@@ -80,6 +80,21 @@ mvn verify
 - Squash-merge to keep main history clean
 - A pre-push hook will enforce quality gates before code reaches the remote
 
+## Issue Creation
+
+When asked to track a bug (e.g., "track this bug, the behavior should be X"), create a GitHub issue using the bug template in `.github/ISSUE_TEMPLATE/bug.yml`. The issue must be **self-contained** — a fresh session with no prior context must be able to read it and deliver a complete, correct fix.
+
+From the user's short description and your knowledge of the current session, you must fill in:
+
+1. **Summary** — what is broken, in one or two sentences
+2. **Expected Behavior** — what should happen (often this is what the user tells you)
+3. **Actual Behavior** — what happens instead (from your observation or the user's description)
+4. **Location in Code** — specific file paths, class names, method names, line numbers where the bug lives or is likely to live
+5. **Steps to Reproduce** — how to trigger the bug (test setup, API calls, configuration)
+6. **Acceptance Criteria** — checkboxes that define "done". These must be verifiable: a test that should pass, a behavior that should be observable, a log that should appear. The agent working the fix uses these to know when to stop.
+
+The **Location in Code** and **Acceptance Criteria** fields are what make the difference between an issue that requires a conversation and one that an agent can resolve cold. Be specific. "Fix the bug" is not an acceptance criterion. "Authorizations with scope_type=ENGINE are persisted during snapshot apply and a unit test covers this path" is.
+
 ## ADRs
 
 Architecture decisions are documented in `docs/adr/`. Read these before making changes that touch architectural boundaries.
