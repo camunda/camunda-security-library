@@ -82,9 +82,14 @@ mvn verify
 
 ## Issue Creation
 
-When asked to track a bug (e.g., "track this bug, the behavior should be X"), create a GitHub issue using the bug template in `.github/ISSUE_TEMPLATE/bug.yml`. The issue must be **self-contained** — a fresh session with no prior context must be able to read it and deliver a complete, correct fix.
+When asked to track work, create a GitHub issue using the appropriate template in `.github/ISSUE_TEMPLATE/`. The issue must be **self-contained** — a fresh session with no prior context must be able to read it and deliver a complete, correct result.
 
-From the user's short description and your knowledge of the current session, you must fill in:
+### Bugs
+
+Trigger: "track this bug", "this is broken", "the behavior should be X"
+Template: `.github/ISSUE_TEMPLATE/bug.yml`
+
+From the user's short description and your knowledge of the current session, fill in:
 
 1. **Summary** — what is broken, in one or two sentences
 2. **Expected Behavior** — what should happen (often this is what the user tells you)
@@ -93,7 +98,23 @@ From the user's short description and your knowledge of the current session, you
 5. **Steps to Reproduce** — how to trigger the bug (test setup, API calls, configuration)
 6. **Acceptance Criteria** — checkboxes that define "done". These must be verifiable: a test that should pass, a behavior that should be observable, a log that should appear. The agent working the fix uses these to know when to stop.
 
-The **Location in Code** and **Acceptance Criteria** fields are what make the difference between an issue that requires a conversation and one that an agent can resolve cold. Be specific. "Fix the bug" is not an acceptance criterion. "Authorizations with scope_type=ENGINE are persisted during snapshot apply and a unit test covers this path" is.
+### Features
+
+Trigger: "we should be able to", "add support for", "I want to be able to"
+Template: `.github/ISSUE_TEMPLATE/feature.yml`
+
+From the user's short description and your knowledge of the current session, fill in:
+
+1. **Summary** — what should be possible, in one or two sentences
+2. **Motivation** — why this is needed, what problem it solves or workflow it enables
+3. **Expected Behavior** — what the feature looks like when it works (inputs, outputs, side effects)
+4. **Scope and Boundaries** — what is in scope and what is explicitly out of scope. This prevents the implementing session from over-building.
+5. **Location in Code** — where this should be implemented. Relevant modules, packages, existing classes to extend or follow as patterns.
+6. **Acceptance Criteria** — checkboxes that define "done". Each criterion must be verifiable.
+
+### What makes an issue work for cold-start resolution
+
+The **Location in Code** and **Acceptance Criteria** fields are what make the difference between an issue that requires a conversation and one that an agent can resolve cold. Be specific. "Fix the bug" is not an acceptance criterion. "Authorizations with scope_type=ENGINE are persisted during snapshot apply and a unit test covers this path" is. "Add the feature" is not useful. "POST /api/principals/{id}/roles accepts an array, assigns atomically, and a contract test covers the endpoint" is.
 
 ## ADRs
 
