@@ -4,7 +4,7 @@ A unified identity and authorization library for the Camunda 8 platform, embedde
 
 ## Stack
 
-Java 21 / Spring Boot 4 / Maven 3.9 / Hexagonal architecture
+Java 25 / Spring Boot 4 / Maven 3.9 / Hexagonal architecture
 
 ## Key Commands
 
