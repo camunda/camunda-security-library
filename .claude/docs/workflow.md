@@ -25,6 +25,24 @@ Conventional Commits format: `<type>(<scope>): <subject>`
 - Squash-merge to keep main history clean
 - Link relevant issues in the PR description
 
+## Architecture Decision Records
+
+When a change involves a significant design choice, create an ADR in `docs/adr/`. Err on the side of writing one — a short ADR that captures the reasoning is far more valuable than no record at all.
+
+**Write an ADR when:**
+- Introducing a new module, port, or adapter
+- Choosing between multiple viable approaches
+- Changing how deployment strategies, policy propagation, or authorization work
+- Adding or replacing a dependency
+- Altering data flow or storage patterns
+
+**Do not write an ADR for:**
+- Bug fixes that don't change design
+- Routine implementation that follows established patterns
+- Style or formatting changes
+
+Number ADRs sequentially. Check `docs/adr/` for the latest number.
+
 ## Pre-Push Hook
 
 A pre-push git hook will enforce quality gates before code reaches the remote. The hook will be auto-installed via Maven on first build. Details will be documented here once the build tooling is in place.

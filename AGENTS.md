@@ -119,3 +119,5 @@ The **Location in Code** and **Acceptance Criteria** fields are what make the di
 ## ADRs
 
 Architecture decisions are documented in `docs/adr/`. Read these before making changes that touch architectural boundaries.
+
+When a change involves a significant design choice, create a new ADR. Err on the side of writing one. Write an ADR when introducing new modules/ports/adapters, choosing between approaches, changing data flow or storage patterns, or adding/replacing dependencies. Number sequentially — check `docs/adr/` for the latest number.
