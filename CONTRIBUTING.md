@@ -18,11 +18,11 @@ If you're using an agent other than Claude, point it at `AGENTS.md` — it's sel
 
 The repository includes Claude Code skills (`.claude/skills/`) that streamline common workflows. These can be invoked as slash commands in Claude Code:
 
-| Command | Trigger | What it does |
-|---|---|---|
-| `/bug` | "Track this bug", "this is broken", "the behavior should be X" | Creates a structured GitHub issue from a short bug description. Enriches it with code locations, reproduction steps, and verifiable acceptance criteria so a fresh session can fix it without further conversation. |
-| `/feature` | "We should be able to", "add support for", "I want to be able to" | Creates a structured GitHub issue from a short feature description. Includes motivation, scope boundaries, implementation location, and acceptance criteria so a fresh session can implement it cold. |
-| `/docs` | "Document this", "add docs for", "write documentation for" | Creates or updates documentation — Javadoc, module READMEs, feature guides, or ADRs — and ensures related docs stay in sync. |
+| Command | What it does |
+|---|---|
+| `/bug` | Creates a structured GitHub issue from a short bug description. Enriches it with code locations, reproduction steps, and verifiable acceptance criteria so a fresh session can fix it without further conversation. |
+| `/feature` | Creates a structured GitHub issue from a short feature description. Includes motivation, scope boundaries, implementation location, and acceptance criteria so a fresh session can implement it cold. |
+| `/docs` | Creates or updates documentation — Javadoc, module READMEs, feature guides, or ADRs — and ensures related docs stay in sync. |
 
 These commands are designed for a two-step workflow:
 1. **Quick capture** — describe what you need in a short sentence, the agent creates a rich, self-contained issue
