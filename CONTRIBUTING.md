@@ -14,15 +14,25 @@ This project is set up for AI-assisted development. Whether you're working with 
 
 If you're using an agent other than Claude, point it at `AGENTS.md` — it's self-contained.
 
-### AI-Assisted Skills
+### AI-Assisted Workflows
 
-The repository includes Claude Code skills (`.claude/skills/`) that streamline common workflows. These can be invoked as slash commands in Claude Code:
+Common AI-assisted workflows are documented in `docs/workflows/` — these are agent-neutral process guides any AI tool can follow:
 
-| Command | What it does |
+| Workflow | File | What it does |
+|---|---|---|
+| Creating bug issues | `docs/workflows/bug-issues.md` | Produces a structured GitHub bug issue from a short description. Enriches it with code locations, reproduction steps, and verifiable acceptance criteria so a fresh session can fix it without further conversation. |
+| Creating feature issues | `docs/workflows/feature-issues.md` | Produces a structured GitHub feature issue from a short description. Includes motivation, scope boundaries, implementation location, and acceptance criteria so a fresh session can implement it cold. |
+| Documenting code | `docs/workflows/documenting-code.md` | Creates or updates documentation — Javadoc, module READMEs, feature guides, or ADRs — and ensures related docs stay in sync. |
+
+**Claude Code users:** these workflows are also available as slash commands via `.claude/skills/`:
+
+| Command | Workflow |
 |---|---|
-| `/bug` | Creates a structured GitHub issue from a short bug description. Enriches it with code locations, reproduction steps, and verifiable acceptance criteria so a fresh session can fix it without further conversation. |
-| `/feature` | Creates a structured GitHub issue from a short feature description. Includes motivation, scope boundaries, implementation location, and acceptance criteria so a fresh session can implement it cold. |
-| `/docs` | Creates or updates documentation — Javadoc, module READMEs, feature guides, or ADRs — and ensures related docs stay in sync. |
+| `/bug` | Creating bug issues |
+| `/feature` | Creating feature issues |
+| `/docs` | Documenting code |
+
+**Users of other AI tools (Copilot, Cursor, Gemini, etc.):** point your agent at the relevant file in `docs/workflows/` when you want it to follow one of these workflows.
 
 ### Working on an Issue
 
