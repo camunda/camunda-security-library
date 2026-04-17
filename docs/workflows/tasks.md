@@ -64,10 +64,12 @@ gh issue create --title "<concise title>" --body "<body>"
 
 After creation:
 
-1. Set the native issue type to `Task` — see `docs/workflows/github-issue-operations.md` for the command.
-2. If this task has a parent feature, link it as a native sub-issue — also covered in `docs/workflows/github-issue-operations.md`. Do NOT rely solely on body text for the parent link; use the sub-issues API so the GitHub UI renders the hierarchy and progress.
+1. Set the native issue type to `Task` — see [github-issue-operations.md](https://github.com/camunda/camunda-security-gateway/blob/main/docs/workflows/github-issue-operations.md) for the command.
+2. If this task has a parent feature, link it as a native sub-issue — also covered in [github-issue-operations.md](https://github.com/camunda/camunda-security-gateway/blob/main/docs/workflows/github-issue-operations.md). Do NOT rely solely on body text for the parent link; use the sub-issues API so the GitHub UI renders the hierarchy and progress.
 
 Do not apply a `task` label — the native type replaces it.
+
+When you write the body, **link in-repo files as clickable GitHub blob URLs**, not plain-text paths. See the "Linking files in issue bodies" section of [github-issue-operations.md](https://github.com/camunda/camunda-security-gateway/blob/main/docs/workflows/github-issue-operations.md).
 
 **Body structure:**
 

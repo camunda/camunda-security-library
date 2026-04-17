@@ -44,7 +44,9 @@ Use `gh issue create` with the bug template. Every field should give a cold-star
 gh issue create --title "<concise title>" --body "<body>"
 ```
 
-After creation, set the native issue type to `Bug`. See `docs/workflows/github-issue-operations.md` for the exact commands. Do not apply a `bug` label — the native type replaces it.
+After creation, set the native issue type to `Bug`. See [github-issue-operations.md](https://github.com/camunda/camunda-security-gateway/blob/main/docs/workflows/github-issue-operations.md) for the exact commands. Do not apply a `bug` label — the native type replaces it.
+
+When you write the body, **link in-repo files as clickable GitHub blob URLs**, not plain-text paths. See the "Linking files in issue bodies" section of [github-issue-operations.md](https://github.com/camunda/camunda-security-gateway/blob/main/docs/workflows/github-issue-operations.md).
 
 **Body structure:**
 

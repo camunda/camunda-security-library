@@ -45,7 +45,9 @@ Use `gh issue create` with the feature template. Every field should give a cold-
 gh issue create --title "<concise title>" --body "<body>"
 ```
 
-After creation, set the native issue type to `Feature`. See `docs/workflows/github-issue-operations.md` for the exact commands. Do not apply an `enhancement` label — the native type replaces it.
+After creation, set the native issue type to `Feature`. See [github-issue-operations.md](https://github.com/camunda/camunda-security-gateway/blob/main/docs/workflows/github-issue-operations.md) for the exact commands. Do not apply an `enhancement` label — the native type replaces it.
+
+When you write the body, **link in-repo files as clickable GitHub blob URLs**, not plain-text paths. See the "Linking files in issue bodies" section of [github-issue-operations.md](https://github.com/camunda/camunda-security-gateway/blob/main/docs/workflows/github-issue-operations.md).
 
 **Body structure:**
 
