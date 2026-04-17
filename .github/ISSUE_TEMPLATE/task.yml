@@ -1,6 +1,6 @@
 name: Task
 description: A small, self-contained unit of implementation work — standalone or part of a feature
-labels: ["task"]
+type: Task
 body:
   - type: markdown
     attributes:

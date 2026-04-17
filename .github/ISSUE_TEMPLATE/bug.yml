@@ -1,6 +1,6 @@
 name: Bug Report
 description: Report a bug — structured for both human review and AI-assisted resolution
-labels: ["bug"]
+type: Bug
 body:
   - type: markdown
     attributes:
