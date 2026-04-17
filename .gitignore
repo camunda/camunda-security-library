@@ -1,0 +1,3 @@
+# Override global gitignore for AI agent context files
+!CLAUDE.md
+!.claude/

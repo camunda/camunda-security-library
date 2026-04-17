@@ -1,0 +1,78 @@
+name: Bug Report
+description: Report a bug — structured for both human review and AI-assisted resolution
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Provide enough context that someone (or an AI agent) picking this up cold can understand, locate, reproduce, and fix the issue without further conversation.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences describing what is broken.
+      placeholder: "PolicySnapshot apply silently drops authorizations with ENGINE scope type"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should happen?
+      placeholder: "All authorizations in the snapshot — including ENGINE-scoped ones — should be persisted and queryable after apply."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What happens instead?
+      placeholder: "ENGINE-scoped authorizations are silently skipped during apply. No error is logged. The policy projection is incomplete."
+    validations:
+      required: true
+
+  - type: textarea
+    id: location
+    attributes:
+      label: Location in Code
+      description: Where in the codebase does this occur? File paths, class names, method names — as specific as possible.
+      placeholder: |
+        - `sgf-domain/src/.../PolicyApplyService.java:applySnapshot()` — filtering logic at line ~84
+        - `sgf-domain/src/.../Authorization.java` — scope type enum
+    validations:
+      required: false
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How to trigger the bug. Include test setup, API calls, or configuration if relevant.
+      placeholder: |
+        1. Create a PolicySnapshot containing an authorization with scope_type=ENGINE
+        2. Call PolicyApplyService.applySnapshot(snapshot)
+        3. Query authorizations — ENGINE-scoped entry is missing
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: What must be true for this to be considered fixed? Be specific — these are the verification checks.
+      placeholder: |
+        - [ ] Authorizations with all scope types (ALL, TENANT, ENGINE, TENANT_ENGINE) are persisted during snapshot apply
+        - [ ] A unit test covers each scope type through the apply path
+        - [ ] No silent data loss — if an authorization cannot be applied, an error is logged
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Anything else — related ADRs, deployment strategy, screenshots, logs, links to related issues.
+    validations:
+      required: false
