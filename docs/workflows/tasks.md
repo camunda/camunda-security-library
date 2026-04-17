@@ -59,11 +59,15 @@ If the task fails these checks, split it into smaller tasks.
 Use `gh issue create` with the task template.
 
 ```
-gh issue create \
-  --label "task" \
-  --title "<concise title>" \
-  --body "<body>"
+gh issue create --title "<concise title>" --body "<body>"
 ```
+
+After creation:
+
+1. Set the native issue type to `Task` — see `docs/workflows/github-issue-operations.md` for the command.
+2. If this task has a parent feature, link it as a native sub-issue — also covered in `docs/workflows/github-issue-operations.md`. Do NOT rely solely on body text for the parent link; use the sub-issues API so the GitHub UI renders the hierarchy and progress.
+
+Do not apply a `task` label — the native type replaces it.
 
 **Body structure:**
 
@@ -102,7 +106,9 @@ gh issue create \
 
 ### 5. Update the parent feature (if applicable)
 
-If this task has a parent feature issue, add a checkbox to the parent's implementation plan linking to this task. For example, edit the parent feature issue body to add:
+If this task has a parent feature, link it as a native GitHub sub-issue (done in step 4). The parent feature's body can also keep an Implementation Plan section for human readability, but the sub-issue link is the source of truth that GitHub uses to render progress and hierarchy.
+
+If you keep the Implementation Plan section in the parent body, edit it to add this task:
 
 ```markdown
 ## Implementation Plan
@@ -122,4 +128,4 @@ Before creating, verify:
 - [ ] The "Why This Is Independently Mergeable" section gives a clear boundary
 - [ ] Acceptance criteria are verifiable without human judgment
 - [ ] The verification command is specific (not just "run all tests")
-- [ ] If there's a parent feature, it is linked both ways (task references parent, parent's plan lists task)
+- [ ] If there's a parent feature, it is linked as a native sub-issue (GitHub UI shows the hierarchy), not only via body text

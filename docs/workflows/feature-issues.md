@@ -42,11 +42,10 @@ If any of these are missing and you cannot determine them from the current sessi
 Use `gh issue create` with the feature template. Every field should give a cold-start agent what it needs.
 
 ```
-gh issue create \
-  --label "enhancement" \
-  --title "<concise title>" \
-  --body "<body>"
+gh issue create --title "<concise title>" --body "<body>"
 ```
+
+After creation, set the native issue type to `Feature`. See `docs/workflows/github-issue-operations.md` for the exact commands. Do not apply an `enhancement` label — the native type replaces it.
 
 **Body structure:**
 
