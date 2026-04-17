@@ -2,6 +2,28 @@
 
 Shared helpers for the bug, feature, and task workflows. All three workflows use native GitHub issue types (not labels) and native sub-issue relationships (not body-only references).
 
+## Linking files in issue bodies
+
+When an issue body references a file in this repo (an ADR, a workflow doc, a source file, a skill, etc.), use a clickable GitHub blob URL — not a plain text path. A reader should be able to follow the reference in one click without copying a path and searching for it.
+
+**Format:**
+
+```
+[display text](https://github.com/camunda/camunda-security-gateway/blob/main/<path>)
+```
+
+**Examples:**
+
+- `` [ADR-0002](https://github.com/camunda/camunda-security-gateway/blob/main/docs/adr/0002-placement-of-the-security-gateway-framework.md) `` instead of `` `docs/adr/0002-placement-of-the-security-gateway-framework.md` ``
+- `` [architecture.md](https://github.com/camunda/camunda-security-gateway/blob/main/.claude/docs/architecture.md) `` instead of `` `.claude/docs/architecture.md` ``
+
+**When this applies:**
+- Any narrative reference a reader should be able to follow (Location in Code, Additional Context, referenced ADRs, patterns to follow).
+
+**When this does NOT apply:**
+- Inline code fences showing file paths inside a shell command (e.g., `grep foo docs/adr/*.md`) — those are commands, not navigation.
+- Sibling, child, or parent issues — use `#<number>` for those; GitHub auto-links issues.
+
 ## Setting the issue type
 
 The repo has these native issue types configured: `Bug`, `Feature`, `Task`, `Epic`, `Tech-debt`, `CVE`.
