@@ -14,9 +14,9 @@ This project is set up for AI-assisted development. Whether you're working with 
 
 If you're using an agent other than Claude, point it at `AGENTS.md` — it's self-contained.
 
-### AI-Assisted Commands
+### AI-Assisted Skills
 
-The repository includes Claude Code commands (`.claude/commands/`) that streamline common workflows. These can be invoked as slash commands in Claude Code:
+The repository includes Claude Code skills (`.claude/skills/`) that streamline common workflows. These can be invoked as slash commands in Claude Code:
 
 | Command | Trigger | What it does |
 |---|---|---|
