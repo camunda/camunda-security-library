@@ -79,11 +79,21 @@ gh issue create \
 ## Verification
 <Exact command to run to confirm the feature works, e.g., `mvn test -pl sgf-domain -Dtest=BulkRoleAssignmentServiceTest`>
 
+## Implementation Plan
+<Checkboxes linking to task issues that will deliver this feature. Populated as tasks are created via the task workflow. Leave the list empty at feature creation time if the breakdown isn't known yet.>
+- [ ] <Linked via `#<task-number>` as tasks are created>
+
 ## Additional Context
 <Related ADRs, deployment strategy relevance, links to related issues, design notes.>
 ```
 
-### 4. Confirm with the user
+### 4. Suggest breaking into tasks
+
+If the feature is non-trivial — meaning it cannot be delivered in a single small PR — suggest to the user that they break it into tasks using the task workflow (`/task` in Claude Code, or `docs/workflows/tasks.md` for other agents). Each task becomes a child of this feature issue and is linked back via the Implementation Plan section.
+
+A feature that can be delivered in one small PR does not need to be broken down. The task workflow is for features that otherwise would not fit in a reviewable change.
+
+### 5. Confirm with the user
 
 Show the user the created issue URL and a one-line summary. Ask if anything needs adjusting.
 
