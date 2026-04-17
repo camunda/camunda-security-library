@@ -22,6 +22,7 @@ Common AI-assisted workflows are documented in `docs/workflows/` — these are a
 |---|---|---|
 | Creating bug issues | `docs/workflows/bug-issues.md` | Produces a structured GitHub bug issue from a short description. Enriches it with code locations, reproduction steps, and verifiable acceptance criteria so a fresh session can fix it without further conversation. |
 | Creating feature issues | `docs/workflows/feature-issues.md` | Produces a structured GitHub feature issue from a short description. Includes motivation, scope boundaries, implementation location, and acceptance criteria so a fresh session can implement it cold. |
+| Creating task issues | `docs/workflows/tasks.md` | Produces a small, self-contained, independently mergeable task issue. A task can stand alone, or be one of several that together deliver a feature. |
 | Documenting code | `docs/workflows/documenting-code.md` | Creates or updates documentation — Javadoc, module READMEs, feature guides, or ADRs — and ensures related docs stay in sync. |
 
 **Claude Code users:** these workflows are also available as slash commands via `.claude/skills/`:
@@ -30,9 +31,17 @@ Common AI-assisted workflows are documented in `docs/workflows/` — these are a
 |---|---|
 | `/bug` | Creating bug issues |
 | `/feature` | Creating feature issues |
+| `/task` | Creating task issues |
 | `/docs` | Documenting code |
 
 **Users of other AI tools (Copilot, Cursor, Gemini, etc.):** point your agent at the relevant file in `docs/workflows/` when you want it to follow one of these workflows.
+
+### Features vs tasks
+
+- **Feature** — a user-facing outcome ("users should be able to bulk-assign roles"). Often too large to deliver in a single reviewable PR.
+- **Task** — a small, self-contained, independently mergeable unit of implementation work. Can be standalone, or one of several tasks that together deliver a feature.
+
+When a feature is too large to land in a single small PR, break it into tasks. Each task must be safe to merge on its own — either because it stands alone, or because it lands behind a boundary (no caller yet, feature flag, internal only, additive change) until the parent feature is complete.
 
 ### Working on an Issue
 
@@ -47,7 +56,8 @@ The agent will read the issue, follow the acceptance criteria, and verify agains
 GitHub issue templates (`.github/ISSUE_TEMPLATE/`) mirror the structure the AI commands produce:
 
 - **Bug Report** (`bug.yml`) — summary, expected/actual behavior, code location, reproduction steps, acceptance criteria
-- **Feature Request** (`feature.yml`) — summary, motivation, expected behavior, scope/boundaries, code location, acceptance criteria
+- **Feature Request** (`feature.yml`) — summary, motivation, expected behavior, scope/boundaries, code location, acceptance criteria, implementation plan
+- **Task** (`task.yml`) — summary, parent feature (if any), why independently mergeable, scope, code location, acceptance criteria, verification
 
 These templates work for both human-authored and AI-authored issues.
 
