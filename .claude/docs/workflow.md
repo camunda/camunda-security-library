@@ -38,8 +38,9 @@ When a change involves a significant design choice, create an ADR in `docs/adr/`
 
 **Do not write an ADR for:**
 - Bug fixes that don't change design
-- Routine implementation that follows established patterns
 - Style or formatting changes
+
+Note: even when following an established pattern, if the decision to do so was deliberate and worth recording, write an ADR. The value is in documenting that a conscious choice was made, not just in comparing alternatives.
 
 Number ADRs sequentially. Check `docs/adr/` for the latest number.
 
