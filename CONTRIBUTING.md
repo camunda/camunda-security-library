@@ -24,9 +24,13 @@ The repository includes Claude Code skills (`.claude/skills/`) that streamline c
 | `/feature` | Creates a structured GitHub issue from a short feature description. Includes motivation, scope boundaries, implementation location, and acceptance criteria so a fresh session can implement it cold. |
 | `/docs` | Creates or updates documentation — Javadoc, module READMEs, feature guides, or ADRs — and ensures related docs stay in sync. |
 
-These commands are designed for a two-step workflow:
-1. **Quick capture** — describe what you need in a short sentence, the agent creates a rich, self-contained issue
-2. **Cold-start resolution** — in a new session, point the agent at the issue URL and it delivers a complete result
+### Working on an Issue
+
+Issues created via `/bug` and `/feature` are designed to be **self-contained** — a fresh agent session should be able to resolve them without prior context. To work on one, start a new session and point the agent at the issue:
+
+> "Work on https://github.com/camunda/camunda-security-gateway/issues/123"
+
+The agent will read the issue, follow the acceptance criteria, and verify against the stated verification command. If the issue is missing information the agent needs, that's a signal the issue itself should be improved — update the issue rather than handing the context verbally.
 
 ### Issue Templates
 
