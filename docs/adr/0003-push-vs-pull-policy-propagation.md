@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -38,7 +38,7 @@ The only fixed constraint is that Hub is the policy SoT. Using a transactional o
 
 ## Options considered
 
-### Option A – Push-based propagation from Hub to OCs (chosen)
+### Option 1 – Push-based propagation from Hub to OCs (chosen)
 
 Shape:
 
@@ -52,12 +52,12 @@ Pros:
   - Recording the policy change and the fact that it needs to be delivered happens together.
 - Good central visibility:
   - Hub can keep track, per OC, of which policy version it intended to deliver and which version an OC has confirmed.
-  - This makes it easier to answer questions like "which clusters are on policy version X?".
+  - This makes it easier to answer questions like “which clusters are on policy version X?”.
 - Efficient for infrequent configuration changes:
   - Policy changes are relatively rare compared to runtime authorization decisions.
   - OCs do not waste resources asking Hub for changes when there are none.
 - Simple mental model for operators:
-  - "When I change policy in Hub, Hub will push it out to all relevant clusters and tell me if something failed."
+  - “When I change policy in Hub, Hub will push it out to all relevant clusters and tell me if something failed.”
 - Better central rollout visibility at scale:
   - Hub can expose delivery progress and failure states per OC without adding extra OC reporting paths.
 
@@ -71,7 +71,7 @@ Cons:
 - Snapshot-based propagation (without diffs) increases per-call payload size and apply time:
   - Larger payloads can increase latency per delivery and require stronger timeout, batching, and throughput controls.
 
-### Option B – Pull-based propagation (OC asks Hub for new versions and changes)
+### Option 2 – Pull-based propagation (OC asks Hub for new versions and changes)
 
 Shape:
 
@@ -81,7 +81,7 @@ Shape:
 - Each OC tracks the last policy version it has applied.
 - Periodically, an OC:
   - Asks Hub what the current policy version is for its cluster.
-  - If Hub reports a higher version than the OC's stored version, the OC asks Hub for:
+  - If Hub reports a higher version than the OC’s stored version, the OC asks Hub for:
     - Either the full snapshot of the current policy, or
     - The sequence of diffs needed to move from its current version to the latest version.
   - The OC applies the received changes and updates its stored version.
@@ -102,11 +102,11 @@ Cons:
 - Pull creates continuous background traffic by design:
   - Even without policy changes, OCs keep polling Hub, consuming network and compute capacity.
 - Central visibility is weaker unless we add extra reporting:
-  - By default, Hub only knows "the latest policy version is N", not which version each OC is currently running.
+  - By default, Hub only knows “the latest policy version is N”, not which version each OC is currently running.
   - To regain that information, OCs would need to report their applied version back to Hub, which reintroduces coordination complexity.
 - No built-in notion of queued deliveries:
-  - There is no concept of "this change is ready to be delivered to OC X but has not been pulled yet".
-  - Investigating "why is OC X still on an old policy?" becomes harder.
+  - There is no concept of “this change is ready to be delivered to OC X but has not been pulled yet”.
+  - Investigating “why is OC X still on an old policy?” becomes harder.
 - More logic per OC:
   - Error handling (for example, failures while applying a chain of diffs) must be coordinated across two independent systems.
 - Polling synchronization risk at large OC counts:
@@ -114,12 +114,12 @@ Cons:
 - Pull clients and Hub polling endpoints both require rate limiting and circuit breaking:
   - OCs should back off when Hub is degraded; Hub should protect itself from abusive or accidental poll bursts.
 
-### Option C – Hybrid: push as default, pull only for recovery
+### Option 3 – Hybrid: push as default, pull only for recovery
 
 Shape:
 
 - Normal operation:
-  - Same as Option A: Hub records policy changes and pushes snapshots or diffs to OCs.
+  - Same as Option 1: Hub records policy changes and pushes snapshots or diffs to OCs.
 - Exceptional cases:
   - An OC can explicitly request a full snapshot from Hub if it detects that its state is inconsistent or too far behind.
   - This is used for recovery and bootstrapping, not as the main propagation path.
@@ -135,7 +135,7 @@ Cons:
 
 ## Decision outcome
 
-We choose push-based propagation from Hub to OCs (Option A), with an optional recovery mechanism (Option C). We do not implement a generic pull-based propagation model for policy.
+We choose push-based propagation from Hub to OCs (Option 1), with an optional recovery mechanism (Option 3). We do not implement a generic pull-based propagation model for policy.
 
 Rationale:
 
