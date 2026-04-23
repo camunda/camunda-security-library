@@ -68,4 +68,22 @@ class CamundaSecurityLibraryAutoConfigurationTest {
                         .hasStackTraceContaining("camunda.security.strategy")
                         .hasStackTraceContaining("bogus"));
     }
+
+    @Test
+    void marker_bean_is_registered_under_oc_standalone() {
+        runner.withPropertyValues("camunda.security.strategy=oc-standalone")
+                .run(ctx -> assertThat(ctx).hasSingleBean(OcStandaloneMarker.class));
+    }
+
+    @Test
+    void marker_bean_is_absent_under_oc_managed() {
+        runner.withPropertyValues("camunda.security.strategy=oc-managed")
+                .run(ctx -> assertThat(ctx).doesNotHaveBean(OcStandaloneMarker.class));
+    }
+
+    @Test
+    void marker_bean_is_absent_under_hub() {
+        runner.withPropertyValues("camunda.security.strategy=hub")
+                .run(ctx -> assertThat(ctx).doesNotHaveBean(OcStandaloneMarker.class));
+    }
 }
