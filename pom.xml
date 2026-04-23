@@ -31,6 +31,7 @@
         <plugin.version.checkstyle>3.5.0</plugin.version.checkstyle>
         <version.checkstyle>10.18.2</version.checkstyle>
         <plugin.version.exec>3.6.3</plugin.version.exec>
+        <plugin.version.dependency>3.8.1</plugin.version.dependency>
         <license.header.file>${maven.multiModuleProjectDirectory}/COPYING-HEADER.txt</license.header.file>
         <spotless.check.skip>false</spotless.check.skip>
         <git.hooks.configure.skip>false</git.hooks.configure.skip>
@@ -99,6 +100,22 @@
                                 <rules>
                                     <dependencyConvergence/>
                                 </rules>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-dependency-plugin</artifactId>
+                    <version>${plugin.version.dependency}</version>
+                    <executions>
+                        <execution>
+                            <id>analyze-dependencies</id>
+                            <goals>
+                                <goal>analyze-only</goal>
+                            </goals>
+                            <configuration>
+                                <failOnWarning>true</failOnWarning>
                             </configuration>
                         </execution>
                     </executions>
