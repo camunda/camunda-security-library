@@ -1,1 +1,1 @@
-io.camunda.security.autoconfigure.spring.CamundaSecurityLibraryAutoConfiguration
+io.camunda.security.autoconfigure.spring.CamundaSecurityAutoConfiguration
