@@ -33,7 +33,7 @@
     <modules>
         <module>core</module>
         <module>api</module>
-        <module>adapters</module>
+        <module>spring-boot-starter</module>
     </modules>
 
     <dependencyManagement>
