@@ -28,7 +28,7 @@ If any of these are missing and you cannot determine them from the current sessi
 **You SHOULD know (investigate the codebase if needed):**
 - Where the bug is (file paths, class names, method names — be specific)
 - How to trigger it (steps or a test description)
-- What verification command confirms the fix (e.g., `mvn test -pl sgf-domain -Dtest=SpecificTest`)
+- What verification command confirms the fix (e.g., `mvn test -pl csl-domain -Dtest=SpecificTest`)
 - What related code or patterns exist that the fix should follow
 
 **Do NOT ask the user for:**
@@ -72,7 +72,7 @@ When you write the body, **link in-repo files as clickable GitHub blob URLs**, n
 - [ ] <Each criterion must be checkable by an agent without human judgment>
 
 ## Verification
-<Exact command to run to confirm the fix, e.g., `mvn test -pl sgf-domain -Dtest=PolicyApplyServiceTest`>
+<Exact command to run to confirm the fix, e.g., `mvn test -pl csl-domain -Dtest=PolicyApplyServiceTest`>
 
 ## Additional Context
 <Related ADRs, deployment strategy relevance, links to related issues.>

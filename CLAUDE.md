@@ -1,4 +1,4 @@
-# Security Gateway Framework (SGF)
+# Camunda Security Library (CSL)
 
 A unified identity and authorization library for the Camunda 8 platform, embedded as a hexagonal Spring Boot library into Hub and Orchestration Clusters.
 

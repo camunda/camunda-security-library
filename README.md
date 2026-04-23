@@ -1,6 +1,6 @@
-# Security Gateway Framework (SGF)
+# Camunda Security Library (CSL)
 
-The Security Gateway Framework is a unified identity and authorization library for the [Camunda 8](https://camunda.com/) platform. It replaces two separate identity stacks — OC Identity (embedded in each Orchestration Cluster) and Management Identity (a standalone service for Web Modeler, Console, and Optimize) — with a single, shared implementation.
+The Camunda Security Library is a unified identity and authorization library for the [Camunda 8](https://camunda.com/) platform. It replaces two separate identity stacks — OC Identity (embedded in each Orchestration Cluster) and Management Identity (a standalone service for Web Modeler, Console, and Optimize) — with a single, shared implementation.
 
 ## Why
 
@@ -11,14 +11,14 @@ Camunda currently maintains two independent identity stacks that solve the same 
 - **Double maintenance burden** — two codebases to test, maintain, and audit for compliance, with behavior diverging over time.
 - **Integration friction** — Hub integration would require a third implementation path unless the underlying stacks are unified first.
 
-The SGF solves this by implementing authentication, authorization, policy authoring, and policy propagation once. Hub and every Orchestration Cluster embed the same library, configured for their deployment context.
+The CSL solves this by implementing authentication, authorization, policy authoring, and policy propagation once. Hub and every Orchestration Cluster embed the same library, configured for their deployment context.
 
 For customers: one set of concepts, one configuration surface, one place to look when something goes wrong.
 For the platform team: one codebase to maintain, one security surface to audit, one upgrade path.
 
 ## Architecture
 
-The SGF is a **hexagonal (ports and adapters) Spring Boot library** embedded into host applications (Hub, Orchestration Clusters). All persistence, IdP clients, engine commands, and outbox delivery sit behind port interfaces defined in the library core. Host applications provide adapter implementations.
+The CSL is a **hexagonal (ports and adapters) Spring Boot library** embedded into host applications (Hub, Orchestration Clusters). All persistence, IdP clients, engine commands, and outbox delivery sit behind port interfaces defined in the library core. Host applications provide adapter implementations.
 
 No host-specific code leaks into the library domain. Swapping a database, replacing an IdP client, or adding a new deployment topology requires only a new adapter.
 

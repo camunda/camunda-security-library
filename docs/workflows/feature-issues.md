@@ -78,7 +78,7 @@ When you write the body, **link in-repo files as clickable GitHub blob URLs**, n
 - [ ] <Include a criterion for not breaking existing behavior>
 
 ## Verification
-<Exact command to run to confirm the feature works, e.g., `mvn test -pl sgf-domain -Dtest=BulkRoleAssignmentServiceTest`>
+<Exact command to run to confirm the feature works, e.g., `mvn test -pl csl-domain -Dtest=BulkRoleAssignmentServiceTest`>
 
 ## Implementation Plan
 <Checkboxes linking to task issues that will deliver this feature. Populated as tasks are created via the task workflow. Leave the list empty at feature creation time if the breakdown isn't known yet.>

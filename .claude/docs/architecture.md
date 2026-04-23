@@ -2,16 +2,16 @@
 
 ## Module / Package Map
 
-The SGF is a multi-module Maven library. Modules will be added as implementation progresses — update this map when they are.
+The CSL is a multi-module Maven library. Modules will be added as implementation progresses — update this map when they are.
 
-- `sgf-domain/` — Core domain models and business logic; zero framework dependencies
-- `sgf-spring/` — Spring Security adapters, filters, OIDC support
-- `sgf-spring-boot-starter/` — Auto-configuration with `@ConditionalOnMissingBean` overrides
-- `sgf-integration-tests/` — Testcontainers-based integration tests (only built with `-Pintegration-tests`)
+- `csl-domain/` — Core domain models and business logic; zero framework dependencies
+- `csl-spring/` — Spring Security adapters, filters, OIDC support
+- `csl-spring-boot-starter/` — Auto-configuration with `@ConditionalOnMissingBean` overrides
+- `csl-integration-tests/` — Testcontainers-based integration tests (only built with `-Pintegration-tests`)
 
 ## Key Boundaries
 
-- `sgf-domain/` has zero framework dependencies — no Spring annotations, no JPA, no HTTP types. Enforced by ArchUnit (see `DomainArchTest`).
+- `csl-domain/` has zero framework dependencies — no Spring annotations, no JPA, no HTTP types. Enforced by ArchUnit (see `DomainArchTest`).
 - Adapters implement ports; they never call each other directly
 - All dependencies point inward toward the domain — adapters depend on ports, ports are defined by the domain
 - Inbound adapters translate HTTP concerns into domain language before calling ports; they must not contain business logic
@@ -19,7 +19,7 @@ The SGF is a multi-module Maven library. Modules will be added as implementation
 
 ## Deployment Strategy Architecture
 
-The SGF is embedded into host applications. Active capabilities are selected via a deployment strategy configuration property (not Spring profiles):
+The CSL is embedded into host applications. Active capabilities are selected via a deployment strategy configuration property (not Spring profiles):
 
 - `oc-standalone` — OC is the local source of truth for policy. Authoring and engine projection are active.
 - `oc-managed` — OC receives policy from Hub. Read-only. Engine projection is active.
@@ -50,7 +50,7 @@ Policy change committed in Hub
   → PolicyVersion created (organization + cluster scoped)
   → Outbox event recorded in same transaction
   → Hub dispatcher sends POLICY_SNAPSHOT to target OC
-  → OC Security Gateway Framework receives and applies snapshot
+  → OC Camunda Security Library receives and applies snapshot
   → OC forwards identity state as engine commands (via EngineCommandPort)
   → Engine persists to primary storage (RocksDB)
   → Exporter writes to secondary storage (ES/OS/RDBMS)
@@ -69,16 +69,16 @@ HTTP request
 
 ## Where New Code Goes
 
-- Domain logic → `sgf-domain/`
+- Domain logic → `csl-domain/`
 - New API endpoint → inbound adapter module; define the use case port in `port/in/` first
 - New persistence operation → outbound adapter; define the port interface in `port/out/` first
 - New external integration → outbound adapter; define the port interface in `port/out/` first
 - New use case → define the port interface in `port/in/`, implement in domain service
-- Auto-configuration → `sgf-spring-boot-starter/`
+- Auto-configuration → `csl-spring-boot-starter/`
 
 ## What Not to Touch
 
-- `sgf-domain/` must never import from adapter packages — define a port instead
+- `csl-domain/` must never import from adapter packages — define a port instead
 - Ports are contracts; changing a port interface requires updating all adapter implementations
 - ADRs in `docs/adr/` are historical records — do not modify decided ADRs. Add new ADRs for new decisions.
 - Generated code (if any) — edit the source definitions, not the output
