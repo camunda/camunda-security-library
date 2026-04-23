@@ -12,10 +12,10 @@ The CSL is a multi-module Maven library. Modules will be added as implementation
 ## Key Boundaries
 
 - `csl-domain/` has zero framework dependencies — no Spring annotations, no JPA, no HTTP types. This boundary will be enforced by ArchUnit via `DomainArchTest` (planned in [#5](https://github.com/camunda/camunda-security-library/issues/5)).
-- Adapters implement ports; they never call each other directly
-- All dependencies point inward toward the domain — adapters depend on ports, ports are defined by the domain
-- Inbound adapters translate HTTP concerns into domain language before calling ports; they must not contain business logic
-- Outbound adapters must never leak infrastructure exceptions (JPA, SQL, HTTP client) into the domain
+- Inbound port implementations (`*PortImpl`) implement inbound ports; outbound adapter implementations (`*AdapterImpl`) implement outbound adapters. Implementations never call each other directly.
+- All dependencies point inward toward the domain. Inbound ports and outbound adapters are contracts defined by the domain; implementations depend on these contracts, not the reverse.
+- `*Port` contracts speak domain types only; transport translation is the caller's responsibility
+- Outbound adapter implementations must never leak infrastructure exceptions (JPA, SQL, HTTP client) into the domain
 
 ## Deployment Strategy Architecture
 
@@ -59,26 +59,25 @@ Policy change committed in Hub
 ### Request authorization (OC)
 
 ```
-HTTP request
-  → adapter/in/ (REST adapter — validates, translates to domain types)
-  → port/in/ (use case interface)
-  → domain/ (service — executes authorization logic against local policy projection)
-  → port/out/ (outbound interface for policy/identity lookups)
-  → adapter/out/ (persistence adapter — reads from local store)
+Caller invokes a `*Port` method with domain types
+  → port/ (`*Port` interface — the library's inbound entry point)
+  → `*PortImpl` (domain service — executes authorization logic against local policy projection)
+  → adapter/ (outbound `*Adapter` interface for policy/identity lookups)
+  → `*AdapterImpl` (reads from local store)
 ```
 
 ## Where New Code Goes
 
 - Domain logic → `csl-domain/`
-- New API endpoint → inbound adapter module; define the use case port in `port/in/` first
-- New persistence operation → outbound adapter; define the port interface in `port/out/` first
-- New external integration → outbound adapter; define the port interface in `port/out/` first
-- New use case → define the port interface in `port/in/`, implement in domain service
+- New inbound use case → define the `*Port` interface in `port/`, implement as `*PortImpl`
+- New persistence operation → outbound adapter implementation (`*AdapterImpl`); define the outbound adapter interface (`*Adapter`) in `adapter/` first
+- New external integration → outbound adapter implementation (`*AdapterImpl`); define the outbound adapter interface (`*Adapter`) in `adapter/` first
+- New use case → define the business port interface (`*Port`) in `port/`, implement as `*PortImpl`
 - Auto-configuration → `csl-spring-boot-starter/`
 
 ## What Not to Touch
 
-- `csl-domain/` must never import from adapter packages — define a port instead
-- Ports are contracts; changing a port interface requires updating all adapter implementations
+- Domain contracts (`port/`, `adapter/`, and model records) must never import from `*PortImpl` / `*AdapterImpl` packages.
+- `*Port` and `*Adapter` interfaces are contracts; changing a signature requires updating every `*PortImpl` or `*AdapterImpl` that satisfies it.
 - ADRs in `docs/adr/` are historical records — do not modify decided ADRs. Add new ADRs for new decisions.
 - Generated code (if any) — edit the source definitions, not the output

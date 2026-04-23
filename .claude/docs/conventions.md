@@ -4,19 +4,25 @@
 
 Hexagonal architecture naming (replaces traditional controller/service/repo naming):
 
-- Inbound adapters handle HTTP — suffixed with `RestAdapter` (e.g., `PolicyRestAdapter`, annotated with `@RestController`)
-- Domain services implement use case ports — suffixed with `Service` (e.g., `ApplyPolicyService` implementing `ApplyPolicyUseCase`)
-- Outbound adapters handle persistence/external calls — suffixed with `PersistenceAdapter` or `ClientAdapter` (e.g., `PolicyPersistenceAdapter`, `IdpClientAdapter`)
-- Use case port interfaces live in `port/in/` and are named as verbs or use cases (e.g., `AuthorizeRequestUseCase`, `ApplyPolicyUseCase`)
-- Outbound port interfaces live in `port/out/` and are named after the operation (e.g., `LoadPolicyPort`, `SaveAuthorizationPort`)
-- Spring Data interfaces may keep `Repository` suffix (e.g., `JpaRoleRepository extends JpaRepository`) since they are framework-generated — but the adapter that wraps them uses adapter naming
+**Inbound (driving side)** — `Port` is always inbound.
+
+- Interface — suffixed with `Port`, lives in `port/`. The inbound contract a host application (or any caller) invokes. Example: `GroupPort` with methods like `create(...)`.
+- Implementation — suffixed with `PortImpl`. Contains business logic. Example: `GroupPortImpl` implementing `GroupPort`.
+
+**Outbound (driven side)**
+
+- Interface — suffixed with `Adapter`, lives in `adapter/`. The contract the domain needs the outside world to satisfy. The qualifier before `Adapter` indicates the kind of external system. Example: `GroupPersistenceAdapter` with methods like `store(...)`, `GroupKafkaAdapter`, `IdpClientAdapter`.
+- Implementation — suffixed with `AdapterImpl`. Actually talks to the external system (JDBC, HTTP client, Kafka, …). Example: `GroupPersistenceAdapterImpl` implementing `GroupPersistenceAdapter`.
+
+**Other**
+
+- Spring Data interfaces may keep the `Repository` suffix (e.g., `JpaRoleRepository extends JpaRepository`) since they are framework-generated — but the outbound adapter implementation that wraps them follows the `*AdapterImpl` naming above.
 
 ## Project-Specific Patterns
 
-- Hexagonal architecture package structure is enforced: `domain/`, `port/in/`, `port/out/`, `adapter/in/`, `adapter/out/`
-- Inbound adapters translate HTTP concepts (request bodies, path variables, HTTP status codes) into domain types before calling use case ports — no business logic in adapters
-- Domain services implement use case port interfaces defined in `port/in/`
-- Outbound adapters implement persistence port interfaces defined in `port/out/`
+- Hexagonal architecture package structure is enforced: `domain/`, `port/`, `adapter/`
+- `*PortImpl` classes implement the inbound port interfaces defined in `port/`
+- `*AdapterImpl` classes implement the outbound adapter interfaces defined in `adapter/`
 - **Models:** always Java records (never mutable classes)
 - **Config classes:** cannot be records (Spring `@ConfigurationProperties` needs mutability)
 - **RDBMS entities:** cannot be records (MyBatis/JPA needs setters)
@@ -28,7 +34,7 @@ Hexagonal architecture naming (replaces traditional controller/service/repo nami
 ## Error Handling
 
 - Domain exceptions are defined and thrown in the domain layer — they carry business meaning (e.g., `PolicyNotFoundException`, `UnauthorizedAccessException`)
-- Inbound adapters catch domain exceptions and translate them to appropriate HTTP responses (e.g., 404, 403) — HTTP status codes never bleed into the domain
+- Domain exceptions propagate out of `*Port` methods unchanged; callers are responsible for translating them to their transport. Transport-specific concerns never bleed into the domain.
 - Do not leak infrastructure concerns (JPA exceptions, SQL errors, HTTP client errors) into the domain; outbound adapters must translate these into domain exceptions or domain-meaningful results
 
 ## Testing Patterns
