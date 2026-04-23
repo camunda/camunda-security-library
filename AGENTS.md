@@ -13,7 +13,7 @@ A unified identity and authorization library for the Camunda 8 platform. The CSL
 
 Hexagonal (ports and adapters). The domain has zero framework dependencies — enforced by ArchUnit.
 
-All persistence, IdP clients, engine commands, and outbox delivery sit behind port interfaces defined in the library core. Host applications (Hub, OC) provide adapter implementations. No host-specific code leaks into the library domain.
+All persistence, IdP clients, engine commands, and outbox delivery sit behind outbound `*Adapter` contracts defined in the library core. Host applications (Hub, OC) provide `*AdapterImpl` classes. No host-specific code leaks into the library domain.
 
 ### Deployment Strategies
 
@@ -42,17 +42,18 @@ Shared across Hub and all OCs: `Organization`, `Tenant`, `Role`, `Group`, `Mappi
 
 ### Naming
 
-- Inbound adapters: suffixed with `RestAdapter` (annotated `@RestController`)
-- Domain services: suffixed with `Service` (implementing use case ports)
-- Outbound adapters: suffixed with `PersistenceAdapter` or `ClientAdapter`
-- Use case ports: named as verbs in `port/in/` (e.g., `PlaceOrderUseCase`)
-- Outbound ports: named after the operation in `port/out/` (e.g., `LoadOrderPort`)
+`Port` is always inbound; `Adapter` is always outbound.
+
+- Inbound port interfaces: suffixed with `Port`, in `port/` (e.g., `GroupPort`)
+- Inbound port implementations (business logic): suffixed with `PortImpl` (e.g., `GroupPortImpl`)
+- Outbound adapter interfaces: suffixed with `Adapter`, in `adapter/` (e.g., `GroupPersistenceAdapter`, `IdpClientAdapter`)
+- Outbound adapter implementations (external-system I/O): suffixed with `AdapterImpl` (e.g., `GroupPersistenceAdapterImpl`)
 
 ### Error Handling
 
 - Domain exceptions carry business meaning and are defined in the domain layer
-- Inbound adapters translate domain exceptions to HTTP responses
-- Outbound adapters must never leak infrastructure exceptions into the domain
+- Domain exceptions propagate out of `*Port` methods unchanged; callers are responsible for translating them to their transport
+- Outbound adapter implementations must never leak infrastructure exceptions into the domain
 
 ### Testing
 
