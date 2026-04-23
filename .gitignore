@@ -4,3 +4,6 @@
 
 # Local-only worktrees
 .worktree/
+
+# Maven build output
+target/
