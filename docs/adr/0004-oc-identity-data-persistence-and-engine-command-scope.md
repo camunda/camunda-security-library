@@ -53,10 +53,16 @@ applying a received policy payload, bypassing the engine and the exporter entire
 
 ### Option 2 — Route through engine commands and exporter (extend existing flow)
 
-The OC SGF forwards identity state changes as commands to the engine (via `EngineCommandPort`).
-The engine's Security Engine Framework processes them and persists the state in primary storage
-(RocksDB). The existing exporter then picks up the identity records and writes them to secondary
-storage (ES/OS/RDBMS), preserving the full flow as it exists today.
+The OC SGF forwards identity state changes via the library's `PolicyPersistencePort`. The OC
+adapter for this port translates them into commands to the engine. The engine's Security Engine
+Framework processes the commands and persists the state in primary storage (RocksDB). The
+existing exporter then picks up the identity records and writes them to secondary storage
+(ES/OS/RDBMS), preserving the full flow as it exists today.
+
+The port is named `PolicyPersistencePort` — generic at the library level — because the library is
+shared across Hub and OC and must not carry OC-specific concepts like "engine" or "command" in its
+public contract. The OC adapter implements the port by routing through engine commands; a future
+Hub adapter would implement the same port differently.
 
 To make this work correctly, the engine commands must carry the full scope metadata
 (`scope_type`, `scope_id`), so that:
@@ -82,11 +88,11 @@ To make this work correctly, the engine commands must carry the full scope metad
 
 **Option 2 — route identity state through engine commands and the exporter.**
 
-The OC Security Gateway Framework forwards identity state changes as commands to the engine via
-`EngineCommandPort`. The engine's Security Engine Framework persists the state in primary storage
-(RocksDB), and the existing exporter propagates it to secondary storage (ES/OS/RDBMS). Engine
-commands carry full scope metadata (`scope_type`, `scope_id`) so that both storage layers hold a
-consistent, scope-aware view.
+The OC Security Gateway Framework forwards identity state changes via the library's
+`PolicyPersistencePort`. The OC adapter translates them into commands to the engine; the engine's
+Security Engine Framework persists the state in primary storage (RocksDB), and the existing
+exporter propagates it to secondary storage (ES/OS/RDBMS). Engine commands carry full scope
+metadata (`scope_type`, `scope_id`) so that both storage layers hold a consistent, scope-aware view.
 
 Option 1 — writing directly to secondary storage from the OC SGF — is rejected. Bypassing the
 engine command path is counterproductive: the engine still needs identity state in primary storage

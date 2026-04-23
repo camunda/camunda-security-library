@@ -51,7 +51,7 @@ Policy change committed in Hub
   → Outbox event recorded in same transaction
   → Hub dispatcher sends POLICY_SNAPSHOT to target OC
   → OC Camunda Security Library receives and applies snapshot
-  → OC forwards identity state as engine commands (via EngineCommandPort)
+  → OC forwards identity state via PolicyPersistencePort (OC adapter routes through engine commands)
   → Engine persists to primary storage (RocksDB)
   → Exporter writes to secondary storage (ES/OS/RDBMS)
 ```
