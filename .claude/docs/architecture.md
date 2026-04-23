@@ -11,7 +11,7 @@ The CSL is a multi-module Maven library. Modules will be added as implementation
 
 ## Key Boundaries
 
-- `csl-domain/` has zero framework dependencies — no Spring annotations, no JPA, no HTTP types. Enforced by ArchUnit (see `DomainArchTest`).
+- `csl-domain/` has zero framework dependencies — no Spring annotations, no JPA, no HTTP types. This boundary will be enforced by ArchUnit via `DomainArchTest` (planned in [#5](https://github.com/camunda/camunda-security-library/issues/5)).
 - Adapters implement ports; they never call each other directly
 - All dependencies point inward toward the domain — adapters depend on ports, ports are defined by the domain
 - Inbound adapters translate HTTP concerns into domain language before calling ports; they must not contain business logic
