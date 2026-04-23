@@ -4,7 +4,7 @@ A unified identity and authorization library for the Camunda 8 platform. The SGF
 
 ## Stack
 
-- Java 25 / Spring Boot 4 / Spring Web MVC / Maven 3.9
+- Java 21 / Spring Boot 4 / Spring Web MVC / Maven 3.9
 - Architecture: Hexagonal (ports and adapters)
 - Testing: JUnit 5, Mockito, AssertJ, ArchUnit, Testcontainers, Pact
 - Formatting: Google Java Format (Spotless)
