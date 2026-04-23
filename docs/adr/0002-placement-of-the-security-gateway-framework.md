@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -64,7 +64,7 @@ This is the architecture described in the unified identity document (sections 4�
 - Pros:
   - Clear operational boundary: identity could be scaled and rolled out independently from Hub/OC.
   - Language‑agnostic: any client that can speak HTTP/gRPC can ask for decisions.
-  - Familiar to teams used to "central IAM service per cluster" patterns.
+  - Familiar to teams used to “central IAM service per cluster” patterns.
 - Cons:
   - Additional service to operate:
     - More deployments, monitoring, on‑call, SLAs.
@@ -78,7 +78,7 @@ This is the architecture described in the unified identity document (sections 4�
 ### Option 3 – Single global identity service for Hub + all clusters (similar to Management Identity)
 
 - Shape:
-  - One global identity service (similar in spirit to today's Management Identity):
+  - One global identity service (similar in spirit to today’s Management Identity):
     - Manages users, IdP connections, and policy centrally.
     - Hub and OCs call it synchronously for authentication/authorization.
   - No per‑cluster SGF; everything goes through the central service.
