@@ -1,4 +1,4 @@
-# Contributing to Security Gateway Framework
+# Contributing to the Camunda Security Library
 
 ## Getting Started
 
@@ -85,7 +85,7 @@ Significant design choices are documented as ADRs in `docs/adr/`. When in doubt,
 
 ## Architecture
 
-The SGF uses hexagonal (ports and adapters) architecture. The domain has zero framework dependencies. See `AGENTS.md` for a complete overview or `.claude/docs/architecture.md` for detailed module boundaries and data flows.
+The CSL uses hexagonal (ports and adapters) architecture. The domain has zero framework dependencies. See `AGENTS.md` for a complete overview or `.claude/docs/architecture.md` for detailed module boundaries and data flows.
 
 ## License
 

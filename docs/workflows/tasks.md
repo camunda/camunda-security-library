@@ -100,7 +100,7 @@ When you write the body, **link in-repo files as clickable GitHub blob URLs**, n
 - [ ] <Include a criterion that existing behavior is unchanged>
 
 ## Verification
-<Exact command to run to confirm the task is complete, e.g., `mvn test -pl sgf-domain -Dtest=PolicyVersionRepositoryTest`>
+<Exact command to run to confirm the task is complete, e.g., `mvn test -pl csl-domain -Dtest=PolicyVersionRepositoryTest`>
 
 ## Additional Context
 <Related ADRs, deployment strategy relevance, links to sibling tasks, design notes.>
