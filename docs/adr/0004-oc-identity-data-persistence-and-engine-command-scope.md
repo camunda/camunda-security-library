@@ -1,12 +1,12 @@
 ---
-status: Open
+status: Accepted
 ---
 
 # ADR-0004: Identity data persistence in the Orchestration Cluster
 
 ## Status
 
-Open
+Accepted
 
 ## Context
 
@@ -80,24 +80,30 @@ To make this work correctly, the engine commands must carry the full scope metad
 
 ## Decision
 
-**Open — not yet decided.**
+**Option 2 — route identity state through engine commands and the exporter.**
 
-Option 1 has correctness and consistency problems that make it impractical without significant
-additional design work. Option 2 is the preferred direction, but the following questions must still
-be resolved:
+The OC Security Gateway Framework forwards identity state changes as commands to the engine via
+`EngineCommandPort`. The engine's Security Engine Framework persists the state in primary storage
+(RocksDB), and the existing exporter propagates it to secondary storage (ES/OS/RDBMS). Engine
+commands carry full scope metadata (`scope_type`, `scope_id`) so that both storage layers hold a
+consistent, scope-aware view.
 
-- Exact schema extensions required for ES/OS/RDBMS to store scope metadata on authorization
-  records.
-- Whether the originating `PolicyVersion` reference should also be stored in primary storage, or
-  only the effective identity state.
-- Reset and re-apply semantics: how a full `POLICY_SNAPSHOT` re-apply atomically resets both
-  primary and secondary storage identity state.
+Option 1 — writing directly to secondary storage from the OC SGF — is rejected. Bypassing the
+engine command path is counterproductive: the engine still needs identity state in primary storage
+for command authorization, so any "shortcut" that skips engine commands still has to trigger them
+to populate RocksDB. The net result is two write paths instead of one, with the consistency and
+schema-ownership costs documented under Option 1.
+
+Open questions identified during review — schema extensions for scope metadata in secondary
+storage, whether primary storage also holds the originating `PolicyVersion` reference, and the
+atomicity of `POLICY_SNAPSHOT` re-apply — are implementation details tracked alongside the unified
+policy model work (camunda/camunda#51101) rather than blockers on this ADR.
 
 ## Alternatives Considered
 
 See Option 1 and Option 2 in the Context section above.
 
-## Consequences (if Option 2 is chosen)
+## Consequences
 
 - Engine and exporter are extended to handle scoped identity records.
 - Secondary storage schemas (ES/OS/RDBMS) are extended with scope columns for authorization

@@ -1,8 +1,12 @@
+---
+status: Accepted
+---
+
 # ADR-0002: Placement of the Security Gateway Framework (embedded vs standalone service)
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
