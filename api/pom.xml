@@ -15,27 +15,16 @@
     <description>Host-facing entry points for the Camunda Security Library.</description>
 
     <dependencies>
+        <!--
+          Cross-module dependency kept for architectural intent: csl-api is
+          the host-facing entry point that sits on top of csl-core. Even
+          without current source references, this edge in the module graph
+          expresses the layering of the library.
+        -->
         <dependency>
             <groupId>io.camunda</groupId>
             <artifactId>camunda-security-library-core</artifactId>
             <version>${project.version}</version>
-        </dependency>
-
-        <!-- Test only. -->
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.assertj</groupId>
-            <artifactId>assertj-core</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-core</artifactId>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 
@@ -48,6 +37,17 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>analyze-dependencies</id>
+                        <configuration>
+                            <!-- Cross-module dep kept for architectural intent. -->
+                            <usedDependencies>
+                                <dependency>io.camunda:camunda-security-library-core</dependency>
+                            </usedDependencies>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
