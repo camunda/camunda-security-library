@@ -8,8 +8,7 @@
 package io.camunda.security.core.adapter;
 
 /**
- * Outbound adapter for persisting and reading the unified policy projection
- * (organizations, tenants, roles, groups, mapping rules, principals,
- * authorizations) in local storage.
+ * Outbound adapter for persisting and reading the unified policy projection (organizations,
+ * tenants, roles, groups, mapping rules, principals, authorizations) in local storage.
  */
 public interface PolicyRepositoryAdapter {}

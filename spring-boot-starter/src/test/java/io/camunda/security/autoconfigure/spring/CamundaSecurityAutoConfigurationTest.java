@@ -19,105 +19,121 @@ import org.springframework.context.annotation.Configuration;
 
 class CamundaSecurityAutoConfigurationTest {
 
-    private final ApplicationContextRunner runner = new ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(CamundaSecurityAutoConfiguration.class))
-            .withUserConfiguration(OcStandaloneDemoConfiguration.class);
+  private final ApplicationContextRunner runner =
+      new ApplicationContextRunner()
+          .withConfiguration(AutoConfigurations.of(CamundaSecurityAutoConfiguration.class))
+          .withUserConfiguration(OcStandaloneDemoConfiguration.class);
 
-    @Test
-    void binds_oc_standalone() {
-        runner.withPropertyValues("camunda.security.strategy=oc-standalone")
-                .run(ctx -> assertThat(ctx)
-                        .getBean(CamundaSecurityLibraryProperties.class)
-                        .extracting(CamundaSecurityLibraryProperties::getStrategy)
-                        .isEqualTo(Strategy.OC_STANDALONE));
-    }
+  @Test
+  void binds_oc_standalone() {
+    runner
+        .withPropertyValues("camunda.security.strategy=oc-standalone")
+        .run(
+            ctx ->
+                assertThat(ctx)
+                    .getBean(CamundaSecurityLibraryProperties.class)
+                    .extracting(CamundaSecurityLibraryProperties::getStrategy)
+                    .isEqualTo(Strategy.OC_STANDALONE));
+  }
 
-    @Test
-    void binds_oc_managed() {
-        runner.withPropertyValues("camunda.security.strategy=oc-managed")
-                .run(ctx -> assertThat(ctx)
-                        .getBean(CamundaSecurityLibraryProperties.class)
-                        .extracting(CamundaSecurityLibraryProperties::getStrategy)
-                        .isEqualTo(Strategy.OC_MANAGED));
-    }
+  @Test
+  void binds_oc_managed() {
+    runner
+        .withPropertyValues("camunda.security.strategy=oc-managed")
+        .run(
+            ctx ->
+                assertThat(ctx)
+                    .getBean(CamundaSecurityLibraryProperties.class)
+                    .extracting(CamundaSecurityLibraryProperties::getStrategy)
+                    .isEqualTo(Strategy.OC_MANAGED));
+  }
 
-    @Test
-    void binds_hub() {
-        runner.withPropertyValues("camunda.security.strategy=hub")
-                .run(ctx -> assertThat(ctx)
-                        .getBean(CamundaSecurityLibraryProperties.class)
-                        .extracting(CamundaSecurityLibraryProperties::getStrategy)
-                        .isEqualTo(Strategy.HUB));
-    }
+  @Test
+  void binds_hub() {
+    runner
+        .withPropertyValues("camunda.security.strategy=hub")
+        .run(
+            ctx ->
+                assertThat(ctx)
+                    .getBean(CamundaSecurityLibraryProperties.class)
+                    .extracting(CamundaSecurityLibraryProperties::getStrategy)
+                    .isEqualTo(Strategy.HUB));
+  }
 
-    @Test
-    void missing_strategy_fails_startup() {
-        runner.run(ctx -> {
-            assertThat(ctx)
-                    .hasFailed()
-                    .getFailure()
-                    .isInstanceOf(ConfigurationPropertiesBindException.class);
-            assertThat(causeChainMessages(ctx.getStartupFailure()))
-                    .as("bind failure cause chain messages")
-                    .contains("camunda.security", "field 'strategy'", "must not be null");
+  @Test
+  void missing_strategy_fails_startup() {
+    runner.run(
+        ctx -> {
+          assertThat(ctx)
+              .hasFailed()
+              .getFailure()
+              .isInstanceOf(ConfigurationPropertiesBindException.class);
+          assertThat(causeChainMessages(ctx.getStartupFailure()))
+              .as("bind failure cause chain messages")
+              .contains("camunda.security", "field 'strategy'", "must not be null");
         });
-    }
+  }
 
-    @Test
-    void invalid_strategy_fails_startup() {
-        runner.withPropertyValues("camunda.security.strategy=bogus").run(ctx -> {
-            assertThat(ctx)
-                    .hasFailed()
-                    .getFailure()
-                    .isInstanceOf(ConfigurationPropertiesBindException.class);
-            assertThat(causeChainMessages(ctx.getStartupFailure()))
-                    .as("bind failure cause chain messages")
-                    .contains("camunda.security.strategy", "bogus");
-        });
-    }
+  @Test
+  void invalid_strategy_fails_startup() {
+    runner
+        .withPropertyValues("camunda.security.strategy=bogus")
+        .run(
+            ctx -> {
+              assertThat(ctx)
+                  .hasFailed()
+                  .getFailure()
+                  .isInstanceOf(ConfigurationPropertiesBindException.class);
+              assertThat(causeChainMessages(ctx.getStartupFailure()))
+                  .as("bind failure cause chain messages")
+                  .contains("camunda.security.strategy", "bogus");
+            });
+  }
 
-    private static String causeChainMessages(Throwable t) {
-        StringBuilder sb = new StringBuilder();
-        while (t != null) {
-            if (t.getMessage() != null) {
-                sb.append(t.getMessage()).append('\n');
-            }
-            t = t.getCause();
-        }
-        return sb.toString();
+  private static String causeChainMessages(Throwable t) {
+    StringBuilder sb = new StringBuilder();
+    while (t != null) {
+      if (t.getMessage() != null) {
+        sb.append(t.getMessage()).append('\n');
+      }
+      t = t.getCause();
     }
+    return sb.toString();
+  }
 
-    @Test
-    void marker_bean_is_registered_under_oc_standalone() {
-        runner.withPropertyValues("camunda.security.strategy=oc-standalone")
-                .run(ctx -> assertThat(ctx).hasSingleBean(OcStandaloneMarker.class));
+  @Test
+  void marker_bean_is_registered_under_oc_standalone() {
+    runner
+        .withPropertyValues("camunda.security.strategy=oc-standalone")
+        .run(ctx -> assertThat(ctx).hasSingleBean(OcStandaloneMarker.class));
+  }
+
+  @Test
+  void marker_bean_is_absent_under_oc_managed() {
+    runner
+        .withPropertyValues("camunda.security.strategy=oc-managed")
+        .run(ctx -> assertThat(ctx).doesNotHaveBean(OcStandaloneMarker.class));
+  }
+
+  @Test
+  void marker_bean_is_absent_under_hub() {
+    runner
+        .withPropertyValues("camunda.security.strategy=hub")
+        .run(ctx -> assertThat(ctx).doesNotHaveBean(OcStandaloneMarker.class));
+  }
+
+  /**
+   * Test-only configuration that exercises the strategy-scoped wiring convention. Production
+   * auto-configuration uses the same {@code @ConditionalOnProperty} pattern when it registers real
+   * strategy-specific beans in later vertical-slice PRs.
+   */
+  @Configuration
+  static class OcStandaloneDemoConfiguration {
+
+    @Bean
+    @ConditionalOnProperty(name = "camunda.security.strategy", havingValue = "oc-standalone")
+    OcStandaloneMarker ocStandaloneMarker() {
+      return new OcStandaloneMarker();
     }
-
-    @Test
-    void marker_bean_is_absent_under_oc_managed() {
-        runner.withPropertyValues("camunda.security.strategy=oc-managed")
-                .run(ctx -> assertThat(ctx).doesNotHaveBean(OcStandaloneMarker.class));
-    }
-
-    @Test
-    void marker_bean_is_absent_under_hub() {
-        runner.withPropertyValues("camunda.security.strategy=hub")
-                .run(ctx -> assertThat(ctx).doesNotHaveBean(OcStandaloneMarker.class));
-    }
-
-    /**
-     * Test-only configuration that exercises the strategy-scoped wiring
-     * convention. Production auto-configuration uses the same
-     * {@code @ConditionalOnProperty} pattern when it registers real
-     * strategy-specific beans in later vertical-slice PRs.
-     */
-    @Configuration
-    static class OcStandaloneDemoConfiguration {
-
-        @Bean
-        @ConditionalOnProperty(name = "camunda.security.strategy", havingValue = "oc-standalone")
-        OcStandaloneMarker ocStandaloneMarker() {
-            return new OcStandaloneMarker();
-        }
-    }
+  }
 }

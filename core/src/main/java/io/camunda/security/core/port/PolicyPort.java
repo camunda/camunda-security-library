@@ -8,7 +8,6 @@
 package io.camunda.security.core.port;
 
 /**
- * Inbound port for queries over the unified policy model (roles, authorizations,
- * mapping rules).
+ * Inbound port for queries over the unified policy model (roles, authorizations, mapping rules).
  */
 public interface PolicyPort {}

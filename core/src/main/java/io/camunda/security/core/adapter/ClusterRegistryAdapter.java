@@ -7,8 +7,5 @@
  */
 package io.camunda.security.core.adapter;
 
-/**
- * Outbound adapter for reading and maintaining the registry of known
- * Orchestration Clusters.
- */
+/** Outbound adapter for reading and maintaining the registry of known Orchestration Clusters. */
 public interface ClusterRegistryAdapter {}

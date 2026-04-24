@@ -8,7 +8,7 @@
 package io.camunda.security.core.port;
 
 /**
- * Inbound port for authorization decisions. Callers ask whether a principal is
- * permitted to perform a specific action on a specific resource scope.
+ * Inbound port for authorization decisions. Callers ask whether a principal is permitted to perform
+ * a specific action on a specific resource scope.
  */
 public interface AuthorizationPort {}

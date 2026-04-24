@@ -8,7 +8,6 @@
 package io.camunda.security.core.port;
 
 /**
- * Inbound port for applying a policy snapshot received from Hub to the local
- * projection (OC side).
+ * Inbound port for applying a policy snapshot received from Hub to the local projection (OC side).
  */
 public interface PolicyApplyPort {}

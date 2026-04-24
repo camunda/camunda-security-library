@@ -8,7 +8,7 @@
 package io.camunda.security.core.adapter;
 
 /**
- * Outbound adapter for recording and dispatching outbox events that carry
- * policy changes from Hub to Orchestration Clusters (see ADR-0001 and ADR-0003).
+ * Outbound adapter for recording and dispatching outbox events that carry policy changes from Hub
+ * to Orchestration Clusters (see ADR-0001 and ADR-0003).
  */
 public interface OutboxAdapter {}
