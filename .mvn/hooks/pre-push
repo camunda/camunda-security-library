@@ -1,0 +1,23 @@
+#!/bin/sh
+# managed-by: camunda-security-library
+#
+# Runs a fast subset of `mvn verify` before pushing.
+# Bypass once: `git push --no-verify`
+# Skip persistently: export CSL_SKIP_HOOKS=1
+
+set -eu
+
+if [ "${CI:-}" ] || [ "${CSL_SKIP_HOOKS:-}" = "1" ]; then
+    exit 0
+fi
+
+cd "$(git rev-parse --show-toplevel)"
+
+# Redirect stdin: git feeds the push-ref list on stdin, which Maven's exec
+# plugin inherits and trips on under the multi-threaded builder. The hook
+# does not need that input.
+if ! ./mvnw --batch-mode -T 1C verify -DskipITs </dev/null; then
+    echo
+    echo "pre-push: './mvnw --batch-mode -T 1C verify -DskipITs' failed. Fix the failures, or bypass once with 'git push --no-verify'."
+    exit 1
+fi
