@@ -15,11 +15,6 @@
     <description>Spring Boot auto-configuration for the Camunda Security Library.</description>
 
     <dependencies>
-        <!--
-          Cross-module dependency kept for architectural intent: the starter
-          wires csl-core into Spring Boot. The module-graph edge expresses
-          this layering even when no current source reference exists.
-        -->
         <dependency>
             <groupId>io.camunda</groupId>
             <artifactId>camunda-security-library-core</artifactId>
@@ -142,14 +137,10 @@
                     <execution>
                         <id>analyze-dependencies</id>
                         <configuration>
-                            <usedDependencies>
-                                <!-- Cross-module dep kept for architectural intent. -->
-                                <dependency>io.camunda:camunda-security-library-core</dependency>
+                            <ignoredUnusedDeclaredDependencies combine.children="append">
                                 <!-- Runtime-only validator activation for @Validated. -->
-                                <dependency>org.springframework.boot:spring-boot-starter-validation</dependency>
-                                <!-- Runtime-only JUnit Platform engine; no source reference. -->
-                                <dependency>org.junit.jupiter:junit-jupiter-engine</dependency>
-                            </usedDependencies>
+                                <ignoredUnusedDeclaredDependency>org.springframework.boot:spring-boot-starter-validation</ignoredUnusedDeclaredDependency>
+                            </ignoredUnusedDeclaredDependencies>
                         </configuration>
                     </execution>
                 </executions>
