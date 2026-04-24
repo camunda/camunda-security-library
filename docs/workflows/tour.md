@@ -18,7 +18,7 @@ Five AI-agent workflows live in this repo. Four create well-structured GitHub is
 |---|---|---|
 | `/feature` | You want a new capability ("we should be able to...", "add support for...") | [feature-issues.md](feature-issues.md) |
 | `/task` | A small, independently mergeable unit of work | [tasks.md](tasks.md) |
-| `/bug` | Something is broken; expected behaviour isn't happening | [bug-issues.md](bug-issues.md) |
+| `/bug` | Something is broken; expected behavior isn't happening | [bug-issues.md](bug-issues.md) |
 | `/docs` | Document code, modules, features, or architecture | [documenting-code.md](documenting-code.md) |
 | `/tour` | This tour — orientation only | [tour.md](tour.md) |
 
