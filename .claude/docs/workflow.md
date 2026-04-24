@@ -15,7 +15,7 @@ Conventional Commits format: `<type>(<scope>): <subject>`
 - Subject line: max 72 characters, imperative mood, no trailing period
 - Body: wrap at 100 characters; explain *why*, not *what*
 - Breaking changes: `BREAKING CHANGE:` footer required
-- Types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`
+- Types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`, `build`, `perf`
 - Scope is optional but encouraged (e.g., `feat(policy): add snapshot apply`)
 
 ## PR Process
@@ -44,9 +44,21 @@ Note: even when following an established pattern, if the decision to do so was d
 
 Number ADRs sequentially. Check `docs/adr/` for the latest number.
 
-## Pre-Push Hook
+## Git Hooks
 
-A pre-push git hook will enforce quality gates before code reaches the remote. The hook will be auto-installed via Maven on first build. Details will be documented here once the build tooling is in place.
+Three hooks ship with the project in `.mvn/hooks/` and run directly from that directory — git is pointed at the path by `core.hooksPath`, which Maven sets during the `initialize` phase. No hook files are copied into `.git/hooks/`. Editing a hook is a normal code change with regular git history.
+
+| Hook | What it does |
+|---|---|
+| `pre-push` | Runs `./mvnw -T 1C verify -DskipITs` and blocks the push on failure. |
+| `pre-commit` | Runs `spotless:apply` on staged `.java` files and re-stages the results. Aborts if a partially-staged file is reformatted, to avoid silently swallowing unstaged hunks. No-op until `spotless-maven-plugin` is configured. |
+| `commit-msg` | Enforces Conventional Commits on the subject line, including the 72-char limit. Merge, revert, fixup, and squash commits are exempt. |
+
+**Bypass a single git operation:** `git push --no-verify` / `git commit --no-verify`.
+
+**Skip all CSL hooks for the current shell:** `export CSL_SKIP_HOOKS=1`.
+
+**Do not configure `core.hooksPath` at all:** run Maven with `-Dskip.hooks=true`, or set `CI` in your environment. Useful for CI and scripted setups that shouldn't touch developer config.
 
 ## Pre-Commit Verification
 
