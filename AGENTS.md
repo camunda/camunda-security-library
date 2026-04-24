@@ -87,12 +87,13 @@ Common AI-assisted workflows are documented in `docs/workflows/` and are usable 
 
 | Workflow | File | Triggers |
 |---|---|---|
+| Orientation tour | `docs/workflows/tour.md` | "tour", "show me around", "what can I do here", "I'm new here" |
 | Creating bug issues | `docs/workflows/bug-issues.md` | "track this bug", "this is broken", "the behavior should be X" |
 | Creating feature issues | `docs/workflows/feature-issues.md` | "we should be able to", "add support for", "I want to be able to" |
 | Creating task issues | `docs/workflows/tasks.md` | "track this task", "break this into tasks", "we need to implement X" |
 | Documenting code | `docs/workflows/documenting-code.md` | "document this", "add docs for", "write documentation for" |
 
-Claude Code users can invoke these as slash commands (`/bug`, `/feature`, `/task`, `/docs`) via `.claude/skills/`. Other agents should read the `docs/workflows/` files directly when triggered.
+Claude Code users can invoke these as slash commands (`/tour`, `/bug`, `/feature`, `/task`, `/docs`) via `.claude/skills/`. Other agents should read the `docs/workflows/` files directly when triggered. `/tour` is the recommended starting point for anyone new to the repo — it links out to everything else.
 
 ### Features vs tasks
 
