@@ -1,0 +1,25 @@
+---
+name: Renovate lint
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/renovatelint.yml'
+      - '**/renovate.json'
+
+concurrency:
+  cancel-in-progress: true
+  group: ${{ format('{0}-{1}', github.workflow, github.ref) }}
+
+permissions:
+  contents: read
+
+jobs:
+  renovate-config-validator:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/renovatebot/renovate@sha256:cef9e18ca6566fa669f1926fa96054aebe71a398d29e8c5f3c76331d6f6fb566 # 43.141.2
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+      - run: renovate-config-validator --strict .github/renovate.json
