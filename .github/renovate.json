@@ -13,13 +13,6 @@
   },
   "packageRules": [
     {
-      "description": "Group non-major Maven updates into one PR to reduce review noise. Majors stay per-artifact.",
-      "matchManagers": ["maven"],
-      "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "maven non-major",
-      "groupSlug": "maven-non-major"
-    },
-    {
       "description": "Exclude SNAPSHOT versions — Renovate sometimes proposes them as pre-releases.",
       "matchManagers": ["maven"],
       "allowedVersions": "!/-SNAPSHOT$/"
