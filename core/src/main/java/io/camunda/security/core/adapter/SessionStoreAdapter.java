@@ -7,7 +7,5 @@
  */
 package io.camunda.security.core.adapter;
 
-/**
- * Outbound adapter for storing and retrieving authenticated session state.
- */
+/** Outbound adapter for storing and retrieving authenticated session state. */
 public interface SessionStoreAdapter {}

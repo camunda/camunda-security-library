@@ -12,20 +12,20 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
 /**
- * Binds {@code camunda.security.*} configuration values. The deployment
- * strategy is required; startup fails if it is missing or invalid.
+ * Binds {@code camunda.security.*} configuration values. The deployment strategy is required;
+ * startup fails if it is missing or invalid.
  */
 @ConfigurationProperties(prefix = "camunda.security")
 @Validated
 public class CamundaSecurityLibraryProperties {
 
-    @NotNull private Strategy strategy;
+  @NotNull private Strategy strategy;
 
-    public Strategy getStrategy() {
-        return strategy;
-    }
+  public Strategy getStrategy() {
+    return strategy;
+  }
 
-    public void setStrategy(Strategy strategy) {
-        this.strategy = strategy;
-    }
+  public void setStrategy(Strategy strategy) {
+    this.strategy = strategy;
+  }
 }

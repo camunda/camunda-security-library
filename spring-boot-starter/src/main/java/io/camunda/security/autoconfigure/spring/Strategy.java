@@ -8,15 +8,15 @@
 package io.camunda.security.autoconfigure.spring;
 
 /**
- * Deployment strategy selected by the host application via the
- * {@code camunda.security.strategy} property.
+ * Deployment strategy selected by the host application via the {@code camunda.security.strategy}
+ * property.
  *
- * <p>Spring's relaxed binding maps kebab-case property values to enum
- * constants: {@code oc-standalone} → {@link #OC_STANDALONE},
- * {@code oc-managed} → {@link #OC_MANAGED}, {@code hub} → {@link #HUB}.
+ * <p>Spring's relaxed binding maps kebab-case property values to enum constants: {@code
+ * oc-standalone} → {@link #OC_STANDALONE}, {@code oc-managed} → {@link #OC_MANAGED}, {@code hub} →
+ * {@link #HUB}.
  */
 public enum Strategy {
-    OC_STANDALONE,
-    OC_MANAGED,
-    HUB
+  OC_STANDALONE,
+  OC_MANAGED,
+  HUB
 }

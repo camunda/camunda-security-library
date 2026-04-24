@@ -8,8 +8,7 @@
 package io.camunda.security.autoconfigure.spring;
 
 /**
- * Demonstration bean registered only under the {@code oc-standalone}
- * deployment strategy. Has no runtime effect — exists to prove the
- * {@code @ConditionalOnProperty} wiring works end-to-end.
+ * Demonstration bean registered only under the {@code oc-standalone} deployment strategy. Has no
+ * runtime effect — exists to prove the {@code @ConditionalOnProperty} wiring works end-to-end.
  */
 public record OcStandaloneMarker() {}

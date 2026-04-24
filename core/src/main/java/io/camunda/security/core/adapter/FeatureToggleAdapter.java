@@ -7,7 +7,5 @@
  */
 package io.camunda.security.core.adapter;
 
-/**
- * Outbound adapter for evaluating feature toggle values at runtime.
- */
+/** Outbound adapter for evaluating feature toggle values at runtime. */
 public interface FeatureToggleAdapter {}

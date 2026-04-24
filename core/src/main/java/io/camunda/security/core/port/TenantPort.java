@@ -7,7 +7,5 @@
  */
 package io.camunda.security.core.port;
 
-/**
- * Inbound port for tenant lifecycle and lookup operations.
- */
+/** Inbound port for tenant lifecycle and lookup operations. */
 public interface TenantPort {}

@@ -8,7 +8,7 @@
 package io.camunda.security.core.adapter;
 
 /**
- * Outbound adapter for communicating with external Identity Providers
- * (OIDC, SAML, and similar protocols).
+ * Outbound adapter for communicating with external Identity Providers (OIDC, SAML, and similar
+ * protocols).
  */
 public interface IdpClientAdapter {}

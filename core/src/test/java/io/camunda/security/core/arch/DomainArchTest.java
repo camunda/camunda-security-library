@@ -15,35 +15,35 @@ import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
 
 /**
- * Enforces the hexagonal boundary for the CSL core module: classes in
- * {@code io.camunda.security.core..} must not depend on anything in
- * {@code io.camunda.security.api..} or {@code io.camunda.security.autoconfigure..}.
+ * Enforces the hexagonal boundary for the CSL core module: classes in {@code
+ * io.camunda.security.core..} must not depend on anything in {@code io.camunda.security.api..} or
+ * {@code io.camunda.security.autoconfigure..}.
  *
- * <p>The import option excludes test classes so this rule only applies to
- * production code in {@code core}.
+ * <p>The import option excludes test classes so this rule only applies to production code in {@code
+ * core}.
  */
 @AnalyzeClasses(
-        packages = "io.camunda.security.core",
-        importOptions = ImportOption.DoNotIncludeTests.class)
+    packages = "io.camunda.security.core",
+    importOptions = ImportOption.DoNotIncludeTests.class)
 class DomainArchTest {
 
-    @ArchTest
-    static final ArchRule core_must_not_depend_on_api =
-            noClasses()
-                    .that()
-                    .resideInAPackage("io.camunda.security.core..")
-                    .should()
-                    .dependOnClassesThat()
-                    .resideInAPackage("io.camunda.security.api..")
-                    .allowEmptyShould(true);
+  @ArchTest
+  static final ArchRule CORE_MUST_NOT_DEPEND_ON_API =
+      noClasses()
+          .that()
+          .resideInAPackage("io.camunda.security.core..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("io.camunda.security.api..")
+          .allowEmptyShould(true);
 
-    @ArchTest
-    static final ArchRule core_must_not_depend_on_starter =
-            noClasses()
-                    .that()
-                    .resideInAPackage("io.camunda.security.core..")
-                    .should()
-                    .dependOnClassesThat()
-                    .resideInAPackage("io.camunda.security.autoconfigure..")
-                    .allowEmptyShould(true);
+  @ArchTest
+  static final ArchRule CORE_MUST_NOT_DEPEND_ON_STARTER =
+      noClasses()
+          .that()
+          .resideInAPackage("io.camunda.security.core..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("io.camunda.security.autoconfigure..")
+          .allowEmptyShould(true);
 }

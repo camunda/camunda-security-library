@@ -7,8 +7,5 @@
  */
 package io.camunda.security.core.port;
 
-/**
- * Inbound port for registering and deregistering Orchestration Clusters
- * against Hub.
- */
+/** Inbound port for registering and deregistering Orchestration Clusters against Hub. */
 public interface ClusterRegistrationPort {}
