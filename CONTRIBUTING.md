@@ -79,6 +79,26 @@ Conventional Commits format: `<type>(<scope>): <subject>`
 - Squash-merge to keep main history clean
 - Link relevant issues in the PR description
 
+### Git Hooks
+
+Three hooks live in `.mvn/hooks/` and are checked into the repository. On `./mvnw initialize` (triggered by any higher phase — `verify`, `test`, `install`), Maven runs `git config --local core.hooksPath .mvn/hooks`, which tells git to execute hooks from the in-tree path directly. No files are copied into `.git/hooks/`.
+
+| Hook | What it does |
+|---|---|
+| `pre-push` | Runs `./mvnw -T 1C verify -DskipITs` and blocks the push on failure. |
+| `pre-commit` | Runs `spotless:apply` on staged `.java` files and re-stages reformatted files. Aborts if a partially-staged file is reformatted. |
+| `commit-msg` | Enforces Conventional Commits on the subject line (see `.claude/docs/workflow.md#commit-message-format`). |
+
+**Bypass a single git operation:** `git commit --no-verify` / `git push --no-verify`.
+
+**Skip all CSL hooks for the current shell:** `export CSL_SKIP_HOOKS=1`.
+
+**Do not configure `core.hooksPath` at all:** run Maven with `-Dskip.hooks=true`, or set `CI` in your environment.
+
+**Opt out for your own checkout:** `git config --local --unset core.hooksPath` after running Maven. You can also point `core.hooksPath` at a different directory if you maintain your own hooks.
+
+`git` must be on your `PATH` for the `initialize` step to succeed. This is a normal prerequisite for contributing to a git-managed project.
+
 ### Architecture Decision Records
 
 Significant design choices are documented as ADRs in `docs/adr/`. When in doubt, write one — a short ADR capturing the reasoning is more valuable than no record at all. See `.claude/docs/workflow.md` for guidance on when to write an ADR.
