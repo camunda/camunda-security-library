@@ -1,3 +1,52 @@
 # Override global gitignore for AI agent context files
 !CLAUDE.md
 !.claude/
+
+# IntelliJ / editors
+*/.idea
+.idea/*
+!.idea/codeStyles
+!.idea/externalDependencies.xml
+!.idea/google-java-format.xml
+!.idea/saveactions_settings.xml
+!.idea/copyright/Apache_2_0.xml
+!.idea/copyright/profiles_settings.xml
+!.idea/scopes/apache_license_scope.xml
+*.iml
+.vscode
+.vs
+.run
+
+# Java / Maven / build output
+target/
+build/
+out/
+bin/
+.classpath
+.project
+.settings/
+.factorypath
+.checkstyle
+dependency-reduced-pom.xml
+.flattened-pom.xml
+
+# Caches / local tooling
+.cache/
+.eslintcache
+.jqwik-database
+
+# Logs / runtime artifacts
+*.log
+hs_err*.log
+transaction.log
+
+# OS files
+*.DS_Store
+
+# Local/private environment files
+**/http-client.private.env.json
+
+# Local output folders
+/output/
+work/
+
