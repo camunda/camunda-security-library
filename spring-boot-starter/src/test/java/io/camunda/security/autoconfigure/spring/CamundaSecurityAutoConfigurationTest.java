@@ -25,7 +25,7 @@ class CamundaSecurityAutoConfigurationTest {
           .withUserConfiguration(OcStandaloneDemoConfiguration.class);
 
   @Test
-  void binds_oc_standalone() {
+  void bindsOcStandalone() {
     runner
         .withPropertyValues("camunda.security.strategy=oc-standalone")
         .run(
@@ -37,7 +37,7 @@ class CamundaSecurityAutoConfigurationTest {
   }
 
   @Test
-  void binds_oc_managed() {
+  void bindsOcManaged() {
     runner
         .withPropertyValues("camunda.security.strategy=oc-managed")
         .run(
@@ -49,7 +49,7 @@ class CamundaSecurityAutoConfigurationTest {
   }
 
   @Test
-  void binds_hub() {
+  void bindsHub() {
     runner
         .withPropertyValues("camunda.security.strategy=hub")
         .run(
@@ -61,7 +61,7 @@ class CamundaSecurityAutoConfigurationTest {
   }
 
   @Test
-  void missing_strategy_fails_startup() {
+  void missingStrategyFailsStartup() {
     runner.run(
         ctx -> {
           assertThat(ctx)
@@ -75,7 +75,7 @@ class CamundaSecurityAutoConfigurationTest {
   }
 
   @Test
-  void invalid_strategy_fails_startup() {
+  void invalidStrategyFailsStartup() {
     runner
         .withPropertyValues("camunda.security.strategy=bogus")
         .run(
@@ -91,7 +91,7 @@ class CamundaSecurityAutoConfigurationTest {
   }
 
   private static String causeChainMessages(Throwable t) {
-    StringBuilder sb = new StringBuilder();
+    final StringBuilder sb = new StringBuilder();
     while (t != null) {
       if (t.getMessage() != null) {
         sb.append(t.getMessage()).append('\n');
@@ -102,21 +102,21 @@ class CamundaSecurityAutoConfigurationTest {
   }
 
   @Test
-  void marker_bean_is_registered_under_oc_standalone() {
+  void markerBeanIsRegisteredUnderOcStandalone() {
     runner
         .withPropertyValues("camunda.security.strategy=oc-standalone")
         .run(ctx -> assertThat(ctx).hasSingleBean(OcStandaloneMarker.class));
   }
 
   @Test
-  void marker_bean_is_absent_under_oc_managed() {
+  void markerBeanIsAbsentUnderOcManaged() {
     runner
         .withPropertyValues("camunda.security.strategy=oc-managed")
         .run(ctx -> assertThat(ctx).doesNotHaveBean(OcStandaloneMarker.class));
   }
 
   @Test
-  void marker_bean_is_absent_under_hub() {
+  void markerBeanIsAbsentUnderHub() {
     runner
         .withPropertyValues("camunda.security.strategy=hub")
         .run(ctx -> assertThat(ctx).doesNotHaveBean(OcStandaloneMarker.class));
