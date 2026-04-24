@@ -41,10 +41,10 @@
                     <execution>
                         <id>analyze-dependencies</id>
                         <configuration>
-                            <!-- Cross-module dep kept for architectural intent. -->
-                            <usedDependencies>
-                                <dependency>io.camunda:camunda-security-library-core</dependency>
-                            </usedDependencies>
+                            <ignoredUnusedDeclaredDependencies combine.children="append">
+                                <!-- Cross-module dep kept for architectural intent. -->
+                                <ignoredUnusedDeclaredDependency>io.camunda:camunda-security-library-core</ignoredUnusedDeclaredDependency>
+                            </ignoredUnusedDeclaredDependencies>
                         </configuration>
                     </execution>
                 </executions>

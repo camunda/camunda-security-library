@@ -42,17 +42,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>analyze-dependencies</id>
-                        <configuration>
-                            <!-- Runtime-only JUnit Platform engine; no source reference. -->
-                            <usedDependencies>
-                                <dependency>com.tngtech.archunit:archunit-junit5-engine</dependency>
-                            </usedDependencies>
-                        </configuration>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>

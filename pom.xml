@@ -127,6 +127,11 @@
                             </goals>
                             <configuration>
                                 <failOnWarning>true</failOnWarning>
+                                <ignoredUnusedDeclaredDependencies combine.children="append">
+                                    <!-- Runtime-only test engines; no source reference. -->
+                                    <ignoredUnusedDeclaredDependency>com.tngtech.archunit:archunit-junit5-engine</ignoredUnusedDeclaredDependency>
+                                    <ignoredUnusedDeclaredDependency>org.junit.jupiter:junit-jupiter-engine</ignoredUnusedDeclaredDependency>
+                                </ignoredUnusedDeclaredDependencies>
                             </configuration>
                         </execution>
                     </executions>
