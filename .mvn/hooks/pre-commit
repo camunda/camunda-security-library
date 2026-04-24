@@ -1,0 +1,76 @@
+#!/bin/sh
+# managed-by: camunda-security-library
+#
+# Auto-applies Spotless formatting to staged .java files.
+# Aborts if a partially-staged file is reformatted (to avoid silently
+# swallowing unstaged hunks).
+# Bypass once: `git commit --no-verify`
+# Skip persistently: export CSL_SKIP_HOOKS=1
+
+set -eu
+
+if [ "${CI:-}" ] || [ "${CSL_SKIP_HOOKS:-}" = "1" ]; then
+    exit 0
+fi
+
+cd "$(git rev-parse --show-toplevel)"
+
+# Collect staged Java files (added/copied/modified/renamed).
+staged=$(git diff --cached --name-only --diff-filter=ACMR -- '*.java' || true)
+if [ -z "$staged" ]; then
+    exit 0
+fi
+
+# Probe: is Spotless declared in any pom.xml in this project? Fast offline check;
+# avoids the '-q help:describe' probe which succeeds whenever Maven can resolve
+# the plugin descriptor from any repo, not when it's actually configured here.
+if ! find . -name pom.xml -not -path './*/target/*' -print0 \
+        | xargs -0 grep -l 'spotless-maven-plugin' >/dev/null 2>&1; then
+    echo "pre-commit: spotless-maven-plugin not configured yet; skipping auto-format."
+    exit 0
+fi
+
+# Capture files with unstaged hunks BEFORE spotless runs. These are the
+# partial-staging hazards — if spotless changes any of them, we can't
+# restage without risking the unstaged content getting rolled into the commit.
+dirty_before=$(git diff --name-only -- '*.java' | sort -u)
+
+if ! ./mvnw --batch-mode spotless:apply; then
+    echo
+    echo "pre-commit: 'spotless:apply' failed. Fix the error above, or bypass once with 'git commit --no-verify'."
+    exit 1
+fi
+
+# Classify each staged file post-spotless.
+hazards=""
+restage=""
+for f in $staged; do
+    # Unchanged post-spotless → nothing to do.
+    if git diff --quiet -- "$f"; then
+        continue
+    fi
+    # Had unstaged content before spotless → hazard (can't safely `git add`).
+    if printf '%s\n' "$dirty_before" | grep -qxF "$f"; then
+        hazards="$hazards $f"
+    else
+        restage="$restage $f"
+    fi
+done
+
+if [ -n "$hazards" ]; then
+    echo
+    echo "pre-commit: spotless reformatted files that had unstaged changes:"
+    for f in $hazards; do echo "    $f"; done
+    echo
+    echo "  Re-stage the formatting fixes explicitly, then retry:"
+    echo "    git add$hazards"
+    echo "    git commit ..."
+    echo
+    echo "  To bypass once: git commit --no-verify"
+    exit 1
+fi
+
+if [ -n "$restage" ]; then
+    for f in $restage; do git add "$f"; done
+    echo "pre-commit: spotless reformatted and restaged:$restage"
+fi

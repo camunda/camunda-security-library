@@ -1,0 +1,46 @@
+#!/bin/sh
+# managed-by: camunda-security-library
+#
+# Enforces Conventional Commits subject format per .claude/docs/workflow.md.
+# Bypass once: `git commit --no-verify`
+# Skip persistently: export CSL_SKIP_HOOKS=1
+
+set -eu
+
+if [ "${CI:-}" ] || [ "${CSL_SKIP_HOOKS:-}" = "1" ]; then
+    exit 0
+fi
+
+msg_file="$1"
+
+# Extract the first non-comment, non-blank line.
+subject=$(grep -v '^#' "$msg_file" | awk 'NF { print; exit }')
+
+# Skip merge, revert, fixup, and squash commits — git manages these.
+case "$subject" in
+    Merge\ *|Revert\ *|fixup!\ *|squash!\ *)
+        exit 0
+        ;;
+    '')
+        # Empty message — let git's own check fire.
+        exit 0
+        ;;
+esac
+
+# Enforce total subject length.
+if [ "${#subject}" -gt 72 ]; then
+    echo "commit-msg: subject is ${#subject} chars (max 72)."
+    echo "  received: $subject"
+    exit 1
+fi
+
+# Enforce Conventional Commits structure.
+pattern='^(feat|fix|chore|docs|refactor|test|ci|build|perf)(\([^)]+\))?!?: .+$'
+if ! printf '%s\n' "$subject" | grep -Eq "$pattern"; then
+    echo "commit-msg: subject does not match Conventional Commits format."
+    echo "  expected: <type>(<optional-scope>)!?: <subject>"
+    echo "  types:    feat|fix|chore|docs|refactor|test|ci|build|perf"
+    echo "  received: $subject"
+    echo "  see:      .claude/docs/workflow.md#commit-message-format"
+    exit 1
+fi
