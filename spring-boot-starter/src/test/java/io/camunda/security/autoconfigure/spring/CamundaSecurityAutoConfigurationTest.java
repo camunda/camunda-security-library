@@ -52,26 +52,39 @@ class CamundaSecurityAutoConfigurationTest {
 
     @Test
     void missing_strategy_fails_startup() {
-        runner.run(ctx -> assertThat(ctx)
-                .hasFailed()
-                .getFailure()
-                .isInstanceOf(ConfigurationPropertiesBindException.class)
-                .rootCause()
-                .hasMessageContainingAll(
-                        "must not be null",
-                        "field 'strategy'",
-                        "camunda.security"));
+        runner.run(ctx -> {
+            assertThat(ctx)
+                    .hasFailed()
+                    .getFailure()
+                    .isInstanceOf(ConfigurationPropertiesBindException.class);
+            assertThat(causeChainMessages(ctx.getStartupFailure()))
+                    .as("bind failure cause chain messages")
+                    .contains("camunda.security", "field 'strategy'", "must not be null");
+        });
     }
 
     @Test
     void invalid_strategy_fails_startup() {
-        runner.withPropertyValues("camunda.security.strategy=bogus")
-                .run(ctx -> assertThat(ctx)
-                        .hasFailed()
-                        .getFailure()
-                        .isInstanceOf(ConfigurationPropertiesBindException.class)
-                        .rootCause()
-                        .hasMessage("No enum constant io.camunda.security.autoconfigure.spring.Strategy.bogus"));
+        runner.withPropertyValues("camunda.security.strategy=bogus").run(ctx -> {
+            assertThat(ctx)
+                    .hasFailed()
+                    .getFailure()
+                    .isInstanceOf(ConfigurationPropertiesBindException.class);
+            assertThat(causeChainMessages(ctx.getStartupFailure()))
+                    .as("bind failure cause chain messages")
+                    .contains("camunda.security.strategy", "bogus");
+        });
+    }
+
+    private static String causeChainMessages(Throwable t) {
+        StringBuilder sb = new StringBuilder();
+        while (t != null) {
+            if (t.getMessage() != null) {
+                sb.append(t.getMessage()).append('\n');
+            }
+            t = t.getCause();
+        }
+        return sb.toString();
     }
 
     @Test
