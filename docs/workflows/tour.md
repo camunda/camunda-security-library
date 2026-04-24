@@ -26,7 +26,7 @@ The four issue-creating workflows all produce self-contained issues — a fresh 
 
 ## Documentation map
 
-Read these in order if you're new. The first four are auto-loaded into Claude Code sessions.
+Read these in order if you're new. `CLAUDE.md` and everything it `@`-includes (`AGENTS.md` plus the `.claude/docs/*` files) auto-load into Claude Code sessions. ADRs are extra reading when you're working near architectural boundaries.
 
 | File | What it covers |
 |---|---|
@@ -44,7 +44,7 @@ Read these in order if you're new. The first four are auto-loaded into Claude Co
 - **Hexagonal (ports and adapters).** `core` (domain) has zero framework dependencies. Adapters and implementations depend on `core`, never the reverse.
 - **Deployment strategies.** Active capabilities are selected by a configuration property — `oc-standalone`, `oc-managed`, `hub`. Not Spring profiles.
 - **One library, many hosts.** The same library embeds into Hub and OC. Host-specific code lives in `*AdapterImpl` beans; nothing host-specific leaks into `core`.
-- **Naming.** Inbound `*Port` interfaces live in `port/`; outbound `*Adapter` interfaces live in `adapter/`. Hosts supply `*AdapterImpl` beans; domain services are `*PortImpl`.
+- **Naming.** Inbound `*Port` interfaces live in `core/port/`; outbound `*Adapter` interfaces live in `core/adapter/`. Hosts supply `*AdapterImpl` beans; domain services are `*PortImpl`.
 - **Auth is always on.** Authentication and authorization enforcement are active in every deployment strategy.
 
 See [architecture.md](../../.claude/docs/architecture.md) for the full picture.
@@ -53,18 +53,7 @@ See [architecture.md](../../.claude/docs/architecture.md) for the full picture.
 
 Work is tracked as GitHub Milestones. Each delivers a vertical slice — the library supports functionality X; OC and Hub both consume it via adapter implementations.
 
-- **M0** — Build foundation and library skeleton
-- **M1** — Library security chain adopted by OC and Hub
-- **M2** — Library authentication baseline adopted by OC and Hub
-- **M3** — Tenants delivered by the library
-- **M4** — Roles delivered by the library
-- **M5** — Groups delivered by the library
-- **M6** — Mapping rules delivered by the library
-- **M7** — Principals delivered by the library
-- **M8** — Authorization decisions delivered by the library
-- **M9** — OC end-to-end integration and observability
-
-Find what's in each (and what's open/closed): [GitHub Milestones](https://github.com/camunda/camunda-security-library/milestones).
+Current milestones (with what's open and closed): [GitHub Milestones](https://github.com/camunda/camunda-security-library/milestones).
 
 ## Working here
 
