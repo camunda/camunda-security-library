@@ -30,8 +30,10 @@
         <plugin.version.google-java-format>1.23.0</plugin.version.google-java-format>
         <plugin.version.checkstyle>3.5.0</plugin.version.checkstyle>
         <version.checkstyle>10.18.2</version.checkstyle>
+        <plugin.version.exec>3.6.3</plugin.version.exec>
         <license.header.file>${maven.multiModuleProjectDirectory}/COPYING-HEADER.txt</license.header.file>
         <spotless.check.skip>false</spotless.check.skip>
+        <git.hooks.configure.skip>false</git.hooks.configure.skip>
     </properties>
 
     <modules>
@@ -190,6 +192,77 @@
                     </plugin>
                 </plugins>
             </build>
+        </profile>
+
+        <!--
+            Points git's core.hooksPath at the in-tree .mvn/hooks directory during
+            the initialize phase. Git then runs hooks directly from there — no copy,
+            no .git/hooks/ management. core.hooksPath is a relative path resolved
+            against each checkout's working tree root, so this works in standard
+            clones and worktrees alike.
+
+            Active when both conditions hold:
+              1. A .git file or directory exists at the project root.
+              2. The skip.hooks property is NOT set (pass -Dskip.hooks=true to suppress).
+            Maven profile activation ANDs multiple conditions within one <activation> block.
+
+            CI environments: the companion profile below sets git.hooks.configure.skip=true
+            when the CI env var is present, which toggles the exec plugin's skip flag.
+        -->
+        <profile>
+            <id>configure-git-hooks</id>
+            <activation>
+                <file>
+                    <exists>${project.basedir}/.git</exists>
+                </file>
+                <property>
+                    <name>!skip.hooks</name>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>${plugin.version.exec}</version>
+                        <executions>
+                            <execution>
+                                <id>configure-git-hooks-path</id>
+                                <phase>initialize</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <executable>git</executable>
+                                    <arguments>
+                                        <argument>config</argument>
+                                        <argument>--local</argument>
+                                        <argument>core.hooksPath</argument>
+                                        <argument>.mvn/hooks</argument>
+                                    </arguments>
+                                    <skip>${git.hooks.configure.skip}</skip>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!--
+            Suppresses the configure step in CI. When the CI environment variable is set
+            (standard on GitHub Actions, GitLab CI, Jenkins, CircleCI, etc.), this profile
+            activates and flips git.hooks.configure.skip to true so the exec execution
+            is a no-op.
+        -->
+        <profile>
+            <id>skip-git-hooks-in-ci</id>
+            <activation>
+                <property>
+                    <name>env.CI</name>
+                </property>
+            </activation>
+            <properties>
+                <git.hooks.configure.skip>true</git.hooks.configure.skip>
+            </properties>
         </profile>
     </profiles>
 </project>
