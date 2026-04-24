@@ -1,0 +1,40 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "enabled": true,
+  "extends": ["config:recommended"],
+  "baseBranches": ["main"],
+  "dependencyDashboard": true,
+  "schedule": ["before 6am every weekday"],
+  "prConcurrentLimit": 10,
+  "prHourlyLimit": 2,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["area/security"]
+  },
+  "packageRules": [
+    {
+      "description": "Group non-major Maven updates into one PR to reduce review noise. Majors stay per-artifact.",
+      "matchManagers": ["maven"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "maven non-major",
+      "groupSlug": "maven-non-major"
+    },
+    {
+      "description": "Exclude SNAPSHOT versions — Renovate sometimes proposes them as pre-releases.",
+      "matchManagers": ["maven"],
+      "allowedVersions": "!/-SNAPSHOT$/"
+    },
+    {
+      "description": "Exclude internal CSL modules.",
+      "matchManagers": ["maven"],
+      "matchPackageNames": ["/^io\\.camunda:camunda-security-library/"],
+      "enabled": false
+    },
+    {
+      "description": "Automerge patch/pin/digest updates that pass CI. Minor and major updates always require human review.",
+      "matchUpdateTypes": ["patch", "pin", "digest"],
+      "automerge": true,
+      "addLabels": ["automerge"]
+    }
+  ]
+}
