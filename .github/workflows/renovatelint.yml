@@ -21,5 +21,5 @@ jobs:
       image: ghcr.io/renovatebot/renovate@sha256:cef9e18ca6566fa669f1926fa96054aebe71a398d29e8c5f3c76331d6f6fb566 # 43.141.2
       options: --user root
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - run: renovate-config-validator --strict .github/renovate.json
