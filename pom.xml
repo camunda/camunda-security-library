@@ -121,6 +121,7 @@
                     <executions>
                         <execution>
                             <id>analyze-dependencies</id>
+                            <phase>verify</phase>
                             <goals>
                                 <goal>analyze-only</goal>
                             </goals>
