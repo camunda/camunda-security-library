@@ -28,6 +28,8 @@
         <plugin.version.enforcer>3.5.0</plugin.version.enforcer>
         <plugin.version.spotless>2.43.0</plugin.version.spotless>
         <plugin.version.google-java-format>1.23.0</plugin.version.google-java-format>
+        <plugin.version.checkstyle>3.5.0</plugin.version.checkstyle>
+        <version.checkstyle>10.18.2</version.checkstyle>
         <license.header.file>${maven.multiModuleProjectDirectory}/COPYING-HEADER.txt</license.header.file>
         <spotless.check.skip>false</spotless.check.skip>
     </properties>
@@ -104,6 +106,32 @@
                         </java>
                     </configuration>
                 </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-checkstyle-plugin</artifactId>
+                    <version>${plugin.version.checkstyle}</version>
+                    <configuration>
+                        <configLocation>${maven.multiModuleProjectDirectory}/config/checkstyle/checkstyle.xml</configLocation>
+                        <includeTestSourceDirectory>true</includeTestSourceDirectory>
+                        <failOnViolation>true</failOnViolation>
+                    </configuration>
+                    <dependencies>
+                        <dependency>
+                            <groupId>com.puppycrawl.tools</groupId>
+                            <artifactId>checkstyle</artifactId>
+                            <version>${version.checkstyle}</version>
+                        </dependency>
+                    </dependencies>
+                    <executions>
+                        <execution>
+                            <id>validate-java</id>
+                            <phase>validate</phase>
+                            <goals>
+                                <goal>check</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
             </plugins>
         </pluginManagement>
 
@@ -123,6 +151,10 @@
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
             </plugin>
         </plugins>
     </build>
