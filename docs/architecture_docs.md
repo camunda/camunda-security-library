@@ -766,13 +766,18 @@ flowchart TB
 
   subgraph OC_SCOPE["OC scope"]
     direction TB
-    OCApply["Security Gateway Framework applies payload"]
-    UpdateStorage["Update OC secondary storage</br>tables (tenants, roles, authz, etc.)"]
+    OCApply["Security Gateway Framework validates and applies payload"]
+    BatchOps["Create batch operations</br>per Physical Tenant"]
+    EnginePrimary["Engine (SEF) applies identity policy</br>to primary storage"]
+    Exporter["Exporter projects identity policy</br>to OC secondary storage tables"]
 
-    OCApply --> UpdateStorage
+    OCApply --> BatchOps
+    BatchOps --> EnginePrimary
+    EnginePrimary --> Exporter
   end
 
   Send --> OCApply
+  Exporter --> Ack
 ```
 
 - Hub Security Gateway Framework
@@ -786,11 +791,17 @@ flowchart TB
   - Updates `OutboxEvent.status` to DELIVERED or FAILED and manages retries via `attempts` and `next_attempt_at`.
   - On successful delivery, updates `OcSyncState.last_acked_version` for the target OC.
 - OC Security Gateway Framework
-  - Tracks `last_applied_version` locally in secondary storage.
-  - For each incoming payload (`POLICY_SNAPSHOT`): replaces the entire local policy projection in secondary storage tables and updates `last_applied_version`.
-  - All updates to secondary storage happen in a single transaction to ensure consistency.
+  - Tracks `last_applied_version` for idempotent snapshot apply per OC.
+  - For each incoming payload (`POLICY_SNAPSHOT`): validates version/idempotency, applies OC-level projection logic, and creates batch operations per Physical Tenant.
+  - Sends engine-scoped policy updates through the batch operation path, not as one-by-one direct writes.
   - Treats every apply as idempotent per `policyVersionId`.
-  - Returns an ACK (including `last_applied_version`) to the dispatcher.
+  - Returns an ACK (including `last_applied_version`) to the dispatcher after successful apply processing.
+- Security Engine Framework (engine side)
+  - Applies the propagated identity policy batch in engine primary storage.
+  - Performs engine-local authorization using that primary-storage state.
+- Exporter path (engine -> OC secondary storage)
+  - Projects applied identity policy from engine primary storage into OC secondary storage tables.
+  - Keeps query/read-model data in sync with engine-applied identity state.
 
 This pattern decouples policy authoring (Hub) from policy enforcement (OCs), ensures at-least-once delivery, and provides clear observability hooks (per-cluster status, last error, retry attempts) for identity operations.
 
