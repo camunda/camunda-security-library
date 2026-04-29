@@ -1,0 +1,66 @@
+name: Create Maven settings.xml file
+description: Create Maven settings.xml file (requires VAULT_ADDR, VAULT_ROLE_ID, VAULT_SECRET_ID inputs)
+inputs:
+  VAULT_ADDR:
+    description: Vault address
+    required: true
+  VAULT_ROLE_ID:
+    description: Vault AppRole role ID
+    required: true
+  VAULT_SECRET_ID:
+    description: Vault AppRole secret ID
+    required: true
+  MAVEN_CENTRAL_DEPLOYMENT_USR:
+    description: Maven Central deployment username (optional, only needed for publishing to Central)
+    required: false
+    default: ''
+  MAVEN_CENTRAL_DEPLOYMENT_PSW:
+    description: Maven Central deployment password (optional, only needed for publishing to Central)
+    required: false
+    default: ''
+runs:
+  using: "composite"
+  steps:
+    - name: Import Nexus Secrets
+      id: nexus-secrets
+      uses: hashicorp/vault-action@4c06c5ccf5c0761b6029f56cfb1dcf5565918a3b # v3.4.0
+      with:
+        url: ${{ inputs.VAULT_ADDR }}
+        method: approle
+        roleId: ${{ inputs.VAULT_ROLE_ID }}
+        secretId: ${{ inputs.VAULT_SECRET_ID }}
+        exportEnv: false # we rely on step outputs, no need for environment variables
+        secrets: |
+          secret/data/github.com/organizations/camunda NEXUS_USR;
+          secret/data/github.com/organizations/camunda NEXUS_PSW;
+
+    # Build the servers list, conditionally including Maven Central credentials
+    - name: 'Build servers list'
+      id: build-servers
+      shell: bash
+      run: |
+        SERVERS='[
+          {"id":"camunda-nexus","username":"${{ steps.nexus-secrets.outputs.NEXUS_USR }}","password":"${{ steps.nexus-secrets.outputs.NEXUS_PSW }}"},
+          {"id":"nexus-snapshots","username":"${{ steps.nexus-secrets.outputs.NEXUS_USR }}","password":"${{ steps.nexus-secrets.outputs.NEXUS_PSW }}"},
+          {"id":"nexus","username":"${{ steps.nexus-secrets.outputs.NEXUS_USR }}","password":"${{ steps.nexus-secrets.outputs.NEXUS_PSW }}"}'
+
+        if [ -n "${{ inputs.MAVEN_CENTRAL_DEPLOYMENT_USR }}" ]; then
+          SERVERS="${SERVERS}"',
+          {"id":"central","username":"${{ inputs.MAVEN_CENTRAL_DEPLOYMENT_USR }}","password":"${{ inputs.MAVEN_CENTRAL_DEPLOYMENT_PSW }}"}'
+        fi
+
+        SERVERS="${SERVERS}]"
+        echo "servers<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$SERVERS" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+
+    # Use CI Nexus as co-located pull-through cache for Maven artifacts via ~/.m2/settings.xml
+    - name: 'Create settings.xml'
+      uses: s4u/maven-settings-action@894661b3ddae382f1ae8edbeab60987e08cf0788 # v4.0.0
+      with:
+        githubServer: false
+        servers: ${{ steps.build-servers.outputs.servers }}
+        mirrors: |
+          [{"url": "https://repository.nexus.camunda.cloud/content/groups/internal/", "id": "camunda-nexus", "mirrorOf": "*,!central,!confluent,!shibboleth", "name": "Camunda Nexus"},
+          {"url": "https://repository.nexus.camunda.cloud/content/groups/internal/", "id": "nexus-snapshots", "mirrorOf": "nexus-snapshots", "name": "Nexus Snapshot"},
+          {"url": "https://repository.nexus.camunda.cloud/content/groups/internal/", "id": "nexus", "mirrorOf": "nexus", "name": "Nexus"}]

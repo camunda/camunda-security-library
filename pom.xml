@@ -40,6 +40,17 @@
         <module>spring-boot-starter</module>
     </modules>
 
+    <distributionManagement>
+        <snapshotRepository>
+            <id>camunda-nexus</id>
+            <url>https://artifacts.camunda.com/artifactory/camunda-identity-snapshots/</url>
+        </snapshotRepository>
+        <repository>
+            <id>camunda-nexus</id>
+            <url>https://artifacts.camunda.com/artifactory/camunda-identity/</url>
+        </repository>
+    </distributionManagement>
+
     <dependencyManagement>
         <dependencies>
             <dependency>
