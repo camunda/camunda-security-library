@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -26,7 +26,11 @@ Current evidence in Camunda codebases and packages:
 
 Use **Option 2 (npm package integration)** as the default integration model for the unified identity Admin UI in both Hub and OC.
 
-Keep web components as a fallback pattern only if we need framework-agnostic embedding in a host that cannot consume React packages directly.
+As of now, the frontend code will stay inside the monorepo from where the NPM package will then be published.
+Publishing a new release of the NPM packages can be done independently.
+
+If in the future, any changed requirements should question leaving the code in the monorepo,
+moving it should be decided together with the rest of the orchestration cluster UI.
 
 ## Options considered
 
