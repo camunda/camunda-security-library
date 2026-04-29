@@ -35,7 +35,15 @@ fi
 # restage without risking the unstaged content getting rolled into the commit.
 dirty_before=$(git diff --name-only -- '*.java' | sort -u)
 
-if ! ./mvnw --batch-mode spotless:apply; then
+# Build the spotlessFiles filter: a comma-separated list of Java regexes,
+# full-matched against absolute paths. \Q...\E escapes the path literally so
+# regex metacharacters (dots, etc.) match themselves. Scoping spotless to the
+# staged set keeps the hook from reformatting unrelated working-tree files.
+spotless_files=$(printf '%s\n' "$staged" | awk -v root="$PWD" '
+    NF { sep = (n++ ? "," : ""); printf "%s\\Q%s/%s\\E", sep, root, $0 }
+')
+
+if ! ./mvnw --batch-mode "-DspotlessFiles=$spotless_files" spotless:apply; then
     echo
     echo "pre-commit: 'spotless:apply' failed. Fix the error above, or bypass once with 'git commit --no-verify'."
     exit 1
