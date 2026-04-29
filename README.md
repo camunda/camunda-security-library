@@ -22,6 +22,16 @@ The CSL is a **hexagonal (ports and adapters) Spring Boot library** embedded int
 
 No host-specific code leaks into the library domain. Swapping a database, replacing an IdP client, or adding a new deployment topology requires only a new adapter.
 
+### Module boundaries
+
+- `core`: internal domain + hexagonal ports used by the library implementation.
+- `api`: public consumer-facing types intended to be imported by host applications.
+  - Put shared public models in `api/model` (for example `CamundaAuthentication`).
+  - Put shared public context/helper contracts in `api/context` (for example holders, providers, converters).
+- `adapters`: Spring and infrastructure integration code for wiring/authentication filter chains.
+
+Rule of thumb: if a type is part of the public contract for library adopters and is not a host-implemented outbound adapter, place it in `api`.
+
 ### Deployment Strategies
 
 Active capabilities are selected via a **deployment strategy configuration property** (not Spring profiles):

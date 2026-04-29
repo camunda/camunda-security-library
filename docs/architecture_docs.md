@@ -1130,6 +1130,13 @@ The Camunda Security Library is a [hexagonal (ports and adapters)](https://herbe
 
 Key rule: all port interfaces — both inbound and outbound — are defined inside the library core. The host application depends on the library, never the other way around.
 
+In addition to core ports, the library exposes a dedicated public API module for adopters:
+
+- `api/model` for public shared models (for example authentication context records)
+- `api/context` for public context/helper contracts (for example holders, providers, converters)
+
+These `api` contracts are consumer-facing and do not need to be outbound host-implemented adapters.
+
 - **Inbound (driving) side:** A Spring MVC controller or security filter lives in the host application. It imports and calls an inbound port interface (e.g. `PolicyService`) from the library. The domain service inside the library implements that interface.
 - **Outbound (driven) side:** The domain service calls an outbound port interface (e.g. `PolicyRepository`) defined in the library. The host application (or a default adapter module) provides the concrete implementation.
 

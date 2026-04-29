@@ -13,7 +13,12 @@ A unified identity and authorization library for the Camunda 8 platform. The CSL
 
 Hexagonal (ports and adapters). The domain has zero framework dependencies — enforced by ArchUnit.
 
-All persistence, IdP clients, engine commands, and outbox delivery sit behind outbound `*Adapter` contracts defined in the library core. Host applications (Hub, OC) provide `*AdapterImpl` classes. No host-specific code leaks into the library domain.
+All persistence, IdP clients, engine commands, and outbox delivery sit behind outbound `*Port` contracts defined in the library core. Host applications (Hub, OC) provide outbound adapter implementations. No host-specific code leaks into the library domain.
+
+Public consumer-facing types are exposed from the `api` module:
+
+- `api/model`: public models used by adopters (for example authentication context records)
+- `api/context`: public context/helper contracts used by adopters (for example holders/providers/converters)
 
 ### Deployment Strategies
 
@@ -42,12 +47,13 @@ Shared across Hub and all OCs: `Organization`, `Tenant`, `Role`, `Group`, `Mappi
 
 ### Naming
 
-`Port` is always inbound; `Adapter` is always outbound.
+All hexagonal contracts are ports.
 
-- Inbound port interfaces: suffixed with `Port`, in `port/` (e.g., `GroupPort`)
-- Inbound port implementations (business logic): suffixed with `PortImpl` (e.g., `GroupPortImpl`)
-- Outbound adapter interfaces: suffixed with `Adapter`, in `adapter/` (e.g., `GroupPersistenceAdapter`, `IdpClientAdapter`)
-- Outbound adapter implementations (external-system I/O): suffixed with `AdapterImpl` (e.g., `GroupPersistenceAdapterImpl`)
+- Port interfaces (inbound and outbound): in `core/.../port/in` and `core/.../port/out`
+- Inbound implementations (business logic): services in the library
+- Outbound implementations (external-system I/O): adapters in host applications
+
+Not every public interface in `api` must use the `Port` suffix. Consumer-facing context/helper interfaces (for example holders/providers/converters) are allowed when they are not host-implemented outbound adapters.
 
 ### Error Handling
 
