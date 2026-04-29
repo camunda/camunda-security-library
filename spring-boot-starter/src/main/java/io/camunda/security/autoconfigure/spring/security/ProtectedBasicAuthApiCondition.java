@@ -7,6 +7,10 @@
  */
 package io.camunda.security.autoconfigure.spring.security;
 
+import static io.camunda.security.autoconfigure.spring.security.CamundaSecurityFilterChainConstants.AUTHENTICATION_METHOD_PROPERTY;
+import static io.camunda.security.autoconfigure.spring.security.CamundaSecurityFilterChainConstants.UNPROTECTED_API_PROPERTY;
+
+import io.camunda.security.autoconfigure.spring.config.AuthenticationMethod;
 import org.springframework.context.annotation.Condition;
 import org.springframework.context.annotation.ConditionContext;
 import org.springframework.core.type.AnnotatedTypeMetadata;
@@ -19,12 +23,9 @@ final class ProtectedBasicAuthApiCondition implements Condition {
 
   @Override
   public boolean matches(final ConditionContext context, final AnnotatedTypeMetadata metadata) {
-    final String method =
-        context.getEnvironment().getProperty("camunda.security.authentication.method");
+    final String method = context.getEnvironment().getProperty(AUTHENTICATION_METHOD_PROPERTY);
     final boolean unprotected =
-        context
-            .getEnvironment()
-            .getProperty("camunda.security.authentication.unprotected-api", Boolean.class, false);
-    return "basic".equalsIgnoreCase(method) && !unprotected;
+        context.getEnvironment().getProperty(UNPROTECTED_API_PROPERTY, Boolean.class, false);
+    return AuthenticationMethod.BASIC.name().equalsIgnoreCase(method) && !unprotected;
   }
 }

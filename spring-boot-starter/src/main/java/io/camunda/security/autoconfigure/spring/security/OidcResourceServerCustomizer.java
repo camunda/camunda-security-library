@@ -12,8 +12,9 @@ import org.springframework.security.config.annotation.web.configurers.oauth2.ser
 
 /**
  * Extension point applied inside the {@code oauth2ResourceServer(...)} DSL of {@link
- * OidcApiSecurityConfig} and {@link OidcWebappSecurityConfig}. Implementations are discovered via
- * {@link org.springframework.beans.factory.ObjectProvider} and applied in {@code @Order}.
+ * OidcApiSecurityAutoConfiguration} and {@link OidcWebappSecurityAutoConfiguration}.
+ * Implementations are discovered via {@link org.springframework.beans.factory.ObjectProvider} and
+ * applied in {@code @Order}.
  *
  * <p>Typical use cases include wiring RFC 9728 {@code protectedResourceMetadata} customisers,
  * adjusting JWT validators, or swapping the bearer-token entry point.

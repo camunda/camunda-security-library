@@ -52,9 +52,23 @@ public class BasicAuthWebappSecurityAutoConfiguration {
       throws Exception {
     LOG.info("Web Applications Login/Logout is set up with Basic Authentication.");
 
+    // Form-login flow needs LOGIN_URL/LOGOUT_URL reachable without auth; static UI assets the
+    // host declares via SecurityPathAdapter.unauthenticatedWebappPaths() are also permitted.
+    // Everything else under webappPaths() requires authentication so the formLogin redirect
+    // fires for unauthenticated navigations.
+    final var permittedPaths = new java.util.ArrayList<String>();
+    permittedPaths.add(LOGIN_URL);
+    permittedPaths.add(LOGOUT_URL);
+    permittedPaths.addAll(pathAdapter.unauthenticatedWebappPaths());
+
     final var filterChainBuilder =
         http.securityMatcher(pathAdapter.webappPaths().toArray(String[]::new))
-            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+            .authorizeHttpRequests(
+                auth ->
+                    auth.requestMatchers(permittedPaths.toArray(String[]::new))
+                        .permitAll()
+                        .anyRequest()
+                        .authenticated())
             .cors(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable)
             .formLogin(

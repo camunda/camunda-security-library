@@ -60,9 +60,12 @@ public class BaseSecurityAutoConfiguration {
         .authorizeHttpRequests(auth -> auth.anyRequest().denyAll())
         .exceptionHandling(
             eh ->
-                eh.accessDeniedHandler(
-                    (request, response, accessDeniedException) ->
-                        response.sendError(HttpServletResponse.SC_NOT_FOUND)))
+                eh.authenticationEntryPoint(
+                        (request, response, authenticationException) ->
+                            response.sendError(HttpServletResponse.SC_NOT_FOUND))
+                    .accessDeniedHandler(
+                        (request, response, accessDeniedException) ->
+                            response.sendError(HttpServletResponse.SC_NOT_FOUND)))
         .csrf(AbstractHttpConfigurer::disable)
         .cors(AbstractHttpConfigurer::disable)
         .formLogin(AbstractHttpConfigurer::disable)

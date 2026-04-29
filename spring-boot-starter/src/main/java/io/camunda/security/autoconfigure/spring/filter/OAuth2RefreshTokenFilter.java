@@ -114,7 +114,8 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
 
     OAuth2AuthorizedClient refreshedAuthorizedClient = null;
     try {
-      refreshedAuthorizedClient = refreshAccessToken(authenticationToken, authorizedClient);
+      refreshedAuthorizedClient =
+          refreshAccessToken(authenticationToken, authorizedClient, request, response);
 
       if (refreshedAuthorizedClient == null) {
         throw new OAuth2AuthenticationException("Failed to refresh access token");
@@ -198,10 +199,18 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
 
   protected OAuth2AuthorizedClient refreshAccessToken(
       final OAuth2AuthenticationToken authenticationToken,
-      final OAuth2AuthorizedClient authorizedClient) {
+      final OAuth2AuthorizedClient authorizedClient,
+      final HttpServletRequest request,
+      final HttpServletResponse response) {
+    // The HTTP request/response are required so DefaultOAuth2AuthorizedClientManager can
+    // persist the refreshed client back into the OAuth2AuthorizedClientRepository (which by
+    // default writes to the HTTP session). Without these attributes the success handler runs
+    // against a null request and the refreshed client is never stored.
     final OAuth2AuthorizeRequest authorizeRequest =
         OAuth2AuthorizeRequest.withAuthorizedClient(authorizedClient)
             .principal(authenticationToken)
+            .attribute(HttpServletRequest.class.getName(), request)
+            .attribute(HttpServletResponse.class.getName(), response)
             .build();
     return authorizedClientManager.authorize(authorizeRequest);
   }

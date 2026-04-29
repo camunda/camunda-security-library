@@ -17,6 +17,7 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProviderBuilder;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.registration.ClientRegistrations;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
@@ -57,8 +58,10 @@ public class OidcBeansAutoConfiguration {
   public ClientRegistrationRepository clientRegistrationRepository(
       final CamundaSecurityLibraryProperties properties) {
     final OidcConfiguration oidc = properties.getAuthentication().getOidc();
+    final ClientRegistration.Builder builder = clientRegistrationBuilder(oidc);
     final ClientRegistration registration =
-        ClientRegistration.withRegistrationId(oidc.getRegistrationId())
+        builder
+            .registrationId(oidc.getRegistrationId())
             .clientId(oidc.getClientId())
             .clientSecret(oidc.getClientSecret())
             .clientAuthenticationMethod(
@@ -66,13 +69,34 @@ public class OidcBeansAutoConfiguration {
             .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
             .redirectUri(oidc.getRedirectUri())
             .scope(oidc.getScope())
-            .authorizationUri(oidc.getAuthorizationUri())
-            .tokenUri(oidc.getTokenUri())
-            .userInfoUri(oidc.getUserInfoUri())
-            .jwkSetUri(oidc.getJwkSetUri())
-            .issuerUri(oidc.getIssuerUri())
             .build();
     return new InMemoryClientRegistrationRepository(registration);
+  }
+
+  /**
+   * Builds the {@link ClientRegistration.Builder} from {@link OidcConfiguration}. When {@code
+   * issuer-uri} is set, OIDC discovery populates the authorization/token/user-info/jwk-set URIs
+   * automatically. Adopters who only have explicit endpoints fall through to the empty-builder path
+   * and must set those URIs explicitly.
+   */
+  private static ClientRegistration.Builder clientRegistrationBuilder(
+      final OidcConfiguration oidc) {
+    if (oidc.getIssuerUri() != null && !oidc.getIssuerUri().isBlank()) {
+      return ClientRegistrations.fromIssuerLocation(oidc.getIssuerUri());
+    }
+    if (oidc.getAuthorizationUri() == null
+        || oidc.getTokenUri() == null
+        || oidc.getJwkSetUri() == null) {
+      throw new IllegalStateException(
+          "Cannot build ClientRegistrationRepository: set"
+              + " camunda.security.authentication.oidc.issuer-uri,"
+              + " or all of authorization-uri, token-uri, and jwk-set-uri.");
+    }
+    return ClientRegistration.withRegistrationId(oidc.getRegistrationId())
+        .authorizationUri(oidc.getAuthorizationUri())
+        .tokenUri(oidc.getTokenUri())
+        .userInfoUri(oidc.getUserInfoUri())
+        .jwkSetUri(oidc.getJwkSetUri());
   }
 
   @Bean

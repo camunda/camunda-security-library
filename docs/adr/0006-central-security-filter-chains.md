@@ -1,3 +1,7 @@
+---
+status: Accepted
+---
+
 # ADR-0006: Central Spring Security filter chains as Spring Boot auto-configuration
 
 ## Status
