@@ -27,9 +27,8 @@ Hexagonal architecture naming (replaces traditional controller/service/repo nami
 - **Config classes:** cannot be records (Spring `@ConfigurationProperties` needs mutability)
 - **RDBMS entities:** cannot be records (MyBatis/JPA needs setters)
 - **Sealed by default:** all production classes must be `final` unless they are intentional extension points (SPIs, classes with `protected` methods, config properties classes, persistence entities)
-- **Auto-configuration:** every bean must have `@ConditionalOnMissingBean` for consumer overrides. `@AutoConfiguration` already implies `proxyBeanMethods = false` — do NOT add it explicitly.
-- **No unnecessary property gates:** do not add `@ConditionalOnProperty(enabled=true)` for features that Spring Security activates through bean presence. Property gates are reserved for features with significant runtime side effects.
-- **Read/write port separation:** read ports are always active, write ports activate based on deployment strategy
+- **Auto-configuration:** every library-supplied bean must have `@ConditionalOnMissingBean` so consumers can override by registering their own. `@AutoConfiguration` already implies `proxyBeanMethods = false` — do NOT add it explicitly. Each filter-chain auto-configuration registers in `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`.
+- **Property-driven activation:** chain auto-configurations gate on `camunda.security.authentication.*` via `@ConditionalOnProperty` (or a small `@Conditional` class when more than one property contributes to the decision). Avoid `@ConditionalOnProperty(enabled=true)` for features Spring Security already activates through bean presence — property gates are reserved for features with significant runtime side effects (e.g., the dev-mode unprotected-API chain).
 
 ## Error Handling
 
