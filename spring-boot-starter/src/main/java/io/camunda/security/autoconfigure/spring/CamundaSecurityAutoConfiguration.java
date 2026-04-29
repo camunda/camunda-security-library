@@ -12,8 +12,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 
 /**
  * Root auto-configuration for the Camunda Security Library. Enables {@link
- * CamundaSecurityLibraryProperties} binding so the deployment strategy is validated at application
- * startup.
+ * CamundaSecurityLibraryProperties} binding at application startup.
  */
 @AutoConfiguration
 @EnableConfigurationProperties(CamundaSecurityLibraryProperties.class)

@@ -9,131 +9,261 @@ package io.camunda.security.autoconfigure.spring;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.camunda.security.autoconfigure.spring.handler.AuthFailureHandler;
+import io.camunda.security.autoconfigure.spring.handler.AuthFailureHandlerAutoConfiguration;
+import io.camunda.security.autoconfigure.spring.handler.JsonProblemDetailAuthFailureHandler;
+import io.camunda.security.autoconfigure.spring.oidc.OidcBeansAutoConfiguration;
+import io.camunda.security.autoconfigure.spring.security.BaseSecurityAutoConfiguration;
+import io.camunda.security.autoconfigure.spring.security.BasicAuthApiSecurityAutoConfiguration;
+import io.camunda.security.autoconfigure.spring.security.BasicAuthWebappSecurityAutoConfiguration;
+import io.camunda.security.autoconfigure.spring.security.OidcApiSecurityAutoConfiguration;
+import io.camunda.security.autoconfigure.spring.security.OidcWebappSecurityAutoConfiguration;
+import io.camunda.security.autoconfigure.spring.security.UnprotectedApiSecurityAutoConfiguration;
+import io.camunda.security.core.adapter.SecurityPathAdapter;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.context.properties.ConfigurationPropertiesBindException;
-import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.provisioning.InMemoryUserDetailsManager;
+import org.springframework.security.web.SecurityFilterChain;
 
 class CamundaSecurityAutoConfigurationTest {
 
-  private final ApplicationContextRunner runner =
-      new ApplicationContextRunner()
-          .withConfiguration(AutoConfigurations.of(CamundaSecurityAutoConfiguration.class))
-          .withUserConfiguration(OcStandaloneDemoConfiguration.class);
+  private final WebApplicationContextRunner runner =
+      new WebApplicationContextRunner()
+          .withUserConfiguration(ObjectMapperConfig.class)
+          .withConfiguration(
+              AutoConfigurations.of(
+                  CamundaSecurityAutoConfiguration.class,
+                  BaseSecurityAutoConfiguration.class,
+                  OidcApiSecurityAutoConfiguration.class,
+                  OidcWebappSecurityAutoConfiguration.class,
+                  BasicAuthApiSecurityAutoConfiguration.class,
+                  BasicAuthWebappSecurityAutoConfiguration.class,
+                  UnprotectedApiSecurityAutoConfiguration.class,
+                  AuthFailureHandlerAutoConfiguration.class,
+                  OidcBeansAutoConfiguration.class))
+          .withUserConfiguration(StubPaths.class);
 
   @Test
-  void bindsOcStandalone() {
-    runner
-        .withPropertyValues("camunda.security.strategy=oc-standalone")
-        .run(
-            ctx ->
-                assertThat(ctx)
-                    .getBean(CamundaSecurityLibraryProperties.class)
-                    .extracting(CamundaSecurityLibraryProperties::getStrategy)
-                    .isEqualTo(Strategy.OC_STANDALONE));
-  }
-
-  @Test
-  void bindsOcManaged() {
-    runner
-        .withPropertyValues("camunda.security.strategy=oc-managed")
-        .run(
-            ctx ->
-                assertThat(ctx)
-                    .getBean(CamundaSecurityLibraryProperties.class)
-                    .extracting(CamundaSecurityLibraryProperties::getStrategy)
-                    .isEqualTo(Strategy.OC_MANAGED));
-  }
-
-  @Test
-  void bindsHub() {
-    runner
-        .withPropertyValues("camunda.security.strategy=hub")
-        .run(
-            ctx ->
-                assertThat(ctx)
-                    .getBean(CamundaSecurityLibraryProperties.class)
-                    .extracting(CamundaSecurityLibraryProperties::getStrategy)
-                    .isEqualTo(Strategy.HUB));
-  }
-
-  @Test
-  void missingStrategyFailsStartup() {
+  void bindsDefaultPropertiesWithoutAuthenticationMethod() {
     runner.run(
         ctx -> {
+          assertThat(ctx).hasSingleBean(CamundaSecurityLibraryProperties.class);
           assertThat(ctx)
-              .hasFailed()
-              .getFailure()
-              .isInstanceOf(ConfigurationPropertiesBindException.class);
-          assertThat(causeChainMessages(ctx.getStartupFailure()))
-              .as("bind failure cause chain messages")
-              .contains("camunda.security", "field 'strategy'", "must not be null");
+              .getBean(CamundaSecurityLibraryProperties.class)
+              .extracting(p -> p.getAuthentication().getMethod())
+              .isNull();
         });
   }
 
   @Test
-  void invalidStrategyFailsStartup() {
+  void basicMethodActivatesBasicChainsAndSuppressesOidcChains() {
     runner
-        .withPropertyValues("camunda.security.strategy=bogus")
+        .withPropertyValues("camunda.security.authentication.method=basic")
+        .withUserConfiguration(StubUserDetailsService.class)
         .run(
             ctx -> {
-              assertThat(ctx)
-                  .hasFailed()
-                  .getFailure()
-                  .isInstanceOf(ConfigurationPropertiesBindException.class);
-              assertThat(causeChainMessages(ctx.getStartupFailure()))
-                  .as("bind failure cause chain messages")
-                  .contains("camunda.security.strategy", "bogus");
+              assertThat(ctx).hasSingleBean(AuthFailureHandler.class);
+              final var chains = ctx.getBeansOfType(SecurityFilterChain.class);
+              assertThat(chains).isNotEmpty();
+              // OIDC-specific beans must NOT be present
+              assertThat(ctx).doesNotHaveBean(JwtDecoder.class);
+              assertThat(ctx).doesNotHaveBean(ClientRegistrationRepository.class);
             });
   }
 
-  private static String causeChainMessages(Throwable t) {
-    final StringBuilder sb = new StringBuilder();
-    while (t != null) {
-      if (t.getMessage() != null) {
-        sb.append(t.getMessage()).append('\n');
-      }
-      t = t.getCause();
-    }
-    return sb.toString();
+  @Test
+  void oidcMethodActivatesOidcChainsAndSuppressesBasicChains() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.method=oidc",
+            "camunda.security.authentication.oidc.jwk-set-uri=http://localhost/jwks",
+            "camunda.security.authentication.oidc.client-id=test-client",
+            "camunda.security.authentication.oidc.client-secret=secret",
+            "camunda.security.authentication.oidc.authorization-uri=http://localhost/auth",
+            "camunda.security.authentication.oidc.token-uri=http://localhost/token",
+            "camunda.security.authentication.oidc.user-info-uri=http://localhost/userinfo",
+            "camunda.security.authentication.oidc.redirect-uri=http://localhost/sso-callback")
+        .run(
+            ctx -> {
+              assertThat(ctx).hasSingleBean(JwtDecoder.class);
+              assertThat(ctx).hasSingleBean(ClientRegistrationRepository.class);
+              // SecurityFilterChain beans from base + OIDC chains
+              final var chains = ctx.getBeansOfType(SecurityFilterChain.class);
+              assertThat(chains).isNotEmpty();
+            });
   }
 
   @Test
-  void markerBeanIsRegisteredUnderOcStandalone() {
+  void unprotectedApiSwapsOutProtectedApiChain() {
     runner
-        .withPropertyValues("camunda.security.strategy=oc-standalone")
-        .run(ctx -> assertThat(ctx).hasSingleBean(OcStandaloneMarker.class));
+        .withPropertyValues(
+            "camunda.security.authentication.method=oidc",
+            "camunda.security.authentication.unprotected-api=true",
+            "camunda.security.authentication.oidc.jwk-set-uri=http://localhost/jwks",
+            "camunda.security.authentication.oidc.client-id=c",
+            "camunda.security.authentication.oidc.client-secret=s",
+            "camunda.security.authentication.oidc.authorization-uri=http://localhost/auth",
+            "camunda.security.authentication.oidc.token-uri=http://localhost/token",
+            "camunda.security.authentication.oidc.user-info-uri=http://localhost/userinfo",
+            "camunda.security.authentication.oidc.redirect-uri=http://localhost/callback")
+        .run(
+            ctx -> {
+              // UnprotectedApiSecurityAutoConfiguration must be active
+              assertThat(ctx).hasSingleBean(UnprotectedApiSecurityAutoConfiguration.class);
+              // OidcApiSecurityAutoConfiguration must NOT be active (unprotected-api=true)
+              assertThat(ctx).doesNotHaveBean(OidcApiSecurityAutoConfiguration.class);
+            });
   }
 
   @Test
-  void markerBeanIsAbsentUnderOcManaged() {
-    runner
-        .withPropertyValues("camunda.security.strategy=oc-managed")
-        .run(ctx -> assertThat(ctx).doesNotHaveBean(OcStandaloneMarker.class));
+  void defaultAuthFailureHandlerIsJsonProblemDetail() {
+    runner.run(
+        ctx ->
+            assertThat(ctx)
+                .getBean(AuthFailureHandler.class)
+                .isInstanceOf(JsonProblemDetailAuthFailureHandler.class));
   }
 
   @Test
-  void markerBeanIsAbsentUnderHub() {
+  void hostCanOverrideAuthFailureHandler() {
     runner
-        .withPropertyValues("camunda.security.strategy=hub")
-        .run(ctx -> assertThat(ctx).doesNotHaveBean(OcStandaloneMarker.class));
+        .withUserConfiguration(CustomAuthFailureHandlerConfig.class)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasSingleBean(AuthFailureHandler.class);
+              assertThat(ctx)
+                  .getBean(AuthFailureHandler.class)
+                  .isInstanceOf(CustomAuthFailureHandlerConfig.StubAuthFailureHandler.class);
+            });
   }
 
-  /**
-   * Test-only configuration that exercises the strategy-scoped wiring convention. Production
-   * auto-configuration uses the same {@code @ConditionalOnProperty} pattern when it registers real
-   * strategy-specific beans in later vertical-slice PRs.
-   */
+  @Test
+  void hostCanOverrideJwtDecoder() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.method=oidc",
+            "camunda.security.authentication.oidc.jwk-set-uri=http://localhost/jwks",
+            "camunda.security.authentication.oidc.client-id=c",
+            "camunda.security.authentication.oidc.client-secret=s",
+            "camunda.security.authentication.oidc.authorization-uri=http://localhost/auth",
+            "camunda.security.authentication.oidc.token-uri=http://localhost/token",
+            "camunda.security.authentication.oidc.user-info-uri=http://localhost/userinfo",
+            "camunda.security.authentication.oidc.redirect-uri=http://localhost/callback")
+        .withUserConfiguration(CustomJwtDecoderConfig.class)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasSingleBean(JwtDecoder.class);
+              assertThat(ctx)
+                  .getBean(JwtDecoder.class)
+                  .isInstanceOf(CustomJwtDecoderConfig.StubJwtDecoder.class);
+            });
+  }
+
+  /** Stub {@link SecurityPathAdapter} required by all filter chain beans. */
   @Configuration
-  static class OcStandaloneDemoConfiguration {
+  static class StubPaths {
 
     @Bean
-    @ConditionalOnProperty(name = "camunda.security.strategy", havingValue = "oc-standalone")
-    OcStandaloneMarker ocStandaloneMarker() {
-      return new OcStandaloneMarker();
+    SecurityPathAdapter pathAdapter() {
+      return new SecurityPathAdapter() {
+        @Override
+        public Set<String> apiPaths() {
+          return Set.of("/api/**");
+        }
+
+        @Override
+        public Set<String> unprotectedApiPaths() {
+          return Set.of();
+        }
+
+        @Override
+        public Set<String> unprotectedPaths() {
+          return Set.of("/error");
+        }
+
+        @Override
+        public Set<String> webappPaths() {
+          return Set.of("/login");
+        }
+
+        @Override
+        public Set<String> webComponentNames() {
+          return Set.of();
+        }
+      };
+    }
+  }
+
+  @Configuration
+  static class CustomAuthFailureHandlerConfig {
+
+    @Bean
+    AuthFailureHandler customAuthFailureHandler() {
+      return new StubAuthFailureHandler();
+    }
+
+    static final class StubAuthFailureHandler implements AuthFailureHandler {
+      @Override
+      public void onAuthenticationFailure(
+          final jakarta.servlet.http.HttpServletRequest request,
+          final jakarta.servlet.http.HttpServletResponse response,
+          final org.springframework.security.core.AuthenticationException exception) {}
+
+      @Override
+      public void handle(
+          final jakarta.servlet.http.HttpServletRequest request,
+          final jakarta.servlet.http.HttpServletResponse response,
+          final org.springframework.security.access.AccessDeniedException accessDeniedException) {}
+
+      @Override
+      public void commence(
+          final jakarta.servlet.http.HttpServletRequest request,
+          final jakarta.servlet.http.HttpServletResponse response,
+          final org.springframework.security.core.AuthenticationException authException) {}
+    }
+  }
+
+  @Configuration
+  static class CustomJwtDecoderConfig {
+
+    @Bean
+    JwtDecoder customJwtDecoder() {
+      return new StubJwtDecoder();
+    }
+
+    static final class StubJwtDecoder implements JwtDecoder {
+      @Override
+      public org.springframework.security.oauth2.jwt.Jwt decode(final String token) {
+        throw new UnsupportedOperationException("stub");
+      }
+    }
+  }
+
+  @Configuration
+  static class ObjectMapperConfig {
+
+    @Bean
+    ObjectMapper objectMapper() {
+      return new ObjectMapper();
+    }
+  }
+
+  @Configuration
+  static class StubUserDetailsService {
+
+    @Bean
+    UserDetailsService userDetailsService() {
+      return new InMemoryUserDetailsManager(
+          User.withUsername("user").password("{noop}password").roles("USER").build());
     }
   }
 }

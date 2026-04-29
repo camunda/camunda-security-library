@@ -2,6 +2,9 @@
 !CLAUDE.md
 !.claude/
 
+# Per-developer Claude Code settings
+.claude/settings.local.json
+
 # Local-only worktrees
 .worktree/
 

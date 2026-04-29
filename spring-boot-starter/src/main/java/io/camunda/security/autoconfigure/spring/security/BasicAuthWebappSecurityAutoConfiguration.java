@@ -1,0 +1,93 @@
+/*
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH under
+ * one or more contributor license agreements. See the NOTICE file distributed
+ * with this work for additional information regarding copyright ownership.
+ * Licensed under the Camunda License 1.0. You may not use this file
+ * except in compliance with the Camunda License 1.0.
+ */
+package io.camunda.security.autoconfigure.spring.security;
+
+import static io.camunda.security.autoconfigure.spring.security.CamundaSecurityFilterChainConstants.LOGIN_URL;
+import static io.camunda.security.autoconfigure.spring.security.CamundaSecurityFilterChainConstants.LOGOUT_URL;
+import static io.camunda.security.autoconfigure.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP_API;
+import static io.camunda.security.autoconfigure.spring.security.CamundaSecurityFilterChainConstants.SESSION_COOKIE;
+import static io.camunda.security.autoconfigure.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
+
+import io.camunda.security.autoconfigure.spring.CamundaSecurityAutoConfiguration;
+import io.camunda.security.autoconfigure.spring.CamundaSecurityLibraryProperties;
+import io.camunda.security.autoconfigure.spring.handler.AuthFailureHandler;
+import io.camunda.security.core.adapter.SecurityPathAdapter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.AutoConfigureAfter;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Bean;
+import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.csrf.CsrfToken;
+
+/**
+ * Filter chain that protects webapp UI paths with form-based Basic authentication. Login and logout
+ * return 204 No Content with the CSRF token surfaced as a response header.
+ */
+@AutoConfiguration
+@AutoConfigureAfter(CamundaSecurityAutoConfiguration.class)
+@ConditionalOnProperty(name = "camunda.security.authentication.method", havingValue = "basic")
+public class BasicAuthWebappSecurityAutoConfiguration {
+
+  private static final Logger LOG =
+      LoggerFactory.getLogger(BasicAuthWebappSecurityAutoConfiguration.class);
+
+  @Bean
+  @Order(ORDER_WEBAPP_API)
+  public SecurityFilterChain basicAuthWebappSecurityFilterChain(
+      final HttpSecurity http,
+      final AuthFailureHandler authFailureHandler,
+      final CamundaSecurityLibraryProperties properties,
+      final SecurityPathAdapter pathAdapter)
+      throws Exception {
+    LOG.info("Web Applications Login/Logout is set up with Basic Authentication.");
+
+    final var filterChainBuilder =
+        http.securityMatcher(pathAdapter.webappPaths().toArray(String[]::new))
+            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+            .cors(AbstractHttpConfigurer::disable)
+            .anonymous(AbstractHttpConfigurer::disable)
+            .formLogin(
+                formLogin ->
+                    formLogin
+                        .loginPage(LOGIN_URL)
+                        .loginProcessingUrl(LOGIN_URL)
+                        .failureHandler(authFailureHandler)
+                        .successHandler(
+                            (request, response, authentication) -> {
+                              response.setStatus(HttpStatus.NO_CONTENT.value());
+                              final CsrfToken token =
+                                  (CsrfToken) request.getAttribute(CsrfToken.class.getName());
+                              if (token != null) {
+                                response.setHeader(X_CSRF_TOKEN, token.getToken());
+                              }
+                            }))
+            .logout(
+                logout ->
+                    logout
+                        .logoutUrl(LOGOUT_URL)
+                        .logoutSuccessHandler(
+                            (request, response, authentication) ->
+                                response.setStatus(HttpStatus.NO_CONTENT.value()))
+                        .deleteCookies(SESSION_COOKIE, X_CSRF_TOKEN))
+            .exceptionHandling(
+                eh ->
+                    eh.authenticationEntryPoint(authFailureHandler)
+                        .accessDeniedHandler(authFailureHandler));
+
+    SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathAdapter);
+    SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
+
+    return filterChainBuilder.build();
+  }
+}

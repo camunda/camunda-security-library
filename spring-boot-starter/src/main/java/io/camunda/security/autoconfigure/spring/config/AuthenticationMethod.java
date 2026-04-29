@@ -5,10 +5,12 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.autoconfigure.spring;
+package io.camunda.security.autoconfigure.spring.config;
 
 /**
- * Demonstration bean registered only under the {@code oc-standalone} deployment strategy. Has no
- * runtime effect — exists to prove the {@code @ConditionalOnProperty} wiring works end-to-end.
+ * Authentication method selected by the host via {@code camunda.security.authentication.method}.
  */
-public record OcStandaloneMarker() {}
+public enum AuthenticationMethod {
+  BASIC,
+  OIDC
+}

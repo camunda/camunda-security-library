@@ -7,25 +7,40 @@
  */
 package io.camunda.security.autoconfigure.spring;
 
-import jakarta.validation.constraints.NotNull;
+import io.camunda.security.autoconfigure.spring.config.AuthenticationConfiguration;
+import io.camunda.security.autoconfigure.spring.config.CsrfConfiguration;
+import io.camunda.security.autoconfigure.spring.config.headers.HeaderConfiguration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.validation.annotation.Validated;
 
-/**
- * Binds {@code camunda.security.*} configuration values. The deployment strategy is required;
- * startup fails if it is missing or invalid.
- */
+/** Binds {@code camunda.security.*} configuration values for the CSL filter chains. */
 @ConfigurationProperties(prefix = "camunda.security")
-@Validated
 public class CamundaSecurityLibraryProperties {
 
-  @NotNull private Strategy strategy;
+  private AuthenticationConfiguration authentication = new AuthenticationConfiguration();
+  private CsrfConfiguration csrf = new CsrfConfiguration();
+  private HeaderConfiguration httpHeaders = new HeaderConfiguration();
 
-  public Strategy getStrategy() {
-    return strategy;
+  public AuthenticationConfiguration getAuthentication() {
+    return authentication;
   }
 
-  public void setStrategy(Strategy strategy) {
-    this.strategy = strategy;
+  public void setAuthentication(final AuthenticationConfiguration authentication) {
+    this.authentication = authentication;
+  }
+
+  public CsrfConfiguration getCsrf() {
+    return csrf;
+  }
+
+  public void setCsrf(final CsrfConfiguration csrf) {
+    this.csrf = csrf;
+  }
+
+  public HeaderConfiguration getHttpHeaders() {
+    return httpHeaders;
+  }
+
+  public void setHttpHeaders(final HeaderConfiguration httpHeaders) {
+    this.httpHeaders = httpHeaders;
   }
 }
