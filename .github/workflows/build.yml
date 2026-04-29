@@ -29,3 +29,32 @@ jobs:
 
       - name: Verify (compile, unit tests, integration tests)
         run: ./mvnw --batch-mode --no-transfer-progress -T 1C clean verify
+
+  deploy-snapshot:
+    name: Deploy SNAPSHOT to Camunda Artifactory
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: deploy-snapshot-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Set up Java 21
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Create Maven settings.xml
+        uses: ./.github/actions/create-maven-setting-file
+        with:
+          VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
+          VAULT_ROLE_ID: ${{ secrets.VAULT_ROLE_ID }}
+          VAULT_SECRET_ID: ${{ secrets.VAULT_SECRET_ID }}
+
+      - name: Deploy SNAPSHOT
+        run: ./mvnw --batch-mode --no-transfer-progress -DskipTests deploy
