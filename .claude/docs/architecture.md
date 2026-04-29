@@ -4,10 +4,9 @@
 
 The CSL is a multi-module Maven library. Modules will be added as implementation progresses — update this map when they are.
 
-- `csl-domain/` — Core domain models and business logic; zero framework dependencies
-- `csl-spring/` — Spring Security adapters, filters, OIDC support
-- `csl-spring-boot-starter/` — Auto-configuration with `@ConditionalOnMissingBean` overrides
-- `csl-integration-tests/` — Testcontainers-based integration tests (only built with `-Pintegration-tests`)
+- `core/` — Framework-free domain model, inbound ports, outbound adapter contracts. Zero Spring or zeebe-protocol dependencies (enforced by `DomainArchTest`).
+- `api/` — Host-facing entry points layered on `core/`. Currently a placeholder.
+- `spring-boot-starter/` — Spring Boot auto-configuration. Hosts include this artefact, set `camunda.security.*` properties, and the chains plus library-default beans (`JwtDecoder`, `ClientRegistrationRepository`, `OAuth2AuthorizedClientRepository`, `OAuth2AuthorizedClientManager`, default `AuthFailureHandler`) wire automatically. Every library-supplied bean has `@ConditionalOnMissingBean` so hosts override by registering their own.
 
 ## Key Boundaries
 
@@ -19,13 +18,13 @@ The CSL is a multi-module Maven library. Modules will be added as implementation
 
 ## Deployment Strategy Architecture
 
-The CSL is embedded into host applications. Active capabilities are selected via a deployment strategy configuration property (not Spring profiles):
+The CSL is embedded into host applications. Active capabilities are selected via configuration properties (not Spring profiles):
 
-- `oc-standalone` — OC is the local source of truth for policy. Authoring and engine projection are active.
-- `oc-managed` — OC receives policy from Hub. Read-only. Engine projection is active.
-- `hub` — Hub is the central source of truth. Authoring and outbox dispatch are active.
+- **Authentication method**: `camunda.security.authentication.method=basic|oidc` selects the auth-mode chains.
+- **API protection**: `camunda.security.authentication.unprotected-api=true|false` swaps the API protection chain for the dev-mode permit-all variant.
+- **Deployment strategy** (`oc-standalone` / `oc-managed` / `hub`): planned for the policy work; **not currently consumed by the filter chain layer.** AuthN/AuthZ enforcement is always active regardless of strategy.
 
-AuthN and AuthZ enforcement is always active regardless of strategy. Strategy selection must be a first-class concept in auto-configuration — use `@ConditionalOnProperty` on strategy value, not ad-hoc feature flags.
+Auto-configuration uses `@ConditionalOnProperty` (or small `@Conditional` classes for chains that depend on more than one property). Library-supplied default beans (e.g., `JwtDecoder` from `camunda.security.authentication.oidc.*`) sit behind `@ConditionalOnMissingBean` so any host bean of the same type wins.
 
 ## Unified Policy Model
 
@@ -68,12 +67,11 @@ Caller invokes a `*Port` method with domain types
 
 ## Where New Code Goes
 
-- Domain logic → `csl-domain/`
-- New inbound use case → define the `*Port` interface in `port/`, implement as `*PortImpl`
-- New persistence operation → outbound adapter implementation (`*AdapterImpl`); define the outbound adapter interface (`*Adapter`) in `adapter/` first
-- New external integration → outbound adapter implementation (`*AdapterImpl`); define the outbound adapter interface (`*Adapter`) in `adapter/` first
-- New use case → define the business port interface (`*Port`) in `port/`, implement as `*PortImpl`
-- Auto-configuration → `csl-spring-boot-starter/`
+- Domain logic → `core/`
+- New inbound use case → define the `*Port` interface in `core/port/`, implement as `*PortImpl` (typically in `spring-boot-starter/`)
+- New persistence operation → outbound adapter implementation (`*AdapterImpl`); define the outbound adapter interface (`*Adapter`) in `core/adapter/` first
+- New external integration → outbound adapter implementation (`*AdapterImpl`); define the outbound adapter interface (`*Adapter`) in `core/adapter/` first
+- Auto-configuration, default beans, conditional activation → `spring-boot-starter/` (under `io.camunda.security.autoconfigure.spring.*`)
 
 ## What Not to Touch
 

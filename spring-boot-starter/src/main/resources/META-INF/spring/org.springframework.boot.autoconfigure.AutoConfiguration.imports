@@ -1,1 +1,9 @@
 io.camunda.security.autoconfigure.spring.CamundaSecurityAutoConfiguration
+io.camunda.security.autoconfigure.spring.security.BaseSecurityAutoConfiguration
+io.camunda.security.autoconfigure.spring.security.UnprotectedApiSecurityAutoConfiguration
+io.camunda.security.autoconfigure.spring.security.OidcApiSecurityAutoConfiguration
+io.camunda.security.autoconfigure.spring.security.OidcWebappSecurityAutoConfiguration
+io.camunda.security.autoconfigure.spring.security.BasicAuthApiSecurityAutoConfiguration
+io.camunda.security.autoconfigure.spring.security.BasicAuthWebappSecurityAutoConfiguration
+io.camunda.security.autoconfigure.spring.oidc.OidcBeansAutoConfiguration
+io.camunda.security.autoconfigure.spring.handler.AuthFailureHandlerAutoConfiguration

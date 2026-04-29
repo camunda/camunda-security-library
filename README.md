@@ -48,6 +48,33 @@ A single policy model is shared across Hub and all Orchestration Clusters:
 
 Authorizations can be scoped at four levels: `ALL`, `TENANT`, `ENGINE`, or `TENANT_ENGINE`.
 
+## Getting Started
+
+The library ships as a Spring Boot starter. Hosts include the artefact, set a few properties, and the central security filter chains plus their dependencies (JWT decoder, OAuth2 client beans, default failure handler) wire automatically.
+
+```xml
+<dependency>
+  <groupId>io.camunda</groupId>
+  <artifactId>camunda-security-library-spring-boot-starter</artifactId>
+  <version>${camunda.security.library.version}</version>
+</dependency>
+```
+
+```yaml
+camunda:
+  security:
+    authentication:
+      method: oidc                                            # or "basic"
+      oidc:
+        issuer-uri: https://login.example.com/realms/camunda
+        client-id: camunda-app
+        client-secret: ...
+```
+
+The only mandatory host-supplied bean is a `SecurityPathAdapter` that declares which paths are API, webapp, and unprotected. Everything else — JWT decoder, client registration, OAuth2 client manager, RFC 7807 problem-detail failure handler — is library-supplied with `@ConditionalOnMissingBean` so hosts override any layer by registering their own bean.
+
+See [`docs/adopters/security-filter-chains.md`](docs/adopters/security-filter-chains.md) for the full configuration reference, extension hooks, and migration guide. Design rationale lives in [ADR-0006](docs/adr/0006-central-security-filter-chains.md).
+
 ## Related
 
 - [Tracking issue — camunda/product-hub#3607](https://github.com/camunda/product-hub/issues/3607)
