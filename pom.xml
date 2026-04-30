@@ -143,7 +143,8 @@
                     <configuration>
                         <!--
                             Re-canonicalize POMs after every release-plugin edit via the
-                            spotless <formats> block above. Without this, the jdom-based
+                            spotless-maven-plugin <formats> block defined later in this
+                            <pluginManagement>. Without this, the jdom-based
                             POM rewriter would introduce cosmetic churn (collapsed
                             <project> attrs, spaces in self-closing tags) on every release
                             commit. Override the default 'clean verify' for preparationGoals
@@ -216,8 +217,11 @@
                                 Targeted fixes for the maven-release-plugin's jdom-based
                                 POM rewriter, which otherwise introduces formatting churn
                                 on every release commit:
-                                  1. Drops the leading space in self-closing tags
-                                     (<foo/> back to <foo/>).
+                                  1. Drops the leading horizontal whitespace that jdom
+                                     inserts before the slash in self-closing tags, e.g.
+                                     turns "relativePath SPACE/>" back into
+                                     "relativePath/>". (Spelled out because the literal
+                                     noisy form gets canonicalized by this very rule.)
                                   2. Restores the multi-line <project xmlns="..."> opening
                                      (jdom collapses all attributes onto one line).
                                 Implemented as text replacements rather than sortPom so we
