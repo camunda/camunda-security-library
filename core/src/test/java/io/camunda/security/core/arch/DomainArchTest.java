@@ -95,4 +95,14 @@ class DomainArchTest {
                   resideInAPackage("com.fasterxml.jackson.."),
                   resideOutsideOfPackage("com.fasterxml.jackson.annotation..")))
           .allowEmptyShould(true);
+
+  @ArchTest
+  static final ArchRule CORE_MUST_NOT_DEPEND_ON_ZEEBE_PROTOCOL =
+      noClasses()
+          .that()
+          .resideInAPackage("io.camunda.security.core..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("io.camunda.zeebe.protocol..")
+          .allowEmptyShould(true);
 }
