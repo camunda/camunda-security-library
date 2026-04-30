@@ -18,7 +18,7 @@ For the platform team: one codebase to maintain, one security surface to audit, 
 
 ## Architecture
 
-The CSL is a **hexagonal (ports and adapters) Spring Boot library** embedded into host applications (Hub, Orchestration Clusters). All persistence, IdP clients, engine commands, and outbox delivery sit behind port interfaces defined in the library core. Host applications provide adapter implementations.
+The CSL is a **hexagonal (ports and adapters) Spring Boot library** embedded into host applications (Hub, Orchestration Clusters). Interfaces in the core are always ports: inbound ports model use cases, and outbound ports model dependencies on persistence, IdP clients, engine commands, and outbox delivery. Host applications provide adapters that implement those outbound ports.
 
 No host-specific code leaks into the library domain. Swapping a database, replacing an IdP client, or adding a new deployment topology requires only a new adapter.
 
@@ -30,7 +30,7 @@ No host-specific code leaks into the library domain. Swapping a database, replac
   - Put shared public context/helper contracts in `api/context` (for example holders, providers, converters).
 - `adapters`: Spring and infrastructure integration code for wiring/authentication filter chains.
 
-Rule of thumb: if a type is part of the public contract for library adopters and is not a host-implemented outbound adapter, place it in `api`.
+Rule of thumb: if a type is a hexagonal inbound or outbound port, keep it in `core`. Use `api` for public adopter-facing models and helper/context contracts that are not hexagonal ports.
 
 ### Deployment Strategies
 

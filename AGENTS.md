@@ -47,13 +47,14 @@ Shared across Hub and all OCs: `Organization`, `Tenant`, `Role`, `Group`, `Mappi
 
 ### Naming
 
-All hexagonal contracts are ports.
+An interface is always a `Port`. Use `port/in/` for inbound ports and `port/out/` for outbound ports. `Adapter` is reserved for implementations of outbound ports.
 
-- Port interfaces (inbound and outbound): in `core/.../port/in` and `core/.../port/out`
-- Inbound implementations (business logic): services in the library
-- Outbound implementations (external-system I/O): adapters in host applications
-
-Not every public interface in `api` must use the `Port` suffix. Consumer-facing context/helper interfaces (for example holders/providers/converters) are allowed when they are not host-implemented outbound adapters.
+- Inbound port interfaces: suffixed with `Port`, in `port/in/` (e.g., `GroupPort`)
+- Inbound port implementations (business logic): named by responsibility, typically `*Service` (e.g., `GroupService`)
+- Outbound port interfaces: suffixed with `Port`, in `port/out/` (e.g., `GroupPersistencePort`, `IdpPort`)
+- Outbound port implementations (external-system I/O): suffixed with `Adapter` (e.g., `GroupPersistenceAdapter`, `IdpClientAdapter`)
+- Never use `*Impl` as a naming convention for implementations
+- Existing code may still contain legacy `*PortImpl`, `*AdapterImpl`, and `adapter/` contract packages until explicitly refactored
 
 ### Error Handling
 

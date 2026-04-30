@@ -8,7 +8,7 @@ IMPORTANT: Functions should be small and focused. If a function is growing beyon
 
 ## Off-Limits Areas
 
-IMPORTANT: Respect hexagonal architecture boundaries — domain contracts (interfaces in `port/` and `adapter/`, and domain model records) must not depend on frameworks or implementation classes (`*PortImpl`, `*AdapterImpl`). Implementations depend on contracts, not the reverse. If you find yourself importing an `*AdapterImpl` class from a contract, stop and define a `*Adapter` in `adapter/` instead.
+IMPORTANT: Respect hexagonal architecture boundaries — domain contracts (interfaces in `port/in/` and `port/out/`, and domain model records) must not depend on frameworks or implementation classes. Implementations depend on contracts, not the reverse. If you find yourself importing an adapter class from a contract, stop and define an outbound `*Port` in `port/out/` instead.
 
 IMPORTANT: ADRs in `docs/adr/` are historical records of decisions made. Do not modify decided ADRs. If a decision needs revisiting, write a new ADR that supersedes the old one.
 
