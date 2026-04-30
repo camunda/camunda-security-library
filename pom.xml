@@ -234,6 +234,12 @@
                                     <include>pom.xml</include>
                                     <include>**/pom.xml</include>
                                 </includes>
+                                <excludes>
+                                    <!-- Don't walk into build-output trees, in particular
+                                         target/checkout/** which release:perform creates
+                                         when localCheckout=true. -->
+                                    <exclude>**/target/**</exclude>
+                                </excludes>
                                 <replaceRegex>
                                     <name>self-closing tag without leading space</name>
                                     <!-- \h matches horizontal whitespace and survives
