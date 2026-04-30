@@ -14,9 +14,8 @@ import java.io.IOException;
 
 /**
  * Decides what to do when the {@code WebComponentAuthorizationCheckFilter} denies access to a
- * component. The default library implementation redirects to {@code
- * <contextPath>/<component>/forbidden}. Hosts override this bean to return a 403 JSON body,
- * redirect to a different URL, or any other behaviour.
+ * component. Hosts implement this SPI to return a 403 JSON body, redirect to a URL, or apply any
+ * other access-denied behaviour appropriate for the host.
  */
 @FunctionalInterface
 public interface WebComponentAccessDeniedHandler {

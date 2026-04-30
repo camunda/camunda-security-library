@@ -16,10 +16,9 @@ import io.camunda.security.core.authorization.ResourceAccess;
  * the requested {@link Authorization} (which carries the permission, resource type, and resource
  * ids being checked).
  *
- * <p>Implementations may consult host-supplied data (via {@link
+ * <p>Implementations may consult host-supplied data (typically via {@link
  * io.camunda.security.core.port.out.AuthorizationRepositoryPort}), apply caching, or layer in
- * additional cross-cutting concerns. The reference implementation in {@code spring-boot-starter}
- * delegates straight to the repository port.
+ * additional cross-cutting concerns.
  */
 public interface AuthorizationPort {
 
