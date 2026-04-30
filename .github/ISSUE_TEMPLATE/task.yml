@@ -44,8 +44,8 @@ body:
       description: What is in scope and what is explicitly out of scope for this task.
       placeholder: |
         In scope:
-        - Define `PolicyVersionRepository` port in `sgf-domain/src/.../port/out/`
-        - Implement `JpaPolicyVersionPersistenceAdapter` in `sgf-spring/src/.../adapter/out/`
+        - Define `PolicyVersionRepository` port in `sgl-domain/src/.../port/out/`
+        - Implement `JpaPolicyVersionPersistenceAdapter` in `sgl-spring/src/.../adapter/out/`
         - Unit tests for the adapter
 
         Out of scope:
@@ -60,8 +60,8 @@ body:
       label: Location in Code
       description: Where to implement. Specific file paths, modules, new files. Existing classes to follow as patterns — name them specifically.
       placeholder: |
-        - New file: `sgf-domain/src/main/java/.../port/out/PolicyVersionRepository.java`
-        - New file: `sgf-spring/src/main/java/.../adapter/out/JpaPolicyVersionPersistenceAdapter.java`
+        - New file: `sgl-domain/src/main/java/.../port/out/PolicyVersionRepository.java`
+        - New file: `sgl-spring/src/main/java/.../adapter/out/JpaPolicyVersionPersistenceAdapter.java`
         - Follow pattern in `RolePersistenceAdapter` for the JPA adapter structure
     validations:
       required: false
@@ -84,7 +84,7 @@ body:
     attributes:
       label: Verification
       description: Exact command to run to confirm the task is complete.
-      placeholder: "`mvn test -pl sgf-spring -Dtest=JpaPolicyVersionPersistenceAdapterTest`"
+      placeholder: "`mvn test -pl sgl-spring -Dtest=JpaPolicyVersionPersistenceAdapterTest`"
     validations:
       required: true
 

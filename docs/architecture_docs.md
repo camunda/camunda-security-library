@@ -34,7 +34,7 @@ The term **Orchestration Cluster (OC)** is used at two abstraction levels:
 - **Physical/deployment view (runtime level):**
   - An OC deployment consists of one or more **Gateways** (the Gateway/Search layer) and one or more **Brokers**.
   - Each Broker contains one or more **Engines**.
-  - The Security Gateway Framework (SGF) is embedded in the Gateway/Search layer and enforces authentication and authorization before broker/search access.
+  - The Camunda Security Library (CSL) is embedded in the Gateway/Search layer and enforces authentication and authorization before broker/search access.
 
 In high-level diagrams, OC is intentionally simplified as one logical component. In detailed building-block and deployment diagrams (section 5.1 and below), Gateway/Search and Broker/Engine layers are shown explicitly.
 
@@ -53,14 +53,14 @@ The terms **Hub UI** and **OC UI** refer to aggregated frontend applications, no
 
 - **Hub UI** (management plane)
   - A single management-plane frontend that consolidates Console, Web Modeler, Admin, and related management capabilities.
-  - Hub-side components authenticate and authorize through one SGF instance.
+  - Hub-side components authenticate and authorize through one CSL instance.
 - **OC UI** (execution plane)
   - A single execution-plane frontend that consolidates Operate, Tasklist, and cluster administration capabilities.
-  - OC-side components authenticate and authorize through one SGF instance.
+  - OC-side components authenticate and authorize through one CSL instance.
   - In full mode (Hub + OC), the admin section is read-only and reflects policy projected from Hub.
   - In OC-only mode, the admin section is read-write and supports local policy authoring.
 
-Both UIs follow the same identity and multi-tenancy model provided by the SGF.
+Both UIs follow the same identity and multi-tenancy model provided by the CSL.
 
 ---
 
@@ -131,7 +131,7 @@ In SaaS today:
 - OC Identity in each Orchestration Cluster also uses Auth0 as its OIDC IdP, applying runtime authorization for Operate, Tasklist, and cluster APIs.
 - Auth0 either federates to the customer Enterprise IdP or manages user accounts directly, depending on tenant configuration. The concrete integration code lives in the respective SaaS backends (Console/Hub services and OC Identity OIDC client configuration), which use standard OAuth2/OIDC client libraries to communicate with Auth0.
 - Since 8.8, Management Identity is no longer used in SaaS to serve the web applications. It is, however, still deployed **headlessly** in SaaS for two specific purposes: handling Optimize permissions, and providing RBAC for clusters on versions prior to 8.8. 
-- Auth0 org membership: Today, membership of users in organizations is stored in Auth0 user metadata and surfaced as JWT claims. These claims are consumed by Hub/OC (in scope of this proposal) as well as by components outside this proposal's scope (e.g. Accounts). As Auth0 becomes an IdP like any other in the target architecture, this dependency on Auth0-specific metadata must be resolved — likely as part of [product-hub#3190](https://github.com/camunda/product-hub/issues/3190) or when multi-org Self-Managed support is introduced. Until then, the SGF cannot fully treat Auth0 as a standard OIDC IdP and must accommodate the existing Auth0 JWT claim structure for org membership.
+- Auth0 org membership: Today, membership of users in organizations is stored in Auth0 user metadata and surfaced as JWT claims. These claims are consumed by Hub/OC (in scope of this proposal) as well as by components outside this proposal's scope (e.g. Accounts). As Auth0 becomes an IdP like any other in the target architecture, this dependency on Auth0-specific metadata must be resolved — likely as part of [product-hub#3190](https://github.com/camunda/product-hub/issues/3190) or when multi-org Self-Managed support is introduced. Until then, the CSL cannot fully treat Auth0 as a standard OIDC IdP and must accommodate the existing Auth0 JWT claim structure for org membership.
 
 #### 2.2.2 Self-managed
 
@@ -221,11 +221,11 @@ The target architecture is based on the following assumptions:
 
 ### 2.5 Unresolved issues
 
-- Multiple Hub instances: The architecture diagrams show a single shared Hub instance in SaaS and a single Hub in Self-Managed full mode. Some customers require multiple Hub instances — for example to fully separate delivery stages or organizational boundaries. The library architecture supports this because each Hub instance is an independent SGF deployment with its own cluster registry, policy state, and outbox. Hub-to-Hub coordination is out of scope. An OC is associated with exactly one Hub at a time; reassignment is addressed as an open question in §9.1.
+- Multiple Hub instances: The architecture diagrams show a single shared Hub instance in SaaS and a single Hub in Self-Managed full mode. Some customers require multiple Hub instances — for example to fully separate delivery stages or organizational boundaries. The library architecture supports this because each Hub instance is an independent CSL deployment with its own cluster registry, policy state, and outbox. Hub-to-Hub coordination is out of scope. An OC is associated with exactly one Hub at a time; reassignment is addressed as an open question in §9.1.
 - Satellite components (open scope): Two satellite runtimes that sit adjacent to Hub and OC are not yet explicitly covered:
-  - App Integrations backend — operates at the management plane level. It is not yet decided whether it should receive IdP configuration managed by Hub via the SGF port model, or whether it manages its own auth independently.
-  - Connectors runtime — operates at the OC level. The same open question applies: should it consume IdP config propagated by the OC SGF, or remain separately configured?
-  - The hexagonal port model accommodates both being integrated as SGF consumers in the future (by providing adapter implementations) without changing the core. Whether and when to do this is a scope decision outside this document.
+  - App Integrations backend — operates at the management plane level. It is not yet decided whether it should receive IdP configuration managed by Hub via the CSL port model, or whether it manages its own auth independently.
+  - Connectors runtime — operates at the OC level. The same open question applies: should it consume IdP config propagated by the OC CSL, or remain separately configured?
+  - The hexagonal port model accommodates both being integrated as CSL consumers in the future (by providing adapter implementations) without changing the core. Whether and when to do this is a scope decision outside this document.
 
 ---
 
@@ -233,8 +233,6 @@ The target architecture is based on the following assumptions:
 
 - [Prepare Authentication for Hub Integration](https://github.com/camunda/camunda/issues/38556)
 - Spike about extraction of code: [Spike/new replacement auth lib](https://github.com/camunda/camunda/pull/49058)
-- Security Gateway library repository: [camunda/camunda-security-gateway](https://github.com/camunda/camunda-security-gateway/tree/main)
-
 
 ---
 
@@ -283,8 +281,8 @@ Short- to midterm target: Admins configure cluster policies (including Physical 
   - Cluster-wide permissions (for example cluster admins).
   - Tenant-scoped permissions (for example `retail` vs `wholesale`).
   - Physical Tenant-scoped (`PHYSICAL_TENANT`).
-  4. Hub Security Gateway Framework validates and persists the changes in the selected organization scope, producing a new `PolicyVersion` for the target cluster.
-  5. The outbox dispatcher propagates the updated policy to the target OC; OC Security Gateway Framework applies it and updates the Physical Tenant-scoped (`PHYSICAL_TENANT`) projections.
+  4. Hub Camunda Security Library validates and persists the changes in the selected organization scope, producing a new `PolicyVersion` for the target cluster.
+  5. The outbox dispatcher propagates the updated policy to the target OC; OC Camunda Security Library applies it and updates the Physical Tenant-scoped (`PHYSICAL_TENANT`) projections.
   6. The admin section of the OC UI, in read-only mode, allows cluster operators to view the effective policies per engine and tenant, including the applied policy version.
 
 Outcome: Cluster policies, including Physical Tenant- and Tenant-specific permissions, are authored once in Hub and enforced consistently in the target OC. Cluster operators can inspect, but not change, these policies via the admin section of the OC UI.
@@ -298,7 +296,7 @@ Outcome: Cluster policies, including Physical Tenant- and Tenant-specific permis
   2. Admin associates the client with one or more tenants and assigns roles or groups appropriate for the worker.
   3. Admin configures mapping rules (if needed) so that the client’s token claims map to the desired roles and tenants.
   4. Developer configures the worker application to request tokens from the Enterprise IdP using the client credentials.
-  5. At runtime, the worker calls the OC APIs with those tokens; OC’s Security Gateway Framework validates the token against the IdP, derives permissions from the policy model, and enforces them for each request.
+  5. At runtime, the worker calls the OC APIs with those tokens; OC’s Camunda Security Library validates the token against the IdP, derives permissions from the policy model, and enforces them for each request.
 
 Outcome: The worker runs with the minimum required permissions derived from the unified policy model; there is no ad-hoc, engine-specific authorization logic.
 
@@ -308,9 +306,9 @@ Outcome: The worker runs with the minimum required permissions derived from the 
 - Goal: Use the Hub UI and OC UI with consistent permissions.
 - Main steps:
   1. User signs into the Hub UI via the Enterprise IdP.
-  2. Hub Security Gateway Framework validates the token and derives roles, groups, and tenants from mapping rules.
+  2. Hub Camunda Security Library validates the token and derives roles, groups, and tenants from mapping rules.
   3. User creates or edits models, deploys them to a target Orchestration Cluster or environment.
-  4. When the user opens the OC UI for that cluster, they authenticate via the same Enterprise IdP; OC’s Security Gateway Framework derives the same or related roles/tenants from the token.
+  4. When the user opens the OC UI for that cluster, they authenticate via the same Enterprise IdP; OC’s Camunda Security Library derives the same or related roles/tenants from the token.
   5. In the OC UI, the user can only see and act on data allowed by their tenant- and role-based authorizations (for example, only instances in `retail` tenant, only tasks assigned to their team).
 
 Outcome: The user experiences a consistent identity across Hub and OC: one Enterprise IdP login, one conceptual set of roles and tenants, and predictable access in both management and execution plane UIs.
@@ -326,7 +324,7 @@ Long-term target: Bring the same policy model, including Physical Tenant- and Te
   2. Cluster admin configures the Enterprise IdP connection directly on the OC (OIDC/SAML client settings for the deployment).
   3. Cluster admin creates tenants, roles, groups, and mapping rules in the admin section of the OC UI.
   4. Cluster admin defines authorizations for cluster resources (definitions, instances, tasks, cluster APIs) and, if needed, Physical Tenant- and Tenant-specific scopes.
-  5. OC Security Gateway Framework persists the policy locally and propagates Physical Tenant-scoped (`PHYSICAL_TENANT`) projections to the engines.
+  5. OC Camunda Security Library persists the policy locally and propagates Physical Tenant-scoped (`PHYSICAL_TENANT`) projections to the engines.
 
 Outcome: The OC acts as local SoT for identity and policy. Users and workers can authenticate via the Enterprise IdP, and permissions are enforced consistently across the OC UI and APIs within that cluster, including Physical Tenant- and Tenant-specific rules.
 
@@ -343,13 +341,13 @@ Long-term target: Org-level IdP setup and cluster provisioning are performed cen
   4. Org admin defines mapping rules (claims → roles/tenants) and assigns baseline roles and groups for key personas (for example Cluster Admins, Developers, Support).
   5. Org admin provisions (or selects) an Orchestration Cluster and associates it with the organization/tenants.
     - Cluster selection is resolved via the `ClusterRegistryPort`; the host application (Hub) provides the adapter implementation that enumerates available clusters.
-  6. Hub Security Gateway Framework persists this configuration in the organization-scoped Hub partition, produces a new `PolicyVersion`, and starts outbox-based propagation to the relevant OC(s).
+  6. Hub Camunda Security Library persists this configuration in the organization-scoped Hub partition, produces a new `PolicyVersion`, and starts outbox-based propagation to the relevant OC(s).
 
 Outcome: The organization’s IdP is connected, tenants and roles exist, and cluster-local policy is projected to the associated OCs. Cluster admins and developers can authenticate via the Enterprise IdP and start using cluster UIs and APIs, with Hub acting as the central identity and policy entry point.
 
 ### 3.2 Quality goals
 
-The Security Gateway Framework and unified identity plane must meet the following quality goals:
+The Camunda Security Library and unified identity plane must meet the following quality goals:
 
 - Security and correctness
   - Authorization decisions are deterministic: given the same token, policy, and resource, all instances (Hub, OC) reach the same result.
@@ -381,7 +379,7 @@ This section describes the unified identity system at a high level, showing how 
 
 ### 4.1 Full mode (Hub + OC)
 
-In full mode, the platform runs with both Hub (management/control plane) and Orchestration Cluster (execution plane). Both use the same identity model and the same Security Gateway Framework.
+In full mode, the platform runs with both Hub (management/control plane) and Orchestration Cluster (execution plane). Both use the same identity model and the same Camunda Security Library.
 
 Configuration flows top-down: Hub is the central source of truth for all policy. Configuration is authored once in Hub and propagated to each OC, which then propagates scoped views to individual engines. The Admin UI in each OC runs in read-only mode, showing the local projection of Hub policy.
 
@@ -415,7 +413,7 @@ flowchart TB
   Hub --> Infra
 ```
 
-- Hub and each OC use the same Security Gateway Framework as the shared identity and policy engine.
+- Hub and each OC use the same Camunda Security Library as the shared identity and policy engine.
 - Hub is the single source of truth for all policy and configuration.
 - Hub propagates policy changes via the outbox pattern to OC, which maintains a local projection and handles runtime enforcement per engine/tenant.
 - Existing infrastructure is reused, no new databases or services are introduced.
@@ -445,7 +443,7 @@ flowchart TB
 ```
 
 - OC is the single source of truth for all policy and configuration.
-- The same Security Gateway Framework is used but configured for standalone operation.
+- The same Camunda Security Library is used but configured for standalone operation.
 - Existing infrastructure is reused, no new databases or services are introduced.
 - OC owns the IdP client configurations for its tenants and engines; engines still only consume OC-level identity decisions and never call IdPs directly.
 
@@ -455,9 +453,9 @@ flowchart TB
 
 ### 5.1 High-level components
 
-The following diagrams show the internal structure of Hub and Orchestration Cluster, including how Security Gateway Framework instance connects to frontend applications, infrastructure, and (in multiple-Physical-Tenant scenarios) individual engine instances.
+The following diagrams show the internal structure of Hub and Orchestration Cluster, including how Camunda Security Library instance connects to frontend applications, infrastructure, and (in multiple-Physical-Tenant scenarios) individual engine instances.
 
-Both the Hub and OC instances of the Security Gateway Framework maintain their own local state:
+Both the Hub and OC instances of the Camunda Security Library maintain their own local state:
 
 - A cluster-scoped policy projection for the relevant cluster(s) they manage.
 - Local tracking of the last applied policy version (`last_applied_version` on the OC side, `last_acked_version` per OC on the Hub side).
@@ -471,7 +469,7 @@ flowchart TB
     HubUi["Hub UI (Console, Web Modeler, Admin)"]
 
     subgraph Hub["Hub"]
-      SecGatHub["Security Gateway Framework"]
+      SecGatHub["Camunda Security Library"]
     end
 
     HubUi --> Hub
@@ -482,7 +480,7 @@ flowchart TB
 
     subgraph OC["Orchestration Cluster"]
       subgraph GatewayLayer["Gateway / Search Layer"]
-        SecGatOC["Security Gateway Framework</br>(embedded in Gateway)"]
+        SecGatOC["Camunda Security Library</br>(embedded in Gateway)"]
       end
 
       subgraph Broker["Broker"]
@@ -511,9 +509,9 @@ flowchart TB
 Key building blocks in full mode simple:
 
 - Hub UI: Unified frontend in the management plane. It includes modeling, management, and admin capabilities, and allows full policy authoring for all configurable layers (Hub, OCs, engines, tenants).
-- Hub + Security Gateway Framework: Central source of truth. Manages all policy configuration for all clusters, OCs, and engines. All policy changes originate here.
+- Hub + Camunda Security Library: Central source of truth. Manages all policy configuration for all clusters, OCs, and engines. All policy changes originate here.
 - OC UI: Unified frontend in the execution plane. Its admin section shows the cluster-local projection of Hub policy; configuration there is read-only.
-- OC + Security Gateway Framework: Per-cluster policy enforcement and projection layer. Receives policy snapshots from Hub via the outbox pattern. Propagates scoped policy views via batch operation to the single engine.
+- OC + Camunda Security Library: Per-cluster policy enforcement and projection layer. Receives policy snapshots from Hub via the outbox pattern. Propagates scoped policy views via batch operation to the single engine.
 - Engine (Physical Tenant): A single execution context (Zeebe engine) inside the Broker. A Physical Tenant is an independent execution unit that hosts one or more logical Tenants (e.g., `default`, `retail`). Receives its scoped projection of cluster policy from OC. No direct Hub connection.
 - Security Engine Framework: Engine-specific policy enforcement layer.
 - Infrastructure (IDPs, DBs): Shared existing persistence and IdP connectivity for authentication and authorization across all layers.
@@ -526,7 +524,7 @@ For concrete deployment topologies (including multi-gateway and multi-broker lay
 
 #### 5.1.2 OC-only mode Simple (standalone OC with one Engine)
 
-> **Note on physical layout:** In this diagram, the OC box represents the full logical cluster. At the physical level the Security Gateway Framework runs inside the **Gateway / Search Layer** (one or more Zeebe Gateways), and each Broker contains one or more **Engines (Physical Tenants)**. See section 1.1 for details.
+> **Note on physical layout:** In this diagram, the OC box represents the full logical cluster. At the physical level the Camunda Security Library runs inside the **Gateway / Search Layer** (one or more Zeebe Gateways), and each Broker contains one or more **Engines (Physical Tenants)**. See section 1.1 for details.
 
 ```mermaid
 flowchart TB
@@ -536,7 +534,7 @@ flowchart TB
 
     subgraph OC["Orchestration Cluster"]
       subgraph GatewayLayer["Gateway / Search Layer"]
-        OCLib["Security Gateway Framework"]
+        OCLib["Camunda Security Library"]
       end
 
       subgraph Broker["Broker"]
@@ -562,7 +560,7 @@ flowchart TB
 Key building blocks in OC-only mode simple:
 
 - OC UI: Unified runtime frontend that interacts directly with OC. Its admin section allows full policy authoring (no Hub restrictions).
-- OC + Security Gateway Framework: Local source of truth. Manages all policy and authorization directly without Hub coordination. All policy changes originate here.
+- OC + Camunda Security Library: Local source of truth. Manages all policy and authorization directly without Hub coordination. All policy changes originate here.
 - Engine (Physical Tenant): A single execution context (Zeebe engine) inside the Broker. A Physical Tenant is an independent execution unit that hosts one or more logical Tenants (e.g., `default`, `retail`). Receives its scoped projection of local OC policy. No direct Hub connection.
 - Security Engine Framework: Engine-specific policy enforcement layer.
 - Infrastructure (IDPs, DBs): Local persistence and IdP connectivity; no cross-cluster replication or Hub involvement.
@@ -575,7 +573,7 @@ For more complex OC-only deployments with multiple brokers and multiple engines 
 
 This section defines the conceptual behavior only; the complete deployment examples are maintained in section [7. Deployment view](#7-deployment-view).
 
-- Full mode keeps the same propagation chain: Hub (policy SoT) -> OC gateway/search layer (Security Gateway Framework) -> broker/engine layer (Security Engine Framework).
+- Full mode keeps the same propagation chain: Hub (policy SoT) -> OC gateway/search layer (Camunda Security Library) -> broker/engine layer (Security Engine Framework).
 - OC may run one or many gateways and one or many brokers depending on scale and availability targets.
 - Each broker may host one or many engines (Physical Tenants), and each engine hosts one or many logical tenants.
 
@@ -653,7 +651,7 @@ Both Hub and OC use exactly the same policy model, but with different responsibi
   - Acts as **policy source of truth** for all clusters in full-mode deployments.
   - Authoring location for tenants, roles, groups, mapping rules, and authorizations (all with full scope awareness: `ALL`, `TENANT`, `PHYSICAL_TENANT`).
   - Stores organization-scoped `PolicyVersion` records per cluster and drives propagation via Outbox/`OutboxEvent`.
-  - Handles authentication for Hub applications (Console, Web Modeler, Admin UI) via the same Security Gateway Framework instance.
+  - Handles authentication for Hub applications (Console, Web Modeler, Admin UI) via the same Camunda Security Library instance.
   - Does **not** enforce authorization for runtime execution APIs; that is strictly an OC responsibility.
 
 - **OC Identity** (cluster-local policy enforcement)
@@ -691,7 +689,7 @@ Engines only need to know the effective permissions resulting from the policy mo
 
 ### 5.3 Outbox-based policy propagation (Hub → Orchestration Clusters)
 
-The Security Gateway Framework uses an outbox pattern to propagate policy changes from Hub (policy SoT) to each Orchestration Cluster in a reliable, observable, and idempotent way. In shared-Hub deployments, this propagation is scoped by organization and cluster.
+The Camunda Security Library uses an outbox pattern to propagate policy changes from Hub (policy SoT) to each Orchestration Cluster in a reliable, observable, and idempotent way. In shared-Hub deployments, this propagation is scoped by organization and cluster.
 
 **First iteration propagation contract:** Hub always sends a full policy payload (`POLICY_SNAPSHOT`) for every new `PolicyVersion`.
 
@@ -710,7 +708,7 @@ Reference: [Transactional outbox](https://microservices.io/patterns/data/transac
 ```mermaid
 flowchart TB
   subgraph Hub["Hub"]
-    subgraph subHubLib["Security Gateway Framework</br>(Hub instance)"]
+    subgraph subHubLib["Camunda Security Library</br>(Hub instance)"]
       Dispatcher["Outbox Dispatcher"]
     end
   end
@@ -718,7 +716,7 @@ flowchart TB
   HubDB[("Hub DB")]
 
   subgraph OC1["Orchestration Cluster A"]
-    OC1Lib["Security Gateway Framework A</br>(OC instance)"]
+    OC1Lib["Camunda Security Library A</br>(OC instance)"]
     Engine1["Engine"]
   end
 
@@ -726,7 +724,7 @@ flowchart TB
   OC2DB[("OC2 DB (Primary / Secondary)")]
 
   subgraph OC2["Orchestration Cluster B"]
-    OC2Lib["Security Gateway Framework B</br>(OC instance)"]
+    OC2Lib["Camunda Security Library B</br>(OC instance)"]
     Engine2["Engine"]
   end
 
@@ -748,7 +746,7 @@ flowchart TB
 flowchart TB
   subgraph HUB["Hub scope"]
     direction TB
-    HubUi["Hub UI (Console, Web Modeler, Admin) / API"] --> HubSvc["Hub Security Gateway Framework"]
+    HubUi["Hub UI (Console, Web Modeler, Admin) / API"] --> HubSvc["Hub Camunda Security Library"]
 
     subgraph HubTx["Hub transaction"]
       direction TB
@@ -766,7 +764,7 @@ flowchart TB
 
   subgraph OC_SCOPE["OC scope"]
     direction TB
-    OCApply["Security Gateway Framework applies payload"]
+    OCApply["Camunda Security Library applies payload"]
     UpdateStorage["Update OC secondary storage</br>tables (tenants, roles, authz, etc.)"]
 
     OCApply --> UpdateStorage
@@ -775,7 +773,7 @@ flowchart TB
   Send --> OCApply
 ```
 
-- Hub Security Gateway Framework
+- Hub Camunda Security Library
   - Accepts policy changes via UI/API.
   - Writes a delivery-neutral `PolicyVersion` and a corresponding `OutboxEvent` (`POLICY_SNAPSHOT`, status = PENDING) in the same transaction.
   - Tracks per-OC `last_acked_version` via `OcSyncState` for delivery progress and retries.
@@ -785,7 +783,7 @@ flowchart TB
   - Calls each OC's public admin endpoint (e.g. `POST /identity/policies/apply`) with the full snapshot payload.
   - Updates `OutboxEvent.status` to DELIVERED or FAILED and manages retries via `attempts` and `next_attempt_at`.
   - On successful delivery, updates `OcSyncState.last_acked_version` for the target OC.
-- OC Security Gateway Framework
+- OC Camunda Security Library
   - Tracks `last_applied_version` locally in secondary storage.
   - For each incoming payload (`POLICY_SNAPSHOT`): replaces the entire local policy projection in secondary storage tables and updates `last_applied_version`.
   - All updates to secondary storage happen in a single transaction to ensure consistency.
@@ -1112,23 +1110,23 @@ Change: add support role and support task authorization.
 
 ---
 
-### 5.4 Security Gateway Framework – hexagonal architecture
+### 5.4 Camunda Security Library – hexagonal architecture
 
-#### SGF and Spring Security
+#### CSL and Spring Security
 
-The Security Gateway Framework is built on top of Spring Security but does not replace it. Spring Security provides the filter chain, `SecurityContext` management, and the `HttpSecurity` DSL. The SGF configures and extends the Spring Security infrastructure by:
+The Camunda Security Library is built on top of Spring Security but does not replace it. Spring Security provides the filter chain, `SecurityContext` management, and the `HttpSecurity` DSL. The CSL configures and extends the Spring Security infrastructure by:
 
 - Registering OIDC/SAML authentication providers and token validators via `IdpPort`.
 - Installing a scope-aware authorization interceptor (`AuthorizationService`) that replaces ad-hoc role checks in individual controllers.
 - Providing a pre-configured `SecurityFilterChain` bean that consuming applications can override via `@ConditionalOnMissingBean`.
 
-Consuming applications should not need to write Spring Security configuration from scratch. The SGF's Spring Boot auto-configuration wires the filter chain and authorization infrastructure automatically. Consuming applications opt in by adding the SGF dependency and providing only the port adapter implementations specific to their infrastructure (database, IdP client config, etc.).
+Consuming applications should not need to write Spring Security configuration from scratch. The CSL's Spring Boot auto-configuration wires the filter chain and authorization infrastructure automatically. Consuming applications opt in by adding the CSL dependency and providing only the port adapter implementations specific to their infrastructure (database, IdP client config, etc.).
 
-> Design constraint — lesson from the Identity SDK: The Identity SDK precedent shows that when consuming applications must write significant boilerplate around a shared security library, inconsistencies emerge: auth features present in one application (e.g. Operate) but missing in another (e.g. Tasklist), or bugs fixed in one integration but not others. The SGF must minimize the glue code required in each consumer. All auth logic that is not host-infrastructure-specific belongs in the SGF core, not in consuming-application code.
+> Design constraint — lesson from the Identity SDK: The Identity SDK precedent shows that when consuming applications must write significant boilerplate around a shared security library, inconsistencies emerge: auth features present in one application (e.g. Operate) but missing in another (e.g. Tasklist), or bugs fixed in one integration but not others. The CSL must minimize the glue code required in each consumer. All auth logic that is not host-infrastructure-specific belongs in the CSL core, not in consuming-application code.
 
 #### Hexagonal architecture
 
-The Security Gateway Framework is a [hexagonal (ports and adapters)](https://herbertograca.com/2017/09/14/ports-adapters-architecture/) library. Its core domain never imports a concrete database class, OIDC library, or Zeebe API — all external dependencies are hidden behind port interfaces that the host application (Hub, OC) wires in.
+The Camunda Security Library is a [hexagonal (ports and adapters)](https://herbertograca.com/2017/09/14/ports-adapters-architecture/) library. Its core domain never imports a concrete database class, OIDC library, or Zeebe API — all external dependencies are hidden behind port interfaces that the host application (Hub, OC) wires in.
 
 Key rule: all port interfaces — both inbound and outbound — are defined inside the library core. The host application depends on the library, never the other way around.
 
@@ -1146,7 +1144,7 @@ graph LR
     CREG_IN["Cluster Registration Adapter</br>triggered by provisioning events,</br>config, or any host-side mechanism"]
   end
 
-  subgraph CORE["Security Gateway Framework (library)"]
+  subgraph CORE["Camunda Security Library (library)"]
     subgraph IN_PORTS["Inbound port interfaces</br>(defined in Core)"]
       PS["PolicyService"]
       AZ["AuthorizationService"]
@@ -1221,7 +1219,7 @@ The same library core is reused in all deployments. **In every runtime profile, 
 
 Hub enforces AuthN/AuthZ for the Hub UI. This is exactly the same `AuthorizationService` and `IdpPort` used by OC, just configured with Hub-scoped resources instead of cluster/engine resources.
 
-**Security Gateway Framework responsibilities by profile:**
+**Camunda Security Library responsibilities by profile:**
 
 | Profile | AuthN/AuthZ enforcement | Policy source | Policy authoring | Outbox dispatch to OCs | Engine projection | Cluster registry | Runtime context |
 |---|---|---|---|---|---|---|---|
@@ -1279,7 +1277,7 @@ flowchart LR
 
 - There is no dedicated or separate IdP "for the gateway"; the framework acts as the OIDC/SAML client against the configured IdPs.
 
-#### 5.4.2 Why a shared Security Gateway Framework layer?
+#### 5.4.2 Why a shared Camunda Security Library layer?
 
 The extra layer between UIs/clients and engines is intentional:
 
@@ -1297,11 +1295,11 @@ The extra layer between UIs/clients and engines is intentional:
 
 #### 5.5 Security Engine Framework
 
-The **Security Engine Framework** is the identity sub-framework embedded directly inside each engine (Zeebe). It is the engine-side counterpart to the Security Gateway Framework and follows the same hexagonal principle: all external dependencies are hidden behind port interfaces.
+The **Security Engine Framework** is the identity sub-framework embedded directly inside each engine (Zeebe). It is the engine-side counterpart to the Camunda Security Library and follows the same hexagonal principle: all external dependencies are hidden behind port interfaces.
 
-The OC Security Gateway Framework communicates with each engine exclusively through the `EngineCommandPort` outbound port, which translates into engine-level identity commands. The Security Engine Framework receives those commands via its own inbound port and decides how to persist and apply the identity state changes inside the engine.
+The OC Camunda Security Library communicates with each engine exclusively through the `EngineCommandPort` outbound port, which translates into engine-level identity commands. The Security Engine Framework receives those commands via its own inbound port and decides how to persist and apply the identity state changes inside the engine.
 
-**Key rule:** engines never talk to IdPs directly, never hold policy versions, and never interpret scope metadata beyond what is needed for their own authorization decisions. The Security Gateway Framework on the OC side is responsible for deciding what to forward and how to scope it; see [ ADR-0004](adr/0004-oc-identity-data-persistence-and-engine-command-scope.md) for the open decision on how scope metadata flows into the engine.
+**Key rule:** engines never talk to IdPs directly, never hold policy versions, and never interpret scope metadata beyond what is needed for their own authorization decisions. The Camunda Security Library on the OC side is responsible for deciding what to forward and how to scope it; see [ ADR-0004](adr/0004-oc-identity-data-persistence-and-engine-command-scope.md) for the open decision on how scope metadata flows into the engine.
 
 ```mermaid
 graph LR
@@ -1336,7 +1334,7 @@ graph LR
 
 | Inbound port | Responsibility |
 |---|---|
-| `IdentityCommandPort` | Receive and apply identity state updates forwarded by the OC Security Gateway Framework (tenants, roles, mapping rules, authorizations). Persists the effective state to primary storage via `IdentityStatePort`. |
+| `IdentityCommandPort` | Receive and apply identity state updates forwarded by the OC Camunda Security Library (tenants, roles, mapping rules, authorizations). Persists the effective state to primary storage via `IdentityStatePort`. |
 | `EngineAuthorizationPort` | Evaluate whether a given engine command (e.g. create process instance, complete user task) is authorized for the requesting principal, using the identity state held in primary storage. |
 
 **Outbound port responsibilities:**
@@ -1345,7 +1343,7 @@ graph LR
 |---|---|
 | `IdentityStatePort` | Read and write identity state (authorizations, tenants, memberships) to the engine's primary storage (RocksDB). Abstracts the concrete state class layer from the domain logic. |
 
-**Open question:** how identity data is persisted in the OC (direct write from the OC SGF to secondary storage vs. routing through engine commands and the exporter) is an unresolved design question that also determines what scope metadata the engine must receive. See [ADR-0004: Identity data persistence in the Orchestration Cluster](adr/0004-oc-identity-data-persistence-and-engine-command-scope.md).
+**Open question:** how identity data is persisted in the OC (direct write from the OC CSL to secondary storage vs. routing through engine commands and the exporter) is an unresolved design question that also determines what scope metadata the engine must receive. See [ADR-0004: Identity data persistence in the Orchestration Cluster](adr/0004-oc-identity-data-persistence-and-engine-command-scope.md).
 
 #### 5.5.1 Why a shared Security Engine Framework layer?
 
@@ -1355,15 +1353,15 @@ The dedicated enforcement layer inside each engine is intentional:
   - All engine commands requiring authorization pass through `EngineAuthorizationPort`. Command processors focus on process execution and never embed role or tenant logic directly.
 - Primary-storage-optimized identity state
   - Identity state (authorizations, tenants, memberships) is held in RocksDB (primary storage), co-located with engine state, avoiding round-trips to secondary storage on every command.
-  - Query-time authorization for UIs and APIs is handled by the OC Security Gateway Framework against secondary storage; the Security Engine Framework covers command-time decisions only.
+  - Query-time authorization for UIs and APIs is handled by the OC Camunda Security Library against secondary storage; the Security Engine Framework covers command-time decisions only.
 - Engine state is a projection, never a source of truth
-  - Engines only apply what the OC Security Gateway Framework forwards; they cannot author or override policy.
+  - Engines only apply what the OC Camunda Security Library forwards; they cannot author or override policy.
 - Pluggable state adapter
   - `IdentityStatePort` decouples authorization logic from the concrete persistence backend (RocksDB today), so the backend can be swapped without changing domain logic.
 
 #### 5.5.2 Config propagation to the engine via batch operations
 
-When the OC Security Gateway Framework needs to propagate a policy change to a Physical Tenant (Engine) inside a Broker, it must create a potentially large number of identity commands and/or resources inside the engine (tenants, roles, mapping rules, authorizations). Creating these one-by-one would be fragile and slow.
+When the OC Camunda Security Library needs to propagate a policy change to a Physical Tenant (Engine) inside a Broker, it must create a potentially large number of identity commands and/or resources inside the engine (tenants, roles, mapping rules, authorizations). Creating these one-by-one would be fragile and slow.
 
 **The propagation is therefore implemented using the engine's existing Batch Operation feature.** The `EngineCommandPort` adapter creates for each Physical Tenant a single batch operation. This gives us:
 
@@ -1388,7 +1386,7 @@ Persistent sessions are required for the OC authentication UX and remain part of
 
 #### Target in unified architecture
 
-- Keep persistent sessions as the default behavior in `Security Gateway Framework`.
+- Keep persistent sessions as the default behavior in `Camunda Security Library`.
 - Expose session persistence behind a `SessionStore` port so integrating applications can choose the backend.
 - Enforce timeout-based expiry (idle and absolute timeout) and explicit logout invalidation.
 - Keep session handling local per deployment:
@@ -1441,17 +1439,17 @@ The unified identity plane supports multiple Physical Tenants (Engines) per Orch
 ```mermaid
 flowchart TB
   subgraph HubLayer["Hub – Policy SoT"]
-    HubPolicy["Security Gateway Framework</br>(cluster-scoped policies)"]
+    HubPolicy["Camunda Security Library</br>(cluster-scoped policies)"]
   end
 
   subgraph OC1["Orchestration Cluster A"]
-    OC1Id["Security Gateway Framework A</br>(OC instance)"]
+    OC1Id["Camunda Security Library A</br>(OC instance)"]
     E1["Engine 1"]
     E2["Engine 2"]
   end
 
   subgraph OC2["Orchestration Cluster B"]
-    OC2Id["Security Gateway Framework B</br>(OC instance)"]
+    OC2Id["Camunda Security Library B</br>(OC instance)"]
     E3["Engine 3"]
   end
 
@@ -1494,7 +1492,7 @@ graph TB
   OC_TB --> ENG_TB
 ```
 
-On each request, the Security Gateway Framework:
+On each request, the Camunda Security Library:
 
 1. Resolves the logical-tenant context from token claims and/or headers.
 2. Loads the logical-tenant-specific policy view (roles, mappings, authorizations).
@@ -1525,9 +1523,9 @@ This section illustrates selected runtime flows as concrete user journeys, focus
 ### 6.1 Admin configures cluster policies in full mode (Hub + OC)
 
 1. Admin logs into the Hub UI.
-2. Hub Security Gateway Framework authenticates the user against the configured IdP for the Hub organization and derives roles/tenants via mapping rules.
+2. Hub Camunda Security Library authenticates the user against the configured IdP for the Hub organization and derives roles/tenants via mapping rules.
 3. Admin creates or updates tenants, roles, mapping rules, and authorizations for a specific Orchestration Cluster in the Hub UI.
-4. Hub Security Gateway Framework:
+4. Hub Camunda Security Library:
 - Resolves the organization and target cluster context via `ClusterRegistryPort`.
 - Validates and persists the changes in the Hub DB under that organization scope.
 - Writes a new `PolicyVersion` and associated `EntityRevision` and `PolicyVersionChange` rows.
@@ -1535,7 +1533,7 @@ This section illustrates selected runtime flows as concrete user journeys, focus
 5. Outbox Dispatcher picks up the new events:
 - Builds a full `POLICY_SNAPSHOT` for the target `PolicyVersion`.
 - Posts the payload to `/identity/policies/apply` on each target OC.
-6. OC Security Gateway Framework:
+6. OC Camunda Security Library:
 - Applies the full policy snapshot to its local projection and updates `last_applied_version`.
 - Propagates engine-scoped changes to engines via the engine command path / Security Engine Framework.
 
@@ -1546,33 +1544,33 @@ sequenceDiagram
   actor Admin
   box Hub
     participant HubUI as Hub UI (Console, Web Modeler, Admin)
-    participant HubSGF as Hub Security Gateway Framework
+    participant HubCSL as Hub Camunda Security Library
     participant Outbox as Outbox Dispatcher
   end
   participant IdP as Hub IdP
   participant HubDB as Hub DB
   box Orchestration Cluster
-    participant OCSGF as OC Security Gateway Framework
+    participant OCSLF as OC Camunda Security Library
     participant Engine as Engine(s)
   end
 
   Admin->>HubUI: Log in and manage policies
-  HubUI->>HubSGF: Authn/authz request
-  HubSGF->>IdP: Validate identity and derive roles/tenants
-  IdP-->>HubSGF: Token/claims
-  HubUI->>HubSGF: Submit policy updates
-  HubSGF->>HubDB: Persist policy + PolicyVersion + revisions + outbox events
+  HubUI->>HubCSL: Authn/authz request
+  HubCSL->>IdP: Validate identity and derive roles/tenants
+  IdP-->>HubCSL: Token/claims
+  HubUI->>HubCSL: Submit policy updates
+  HubCSL->>HubDB: Persist policy + PolicyVersion + revisions + outbox events
   Outbox->>HubDB: Read pending events
-  Outbox->>OCSGF: POST /identity/policies/apply (full snapshot)
-  OCSGF->>OCSGF: Apply snapshot projection
-  OCSGF->>Engine: Propagate engine-scoped changes
+  Outbox->>OCSLF: POST /identity/policies/apply (full snapshot)
+  OCSLF->>OCSLF: Apply snapshot projection
+  OCSLF->>Engine: Propagate engine-scoped changes
 ```
 
 ### 6.2 End user uses the OC UI in full mode
 
 1. User opens the OC UI in the browser.
-2. The OC UI delegates authentication to the OC's Security Gateway Framework (for example via OAuth2 login flow or existing session cookie).
-3. OC Security Gateway Framework:
+2. The OC UI delegates authentication to the OC's Camunda Security Library (for example via OAuth2 login flow or existing session cookie).
+3. OC Camunda Security Library:
 - Redirects or talks to the configured IdP for the user's logical Tenant.
 - Validates the returned OIDC/SAML token and derives the principal's roles, groups, and logical-Tenant assignments from mapping rules and direct assignments.
 4. For each incoming request from the OC UI:
@@ -1593,24 +1591,24 @@ sequenceDiagram
   participant IdP as Customer IdP
   box Orchestration Cluster
     participant OcUi as OC UI (Operate, Tasklist, Admin (view only)
-    participant OCSGF as OC Security Gateway Framework
+    participant OCSLF as OC Camunda Security Library
     participant Engine as Engine(s)
   end
 
   User->>OcUi: Open OC UI
-  OcUi->>OCSGF: Start login / present session
-  OCSGF->>IdP: Redirect/validate token
-  IdP-->>OCSGF: OIDC/SAML token claims
-  OCSGF->>OCSGF: Derive roles/groups/tenant assignments
+  OcUi->>OCSLF: Start login / present session
+  OCSLF->>IdP: Redirect/validate token
+  IdP-->>OCSLF: OIDC/SAML token claims
+  OCSLF->>OCSLF: Derive roles/groups/tenant assignments
 
-  OcUi->>OCSGF: API request
-  OCSGF->>SecStore: Load tenant+engine scoped policy
-  OCSGF->>OCSGF: Evaluate permission on requested resource
+  OcUi->>OCSLF: API request
+  OCSLF->>SecStore: Load tenant+engine scoped policy
+  OCSLF->>OCSLF: Evaluate permission on requested resource
   alt Authorized
-    OCSGF->>Engine: Forward/execute operation
+    OCSLF->>Engine: Forward/execute operation
     Engine-->>OcUi: Success response
   else Not authorized
-    OCSGF-->>OcUi: Deny request (error)
+    OCSLF-->>OcUi: Deny request (error)
   end
 ```
 
@@ -1618,7 +1616,7 @@ sequenceDiagram
 
 1. A worker application gets a token from the customer’s IdP using the configured client credentials (machine principal).
 2. The worker calls OC gRPC/REST APIs with the token.
-3. OC Security Gateway Framework:
+3. OC Camunda Security Library:
 - Validates the token against the IdP.
 - Maps its claims to machine principal permissions via mapping rules and authorizations (for example which tenants and which process instances the worker can access).
 4. If authorized, the worker’s request is executed against the engine(s); otherwise it is rejected.
@@ -1630,21 +1628,21 @@ sequenceDiagram
   actor Worker
   participant IdP as Customer IdP
   box Orchestration Cluster
-    participant OCSGF as OC Security Gateway Framework
+    participant OCSLF as OC Camunda Security Library
     participant Engine as Engine(s)
   end
 
   Worker->>IdP: Request token (client credentials)
   IdP-->>Worker: Access token
-  Worker->>OCSGF: Call OC gRPC/REST APIs with token
-  OCSGF->>IdP: Validate token
-  IdP-->>OCSGF: Validation/claims
-  OCSGF->>OCSGF: Map claims to machine principal permissions
+  Worker->>OCSLF: Call OC gRPC/REST APIs with token
+  OCSLF->>IdP: Validate token
+  IdP-->>OCSLF: Validation/claims
+  OCSLF->>OCSLF: Map claims to machine principal permissions
   alt Authorized
-    OCSGF->>Engine: Execute request
+    OCSLF->>Engine: Execute request
     Engine-->>Worker: Success response
   else Not authorized
-    OCSGF-->>Worker: Reject request
+    OCSLF-->>Worker: Reject request
   end
 ```
 
@@ -1661,7 +1659,7 @@ In Self-Managed, the customer owns and operates all infrastructure. Three deploy
 
 - OC acts as local SoT for identity and policy.
 - The Enterprise IdP is integrated directly via OIDC/SAML; no Camunda-operated broker is involved.
-- OC includes an embedded gateway/search layer and a broker/engine layer; policy is enforced by Security Gateway Framework (gateway) and Security Engine Framework (broker/engine).
+- OC includes an embedded gateway/search layer and a broker/engine layer; policy is enforced by Camunda Security Library (gateway) and Security Engine Framework (broker/engine).
 - Multiple engines per cluster are supported with OC-level policy propagation.
 - Suitable for production use cases that do not require cross-cluster policy management.
 
@@ -1678,7 +1676,7 @@ flowchart TB
 
       subgraph OC["Orchestration Cluster"]
         subgraph GatewayLayer["Gateway / Search Layer"]
-          SecGatOC["Security Gateway Framework"]
+          SecGatOC["Camunda Security Library"]
         end
 
         subgraph Broker1["Broker"]
@@ -1704,7 +1702,7 @@ An advanced Self-Managed topology where the customer also operates Hub. Hub beco
 - Hub and all OC instances are deployed and operated by the customer on their own infrastructure.
 - The Enterprise IdP is integrated at both Hub (management plane auth) and OC (execution plane auth) levels.
 - Cluster discovery and registration are handled via the `ClusterRegistryPort` and `ClusterRegistrationService` ports; the host application's adapter determines how new OCs are discovered and registered.
-- OC is configured with an embedded gateway/search layer and broker/engine layer; Security Gateway Framework runs in gateway, Security Engine Framework runs in broker/engine.
+- OC is configured with an embedded gateway/search layer and broker/engine layer; Camunda Security Library runs in gateway, Security Engine Framework runs in broker/engine.
 - Policy flows top-down: Hub -> Gateway -> Broker(Engine), same as in SaaS, but without a Camunda-operated broker.
 - Suitable for large-scale or multi-cluster Self-Managed environments requiring centralized policy governance.
 
@@ -1720,7 +1718,7 @@ flowchart TB
       AdminHub["Admin UI (read/write)"]
 
       subgraph Hub["Hub"]
-        SecGatHub["Security Gateway Framework"]
+        SecGatHub["Camunda Security Library"]
       end
 
       Console & WebModeler & AdminHub --> Hub
@@ -1733,7 +1731,7 @@ flowchart TB
 
       subgraph OC["Orchestration Cluster"]
         subgraph GatewayLayer["Gateway / Search Layer"]
-          SecGatOC["Security Gateway Framework"]
+          SecGatOC["Camunda Security Library"]
         end
 
         subgraph Broker1["Broker"]
@@ -1760,7 +1758,7 @@ flowchart TB
 
 Standalone OC topology for higher throughput and availability. Hub is not present; OC remains the local policy source of truth. Two gateways provide ingress and search-layer responsibilities, and three brokers execute workloads.
 
-- Two gateways each run the Security Gateway Framework and connect clients (Operate, Tasklist, Admin UI, workers) to the cluster.
+- Two gateways each run the Camunda Security Library and connect clients (Operate, Tasklist, Admin UI, workers) to the cluster.
 - Three brokers run the Security Engine Framework and receive policy snapshots from the gateway layer.
 - Each broker hosts multiple engines (Physical Tenants); logical tenants are scoped onto those engines using `ALL`, `TENANT` and `PHYSICAL_TENANT`.
 - Suitable for larger standalone Self-Managed deployments that need horizontal scale without Hub.
@@ -1773,10 +1771,10 @@ flowchart TB
   subgraph Customer["Customer-managed Infrastructure"]
     subgraph Execution["Execution Plane"]
       subgraph GW1["Gateway 1"]
-        GW1SGF["Security Gateway Framework"]
+        GW1CSL["Camunda Security Library"]
       end
       subgraph GW2["Gateway 2"]
-        GW2SGF["Security Gateway Framework"]
+        GW2CSL["Camunda Security Library"]
       end
 
       subgraph Broker1["Broker 1"]
@@ -1835,7 +1833,7 @@ flowchart TB
       AdminHub["Admin UI (read/write)"]
 
       subgraph Hub["Shared Hub"]
-        SecGatHub["Security Gateway Framework"]
+        SecGatHub["Camunda Security Library"]
       end
 
       Console & WebModeler & AdminHub --> Hub
@@ -1895,7 +1893,7 @@ These constraints directly inform the choice and implementation details of ADR-0
 
 This unified architecture builds on existing identity arc42 docs and ADRs for OC Identity and Management Identity; those ADRs remain the canonical source for detailed trade-offs. The main new decisions here are:
 
-- Use a shared hexagonal Security Gateway Framework with SPIs for persistence, outbox, IdP, OC commands, and (optionally) engine-level integration.
+- Use a shared hexagonal Camunda Security Library with SPIs for persistence, outbox, IdP, OC commands, and (optionally) engine-level integration.
 - Use Hub as policy SoT whenever present; OC-only deployments are treated as documented first-class modes, not afterthoughts.
 - Ship a single shared Admin UI package, feature-gated by configuration for Hub vs OC, standalone vs Hub-managed.
 - Make logical-tenant and Physical-Tenant support explicit in the core model and diagrams, not side effects.
@@ -1909,10 +1907,10 @@ This unified architecture builds on existing identity arc42 docs and ADRs for OC
 
 ### 9.2 Detailed ADRs
 
-This section contains detailed Architectural Decision Records (ADRs) for the Security Gateway Framework. Each ADR documents a specific decision, the context, alternatives considered, and consequences.
+This section contains detailed Architectural Decision Records (ADRs) for the Camunda Security Library. Each ADR documents a specific decision, the context, alternatives considered, and consequences.
 
 - [ADR-0001: PolicyVersion commits and full-policy propagation](adr/0001-policy-version-change-sets.md)
-- [ADR-0002: Placement of the Security Gateway Framework (embedded vs standalone service)](adr/0002-placement-of-the-security-gateway-framework.md)
+- [ADR-0002: Placement of the Camunda Security Library (embedded vs standalone service)](adr/0002-placement-of-the-security-gateway-framework.md)
 - [ADR-0003: Push vs Pull Policy Propagation (Hub ↔ Orchestration Clusters)](adr/0003-push-vs-pull-policy-propagation.md)
 - [ADR-0004: Identity data persistence in the Orchestration Cluster (Open)](adr/0004-oc-identity-data-persistence-and-engine-command-scope.md)
 - [ADR-0005: Frontend integration approach for Hub and Orchestration Cluster Admin UI](adr/0005-frontend-integration-for-hub-and-oc.md)
@@ -1921,7 +1919,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Sec
 
 ## 10. Migration path
 
-The migration path from the current split identity systems (Auth0 in SaaS, Management Identity, and OC Identity in Self-Managed) to the unified Security Gateway Framework is documented in a dedicated file:
+The migration path from the current split identity systems (Auth0 in SaaS, Management Identity, and OC Identity in Self-Managed) to the unified Camunda Security Library is documented in a dedicated file:
 
 - **[Migration Path](migration_path.md)**
 

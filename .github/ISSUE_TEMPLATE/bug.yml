@@ -40,8 +40,8 @@ body:
       label: Location in Code
       description: Where in the codebase does this occur? File paths, class names, method names — as specific as possible.
       placeholder: |
-        - `sgf-domain/src/.../PolicyApplyService.java:applySnapshot()` — filtering logic at line ~84
-        - `sgf-domain/src/.../Authorization.java` — scope type enum
+        - `sgl-domain/src/.../PolicyApplyService.java:applySnapshot()` — filtering logic at line ~84
+        - `sgl-domain/src/.../Authorization.java` — scope type enum
     validations:
       required: false
 

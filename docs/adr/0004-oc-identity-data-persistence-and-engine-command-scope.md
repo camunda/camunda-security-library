@@ -10,7 +10,7 @@ Accepted
 
 ## Context
 
-After the OC Security Gateway Framework receives and applies a policy payload (`POLICY_SNAPSHOT`
+After the OC Camunda Security Library receives and applies a policy payload (`POLICY_SNAPSHOT`
 or `POLICY_DIFF`), the resulting identity state (tenants, roles, groups, mapping rules,
 authorizations — including their `scope_type`/`scope_id`) must be persisted in the OC so it can
 be used for two distinct authorization purposes:
@@ -20,7 +20,7 @@ be used for two distinct authorization purposes:
   checks the identity state in primary storage to decide whether the command is authorized. Primary
   storage is the authoritative source for execution-time authorization decisions.
 - **Query authorization (secondary storage — ES/OS/RDBMS).** When Operate, Tasklist, or the Admin
-  UI queries data (e.g. list process instances, list tasks), the OC Security Gateway Framework
+  UI queries data (e.g. list process instances, list tasks), the OC Camunda Security Library
   applies authorization filters against the identity state held in secondary storage. Secondary
   storage is the authoritative source for read/query authorization decisions.
 
@@ -30,9 +30,9 @@ removing secondary storage breaks query authorization in the OC layer.
 
 Two persistence paths are possible.
 
-### Option 1 — OC Security Gateway Framework writes directly to secondary storage
+### Option 1 — OC Camunda Security Library writes directly to secondary storage
 
-The OC SGF writes identity state changes directly to secondary storage (ES/OS/RDBMS) after
+The OC CSL writes identity state changes directly to secondary storage (ES/OS/RDBMS) after
 applying a received policy payload, bypassing the engine and the exporter entirely.
 
 **Problems identified:**
@@ -41,19 +41,19 @@ applying a received policy payload, bypassing the engine and the exporter entire
   authorization) and secondary storage (used for query) would be written by two different paths.
   Keeping them consistent — especially after failures or re-applies — requires additional
   coordination logic.
-- **Schema ownership.** The OC SGF would need to own and maintain secondary storage schemas for
+- **Schema ownership.** The OC CSL would need to own and maintain secondary storage schemas for
   identity entities, duplicating schema management that currently lives in the engine/exporter
   layer.
 - **Reset and re-apply.** Applying a `POLICY_SNAPSHOT` again must reset both primary and secondary
   storage to a consistent baseline. With two independent write paths, this is harder to make
   atomic and observable.
 - **Secondary storage without primary.** The engine still needs identity state in RocksDB for
-  engine-level authorization decisions. This means the OC SGF must also trigger engine commands to
+  engine-level authorization decisions. This means the OC CSL must also trigger engine commands to
   populate primary storage, resulting in two distinct write paths anyway.
 
 ### Option 2 — Route through engine commands and exporter (extend existing flow)
 
-The OC SGF forwards identity state changes as commands to the engine (via `EngineCommandPort`).
+The OC CSL forwards identity state changes as commands to the engine (via `EngineCommandPort`).
 The engine's Security Engine Framework processes them and persists the state in primary storage
 (RocksDB). The existing exporter then picks up the identity records and writes them to secondary
 storage (ES/OS/RDBMS), preserving the full flow as it exists today.
@@ -84,7 +84,7 @@ Choose **Option 2**.
 
 Identity data persistence in the OC follows the existing engine command + exporter flow:
 
-- The OC SGF forwards identity updates via `EngineCommandPort`.
+- The OC CSL forwards identity updates via `EngineCommandPort`.
 - The Security Engine Framework persists scope-aware state in primary storage (RocksDB).
 - The exporter writes scoped identity records to secondary storage (ES/OS/RDBMS).
 
@@ -98,15 +98,15 @@ Follow-up design work remains, but does not change the selected direction:
 
 ## Options considered
 
-### Option 1 — OC Security Gateway Framework writes directly to secondary storage
+### Option 1 — OC Camunda Security Library writes directly to secondary storage
 
-- The OC SGF writes identity state changes directly to secondary storage (ES/OS/RDBMS) after applying a received policy payload, bypassing the engine and the exporter.
+- The OC CSL writes identity state changes directly to secondary storage (ES/OS/RDBMS) after applying a received policy payload, bypassing the engine and the exporter.
 - This introduces a second write path and raises consistency, schema ownership, and reset/re-apply complexity concerns.
 - Not chosen.
 
 ### Option 2 — Route through engine commands and exporter (chosen)
 
-- The OC SGF forwards identity state changes as commands to the engine (via `EngineCommandPort`).
+- The OC CSL forwards identity state changes as commands to the engine (via `EngineCommandPort`).
 - The Security Engine Framework persists scope-aware state in primary storage (RocksDB).
 - The exporter writes scoped records to secondary storage (ES/OS/RDBMS), preserving the existing end-to-end flow.
 - Chosen for a single consistent write path.
