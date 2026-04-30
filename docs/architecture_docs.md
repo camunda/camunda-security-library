@@ -207,7 +207,7 @@ The target architecture is based on the following assumptions:
 - In Self-Managed, the initial target scope assumes exactly one organization — the customer's own deployment. The `organization_id` field exists in the data model for architectural consistency with the SaaS multi-org model, but it is fixed to a single value in the initial Self-Managed iterations and has no operational significance there. A Self-Managed deployment may own one or more OC clusters, all belonging to that single organization. 
   - Support for multiple organizations in a Self-Managed Hub instance is a planned post-8.10 capability; the data model is already partitioned by `organization_id` to support this without structural changes when that capability is introduced.
 - In full mode, each Orchestration Cluster is associated with exactly one Hub organization boundary for policy management; policies are always authored “above” the cluster in Hub and projected downward.
-  - The library itself has no knowledge of how a host application discovers or tracks Orchestration Clusters. Cluster registration and enumeration are exposed as generic port interfaces: the host application calls `ClusterRegistrationService` (inbound port) to inform the library about new or updated clusters; the library calls `ClusterRegistryPort` (outbound port) when it needs to enumerate clusters for outbox dispatch or policy targeting.
+    - The library itself has no knowledge of how a host application discovers or tracks Orchestration Clusters. Cluster registration and enumeration are exposed as generic port interfaces: the host application calls `ClusterRegistrationService` (inbound port) to inform the library about new or updated clusters; the library calls `ClusterRegistryPort` (outbound port) when it needs to enumerate clusters for policy targeting.
   - How a specific host application learns about newly created OCs — whether by querying an external service, consuming provisioning events, or reading configuration — is entirely an integration concern for the host and not part of the library.
 - In OC-only mode, the Orchestration Cluster is the local source of truth for policy; there is no Hub and therefore no cross-cluster policy coordination.
 - All engines within a given Orchestration Cluster share the same OC-level; engines never talk to IdPs directly and are not configured as OIDC/SAML clients.
@@ -221,7 +221,7 @@ The target architecture is based on the following assumptions:
 
 ### 2.5 Unresolved issues
 
-- Multiple Hub instances: The architecture diagrams show a single shared Hub instance in SaaS and a single Hub in Self-Managed full mode. Some customers require multiple Hub instances — for example to fully separate delivery stages or organizational boundaries. The library architecture supports this because each Hub instance is an independent CSL deployment with its own cluster registry, policy state, and outbox. Hub-to-Hub coordination is out of scope. An OC is associated with exactly one Hub at a time; reassignment is addressed as an open question in §9.1.
+- Multiple Hub instances: The architecture diagrams show a single shared Hub instance in SaaS and a single Hub in Self-Managed full mode. Some customers require multiple Hub instances — for example to fully separate delivery stages or organizational boundaries. The library architecture supports this because each Hub instance is an independent CSL deployment with its own cluster registry and policy state. Hub-to-Hub coordination is out of scope. An OC is associated with exactly one Hub at a time; reassignment is addressed as an open question in §9.1.
 - Satellite components (open scope): Two satellite runtimes that sit adjacent to Hub and OC are not yet explicitly covered:
   - App Integrations backend — operates at the management plane level. It is not yet decided whether it should receive IdP configuration managed by Hub via the CSL port model, or whether it manages its own auth independently.
   - Connectors runtime — operates at the OC level. The same open question applies: should it consume IdP config propagated by the OC CSL, or remain separately configured?
@@ -261,7 +261,7 @@ Key design principles (selected):
 - Generic library with no product-specific code: the library contains no knowledge of how clusters are discovered or provisioned in any particular host application. All cluster lifecycle interactions go through two dedicated port interfaces — `ClusterRegistrationService` (inbound: host notifies library of new or updated clusters) and `ClusterRegistryPort` (outbound: library queries host for the current cluster list). How a host application (Hub in SaaS, Hub in Self-Managed full mode) learns about new OCs is exclusively an adapter concern and never leaks into the library domain.
 - Hexagonal architecture: all persistence, messaging, OC command creation, and engine‑level wiring are behind interfaces; default implementations can be swapped or replaced entirely.
 - IdP-agnostic: only relies on OIDC and SAML standards, so any compliant IdP can integrate.
-- Automated lifecycle and migrations: IdP claim mapping and outbox-based policy replication, with idempotent and observable migrations.
+- Automated lifecycle and migrations: IdP claim mapping and policy replication, with idempotent and observable migrations.
 - Standalone OC support: OC can act as the top-level policy authority when Hub is absent, mirroring the fallback topologies in existing docs.
 
 ### 3.1 Functional user journeys
@@ -282,7 +282,7 @@ Short- to midterm target: Admins configure cluster policies (including Physical 
   - Tenant-scoped permissions (for example `retail` vs `wholesale`).
   - Physical Tenant-scoped (`PHYSICAL_TENANT`).
   4. Hub Camunda Security Library validates and persists the changes in the selected organization scope, producing a new `PolicyVersion` for the target cluster.
-  5. The outbox dispatcher propagates the updated policy to the target OC; OC Camunda Security Library applies it and updates the Physical Tenant-scoped (`PHYSICAL_TENANT`) projections.
+  5. Hub propagates the updated policy to the target OC through a platform-owned transport channel; OC Camunda Security Library applies it and updates the Physical Tenant-scoped (`PHYSICAL_TENANT`) projections.
   6. The admin section of the OC UI, in read-only mode, allows cluster operators to view the effective policies per engine and tenant, including the applied policy version.
 
 Outcome: Cluster policies, including Physical Tenant- and Tenant-specific permissions, are authored once in Hub and enforced consistently in the target OC. Cluster operators can inspect, but not change, these policies via the admin section of the OC UI.
@@ -341,7 +341,7 @@ Long-term target: Org-level IdP setup and cluster provisioning are performed cen
   4. Org admin defines mapping rules (claims → roles/tenants) and assigns baseline roles and groups for key personas (for example Cluster Admins, Developers, Support).
   5. Org admin provisions (or selects) an Orchestration Cluster and associates it with the organization/tenants.
     - Cluster selection is resolved via the `ClusterRegistryPort`; the host application (Hub) provides the adapter implementation that enumerates available clusters.
-  6. Hub Camunda Security Library persists this configuration in the organization-scoped Hub partition, produces a new `PolicyVersion`, and starts outbox-based propagation to the relevant OC(s).
+  6. Hub Camunda Security Library persists this configuration in the organization-scoped Hub partition, produces a new `PolicyVersion`, and starts propagation to the relevant OC(s).
 
 Outcome: The organization’s IdP is connected, tenants and roles exist, and cluster-local policy is projected to the associated OCs. Cluster admins and developers can authenticate via the Enterprise IdP and start using cluster UIs and APIs, with Hub acting as the central identity and policy entry point.
 
@@ -360,7 +360,7 @@ The Camunda Security Library and unified identity plane must meet the following 
 
 - Performance and scalability
   - Policy evaluation adds minimal per-request overhead for common paths (UI/API calls, worker calls).
-  - Policy propagation is efficient for large numbers of clusters and tenants; in the first iteration Hub always sends full policy payloads and relies on batching/backpressure to keep throughput stable.
+  - Policy propagation is efficient for large numbers of clusters and tenants; in the proposed first iteration, Hub would send full policy payloads and rely on batching/backpressure to keep throughput stable.
 
 - Observability and logging
   - All authentication and authorization decisions are logged with enough context (principal, resource, action, tenant, result, correlation IDs) to trace end-to-end flows.
@@ -381,7 +381,7 @@ This section describes the unified identity system at a high level, showing how 
 
 In full mode, the platform runs with Hub (management/control plane), Orchestration Cluster (execution plane), and Optimize (analytics plane). All three use the same identity model and the same Camunda Security Library.
 
-Configuration flows top-down: Hub is the central source of truth for all policy. Configuration is authored once in Hub and propagated via outbox to both OC and Optimize, which maintain local projections and enforce policy for their respective domains. OC receives process data from engines; Optimize consumes both policy and process data from OC for analytics. The Admin UI in OC runs in read-only mode, showing the local projection of Hub policy.
+Configuration flows top-down: Hub is the central source of truth for all policy. Configuration is authored once in Hub and propagated to both OC and Optimize through a platform-owned transport channel, while OC and Optimize maintain local projections and enforce policy for their respective domains. OC receives process data from engines; Optimize consumes both policy and process data from OC for analytics. The Admin UI in OC runs in read-only mode, showing the local projection of Hub policy.
 
 In SaaS, this full-mode topology is realized by one shared Hub instance serving multiple organizations, where each organization owns one or more OC clusters.
 
@@ -419,12 +419,12 @@ flowchart TB
 - Hub and each OC use the same Camunda Security Library as the shared identity and policy engine.
 - Hub and Optimize use the same Camunda Security Library; Optimize applies policies locally and enforces access to analytics and reporting.
 - Hub is the single source of truth for all policy and configuration.
-- Hub propagates policy changes via the outbox pattern to OC, which maintains a local projection and handles runtime enforcement per engine/tenant.
-- Hub also propagates policy changes via the same outbox pattern to Optimize, which maintains a local projection and enforces access policies for analytics.
+- Hub propagates policy changes to OC through a platform-owned propagation channel; OC maintains a local projection and handles runtime enforcement per engine/tenant.
+- Hub also propagates policy changes to Optimize through the same platform-owned channel; Optimize maintains a local projection and enforces access policies for analytics.
 - Existing infrastructure is reused, no new databases or services are introduced.
 - Hub and OC gateway-layer instances of the framework integrate with one or more IdPs (per organization/cluster and mapped to logical Tenants and Physical Tenants) via standard OIDC/SAML clients; engines never integrate with IdPs directly.
 - Optimize integrates with the same Enterprise IdP to authenticate users/machines accessing analytics and enforces the same policy model for analytics access control.
-- Optimize consumes both policy state (via outbox propagation or API) and process execution data (events, process instances, tasks) from OC for analysis and reporting.
+- Optimize consumes both policy state (via propagation channel or API) and process execution data (events, process instances, tasks) from OC for analysis and reporting.
 
 ### 4.2 OC-only mode (standalone OC without Hub or Optimize)
 
@@ -492,17 +492,22 @@ flowchart TB
 
 ### 4.4 Infrastructure implications for policy distribution and Optimize
 
-**Datastore and policy persistence for Optimize:**
+**Ownership boundary:**
+
+Hub -> OC/Optimize data distribution (transport, retries, sequencing, dispatch, and delivery operations) is **outside this library**. It is a broader Hub/OC platform concern because the same channel must propagate multiple data categories (for example identity policy, secrets, and connection/configuration data), not only identity.
+
+Propagation architecture and operational details are documented in **[docs/hub-oc-data-propagation.md](hub-oc-data-propagation.md)**.
+
+**Datastore and policy persistence for Optimize (CSL-relevant):**
 
 Optimize requires dedicated storage for policy and session state, with different characteristics depending on mode:
 
-- In full-mode deployments (Hub → OC + Optimize), Hub distributes policy to both OC and Optimize:
+- In full-mode deployments, Hub distributes policy to both OC and Optimize through the platform-owned propagation mechanism.
   - Optimize maintains a local database for:
     - Policy projections (tenants, roles, groups, mapping rules, authorizations)
     - Session and authentication state
     - Last applied policy version tracking (`last_applied_version`)
     - Analytics caching and query results
-  - Hub uses the same outbox pattern to send policy snapshots to Optimize as it does to OC
 
 - In OC + Optimize mode (without Hub), policy is maintained independently in each system:
   - OC and Optimize each manage their own policy via their respective Admin UIs
@@ -585,7 +590,7 @@ Key building blocks in full mode simple:
 - Hub UI: Unified frontend in the management plane. It includes modeling, management, and admin capabilities, and allows full policy authoring for all configurable layers (Hub, OCs, engines, tenants).
 - Hub + Camunda Security Library: Central source of truth. Manages all policy configuration for all clusters, OCs, and engines. All policy changes originate here.
 - OC UI: Unified frontend in the execution plane. Its admin section shows the cluster-local projection of Hub policy; configuration there is read-only.
-- OC + Camunda Security Library: Per-cluster policy enforcement and projection layer. Receives policy snapshots from Hub via the outbox pattern. Propagates scoped policy views via batch operation to the single engine.
+- OC + Camunda Security Library: Per-cluster policy enforcement and projection layer. Receives policy snapshots from Hub via the Hub-to-OC propagation channel. Propagates scoped policy views via batch operation to the single engine.
 - Engine (Physical Tenant): A single execution context (Zeebe engine) inside the Broker. A Physical Tenant is an independent execution unit that hosts one or more logical Tenants (e.g., `default`, `retail`). Receives its scoped projection of cluster policy from OC. No direct Hub connection.
 - Security Engine Framework: Engine-specific policy enforcement layer.
 - Infrastructure (IDPs, DBs): Shared existing persistence and IdP connectivity for authentication and authorization across all layers.
@@ -760,176 +765,54 @@ The following table summarizes which information must be known to which componen
 | Mapping rules (claims → roles/tenants)      | Yes (SoT)                                                      | Yes (projection per cluster)                                        | Yes                              | No                                     |
 | Roles and groups                            | Yes (SoT)                                                      | Yes (projection per cluster)                                        | Yes                              | No (only resulting permissions)        |
 | Authorizations (role/group → resource perms)| Yes (SoT)                                                      | Yes (projection per cluster; Physical-Tenant-scoped and logical-Tenant-scoped views) | Yes                              | Indirectly (via engine-local projections) |
-| Policy versions and outbox state            | Yes (`PolicyVersion`, `OutboxEvent`, `OcSyncState`), scoped by organization + cluster in shared Hub deployments | Yes (`last_applied_version` per cluster)                            | Yes (local policy versions only) | No explicit versioning; consumes OC-level updates |
+| Policy versions and propagation state       | Yes (`PolicyVersion`, `EntityRevision`, optional `PolicyVersionChange`, and per-target acknowledgement state), scoped by organization + cluster in shared Hub deployments | Yes (`last_applied_version` per cluster)                            | Yes (local policy versions only) | No explicit versioning; consumes OC-level updates |
 | Session data                                | Yes (Hub sessions only)                                        | Yes (cluster sessions only)                                         | Yes                              | No                                     |
 
 Engines only need to know the effective permissions resulting from the policy model; they neither talk to IdPs nor store policy versions.
 
-### 5.3 Outbox-based policy propagation (Hub → OC / Optimize)
+### 5.3 Policy propagation boundary and semantic versioning (Hub → OC / Optimize)
 
-The Camunda Security Library uses an outbox pattern to propagate policy changes from Hub (policy SoT) to each Orchestration Cluster and/or Optimize instance in a reliable, observable, and idempotent way. In shared-Hub deployments, this propagation is scoped by organization and target (cluster or Optimize instance).
+For this architecture document, transport mechanics are intentionally out of scope. Hub-to-OC/Optimize delivery (channel type, retries, sequencing, dispatch operations) is a Hub/platform integration concern and is documented in `docs/hub-oc-data-propagation.md`.
 
-**First iteration propagation contract:** Hub always sends a full policy payload (`POLICY_SNAPSHOT`) for every new `PolicyVersion`. Each snapshot is composed from the current roles, groups, mapping rules, principals, and authorizations for the target scope.
+What remains in scope for CSL architecture:
 
-- **Initial sync:** OC and/or Optimize receive the full policy at the current target version.
-- **Subsequent updates:** OC and/or Optimize still receive the full policy for the new target version (no incremental diff payloads in iteration one).
-- **Recovery:** If an OC or Optimize instance falls behind, Hub resends a full policy payload for the requested target version.
+- CSL defines propagation semantics and contracts (`PolicyVersion`, `POLICY_SNAPSHOT`, and apply rules).
+- Hub persists versioned policy state per organization/cluster using `PolicyVersion`, `EntityRevision`, and optional `PolicyVersionChange`.
+- Receiver CSL (`PolicyApplyService`) owns semantic apply behavior: apply newer versions, ignore already-applied versions, and handle replay idempotently.
+- Hub tracks per-target acknowledgement state (`last_acked_version`); each receiver tracks local apply progress (`last_applied_version`).
+- Engines do not track policy versions; they consume OC-projected effective state.
 
-This keeps apply logic simple and deterministic for the first iteration across all targets. Diff-based propagation can be introduced later if payload size or throughput requires it.
+These rules preserve deterministic policy convergence while keeping transport implementation fully outside the library.
 
-The outbox pattern we use here is a specific instance of the “Transactional Outbox” architecture pattern.
+#### 5.3.1 First-iteration semantic contract
 
-Reference: [Transactional outbox](https://microservices.io/patterns/data/transactional-outbox.html)
+In iteration one, CSL semantic apply uses full snapshots:
 
-#### 5.3.1 High-level flow
+- Hub emits `POLICY_SNAPSHOT` for each new `PolicyVersion`.
+- Receivers apply the snapshot as the desired full state at target version `V`.
+- Incremental diff propagation (`POLICY_DIFF`) remains a future optimization and is not required for semantic correctness.
 
-```mermaid
-flowchart TB
-  subgraph Hub["Hub"]
-    subgraph subHubLib["Camunda Security Library</br>(Hub instance)"]
-      Dispatcher["Outbox Dispatcher"]
-    end
-  end
+#### 5.3.2 Transport/semantic split
 
-  HubDB[("Hub DB")]
-
-  subgraph OC1["Orchestration Cluster A"]
-    OC1Lib["Camunda Security Library A</br>(OC instance)"]
-    Engine1["Engine"]
-  end
-
-  OC1DB[("OC1 DB (Primary / Secondary)")]
-  OC2DB[("OC2 DB (Primary / Secondary)")]
-
-  subgraph OC2["Orchestration Cluster B"]
-    OC2Lib["Camunda Security Library B</br>(OC instance)"]
-    Engine2["Engine"]
-  end
-
-  subgraph Opt["Optimize"]
-    OptLib["Camunda Security Library</br>(Optimize instance)"]
-  end
-
-  OptDB[("Optimize DB")]
-
-  Hub --> HubDB
-  OC1 --> OC1DB
-  OC2 --> OC2DB
-  Opt --> OptDB
-
-%% Dispatch path
-  Dispatcher -->|"POST POLICY_SNAPSHOT (full policy)</br>/identity/policies/apply"| OC1Lib & OC2Lib & OptLib
-
-%% Apply on OC side
-  OC1Lib -->|"Apply full policy snapshot</br>to local projection"| Engine1
-  OC2Lib -->|"Apply full policy snapshot</br>to local projection"| Engine2
-
-%% Apply on Optimize side  
-  OptLib -->|"Apply full policy snapshot</br>to local projection"| Opt
-```
-
-#### 5.3.2 Detailed outbox flow
-
-```mermaid
-flowchart TB
-  subgraph HUB["Hub scope"]
-    direction TB
-    HubUi["Hub UI (Console, Web Modeler, Admin) / API"] --> HubSvc["Hub Camunda Security Library"]
-
-    subgraph HubTx["Hub transaction"]
-      direction TB
-      HubSvc --> WritePolicy["Write PolicyVersion"]
-      HubSvc --> WriteOutbox["Write OutboxEvent</br>status=PENDING"]
-    end
-
-    WritePolicy & WriteOutbox --> Commit["Commit TX"]
-    Commit --> Poll["Outbox Dispatcher polls</br>PENDING events"]
-    Poll --> Snapshot["Build POLICY_SNAPSHOT"]
-    Snapshot --> Send["POST /identity/policies/apply"]
-    Ack["(Response from OC/Optimize) ACK with last_applied_version"] --> Delivered["Mark OutboxEvent DELIVERED"]
-    Failed["(Response from OC/Optimize) Mark OutboxEvent FAILED</br>attempts++ / next_attempt_at"] --> Poll
-  end
-
-  subgraph OC_SCOPE["OC / Optimize scope"]
-    direction TB
-    OCApply["Camunda Security Library applies payload"]
-    UpdateStorage["Update local secondary storage</br>tables (tenants, roles, authz, etc.)"]
-
-    OCApply --> UpdateStorage
-  end
-
-  Send --> OCApply
-```
-
-- Hub Camunda Security Library
-  - Accepts policy changes via UI/API.
-  - Writes a delivery-neutral `PolicyVersion` and a corresponding `OutboxEvent` (`POLICY_SNAPSHOT`, status = PENDING) in the same transaction.
-  - Tracks per-OC `last_acked_version` via `OcSyncState` for delivery progress and retries.
-- Outbox Dispatcher
-  - Periodically selects due PENDING events.
-  - Loads the corresponding `PolicyVersion` and builds a full snapshot payload for that target version.
-  - Calls each OC's public admin endpoint (e.g. `POST /identity/policies/apply`) with the full snapshot payload.
-  - Updates `OutboxEvent.status` to DELIVERED or FAILED and manages retries via `attempts` and `next_attempt_at`.
-  - On successful delivery, updates `OcSyncState.last_acked_version` for the target OC.
-- OC Camunda Security Library
-  - Tracks `last_applied_version` locally in secondary storage.
-  - For each incoming payload (`POLICY_SNAPSHOT`): replaces the entire local policy projection in secondary storage tables and updates `last_applied_version`.
-  - All updates to secondary storage happen in a single transaction to ensure consistency.
-  - Treats every apply as idempotent per `policyVersionId`.
-  - Returns an ACK (including `last_applied_version`) to the dispatcher.
-
-This pattern decouples policy authoring (Hub) from policy enforcement (OCs), ensures at-least-once delivery, and provides clear observability hooks (per-cluster status, last error, retry attempts) for identity operations.
+- Transport outcome (`ACK`/`NACK`, retries, sequencing, dead-letter) is platform-owned.
+- Semantic correctness (version checks, idempotent replay, state replacement rules) is CSL-owned.
+- A successful transport delivery does not replace semantic validation in `PolicyApplyService`.
 
 #### 5.3.3 Linking `PolicyVersion` with the policy data model
 
-At a high level, Hub persists policy propagation in three layers:
+At an architecture level, policy state linkage in Hub uses three semantic layers:
 
-- `PolicyVersion` is the organization + cluster-scoped commit marker in Hub (`version_number`).
-- `EntityRevision` stores immutable payload snapshots per changed entity (or tombstones for deletes) and is linked to the policy version where it was introduced.
-- `PolicyVersionChange` is an optional ordered index that can link one `PolicyVersion` to changed entity revisions for future incremental propagation.
+- `PolicyVersion`: organization + cluster-scoped commit marker (`version_number`).
+- `EntityRevision`: immutable per-entity revision payload (or tombstone) introduced by a specific `PolicyVersion`.
+- `PolicyVersionChange` (optional): ordered change index for a `PolicyVersion`, useful for auditability and potential future diff optimization.
 
-In practice, each policy update writes a new `PolicyVersion` and writes one or more `EntityRevision` rows for changed entities. Each `EntityRevision.payload` contains only the single referenced entity JSON. For first-iteration propagation, Hub builds outbound payloads as a full snapshot (latest non-deleted revisions up to the target version). `PolicyVersionChange` may still be persisted for auditability and for a later diff-based optimization, but OCs do not require it for apply.
+This linkage is CSL domain semantics, independent of transport implementation.
 
-To keep snapshots and any future incremental updates consistent, `PolicyVersion` should be treated as an **organization + cluster-scoped commit in Hub** over the policy model (and as cluster-scoped from the receiving OC's point of view).
-
-**How payload resources are calculated (iteration one)**
-
-- **For `POLICY_SNAPSHOT` (full state at target version `V`)**
-  - Start from all `EntityRevision` rows with `introduced_in_policy_version <= V` for the target cluster.
-  - Group by `(entity_type, entity_id, scope_type, scope_id)`.
-  - Keep only the latest revision in each group (highest `introduced_in_policy_version`, then latest sequence if needed).
-  - Drop rows where the latest revision is a tombstone (`is_deleted = true`).
-  - Emit the remaining payloads as the full snapshot resource set.
-  - Result: exactly the effective current policy state for that OC at version `V`.
-
-Operational note:
-
-- Hub always emits `POLICY_SNAPSHOT` in iteration one, independent of `OcSyncState.last_acked_version`.
-- `OcSyncState.last_acked_version` remains important for progress tracking, retries, and monitoring rollout status per OC.
-- A future iteration may introduce `POLICY_DIFF` as an optimization if payload sizing and operational metrics justify it.
-
-#### 5.3.4 Model for Policy Linking
+#### 5.3.4 Model for policy-version linking
 
 Minimal conceptual schema:
 
 ```text
-OcSyncState
-  organization_id    -- organization boundary in Hub
-  oc_id              -- stable identifier of the target OC
-  cluster_id
-  last_acked_version -- last PolicyVersion successfully delivered and ACKed
-  last_sync_at
-
-OutboxEvent
-  id
-  organization_id
-  oc_id              -- target OC for this delivery attempt
-  policy_version_id
-  event_type         -- POLICY_SNAPSHOT (iteration one; extensible)
-  status             -- 'PENDING' | 'DELIVERED' | 'FAILED'
-  attempts
-  next_attempt_at
-
 PolicyVersion
   id
   organization_id
@@ -951,187 +834,42 @@ EntityRevision
 PolicyVersionChange
   policy_version_id
   organization_id
-  entity_type        -- TENANT | GROUP | ROLE | MAPPING_RULE | PRINCIPAL | AUTHORIZATION
-  entity_id          -- stable logical ID
+  entity_type
+  entity_id
   operation          -- UPSERT | DELETE
   scope_type         -- ALL | TENANT | PHYSICAL_TENANT
-  scope_id           -- nullable;
+  scope_id
   revision_ref       -- reference to concrete entity revision payload
+
+OcSyncState
+  organization_id
+  oc_id
+  cluster_id
+  last_acked_version -- semantic acknowledgement progress per target
+  last_sync_at
 ```
 
-- `OutboxEvent`
-  - One row per policy delivery attempt to a specific cluster.
-  - In shared-Hub deployments, includes the organization boundary and concrete target OC to make routing and operations explicit.
-  - `event_type` is `POLICY_SNAPSHOT`.
-  - Drives asynchronous delivery and retry without coupling Hub writes to OC availability.
-- `OcSyncState`
-  - One row per target OC.
-  - Scoped by organization in shared-Hub deployments.
-  - Tracks `last_acked_version`: the last `PolicyVersion` successfully delivered and acknowledged.
-  - Read by the Outbox Dispatcher to track delivery progress and retries per OC.
-- `PolicyVersion`
-  - One row per cluster and version of the desired policy.
-  - Represents the canonical policy commit for a cluster within one organization boundary.
-- `PolicyVersionChange`
-  - Ordered list of changed entities for one `PolicyVersion`.
-  - Contains `entity_type`, `entity_id`, `operation`, and scope (`scope_type`, `scope_id`).
-  - Optional in iteration one; can support future incremental (`POLICY_DIFF`) payloads.
-- `EntityRevision`
-  - Immutable revision payload per changed entity.
-  - Stores one referenced entity JSON payload per row or delete tombstones (`is_deleted`).
-  - Used to reconstruct snapshots (latest non-deleted revision per entity/scope up to target version).
-  - Practical persistence split:
-    - Keep canonical current-state tables per entity (role/group/authorization/etc.) for normal queries and constraints.
-    - Keep `EntityRevision.payload` as JSON for versioned transport, idempotent apply, and snapshot/diff reconstruction.
-    - Do not require fully normalized historical tables per version.
+Snapshot materialization rule for target version `V`:
 
-The full policy data model is described in [5.2 Unified policy model](#52-unified-policy-model). The tables above are the outbox-relevant persistence model in Hub. In SaaS, they live in a shared Hub database and are separated logically by `organization_id`.
+- Select revisions with `introduced_in_policy_version <= V` for the target cluster.
+- Group by `(entity_type, entity_id, scope_type, scope_id)` and keep the latest revision.
+- Drop tombstones (`is_deleted = true`) from the final set.
+- Emit the remaining resource set as the effective snapshot at `V`.
 
-Version tracking is explicitly scoped to the Hub–OC relationship:
+#### 5.3.5 Semantic consistency guarantees
 
-- Hub tracks last acknowledged versions per OC via `OcSyncState.last_acked_version`.
-- Each OC tracks its own `last_applied_version` locally.
-- Engines do not track policy versions explicitly. They receive commands or projections from the OC and are expected to converge towards the OC’s effective policy state. From the unified identity plane’s perspective, “policy version X is applied” is defined at the OC boundary.
+- **Eventual convergence:** Hub commit -> receiver apply -> engine projection.
+- **Idempotent apply:** same `policyVersionId` replay has no semantic side effects.
+- **Monotonic versioning:** receivers accept newer versions and ignore stale/duplicate versions.
+- **Deterministic replacement:** snapshot apply reconstructs one known-good effective policy state for target version `V`.
 
-```mermaid
-erDiagram
-  OutboxEvent {
-    UUID id PK
-    STRING organization_id
-    STRING oc_id
-    UUID policy_version_id FK
-    STRING event_type
-    STRING status
-    INT attempts
-    TIMESTAMP next_attempt_at
-  }
+#### 5.3.6 Semantic progress tracking
 
-  PolicyVersion {
-    UUID id PK
-    STRING organization_id
-    STRING cluster_id
-    INT version_number
-    INT base_version
-  }
+- Hub tracks per-target semantic acknowledgement (`last_acked_version`).
+- Each receiver tracks semantic apply progress (`last_applied_version`).
+- Engines do not track policy versions explicitly; they converge to OC-projected effective state.
 
-  OcSyncState {
-    STRING organization_id
-    STRING oc_id PK
-    STRING cluster_id
-    INT last_acked_version
-    TIMESTAMP last_sync_at
-  }
-
-  EntityRevision {
-    UUID id PK
-    STRING organization_id
-    STRING entity_type
-    STRING entity_id
-    UUID introduced_in_policy_version FK
-    STRING scope_type
-    STRING scope_id
-    BOOLEAN is_deleted
-    JSON payload
-  }
-
-  PolicyVersionChange {
-    UUID id PK
-    UUID policy_version_id FK
-    STRING organization_id
-    INT sequence_no
-    STRING entity_type
-    STRING entity_id
-    STRING operation
-    STRING scope_type
-    STRING scope_id
-    UUID entity_revision_id FK
-  }
-
-  PolicyVersion ||--o{ EntityRevision : introduces
-  PolicyVersion ||--o{ PolicyVersionChange : contains
-  PolicyVersion ||--o{ OutboxEvent : publishes
-  OcSyncState }o--|| PolicyVersion : tracks
-  EntityRevision ||--o{ PolicyVersionChange : referenced_by
-```
-
-### 5.3.5 Consistency guarantees
-
-The outbox-based propagation provides the following consistency characteristics:
-
-- Eventual consistency across layers
-  - Policy changes become visible in this order:
-    - Hub (immediately in the Hub UI after commit).
-    - OC (after outbox dispatch and a successful apply).
-    - Engines (after OC-to-engine propagation via the engine command path).
-  - There may be short windows where Hub and OC/engines disagree on the currently effective policy; operational tooling should reflect per-OC sync status.
-- Delivery semantics
-  - At-least-once delivery from Hub to each OC:
-    - Failed `OutboxEvent`s are retried according to `attempts` and `next_attempt_at`.
-  - Idempotent apply on the OC side:
-    - Each `PolicyVersion` is applied at most once per OC; replays with the same `policyVersionId` are ignored.
-- Full snapshots as the default contract
-  - Every apply payload reconstructs the full desired state up to a target version.
-  - Applying a snapshot overwrites the local projection and resets the OC back to a known-good baseline.
-- Ordering
-  - Within a single OC:
-    - `PolicyVersion.version_number` is strictly increasing.
-    - OCs accept newer `POLICY_SNAPSHOT` versions and ignore already-applied versions by `policyVersionId`.
-
----
-
-### 5.3.6 Example database rows (Hub)
-
-The following simplified rows show selected database rows for the same entities used in examples A/B/C in section `5.3.7`.
-
-**OcSyncState**
-
-| organization_id | oc_id | cluster_id | last_acked_version | last_sync_at |
-|---|---|---|---:|---|
-| `org-acme` | `oc-a` | `oc-a` | 3 | `2025-01-03T10:00:00Z` |
-
-**OutboxEvent**
-
-| id | organization_id | oc_id | policy_version_id | event_type | status | attempts | next_attempt_at |
-|---|---|---|---|---|---|---:|---|
-| `evt-1` | `org-acme` | `oc-a` | `pv-1` | `POLICY_SNAPSHOT` | `DELIVERED` | 1 | `null` |
-| `evt-2` | `org-acme` | `oc-a` | `pv-2` | `POLICY_SNAPSHOT` | `DELIVERED` | 1 | `null` |
-| `evt-3` | `org-acme` | `oc-a` | `pv-3` | `POLICY_SNAPSHOT` | `DELIVERED` | 1 | `null` |
-
-**PolicyVersion**
-
-| id | organization_id | cluster_id | version_number | base_version |
-|---|---|---|---:|---:|
-| `pv-1` | `org-acme` | `oc-a` | 1 | `null` |
-| `pv-2` | `org-acme` | `oc-a` | 2 | `null` |
-| `pv-3` | `org-acme` | `oc-a` | 3 | `null` |
-
-**EntityRevision**
-
-| id | organization_id | entity_type | entity_id | introduced_in_policy_version | scope_type | scope_id | is_deleted | payload |
-|---|---|---|---|---|---|---|---|---|
-| `rev-tenant-default-v1` | `org-acme` | `TENANT` | `default` | `pv-1` | `ALL` |  | `false` | `{"id":"default"}` |
-| `rev-role-admin-v1` | `org-acme` | `ROLE` | `role-cluster-admin` | `pv-1` | `ALL` |  | `false` | `{"id":"role-cluster-admin","permissions":["MANAGE_CLUSTER_SETTINGS","MANAGE_USERS"]}` |
-| `rev-authz-cluster-admin-api-v1` | `org-acme` | `AUTHORIZATION` | `authz-cluster-admin-api` | `pv-1` | `ALL` |  | `false` | `{"id":"authz-cluster-admin-api","ownerType":"ROLE","ownerId":"role-cluster-admin","resourceType":"CLUSTER_API","resourceId":"*","permissions":["MANAGE_CLUSTER_SETTINGS","MANAGE_USERS"]}` |
-| `rev-role-support-agent-v2` | `org-acme` | `ROLE` | `role-support-agent` | `pv-2` | `ALL` |  | `false` | `{"id":"role-support-agent","permissions":["READ_PROCESS_INSTANCE","READ_TASK","UPDATE_TASK"]}` |
-| `rev-authz-support-task-v2` | `org-acme` | `AUTHORIZATION` | `authz-support-task` | `pv-2` | `ALL` |  | `false` | `{"id":"authz-support-task","ownerType":"ROLE","ownerId":"role-support-agent","resourceType":"USER_TASK","resourceId":"*","permissions":["READ_TASK","UPDATE_TASK"]}` |
-| `rev-authz-engine2-support-v3` | `org-acme` | `AUTHORIZATION` | `authz-engine2-support` | `pv-3` | `PHYSICAL_TENANT` | `engine-2` | `false` | `{"id":"authz-engine2-support","ownerType":"ROLE","ownerId":"role-support-agent","resourceType":"PROCESS_INSTANCE","resourceId":"*","permissions":["READ_PROCESS_INSTANCE"]}` |
-
-**PolicyVersionChange**
-
-| id | organization_id | policy_version_id | sequence_no | entity_type | entity_id | operation | scope_type | scope_id | entity_revision_id |
-|---|---|---|---:|---|---|---|---|---|---|
-| `chg-1` | `org-acme` | `pv-1` | 1 | `TENANT` | `default` | `UPSERT` | `ALL` |  | `rev-tenant-default-v1` |
-| `chg-2` | `org-acme` | `pv-1` | 2 | `ROLE` | `role-cluster-admin` | `UPSERT` | `ALL` |  | `rev-role-admin-v1` |
-| `chg-3` | `org-acme` | `pv-1` | 3 | `AUTHORIZATION` | `authz-cluster-admin-api` | `UPSERT` | `ALL` |  | `rev-authz-cluster-admin-api-v1` |
-| `chg-4` | `org-acme` | `pv-2` | 1 | `ROLE` | `role-support-agent` | `UPSERT` | `ALL` |  | `rev-role-support-agent-v2` |
-| `chg-5` | `org-acme` | `pv-2` | 2 | `AUTHORIZATION` | `authz-support-task` | `UPSERT` | `ALL` |  | `rev-authz-support-task-v2` |
-| `chg-6` | `org-acme` | `pv-3` | 1 | `AUTHORIZATION` | `authz-engine2-support` | `UPSERT` | `PHYSICAL_TENANT` | `engine-2` | `rev-authz-engine2-support-v3` |
-
-#### 5.3.7 Example policy versions (initial + 2 updates)
-
-The following examples show one initial policy and two subsequent updates for the same cluster, all as full snapshots.
-
-#### Example A: Initial policy (`PolicyVersion = 1`, `POLICY_SNAPSHOT`)
+Example snapshots (semantic contract):
 
 ```json
 {
@@ -1139,28 +877,10 @@ The following examples show one initial policy and two subsequent updates for th
   "clusterId": "oc-a",
   "policyVersion": 1,
   "kind": "POLICY_SNAPSHOT",
-  "tenants": [
-    {"id": "default"}
-  ],
-  "roles": [
-    {"id": "role-cluster-admin", "permissions": ["MANAGE_CLUSTER_SETTINGS", "MANAGE_USERS"]}
-  ],
-  "authorizations": [
-    {
-      "id": "authz-cluster-admin-api",
-      "ownerType": "ROLE",
-      "ownerId": "role-cluster-admin",
-      "resourceType": "CLUSTER_API",
-      "resourceId": "*",
-      "permissions": ["MANAGE_CLUSTER_SETTINGS", "MANAGE_USERS"]
-    }
-  ]
+  "tenants": [{"id": "default"}],
+  "roles": [{"id": "role-cluster-admin", "permissions": ["MANAGE_CLUSTER_SETTINGS", "MANAGE_USERS"]}]
 }
 ```
-
-#### Example B: Update 1 (`PolicyVersion = 2`, `POLICY_SNAPSHOT`)
-
-Change: add support role and support task authorization.
 
 ```json
 {
@@ -1168,30 +888,10 @@ Change: add support role and support task authorization.
   "clusterId": "oc-a",
   "policyVersion": 2,
   "kind": "POLICY_SNAPSHOT",
-  "tenants": [
-    {"id": "default"}
-  ],
+  "tenants": [{"id": "default"}],
   "roles": [
     {"id": "role-cluster-admin", "permissions": ["MANAGE_CLUSTER_SETTINGS", "MANAGE_USERS"]},
     {"id": "role-support-agent", "permissions": ["READ_PROCESS_INSTANCE", "READ_TASK", "UPDATE_TASK"]}
-  ],
-  "authorizations": [
-    {
-      "id": "authz-cluster-admin-api",
-      "ownerType": "ROLE",
-      "ownerId": "role-cluster-admin",
-      "resourceType": "CLUSTER_API",
-      "resourceId": "*",
-      "permissions": ["MANAGE_CLUSTER_SETTINGS", "MANAGE_USERS"]
-    },
-    {
-      "id": "authz-support-task",
-      "ownerType": "ROLE",
-      "ownerId": "role-support-agent",
-      "resourceType": "USER_TASK",
-      "resourceId": "*",
-      "permissions": ["READ_TASK", "UPDATE_TASK"]
-    }
   ]
 }
 ```
@@ -1260,7 +960,7 @@ graph LR
 
   subgraph EXT_OUT["Outbound adapter implementations (host application or default modules)"]
     PR_I["PolicyRepository</br>Hub: Spring Data JPA</br>OC: RDBMS / ES adapter"]
-    OX_I["OutboxPort</br>SQL transactional outbox</br>(same TX as business change)"]
+    OX_I["OutboxPort</br>SQL propagation store</br>(same TX as business change)"]
     IDP_I["IdpPort</br>OIDC/SAML client</br>(Keycloak, Entra, Auth0)"]
     CMD_I["EngineCommandPort</br>Engine projection command adapter</br>(OC backend service layer)"]
     FT_I["FeatureTogglePort</br>Spring @ConfigurationProperties</br>or Unleash / LaunchDarkly"]
@@ -1291,7 +991,7 @@ graph LR
 | `AuthorizationService` | Evaluate whether the current principal is allowed to access a Hub or OC resource. Resolves the effective permission set from token/session context, roles, groups, mapping rules, and scoped authorizations. | `HUB`, `OC_MANAGED`, `OC_STANDALONE` | Spring Security filter chain, method-security interceptor, API authorization middleware |
 | `TenantService` | Resolve and validate the active tenant context for the current request. Provides tenant-aware policy lookup and ensures tenant scoping is applied consistently before authorization decisions are made. | `HUB`, `OC_MANAGED`, `OC_STANDALONE` | Request filter, tenant resolver, REST controller support |
 | `PolicyService` | Handle policy authoring and policy read operations in the local source-of-truth runtime. Validates and persists changes to tenants, roles, groups, mapping rules, principals, and authorizations. | `HUB`, `OC_STANDALONE` | Admin REST controller, Hub UI / OC UI backend |
-| `PolicyApplyService` | Accept and apply externally produced policy payloads (`POLICY_SNAPSHOT`) to the local projection. Performs version checks, idempotency handling, and apply orchestration. | `OC_MANAGED` | `POST /identity/policies/apply` controller |
+| `PolicyApplyService` | Accept and apply externally produced policy payloads (`POLICY_SNAPSHOT`) to the local projection. Owns semantic apply behavior (version checks, idempotency handling, apply orchestration) independent of transport. | `OC_MANAGED` | `POST /identity/policies/apply` controller |
 | `ClusterRegistrationService` | Accept cluster registration and update notifications from the host application. The host calls this port when a new cluster is discovered or an existing cluster's metadata changes (name, organization scope, etc.). | `HUB` | Hub adapter triggered by provisioning events, configuration, or any other host-side discovery mechanism |
 
 **Outbound port responsibilities and example usage by deployment strategy:**
@@ -1299,18 +999,20 @@ graph LR
 | Outbound port | Responsibility | Used in deployment strategies | Typical host-side implementations                                                |
 |---|---|---|----------------------------------------------------------------------------------|
 | `PolicyRepository` | Persist and query tenants, roles, mapping rules, principals, and authorizations. | `HUB`, `OC_MANAGED`, `OC_STANDALONE` | Hub: Spring Data JPA adapter; OC: RDBMS/Commands and Camunda Services            |
-| `OutboxPort` | Persist and dispatch outbox records transactionally with policy changes for Hub-to-OC propagation. | `HUB` | SQL transactional outbox adapter (same DB transaction as policy write)           |
+| `OutboxPort` | Persist propagation records transactionally with policy changes and expose dispatch hooks for Hub-to-OC/Optimize propagation. Concrete transport mechanics are platform adapter concerns. | `HUB` | SQL propagation adapter (same DB transaction as policy write)           |
 | `IdpPort` | Resolve IdP metadata, validate tokens, and provide claims needed for principal mapping. | `HUB`, `OC_MANAGED`, `OC_STANDALONE` | OIDC client adapter (Keycloak, Entra, Auth0), SAML adapter                       |
 | `EngineCommandPort` | Emit engine-scoped projection commands from OC to engines after local apply or local authoring changes. | `OC_MANAGED`, `OC_STANDALONE` | OC engine command adapter backed by engine command handling                      |
-| `FeatureTogglePort` | Expose runtime feature switches for mode-gated behavior (for example outbox dispatch, shadow evaluation). | `HUB`, `OC_MANAGED`, `OC_STANDALONE` | Spring `@ConfigurationProperties` adapter, Unleash adapter, LaunchDarkly adapter |
+| `FeatureTogglePort` | Expose runtime feature switches for mode-gated behavior (for example propagation dispatch, shadow evaluation). | `HUB`, `OC_MANAGED`, `OC_STANDALONE` | Spring `@ConfigurationProperties` adapter, Unleash adapter, LaunchDarkly adapter |
 | `SessionStore` | Persist and retrieve authenticated sessions (create, read, update, delete, cleanup). | `HUB`, `OC_MANAGED`, `OC_STANDALONE` | Redis adapter, SQL session adapter, in-memory adapter                            |
-| `ClusterRegistryPort` | Retrieve the current list of known clusters for a given organization scope. Called by the library when enumerating targets for outbox dispatch, policy targeting, or UI listing. The host application provides the implementation; the library has no opinion on how the host populates this list. | `HUB` | Hub adapter backed by an in-memory registry populated via `ClusterRegistrationService`, a local DB, or any other host-side cluster store |
+| `ClusterRegistryPort` | Retrieve the current list of known clusters for a given organization scope. Called by the library when enumerating targets for policy propagation, policy targeting, or UI listing. The host application provides the implementation; the library has no opinion on how the host populates this list. | `HUB` | Hub adapter backed by an in-memory registry populated via `ClusterRegistrationService`, a local DB, or any other host-side cluster store |
 
 This design guarantees that **swapping a database, replacing the IdP client, or providing a custom command backend requires only a new adapter class** — no changes to the domain core.
 
+Inbound and outbound ports are CSL boundaries; concrete transport adapters on both sides are owned by host platform integration.
+
 #### 5.4.1 Property-driven runtime mode switching
 
-The same library core is reused in all deployments. **In every runtime mode, AuthN and AuthZ enforcement is always active** — the library always configures a Spring Security filter chain to authenticate inbound requests and enforce scope-aware authorization decisions. What differs per mode is which additional capabilities (authoring, outbox dispatch, engine projection) are switched on.
+The same library core is reused in all deployments. **In every runtime mode, AuthN and AuthZ enforcement is always active** — the library always configures a Spring Security filter chain to authenticate inbound requests and enforce scope-aware authorization decisions. What differs per mode is which additional capabilities (authoring, policy propagation dispatch, engine projection) are switched on.
 
 Mode activation is property-driven via Spring Boot conditions (`@ConditionalOnProperty`, or a small custom `@Conditional` when multiple properties contribute to the decision), not via Spring profiles.
 
@@ -1388,7 +1090,7 @@ The extra layer between UIs/clients and engines is intentional:
   - IdP integration, session handling, multi-tenancy, mapping rules, and authorization decisions are handled in one place.
   - Engine integration is reduced to a narrow command API (Security Engine Framework) that can evolve independently.
 - Pluggable backends
-  - Concrete persistence (SQL, search), outbox transport, and IdP clients can be swapped or customized by providing alternative adapters, without changing the domain model.
+  - Concrete persistence (SQL, search), propagation transport, and IdP clients can be swapped or customized by providing alternative adapters, without changing the domain model.
 
 #### 5.5 Security Engine Framework
 
@@ -1489,7 +1191,7 @@ Persistent sessions are required for the OC authentication UX and remain part of
 - Keep session handling local per deployment:
   - In full mode, Hub and each OC manage their own sessions independently.
   - In OC-only mode, OC is the only session authority.
-- Session data is not propagated via the policy outbox flow.
+- Session data is not propagated via the policy propagation flow.
 
 ### 5.7 Frontend integration (Hub and OC)
 
@@ -1550,7 +1252,7 @@ flowchart TB
     E3["Engine 3"]
   end
 
-  HubPolicy -->|"Policies (outbox pattern)"| OC1Id & OC2Id
+  HubPolicy -->|"Policies (propagation channel)"| OC1Id & OC2Id
 
   OC1Id -->|"Engine-local role/perm view"| E1 & E2
   OC2Id -->|"Engine-local role/perm view"| E3
@@ -1656,7 +1358,7 @@ sequenceDiagram
   HubCSL->>IdP: Validate identity and derive roles/tenants
   IdP-->>HubCSL: Token/claims
   HubUI->>HubCSL: Submit policy updates
-  HubCSL->>HubDB: Persist policy + PolicyVersion + revisions + outbox events
+  HubCSL->>HubDB: Persist policy + PolicyVersion + revisions + propagation events
   Outbox->>HubDB: Read pending events
   Outbox->>OCSLF: POST /identity/policies/apply (full snapshot)
   OCSLF->>OCSLF: Apply snapshot projection
@@ -1794,7 +1496,7 @@ flowchart TB
 
 #### 7.1.2 Full mode (Hub + Orchestration Cluster, self-managed)
 
-An advanced Self-Managed topology where the customer also operates Hub. Hub becomes the central policy SoT, and policy is propagated via the outbox pattern to each OC. The Admin UI on OC runs in read-only mode; all policy authoring happens in Hub.
+An advanced Self-Managed topology where the customer also operates Hub. Hub becomes the central policy SoT, and policy is propagated to each OC via the platform-owned channel. The Admin UI on OC runs in read-only mode; all policy authoring happens in Hub.
 
 - Hub and all OC instances are deployed and operated by the customer on their own infrastructure.
 - The Enterprise IdP is integrated at both Hub (management plane auth) and OC (execution plane auth) levels.
@@ -1958,9 +1660,9 @@ flowchart TB
 
 - IdP-agnostic: Any OIDC/SAML IdP integrating via standards (no IdP-specific code in the domain layer).
 - RBAC + ABAC: Roles and authorizations with optional attribute-based policies (resource attributes, environment conditions).
-- Multi-tenancy: Tenant-aware identity context propagated from tokens/headers; tenant-specific policy and IdP configuration; outbox filters by tenant.
+- Multi-tenancy: Tenant-aware identity context propagated from tokens/headers; tenant-specific policy and IdP configuration; propagation filters by tenant.
 - Lifecycle handling: Principal and tenant assignment are derived from IdP claims and mapping rules; clusters receive derived principals and policies from Hub.
-- Observability: Identity flows emit metrics, logs, and traces (e.g. authn attempts, authz decisions, outbox propagation delay, health indicators). For Spring Security instrumentation, align with the Spring Security observability integration guidance: https://docs.spring.io/spring-security/reference/reactive/integrations/observability.html
+- Observability: Identity flows emit metrics, logs, and traces (e.g. authn attempts, authz decisions, propagation delay, health indicators). For Spring Security instrumentation, align with the Spring Security observability integration guidance: https://docs.spring.io/spring-security/reference/reactive/integrations/observability.html
 
 ### 8.1 Scalability and operational considerations
 
@@ -1977,7 +1679,7 @@ The unified identity architecture must support SaaS deployments at significant s
 1. **Policy propagation scale**: Hub must reliably propagate policy changes to 43k+ clusters without overwhelming either Hub or OC infrastructure.
 2. **Visibility and monitoring**: At this scale, operators must be able to track policy rollout state across thousands of clusters in real time. Hub must surface which clusters are on which policy versions, and what delivery state each cluster is in (pending, delivered, failed, retrying).
 3. **Rate limiting and backpressure**: Both push-based and pull-based propagation require careful handling of load spikes:
-  - Push: Hub outbox dispatcher must respect OC capacity and not flood clusters with simultaneous policy updates.
+  - Push: Hub propagation dispatcher must respect OC capacity and not flood clusters with simultaneous policy updates.
   - Pull: OCs must not synchronize polling (thundering herd problem) to avoid overwhelming Hub with simultaneous policy version queries.
 4. **Idempotency**: At this scale, retries are frequent and necessary. All policy applies must be idempotent per `policyVersionId` to ensure correctness despite network failures and replay scenarios.
 5. **Observability requirements**: Logs, metrics, and traces must emit at a reasonable volume even with 43k+ clusters. Per-cluster granular logging is necessary for debugging but must be carefully sampled or aggregated for operational dashboards.
@@ -1990,7 +1692,7 @@ These constraints directly inform the choice and implementation details of ADR-0
 
 This unified architecture builds on existing identity arc42 docs and ADRs for OC Identity and Management Identity; those ADRs remain the canonical source for detailed trade-offs. The main new decisions here are:
 
-- Use a shared hexagonal Camunda Security Library with SPIs for persistence, outbox, IdP, OC commands, and (optionally) engine-level integration.
+- Use a shared hexagonal Camunda Security Library with SPIs for persistence, propagation, IdP, OC commands, and (optionally) engine-level integration.
 - Use Hub as policy SoT whenever present; OC-only deployments are treated as documented first-class modes, not afterthoughts.
 - Ship a single shared Admin UI package, feature-gated by configuration for Hub vs OC, standalone vs Hub-managed.
 - Make logical-tenant and Physical-Tenant support explicit in the core model and diagrams, not side effects.
