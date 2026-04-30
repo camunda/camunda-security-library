@@ -25,8 +25,16 @@ defaults:
   run:
     shell: bash
 
+# Prevent concurrent release runs from racing on the same tag/branch.
+concurrency:
+  group: release-${{ github.workflow }}
+  cancel-in-progress: false
+
 env:
-  RELEASE_BRANCH: ${{ inputs.releaseBranch != '' && inputs.releaseBranch || format('release-{0}', inputs.releaseVersion) }}
+  # Default to releasing from whichever branch the workflow was dispatched on
+  # (typically main). Callers can override by passing releaseBranch explicitly,
+  # e.g. to release from a pre-created release-X.Y.Z branch.
+  RELEASE_BRANCH: ${{ inputs.releaseBranch != '' && inputs.releaseBranch || github.ref_name }}
   RELEASE_VERSION: ${{ inputs.releaseVersion }}
   RELEASE_TAG: ${{ inputs.releaseVersion }}
   GH_TOKEN: ${{ github.token }}
