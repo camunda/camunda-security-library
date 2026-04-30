@@ -436,7 +436,7 @@ flowchart TB
     OcUi --> OC
   end
 
-  IdPs[("[1 - N] IDPs (per logical tenant/Physical Tenant)")]
+  IdPs["[1 - N] IDPs (per logical tenant/Physical Tenant)"]
   DBs[("DBs (primary/secondary)")]
 
   OC --> DBs & IdPs
@@ -494,7 +494,7 @@ flowchart TB
     OcUi --> GatewayLayer
   end
 
-  IdPs[("[1 - N] IDPs (per logical tenant/Physical Tenant)")]
+  IdPs["[1 - N] IDPs (per logical tenant/Physical Tenant)"]
   DBs[("DBs (primary/secondary)")]
   HubDb[("Hub DB")]
 
@@ -548,7 +548,7 @@ flowchart TB
 
   OcUi --> GatewayLayer
 
-  IdPs[("[1 - N] IDPs (per logical tenant/Physical Tenant)")]
+  IdPs["[1 - N] IDPs (per logical tenant/Physical Tenant)"]
   DBs[("DBs (primary/secondary)")]
 
   Broker --> DBs
@@ -1196,9 +1196,9 @@ graph LR
   CRX -->|"implemented by"| CRX_I
 ```
 
-**Inbound port responsibilities and example usage by profile:**
+**Inbound port responsibilities and example usage by deployment strategy:**
 
-| Inbound port | Responsibility | Used in profiles | Typical host-side adapters |
+| Inbound port | Responsibility | Used in deployment strategies | Typical host-side adapters |
 |---|---|---|---|
 | `AuthorizationService` | Evaluate whether the current principal is allowed to access a Hub or OC resource. Resolves the effective permission set from token/session context, roles, groups, mapping rules, and scoped authorizations. | `HUB`, `OC_MANAGED`, `OC_STANDALONE` | Spring Security filter chain, method-security interceptor, API authorization middleware |
 | `TenantService` | Resolve and validate the active tenant context for the current request. Provides tenant-aware policy lookup and ensures tenant scoping is applied consistently before authorization decisions are made. | `HUB`, `OC_MANAGED`, `OC_STANDALONE` | Request filter, tenant resolver, REST controller support |
@@ -1206,9 +1206,9 @@ graph LR
 | `PolicyApplyService` | Accept and apply externally produced policy payloads (`POLICY_SNAPSHOT`) to the local projection. Performs version checks, idempotency handling, and apply orchestration. | `OC_MANAGED` | `POST /identity/policies/apply` controller |
 | `ClusterRegistrationService` | Accept cluster registration and update notifications from the host application. The host calls this port when a new cluster is discovered or an existing cluster's metadata changes (name, organization scope, etc.). | `HUB` | Hub adapter triggered by provisioning events, configuration, or any other host-side discovery mechanism |
 
-**Outbound port responsibilities and example usage by profile:**
+**Outbound port responsibilities and example usage by deployment strategy:**
 
-| Outbound port | Responsibility | Used in profiles | Typical host-side implementations                                                |
+| Outbound port | Responsibility | Used in deployment strategies | Typical host-side implementations                                                |
 |---|---|---|----------------------------------------------------------------------------------|
 | `PolicyRepository` | Persist and query tenants, roles, mapping rules, principals, and authorizations. | `HUB`, `OC_MANAGED`, `OC_STANDALONE` | Hub: Spring Data JPA adapter; OC: RDBMS/Commands and Camunda Services            |
 | `OutboxPort` | Persist and dispatch outbox records transactionally with policy changes for Hub-to-OC propagation. | `HUB` | SQL transactional outbox adapter (same DB transaction as policy write)           |
@@ -1220,15 +1220,17 @@ graph LR
 
 This design guarantees that **swapping a database, replacing the IdP client, or providing a custom command backend requires only a new adapter class** — no changes to the domain core.
 
-#### 5.4.1 Runtime profiles and mode switching
+#### 5.4.1 Property-driven runtime mode switching
 
-The same library core is reused in all deployments. **In every runtime profile, AuthN and AuthZ enforcement is always active** — the library always configures a Spring Security filter chain to authenticate inbound requests and enforce scope-aware authorization decisions. What differs per profile is which additional capabilities (authoring, outbox dispatch, engine projection) are switched on.
+The same library core is reused in all deployments. **In every runtime mode, AuthN and AuthZ enforcement is always active** — the library always configures a Spring Security filter chain to authenticate inbound requests and enforce scope-aware authorization decisions. What differs per mode is which additional capabilities (authoring, outbox dispatch, engine projection) are switched on.
+
+Mode activation is property-driven via Spring Boot conditions (`@ConditionalOnProperty`, or a small custom `@Conditional` when multiple properties contribute to the decision), not via Spring profiles.
 
 Hub enforces AuthN/AuthZ for the Hub UI. This is exactly the same `AuthorizationService` and `IdpPort` used by OC, just configured with Hub-scoped resources instead of cluster/engine resources.
 
-**Camunda Security Library responsibilities by profile:**
+**Camunda Security Library responsibilities by deployment strategy:**
 
-| Profile | AuthN/AuthZ enforcement | Policy source | Policy authoring | Outbox dispatch to OCs | Engine projection | Cluster registry | Runtime context |
+| Deployment strategy | AuthN/AuthZ enforcement | Policy source | Policy authoring | Outbox dispatch to OCs | Engine projection | Cluster registry | Runtime context |
 |---|---|---|---|---|---|---|---|
 | `HUB` | ✅ Hub-scoped (org, workspace, cluster resources) | Hub is SoT | ✅ via Hub UI/API | ✅ via `OutboxPort` | ❌ no engines in Hub | ✅ `ClusterRegistrationService` + `ClusterRegistryPort` | Hub authentication and policy management for the Hub UI |
 | `OC_MANAGED` | ✅ Cluster-scoped (engine, tenant, task resources) | Receives from Hub | ❌ (read-only in the admin section of the OC UI) | ❌ | ✅ via `EngineCommandPort` | ❌ | OC receives policy via `/identity/policies/apply` endpoint from Hub; enforces for all cluster requests and exposes the applied policy through the admin section of the OC UI |
@@ -1236,11 +1238,11 @@ Hub enforces AuthN/AuthZ for the Hub UI. This is exactly the same `Authorization
 
 ```mermaid
 flowchart TB
-  Start["Library bootstrap"] --> Profile{"runtime.profile"}
+  Start["Library bootstrap"] --> Mode{"deployment strategy property"}
 
-  Profile -->|"HUB"| Hub["Enable Hub services<br>AuthN/AuthZ (Hub-scoped)<br>PolicyAuthoring + Versioning + OutboxDispatch"]
-  Profile -->|"OC_MANAGED"| OCM["Enable OC managed services<br>AuthN/AuthZ (cluster-scoped)<br>RemotePolicyApply + ProjectionToEngine"]
-  Profile -->|"OC_STANDALONE"| OCS["Enable OC standalone services<br>AuthN/AuthZ (cluster-scoped)<br>LocalPolicyAuthoring + ProjectionToEngine"]
+  Mode -->|"HUB"| Hub["Enable Hub services<br>AuthN/AuthZ (Hub-scoped)<br>PolicyAuthoring + Versioning + OutboxDispatch"]
+  Mode -->|"OC_MANAGED"| OCM["Enable OC managed services<br>AuthN/AuthZ (cluster-scoped)<br>RemotePolicyApply + ProjectionToEngine"]
+  Mode -->|"OC_STANDALONE"| OCS["Enable OC standalone services<br>AuthN/AuthZ (cluster-scoped)<br>LocalPolicyAuthoring + ProjectionToEngine"]
 
   Core["Always-on core<br>Spring Security filter chain<br>Scope resolver + Session handling<br>IdpPort (all modes)"]
 
