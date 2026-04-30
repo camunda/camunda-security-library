@@ -12,7 +12,7 @@ on:
         type: string
         required: true
       releaseBranch:
-        description: 'Branch to perform the release on. Defaults to release-$releaseVersion.'
+        description: 'Branch to perform the release on. Defaults to the branch the workflow is dispatched on (typically main).'
         type: string
         required: false
         default: ''
@@ -25,7 +25,10 @@ defaults:
   run:
     shell: bash
 
-# Prevent concurrent release runs from racing on the same tag/branch.
+# Serialize all release runs. Two releases at once — even on different
+# versions or branches — would interleave version commits, tag creation,
+# and Central deployment names. Queue them instead of cancelling so a
+# legitimate run isn't aborted by an accidental second dispatch.
 concurrency:
   group: release-${{ github.workflow }}
   cancel-in-progress: false
