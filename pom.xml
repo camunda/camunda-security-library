@@ -150,9 +150,11 @@
                             commit. Override the default 'clean verify' for preparationGoals
                             because verify's spotless:check would reject the still-noisy
                             intermediate POM before spotless:apply could canonicalize it.
-                            CI runs verify before dispatch and release:perform re-runs the
-                            verify+deploy lifecycle, so verifying inside release:prepare is
-                            redundant.
+                            Main is gated by PR/build CI which runs mvn verify on every
+                            push and PR, so the dispatcher releases from an already-
+                            verified state; release:perform re-runs the verify+deploy
+                            lifecycle on the tag, so a verify inside release:prepare
+                            would be redundant.
                         -->
                         <preparationGoals>spotless:apply</preparationGoals>
                         <completionGoals>spotless:apply</completionGoals>
