@@ -140,6 +140,22 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-release-plugin</artifactId>
                     <version>${plugin.version.release}</version>
+                    <configuration>
+                        <!--
+                            Re-canonicalize POMs after every release-plugin edit via the
+                            spotless <formats> block above. Without this, the jdom-based
+                            POM rewriter would introduce cosmetic churn (collapsed
+                            <project> attrs, spaces in self-closing tags) on every release
+                            commit. Override the default 'clean verify' for preparationGoals
+                            because verify's spotless:check would reject the still-noisy
+                            intermediate POM before spotless:apply could canonicalize it.
+                            CI runs verify before dispatch and release:perform re-runs the
+                            verify+deploy lifecycle, so verifying inside release:prepare is
+                            redundant.
+                        -->
+                        <preparationGoals>spotless:apply</preparationGoals>
+                        <completionGoals>spotless:apply</completionGoals>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -195,6 +211,43 @@
                                 <file>${license.header.file}</file>
                             </licenseHeader>
                         </java>
+                        <formats>
+                            <!--
+                                Targeted fixes for the maven-release-plugin's jdom-based
+                                POM rewriter, which otherwise introduces formatting churn
+                                on every release commit:
+                                  1. Drops the leading space in self-closing tags
+                                     (<foo/> back to <foo/>).
+                                  2. Restores the multi-line <project xmlns="..."> opening
+                                     (jdom collapses all attributes onto one line).
+                                Implemented as text replacements rather than sortPom so we
+                                don't reorder any of the existing POM structure.
+                                Wired into release:prepare via the maven-release-plugin's
+                                preparationGoals + completionGoals above.
+                            -->
+                            <format>
+                                <includes>
+                                    <include>pom.xml</include>
+                                    <include>**/pom.xml</include>
+                                </includes>
+                                <replaceRegex>
+                                    <name>self-closing tag without leading space</name>
+                                    <!-- \h matches horizontal whitespace and survives
+                                         XML's leading-whitespace trim where a literal
+                                         space would be eaten. -->
+                                    <searchRegex>\h+/&gt;</searchRegex>
+                                    <replacement>/&gt;</replacement>
+                                </replaceRegex>
+                                <replaceRegex>
+                                    <name>multi-line project opening</name>
+                                    <searchRegex>&lt;project xmlns="([^"]+)" xmlns:xsi="([^"]+)" xsi:schemaLocation="([^"]+)"&gt;</searchRegex>
+                                    <replacement>&lt;project xmlns="$1"
+         xmlns:xsi="$2"
+         xsi:schemaLocation="$3"&gt;</replacement>
+                                </replaceRegex>
+                                <endWithNewline/>
+                            </format>
+                        </formats>
                     </configuration>
                 </plugin>
                 <plugin>
