@@ -28,7 +28,7 @@
 
     <scm>
         <connection>scm:git:https://github.com/camunda/camunda-security-library.git</connection>
-        <developerConnection>scm:git:git@github.com:camunda/camunda-security-library.git</developerConnection>
+        <developerConnection>scm:git:https://github.com/camunda/camunda-security-library.git</developerConnection>
         <url>https://github.com/camunda/camunda-security-library</url>
         <tag>HEAD</tag>
     </scm>
@@ -103,10 +103,8 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>3.13.0</version>
-                    <configuration>
+                    <configuration combine.self="override">
                         <release>${maven.compiler.release}</release>
-                        <source combine.self="override"/>
-                        <target combine.self="override"/>
                     </configuration>
                 </plugin>
                 <plugin>
