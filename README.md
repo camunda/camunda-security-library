@@ -48,6 +48,8 @@ Authentication and authorization enforcement is **always active** in every strat
 
 A single policy model is shared across Hub and all Orchestration Clusters:
 
+In CSL, a **Policy** is the effective access configuration for a scope, built from roles, groups, mapping rules, principals, and authorizations.
+
 - **Organization** — top-level tenant boundary
 - **Tenant** — logical isolation within an organization
 - **Role** — a named set of permissions
@@ -55,6 +57,8 @@ A single policy model is shared across Hub and all Orchestration Clusters:
 - **Mapping Rule** — maps external identity attributes to internal roles/groups
 - **Principal** — a user or machine identity
 - **Authorization** — a granted permission scoped to a resource
+
+Iteration one starts with explicit modeling of roles, groups, mapping rules, principals, and authorizations. If future requirements demand a higher-level aggregate, we can evolve this into a first-class `Policy` entity without changing the core concepts above.
 
 Authorizations can be scoped at four levels: `ALL`, `TENANT`, `ENGINE`, or `TENANT_ENGINE`.
 

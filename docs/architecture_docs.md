@@ -588,6 +588,10 @@ For concrete diagrams:
 
 The unified identity architecture is built around a single policy model that is shared between Hub Identity & Policy and OC Identity. Hub is the source of truth for this model per cluster; in shared-Hub deployments, Hub stores it per organization and cluster. Each OC hosts a cluster-local projection of the same concepts for enforcement.
 
+In CSL, a **Policy** means the effective access configuration for a scope, derived from roles, groups, mapping rules, principals, and authorizations.
+
+Iteration one models these building blocks directly (roles, groups, mapping rules, principals, and authorizations) and propagates them as versioned snapshots. We intentionally defer introducing a separate first-class `Policy` aggregate until there is a concrete need for additional abstraction.
+
 At a high level, the shared policy model consists of:
 
 - **Organization**
@@ -691,7 +695,7 @@ Engines only need to know the effective permissions resulting from the policy mo
 
 The Camunda Security Library uses an outbox pattern to propagate policy changes from Hub (policy SoT) to each Orchestration Cluster in a reliable, observable, and idempotent way. In shared-Hub deployments, this propagation is scoped by organization and cluster.
 
-**First iteration propagation contract:** Hub always sends a full policy payload (`POLICY_SNAPSHOT`) for every new `PolicyVersion`.
+**First iteration propagation contract:** Hub always sends a full policy payload (`POLICY_SNAPSHOT`) for every new `PolicyVersion`. Each snapshot is composed from the current roles, groups, mapping rules, principals, and authorizations for the target scope.
 
 - **Initial sync:** OC receives the full policy at the current target version.
 - **Subsequent updates:** OC still receives the full policy for the new target version (no incremental diff payloads in iteration one).

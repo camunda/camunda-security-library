@@ -36,6 +36,8 @@ Authentication and authorization enforcement is always active in every strategy.
 
 Shared across Hub and all OCs: `Organization`, `Tenant`, `Role`, `Group`, `MappingRule`, `Principal` (User + Machine), `Authorization`. Scope types: `ALL`, `TENANT`, `ENGINE`, `TENANT_ENGINE`.
 
+In CSL, a policy is the effective access configuration derived from those building blocks. Iteration one models roles/groups/mapping rules/principals/authorizations directly; introduce a first-class `Policy` aggregate only if future requirements require it.
+
 ## Key Conventions
 
 - **Models:** always Java records (never mutable classes)
