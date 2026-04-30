@@ -134,10 +134,16 @@ jobs:
           # central-publishing-maven-plugin defaults to a 30-minute wait window; bump to 60.
           CENTRAL_WAIT_MAX_TIME: '3600'
         run: |
+          # localCheckout=true makes release:perform clone from the local working
+          # copy (which already contains the tag created by release:prepare moments
+          # earlier) instead of doing a fresh https://github.com clone. That fresh
+          # clone has no credentials available and fails non-interactively on a
+          # runner. Skipping the remote re-clone is safe: release:prepare already
+          # exited 0 after pushing the tag.
           ./mvnw release:perform -B \
             -DreleaseVersion="${RELEASE_VERSION}" \
             -Dgpg.passphrase="${MAVEN_GPG_PASSPHRASE}" \
-            -DlocalCheckout="${{ inputs.dryRun }}" \
+            -DlocalCheckout=true \
             -Darguments="-DskipTests=true -Dskip.central.release=${SKIP_CENTRAL_RELEASE} -Dskip.camunda.release=${SKIP_CAMUNDA_RELEASE} -DwaitMaxTime=${CENTRAL_WAIT_MAX_TIME} -Dgpg.passphrase=${MAVEN_GPG_PASSPHRASE}"
 
           if [[ -d target/checkout ]]; then
