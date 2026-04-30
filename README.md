@@ -18,7 +18,7 @@ For the platform team: one codebase to maintain, one security surface to audit, 
 
 ## Architecture
 
-The CSL is a **hexagonal (ports and adapters) Spring Boot library** embedded into host applications (Hub, Orchestration Clusters). Interfaces in the core are always ports: inbound ports model use cases, and outbound ports model dependencies on persistence, IdP clients, engine commands, and outbox delivery. Host applications provide adapters that implement those outbound ports.
+The CSL is a **hexagonal (ports and adapters) Spring Boot library** embedded into host applications (Hub, Orchestration Clusters). For new code, interfaces in the core should be modeled as ports: inbound ports model use cases, and outbound ports model dependencies on persistence, IdP clients, engine commands, and outbox delivery. Host applications provide adapters that implement those outbound ports. Some legacy outbound contracts still exist in `core` under `io.camunda.security.core.adapter` and will remain until they are refactored to follow this convention consistently.
 
 No host-specific code leaks into the library domain. Swapping a database, replacing an IdP client, or adding a new deployment topology requires only a new adapter.
 
@@ -28,7 +28,8 @@ No host-specific code leaks into the library domain. Swapping a database, replac
 - `api`: public consumer-facing types intended to be imported by host applications.
   - Put shared public models in `api/model` (for example `CamundaAuthentication`).
   - Put shared public context/helper contracts in `api/context` (for example holders, providers, converters).
-- `adapters`: Spring and infrastructure integration code for wiring/authentication filter chains.
+- `spring-boot-starter`: Spring-specific auto-configuration and authentication filter chain wiring.
+- `adapters` *(planned)*: non-Spring infrastructure adapter code for environments that do not use Spring Boot.
 
 Rule of thumb: if a type is a hexagonal inbound or outbound port, keep it in `core`. Use `api` for public adopter-facing models and helper/context contracts that are not hexagonal ports.
 
@@ -60,7 +61,7 @@ In CSL, a **Policy** is the effective access configuration for a scope, built fr
 
 Iteration one starts with explicit modeling of roles, groups, mapping rules, principals, and authorizations. If future requirements demand a higher-level aggregate, we can evolve this into a first-class `Policy` entity without changing the core concepts above.
 
-Authorizations can be scoped at four levels: `ALL`, `TENANT`, `ENGINE`, or `TENANT_ENGINE`.
+Authorizations can be scoped at three levels: `ALL`, `TENANT`, or `PHYSICAL_TENANT`.
 
 ## Getting Started
 

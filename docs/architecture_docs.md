@@ -114,7 +114,7 @@ flowchart TB
 
   SaaSAuth0["Auth0 tenant</br>(Camunda-managed, SaaS)"]
   
-  ManagementIdDBUse[("Management Identity DB)")]
+  ManagementIdDBUse[("Management Identity DB")]
 
   ConsoleHub & WebModeler --> SaaSAuth0
   Operate & Tasklist & Identity  --> OC
@@ -170,7 +170,7 @@ flowchart TB
 
 In Self-managed today:
 
-- Management Identity is a shared service for authorization and user/group management, but authentication is not uniformly delegated to it as a service across management-plane components. Each component implements its own authentication flow:
+- Management Identity is a shared service for authorization and user/group/role management, but authentication is not uniformly delegated to it as a service across management-plane components. Each component implements its own authentication flow:
   - Some (e.g. Optimize) use the Identity SDK to integrate with Management Identity and delegate authentication to it.
   - Others (e.g. Web Modeler, Accounts) implement the authentication flow themselves, either using the Identity SDK for limited integration or communicating with the Enterprise IdP directly without going through Management Identity.
   - This means there are effectively more than two identity silos — not just Management Identity vs OC Identity, but multiple per-component authentication paths that may or may not align in behavior or feature completeness.
@@ -229,7 +229,7 @@ The target architecture is based on the following assumptions:
 
 ---
 
-### 2.5 Preparation work and ongoing epics
+### 2.6 Preparation work and ongoing epics
 
 - [Prepare Authentication for Hub Integration](https://github.com/camunda/camunda/issues/38556)
 - Spike about extraction of code: [Spike/new replacement auth lib](https://github.com/camunda/camunda/pull/49058)
@@ -400,7 +400,7 @@ flowchart TB
   end
 
   subgraph Execution["Execution plane"]
-    OcUi["OC UI (Operate, Tasklist, Admin (view only)"]
+    OcUi["OC UI (Operate, Tasklist, Admin (view only))"]
 
     OC["Orchestration Cluster"]
 
@@ -436,7 +436,7 @@ Configuration flows locally: OC manages all policies directly, and the Admin UI 
 flowchart TB
 
   subgraph Execution["Execution plane"]
-    OcUi["OC UI (Operate, Tasklist, Admin"]
+    OcUi["OC UI (Operate, Tasklist, Admin)"]
 
     OC["Orchestration Cluster"]
 
@@ -555,7 +555,7 @@ flowchart TB
   end
 
   subgraph Execution["Execution plane"]
-    OcUi["OC UI (Operate, Tasklist, Admin (view only)"]
+    OcUi["OC UI (Operate, Tasklist, Admin (view only))"]
 
     subgraph OC["Orchestration Cluster"]
       subgraph GatewayLayer["Gateway / Search Layer"]
@@ -609,7 +609,7 @@ For concrete deployment topologies (including multi-gateway and multi-broker lay
 flowchart TB
 
   subgraph Execution["Execution plane"]
-    OcUi["OC UI (Operate, Tasklist, Admin"]
+    OcUi["OC UI (Operate, Tasklist, Admin)"]
 
     subgraph OC["Orchestration Cluster"]
       subgraph GatewayLayer["Gateway / Search Layer"]
@@ -1329,9 +1329,7 @@ This section illustrates selected runtime flows as concrete user journeys, focus
 - Validates and persists the changes in the Hub DB under that organization scope.
 - Writes a new `PolicyVersion` and associated `EntityRevision` and `PolicyVersionChange` rows.
 - Writes one or more `OutboxEvent`s in status `PENDING` for the affected OCs.
-5. Outbox Dispatcher picks up the new events:
-- Builds a full `POLICY_SNAPSHOT` for the target `PolicyVersion`.
-- Posts the payload to `/identity/policies/apply` on each target OC.
+5. Outbox Dispatcher picks up the new events and delivers the full `POLICY_SNAPSHOT` for the target `PolicyVersion` to each affected OC via the configured transport (see `docs/hub-oc-data-propagation.md`).
 6. OC Camunda Security Library:
 - Applies the full policy snapshot to its local projection and updates `last_applied_version`.
 - Propagates engine-scoped changes to engines via the engine command path / Security Engine Framework.
@@ -1360,7 +1358,7 @@ sequenceDiagram
   HubUI->>HubCSL: Submit policy updates
   HubCSL->>HubDB: Persist policy + PolicyVersion + revisions + propagation events
   Outbox->>HubDB: Read pending events
-  Outbox->>OCSLF: POST /identity/policies/apply (full snapshot)
+  Outbox->>OCSLF: Deliver policy snapshot (transport-agnostic, see hub-oc-data-propagation.md)
   OCSLF->>OCSLF: Apply snapshot projection
   OCSLF->>Engine: Propagate engine-scoped changes
 ```
@@ -1389,8 +1387,9 @@ sequenceDiagram
   actor User
   participant IdP as Customer IdP
   box Orchestration Cluster
-    participant OcUi as OC UI (Operate, Tasklist, Admin (view only)
+    participant OcUi as OC UI (Operate, Tasklist, Admin (view only))
     participant OCSLF as OC Camunda Security Library
+    participant SecStore as Secondary Storage
     participant Engine as Engine(s)
   end
 

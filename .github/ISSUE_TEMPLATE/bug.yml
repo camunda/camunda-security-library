@@ -12,7 +12,7 @@ body:
     attributes:
       label: Summary
       description: One or two sentences describing what is broken.
-      placeholder: "PolicySnapshot apply silently drops authorizations with ENGINE scope type"
+      placeholder: "PolicySnapshot apply silently drops authorizations with PHYSICAL_TENANT scope type"
     validations:
       required: true
 
@@ -21,7 +21,7 @@ body:
     attributes:
       label: Expected Behavior
       description: What should happen?
-      placeholder: "All authorizations in the snapshot — including ENGINE-scoped ones — should be persisted and queryable after apply."
+      placeholder: "All authorizations in the snapshot — including PHYSICAL_TENANT-scoped ones — should be persisted and queryable after apply."
     validations:
       required: true
 
@@ -30,7 +30,7 @@ body:
     attributes:
       label: Actual Behavior
       description: What happens instead?
-      placeholder: "ENGINE-scoped authorizations are silently skipped during apply. No error is logged. The policy projection is incomplete."
+      placeholder: "PHYSICAL_TENANT-scoped authorizations are silently skipped during apply. No error is logged. The policy projection is incomplete."
     validations:
       required: true
 
@@ -40,8 +40,9 @@ body:
       label: Location in Code
       description: Where in the codebase does this occur? File paths, class names, method names — as specific as possible.
       placeholder: |
-        - `sgl-domain/src/.../PolicyApplyService.java:applySnapshot()` — filtering logic at line ~84
-        - `sgl-domain/src/.../Authorization.java` — scope type enum
+        - `core/pom.xml` — module where the persistence/apply implementation lives
+        - `api/pom.xml` — module defining shared API/domain types involved in the bug
+        - `spring-boot-starter/src/main/resources/` — starter configuration or auto-configuration resources related to the issue
     validations:
       required: false
 
@@ -51,9 +52,9 @@ body:
       label: Steps to Reproduce
       description: How to trigger the bug. Include test setup, API calls, or configuration if relevant.
       placeholder: |
-        1. Create a PolicySnapshot containing an authorization with scope_type=ENGINE
+        1. Create a PolicySnapshot containing an authorization with scope_type=PHYSICAL_TENANT
         2. Call PolicyApplyService.applySnapshot(snapshot)
-        3. Query authorizations — ENGINE-scoped entry is missing
+        3. Query authorizations — PHYSICAL_TENANT-scoped entry is missing
     validations:
       required: false
 
@@ -63,7 +64,7 @@ body:
       label: Acceptance Criteria
       description: What must be true for this to be considered fixed? Be specific — these are the verification checks.
       placeholder: |
-        - [ ] Authorizations with all scope types (ALL, TENANT, ENGINE, TENANT_ENGINE) are persisted during snapshot apply
+        - [ ] Authorizations with all scope types (ALL, TENANT, PHYSICAL_TENANT) are persisted during snapshot apply
         - [ ] A unit test covers each scope type through the apply path
         - [ ] No silent data loss — if an authorization cannot be applied, an error is logged
     validations:

@@ -34,7 +34,7 @@ Authentication and authorization enforcement is always active in every strategy.
 
 ### Unified Policy Model
 
-Shared across Hub and all OCs: `Organization`, `Tenant`, `Role`, `Group`, `MappingRule`, `Principal` (User + Machine), `Authorization`. Scope types: `ALL`, `TENANT`, `ENGINE`, `TENANT_ENGINE`.
+Shared across Hub and all OCs: `Organization`, `Tenant`, `Role`, `Group`, `MappingRule`, `Principal` (User + Machine), `Authorization`. Scope types: `ALL`, `TENANT`, `PHYSICAL_TENANT`.
 
 In CSL, a policy is the effective access configuration derived from those building blocks. Iteration one models roles/groups/mapping rules/principals/authorizations directly; introduce a first-class `Policy` aggregate only if future requirements require it.
 
@@ -115,7 +115,7 @@ When a feature is too large to land in a single small PR, break it into tasks an
 
 Every issue created via these workflows must be **self-contained** — a fresh session with no prior context must be able to read it and deliver a complete, correct result.
 
-The **Location in Code** and **Acceptance Criteria** fields are what make the difference between an issue that requires a conversation and one that an agent can resolve cold. Be specific. "Fix the bug" is not an acceptance criterion. "Authorizations with scope_type=ENGINE are persisted during snapshot apply and a unit test covers this path" is.
+The **Location in Code** and **Acceptance Criteria** fields are what make the difference between an issue that requires a conversation and one that an agent can resolve cold. Be specific. "Fix the bug" is not an acceptance criterion. "Authorizations with scope_type=PHYSICAL_TENANT are persisted during snapshot apply and a unit test covers this path" is.
 
 ## ADRs
 

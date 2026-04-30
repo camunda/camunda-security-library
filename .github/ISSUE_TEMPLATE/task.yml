@@ -14,7 +14,7 @@ body:
     attributes:
       label: Summary
       description: One or two sentences describing what this task delivers.
-      placeholder: "Add the PolicyVersionRepository port and a JPA adapter implementation"
+      placeholder: "Add the PolicyVersionPersistencePort and a JPA adapter implementation"
     validations:
       required: true
 
@@ -44,8 +44,8 @@ body:
       description: What is in scope and what is explicitly out of scope for this task.
       placeholder: |
         In scope:
-        - Define `PolicyVersionRepository` port in `sgl-domain/src/.../port/out/`
-        - Implement `JpaPolicyVersionPersistenceAdapter` in `sgl-spring/src/.../adapter/out/`
+        - Define `PolicyVersionPersistencePort` in `core/src/main/java/.../port/out/`
+        - Implement `JpaPolicyVersionPersistenceAdapter` in `spring-boot-starter/src/main/java/.../adapter/out/`
         - Unit tests for the adapter
 
         Out of scope:
@@ -60,9 +60,9 @@ body:
       label: Location in Code
       description: Where to implement. Specific file paths, modules, new files. Existing classes to follow as patterns — name them specifically.
       placeholder: |
-        - New file: `sgl-domain/src/main/java/.../port/out/PolicyVersionRepository.java`
-        - New file: `sgl-spring/src/main/java/.../adapter/out/JpaPolicyVersionPersistenceAdapter.java`
-        - Follow pattern in `RolePersistenceAdapter` for the JPA adapter structure
+        - New file: `core/src/main/java/.../port/out/PolicyVersionPersistencePort.java`
+        - New file: `spring-boot-starter/src/main/java/.../adapter/out/JpaPolicyVersionPersistenceAdapter.java`
+        - Follow pattern in an existing persistence adapter in the same module/package, if applicable
     validations:
       required: false
 
@@ -72,7 +72,7 @@ body:
       label: Acceptance Criteria
       description: What must be true for this task to be considered complete. Each criterion must be verifiable.
       placeholder: |
-        - [ ] `PolicyVersionRepository` interface exists with `save(PolicyVersion)` and `findByClusterAndVersion(...)` methods
+        - [ ] `PolicyVersionPersistencePort` interface exists with `save(PolicyVersion)` and `findByClusterAndVersion(...)` methods
         - [ ] `JpaPolicyVersionPersistenceAdapter` implements the interface and is annotated `@Component`
         - [ ] Unit test covers save and findByClusterAndVersion happy paths
         - [ ] No existing test fails
@@ -84,7 +84,7 @@ body:
     attributes:
       label: Verification
       description: Exact command to run to confirm the task is complete.
-      placeholder: "`mvn test -pl sgl-spring -Dtest=JpaPolicyVersionPersistenceAdapterTest`"
+      placeholder: "`mvn test -pl spring-boot-starter -Dtest=JpaPolicyVersionPersistenceAdapterTest`"
     validations:
       required: true
 
