@@ -13,7 +13,12 @@ A unified identity and authorization library for the Camunda 8 platform. The CSL
 
 Hexagonal (ports and adapters). The domain has zero framework dependencies — enforced by ArchUnit.
 
-All persistence, IdP clients, engine commands, and outbox delivery sit behind outbound `*Adapter` contracts defined in the library core. Host applications (Hub, OC) provide `*AdapterImpl` classes. No host-specific code leaks into the library domain.
+All persistence, IdP clients, engine commands, and outbox delivery sit behind outbound `*Port` contracts defined in the library core. Host applications (Hub, OC) provide outbound adapter implementations. No host-specific code leaks into the library domain.
+
+Public consumer-facing types are exposed from the `api` module:
+
+- `api/model`: public models used by adopters (for example authentication context records)
+- `api/context`: public context/helper contracts used by adopters (for example holders/providers/converters)
 
 ### Deployment Strategies
 
@@ -29,7 +34,9 @@ Authentication and authorization enforcement is always active in every strategy.
 
 ### Unified Policy Model
 
-Shared across Hub and all OCs: `Organization`, `Tenant`, `Role`, `Group`, `MappingRule`, `Principal` (User + Machine), `Authorization`. Scope types: `ALL`, `TENANT`, `ENGINE`, `TENANT_ENGINE`.
+Shared across Hub and all OCs: `Organization`, `Tenant`, `Role`, `Group`, `MappingRule`, `Principal` (User + Machine), `Authorization`. Scope types: `ALL`, `TENANT`, `PHYSICAL_TENANT`.
+
+In CSL, a policy is the effective access configuration derived from those building blocks. Iteration one models roles/groups/mapping rules/principals/authorizations directly; introduce a first-class `Policy` aggregate only if future requirements require it.
 
 ## Key Conventions
 
@@ -42,12 +49,14 @@ Shared across Hub and all OCs: `Organization`, `Tenant`, `Role`, `Group`, `Mappi
 
 ### Naming
 
-`Port` is always inbound; `Adapter` is always outbound.
+An interface is always a `Port`. Use `port/in/` for inbound ports and `port/out/` for outbound ports. `Adapter` is reserved for implementations of outbound ports.
 
-- Inbound port interfaces: suffixed with `Port`, in `port/` (e.g., `GroupPort`)
-- Inbound port implementations (business logic): suffixed with `PortImpl` (e.g., `GroupPortImpl`)
-- Outbound adapter interfaces: suffixed with `Adapter`, in `adapter/` (e.g., `GroupPersistenceAdapter`, `IdpClientAdapter`)
-- Outbound adapter implementations (external-system I/O): suffixed with `AdapterImpl` (e.g., `GroupPersistenceAdapterImpl`)
+- Inbound port interfaces: suffixed with `Port`, in `port/in/` (e.g., `GroupPort`)
+- Inbound port implementations (business logic): named by responsibility, typically `*Service` (e.g., `GroupService`)
+- Outbound port interfaces: suffixed with `Port`, in `port/out/` (e.g., `GroupPersistencePort`, `IdpPort`)
+- Outbound port implementations (external-system I/O): suffixed with `Adapter` (e.g., `GroupPersistenceAdapter`, `IdpClientAdapter`)
+- Never use `*Impl` as a naming convention for implementations
+- Existing code may still contain legacy `*PortImpl`, `*AdapterImpl`, and `adapter/` contract packages until explicitly refactored
 
 ### Error Handling
 
@@ -106,7 +115,7 @@ When a feature is too large to land in a single small PR, break it into tasks an
 
 Every issue created via these workflows must be **self-contained** — a fresh session with no prior context must be able to read it and deliver a complete, correct result.
 
-The **Location in Code** and **Acceptance Criteria** fields are what make the difference between an issue that requires a conversation and one that an agent can resolve cold. Be specific. "Fix the bug" is not an acceptance criterion. "Authorizations with scope_type=ENGINE are persisted during snapshot apply and a unit test covers this path" is.
+The **Location in Code** and **Acceptance Criteria** fields are what make the difference between an issue that requires a conversation and one that an agent can resolve cold. Be specific. "Fix the bug" is not an acceptance criterion. "Authorizations with scope_type=PHYSICAL_TENANT are persisted during snapshot apply and a unit test covers this path" is.
 
 ## ADRs
 

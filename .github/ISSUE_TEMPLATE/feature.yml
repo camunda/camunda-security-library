@@ -59,10 +59,11 @@ body:
       label: Location in Code
       description: Where should this be implemented? Relevant modules, packages, existing classes to extend or follow as patterns.
       placeholder: |
-        - New use case port: `sgf-domain/src/.../port/in/AssignRolesUseCase.java`
-        - Domain service: `sgf-domain/src/.../RoleAssignmentService.java`
-        - REST adapter: `sgf-spring/src/.../RoleRestAdapter.java` (extend existing)
-        - Follow pattern in `AssignAuthorizationService` for the domain layer
+        - New use case port: `core/src/.../port/in/AssignRolesPort.java`
+        - Domain service: `core/src/.../RoleAssignmentService.java`
+        - API contract or DTOs: `api/src/...`
+        - REST adapter: `spring-boot-starter/src/.../RoleRestAdapter.java` (extend existing)
+        - If there is an existing domain-layer service with a similar responsibility, reference it here as the pattern to follow
     validations:
       required: false
 

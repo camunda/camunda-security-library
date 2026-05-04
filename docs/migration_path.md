@@ -1,7 +1,7 @@
 # Unified Identity Architecture – Migration Path
 
 This document describes the incremental migration path from the current split identity systems
-to the unified Security Gateway Framework described in the
+to the unified Camunda Security Library described in the
 [Unified Identity Architecture](unified_identity_architecture.md).
 
 ## 1. Current state summary

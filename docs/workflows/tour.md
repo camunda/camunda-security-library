@@ -43,8 +43,8 @@ Read these in order if you're new. `CLAUDE.md` and everything it `@`-includes (`
 
 - **Hexagonal (ports and adapters).** `core` (domain) has zero framework dependencies. Adapters and implementations depend on `core`, never the reverse.
 - **Deployment strategies.** Active capabilities are selected by a configuration property — `oc-standalone`, `oc-managed`, `hub`. Not Spring profiles.
-- **One library, many hosts.** The same library embeds into Hub and OC. Host-specific code lives in `*AdapterImpl` beans; nothing host-specific leaks into `core`.
-- **Naming.** Inbound `*Port` interfaces live in `core/port/`; outbound `*Adapter` interfaces live in `core/adapter/`. Hosts supply `*AdapterImpl` beans; domain services are `*PortImpl`.
+- **One library, many hosts.** The same library embeds into Hub and OC. Host-specific code lives in adapters that implement outbound ports; nothing host-specific leaks into `core`.
+- **Naming.** Interfaces are always ports. Inbound `*Port` interfaces live in `core/port/in/`; outbound `*Port` interfaces live in `core/port/out/`. Services implement inbound ports; adapters implement outbound ports. Do not introduce `*Impl` names in new code.
 - **Auth is always on.** Authentication and authorization enforcement are active in every deployment strategy.
 
 See [architecture.md](../../.claude/docs/architecture.md) for the full picture.

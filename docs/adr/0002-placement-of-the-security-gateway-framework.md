@@ -1,4 +1,4 @@
-# ADR-0002: Placement of the Security Gateway Framework (embedded vs standalone service)
+# ADR-0002: Placement of the Camunda Security Library (embedded vs standalone service)
 
 ## Status
 
@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-The unified identity architecture introduces a shared Security Gateway Framework (SGF) that implements authentication and authorization for both Hub and Orchestration Clusters (OCs).
+The unified identity architecture introduces a shared Camunda Security Library (CSL) that implements authentication and authorization for both Hub and Orchestration Clusters (OCs).
 
 The core question for this ADR is:
 
@@ -14,7 +14,7 @@ The core question for this ADR is:
 
 Concretely, we are deciding between:
 
-- Embedding the SGF as a shared library in Hub and OC (current proposal), or
+- Embedding the CSL as a shared library in Hub and OC (current proposal), or
 - Running one or more dedicated identity services that Hub/OCs connect to over the network.
 
 This decision is closely related to:
@@ -27,17 +27,17 @@ This decision is closely related to:
 
 We will:
 
-- Embed the Security Gateway Framework as a library into both Hub and each Orchestration Cluster, and
+- Embed the Camunda Security Library as a library into both Hub and each Orchestration Cluster, and
 - Not introduce a separate, always‑on identity microservice (either per cluster or globally) for unified identity.
 
-In other words, we adopt Option 1 (embedded SGF in Hub + OC) and explicitly reject the alternatives described below.
+In other words, we adopt Option 1 (embedded CSL in Hub + OC) and explicitly reject the alternatives described below.
 
 ## Options considered
 
-### Option 1 – Embedded Security Gateway Framework in Hub + OC (chosen)
+### Option 1 – Embedded Camunda Security Library in Hub + OC (chosen)
 
 - Shape:
-  - SGF is a shared library.
+  - CSL is a shared library.
   - Hub embeds one instance; each OC embeds one instance.
   - Engines integrate via a narrow Security Engine Framework; they never talk to IdPs directly.
 - Characteristics:
@@ -48,7 +48,7 @@ In other words, we adopt Option 1 (embedded SGF in Hub + OC) and explicitly reje
   - OC:
     - Hosts a cluster‑local policy projection and runtime enforcement.
     - Exposes Admin UI (read‑only in full mode, read/write in OC‑only mode).
-    - Uses SGF for IdP integration, sessions, multi‑tenancy, and authorization checks for UIs/APIs.
+    - Uses CSL for IdP integration, sessions, multi‑tenancy, and authorization checks for UIs/APIs.
   - Engines:
     - Consume scoped policy projections.
     - Do not embed IdP clients or full policy logic.
@@ -81,7 +81,7 @@ This is the architecture described in the unified identity document (sections 4�
   - One global identity service (similar in spirit to today’s Management Identity):
     - Manages users, IdP connections, and policy centrally.
     - Hub and OCs call it synchronously for authentication/authorization.
-  - No per‑cluster SGF; everything goes through the central service.
+  - No per‑cluster CSL; everything goes through the central service.
 - Pros:
   - Maximum centralization:
     - Single place for identity logs, audit, and configuration.
@@ -101,7 +101,7 @@ Given our experience with Management Identity, we explicitly want fewer standalo
 
 ### Why Option 1 is preferred
 
-We choose embedded SGF in both Hub and OC because it:
+We choose embedded CSL in both Hub and OC because it:
 
 - Keeps policy enforcement local to each runtime boundary:
   - Hub: for management-plane UIs and APIs.
@@ -113,18 +113,18 @@ We choose embedded SGF in both Hub and OC because it:
   - One conceptual model (tenants, roles, groups, mapping rules, authorizations).
   - Different adapters per runtime (Hub vs OC vs engine).
 - Respects self‑managed and disconnected deployment needs:
-  - Each OC can keep making identity decisions as long as its own SGF instance and DB are healthy.
+  - Each OC can keep making identity decisions as long as its own CSL instance and DB are healthy.
   - Hub can be offline without breaking runtime authZ on clusters (after last successful policy sync).
 
 ### Consequences
 
-- We must maintain SGF as a library with clear interfaces.
+- We must maintain CSL as a library with clear interfaces.
 - Hub and OC will each:
-  - Have their own SGF configuration and adapter implementations.
+  - Have their own CSL configuration and adapter implementations.
   - Own their local identity/session/policy state and observability.
 - We do not introduce:
   - A separate Identity microservice per cluster.
   - A single global Identity service for all clusters and Hub.
 - Migration from Management Identity will converge towards:
-  - Hub using embedded SGF for management-plane identity instead of an external Management Identity service.
-  - OCs using embedded SGF for cluster identity, as described in the unified identity architecture.
+  - Hub using embedded CSL for management-plane identity instead of an external Management Identity service.
+  - OCs using embedded CSL for cluster identity, as described in the unified identity architecture.

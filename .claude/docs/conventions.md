@@ -4,25 +4,27 @@
 
 Hexagonal architecture naming (replaces traditional controller/service/repo naming):
 
-**Inbound (driving side)** — `Port` is always inbound.
+**Ports** — an interface is always a `Port`.
 
-- Interface — suffixed with `Port`, lives in `port/`. The inbound contract a host application (or any caller) invokes. Example: `GroupPort` with methods like `create(...)`.
-- Implementation — suffixed with `PortImpl`. Contains business logic. Example: `GroupPortImpl` implementing `GroupPort`.
+- Inbound port interfaces live in `port/in/`. They are the use-case contracts a host application (or any caller) invokes. Example: `GroupPort` with methods like `create(...)`.
+- Outbound port interfaces live in `port/out/`. They are the contracts the domain needs the outside world to satisfy. Example: `GroupPersistencePort`, `IdpPort`, `EngineCommandPort`.
 
-**Outbound (driven side)**
+**Implementations**
 
-- Interface — suffixed with `Adapter`, lives in `adapter/`. The contract the domain needs the outside world to satisfy. The qualifier before `Adapter` indicates the kind of external system. Example: `GroupPersistenceAdapter` with methods like `store(...)`, `GroupKafkaAdapter`, `IdpClientAdapter`.
-- Implementation — suffixed with `AdapterImpl`. Actually talks to the external system (JDBC, HTTP client, Kafka, …). Example: `GroupPersistenceAdapterImpl` implementing `GroupPersistenceAdapter`.
+- Inbound port implementations are named by responsibility, typically as `*Service`. Example: `GroupService` implementing `GroupPort`.
+- Outbound port implementations are adapters, typically suffixed with `Adapter`. Example: `GroupPersistenceAdapter`, `IdpClientAdapter`.
+- Never use `*Impl` as a naming convention for implementations.
 
 **Other**
 
-- Spring Data interfaces may keep the `Repository` suffix (e.g., `JpaRoleRepository extends JpaRepository`) since they are framework-generated — but the outbound adapter implementation that wraps them follows the `*AdapterImpl` naming above.
+- Spring Data interfaces may keep the `Repository` suffix (e.g., `JpaRoleRepository extends JpaRepository`) since they are framework-generated — but the outbound adapter that wraps them should follow the naming above.
+- Existing code may still contain legacy `*PortImpl`, `*AdapterImpl`, and `adapter/` contract packages. Do not refactor those names unless the work explicitly calls for it.
 
 ## Project-Specific Patterns
 
-- Hexagonal architecture package structure is enforced: `domain/`, `port/`, `adapter/`
-- `*PortImpl` classes implement the inbound port interfaces defined in `port/`
-- `*AdapterImpl` classes implement the outbound adapter interfaces defined in `adapter/`
+- For new core contracts, the hexagonal package structure is `domain/`, `port/in/`, `port/out/`
+- Inbound port interfaces live in `port/in/`; their implementations are named by responsibility, typically `*Service`
+- Outbound port interfaces live in `port/out/`; their implementations are adapters
 - **Models:** always Java records (never mutable classes)
 - **Config classes:** cannot be records (Spring `@ConfigurationProperties` needs mutability)
 - **RDBMS entities:** cannot be records (MyBatis/JPA needs setters)
