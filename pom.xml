@@ -42,7 +42,7 @@
         <plugin.version.enforcer>3.5.0</plugin.version.enforcer>
         <plugin.version.spotless>3.4.0</plugin.version.spotless>
         <plugin.version.google-java-format>1.23.0</plugin.version.google-java-format>
-        <plugin.version.checkstyle>3.5.0</plugin.version.checkstyle>
+        <plugin.version.checkstyle>3.6.0</plugin.version.checkstyle>
         <version.checkstyle>13.4.2</version.checkstyle>
         <plugin.version.exec>3.6.3</plugin.version.exec>
         <plugin.version.dependency>3.10.0</plugin.version.dependency>
