@@ -4,9 +4,9 @@
   "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
   "baseBranchPatterns": ["main"],
   "dependencyDashboard": true,
-  "schedule": ["before 6am every weekday"],
+  "schedule": ["after 10pm every weekday", "before 6am every weekday", "every weekend"],
   "prConcurrentLimit": 10,
-  "prHourlyLimit": 2,
+  "prHourlyLimit": 0,
   "vulnerabilityAlerts": {
     "enabled": true,
     "labels": ["area/security"]
