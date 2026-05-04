@@ -11,13 +11,18 @@ on:
         description: 'Next development version (e.g. 0.2.0-SNAPSHOT).'
         type: string
         required: true
+      baseBranch:
+        description: 'Base branch to cut a new release/<version> canary branch from. Mutually exclusive with releaseBranch. If both are empty, defaults to the workflow dispatch ref (typically main).'
+        type: string
+        required: false
+        default: ''
       releaseBranch:
-        description: 'Branch to perform the release on. Defaults to the branch the workflow is dispatched on (typically main).'
+        description: 'Existing branch to release from (e.g. a maintenance branch for a patch release). Mutually exclusive with baseBranch. No mergeback PR is opened in this mode.'
         type: string
         required: false
         default: ''
       dryRun:
-        description: 'Whether to perform a dry release (no git push, no Maven publish). Defaults to true.'
+        description: 'Whether to perform a dry release (no git push, no Maven publish, no canary push, no mergeback PR). Defaults to true.'
         type: boolean
         default: true
 
@@ -34,10 +39,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Default to releasing from whichever branch the workflow was dispatched on
-  # (typically main). Callers can override by passing releaseBranch explicitly,
-  # e.g. to release from a pre-created release-X.Y.Z branch.
-  RELEASE_BRANCH: ${{ inputs.releaseBranch != '' && inputs.releaseBranch || github.ref_name }}
   RELEASE_VERSION: ${{ inputs.releaseVersion }}
   RELEASE_TAG: ${{ inputs.releaseVersion }}
   GH_TOKEN: ${{ github.token }}
@@ -49,6 +50,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: write
+      pull-requests: write
     env:
       DEVELOPMENT_VERSION: ${{ inputs.nextDevelopmentVersion }}
       PUSH_CHANGES: ${{ !inputs.dryRun }}
@@ -57,6 +59,77 @@ jobs:
     steps:
       - name: Output Inputs
         run: echo "${{ toJSON(github.event.inputs) }}"
+
+      - name: Resolve release branch
+        id: resolve
+        env:
+          BASE_BRANCH_INPUT: ${{ inputs.baseBranch }}
+          RELEASE_BRANCH_INPUT: ${{ inputs.releaseBranch }}
+          DEFAULT_BASE: ${{ github.ref_name }}
+        run: |
+          if [[ -n "$BASE_BRANCH_INPUT" && -n "$RELEASE_BRANCH_INPUT" ]]; then
+            echo "::error::baseBranch and releaseBranch are mutually exclusive"
+            exit 1
+          fi
+
+          if [[ -n "$RELEASE_BRANCH_INPUT" ]]; then
+            mode=existing
+            release_branch="$RELEASE_BRANCH_INPUT"
+            base_branch=""
+            checkout_ref="$RELEASE_BRANCH_INPUT"
+          else
+            mode=create
+            base_branch="${BASE_BRANCH_INPUT:-$DEFAULT_BASE}"
+            release_branch="release/${RELEASE_VERSION}"
+            checkout_ref="$base_branch"
+          fi
+
+          {
+            echo "mode=$mode"
+            echo "releaseBranch=$release_branch"
+            echo "baseBranch=$base_branch"
+            echo "checkoutRef=$checkout_ref"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Mode:           $mode"
+          echo "Release branch: $release_branch"
+          echo "Base branch:    ${base_branch:-(n/a)}"
+          echo "Checkout ref:   $checkout_ref"
+
+      - name: Verify canary branch does not exist on origin
+        if: ${{ steps.resolve.outputs.mode == 'create' && !inputs.dryRun }}
+        env:
+          RELEASE_BRANCH: ${{ steps.resolve.outputs.releaseBranch }}
+          # Authenticate the URL so this works on private repos and so we
+          # don't share unauthenticated rate limits with the rest of the
+          # internet. Token is masked by the runner; never echoed.
+          REMOTE_URL: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: |
+          # git ls-remote rather than `gh api .../branches/<name>`: the API
+          # endpoint takes the branch name as a single path segment, so a
+          # name like `release/0.1.0` would be sent as two segments and
+          # silently 404 — defeating the safety check. ls-remote handles
+          # slashes natively and tests the same remote we'll push to.
+          #
+          # --exit-code: 0 = ref found, 2 = not found, anything else =
+          # network/protocol/auth error. Distinguish all three so a transient
+          # failure doesn't silently bypass the safety check.
+          set +e
+          git ls-remote --exit-code --heads "${REMOTE_URL}" "${RELEASE_BRANCH}" >/dev/null 2>&1
+          rc=$?
+          set -e
+          case "$rc" in
+            0)
+              echo "::error::Release branch ${RELEASE_BRANCH} already exists on origin. Either delete it and re-dispatch, or re-dispatch with releaseBranch=${RELEASE_BRANCH} to release from the existing branch (no mergeback PR will be opened in that mode)."
+              exit 1
+              ;;
+            2)
+              ;;
+            *)
+              echo "::error::Could not verify whether ${RELEASE_BRANCH} exists on origin (git ls-remote exit code ${rc}). Aborting to avoid overwriting an existing branch."
+              exit 1
+              ;;
+          esac
 
       - name: Import Maven Central secrets
         id: secrets
@@ -76,7 +149,7 @@ jobs:
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          ref: ${{ env.RELEASE_BRANCH }}
+          ref: ${{ steps.resolve.outputs.checkoutRef }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -84,6 +157,19 @@ jobs:
         run: |
           git config --global user.email "github-actions[release]@users.noreply.github.com"
           git config --global user.name "github-actions[release]"
+
+      - name: Create canary release branch
+        if: ${{ steps.resolve.outputs.mode == 'create' }}
+        env:
+          RELEASE_BRANCH: ${{ steps.resolve.outputs.releaseBranch }}
+        run: |
+          git switch -c "${RELEASE_BRANCH}"
+          if [[ "${PUSH_CHANGES}" == "true" ]]; then
+            # Push immediately so release:prepare has an upstream to push version
+            # commits and tags to, and so the branch is visible for inspection if
+            # a later step fails.
+            git push -u origin "${RELEASE_BRANCH}"
+          fi
 
       - name: Install Maven Central GPG Key
         run: |
@@ -155,16 +241,65 @@ jobs:
 
       - name: Push release branch
         if: ${{ !inputs.dryRun }}
+        env:
+          RELEASE_BRANCH: ${{ steps.resolve.outputs.releaseBranch }}
         run: git push origin "${RELEASE_BRANCH}"
 
       - name: Create GitHub Release
         if: ${{ !inputs.dryRun }}
+        env:
+          RELEASE_BRANCH: ${{ steps.resolve.outputs.releaseBranch }}
         run: |
           gh release create "${RELEASE_TAG}" \
             --repo "${{ github.repository }}" \
             --target "${RELEASE_BRANCH}" \
             --title "${RELEASE_VERSION}" \
             --generate-notes
+
+      - name: Open mergeback PR
+        if: ${{ steps.resolve.outputs.mode == 'create' && !inputs.dryRun }}
+        env:
+          BASE_BRANCH: ${{ steps.resolve.outputs.baseBranch }}
+          RELEASE_BRANCH: ${{ steps.resolve.outputs.releaseBranch }}
+          NEXT_DEV_VERSION: ${{ inputs.nextDevelopmentVersion }}
+        run: |
+          body=$(cat <<EOF
+          Mergeback of \`${RELEASE_BRANCH}\` into \`${BASE_BRANCH}\` after the ${RELEASE_VERSION} release.
+
+          Contains the version commits produced by \`maven-release-plugin\`:
+          - \`${RELEASE_VERSION}\` release commit
+          - \`${NEXT_DEV_VERSION}\` next development version commit
+
+          Tag: [\`${RELEASE_TAG}\`](https://github.com/${{ github.repository }}/releases/tag/${RELEASE_TAG})
+
+          > **Note:** PRs opened via \`GITHUB_TOKEN\` do not trigger workflow runs.
+          > To run CI on this PR, push an empty commit (\`git commit --allow-empty\`) or close-and-reopen the PR.
+          EOF
+          )
+
+          # Idempotency: GitHub keeps PRs indexed even after their head branch
+          # is deleted and recreated, so a zombie PR from a previous run that
+          # was manually cleaned up can re-attach to the new canary. Reusing
+          # the existing PR avoids failing this step (and the whole workflow)
+          # after the release/tag are already published.
+          existing=$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --head "${RELEASE_BRANCH}" \
+            --base "${BASE_BRANCH}" \
+            --state open \
+            --json number,url \
+            --jq '.[0].url // empty')
+          if [[ -n "$existing" ]]; then
+            echo "Mergeback PR already exists: ${existing} — skipping creation."
+            exit 0
+          fi
+
+          gh pr create \
+            --repo "${{ github.repository }}" \
+            --base "${BASE_BRANCH}" \
+            --head "${RELEASE_BRANCH}" \
+            --title "chore(release): merge back ${RELEASE_VERSION} into ${BASE_BRANCH}" \
+            --body "${body}"
 
       - name: Cleanup Maven Central GPG Key
         if: always()
