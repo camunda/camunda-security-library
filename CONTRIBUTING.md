@@ -105,7 +105,7 @@ Significant design choices are documented as ADRs in `docs/adr/`. When in doubt,
 
 ## Releases
 
-Releases are cut by the [`release` workflow](.github/workflows/release.yml), dispatched manually from the GitHub Actions tab. The workflow runs `maven-release-plugin`, **publishes to Camunda's internal Maven repository** (visible to internal consumers immediately), **stages a deployment on Sonatype Central** (an operator publishes it manually for external consumers — see below), creates a GitHub Release, and (in canary mode) opens a mergeback PR. Concurrent dispatches are serialized — never cancelled — so an accidental second dispatch queues behind the in-flight one.
+Releases are created by the [`release` workflow](.github/workflows/release.yml), dispatched manually from the GitHub Actions tab. The workflow runs `maven-release-plugin`, **publishes to Camunda's internal Maven repository** (visible to internal consumers immediately), **stages a deployment on Sonatype Central** (an operator publishes it manually for external consumers — see below), creates a GitHub Release, and (in canary mode) opens a mergeback PR. Concurrent dispatches are serialized — never cancelled — so an accidental second dispatch queues behind the in-flight one.
 
 ### Dispatching a release
 
@@ -115,7 +115,7 @@ Go to **Actions → release → Run workflow** and fill in:
 |---|---|---|
 | `releaseVersion` | yes | Version to release, e.g. `0.1.0` |
 | `nextDevelopmentVersion` | yes | Next snapshot, e.g. `0.2.0-SNAPSHOT` |
-| `baseBranch` | no | Base to cut a new `release/<version>` canary from. Mutually exclusive with `releaseBranch`. Defaults to the dispatch ref (typically `main`) when both are empty. |
+| `baseBranch` | no | Base to create a new `release/<version>` canary from. Mutually exclusive with `releaseBranch`. Defaults to the dispatch ref (typically `main`) when both are empty. |
 | `releaseBranch` | no | Existing branch to release from (e.g. a maintenance branch for a patch). Mutually exclusive with `baseBranch`. No mergeback PR is opened in this mode. |
 | `dryRun` | no | Defaults to **true**. Set to false for an actual release. A dry run skips git pushes, Maven publishing, canary push, and PR creation. |
 
