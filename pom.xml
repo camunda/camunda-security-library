@@ -43,7 +43,7 @@
         <plugin.version.spotless>2.43.0</plugin.version.spotless>
         <plugin.version.google-java-format>1.23.0</plugin.version.google-java-format>
         <plugin.version.checkstyle>3.5.0</plugin.version.checkstyle>
-        <version.checkstyle>10.18.2</version.checkstyle>
+        <version.checkstyle>13.4.2</version.checkstyle>
         <plugin.version.exec>3.6.3</plugin.version.exec>
         <plugin.version.dependency>3.8.1</plugin.version.dependency>
         <plugin.version.release>3.3.1</plugin.version.release>
