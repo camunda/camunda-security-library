@@ -36,7 +36,7 @@ We will:
 - Ship the filter chains and supporting beans as **Spring Boot auto-configurations** in a `camunda-security-library-spring-boot-starter` artefact, registered through `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`.
 - Activate each chain via `@ConditionalOnProperty` (or, for chains that depend on more than one property, a small `@Conditional` class with the same semantics). Hosts opt in by setting `camunda.security.authentication.method=oidc|basic` (and friends) — they never touch `@Import`.
 - Provide library-supplied default beans for `JwtDecoder`, `ClientRegistrationRepository`, `OAuth2AuthorizedClientRepository`, `OAuth2AuthorizedClientManager`, and a default `AuthFailureHandler` (`JsonProblemDetailAuthFailureHandler`). Each has `@ConditionalOnMissingBean` so a host that registers its own bean with the same type takes precedence.
-- Define the host-facing contract through `SecurityPathAdapter` (in `csl-core`) plus the existing OAuth2 extension hooks (`OidcTokenEndpointCustomizer`, `OidcResourceServerCustomizer`). Hosts register beans of those types; the library picks them up via `ObjectProvider`. Host-specific filter wiring is deliberately not addressed by this PR — a follow-up will introduce a more focused mechanism than a generic `HttpSecurity` mutator.
+- Define the host-facing contract through `SecurityPathPort` (in `csl-core`) plus the existing OAuth2 extension hooks (`OidcTokenEndpointCustomizer`, `OidcResourceServerCustomizer`). Hosts register beans of those types; the library picks them up via `ObjectProvider`. Host-specific filter wiring is deliberately not addressed by this PR — a follow-up will introduce a more focused mechanism than a generic `HttpSecurity` mutator.
 - Bind all configuration through one `@ConfigurationProperties("camunda.security")` POJO (`CamundaSecurityLibraryProperties`) covering authentication, CSRF, and HTTP response headers.
 
 The chain auto-configurations are:
@@ -62,7 +62,7 @@ Plus `OidcBeansAutoConfiguration` (the OIDC default beans, gated on `method=oidc
   - Library provides default `JwtDecoder`, `ClientRegistrationRepository`, OAuth2 client beans and the default `AuthFailureHandler` behind `@ConditionalOnMissingBean`.
   - Hosts include the dep, set properties, and the right chains plus their dependencies wire automatically. Hosts override any of the library beans by registering their own.
 - Pros:
-  - Adopting the library is "include the dep, set `camunda.security.authentication.method`, supply a `SecurityPathAdapter`."
+  - Adopting the library is "include the dep, set `camunda.security.authentication.method`, supply a `SecurityPathPort`."
   - A single source of truth for configuration: `camunda.security.*` properties drive activation; no separate compile-time wiring to keep in sync with runtime config.
   - Library defaults eliminate per-host bean duplication while still allowing overrides at any specific layer.
   - Plays well with Spring Boot's existing autoconfig (`JacksonAutoConfiguration` provides the `ObjectMapper` the failure handler consumes; `SecurityAutoConfiguration` doesn't conflict because the library's chains are explicit `@Bean`s).
@@ -101,7 +101,7 @@ This was the v1 design in this PR. We reversed before merging.
 
 ## Consequences
 
-- **Adopting hosts get a one-line story:** include the dep, set properties (auth method, OIDC settings if any), supply a `SecurityPathAdapter` bean. Everything else is library-provided defaults that the host can override per bean if needed. The adopter guide at `docs/adopters/security-filter-chains.md` walks through the property surface.
+- **Adopting hosts get a one-line story:** include the dep, set properties (auth method, OIDC settings if any), supply a `SecurityPathPort` bean. Everything else is library-provided defaults that the host can override per bean if needed. The adopter guide at `docs/adopters/security-filter-chains.md` walks through the property surface.
 - **Library is committed to Spring Boot for this slice.** Non-Spring-Boot consumers are out of scope; a follow-up effort can extract the filter chain logic into a Spring-only or non-Spring distribution that a Boot starter wraps. That extraction does not require redesigning the chains — only the wiring layer.
 - **Configuration consistency moves from the class graph to property files.** A misspelled `camunda.security.authentication.method` value silently leaves chains off. The library's auto-configuration tests cover the activation conditions explicitly so regressions surface in CI; hosts can add a smoke test that asserts the expected `SecurityFilterChain` beans are present at startup.
 - **Library defaults reduce per-host duplication.** `JwtDecoder` is built from `camunda.security.authentication.oidc.*` properties; same for `ClientRegistrationRepository` and the OAuth2 client beans. A host that needs a different shape (multi-IdP, custom token validator, private_key_jwt) registers its own bean and the library's default backs off.

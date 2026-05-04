@@ -5,10 +5,9 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.core.port;
+package io.camunda.security.core.port.in;
 
 /**
- * Inbound port for authorization decisions. Callers ask whether a principal is permitted to perform
- * a specific action on a specific resource scope.
+ * Inbound port for applying a policy snapshot received from Hub to the local projection (OC side).
  */
-public interface AuthorizationPort {}
+public interface PolicyApplyPort {}

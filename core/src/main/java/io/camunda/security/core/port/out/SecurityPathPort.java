@@ -5,19 +5,19 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.core.adapter;
+package io.camunda.security.core.port.out;
 
 import java.util.Set;
 
 /**
- * Outbound adapter the host application implements to declare the HTTP path patterns the security
+ * Outbound port the host application implements to declare the HTTP path patterns the security
  * filter chains operate on. The library cannot wire its filter chains without these — APIs,
  * unprotected endpoints, webapp UI paths, and web component identifiers are all host-specific.
  *
  * <p>Path patterns use Spring Security's ant-style syntax ({@code **} for multi-level, {@code *}
  * for single-level).
  */
-public interface SecurityPathAdapter {
+public interface SecurityPathPort {
 
   /** Paths that match API endpoints (e.g., {@code "/api/**"}, {@code "/v2/**"}). */
   Set<String> apiPaths();

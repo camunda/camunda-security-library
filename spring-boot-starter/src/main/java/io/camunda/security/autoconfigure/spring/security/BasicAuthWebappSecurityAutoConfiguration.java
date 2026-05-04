@@ -16,7 +16,7 @@ import static io.camunda.security.autoconfigure.spring.security.CamundaSecurityF
 import io.camunda.security.autoconfigure.spring.CamundaSecurityAutoConfiguration;
 import io.camunda.security.autoconfigure.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.autoconfigure.spring.handler.AuthFailureHandler;
-import io.camunda.security.core.adapter.SecurityPathAdapter;
+import io.camunda.security.core.port.out.SecurityPathPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -48,21 +48,21 @@ public class BasicAuthWebappSecurityAutoConfiguration {
       final HttpSecurity http,
       final AuthFailureHandler authFailureHandler,
       final CamundaSecurityLibraryProperties properties,
-      final SecurityPathAdapter pathAdapter)
+      final SecurityPathPort pathPort)
       throws Exception {
     LOG.info("Web Applications Login/Logout is set up with Basic Authentication.");
 
     // Form-login flow needs LOGIN_URL/LOGOUT_URL reachable without auth; static UI assets the
-    // host declares via SecurityPathAdapter.unauthenticatedWebappPaths() are also permitted.
+    // host declares via SecurityPathPort.unauthenticatedWebappPaths() are also permitted.
     // Everything else under webappPaths() requires authentication so the formLogin redirect
     // fires for unauthenticated navigations.
     final var permittedPaths = new java.util.ArrayList<String>();
     permittedPaths.add(LOGIN_URL);
     permittedPaths.add(LOGOUT_URL);
-    permittedPaths.addAll(pathAdapter.unauthenticatedWebappPaths());
+    permittedPaths.addAll(pathPort.unauthenticatedWebappPaths());
 
     final var filterChainBuilder =
-        http.securityMatcher(pathAdapter.webappPaths().toArray(String[]::new))
+        http.securityMatcher(pathPort.webappPaths().toArray(String[]::new))
             .authorizeHttpRequests(
                 auth ->
                     auth.requestMatchers(permittedPaths.toArray(String[]::new))
@@ -99,7 +99,7 @@ public class BasicAuthWebappSecurityAutoConfiguration {
                     eh.authenticationEntryPoint(authFailureHandler)
                         .accessDeniedHandler(authFailureHandler));
 
-    SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathAdapter);
+    SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
     return filterChainBuilder.build();

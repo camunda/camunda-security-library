@@ -86,7 +86,7 @@ camunda:
         client-secret: ...
 ```
 
-The only mandatory host-supplied bean is a `SecurityPathAdapter` that declares which paths are API, webapp, and unprotected. Everything else — JWT decoder, client registration, OAuth2 client manager, RFC 7807 problem-detail failure handler — is library-supplied with `@ConditionalOnMissingBean` so hosts override any layer by registering their own bean.
+The only mandatory host-supplied bean is a `SecurityPathPort` that declares which paths are API, webapp, and unprotected. Everything else — JWT decoder, client registration, OAuth2 client manager, RFC 7807 problem-detail failure handler — is library-supplied with `@ConditionalOnMissingBean` so hosts override any layer by registering their own bean.
 
 See [`docs/adopters/security-filter-chains.md`](docs/adopters/security-filter-chains.md) for the full configuration reference, extension hooks, and migration guide. Design rationale lives in [ADR-0006](docs/adr/0006-central-security-filter-chains.md).
 

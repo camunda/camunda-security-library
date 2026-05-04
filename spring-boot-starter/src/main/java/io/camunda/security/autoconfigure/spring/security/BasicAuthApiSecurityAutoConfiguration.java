@@ -12,7 +12,7 @@ import static io.camunda.security.autoconfigure.spring.security.CamundaSecurityF
 import io.camunda.security.autoconfigure.spring.CamundaSecurityAutoConfiguration;
 import io.camunda.security.autoconfigure.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.autoconfigure.spring.handler.AuthFailureHandler;
-import io.camunda.security.core.adapter.SecurityPathAdapter;
+import io.camunda.security.core.port.out.SecurityPathPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -42,14 +42,14 @@ public class BasicAuthApiSecurityAutoConfiguration {
       final HttpSecurity http,
       final AuthFailureHandler authFailureHandler,
       final CamundaSecurityLibraryProperties properties,
-      final SecurityPathAdapter pathAdapter)
+      final SecurityPathPort pathPort)
       throws Exception {
     LOG.info("The API is protected by HTTP Basic authentication.");
     final var filterChainBuilder =
-        http.securityMatcher(pathAdapter.apiPaths().toArray(String[]::new))
+        http.securityMatcher(pathPort.apiPaths().toArray(String[]::new))
             .authorizeHttpRequests(
                 auth ->
-                    auth.requestMatchers(pathAdapter.unprotectedApiPaths().toArray(String[]::new))
+                    auth.requestMatchers(pathPort.unprotectedApiPaths().toArray(String[]::new))
                         .permitAll()
                         .anyRequest()
                         .authenticated())
@@ -64,7 +64,7 @@ public class BasicAuthApiSecurityAutoConfiguration {
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.NEVER))
             .requestCache(cache -> cache.requestCache(new NullRequestCache()));
 
-    SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathAdapter);
+    SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
     return filterChainBuilder.build();
