@@ -1,0 +1,24 @@
+---
+name: Renovate auto-approve
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, labeled]
+
+concurrency:
+  cancel-in-progress: true
+  group: ${{ format('{0}-{1}', github.workflow, github.ref) }}
+
+permissions:
+  contents: read
+
+jobs:
+  approve:
+    if: >-
+      github.event.pull_request.user.login == 'renovate[bot]' &&
+      contains(github.event.pull_request.labels.*.name, 'automerge')
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: hmarr/auto-approve-action@f0939ea97e9205ef24d872e76833fa908a770363 # v4.0.0
