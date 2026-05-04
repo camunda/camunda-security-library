@@ -20,7 +20,7 @@ import io.camunda.security.autoconfigure.spring.security.BasicAuthWebappSecurity
 import io.camunda.security.autoconfigure.spring.security.OidcApiSecurityAutoConfiguration;
 import io.camunda.security.autoconfigure.spring.security.OidcWebappSecurityAutoConfiguration;
 import io.camunda.security.autoconfigure.spring.security.UnprotectedApiSecurityAutoConfiguration;
-import io.camunda.security.core.adapter.SecurityPathAdapter;
+import io.camunda.security.core.port.out.SecurityPathPort;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -168,13 +168,13 @@ class CamundaSecurityAutoConfigurationTest {
             });
   }
 
-  /** Stub {@link SecurityPathAdapter} required by all filter chain beans. */
+  /** Stub {@link SecurityPathPort} required by all filter chain beans. */
   @Configuration
   static class StubPaths {
 
     @Bean
-    SecurityPathAdapter pathAdapter() {
-      return new SecurityPathAdapter() {
+    SecurityPathPort pathPort() {
+      return new SecurityPathPort() {
         @Override
         public Set<String> apiPaths() {
           return Set.of("/api/**");

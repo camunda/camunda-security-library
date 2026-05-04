@@ -5,10 +5,10 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.core.adapter;
+package io.camunda.security.core.port.out;
 
 /**
- * Outbound adapter for persisting and reading the unified policy projection (organizations,
- * tenants, roles, groups, mapping rules, principals, authorizations) in local storage.
+ * Outbound port for communicating with external Identity Providers (OIDC, SAML, and similar
+ * protocols).
  */
-public interface PolicyRepositoryAdapter {}
+public interface IdpClientPort {}

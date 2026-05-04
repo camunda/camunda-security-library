@@ -21,7 +21,7 @@ import io.camunda.security.autoconfigure.spring.handler.AuthFailureHandler;
 import io.camunda.security.autoconfigure.spring.handler.LoggingAuthenticationFailureHandler;
 import io.camunda.security.autoconfigure.spring.handler.OAuth2AuthenticationExceptionHandler;
 import io.camunda.security.autoconfigure.spring.oidc.OidcTokenEndpointCustomizer;
-import io.camunda.security.core.adapter.SecurityPathAdapter;
+import io.camunda.security.core.port.out.SecurityPathPort;
 import java.util.LinkedHashMap;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -76,15 +76,15 @@ public class OidcWebappSecurityAutoConfiguration {
       final ObjectProvider<OidcUserService> oidcUserServiceProvider,
       final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers,
       final CamundaSecurityLibraryProperties properties,
-      final SecurityPathAdapter pathAdapter)
+      final SecurityPathPort pathPort)
       throws Exception {
 
     final var filterChainBuilder =
-        http.securityMatcher(pathAdapter.webappPaths().toArray(String[]::new))
+        http.securityMatcher(pathPort.webappPaths().toArray(String[]::new))
             .authorizeHttpRequests(
                 auth ->
                     auth.requestMatchers(
-                            pathAdapter.unauthenticatedWebappPaths().toArray(String[]::new))
+                            pathPort.unauthenticatedWebappPaths().toArray(String[]::new))
                         .permitAll()
                         .anyRequest()
                         .authenticated())
@@ -138,7 +138,7 @@ public class OidcWebappSecurityAutoConfiguration {
             authorizedClientRepository, authorizedClientManager, logoutHandler),
         AuthorizationFilter.class);
 
-    SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathAdapter);
+    SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
     return filterChainBuilder.build();

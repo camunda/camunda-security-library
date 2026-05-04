@@ -5,7 +5,7 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.core.adapter;
+package io.camunda.security.core.port.in;
 
-/** Outbound adapter for evaluating feature toggle values at runtime. */
-public interface FeatureToggleAdapter {}
+/** Inbound port for registering and deregistering Orchestration Clusters against Hub. */
+public interface ClusterRegistrationPort {}

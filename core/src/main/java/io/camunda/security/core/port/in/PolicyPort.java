@@ -5,7 +5,9 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.core.port;
+package io.camunda.security.core.port.in;
 
-/** Inbound port for registering and deregistering Orchestration Clusters against Hub. */
-public interface ClusterRegistrationPort {}
+/**
+ * Inbound port for queries over the unified policy model (roles, authorizations, mapping rules).
+ */
+public interface PolicyPort {}

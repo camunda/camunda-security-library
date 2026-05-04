@@ -5,10 +5,7 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.core.adapter;
+package io.camunda.security.core.port.out;
 
-/**
- * Outbound adapter for communicating with external Identity Providers (OIDC, SAML, and similar
- * protocols).
- */
-public interface IdpClientAdapter {}
+/** Outbound port for evaluating feature toggle values at runtime. */
+public interface FeatureTogglePort {}

@@ -12,7 +12,7 @@ import static io.camunda.security.autoconfigure.spring.security.CamundaSecurityF
 
 import io.camunda.security.autoconfigure.spring.CamundaSecurityAutoConfiguration;
 import io.camunda.security.autoconfigure.spring.CamundaSecurityLibraryProperties;
-import io.camunda.security.core.adapter.SecurityPathAdapter;
+import io.camunda.security.core.port.out.SecurityPathPort;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
@@ -37,10 +37,10 @@ public class BaseSecurityAutoConfiguration {
   public SecurityFilterChain unprotectedPathsSecurityFilterChain(
       final HttpSecurity http,
       final CamundaSecurityLibraryProperties properties,
-      final SecurityPathAdapter pathAdapter)
+      final SecurityPathPort pathPort)
       throws Exception {
     final var filterChainBuilder =
-        http.securityMatcher(pathAdapter.unprotectedPaths().toArray(String[]::new))
+        http.securityMatcher(pathPort.unprotectedPaths().toArray(String[]::new))
             .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
             .csrf(AbstractHttpConfigurer::disable)
             .cors(AbstractHttpConfigurer::disable)

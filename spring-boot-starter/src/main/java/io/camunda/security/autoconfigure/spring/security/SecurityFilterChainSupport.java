@@ -14,7 +14,7 @@ import static io.camunda.security.autoconfigure.spring.security.CamundaSecurityF
 import io.camunda.security.autoconfigure.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.autoconfigure.spring.config.headers.HeaderConfiguration;
 import io.camunda.security.autoconfigure.spring.csrf.CsrfProtectionRequestMatcher;
-import io.camunda.security.core.adapter.SecurityPathAdapter;
+import io.camunda.security.core.port.out.SecurityPathPort;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -58,7 +58,7 @@ final class SecurityFilterChainSupport {
   static void applyCsrfConfiguration(
       final HttpSecurity http,
       final CamundaSecurityLibraryProperties properties,
-      final SecurityPathAdapter pathAdapter)
+      final SecurityPathPort pathPort)
       throws Exception {
     if (!properties.getCsrf().isEnabled()) {
       http.csrf(AbstractHttpConfigurer::disable);
@@ -66,8 +66,8 @@ final class SecurityFilterChainSupport {
     }
 
     final var allowedPaths = new HashSet<String>();
-    allowedPaths.addAll(pathAdapter.unprotectedPaths());
-    allowedPaths.addAll(pathAdapter.unprotectedApiPaths());
+    allowedPaths.addAll(pathPort.unprotectedPaths());
+    allowedPaths.addAll(pathPort.unprotectedApiPaths());
     allowedPaths.add(LOGIN_URL);
     allowedPaths.add(LOGOUT_URL);
     allowedPaths.addAll(properties.getCsrf().getIgnoredPathPatterns());

@@ -5,9 +5,10 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.core.port;
+package io.camunda.security.core.port.out;
 
 /**
- * Inbound port for applying a policy snapshot received from Hub to the local projection (OC side).
+ * Outbound port for persisting and reading the unified policy projection (organizations, tenants,
+ * roles, groups, mapping rules, principals, authorizations) in local storage.
  */
-public interface PolicyApplyPort {}
+public interface PolicyRepositoryPort {}

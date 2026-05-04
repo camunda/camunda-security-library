@@ -13,7 +13,7 @@ Authentication and authorization enforcement must be on for every Camunda platfo
 - Refresh-token expiry, forced-logout-on-failure, and the OIDC entry-point delegation (browser → 302, API → 401) are wired once and tested once.
 - A security regression in any of these areas is a single PR in the CSL, not a coordinated rollout across N host repos.
 
-Hosts retain control of *which* paths to protect (`SecurityPathAdapter`), the values of the configurable knobs (CSRF on/off, auth method, OIDC issuer, etc.), and any per-host extension behaviour through the library's extension hooks.
+Hosts retain control of *which* paths to protect (`SecurityPathPort`), the values of the configurable knobs (CSRF on/off, auth method, OIDC issuer, etc.), and any per-host extension behaviour through the library's extension hooks.
 
 ## Quickstart
 
@@ -27,12 +27,12 @@ Hosts retain control of *which* paths to protect (`SecurityPathAdapter`), the va
    </dependency>
    ```
 
-2. Provide a `SecurityPathAdapter` bean — the only mandatory host-supplied bean:
+2. Provide a `SecurityPathPort` bean — the only mandatory host-supplied bean:
 
    ```java
    @Bean
-   public SecurityPathAdapter securityPaths() {
-     return new SecurityPathAdapter() {
+   public SecurityPathPort securityPaths() {
+     return new SecurityPathPort() {
        @Override public Set<String> apiPaths() { return Set.of("/api/**", "/v2/**"); }
        @Override public Set<String> unprotectedApiPaths() { return Set.of("/v2/license", "/v2/status"); }
        @Override public Set<String> unprotectedPaths() { return Set.of("/actuator/**", "/error"); }
@@ -141,7 +141,7 @@ Defaults are the hardened production set (CSP locked down, HSTS at one year, COO
 
 | Bean | Why |
 |---|---|
-| `SecurityPathAdapter` | The library has no way to know which paths are API vs webapp vs unprotected; the host declares this. |
+| `SecurityPathPort` | The library has no way to know which paths are API vs webapp vs unprotected; the host declares this. |
 
 ### Supplied by the library (overridable)
 
@@ -242,7 +242,7 @@ A typical migration from a host-owned `WebSecurityConfig`:
 
 1. Replace your `@Bean SecurityFilterChain` methods by deleting them — the library's auto-configurations supply the chains. Don't `@Import` anything from the library; just include the dep.
 2. Move whatever you previously hand-rolled into `OidcResourceServerCustomizer` / `OidcTokenEndpointCustomizer` beans where applicable. For host-specific filter wiring (authorization filters, header rewrites), park the change until the follow-up PR introduces the new filter approach.
-3. Implement `SecurityPathAdapter` with the path patterns your previous chains used.
+3. Implement `SecurityPathPort` with the path patterns your previous chains used.
 4. Bind your existing security config to `camunda.security.*` properties (or set them explicitly).
 5. If you previously constructed `JwtDecoder` / `ClientRegistrationRepository` / `OAuth2AuthorizedClientRepository` / `OAuth2AuthorizedClientManager` by hand, either delete those beans (the library's defaults will activate) or leave them and the library's defaults back off via `@ConditionalOnMissingBean`.
 6. Delete the old `WebSecurityConfig`.

@@ -5,7 +5,7 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.core.adapter;
+package io.camunda.security.core.port.in;
 
-/** Outbound adapter for storing and retrieving authenticated session state. */
-public interface SessionStoreAdapter {}
+/** Inbound port for tenant lifecycle and lookup operations. */
+public interface TenantPort {}
