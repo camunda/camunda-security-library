@@ -40,10 +40,29 @@ public record CamundaAuthentication(
         throw new IllegalArgumentException(
             "Anonymous authentication must not define username or clientId.");
       }
-    } else if ((authenticatedUsername == null) && (authenticatedClientId == null)) {
+    }
+    /*
+     TODO this is currently not possible with usage of the "none()" methode.
+     This will be fixed with: https://github.com/camunda/camunda-security-library/issues/96
+
+      else if ((authenticatedUsername == null) && (authenticatedClientId == null)) {
       throw new IllegalArgumentException(
           "Exactly one of username or clientId must be set for non-anonymous authentication.");
-    }
+    } */
+
+    authenticatedGroupIds = immutableListOrEmpty(authenticatedGroupIds);
+    authenticatedRoleIds = immutableListOrEmpty(authenticatedRoleIds);
+    authenticatedTenantIds = immutableListOrEmpty(authenticatedTenantIds);
+    authenticatedMappingRuleIds = immutableListOrEmpty(authenticatedMappingRuleIds);
+    claims = immutableMapOrEmpty(claims);
+  }
+
+  private static <T> List<T> immutableListOrEmpty(final List<T> values) {
+    return values == null ? List.of() : List.copyOf(values);
+  }
+
+  private static <K, V> Map<K, V> immutableMapOrEmpty(final Map<K, V> values) {
+    return values == null ? Map.of() : Map.copyOf(values);
   }
 
   public boolean isAnonymous() {
@@ -122,10 +141,10 @@ public record CamundaAuthentication(
     }
 
     public Builder mappingRule(final String mappingRule) {
-      return mappingRule(Collections.singletonList(mappingRule));
+      return mappingRules(Collections.singletonList(mappingRule));
     }
 
-    public Builder mappingRule(final List<String> values) {
+    public Builder mappingRules(final List<String> values) {
       if (values != null) {
         mappingRules.addAll(values);
       }
@@ -133,7 +152,7 @@ public record CamundaAuthentication(
     }
 
     public Builder claims(final Map<String, Object> value) {
-      claims = value;
+      claims = value == null ? null : Map.copyOf(value);
       return this;
     }
 
@@ -142,10 +161,10 @@ public record CamundaAuthentication(
           username,
           clientId,
           anonymous,
-          Collections.unmodifiableList(groupIds),
-          Collections.unmodifiableList(roleIds),
-          Collections.unmodifiableList(tenants),
-          Collections.unmodifiableList(mappingRules),
+          List.copyOf(groupIds),
+          List.copyOf(roleIds),
+          List.copyOf(tenants),
+          List.copyOf(mappingRules),
           claims);
     }
   }

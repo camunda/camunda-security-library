@@ -9,9 +9,7 @@ package io.camunda.security.api.context;
 
 import io.camunda.security.api.model.CamundaAuthentication;
 
-/**
- * Associates a given {@link CamundaAuthentication} with the current request handling context.
- */
+/** Associates a given {@link CamundaAuthentication} with the current request handling context. */
 public interface CamundaAuthenticationHolder {
 
   /**
