@@ -10,6 +10,7 @@ package io.camunda.security.spring;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.camunda.security.api.model.config.AuthenticationMethod;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
@@ -60,7 +61,7 @@ class CamundaSecurityConfigurationTest {
           assertThat(ctx)
               .getBean(CamundaSecurityLibraryProperties.class)
               .extracting(p -> p.getAuthentication().getMethod())
-              .isNull();
+              .isEqualTo(AuthenticationMethod.BASIC);
         });
   }
 
