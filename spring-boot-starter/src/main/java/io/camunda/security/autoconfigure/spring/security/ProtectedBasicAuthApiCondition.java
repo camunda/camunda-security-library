@@ -10,7 +10,7 @@ package io.camunda.security.autoconfigure.spring.security;
 import static io.camunda.security.autoconfigure.spring.security.CamundaSecurityFilterChainConstants.AUTHENTICATION_METHOD_PROPERTY;
 import static io.camunda.security.autoconfigure.spring.security.CamundaSecurityFilterChainConstants.UNPROTECTED_API_PROPERTY;
 
-import io.camunda.security.autoconfigure.spring.config.AuthenticationMethod;
+import io.camunda.security.api.model.config.AuthenticationMethod;
 import org.springframework.context.annotation.Condition;
 import org.springframework.context.annotation.ConditionContext;
 import org.springframework.core.type.AnnotatedTypeMetadata;

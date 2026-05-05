@@ -17,6 +17,11 @@
     <dependencies>
         <dependency>
             <groupId>io.camunda</groupId>
+            <artifactId>camunda-security-library-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.camunda</groupId>
             <artifactId>camunda-security-library-core</artifactId>
             <version>${project.version}</version>
         </dependency>

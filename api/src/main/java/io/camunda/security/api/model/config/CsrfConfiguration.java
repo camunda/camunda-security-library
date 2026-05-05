@@ -5,7 +5,7 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.autoconfigure.spring.config;
+package io.camunda.security.api.model.config;
 
 import java.util.HashSet;
 import java.util.Set;

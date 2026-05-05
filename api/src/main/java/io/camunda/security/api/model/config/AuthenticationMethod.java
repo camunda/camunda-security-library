@@ -5,9 +5,12 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.autoconfigure.spring.config.headers.values;
+package io.camunda.security.api.model.config;
 
-public enum FrameOptionMode {
-  DENY,
-  SAMEORIGIN
+/**
+ * Authentication method selected by the host via {@code camunda.security.authentication.method}.
+ */
+public enum AuthenticationMethod {
+  BASIC,
+  OIDC
 }
