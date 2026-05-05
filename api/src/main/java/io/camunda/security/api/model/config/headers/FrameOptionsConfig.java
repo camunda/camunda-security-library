@@ -5,9 +5,9 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.autoconfigure.spring.config.headers;
+package io.camunda.security.api.model.config.headers;
 
-import io.camunda.security.autoconfigure.spring.config.headers.values.FrameOptionMode;
+import io.camunda.security.api.model.config.headers.values.FrameOptionMode;
 
 /**
  * Configures X-Frame-Options header to prevent clickjacking attacks.

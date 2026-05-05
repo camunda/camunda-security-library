@@ -5,7 +5,7 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.autoconfigure.spring.config;
+package io.camunda.security.api.model.config;
 
 /** Authentication configuration bound to {@code camunda.security.authentication.*}. */
 public class AuthenticationConfiguration {
@@ -18,6 +18,9 @@ public class AuthenticationConfiguration {
    * OIDC and basic auth API protection chains in favour of a permit-all chain.
    */
   private boolean unprotectedApi = false;
+
+  /** Authentication refresh interval (ISO-8601 duration format, e.g., "PT30S"). */
+  private String authenticationRefreshInterval = "PT30S";
 
   /** OIDC-specific settings (only consulted when {@code method == OIDC}). */
   private OidcConfiguration oidc = new OidcConfiguration();
@@ -36,6 +39,14 @@ public class AuthenticationConfiguration {
 
   public void setUnprotectedApi(final boolean unprotectedApi) {
     this.unprotectedApi = unprotectedApi;
+  }
+
+  public String getAuthenticationRefreshInterval() {
+    return authenticationRefreshInterval;
+  }
+
+  public void setAuthenticationRefreshInterval(final String authenticationRefreshInterval) {
+    this.authenticationRefreshInterval = authenticationRefreshInterval;
   }
 
   public OidcConfiguration getOidc() {

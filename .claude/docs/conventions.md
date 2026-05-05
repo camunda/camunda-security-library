@@ -26,7 +26,7 @@ Hexagonal architecture naming (replaces traditional controller/service/repo nami
 - Inbound port interfaces live in `port/in/`; their implementations are named by responsibility, typically `*Service`
 - Outbound port interfaces live in `port/out/`; their implementations are adapters
 - **Models:** always Java records (never mutable classes)
-- **Config classes:** cannot be records (Spring `@ConfigurationProperties` needs mutability)
+- **Config classes:** cannot be records (Spring `@ConfigurationProperties` needs mutability). Public configuration that adopters need to understand belongs in `api/model/config/`; Spring binding logic stays in `spring-boot-starter/`
 - **RDBMS entities:** cannot be records (MyBatis/JPA needs setters)
 - **Sealed by default:** all production classes must be `final` unless they are intentional extension points (SPIs, classes with `protected` methods, config properties classes, persistence entities)
 - **Auto-configuration:** every library-supplied bean must have `@ConditionalOnMissingBean` so consumers can override by registering their own. `@AutoConfiguration` already implies `proxyBeanMethods = false` — do NOT add it explicitly. Each filter-chain auto-configuration registers in `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`.

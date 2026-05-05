@@ -11,8 +11,8 @@ import static io.camunda.security.autoconfigure.spring.security.CamundaSecurityF
 import static io.camunda.security.autoconfigure.spring.security.CamundaSecurityFilterChainConstants.LOGOUT_URL;
 import static io.camunda.security.autoconfigure.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
+import io.camunda.security.api.model.config.headers.HeaderConfiguration;
 import io.camunda.security.autoconfigure.spring.CamundaSecurityLibraryProperties;
-import io.camunda.security.autoconfigure.spring.config.headers.HeaderConfiguration;
 import io.camunda.security.autoconfigure.spring.csrf.CsrfProtectionRequestMatcher;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import jakarta.servlet.FilterChain;

@@ -7,9 +7,9 @@
  */
 package io.camunda.security.autoconfigure.spring;
 
-import io.camunda.security.autoconfigure.spring.config.AuthenticationConfiguration;
-import io.camunda.security.autoconfigure.spring.config.CsrfConfiguration;
-import io.camunda.security.autoconfigure.spring.config.headers.HeaderConfiguration;
+import io.camunda.security.api.model.config.AuthenticationConfiguration;
+import io.camunda.security.api.model.config.CsrfConfiguration;
+import io.camunda.security.api.model.config.headers.HeaderConfiguration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /** Binds {@code camunda.security.*} configuration values for the CSL filter chains. */
