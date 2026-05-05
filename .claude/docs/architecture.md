@@ -4,15 +4,15 @@
 
 The CSL is a multi-module Maven library. Modules will be added as implementation progresses — update this map when they are.
 
-- `core/` — Framework-free domain model, inbound ports and outbound ports. For new code, contracts live under `port/in/` and `port/out/`. Zero Spring or zeebe-protocol dependencies (enforced by `DomainArchTest`).
-- `api/` — Host-facing entry points layered on `core/`. Currently a placeholder.
+- `api/` — Public, host-facing surface: model records adopters consume (`api/model/`), context interfaces hosts implement (`api/context/`), and configuration records bound by Spring in the starter (`api/model/config/`). No dependencies on `core/`.
+- `core/` — Framework-free domain logic and port interfaces. For new code, contracts live under `port/in/` and `port/out/`. Depends on `api/` so port signatures can speak the public model types directly. Zero Spring or zeebe-protocol dependencies (enforced by `DomainArchTest`).
 - `spring-boot-starter/` — Spring Boot auto-configuration. Hosts include this artefact, set `camunda.security.*` properties, and the chains plus library-default beans (`JwtDecoder`, `ClientRegistrationRepository`, `OAuth2AuthorizedClientRepository`, `OAuth2AuthorizedClientManager`, default `AuthFailureHandler`) wire automatically. Every library-supplied bean has `@ConditionalOnMissingBean` so hosts override by registering their own.
 
 ## Key Boundaries
 
 - `core/` has zero framework dependencies — no Spring annotations, no JPA, no HTTP types. This boundary will be enforced by ArchUnit via `DomainArchTest` (planned in [#5](https://github.com/camunda/camunda-security-library/issues/5)).
 - Inbound port implementations are services; outbound adapters implement outbound ports. Implementations never call each other directly.
-- All dependencies point inward toward the domain. Inbound and outbound ports are contracts defined by the domain; implementations depend on these contracts, not the reverse.
+- Dependency direction: `core` → `api`. The public types live in `api/`; `core` ports import them. Implementations (services, adapters) depend on the port contracts, not the reverse.
 - `*Port` contracts speak domain types only; transport translation is the caller's responsibility
 - Outbound adapter implementations must never leak infrastructure exceptions (JPA, SQL, HTTP client) into the domain
 - Existing code may still use legacy `adapter/` contract packages and `*Impl` names. Do not refactor those names unless the work explicitly calls for it.

@@ -15,6 +15,12 @@
     <description>Framework-free domain model and port interfaces.</description>
 
     <dependencies>
+        <dependency>
+            <groupId>io.camunda</groupId>
+            <artifactId>camunda-security-library-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- Test only. -->
         <dependency>
             <groupId>com.tngtech.archunit</groupId>

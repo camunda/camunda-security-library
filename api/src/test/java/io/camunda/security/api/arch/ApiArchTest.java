@@ -5,7 +5,7 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.core.arch;
+package io.camunda.security.api.arch;
 
 import static com.tngtech.archunit.base.DescribedPredicate.and;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
@@ -18,71 +18,81 @@ import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
 
 /**
- * Enforces the hexagonal boundary for the CSL core module: classes in {@code
- * io.camunda.security.core..} must not depend on anything in {@code
- * io.camunda.security.autoconfigure..}, and must not depend on framework runtime types (Spring,
- * Jakarta Servlet, Jakarta Persistence, Jackson runtime, zeebe-protocol).
+ * Enforces the framework-free boundary for the CSL api module: classes in {@code
+ * io.camunda.security.api..} carry the public, host-facing surface and must not depend on {@code
+ * io.camunda.security.core..}, {@code io.camunda.security.autoconfigure..}, or framework runtime
+ * types (Spring, Jakarta Servlet, Jakarta Persistence, Jackson runtime, zeebe-protocol).
  *
- * <p>{@code core} is permitted to depend on {@code io.camunda.security.api..}: the public model
- * records (e.g. {@code CamundaAuthentication}) live in {@code api/model/}, and {@code core} ports
- * speak those domain types per the architecture doc.
+ * <p>This is the api-side mirror of {@code DomainArchTest} on {@code core}: keeping {@code api}
+ * free of frameworks lets adopters consume the public types without pulling Spring or other runtime
+ * dependencies into their classpath.
  *
  * <p>{@code jackson-annotations} ({@code com.fasterxml.jackson.annotation..}) is explicitly
  * permitted — see {@code .claude/docs/guardrails.md}.
  *
  * <p>The import option excludes test classes so this rule only applies to production code in {@code
- * core}.
+ * api}.
  */
 @AnalyzeClasses(
-    packages = "io.camunda.security.core",
+    packages = "io.camunda.security.api",
     importOptions = ImportOption.DoNotIncludeTests.class)
-class DomainArchTest {
+class ApiArchTest {
 
   @ArchTest
-  static final ArchRule CORE_MUST_NOT_DEPEND_ON_STARTER =
+  static final ArchRule API_MUST_NOT_DEPEND_ON_CORE =
       noClasses()
           .that()
+          .resideInAPackage("io.camunda.security.api..")
+          .should()
+          .dependOnClassesThat()
           .resideInAPackage("io.camunda.security.core..")
+          .allowEmptyShould(true);
+
+  @ArchTest
+  static final ArchRule API_MUST_NOT_DEPEND_ON_STARTER =
+      noClasses()
+          .that()
+          .resideInAPackage("io.camunda.security.api..")
           .should()
           .dependOnClassesThat()
           .resideInAPackage("io.camunda.security.autoconfigure..")
           .allowEmptyShould(true);
 
   @ArchTest
-  static final ArchRule CORE_MUST_NOT_DEPEND_ON_SPRING =
+  static final ArchRule API_MUST_NOT_DEPEND_ON_SPRING =
       noClasses()
           .that()
-          .resideInAPackage("io.camunda.security.core..")
+          .resideInAPackage("io.camunda.security.api..")
           .should()
           .dependOnClassesThat()
           .resideInAPackage("org.springframework..")
           .allowEmptyShould(true);
 
   @ArchTest
-  static final ArchRule CORE_MUST_NOT_DEPEND_ON_JAKARTA_SERVLET =
+  static final ArchRule API_MUST_NOT_DEPEND_ON_JAKARTA_SERVLET =
       noClasses()
           .that()
-          .resideInAPackage("io.camunda.security.core..")
+          .resideInAPackage("io.camunda.security.api..")
           .should()
           .dependOnClassesThat()
           .resideInAPackage("jakarta.servlet..")
           .allowEmptyShould(true);
 
   @ArchTest
-  static final ArchRule CORE_MUST_NOT_DEPEND_ON_JAKARTA_PERSISTENCE =
+  static final ArchRule API_MUST_NOT_DEPEND_ON_JAKARTA_PERSISTENCE =
       noClasses()
           .that()
-          .resideInAPackage("io.camunda.security.core..")
+          .resideInAPackage("io.camunda.security.api..")
           .should()
           .dependOnClassesThat()
           .resideInAPackage("jakarta.persistence..")
           .allowEmptyShould(true);
 
   @ArchTest
-  static final ArchRule CORE_MUST_NOT_DEPEND_ON_JACKSON_RUNTIME =
+  static final ArchRule API_MUST_NOT_DEPEND_ON_JACKSON_RUNTIME =
       noClasses()
           .that()
-          .resideInAPackage("io.camunda.security.core..")
+          .resideInAPackage("io.camunda.security.api..")
           .should()
           .dependOnClassesThat(
               and(
@@ -91,10 +101,10 @@ class DomainArchTest {
           .allowEmptyShould(true);
 
   @ArchTest
-  static final ArchRule CORE_MUST_NOT_DEPEND_ON_ZEEBE_PROTOCOL =
+  static final ArchRule API_MUST_NOT_DEPEND_ON_ZEEBE_PROTOCOL =
       noClasses()
           .that()
-          .resideInAPackage("io.camunda.security.core..")
+          .resideInAPackage("io.camunda.security.api..")
           .should()
           .dependOnClassesThat()
           .resideInAPackage("io.camunda.zeebe.protocol..")

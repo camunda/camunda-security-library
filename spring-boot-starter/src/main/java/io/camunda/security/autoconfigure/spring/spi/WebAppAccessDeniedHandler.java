@@ -1,0 +1,30 @@
+/*
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH under
+ * one or more contributor license agreements. See the NOTICE file distributed
+ * with this work for additional information regarding copyright ownership.
+ * Licensed under the Camunda License 1.0. You may not use this file
+ * except in compliance with the Camunda License 1.0.
+ */
+package io.camunda.security.autoconfigure.spring.spi;
+
+import io.camunda.security.api.model.CamundaAuthentication;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+
+/**
+ * Decides what to do when an authorization filter denies access to a web app. Hosts implement this
+ * SPI to return a 403 JSON body, redirect to a URL, forward to an error page, or apply any other
+ * access-denied behaviour appropriate for the host.
+ */
+@FunctionalInterface
+public interface WebAppAccessDeniedHandler {
+
+  void handle(
+      HttpServletRequest request,
+      HttpServletResponse response,
+      String webApp,
+      CamundaAuthentication authentication)
+      throws IOException, ServletException;
+}
