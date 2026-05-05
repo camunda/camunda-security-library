@@ -87,7 +87,7 @@ Three hooks live in `.mvn/hooks/` and are checked into the repository. On `./mvn
 |---|---|
 | `pre-push` | Runs `./mvnw -T 1C verify -DskipITs` and blocks the push on failure. |
 | `pre-commit` | Runs `spotless:apply` on staged `.java` files and re-stages reformatted files. Aborts if a partially-staged file is reformatted. |
-| `commit-msg` | Enforces Conventional Commits on the subject line (see `.claude/docs/workflow.md#commit-message-format`). |
+| `commit-msg` | Enforces Conventional Commits on the header line, including the 100-char limit (see `.claude/docs/workflow.md#commit-message-format`). |
 
 **Bypass a single git operation:** `git commit --no-verify` / `git push --no-verify`.
 

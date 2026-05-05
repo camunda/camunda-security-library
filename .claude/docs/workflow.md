@@ -12,7 +12,7 @@ Branch names must be lowercase and hyphen-separated — no underscores.
 
 Conventional Commits format: `<type>(<scope>): <subject>`
 
-- Subject line: max 72 characters, imperative mood, no trailing period
+- Header line (`<type>(<scope>): <subject>`): max 100 characters, imperative mood, no trailing period — aligns with [commitlint config-conventional `header-max-length`](https://github.com/conventional-changelog/commitlint/tree/master/%40commitlint/config-conventional#header-max-length)
 - Body: wrap at 100 characters; explain *why*, not *what*
 - Breaking changes: `BREAKING CHANGE:` footer required
 - Types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`, `build`, `perf`
@@ -52,7 +52,7 @@ Three hooks ship with the project in `.mvn/hooks/` and run directly from that di
 |---|---|
 | `pre-push` | Runs `./mvnw -T 1C verify -DskipITs` and blocks the push on failure. |
 | `pre-commit` | Runs `spotless:apply` on staged `.java` files and re-stages the results. Aborts if a partially-staged file is reformatted, to avoid silently swallowing unstaged hunks. No-op until `spotless-maven-plugin` is configured. |
-| `commit-msg` | Enforces Conventional Commits on the subject line, including the 72-char limit. Merge, revert, fixup, and squash commits are exempt. |
+| `commit-msg` | Enforces Conventional Commits on the header line, including the 100-char limit. Merge, revert, fixup, and squash commits are exempt. |
 
 **Bypass a single git operation:** `git push --no-verify` / `git commit --no-verify`.
 
