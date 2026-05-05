@@ -15,18 +15,6 @@
     <description>Host-facing entry points for the Camunda Security Library.</description>
 
     <dependencies>
-        <!--
-          Cross-module dependency kept for architectural intent: csl-api is
-          the host-facing entry point that sits on top of csl-core. Even
-          without current source references, this edge in the module graph
-          expresses the layering of the library.
-        -->
-        <dependency>
-            <groupId>io.camunda</groupId>
-            <artifactId>camunda-security-library-core</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-
         <!-- Test only. -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -43,6 +31,21 @@
             <artifactId>assertj-core</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5-api</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5-engine</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -54,17 +57,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>analyze-dependencies</id>
-                        <configuration>
-                            <ignoredUnusedDeclaredDependencies combine.children="append">
-                                <!-- Cross-module dep kept for architectural intent. -->
-                                <ignoredUnusedDeclaredDependency>io.camunda:camunda-security-library-core</ignoredUnusedDeclaredDependency>
-                            </ignoredUnusedDeclaredDependencies>
-                        </configuration>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>
