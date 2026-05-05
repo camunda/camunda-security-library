@@ -20,8 +20,8 @@ import com.tngtech.archunit.lang.ArchRule;
 /**
  * Enforces the framework-free boundary for the CSL api module: classes in {@code
  * io.camunda.security.api..} carry the public, host-facing surface and must not depend on {@code
- * io.camunda.security.core..}, {@code io.camunda.security.autoconfigure..}, or framework runtime
- * types (Spring, Jakarta Servlet, Jakarta Persistence, Jackson runtime, zeebe-protocol).
+ * io.camunda.security.core..}, {@code io.camunda.security.spring..}, or framework runtime types
+ * (Spring, Jakarta Servlet, Jakarta Persistence, Jackson runtime, zeebe-protocol).
  *
  * <p>This is the api-side mirror of {@code DomainArchTest} on {@code core}: keeping {@code api}
  * free of frameworks lets adopters consume the public types without pulling Spring or other runtime
@@ -55,7 +55,7 @@ class ApiArchTest {
           .resideInAPackage("io.camunda.security.api..")
           .should()
           .dependOnClassesThat()
-          .resideInAPackage("io.camunda.security.autoconfigure..")
+          .resideInAPackage("io.camunda.security.spring..")
           .allowEmptyShould(true);
 
   @ArchTest

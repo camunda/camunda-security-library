@@ -19,9 +19,9 @@ import com.tngtech.archunit.lang.ArchRule;
 
 /**
  * Enforces the hexagonal boundary for the CSL core module: classes in {@code
- * io.camunda.security.core..} must not depend on anything in {@code
- * io.camunda.security.autoconfigure..}, and must not depend on framework runtime types (Spring,
- * Jakarta Servlet, Jakarta Persistence, Jackson runtime, zeebe-protocol).
+ * io.camunda.security.core..} must not depend on anything in {@code io.camunda.security.spring..},
+ * and must not depend on framework runtime types (Spring, Jakarta Servlet, Jakarta Persistence,
+ * Jackson runtime, zeebe-protocol).
  *
  * <p>{@code core} is permitted to depend on {@code io.camunda.security.api..}: the public model
  * records (e.g. {@code CamundaAuthentication}) live in {@code api/model/}, and {@code core} ports
@@ -45,7 +45,7 @@ class DomainArchTest {
           .resideInAPackage("io.camunda.security.core..")
           .should()
           .dependOnClassesThat()
-          .resideInAPackage("io.camunda.security.autoconfigure..")
+          .resideInAPackage("io.camunda.security.spring..")
           .allowEmptyShould(true);
 
   @ArchTest
