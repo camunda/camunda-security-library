@@ -1,7 +1,7 @@
 #!/bin/sh
 # managed-by: camunda-security-library
 #
-# Enforces Conventional Commits subject format per .claude/docs/workflow.md.
+# Enforces Conventional Commits header format per .claude/docs/workflow.md.
 # Bypass once: `git commit --no-verify`
 # Skip persistently: export CSL_SKIP_HOOKS=1
 
@@ -13,11 +13,11 @@ fi
 
 msg_file="$1"
 
-# Extract the first non-comment, non-blank line.
-subject=$(grep -v '^#' "$msg_file" | awk 'NF { print; exit }')
+# Extract the first non-comment, non-blank line (the commit header).
+header=$(grep -v '^#' "$msg_file" | awk 'NF { print; exit }')
 
 # Skip merge, revert, fixup, and squash commits — git manages these.
-case "$subject" in
+case "$header" in
     Merge\ *|Revert\ *|fixup!\ *|squash!\ *)
         exit 0
         ;;
@@ -27,20 +27,20 @@ case "$subject" in
         ;;
 esac
 
-# Enforce total subject length.
-if [ "${#subject}" -gt 72 ]; then
-    echo "commit-msg: subject is ${#subject} chars (max 72)."
-    echo "  received: $subject"
+# Enforce header length — aligned with commitlint config-conventional header-max-length (100).
+if [ "${#header}" -gt 100 ]; then
+    echo "commit-msg: header is ${#header} chars (max 100)."
+    echo "  received: $header"
     exit 1
 fi
 
 # Enforce Conventional Commits structure.
 pattern='^(feat|fix|chore|docs|refactor|test|ci|build|perf)(\([^)]+\))?!?: .+$'
-if ! printf '%s\n' "$subject" | grep -Eq "$pattern"; then
-    echo "commit-msg: subject does not match Conventional Commits format."
+if ! printf '%s\n' "$header" | grep -Eq "$pattern"; then
+    echo "commit-msg: header does not match Conventional Commits format."
     echo "  expected: <type>(<optional-scope>)!?: <subject>"
     echo "  types:    feat|fix|chore|docs|refactor|test|ci|build|perf"
-    echo "  received: $subject"
+    echo "  received: $header"
     echo "  see:      .claude/docs/workflow.md#commit-message-format"
     exit 1
 fi

@@ -58,7 +58,7 @@ Current milestones (with what's open and closed): [GitHub Milestones](https://gi
 ## Working here
 
 - **Branches:** `<type>/<short-description>` — lowercase, hyphen-separated. Types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`.
-- **Commits:** Conventional Commits — `<type>(<scope>): <subject>`. Subject max 72 characters, imperative mood, no trailing period.
+- **Commits:** Conventional Commits — `<type>(<scope>): <subject>`. Header max 100 characters, imperative mood, no trailing period.
 - **PRs:** title follows conventional-commits format; squash-merge.
 - **Before every commit:** `mvn verify` must pass — no flaky tests, no skipped tests.
 - **Architectural change?** Write an ADR in [docs/adr/](../adr/). See [workflow.md](../../.claude/docs/workflow.md) for when it applies.
