@@ -40,6 +40,9 @@ public record CamundaAuthentication(
         throw new IllegalArgumentException(
             "Anonymous authentication must not define username or clientId.");
       }
+    } else if (authenticatedUsername != null && authenticatedClientId != null) {
+      throw new IllegalArgumentException(
+          "Only one of username or clientId may be set for non-anonymous authentication.");
     }
     /*
      TODO this is currently not possible with usage of the "none()" methode.
