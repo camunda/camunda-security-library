@@ -7,19 +7,36 @@
  */
 package io.camunda.security.api.model.config;
 
-/** Authentication configuration bound to {@code camunda.security.authentication.*}. */
+/**
+ * Authentication configuration bound to {@code camunda.security.authentication.*}.
+ *
+ * <p>This model is consumed by host applications through CSL's Spring binding and represents the
+ * top-level authentication behavior switches (method selection, dev-mode API exposure, refresh
+ * interval, and OIDC sub-configuration).
+ */
 public class AuthenticationConfiguration {
 
-  /** Authentication method. Either {@code basic} or {@code oidc}. */
-  private AuthenticationMethod method;
+  /** Default authentication method when no explicit value is configured. */
+  public static final AuthenticationMethod DEFAULT_METHOD = AuthenticationMethod.BASIC;
+
+  /** Default for {@code camunda.security.authentication.unprotected-api}. */
+  public static final boolean DEFAULT_UNPROTECTED_API = false;
+
+  /** Authentication method. Either {@code basic} or {@code oidc}. Defaults to {@code basic}. */
+  private AuthenticationMethod method = DEFAULT_METHOD;
 
   /**
    * When {@code true}, the API is unprotected (development mode only). Setting this disables the
    * OIDC and basic auth API protection chains in favour of a permit-all chain.
    */
-  private boolean unprotectedApi = false;
+  private boolean unprotectedApi = DEFAULT_UNPROTECTED_API;
 
-  /** Authentication refresh interval (ISO-8601 duration format, e.g., "PT30S"). */
+  /**
+   * Authentication refresh interval in ISO-8601 duration format (for example {@code PT30S}).
+   *
+   * <p>Used by holders that cache authentication state (for example session-based holders) to
+   * decide when the cached value should be refreshed.
+   */
   private String authenticationRefreshInterval = "PT30S";
 
   /** OIDC-specific settings (only consulted when {@code method == OIDC}). */
