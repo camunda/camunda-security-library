@@ -9,13 +9,31 @@ package io.camunda.security.api.model;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThatExceptionOfType;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class CamundaAuthenticationTest {
+
+  @Test
+  void shouldFailToConvertWithUsernameAndClientId() {
+    assertThatExceptionOfType(IllegalArgumentException.class)
+        .isThrownBy(() -> CamundaAuthentication.of(b -> b.user("foo").clientId("bar")));
+  }
+
+  @Test
+  void shouldFailToCreateWithUsernameAndClientId() {
+    assertThatThrownBy(
+            () ->
+                new CamundaAuthentication(
+                    "foo", "bar", false, List.of(), List.of(), List.of(), List.of(), Map.of()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Only one of username or clientId may be set");
+  }
 
   @Test
   void shouldNormalizeNullCollectionsToImmutableEmptyCollections() {
