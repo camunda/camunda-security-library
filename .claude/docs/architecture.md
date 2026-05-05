@@ -76,7 +76,7 @@ Caller invokes a `*Port` method with domain types
 - Configuration classes (non-record classes bound via `@ConfigurationProperties`):
   - **Data model** (plain, no Spring deps): `api/model/config/` — e.g., `AuthenticationConfiguration`, `OidcConfiguration`
   - **Spring binding logic**: `spring-boot-starter/` — @ConfigurationProperties binds `api/model/config/` classes
-- Auto-configuration, default beans, conditional activation → `spring-boot-starter/` (under `io.camunda.security.autoconfigure.spring.*`)
+- Auto-configuration, default beans, conditional activation → `spring-boot-starter/` (under `io.camunda.security.spring.*`)
 
 ## What Not to Touch
 

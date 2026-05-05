@@ -1,0 +1,181 @@
+/*
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH under
+ * one or more contributor license agreements. See the NOTICE file distributed
+ * with this work for additional information regarding copyright ownership.
+ * Licensed under the Camunda License 1.0. You may not use this file
+ * except in compliance with the Camunda License 1.0.
+ */
+package io.camunda.security.spring.security;
+
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.LOGOUT_URL;
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.OIDC_REGISTRATION_ID;
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP_API;
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.REDIRECT_URI;
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.SESSION_COOKIE;
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
+
+import io.camunda.security.core.port.out.SecurityPathPort;
+import io.camunda.security.spring.CamundaSecurityAutoConfiguration;
+import io.camunda.security.spring.CamundaSecurityLibraryProperties;
+import io.camunda.security.spring.filter.OAuth2RefreshTokenFilter;
+import io.camunda.security.spring.handler.AuthFailureHandler;
+import io.camunda.security.spring.handler.LoggingAuthenticationFailureHandler;
+import io.camunda.security.spring.handler.OAuth2AuthenticationExceptionHandler;
+import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
+import java.util.LinkedHashMap;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.AutoConfigureAfter;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Bean;
+import org.springframework.core.annotation.Order;
+import org.springframework.security.config.ObjectPostProcessor;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
+import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
+import org.springframework.security.web.AuthenticationEntryPoint;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
+import org.springframework.security.web.authentication.AuthenticationEntryPointFailureHandler;
+import org.springframework.security.web.authentication.DelegatingAuthenticationEntryPoint;
+import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.authentication.logout.CompositeLogoutHandler;
+import org.springframework.security.web.authentication.logout.CookieClearingLogoutHandler;
+import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
+import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
+import org.springframework.security.web.util.matcher.RequestHeaderRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
+
+/**
+ * Filter chain that protects webapp UI paths with OIDC OAuth2 login and supports session-based
+ * navigation, transparent access-token refresh, and logout. Uses Spring Security's default
+ * authorization request resolver.
+ */
+@AutoConfiguration
+@AutoConfigureAfter(CamundaSecurityAutoConfiguration.class)
+@ConditionalOnProperty(name = "camunda.security.authentication.method", havingValue = "oidc")
+public class OidcWebappSecurityAutoConfiguration {
+
+  @Bean
+  @Order(ORDER_WEBAPP_API)
+  public SecurityFilterChain oidcWebappSecurityFilterChain(
+      final HttpSecurity http,
+      final AuthFailureHandler authFailureHandler,
+      final ClientRegistrationRepository clientRegistrationRepository,
+      final JwtDecoder jwtDecoder,
+      final OAuth2AuthorizedClientRepository authorizedClientRepository,
+      final OAuth2AuthorizedClientManager authorizedClientManager,
+      final ObjectProvider<OidcTokenEndpointCustomizer> tokenEndpointCustomizerProvider,
+      final ObjectProvider<LogoutSuccessHandler> logoutSuccessHandlerProvider,
+      final ObjectProvider<OidcUserService> oidcUserServiceProvider,
+      final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers,
+      final CamundaSecurityLibraryProperties properties,
+      final SecurityPathPort pathPort)
+      throws Exception {
+
+    final var filterChainBuilder =
+        http.securityMatcher(pathPort.webappPaths().toArray(String[]::new))
+            .authorizeHttpRequests(
+                auth ->
+                    auth.requestMatchers(
+                            pathPort.unauthenticatedWebappPaths().toArray(String[]::new))
+                        .permitAll()
+                        .anyRequest()
+                        .authenticated())
+            .exceptionHandling(
+                eh ->
+                    eh.authenticationEntryPoint(oidcWebappAuthenticationEntryPoint())
+                        .accessDeniedHandler(authFailureHandler))
+            .cors(AbstractHttpConfigurer::disable)
+            .formLogin(AbstractHttpConfigurer::disable)
+            .anonymous(AbstractHttpConfigurer::disable)
+            .oauth2ResourceServer(
+                oauth2 -> {
+                  oauth2
+                      .jwt(jwt -> jwt.decoder(jwtDecoder))
+                      .withObjectPostProcessor(postProcessBearerTokenFailureHandler());
+                  resourceServerCustomizers
+                      .orderedStream()
+                      .forEach(customizer -> customizer.customize(oauth2));
+                })
+            .oauth2Login(
+                oauthLogin -> {
+                  oauthLogin
+                      .clientRegistrationRepository(clientRegistrationRepository)
+                      .authorizedClientRepository(authorizedClientRepository)
+                      .redirectionEndpoint(
+                          redirectionEndpoint -> redirectionEndpoint.baseUri(REDIRECT_URI))
+                      .failureHandler(new OAuth2AuthenticationExceptionHandler());
+                  tokenEndpointCustomizerProvider.ifAvailable(oauthLogin::tokenEndpoint);
+                  oidcUserServiceProvider.ifAvailable(
+                      service -> oauthLogin.userInfoEndpoint(c -> c.oidcUserService(service)));
+                })
+            .oidcLogout(oidcLogout -> {})
+            .logout(
+                logout -> {
+                  logout
+                      .logoutUrl(LOGOUT_URL)
+                      .deleteCookies(SESSION_COOKIE, X_CSRF_TOKEN)
+                      .invalidateHttpSession(true);
+                  logoutSuccessHandlerProvider.ifAvailable(logout::logoutSuccessHandler);
+                });
+
+    // Register the refresh token filter after AuthorizationFilter so expired access tokens are
+    // transparently refreshed before downstream filters see them. The filter needs a LogoutHandler
+    // to force-logout users whose refresh tokens have also expired.
+    final var logoutHandler =
+        new CompositeLogoutHandler(
+            new CookieClearingLogoutHandler(SESSION_COOKIE, X_CSRF_TOKEN),
+            new SecurityContextLogoutHandler());
+    filterChainBuilder.addFilterAfter(
+        new OAuth2RefreshTokenFilter(
+            authorizedClientRepository, authorizedClientManager, logoutHandler),
+        AuthorizationFilter.class);
+
+    SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
+    SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
+
+    return filterChainBuilder.build();
+  }
+
+  /**
+   * Delegating entry point: requests carrying an {@code Authorization} header receive a 401 via
+   * {@link BearerTokenAuthenticationEntryPoint}; everything else (browser navigations) is
+   * redirected to the OAuth2 authorization endpoint.
+   *
+   * <p>Required because both {@code oauth2ResourceServer} and {@code oauth2Login} register their
+   * own entry points, and in Spring Security 7.x the resource server's takes precedence — causing
+   * browser requests to receive 401 instead of a 302 redirect to the IdP.
+   */
+  private static AuthenticationEntryPoint oidcWebappAuthenticationEntryPoint() {
+    final var bearerEntryPoint = new BearerTokenAuthenticationEntryPoint();
+    final var oauthRedirectEntryPoint =
+        new LoginUrlAuthenticationEntryPoint("/oauth2/authorization/" + OIDC_REGISTRATION_ID);
+    final var entryPoints = new LinkedHashMap<RequestMatcher, AuthenticationEntryPoint>();
+    entryPoints.put(new RequestHeaderRequestMatcher("Authorization"), bearerEntryPoint);
+    final var delegatingEntryPoint = new DelegatingAuthenticationEntryPoint(entryPoints);
+    delegatingEntryPoint.setDefaultEntryPoint(oauthRedirectEntryPoint);
+    return delegatingEntryPoint;
+  }
+
+  private static ObjectPostProcessor<BearerTokenAuthenticationFilter>
+      postProcessBearerTokenFailureHandler() {
+    return new ObjectPostProcessor<>() {
+      @Override
+      public <O extends BearerTokenAuthenticationFilter> O postProcess(final O filter) {
+        final var defaultFailureHandler =
+            new AuthenticationEntryPointFailureHandler(new BearerTokenAuthenticationEntryPoint());
+        final var loggingFailureHandler =
+            new LoggingAuthenticationFailureHandler(defaultFailureHandler);
+        filter.setAuthenticationFailureHandler(loggingFailureHandler);
+        return filter;
+      }
+    };
+  }
+}
