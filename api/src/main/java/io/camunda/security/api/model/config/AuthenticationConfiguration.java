@@ -19,6 +19,9 @@ public class AuthenticationConfiguration {
    */
   private boolean unprotectedApi = false;
 
+  /** Authentication refresh interval (ISO-8601 duration format, e.g., "PT30S"). */
+  private String authenticationRefreshInterval = "PT30S";
+
   /** OIDC-specific settings (only consulted when {@code method == OIDC}). */
   private OidcConfiguration oidc = new OidcConfiguration();
 
@@ -36,6 +39,14 @@ public class AuthenticationConfiguration {
 
   public void setUnprotectedApi(final boolean unprotectedApi) {
     this.unprotectedApi = unprotectedApi;
+  }
+
+  public String getAuthenticationRefreshInterval() {
+    return authenticationRefreshInterval;
+  }
+
+  public void setAuthenticationRefreshInterval(final String authenticationRefreshInterval) {
+    this.authenticationRefreshInterval = authenticationRefreshInterval;
   }
 
   public OidcConfiguration getOidc() {
