@@ -69,9 +69,13 @@ Caller invokes a `*Port` method with domain types
 ## Where New Code Goes
 
 - Domain logic → `core/`
+- Public models and config → `api/model/` (adopters need to understand these)
 - New inbound use case → define the `*Port` interface in `core/port/in/`, implement it as a responsibility-named service (typically in `spring-boot-starter/`)
 - New persistence operation → define the outbound `*Port` interface in `core/port/out/` first, then implement it as an adapter
 - New external integration → define the outbound `*Port` interface in `core/port/out/` first, then implement it as an adapter
+- Configuration classes (non-record classes bound via `@ConfigurationProperties`):
+  - **Data model** (plain, no Spring deps): `api/model/config/` — e.g., `AuthenticationConfiguration`, `OidcConfiguration`
+  - **Spring binding logic**: `spring-boot-starter/` — @ConfigurationProperties binds `api/model/config/` classes
 - Auto-configuration, default beans, conditional activation → `spring-boot-starter/` (under `io.camunda.security.autoconfigure.spring.*`)
 
 ## What Not to Touch
