@@ -20,9 +20,12 @@ import jakarta.servlet.http.HttpSession;
 import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpSession;
 
+@ExtendWith(MockitoExtension.class)
 public class HttpSessionBasedAuthenticationHolderTest {
 
   @Mock private HttpServletRequest request;
@@ -31,8 +34,6 @@ public class HttpSessionBasedAuthenticationHolderTest {
 
   @BeforeEach
   void setup() {
-    request = mock(HttpServletRequest.class);
-    authenticationConfiguration = mock(AuthenticationConfiguration.class);
     when(authenticationConfiguration.getAuthenticationRefreshInterval()).thenReturn("PT1S");
     holder = new HttpSessionBasedAuthenticationHolder(request, authenticationConfiguration);
   }
