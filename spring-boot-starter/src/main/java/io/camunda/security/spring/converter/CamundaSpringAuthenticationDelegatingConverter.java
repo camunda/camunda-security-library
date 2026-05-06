@@ -78,7 +78,7 @@ public class CamundaSpringAuthenticationDelegatingConverter
   protected CamundaAuthenticationConverter<Authentication> getConverter(
       final Authentication authentication) {
     return converters.stream()
-        .filter(c -> c.supports(authentication))
+        .filter(c -> c != this && c.supports(authentication))
         .findFirst()
         .orElseThrow(
             () -> {

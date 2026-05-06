@@ -26,6 +26,7 @@ final class ProtectedBasicAuthApiCondition implements Condition {
     final String method = context.getEnvironment().getProperty(AUTHENTICATION_METHOD_PROPERTY);
     final boolean unprotected =
         context.getEnvironment().getProperty(UNPROTECTED_API_PROPERTY, Boolean.class, false);
-    return AuthenticationMethod.BASIC.name().equalsIgnoreCase(method) && !unprotected;
+    return (method == null || AuthenticationMethod.BASIC.name().equalsIgnoreCase(method))
+        && !unprotected;
   }
 }

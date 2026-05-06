@@ -36,7 +36,10 @@ import org.springframework.security.web.csrf.CsrfToken;
  * return 204 No Content with the CSRF token surfaced as a response header.
  */
 @Configuration
-@ConditionalOnProperty(name = "camunda.security.authentication.method", havingValue = "basic")
+@ConditionalOnProperty(
+    name = "camunda.security.authentication.method",
+    havingValue = "basic",
+    matchIfMissing = true)
 public class BasicAuthWebappSecurityConfiguration {
 
   private static final Logger LOG =

@@ -18,26 +18,29 @@ import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.context.CamundaAuthenticationHolder;
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.api.model.CamundaAuthentication;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 public class DefaultCamundaAuthenticationProviderTest {
 
-  @Mock CamundaAuthenticationHolder holder;
-  @Mock private CamundaAuthenticationConverter<Authentication> authenticationConverter;
+  private CamundaAuthenticationHolder holder;
+  private CamundaAuthenticationConverter<Authentication> authenticationConverter;
   private CamundaAuthenticationProvider authenticationProvider;
 
   @BeforeEach
-  void setup() throws Exception {
-    MockitoAnnotations.openMocks(this).close();
+  void setup() {
     authenticationConverter = mock(CamundaAuthenticationConverter.class);
     holder = mock(CamundaAuthenticationHolder.class);
     authenticationProvider =
         new DefaultCamundaAuthenticationProvider(holder, authenticationConverter);
+  }
+
+  @AfterEach
+  void tearDown() {
+    SecurityContextHolder.clearContext();
   }
 
   @Test

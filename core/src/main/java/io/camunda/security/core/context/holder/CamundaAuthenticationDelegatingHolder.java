@@ -55,6 +55,6 @@ public class CamundaAuthenticationDelegatingHolder implements CamundaAuthenticat
   }
 
   protected CamundaAuthenticationHolder getMatchingHolder() {
-    return holders.stream().filter(CamundaAuthenticationHolder::supports).findFirst().orElse(null);
+    return holders.stream().filter(h -> h != this && h.supports()).findFirst().orElse(null);
   }
 }

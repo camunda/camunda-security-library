@@ -16,13 +16,16 @@ import static org.springframework.web.context.request.RequestAttributes.SCOPE_RE
 import io.camunda.security.api.model.CamundaAuthentication;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 
+@ExtendWith(MockitoExtension.class)
 public class RequestContextBasedAuthenticationHolderTest {
 
   @Mock private RequestAttributes requestAttributes;
@@ -30,15 +33,30 @@ public class RequestContextBasedAuthenticationHolderTest {
   private RequestContextBasedAuthenticationHolder holder;
 
   @BeforeEach
-  void setup() throws Exception {
-    MockitoAnnotations.openMocks(this).close();
+  void setup() {
     RequestContextHolder.setRequestAttributes(requestAttributes);
-    request = mock(HttpServletRequest.class);
     holder = new RequestContextBasedAuthenticationHolder(request);
   }
 
+  @AfterEach
+  void tearDown() {
+    RequestContextHolder.resetRequestAttributes();
+  }
+
   @Test
-  public void shouldSupportWhenSessionExists() {
+  public void shouldNotSupportWhenNoRequestAttributesBound() {
+    // given
+    RequestContextHolder.resetRequestAttributes();
+
+    // when
+    final var result = holder.supports();
+
+    // then
+    assertThat(result).isFalse();
+  }
+
+  @Test
+  public void shouldSupportWhenNoSessionExists() {
     // given
     when(request.getSession(eq(false))).thenReturn(null);
 
@@ -50,7 +68,7 @@ public class RequestContextBasedAuthenticationHolderTest {
   }
 
   @Test
-  public void shouldNotSupportWhenSessionDoesNotExist() {
+  public void shouldNotSupportWhenSessionExists() {
     // given
     final var session = mock(HttpSession.class);
     when(request.getSession(eq(false))).thenReturn(session);
