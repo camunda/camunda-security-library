@@ -22,7 +22,7 @@ YOU MUST write tests where there are logic branches — not blanket coverage for
 
 YOU MUST run `mvn verify` before presenting work as complete. A clean run means no test failures and `BUILD SUCCESS`.
 
-IMPORTANT: If you touch auto-configuration, verify with `ApplicationContextRunner` tests covering activation conditions, bean creation, and `@ConditionalOnMissingBean` back-off.
+IMPORTANT: Do NOT create or modify `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`. The CSL does not use Spring Boot auto-configuration (ADR-0008). If you find yourself writing `@AutoConfiguration` or editing the imports file, stop — see ADR-0008 and the conventions doc instead.
 
 ## Hard Rules
 

@@ -43,7 +43,8 @@ In CSL, a policy is the effective access configuration derived from those buildi
 - **Models:** always Java records (never mutable classes)
 - **Config classes:** cannot be records (Spring `@ConfigurationProperties` needs mutability)
 - **Sealed by default:** all production classes must be `final` unless they are intentional extension points
-- **Auto-configuration:** every bean must have `@ConditionalOnMissingBean` for consumer overrides
+- **No auto-configuration:** Do NOT use `@AutoConfiguration` or register classes in `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`. Configuration classes in `spring-boot-starter/` are plain `@Configuration` classes that host applications activate by explicit `@Import`. Nothing must activate automatically by including the dependency (see ADR-0008).
+- **`@ConditionalOnMissingBean`:** every library-supplied default bean must have `@ConditionalOnMissingBean` so a host that imports the configuration can still override individual beans.
 - **No `System.out.print`:** use SLF4J (`LOG.debug/info/warn/error`)
 - **All new classes must have tests**
 
