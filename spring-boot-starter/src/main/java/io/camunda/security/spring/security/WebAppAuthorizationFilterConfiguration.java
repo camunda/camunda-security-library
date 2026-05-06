@@ -66,7 +66,9 @@ public class WebAppAuthorizationFilterConfiguration {
   @ConditionalOnBean({
     WebAppProvider.class,
     ResourcePermissionPort.class,
-    CamundaAuthenticationProvider.class
+    WebAppAccessDeniedHandler.class,
+    CamundaAuthenticationProvider.class,
+    SecurityPathPort.class
   })
   public WebAppAuthorizationCheckFilter webAppAuthorizationCheckFilter(
       final WebAppProvider webAppProvider,
