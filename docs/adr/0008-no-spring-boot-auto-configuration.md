@@ -65,13 +65,13 @@ and then explicitly activate the configurations they need:
 ```java
 @Configuration
 @Import({
-    BaseSecurityAutoConfiguration.class,
-    OidcApiSecurityAutoConfiguration.class,
-    OidcWebappSecurityAutoConfiguration.class,
-    OidcBeansAutoConfiguration.class,
-    AuthFailureHandlerAutoConfiguration.class
+    BaseSecurityConfiguration.class,
+    OidcApiSecurityConfiguration.class,
+    OidcWebappSecurityConfiguration.class,
+    OidcBeansConfiguration.class,
+    AuthFailureHandlerConfiguration.class
 })
-public class CamundaSecurityConfiguration {}
+public class MyHostSecurityConfiguration {}
 ```
 
 Nothing activates unless the host opts in. If a CSL configuration class is not yet ready for a

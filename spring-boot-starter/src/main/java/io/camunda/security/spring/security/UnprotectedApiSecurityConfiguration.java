@@ -10,15 +10,13 @@ package io.camunda.security.spring.security;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_UNPROTECTED;
 
 import io.camunda.security.core.port.out.SecurityPathPort;
-import io.camunda.security.spring.CamundaSecurityAutoConfiguration;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -28,15 +26,14 @@ import org.springframework.security.web.SecurityFilterChain;
  * Development-only filter chain that leaves all API paths unprotected. Activated when {@code
  * camunda.security.authentication.unprotected-api=true}. Never use in production.
  */
-@AutoConfiguration
-@AutoConfigureAfter(CamundaSecurityAutoConfiguration.class)
+@Configuration
 @ConditionalOnProperty(
     name = "camunda.security.authentication.unprotected-api",
     havingValue = "true")
-public class UnprotectedApiSecurityAutoConfiguration {
+public class UnprotectedApiSecurityConfiguration {
 
   private static final Logger LOG =
-      LoggerFactory.getLogger(UnprotectedApiSecurityAutoConfiguration.class);
+      LoggerFactory.getLogger(UnprotectedApiSecurityConfiguration.class);
 
   @Bean
   @Order(ORDER_UNPROTECTED)

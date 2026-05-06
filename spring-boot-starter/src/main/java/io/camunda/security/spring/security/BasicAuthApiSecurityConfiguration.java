@@ -10,15 +10,13 @@ package io.camunda.security.spring.security;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP_API;
 
 import io.camunda.security.core.port.out.SecurityPathPort;
-import io.camunda.security.spring.CamundaSecurityAutoConfiguration;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -28,13 +26,12 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.savedrequest.NullRequestCache;
 
 /** Filter chain that protects API paths with HTTP Basic authentication. */
-@AutoConfiguration
-@AutoConfigureAfter(CamundaSecurityAutoConfiguration.class)
+@Configuration
 @Conditional(ProtectedBasicAuthApiCondition.class)
-public class BasicAuthApiSecurityAutoConfiguration {
+public class BasicAuthApiSecurityConfiguration {
 
   private static final Logger LOG =
-      LoggerFactory.getLogger(BasicAuthApiSecurityAutoConfiguration.class);
+      LoggerFactory.getLogger(BasicAuthApiSecurityConfiguration.class);
 
   @Bean
   @Order(ORDER_WEBAPP_API)

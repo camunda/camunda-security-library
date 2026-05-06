@@ -12,7 +12,7 @@ import org.springframework.security.config.annotation.web.configurers.oauth2.ser
 
 /**
  * Extension point applied inside the {@code oauth2ResourceServer(...)} DSL of {@link
- * OidcApiSecurityAutoConfiguration} and {@link OidcWebappSecurityAutoConfiguration}.
+ * OidcApiSecurityConfiguration} and {@link OidcWebappSecurityConfiguration}.
  * Implementations are discovered via {@link org.springframework.beans.factory.ObjectProvider} and
  * applied in {@code @Order}.
  *
