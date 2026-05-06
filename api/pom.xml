@@ -15,6 +15,11 @@
     <description>Host-facing entry points for the Camunda Security Library.</description>
 
     <dependencies>
+        <dependency>
+            <groupId>jakarta.annotation</groupId>
+            <artifactId>jakarta.annotation-api</artifactId>
+        </dependency>
+
         <!-- Test only. -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
