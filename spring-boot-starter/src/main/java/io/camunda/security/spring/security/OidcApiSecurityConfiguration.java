@@ -10,17 +10,15 @@ package io.camunda.security.spring.security;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP_API;
 
 import io.camunda.security.core.port.out.SecurityPathPort;
-import io.camunda.security.spring.CamundaSecurityAutoConfiguration;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.handler.LoggingAuthenticationFailureHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -34,12 +32,11 @@ import org.springframework.security.web.authentication.AuthenticationEntryPointF
 import org.springframework.security.web.savedrequest.NullRequestCache;
 
 /** Filter chain that protects API paths with OIDC JWT bearer authentication. */
-@AutoConfiguration
-@AutoConfigureAfter(CamundaSecurityAutoConfiguration.class)
+@Configuration
 @Conditional(ProtectedOidcApiCondition.class)
-public class OidcApiSecurityAutoConfiguration {
+public class OidcApiSecurityConfiguration {
 
-  private static final Logger LOG = LoggerFactory.getLogger(OidcApiSecurityAutoConfiguration.class);
+  private static final Logger LOG = LoggerFactory.getLogger(OidcApiSecurityConfiguration.class);
 
   @Bean
   @Order(ORDER_WEBAPP_API)

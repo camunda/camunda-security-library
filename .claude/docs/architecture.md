@@ -6,7 +6,7 @@ The CSL is a multi-module Maven library. Modules will be added as implementation
 
 - `api/` — Public, host-facing surface: model records adopters consume (`api/model/`), context interfaces hosts implement (`api/context/`), and configuration records bound by Spring in the starter (`api/model/config/`). No dependencies on `core/`.
 - `core/` — Framework-free domain logic and port interfaces. For new code, contracts live under `port/in/` and `port/out/`. Depends on `api/` so port signatures can speak the public model types directly. Zero Spring or zeebe-protocol dependencies (enforced by `DomainArchTest`).
-- `spring-boot-starter/` — Spring Boot auto-configuration. Hosts include this artefact, set `camunda.security.*` properties, and the chains plus library-default beans (`JwtDecoder`, `ClientRegistrationRepository`, `OAuth2AuthorizedClientRepository`, `OAuth2AuthorizedClientManager`, default `AuthFailureHandler`) wire automatically. Every library-supplied bean has `@ConditionalOnMissingBean` so hosts override by registering their own.
+- `spring-boot-starter/` — Spring configuration classes for filter chains, authentication beans, and related infrastructure. **No Spring Boot auto-configuration is used** (see [ADR-0008](../../docs/adr/0008-no-spring-boot-auto-configuration.md)): there is no `AutoConfiguration.imports` file. Host applications explicitly `@Import` the configuration classes they are ready to activate. Every library-supplied bean has `@ConditionalOnMissingBean` so hosts can override individual beans without touching the configuration class.
 
 ## Key Boundaries
 
@@ -25,7 +25,7 @@ The CSL is embedded into host applications. Active capabilities are selected via
 - **API protection**: `camunda.security.authentication.unprotected-api=true|false` swaps the API protection chain for the dev-mode permit-all variant.
 - **Deployment strategy** (`oc-standalone` / `oc-managed` / `hub`): planned for the policy work; **not currently consumed by the filter chain layer.** AuthN/AuthZ enforcement is always active regardless of strategy.
 
-Auto-configuration uses `@ConditionalOnProperty` (or small `@Conditional` classes for chains that depend on more than one property). Library-supplied default beans (e.g., `JwtDecoder` from `camunda.security.authentication.oidc.*`) sit behind `@ConditionalOnMissingBean` so any host bean of the same type wins.
+**Important:** The CSL does not use Spring Boot auto-configuration (see [ADR-0008](../../docs/adr/0008-no-spring-boot-auto-configuration.md)). `@ConditionalOnProperty` annotations on configuration classes are present for future use but have no effect until the host explicitly `@Import`s the class. Nothing activates by simply adding the Maven dependency.
 
 ## Unified Policy Model
 
@@ -76,7 +76,7 @@ Caller invokes a `*Port` method with domain types
 - Configuration classes (non-record classes bound via `@ConfigurationProperties`):
   - **Data model** (plain, no Spring deps): `api/model/config/` — e.g., `AuthenticationConfiguration`, `OidcConfiguration`
   - **Spring binding logic**: `spring-boot-starter/` — @ConfigurationProperties binds `api/model/config/` classes
-- Auto-configuration, default beans, conditional activation → `spring-boot-starter/` (under `io.camunda.security.spring.*`)
+- Configuration, default beans, conditional activation → `spring-boot-starter/` (under `io.camunda.security.spring.*`). Use plain `@Configuration`, not `@AutoConfiguration`. Do not register classes in `AutoConfiguration.imports` — hosts must explicitly `@Import` them.
 
 ## What Not to Touch
 

@@ -8,17 +8,17 @@
 package io.camunda.security.spring.handler;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
 /**
  * Provides the default {@link AuthFailureHandler} bean. Hosts can override it by registering their
  * own {@link AuthFailureHandler} bean — the {@code @ConditionalOnMissingBean} ensures the library's
  * default backs off.
  */
-@AutoConfiguration
-public class AuthFailureHandlerAutoConfiguration {
+@Configuration
+public class AuthFailureHandlerConfiguration {
 
   @Bean
   @ConditionalOnMissingBean

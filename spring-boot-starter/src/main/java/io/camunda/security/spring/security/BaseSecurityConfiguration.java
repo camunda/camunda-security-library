@@ -11,12 +11,10 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_UNPROTECTED;
 
 import io.camunda.security.core.port.out.SecurityPathPort;
-import io.camunda.security.spring.CamundaSecurityAutoConfiguration;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -27,10 +25,9 @@ import org.springframework.security.web.SecurityFilterChain;
  * Always-on filter chains: unprotected paths (highest priority) and a catch-all deny chain (lowest
  * priority). Activates Spring Security's web security infrastructure via {@link EnableWebSecurity}.
  */
-@AutoConfiguration
-@AutoConfigureAfter(CamundaSecurityAutoConfiguration.class)
+@Configuration
 @EnableWebSecurity
-public class BaseSecurityAutoConfiguration {
+public class BaseSecurityConfiguration {
 
   @Bean
   @Order(ORDER_UNPROTECTED)

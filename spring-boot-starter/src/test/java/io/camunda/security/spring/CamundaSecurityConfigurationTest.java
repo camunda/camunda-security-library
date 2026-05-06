@@ -12,15 +12,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.handler.AuthFailureHandler;
-import io.camunda.security.spring.handler.AuthFailureHandlerAutoConfiguration;
+import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.handler.JsonProblemDetailAuthFailureHandler;
-import io.camunda.security.spring.oidc.OidcBeansAutoConfiguration;
-import io.camunda.security.spring.security.BaseSecurityAutoConfiguration;
-import io.camunda.security.spring.security.BasicAuthApiSecurityAutoConfiguration;
-import io.camunda.security.spring.security.BasicAuthWebappSecurityAutoConfiguration;
-import io.camunda.security.spring.security.OidcApiSecurityAutoConfiguration;
-import io.camunda.security.spring.security.OidcWebappSecurityAutoConfiguration;
-import io.camunda.security.spring.security.UnprotectedApiSecurityAutoConfiguration;
+import io.camunda.security.spring.oidc.OidcBeansConfiguration;
+import io.camunda.security.spring.security.BaseSecurityConfiguration;
+import io.camunda.security.spring.security.BasicAuthApiSecurityConfiguration;
+import io.camunda.security.spring.security.BasicAuthWebappSecurityConfiguration;
+import io.camunda.security.spring.security.OidcApiSecurityConfiguration;
+import io.camunda.security.spring.security.OidcWebappSecurityConfiguration;
+import io.camunda.security.spring.security.UnprotectedApiSecurityConfiguration;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -34,22 +34,22 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 
-class CamundaSecurityAutoConfigurationTest {
+class CamundaSecurityConfigurationTest {
 
   private final WebApplicationContextRunner runner =
       new WebApplicationContextRunner()
           .withUserConfiguration(ObjectMapperConfig.class)
           .withConfiguration(
               AutoConfigurations.of(
-                  CamundaSecurityAutoConfiguration.class,
-                  BaseSecurityAutoConfiguration.class,
-                  OidcApiSecurityAutoConfiguration.class,
-                  OidcWebappSecurityAutoConfiguration.class,
-                  BasicAuthApiSecurityAutoConfiguration.class,
-                  BasicAuthWebappSecurityAutoConfiguration.class,
-                  UnprotectedApiSecurityAutoConfiguration.class,
-                  AuthFailureHandlerAutoConfiguration.class,
-                  OidcBeansAutoConfiguration.class))
+                  CamundaSecurityConfiguration.class,
+                  BaseSecurityConfiguration.class,
+                  OidcApiSecurityConfiguration.class,
+                  OidcWebappSecurityConfiguration.class,
+                  BasicAuthApiSecurityConfiguration.class,
+                  BasicAuthWebappSecurityConfiguration.class,
+                  UnprotectedApiSecurityConfiguration.class,
+                  AuthFailureHandlerConfiguration.class,
+                  OidcBeansConfiguration.class))
           .withUserConfiguration(StubPaths.class);
 
   @Test
@@ -117,10 +117,10 @@ class CamundaSecurityAutoConfigurationTest {
             "camunda.security.authentication.oidc.redirect-uri=http://localhost/callback")
         .run(
             ctx -> {
-              // UnprotectedApiSecurityAutoConfiguration must be active
-              assertThat(ctx).hasSingleBean(UnprotectedApiSecurityAutoConfiguration.class);
-              // OidcApiSecurityAutoConfiguration must NOT be active (unprotected-api=true)
-              assertThat(ctx).doesNotHaveBean(OidcApiSecurityAutoConfiguration.class);
+              // UnprotectedApiSecurityConfiguration must be active
+              assertThat(ctx).hasSingleBean(UnprotectedApiSecurityConfiguration.class);
+              // OidcApiSecurityConfiguration must NOT be active (unprotected-api=true)
+              assertThat(ctx).doesNotHaveBean(OidcApiSecurityConfiguration.class);
             });
   }
 

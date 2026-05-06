@@ -39,18 +39,18 @@ We will:
 - Define the host-facing contract through `SecurityPathPort` (in `csl-core`) plus the existing OAuth2 extension hooks (`OidcTokenEndpointCustomizer`, `OidcResourceServerCustomizer`). Hosts register beans of those types; the library picks them up via `ObjectProvider`. Host-specific filter wiring is deliberately not addressed by this PR — a follow-up will introduce a more focused mechanism than a generic `HttpSecurity` mutator.
 - Bind all configuration through one `@ConfigurationProperties("camunda.security")` POJO (`CamundaSecurityLibraryProperties`) covering authentication, CSRF, and HTTP response headers.
 
-The chain auto-configurations are:
+The chain configurations are:
 
 | Class | Activation |
 |---|---|
-| `BaseSecurityAutoConfiguration` | always — unprotected paths chain + catch-all deny chain |
-| `OidcApiSecurityAutoConfiguration` | `method=oidc` AND `unprotected-api` is not `true` |
-| `OidcWebappSecurityAutoConfiguration` | `method=oidc` |
-| `BasicAuthApiSecurityAutoConfiguration` | `method=basic` AND `unprotected-api` is not `true` |
-| `BasicAuthWebappSecurityAutoConfiguration` | `method=basic` |
-| `UnprotectedApiSecurityAutoConfiguration` | `unprotected-api=true` (development-only; logs a startup warning) |
+| `BaseSecurityConfiguration` | always — unprotected paths chain + catch-all deny chain |
+| `OidcApiSecurityConfiguration` | `method=oidc` AND `unprotected-api` is not `true` |
+| `OidcWebappSecurityConfiguration` | `method=oidc` |
+| `BasicAuthApiSecurityConfiguration` | `method=basic` AND `unprotected-api` is not `true` |
+| `BasicAuthWebappSecurityConfiguration` | `method=basic` |
+| `UnprotectedApiSecurityConfiguration` | `unprotected-api=true` (development-only; logs a startup warning) |
 
-Plus `OidcBeansAutoConfiguration` (the OIDC default beans, gated on `method=oidc`) and `AuthFailureHandlerAutoConfiguration`.
+Plus `OidcBeansConfiguration` (the OIDC default beans, gated on `method=oidc`) and `AuthFailureHandlerConfiguration`.
 
 ## Options considered
 

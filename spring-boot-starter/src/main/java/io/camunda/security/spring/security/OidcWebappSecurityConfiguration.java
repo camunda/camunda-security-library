@@ -15,7 +15,6 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
 import io.camunda.security.core.port.out.SecurityPathPort;
-import io.camunda.security.spring.CamundaSecurityAutoConfiguration;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.filter.OAuth2RefreshTokenFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
@@ -24,10 +23,9 @@ import io.camunda.security.spring.handler.OAuth2AuthenticationExceptionHandler;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import java.util.LinkedHashMap;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -57,10 +55,9 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
  * navigation, transparent access-token refresh, and logout. Uses Spring Security's default
  * authorization request resolver.
  */
-@AutoConfiguration
-@AutoConfigureAfter(CamundaSecurityAutoConfiguration.class)
+@Configuration
 @ConditionalOnProperty(name = "camunda.security.authentication.method", havingValue = "oidc")
-public class OidcWebappSecurityAutoConfiguration {
+public class OidcWebappSecurityConfiguration {
 
   @Bean
   @Order(ORDER_WEBAPP_API)

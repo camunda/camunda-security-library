@@ -29,8 +29,9 @@ Hexagonal architecture naming (replaces traditional controller/service/repo nami
 - **Config classes:** cannot be records (Spring `@ConfigurationProperties` needs mutability). Public configuration that adopters need to understand belongs in `api/model/config/`; Spring binding logic stays in `spring-boot-starter/`
 - **RDBMS entities:** cannot be records (MyBatis/JPA needs setters)
 - **Sealed by default:** all production classes must be `final` unless they are intentional extension points (SPIs, classes with `protected` methods, config properties classes, persistence entities)
-- **Auto-configuration:** every library-supplied bean must have `@ConditionalOnMissingBean` so consumers can override by registering their own. `@AutoConfiguration` already implies `proxyBeanMethods = false` — do NOT add it explicitly. Each filter-chain auto-configuration registers in `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`.
-- **Property-driven activation:** chain auto-configurations gate on `camunda.security.authentication.*` via `@ConditionalOnProperty` (or a small `@Conditional` class when more than one property contributes to the decision). Avoid `@ConditionalOnProperty(enabled=true)` for features Spring Security already activates through bean presence — property gates are reserved for features with significant runtime side effects (e.g., the dev-mode unprotected-API chain).
+- **No auto-configuration:** The CSL does not use Spring Boot auto-configuration (see [ADR-0008](../../docs/adr/0008-no-spring-boot-auto-configuration.md)). Do NOT create or modify `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`. Configuration classes in `spring-boot-starter/` are plain `@Configuration` classes. Host applications activate them by explicitly using `@Import(SomeConfig.class)` — nothing activates by simply adding the dependency.
+- **`@ConditionalOnMissingBean`:** Still required on every library-supplied default bean so that a host which imports a configuration class can override individual beans by registering their own. `@ConditionalOnProperty` annotations may be present on configuration classes for future use but have no activation effect in the current explicit-import model.
+- Do NOT use `@AutoConfiguration`. Do NOT add `proxyBeanMethods = false` explicitly to `@Configuration` unless you have a specific proxying reason.
 
 ## Error Handling
 
@@ -45,5 +46,5 @@ Hexagonal architecture naming (replaces traditional controller/service/repo nami
 - Integration tests for adapters: use `@SpringBootTest` or Testcontainers to test real I/O
 - Contract tests for APIs: Pact consumer-driven contracts
 - ArchUnit tests enforce hexagonal boundary rules (see `DomainArchTest`)
-- Auto-configuration tests use `ApplicationContextRunner` covering: activation conditions, bean creation, and `@ConditionalOnMissingBean` back-off
+- Configuration class tests: use `ApplicationContextRunner` to verify that explicitly importing a configuration class creates the expected beans and that `@ConditionalOnMissingBean` back-off works when the host registers its own bean
 - All new classes must have corresponding tests before committing

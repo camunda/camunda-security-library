@@ -178,7 +178,7 @@ public OidcResourceServerCustomizer protectedResourceMetadata(...) {
 
 ### `OidcTokenEndpointCustomizer` — customise the OAuth2 login token endpoint
 
-Used most commonly to wire `private_key_jwt` client authentication. Implement the interface and register a bean; `OidcWebappSecurityAutoConfiguration` picks it up via `ObjectProvider` if present.
+Used most commonly to wire `private_key_jwt` client authentication. Implement the interface and register a bean; `OidcWebappSecurityConfiguration` picks it up via `ObjectProvider` if present.
 
 ```java
 @Bean
@@ -232,7 +232,7 @@ Session policy:
 
 ## What this library deliberately does *not* provide
 
-- **Multi-IdP routing.** `OidcWebappSecurityAutoConfiguration` uses Spring Security's default authorization request resolver. Multi-IdP support is a follow-up PR.
+- **Multi-IdP routing.** `OidcWebappSecurityConfiguration` uses Spring Security's default authorization request resolver. Multi-IdP support is a follow-up PR.
 - **`private_key_jwt` defaults.** Implement `OidcTokenEndpointCustomizer` if needed.
 - **A user database, role mapping, or membership resolution.** Those belong to the authorization side of the CSL — see the policy-model documents.
 

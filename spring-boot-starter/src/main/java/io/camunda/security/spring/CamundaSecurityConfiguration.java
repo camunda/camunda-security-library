@@ -7,13 +7,13 @@
  */
 package io.camunda.security.spring;
 
-import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Configuration;
 
 /**
- * Root auto-configuration for the Camunda Security Library. Enables {@link
+ * Root configuration for the Camunda Security Library. Enables {@link
  * CamundaSecurityLibraryProperties} binding at application startup.
  */
-@AutoConfiguration
+@Configuration
 @EnableConfigurationProperties(CamundaSecurityLibraryProperties.class)
-public class CamundaSecurityAutoConfiguration {}
+public class CamundaSecurityConfiguration {}

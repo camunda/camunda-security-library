@@ -14,15 +14,13 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
 import io.camunda.security.core.port.out.SecurityPathPort;
-import io.camunda.security.spring.CamundaSecurityAutoConfiguration;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -34,13 +32,12 @@ import org.springframework.security.web.csrf.CsrfToken;
  * Filter chain that protects webapp UI paths with form-based Basic authentication. Login and logout
  * return 204 No Content with the CSRF token surfaced as a response header.
  */
-@AutoConfiguration
-@AutoConfigureAfter(CamundaSecurityAutoConfiguration.class)
+@Configuration
 @ConditionalOnProperty(name = "camunda.security.authentication.method", havingValue = "basic")
-public class BasicAuthWebappSecurityAutoConfiguration {
+public class BasicAuthWebappSecurityConfiguration {
 
   private static final Logger LOG =
-      LoggerFactory.getLogger(BasicAuthWebappSecurityAutoConfiguration.class);
+      LoggerFactory.getLogger(BasicAuthWebappSecurityConfiguration.class);
 
   @Bean
   @Order(ORDER_WEBAPP_API)
