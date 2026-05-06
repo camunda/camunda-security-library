@@ -71,7 +71,7 @@ and then explicitly activate the configurations they need:
     OidcBeansConfiguration.class,
     AuthFailureHandlerConfiguration.class
 })
-public class MyHostSecurityConfiguration {}
+public class HubSecurityConfiguration {}
 ```
 
 Nothing activates unless the host opts in. If a CSL configuration class is not yet ready for a
