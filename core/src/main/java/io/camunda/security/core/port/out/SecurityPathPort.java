@@ -51,4 +51,17 @@ public interface SecurityPathPort {
   default Set<String> unauthenticatedWebappPaths() {
     return Set.of();
   }
+
+  /**
+   * Request URI suffixes the web-app authorization filter passes through without invoking a
+   * permission check — typically static-asset extensions served by the SPA shell (CSS, JS, images,
+   * fonts). Override to add or remove entries; the comparison is plain {@code endsWith} so each
+   * entry should include the leading dot (e.g. {@code ".css"}).
+   *
+   * <p>Default is the set carried over from the OC source ({@code .css}, {@code .js}, {@code
+   * .js.map}, {@code .jpg}, {@code .png}, {@code .woff2}, {@code .ico}, {@code .svg}).
+   */
+  default Set<String> staticResourceSuffixes() {
+    return Set.of(".css", ".js", ".js.map", ".jpg", ".png", ".woff2", ".ico", ".svg");
+  }
 }
