@@ -8,7 +8,6 @@
 package io.camunda.security.api.model.config;
 
 import java.util.Arrays;
-import java.util.Optional;
 
 /**
  * Authentication method selected by the host via {@code camunda.security.authentication.method}.
@@ -23,15 +22,21 @@ public enum AuthenticationMethod {
   /** OpenID Connect authentication. */
   OIDC;
 
-  /** Parses a configured authentication method value. */
-  public static Optional<AuthenticationMethod> parse(final String value) {
+  /**
+   * Parses a configured authentication method value.
+   *
+   * @return the matching {@link AuthenticationMethod}, or {@code null} if {@code value} is {@code
+   *     null}
+   * @throws IllegalArgumentException if {@code value} is non-null but does not match any known
+   *     method
+   */
+  public static AuthenticationMethod parse(final String value) {
     if (value == null) {
-      return Optional.empty();
+      return null;
     }
     return Arrays.stream(values())
         .filter(method -> method.name().equalsIgnoreCase(value))
         .findFirst()
-        .map(Optional::of)
         .orElseThrow(
             () -> new IllegalArgumentException("unsupported authentication method: " + value));
   }

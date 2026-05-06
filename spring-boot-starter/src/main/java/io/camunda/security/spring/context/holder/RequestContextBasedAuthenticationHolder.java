@@ -39,7 +39,7 @@ public class RequestContextBasedAuthenticationHolder implements CamundaAuthentic
 
   @Override
   public boolean supports() {
-    return request.getSession(false) == null;
+    return RequestContextHolder.getRequestAttributes() != null && request.getSession(false) == null;
   }
 
   @Override

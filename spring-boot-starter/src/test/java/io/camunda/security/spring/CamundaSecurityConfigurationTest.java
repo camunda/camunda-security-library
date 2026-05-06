@@ -51,7 +51,8 @@ class CamundaSecurityConfigurationTest {
                   UnprotectedApiSecurityConfiguration.class,
                   AuthFailureHandlerConfiguration.class,
                   OidcBeansConfiguration.class))
-          .withUserConfiguration(StubPaths.class);
+          .withUserConfiguration(StubPaths.class)
+          .withUserConfiguration(StubUserDetailsService.class);
 
   @Test
   void bindsDefaultPropertiesWithoutAuthenticationMethod() {
@@ -62,6 +63,12 @@ class CamundaSecurityConfigurationTest {
               .getBean(CamundaSecurityLibraryProperties.class)
               .extracting(p -> p.getAuthentication().getMethod())
               .isEqualTo(AuthenticationMethod.BASIC);
+          // With method defaulting to BASIC, the Basic auth chains must activate
+          assertThat(ctx).hasSingleBean(BasicAuthApiSecurityConfiguration.class);
+          assertThat(ctx).hasSingleBean(BasicAuthWebappSecurityConfiguration.class);
+          // OIDC-specific beans must NOT be present
+          assertThat(ctx).doesNotHaveBean(JwtDecoder.class);
+          assertThat(ctx).doesNotHaveBean(ClientRegistrationRepository.class);
         });
   }
 
@@ -69,7 +76,6 @@ class CamundaSecurityConfigurationTest {
   void basicMethodActivatesBasicChainsAndSuppressesOidcChains() {
     runner
         .withPropertyValues("camunda.security.authentication.method=basic")
-        .withUserConfiguration(StubUserDetailsService.class)
         .run(
             ctx -> {
               assertThat(ctx).hasSingleBean(AuthFailureHandler.class);
