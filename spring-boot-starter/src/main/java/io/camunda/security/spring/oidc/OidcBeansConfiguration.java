@@ -7,7 +7,7 @@
  */
 package io.camunda.security.spring.oidc;
 
-import io.camunda.security.api.model.config.OidcConfiguration;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;

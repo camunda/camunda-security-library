@@ -7,6 +7,9 @@
  */
 package io.camunda.security.api.model.config;
 
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.camunda.security.api.model.config.oidc.OidcProvidersConfiguration;
+
 /**
  * Authentication configuration bound to {@code camunda.security.authentication.*}.
  *
@@ -42,6 +45,8 @@ public class AuthenticationConfiguration {
   /** OIDC-specific settings (only consulted when {@code method == OIDC}). */
   private OidcConfiguration oidc = new OidcConfiguration();
 
+  private OidcProvidersConfiguration providers;
+
   public AuthenticationMethod getMethod() {
     return method;
   }
@@ -72,5 +77,23 @@ public class AuthenticationConfiguration {
 
   public void setOidc(final OidcConfiguration oidc) {
     this.oidc = oidc;
+  }
+
+  public OidcProvidersConfiguration getProviders() {
+    return providers;
+  }
+
+  public void setProviders(final OidcProvidersConfiguration providers) {
+    this.providers = providers;
+  }
+
+  /** Camunda-managed groups are disabled when OIDC is active and a groups claim is configured. */
+  public boolean isCamundaGroupsEnabled() {
+    return !(getMethod() == AuthenticationMethod.OIDC && getOidc().isGroupsClaimConfigured());
+  }
+
+  /** Camunda-managed users are disabled when OIDC authentication is active. */
+  public boolean isCamundaUsersEnabled() {
+    return getMethod() != AuthenticationMethod.OIDC;
   }
 }
