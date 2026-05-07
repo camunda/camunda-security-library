@@ -216,8 +216,8 @@ These are looked up via `ObjectProvider#ifAvailable`; absence is fine, the chain
 
 The CSL's `WebAppAuthorizationCheckFilter` enforces per-web-app `ACCESS` permission on every authenticated webapp request. It runs immediately after Spring Security's `AuthorizationFilter` on the webapp chain. The filter is host-pluggable on two axes:
 
-- **Which web app does the request belong to?** Hub returns a constant; OC derives from the URL path. Implement `WebAppProvider`.
-- **What happens when access is denied?** The library default redirects to `<contextPath>/<webApp>/forbidden` (preserves OC's behaviour). Override `WebAppAccessDeniedHandler` to return JSON, forward, or anything else.
+- **Which web app does the request belong to?** A single-web-app host returns a constant; a multi-web-app host derives from the URL path. Implement `WebAppProvider`.
+- **What happens when access is denied?** The library default redirects to `<contextPath>/<webApp>/forbidden`. Override `WebAppAccessDeniedHandler` to return JSON, forward, or anything else.
 
 The actual permission decision delegates to `ResourcePermissionPort` — see [ADR-0007](../adr/0007-resource-permission-port-and-authorization-repository.md). Hosts implement `AuthorizationRepositoryPort` for the data; the library supplies a default `ResourcePermissionService` that does an exact-id match. Hosts that need different matching semantics override `ResourcePermissionPort` directly. Activation rationale lives in [ADR-0009](../adr/0009-web-app-authorization-spis.md).
 
@@ -238,24 +238,30 @@ Add `WebAppAuthorizationFilterConfiguration` to your `@Import` list. The filter 
 public class HostSecurityConfiguration {}
 ```
 
-### Hub: constant `WebAppProvider`
+### Opting out
 
-Hub serves a single web app. Return the constant id for every request:
+If your host doesn't enforce per-web-app authorization (for example Hub, which has no resource→permission model that maps onto the `ResourceType.COMPONENT` + `PermissionType.ACCESS` shape), simply omit `WebAppAuthorizationFilterConfiguration` from your `@Import` list. The chain configurations inject the filter via `ObjectProvider`; when the bean isn't there, `addFilterAfterIfAvailable(...)` is a no-op. Nothing else in the webapp chain changes.
+
+There is no halfway state to worry about — the filter is either fully wired (you imported the configuration and registered the SPIs) or completely absent (you didn't). It's safe to add later when the host's authorization model is ready.
+
+### Single-web-app host: constant `WebAppProvider`
+
+A host that serves a single web app returns a constant id for every request:
 
 ```java
 @Bean
-public WebAppProvider hubWebAppProvider() {
-  return request -> Optional.of("hub");
+public WebAppProvider singleWebAppProvider() {
+  return request -> Optional.of("operate");
 }
 ```
 
-### OC: path-derived `WebAppProvider`
+### Multi-web-app host: path-derived `WebAppProvider`
 
-OC routes `/operate/...`, `/tasklist/...`, etc. to different webapps. Derive the id from the first non-empty path segment:
+A host that routes `/operate/...`, `/tasklist/...`, etc. to different webapps derives the id from the first non-empty path segment:
 
 ```java
 @Bean
-public WebAppProvider ocWebAppProvider(final SecurityPathPort pathPort) {
+public WebAppProvider pathDerivedWebAppProvider(final SecurityPathPort pathPort) {
   return request -> {
     final String uri = request.getRequestURI();
     final String contextPath = request.getContextPath();

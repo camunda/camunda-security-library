@@ -17,13 +17,13 @@ Accepted
 The web app authorization filter is the first concrete instance of that follow-up. It runs after `AuthorizationFilter` on the webapp chain and decides whether the authenticated principal has `ACCESS` on the web app the request is bound for. The behaviour is the same in every host, but two pieces of input vary:
 
 1. **Which web app does this request belong to?**
-   - Hub serves a single web app and returns the constant `Optional.of("hub")`.
-   - Orchestration Cluster serves several (`/operate/...`, `/tasklist/...`, `/identity/...`) and derives the id from the URL path's first segment.
+   - A single-web-app host returns a constant id (e.g. `Optional.of("operate")`).
+   - A host serving several web apps (Orchestration Cluster, with `/operate/...`, `/tasklist/...`, `/identity/...`) derives the id from the URL path's first segment.
 2. **What happens when the check denies access?**
-   - OC's existing behaviour redirects the browser to `<contextPath>/<webApp>/forbidden` so the SPA shell can render its own forbidden page.
+   - The OC-derived behaviour the filter was lifted from redirects the browser to `<contextPath>/<webApp>/forbidden` so the SPA shell can render its own forbidden page.
    - Hosts may want a 403 JSON body, a `RequestDispatcher.forward(...)` to a static page, or any other transport-appropriate response.
 
-A single library class can't make either decision. Both are host-specific behaviours, not configuration values.
+A single library class can't make either decision. Both are host-specific behaviours, not configuration values. Hosts that don't enforce per-web-app authorization at all (no resource→permission concept) simply don't `@Import` the configuration — the filter never activates and the rest of the webapp chain runs unchanged.
 
 The authorization decision itself ("does this principal have `ACCESS` on `<componentId>`?") is delegated to the two-layer SPI captured in [ADR-0007](0007-resource-permission-port-and-authorization-repository.md): hosts implement `AuthorizationRepositoryPort` for the data, and the library supplies `ResourcePermissionService` as the default `ResourcePermissionPort`. Hosts that need different matching semantics override `ResourcePermissionPort` directly.
 
@@ -86,9 +86,10 @@ A companion `FilterRegistrationBean<WebAppAuthorizationCheckFilter>` with `setEn
 
 **Positive**
 
-- Hub and OC share the filter implementation; only the host-specific bits (web app derivation, denial response) are pluggable.
+- Hosts that need per-web-app authorization share the filter implementation; only the host-specific bits (web app derivation, denial response) are pluggable.
+- Hosts that don't enforce per-web-app authorization (no resource→permission concept that maps to `ResourceType.COMPONENT` + `PermissionType.ACCESS`) simply don't `@Import` the configuration. The chain configurations inject the filter via `ObjectProvider`; absence is a clean no-op.
 - Hosts can adopt incrementally — registering a `WebAppProvider` alone is harmless because the filter requires `WebAppProvider` + `ResourcePermissionPort` + `WebAppAccessDeniedHandler` + `CamundaAuthenticationProvider` + `SecurityPathPort` to materialise.
-- The redirect-to-forbidden default keeps OC working out of the box; hosts that want a different denial response register one bean.
+- The redirect-to-forbidden default preserves the source behaviour the filter was lifted from; hosts that want a different denial response register one bean.
 - The denial response is a behaviour, not a property — type-safe, testable, and unconstrained.
 - Activation is opt-in per ADR-0008. A host that imports neither `WebAppAuthorizationFilterConfiguration` nor any of its prerequisites sees no behavioural change.
 
