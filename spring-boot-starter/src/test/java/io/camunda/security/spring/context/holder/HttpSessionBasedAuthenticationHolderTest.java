@@ -161,28 +161,23 @@ public class HttpSessionBasedAuthenticationHolderTest {
     // when
     holder.set(authentication);
 
-    // then: both refresh attributes are initialized
+    // then: refresh timestamp is initialized
     assertThat(session.getAttribute(LAST_REFRESH_ATTR)).isInstanceOf(Instant.class);
-    assertThat(session.getAttribute(LAST_REFRESH_ATTR + "_LOCK"))
-        .isNotNull()
-        .isNotInstanceOf(String.class);
   }
 
   @Test
   public void shouldNotReinitializeRefreshAttributesOnSubsequentSet() {
-    // given: a session that already has refresh attributes
+    // given: a session that already has a refresh timestamp
     final var authentication = mock(CamundaAuthentication.class);
     final var session = new MockHttpSession();
     when(request.getSession(eq(false))).thenReturn(session);
     holder.set(authentication);
     final Instant firstRefresh = (Instant) session.getAttribute(LAST_REFRESH_ATTR);
-    final Object firstLock = session.getAttribute(LAST_REFRESH_ATTR + "_LOCK");
 
     // when: set is called again
     holder.set(authentication);
 
-    // then: the existing refresh attributes are not overwritten
+    // then: the existing refresh timestamp is not overwritten
     assertThat(session.getAttribute(LAST_REFRESH_ATTR)).isEqualTo(firstRefresh);
-    assertThat(session.getAttribute(LAST_REFRESH_ATTR + "_LOCK")).isSameAs(firstLock);
   }
 }
