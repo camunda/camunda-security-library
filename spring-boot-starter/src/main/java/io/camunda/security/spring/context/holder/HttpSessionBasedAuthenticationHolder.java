@@ -78,7 +78,7 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
 
   private void lockAndRefresh(final HttpSession session, final Instant now) {
     final Instant lastRefresh;
-    synchronized (session.getAttribute(LAST_REFRESH_ATTR + "_LOCK")) {
+    synchronized (session) {
       lastRefresh = (Instant) session.getAttribute(LAST_REFRESH_ATTR);
       if (isRefreshRequired(lastRefresh, now)) {
         removeCamundaAuthenticationInSession(session);
@@ -103,7 +103,6 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
 
   private static void initializeRefreshAttributes(final HttpSession session, final Instant now) {
     session.setAttribute(LAST_REFRESH_ATTR, now);
-    session.setAttribute(LAST_REFRESH_ATTR + "_LOCK", new Object());
   }
 
   private boolean isRefreshRequired(final Instant lastRefresh, final Instant now) {
