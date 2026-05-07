@@ -38,7 +38,7 @@ public class CamundaAuthenticationDelegatingHolder implements CamundaAuthenticat
    */
   @Override
   public void set(final CamundaAuthentication authentication) {
-    Optional.ofNullable(getMatchingHolder()).ifPresent(c -> c.set(authentication));
+    getMatchingHolder().ifPresent(c -> c.set(authentication));
   }
 
   /**
@@ -49,12 +49,10 @@ public class CamundaAuthenticationDelegatingHolder implements CamundaAuthenticat
    */
   @Override
   public CamundaAuthentication get() {
-    return Optional.ofNullable(getMatchingHolder())
-        .map(CamundaAuthenticationHolder::get)
-        .orElse(null);
+    return getMatchingHolder().map(CamundaAuthenticationHolder::get).orElse(null);
   }
 
-  protected CamundaAuthenticationHolder getMatchingHolder() {
-    return holders.stream().filter(h -> h != this && h.supports()).findFirst().orElse(null);
+  protected Optional<CamundaAuthenticationHolder> getMatchingHolder() {
+    return holders.stream().filter(h -> h != this && h.supports()).findFirst();
   }
 }
