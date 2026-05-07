@@ -54,4 +54,10 @@ public class RequestContextBasedAuthenticationHolder implements CamundaAuthentic
         RequestContextHolder.currentRequestAttributes()
             .getAttribute(CAMUNDA_AUTHENTICATION_REQUEST_HOLDER_KEY, SCOPE_REQUEST);
   }
+
+  @Override
+  public void clear() {
+    RequestContextHolder.currentRequestAttributes()
+        .removeAttribute(CAMUNDA_AUTHENTICATION_REQUEST_HOLDER_KEY, SCOPE_REQUEST);
+  }
 }

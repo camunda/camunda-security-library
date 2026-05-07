@@ -26,4 +26,7 @@ public interface CamundaAuthenticationHolder {
 
   /** Obtains the current {@link CamundaAuthentication}, or null if not present. */
   CamundaAuthentication get();
+
+  /** Clears the current {@link CamundaAuthentication} from the active execution context. */
+  void clear();
 }

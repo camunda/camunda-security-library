@@ -96,6 +96,19 @@ public class HttpSessionBasedAuthenticationHolderTest {
   }
 
   @Test
+  public void shouldClearAuthenticationFromSession() {
+    // given
+    final var session = mock(HttpSession.class);
+    when(request.getSession(eq(false))).thenReturn(session);
+
+    // when
+    holder.clear();
+
+    // then
+    verify(session, times(1)).removeAttribute(eq(CAMUNDA_AUTHENTICATION_SESSION_HOLDER_KEY));
+  }
+
+  @Test
   public void shouldReturnNullIfAuthenticationNotRefreshed() throws InterruptedException {
     // given
     final var authentication = mock(CamundaAuthentication.class);

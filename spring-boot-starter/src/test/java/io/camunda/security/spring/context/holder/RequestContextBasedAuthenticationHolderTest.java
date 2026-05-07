@@ -108,4 +108,14 @@ public class RequestContextBasedAuthenticationHolderTest {
         .setAttribute(
             eq(CAMUNDA_AUTHENTICATION_REQUEST_HOLDER_KEY), eq(authentication), eq(SCOPE_REQUEST));
   }
+
+  @Test
+  public void shouldClearAuthenticationFromRequest() {
+    // when
+    holder.clear();
+
+    // then
+    verify(requestAttributes, times(1))
+        .removeAttribute(eq(CAMUNDA_AUTHENTICATION_REQUEST_HOLDER_KEY), eq(SCOPE_REQUEST));
+  }
 }

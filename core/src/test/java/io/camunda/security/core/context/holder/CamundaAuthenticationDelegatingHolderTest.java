@@ -56,6 +56,21 @@ public class CamundaAuthenticationDelegatingHolderTest {
   }
 
   @Test
+  void shouldDelegateClearToFirstSupportingHolder() {
+    // given
+    final CamundaAuthenticationHolder delegate = mock();
+    when(delegate.supports()).thenReturn(true);
+
+    final var holder = new CamundaAuthenticationDelegatingHolder(List.of(delegate));
+
+    // when
+    holder.clear();
+
+    // then
+    verify(delegate).clear();
+  }
+
+  @Test
   void shouldSkipNonSupportingHoldersAndDelegateToFirstSupporting() {
     // given
     final var expected = CamundaAuthentication.of(b -> b.user("foo"));
