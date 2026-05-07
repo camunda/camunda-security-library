@@ -12,8 +12,6 @@ import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.exception.CamundaAuthenticationException;
 import java.util.List;
 import java.util.Optional;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 
 /**
@@ -26,14 +24,10 @@ import org.springframework.security.core.Authentication;
  * the configured list whose {@code supports} method returns {@code true} for the given
  * authentication.
  *
- * <p>If no matching converter is found, a {@link CamundaAuthenticationException} is thrown and the
- * failure is logged at error level.
+ * <p>If no matching converter is found, a {@link CamundaAuthenticationException} is thrown.
  */
 public class CamundaSpringAuthenticationDelegatingConverter
     implements CamundaAuthenticationConverter<Authentication> {
-
-  private static final Logger LOG =
-      LoggerFactory.getLogger(CamundaSpringAuthenticationDelegatingConverter.class);
 
   private final List<CamundaAuthenticationConverter<Authentication>> converters;
 
