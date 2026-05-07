@@ -2,7 +2,7 @@
 
 This guide is for host applications (Hub, Orchestration Cluster gateways, future Camunda services) that embed the Camunda Security Library. It explains how to wire the central filter chains, what host-side beans are required, and how to extend or override library defaults.
 
-For the rationale behind this design — why the chains are Spring Boot auto-configured rather than `@Import`-composed — see [ADR-0006](../adr/0006-central-security-filter-chains.md).
+For the rationale behind this design — why the chains live in CSL — see [ADR-0006](../adr/0006-central-security-filter-chains.md). For why hosts opt in via explicit `@Import` rather than relying on Spring Boot auto-configuration, see [ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md).
 
 ## Why a central library owns the filter chains
 
@@ -45,7 +45,23 @@ Hosts retain control of *which* paths to protect (`SecurityPathPort`), the value
    }
    ```
 
-3. Set the auth method and any auth-mode-specific properties in `application.yaml`:
+3. `@Import` the configuration classes you want active. The CSL does not use Spring Boot auto-configuration ([ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md)) — nothing activates by simply adding the dependency. Hosts opt in to each capability explicitly:
+
+   ```java
+   @Configuration
+   @Import({
+       BaseSecurityConfiguration.class,            // unprotected paths + catch-all deny
+       OidcWebappSecurityConfiguration.class,      // OIDC browser session chain
+       OidcApiSecurityConfiguration.class,         // OIDC bearer-token API chain
+       OidcBeansConfiguration.class,               // JwtDecoder / ClientRegistrationRepository / etc.
+       AuthFailureHandlerConfiguration.class       // RFC 7807 problem-detail responses
+   })
+   public class HostSecurityConfiguration {}
+   ```
+
+   For HTTP basic auth instead, swap `OidcWebappSecurityConfiguration` / `OidcApiSecurityConfiguration` / `OidcBeansConfiguration` for `BasicAuthWebappSecurityConfiguration` / `BasicAuthApiSecurityConfiguration`. For development without authentication, replace the protected API config with `UnprotectedApiSecurityConfiguration`. Each configuration's beans are gated by `@ConditionalOnMissingBean` so a host that registers its own `JwtDecoder`, `AuthFailureHandler`, etc. silently overrides the library default.
+
+4. Set the auth method and any auth-mode-specific properties in `application.yaml`:
 
    ```yaml
    camunda:
@@ -59,7 +75,7 @@ Hosts retain control of *which* paths to protect (`SecurityPathPort`), the value
            redirect-uri: "{baseUrl}/sso-callback"
    ```
 
-   That's it. The library activates the `BaseSecurity` chains (always-on unprotected paths + catch-all deny), the OIDC API chain, the OIDC webapp chain, and provides default `JwtDecoder` / `ClientRegistrationRepository` / `OAuth2AuthorizedClientRepository` / `OAuth2AuthorizedClientManager` / `AuthFailureHandler` beans wired to those properties.
+   `@ConditionalOnProperty` annotations on the configuration classes are present for forward-compatibility with the future re-enabling of auto-configuration but have no effect today — the `@Import` list is the actual gate.
 
 For HTTP basic auth instead, set:
 
@@ -196,6 +212,118 @@ public OidcTokenEndpointCustomizer privateKeyJwtCustomizer(MyJwkProvider jwks) {
 
 These are looked up via `ObjectProvider#ifAvailable`; absence is fine, the chain falls back to Spring Security defaults.
 
+## Web app authorization
+
+The CSL's `WebAppAuthorizationCheckFilter` enforces per-web-app `ACCESS` permission on every authenticated webapp request. It runs immediately after Spring Security's `AuthorizationFilter` on the webapp chain. The filter is host-pluggable on two axes:
+
+- **Which web app does the request belong to?** Hub returns a constant; OC derives from the URL path. Implement `WebAppProvider`.
+- **What happens when access is denied?** The library default redirects to `<contextPath>/<webApp>/forbidden` (preserves OC's behaviour). Override `WebAppAccessDeniedHandler` to return JSON, forward, or anything else.
+
+The actual permission decision delegates to `ResourcePermissionPort` — see [ADR-0007](../adr/0007-resource-permission-port-and-authorization-repository.md). Hosts implement `AuthorizationRepositoryPort` for the data; the library supplies a default `ResourcePermissionService` that does an exact-id match. Hosts that need different matching semantics override `ResourcePermissionPort` directly. Activation rationale lives in [ADR-0009](../adr/0009-web-app-authorization-spis.md).
+
+### Activation
+
+Add `WebAppAuthorizationFilterConfiguration` to your `@Import` list. The filter and its supporting beans are created only when all the required SPIs are present; otherwise the chain configuration's `addFilterAfterIfAvailable` call is a no-op.
+
+```java
+@Configuration
+@Import({
+    BaseSecurityConfiguration.class,
+    OidcWebappSecurityConfiguration.class,
+    OidcApiSecurityConfiguration.class,
+    OidcBeansConfiguration.class,
+    AuthFailureHandlerConfiguration.class,
+    WebAppAuthorizationFilterConfiguration.class
+})
+public class HostSecurityConfiguration {}
+```
+
+### Hub: constant `WebAppProvider`
+
+Hub serves a single web app. Return the constant id for every request:
+
+```java
+@Bean
+public WebAppProvider hubWebAppProvider() {
+  return request -> Optional.of("hub");
+}
+```
+
+### OC: path-derived `WebAppProvider`
+
+OC routes `/operate/...`, `/tasklist/...`, etc. to different webapps. Derive the id from the first non-empty path segment:
+
+```java
+@Bean
+public WebAppProvider ocWebAppProvider(final SecurityPathPort pathPort) {
+  return request -> {
+    final String uri = request.getRequestURI();
+    final String contextPath = request.getContextPath();
+    final String relative = uri.startsWith(contextPath) ? uri.substring(contextPath.length()) : uri;
+    final int slash = relative.indexOf('/', 1);
+    final String segment = slash > 0 ? relative.substring(1, slash) : relative.substring(1);
+    return pathPort.webComponentNames().contains(segment) ? Optional.of(segment) : Optional.empty();
+  };
+}
+```
+
+`Optional.empty()` signals "this request doesn't belong to a web app" and the filter passes through without invoking the permission check. Filter requests for static assets, anonymous users, and `/forbidden` URLs are pre-filtered by the filter itself — the provider only has to handle the path-derivation question.
+
+### Authorization data: `AuthorizationRepositoryPort`
+
+Implement the outbound port that returns the principal's authorization records for a given resource type. The library calls this per request through the default `ResourcePermissionService`:
+
+```java
+@Bean
+public AuthorizationRepositoryPort authorizationRepository(final MyAuthzStore store) {
+  return (authentication, resourceType) ->
+      store.findGrants(authentication.authenticatedUsername(), resourceType).stream()
+          .map(grant -> new Authorization(
+              grant.resourceType(),
+              grant.resourceId(),
+              Set.copyOf(grant.permissionTypes())))
+          .collect(Collectors.toSet());
+}
+```
+
+The library's default `ResourcePermissionService` then matches by exact resource id and required permission. Hosts that need wildcard semantics, caching, or instrumentation register their own `ResourcePermissionPort` bean — the default backs off via `@ConditionalOnMissingBean`.
+
+### Custom `WebAppAccessDeniedHandler` (optional)
+
+The default `RedirectingWebAppAccessDeniedHandler` calls `response.sendRedirect("<contextPath>/<webApp>/forbidden")`. To return a 403 JSON body instead:
+
+```java
+@Bean
+public WebAppAccessDeniedHandler jsonProblemDetailDeniedHandler(final ObjectMapper objectMapper) {
+  return (request, response, webApp, authentication) -> {
+    response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+    response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+    objectMapper.writeValue(
+        response.getWriter(),
+        Map.of(
+            "type", "about:blank",
+            "title", "Forbidden",
+            "status", 403,
+            "detail", "No ACCESS permission for web app '" + webApp + "'",
+            "instance", request.getRequestURI()));
+  };
+}
+```
+
+Registering any `WebAppAccessDeniedHandler` bean disables the library default. The handler is invoked exactly once per denied request; the filter does not call `filterChain.doFilter(...)` afterwards.
+
+### Required and supplied beans for web app authorization
+
+| Bean | Default | When |
+|---|---|---|
+| `WebAppProvider` | None — host must register | Always required |
+| `AuthorizationRepositoryPort` | None — host must register | Always required |
+| `CamundaAuthenticationProvider` | None — host must register | Always required |
+| `ResourcePermissionPort` | `ResourcePermissionService` (gated on `AuthorizationRepositoryPort` + `@ConditionalOnMissingBean`) | Override only if you need different matching semantics |
+| `WebAppAccessDeniedHandler` | `RedirectingWebAppAccessDeniedHandler` (gated on `WebAppProvider` + `@ConditionalOnMissingBean`) | Override for JSON 403, forwards, etc. |
+
+If any of the three "always required" beans is missing, the filter bean isn't created. The webapp chain still works — it just doesn't enforce the per-web-app `ACCESS` check. Adopt incrementally by registering the SPIs as you build out the host's authorization data layer.
+
 ## Failure response contract
 
 `AuthFailureHandler` is an interface; the library's default implementation (`JsonProblemDetailAuthFailureHandler`) returns RFC 7807 problem-detail JSON for every authentication and authorization failure on every chain. Bodies look like:
@@ -240,8 +368,8 @@ Session policy:
 
 A typical migration from a host-owned `WebSecurityConfig`:
 
-1. Replace your `@Bean SecurityFilterChain` methods by deleting them — the library's auto-configurations supply the chains. Don't `@Import` anything from the library; just include the dep.
-2. Move whatever you previously hand-rolled into `OidcResourceServerCustomizer` / `OidcTokenEndpointCustomizer` beans where applicable. For host-specific filter wiring (authorization filters, header rewrites), park the change until the follow-up PR introduces the new filter approach.
+1. Replace your `@Bean SecurityFilterChain` methods by deleting them. Add an `@Import` list for the library's configuration classes — pick the ones that match your auth method and API protection mode (see the [Quickstart](#quickstart) snippet). Per [ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md) hosts opt in to each capability explicitly; nothing activates by simply adding the dependency.
+2. Move whatever you previously hand-rolled into `OidcResourceServerCustomizer` / `OidcTokenEndpointCustomizer` beans where applicable. For per-web-app authorization, register a `WebAppProvider` and `AuthorizationRepositoryPort` and `@Import(WebAppAuthorizationFilterConfiguration.class)` — see [Web app authorization](#web-app-authorization).
 3. Implement `SecurityPathPort` with the path patterns your previous chains used.
 4. Bind your existing security config to `camunda.security.*` properties (or set them explicitly).
 5. If you previously constructed `JwtDecoder` / `ClientRegistrationRepository` / `OAuth2AuthorizedClientRepository` / `OAuth2AuthorizedClientManager` by hand, either delete those beans (the library's defaults will activate) or leave them and the library's defaults back off via `@ConditionalOnMissingBean`.
