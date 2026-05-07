@@ -17,6 +17,7 @@ import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import java.time.Duration;
 import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -109,35 +110,19 @@ public class HttpSessionBasedAuthenticationHolderTest {
   }
 
   @Test
-  public void shouldReturnNullIfAuthenticationNotRefreshed() throws InterruptedException {
-    // given
-    final var authentication = mock(CamundaAuthentication.class);
-    final var session = new MockHttpSession();
-    when(authenticationConfiguration.getAuthenticationRefreshInterval()).thenReturn("PT0.1S");
-    holder = new HttpSessionBasedAuthenticationHolder(request, authenticationConfiguration);
-    when(request.getSession(eq(false))).thenReturn(session);
-    holder.set(authentication);
-    Thread.sleep(110L);
-
-    // when
-    final var result = holder.get();
-
-    // then
-    assertThat(result).isEqualTo(null);
-  }
-
-  @Test
   public void shouldClearAuthenticationAndUpdateLastRefreshWhenIntervalExpires() {
     // given: a session with authentication set and a last-refresh timestamp in the past
     final var authentication = mock(CamundaAuthentication.class);
     final var session = new MockHttpSession();
-    when(authenticationConfiguration.getAuthenticationRefreshInterval()).thenReturn("PT1S");
+    final var refreshInterval = Duration.ofSeconds(1);
+    when(authenticationConfiguration.getAuthenticationRefreshInterval())
+        .thenReturn(refreshInterval.toString());
     holder = new HttpSessionBasedAuthenticationHolder(request, authenticationConfiguration);
     when(request.getSession(eq(false))).thenReturn(session);
     holder.set(authentication);
 
-    // Manually backdate the last-refresh attribute to simulate interval expiry
-    final Instant expiredRefresh = Instant.now().minusSeconds(2);
+    // Backdate beyond the configured interval to simulate deterministic expiry.
+    final Instant expiredRefresh = Instant.now().minus(refreshInterval).minusMillis(1);
     session.setAttribute(LAST_REFRESH_ATTR, expiredRefresh);
 
     // when

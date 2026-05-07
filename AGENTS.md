@@ -71,6 +71,7 @@ An interface is always a `Port`. Use `port/in/` for inbound ports and `port/out/
 - Integration tests for adapters (`@SpringBootTest` or Testcontainers)
 - Contract tests for APIs (Pact consumer-driven contracts)
 - ArchUnit tests enforce hexagonal boundaries
+- Mockito style: use `@ExtendWith(MockitoExtension.class)` with `@Mock` fields; use `@InjectMocks` when possible for the unit under test; avoid `Mockito.mock(...)` in new tests
 - All new classes must have corresponding tests
 
 ## Key Commands

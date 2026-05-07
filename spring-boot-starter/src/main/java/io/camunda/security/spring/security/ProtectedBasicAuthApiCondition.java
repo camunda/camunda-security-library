@@ -23,10 +23,12 @@ final class ProtectedBasicAuthApiCondition implements Condition {
 
   @Override
   public boolean matches(final ConditionContext context, final AnnotatedTypeMetadata metadata) {
-    final String method = context.getEnvironment().getProperty(AUTHENTICATION_METHOD_PROPERTY);
+    final String method =
+        context
+            .getEnvironment()
+            .getProperty(AUTHENTICATION_METHOD_PROPERTY, AuthenticationMethod.BASIC.name());
     final boolean unprotected =
         context.getEnvironment().getProperty(UNPROTECTED_API_PROPERTY, Boolean.class, false);
-    return (method == null || AuthenticationMethod.BASIC.name().equalsIgnoreCase(method))
-        && !unprotected;
+    return AuthenticationMethod.BASIC.name().equalsIgnoreCase(method) && !unprotected;
   }
 }

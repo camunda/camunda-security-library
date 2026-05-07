@@ -20,6 +20,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.context.request.RequestAttributes;
@@ -30,12 +31,11 @@ public class RequestContextBasedAuthenticationHolderTest {
 
   @Mock private RequestAttributes requestAttributes;
   @Mock private HttpServletRequest request;
-  private RequestContextBasedAuthenticationHolder holder;
+  @InjectMocks private RequestContextBasedAuthenticationHolder holder;
 
   @BeforeEach
   void setup() {
     RequestContextHolder.setRequestAttributes(requestAttributes);
-    holder = new RequestContextBasedAuthenticationHolder(request);
   }
 
   @AfterEach
