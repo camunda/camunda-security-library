@@ -165,7 +165,9 @@ public class HttpSessionBasedAuthenticationHolderTest {
 
     // then: both refresh attributes are initialized
     assertThat(session.getAttribute(LAST_REFRESH_ATTR)).isInstanceOf(Instant.class);
-    assertThat(session.getAttribute(LAST_REFRESH_ATTR + "_LOCK")).isNotNull();
+    assertThat(session.getAttribute(LAST_REFRESH_ATTR + "_LOCK"))
+        .isNotNull()
+        .isNotInstanceOf(String.class);
   }
 
   @Test

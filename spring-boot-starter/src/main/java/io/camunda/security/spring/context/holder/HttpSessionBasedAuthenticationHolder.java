@@ -98,7 +98,7 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
 
   private static void initializeRefreshAttributes(final HttpSession session, final Instant now) {
     session.setAttribute(LAST_REFRESH_ATTR, now);
-    session.setAttribute(LAST_REFRESH_ATTR + "_LOCK", session.getId() + "LOCK");
+    session.setAttribute(LAST_REFRESH_ATTR + "_LOCK", new Object());
   }
 
   private boolean isRefreshRequired(final Instant lastRefresh, final Instant now) {
