@@ -326,13 +326,13 @@ Registering any `WebAppAccessDeniedHandler` bean disables the library default. T
 | Bean | Default | When |
 |---|---|---|
 | `WebAppProvider` | None — host must register | Always required |
-| `AuthorizationRepositoryPort` | None — host must register | Always required |
 | `CamundaAuthenticationProvider` | None — host must register | Always required |
 | `SecurityPathPort` | None — host must register | Always required (already present for any CSL chain) |
-| `ResourcePermissionPort` | `ResourcePermissionService` (gated on `AuthorizationRepositoryPort` + `@ConditionalOnMissingBean`) | Override only if you need different matching semantics |
+| `ResourcePermissionPort` | `ResourcePermissionService` (gated on `AuthorizationRepositoryPort` + `@ConditionalOnMissingBean`) | The filter requires this bean — supply it either by registering an `AuthorizationRepositoryPort` (default service materialises) or by registering a custom `ResourcePermissionPort` directly |
+| `AuthorizationRepositoryPort` | None — host must register | Required when relying on the default `ResourcePermissionService`. Not needed if the host supplies its own `ResourcePermissionPort` |
 | `WebAppAccessDeniedHandler` | `RedirectingWebAppAccessDeniedHandler` (gated on `WebAppProvider` + `@ConditionalOnMissingBean`) | Override for JSON 403, forwards, etc. |
 
-If any of the required beans is missing, the filter bean isn't created. The webapp chain still works — it just doesn't enforce the per-web-app `ACCESS` check. Adopt incrementally by registering the SPIs as you build out the host's authorization data layer.
+If any of the required beans is missing (and `ResourcePermissionPort` not satisfied either way), the filter bean isn't created. The webapp chain still works — it just doesn't enforce the per-web-app `ACCESS` check. Adopt incrementally by registering the SPIs as you build out the host's authorization data layer.
 
 ## Failure response contract
 

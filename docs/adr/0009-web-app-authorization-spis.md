@@ -43,7 +43,7 @@ Two host-pluggable SPIs are introduced alongside the lifted filter:
 These sit alongside (not on top of) the authorization SPIs from ADR-0007:
 
 - `ResourcePermissionPort` (`core/port/in/`) — the inbound port the filter calls. Default implementation is `ResourcePermissionService`, registered behind `@ConditionalOnMissingBean(ResourcePermissionPort.class)`.
-- `AuthorizationRepositoryPort` (`core/port/out/`) — the outbound port `ResourcePermissionService` consults to read the host's authorization records. Hosts always implement this; the library has no opinion on storage.
+- `AuthorizationRepositoryPort` (`core/port/out/`) — the outbound port the default `ResourcePermissionService` consults to read the host's authorization records. Required only when relying on the library default — a host that registers its own `ResourcePermissionPort` bean bypasses `AuthorizationRepositoryPort` entirely. The library has no opinion on storage.
 
 The filter and these SPIs are wired by `WebAppAuthorizationFilterConfiguration` — a plain `@Configuration` per ADR-0008. Hosts adopt by adding it to their `@Import` list:
 
@@ -95,7 +95,7 @@ A companion `FilterRegistrationBean<WebAppAuthorizationCheckFilter>` with `setEn
 
 **Negative / accepted trade-offs**
 
-- Hosts must register a `WebAppProvider` (and an `AuthorizationRepositoryPort`) before the filter activates. There is no "auto-detect web apps from `SecurityPathPort.webComponentNames()`" fallback. This is intentional: hosts may want different derivation logic from path patterns (case-sensitivity, prefix stripping, multi-tenancy). A future iteration can supply a path-segment derivation default if a clear convention emerges.
+- Hosts must register a `WebAppProvider` and a `ResourcePermissionPort` before the filter activates. The `ResourcePermissionPort` requirement is satisfied either by registering an `AuthorizationRepositoryPort` (the library default `ResourcePermissionService` then materialises) or by registering a custom `ResourcePermissionPort` bean directly. There is no "auto-detect web apps from `SecurityPathPort.webComponentNames()`" fallback. This is intentional: hosts may want different derivation logic from path patterns (case-sensitivity, prefix stripping, multi-tenancy). A future iteration can supply a path-segment derivation default if a clear convention emerges.
 - Two interfaces (`WebAppProvider` and `WebAppAccessDeniedHandler`) live in `io.camunda.security.spring.spi` (the starter module) rather than under `io.camunda.security.core.port.out` because their signatures speak `HttpServletRequest`/`HttpServletResponse`. The `core` module is jakarta-servlet-free by design ([ADR-0006](0006-central-security-filter-chains.md)), so any servlet-coupled SPI must live in the starter.
 
 ## Alternatives Considered
