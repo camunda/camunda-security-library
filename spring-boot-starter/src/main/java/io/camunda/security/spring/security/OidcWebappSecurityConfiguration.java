@@ -17,6 +17,7 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.filter.OAuth2RefreshTokenFilter;
+import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.handler.LoggingAuthenticationFailureHandler;
 import io.camunda.security.spring.handler.OAuth2AuthenticationExceptionHandler;
@@ -72,6 +73,7 @@ public class OidcWebappSecurityConfiguration {
       final ObjectProvider<LogoutSuccessHandler> logoutSuccessHandlerProvider,
       final ObjectProvider<OidcUserService> oidcUserServiceProvider,
       final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers,
+      final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort)
       throws Exception {
@@ -134,6 +136,9 @@ public class OidcWebappSecurityConfiguration {
         new OAuth2RefreshTokenFilter(
             authorizedClientRepository, authorizedClientManager, logoutHandler),
         AuthorizationFilter.class);
+
+    SecurityFilterChainSupport.addFilterAfterIfAvailable(
+        filterChainBuilder, webAppAuthorizationFilterProvider, AuthorizationFilter.class);
 
     SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());

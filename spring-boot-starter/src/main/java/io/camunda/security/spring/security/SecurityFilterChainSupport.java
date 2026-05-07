@@ -15,12 +15,14 @@ import io.camunda.security.api.model.config.headers.HeaderConfiguration;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.csrf.CsrfProtectionRequestMatcher;
+import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.HashSet;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.core.Authentication;
@@ -78,6 +80,18 @@ final class SecurityFilterChainSupport {
             csrf.csrfTokenRepository(csrfTokenRepository)
                 .requireCsrfProtectionMatcher(new CsrfProtectionRequestMatcher(allowedPaths)));
     http.addFilterAfter(csrfTokenResponseHeaderFilter(), CsrfFilter.class);
+  }
+
+  /**
+   * Adds the filter supplied by {@code provider} after {@code afterFilter} in the chain when the
+   * provider has a bean. No-op when the provider is empty, so chain configurations can opt-in to
+   * library-supplied filters without hard-wiring the dependency.
+   */
+  static <F extends Filter> void addFilterAfterIfAvailable(
+      final HttpSecurity http,
+      final ObjectProvider<F> provider,
+      final Class<? extends Filter> afterFilter) {
+    provider.ifAvailable(filter -> http.addFilterAfter(filter, afterFilter));
   }
 
   /**

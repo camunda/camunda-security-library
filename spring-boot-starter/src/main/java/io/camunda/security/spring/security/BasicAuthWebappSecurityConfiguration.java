@@ -15,9 +15,11 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
+import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -26,6 +28,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.csrf.CsrfToken;
 
 /**
@@ -44,6 +47,7 @@ public class BasicAuthWebappSecurityConfiguration {
   public SecurityFilterChain basicAuthWebappSecurityFilterChain(
       final HttpSecurity http,
       final AuthFailureHandler authFailureHandler,
+      final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort)
       throws Exception {
@@ -95,6 +99,9 @@ public class BasicAuthWebappSecurityConfiguration {
                 eh ->
                     eh.authenticationEntryPoint(authFailureHandler)
                         .accessDeniedHandler(authFailureHandler));
+
+    SecurityFilterChainSupport.addFilterAfterIfAvailable(
+        filterChainBuilder, webAppAuthorizationFilterProvider, AuthorizationFilter.class);
 
     SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
