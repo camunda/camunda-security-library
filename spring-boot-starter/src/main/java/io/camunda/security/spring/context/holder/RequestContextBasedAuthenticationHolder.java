@@ -18,10 +18,10 @@ import org.springframework.web.context.request.RequestContextHolder;
  * Associates a given {@link CamundaAuthentication} with the executing thread by using the {@link
  * RequestContextHolder}, meaning the {@link CamundaAuthentication} is stored as a request
  * attribute. {@link RequestContextBasedAuthenticationHolder This} ensures that the same {@link
- * CamundaAuthentication} is returned while processing a request. However, Spring bounds the request
+ * CamundaAuthentication} is returned while processing a request. However, Spring binds the request
  * attributes to the current thread. By default, the request attributes are not inheritable for
- * child threads. When spawning new threads, it cannot guarantee to return the same instance of a
- * {@link CamundaAuthentication} child threads.
+ * child threads. When spawning new threads, it cannot guarantee that the same instance of a {@link
+ * CamundaAuthentication} is returned in child threads.
  *
  * <p>{@link org.springframework.web.filter.RequestContextFilter} removes the {@link
  * org.springframework.web.context.request.RequestAttributes} accordingly
