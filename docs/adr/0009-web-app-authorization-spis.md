@@ -37,8 +37,8 @@ The core question for this ADR is:
 
 Two host-pluggable SPIs are introduced alongside the lifted filter:
 
-- **`WebAppProvider`** (`spring-boot-starter/spi/`) — `Optional<String> webAppFor(HttpServletRequest)`. Hosts implement to return either a constant (Hub) or a path-derived id (OC). Returning `Optional.empty()` signals "this request doesn't belong to a web app" and the filter passes through.
-- **`WebAppAccessDeniedHandler`** (`spring-boot-starter/spi/`) — `void handle(request, response, webApp, authentication)`. Hosts implement to choose the response shape. The library supplies a default `RedirectingWebAppAccessDeniedHandler` that preserves OC's redirect-to-forbidden behaviour; it backs off via `@ConditionalOnMissingBean(WebAppAccessDeniedHandler.class)` when a host registers its own.
+- **`WebAppProvider`** (`io.camunda.security.spring.spi`) — `Optional<String> webAppFor(HttpServletRequest)`. Hosts implement to return either a constant id or a path-derived id. Returning `Optional.empty()` signals "this request doesn't belong to a web app" and the filter passes through.
+- **`WebAppAccessDeniedHandler`** (`io.camunda.security.spring.spi`) — `void handle(request, response, webApp, authentication)`. Hosts implement to choose the response shape. The library supplies a default `RedirectingWebAppAccessDeniedHandler` that preserves the OC-derived redirect-to-forbidden behaviour; it backs off via `@ConditionalOnMissingBean(WebAppAccessDeniedHandler.class)` when a host registers its own.
 
 These sit alongside (not on top of) the authorization SPIs from ADR-0007:
 
@@ -96,7 +96,7 @@ A companion `FilterRegistrationBean<WebAppAuthorizationCheckFilter>` with `setEn
 **Negative / accepted trade-offs**
 
 - Hosts must register a `WebAppProvider` (and an `AuthorizationRepositoryPort`) before the filter activates. There is no "auto-detect web apps from `SecurityPathPort.webComponentNames()`" fallback. This is intentional: hosts may want different derivation logic from path patterns (case-sensitivity, prefix stripping, multi-tenancy). A future iteration can supply a path-segment derivation default if a clear convention emerges.
-- Two interfaces (`WebAppProvider` and `WebAppAccessDeniedHandler`) live in `spring-boot-starter/spi/` rather than `core/port/out/` because their signatures speak `HttpServletRequest`/`HttpServletResponse`. The `core` module is jakarta-servlet-free by design ([ADR-0006](0006-central-security-filter-chains.md)), so any servlet-coupled SPI must live in the starter. Same boundary applies to other servlet-aware SPIs already on `main` (e.g. `CamundaAuthenticationProvider` consumers).
+- Two interfaces (`WebAppProvider` and `WebAppAccessDeniedHandler`) live in `io.camunda.security.spring.spi` (the starter module) rather than under `io.camunda.security.core.port.out` because their signatures speak `HttpServletRequest`/`HttpServletResponse`. The `core` module is jakarta-servlet-free by design ([ADR-0006](0006-central-security-filter-chains.md)), so any servlet-coupled SPI must live in the starter.
 
 ## Alternatives Considered
 

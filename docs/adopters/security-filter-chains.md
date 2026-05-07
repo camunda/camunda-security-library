@@ -75,7 +75,7 @@ Hosts retain control of *which* paths to protect (`SecurityPathPort`), the value
            redirect-uri: "{baseUrl}/sso-callback"
    ```
 
-   `@ConditionalOnProperty` annotations on the configuration classes are present for forward-compatibility with the future re-enabling of auto-configuration but have no effect today — the `@Import` list is the actual gate.
+   `@Import` is the activation enabler — without it the configuration is never processed. `@ConditionalOnProperty` annotations on the imported configurations are still evaluated by Spring, so both gates must pass: a host that `@Import`s `OidcWebappSecurityConfiguration` without setting `camunda.security.authentication.method=oidc` will silently get no OIDC chain. Match the property to the configuration you import.
 
 For HTTP basic auth instead, set:
 
@@ -266,6 +266,9 @@ public WebAppProvider pathDerivedWebAppProvider(final SecurityPathPort pathPort)
     final String uri = request.getRequestURI();
     final String contextPath = request.getContextPath();
     final String relative = uri.startsWith(contextPath) ? uri.substring(contextPath.length()) : uri;
+    if (relative.isEmpty() || "/".equals(relative)) {
+      return Optional.empty();
+    }
     final int slash = relative.indexOf('/', 1);
     final String segment = slash > 0 ? relative.substring(1, slash) : relative.substring(1);
     return pathPort.webComponentNames().contains(segment) ? Optional.of(segment) : Optional.empty();
@@ -325,10 +328,11 @@ Registering any `WebAppAccessDeniedHandler` bean disables the library default. T
 | `WebAppProvider` | None — host must register | Always required |
 | `AuthorizationRepositoryPort` | None — host must register | Always required |
 | `CamundaAuthenticationProvider` | None — host must register | Always required |
+| `SecurityPathPort` | None — host must register | Always required (already present for any CSL chain) |
 | `ResourcePermissionPort` | `ResourcePermissionService` (gated on `AuthorizationRepositoryPort` + `@ConditionalOnMissingBean`) | Override only if you need different matching semantics |
 | `WebAppAccessDeniedHandler` | `RedirectingWebAppAccessDeniedHandler` (gated on `WebAppProvider` + `@ConditionalOnMissingBean`) | Override for JSON 403, forwards, etc. |
 
-If any of the three "always required" beans is missing, the filter bean isn't created. The webapp chain still works — it just doesn't enforce the per-web-app `ACCESS` check. Adopt incrementally by registering the SPIs as you build out the host's authorization data layer.
+If any of the required beans is missing, the filter bean isn't created. The webapp chain still works — it just doesn't enforce the per-web-app `ACCESS` check. Adopt incrementally by registering the SPIs as you build out the host's authorization data layer.
 
 ## Failure response contract
 
