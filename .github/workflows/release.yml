@@ -264,47 +264,51 @@ jobs:
         # (rate limit, token permissions, network) so the release is never blocked.
         run: |
           python3 - <<'EOF'
-          import json, os, subprocess, sys, urllib.request, urllib.error
+          import json, os, subprocess, sys, tempfile, urllib.request, urllib.error
 
           release_tag  = os.environ["RELEASE_TAG"]
           release_ver  = os.environ["RELEASE_VERSION"]
           repo         = os.environ["GITHUB_REPOSITORY"]
-          token        = os.environ["GH_TOKEN"]
-
-          # Fetch the auto-generated notes that GitHub produced in the previous step.
-          result = subprocess.run(
-              ["gh", "release", "view", release_tag, "--repo", repo,
-               "--json", "body", "--jq", ".body"],
-              capture_output=True, text=True, check=True,
-          )
-          notes = result.stdout.strip()
-          if not notes:
-              print("No release notes found — skipping AI summary.")
+          # The workflow sets GH_TOKEN globally; fall back to GITHUB_TOKEN if present.
+          token        = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+          if not token:
+              print("Warning: no GitHub token found — skipping AI summary.")
               sys.exit(0)
 
-          payload = {
-              "model": "gpt-4o-mini",
-              "messages": [
-                  {
-                      "role": "system",
-                      "content": (
-                          "You are a technical writer creating release notes for the Camunda Security Library, "
-                          "a Java 21 / Spring Boot hexagonal security library. "
-                          "Given a raw list of commits or PR titles, produce concise, structured release notes with: "
-                          "a one-short-paragraph executive summary, then bullet-point sections titled "
-                          "Breaking Changes (omit entirely if none), New Features, Bug Fixes, and Improvements. "
-                          "Be precise and developer-friendly. Do not invent details not present in the input."
-                      ),
-                  },
-                  {
-                      "role": "user",
-                      "content": f"Generate release notes for version {release_ver}:\n\n{notes[:4000]}",
-                  },
-              ],
-              "max_tokens": 1000,
-          }
-
           try:
+              # Fetch the auto-generated notes that GitHub produced in the previous step.
+              result = subprocess.run(
+                  ["gh", "release", "view", release_tag, "--repo", repo,
+                   "--json", "body", "--jq", ".body"],
+                  capture_output=True, text=True, check=True,
+              )
+              notes = result.stdout.strip()
+              if not notes:
+                  print("No release notes found — skipping AI summary.")
+                  sys.exit(0)
+
+              payload = {
+                  "model": "gpt-4o-mini",
+                  "messages": [
+                      {
+                          "role": "system",
+                          "content": (
+                              "You are a technical writer creating release notes for the Camunda Security Library, "
+                              "a Java 21 / Spring Boot hexagonal security library. "
+                              "Given a raw list of commits or PR titles, produce concise, structured release notes with: "
+                              "a one-short-paragraph executive summary, then bullet-point sections titled "
+                              "Breaking Changes (omit entirely if none), New Features, Bug Fixes, and Improvements. "
+                              "Be precise and developer-friendly. Do not invent details not present in the input."
+                          ),
+                      },
+                      {
+                          "role": "user",
+                          "content": f"Generate release notes for version {release_ver}:\n\n{notes[:4000]}",
+                      },
+                  ],
+                  "max_tokens": 1000,
+              }
+
               req = urllib.request.Request(
                   "https://models.inference.ai.azure.com/chat/completions",
                   data=json.dumps(payload).encode(),
@@ -313,23 +317,31 @@ jobs:
               with urllib.request.urlopen(req, timeout=30) as resp:
                   data = json.loads(resp.read())
               summary = data["choices"][0]["message"]["content"]
+
+              new_body = (
+                  f"## What's new in {release_ver}\n\n"
+                  f"{summary}\n\n"
+                  f"---\n\n"
+                  f"## Full Changelog\n\n"
+                  f"{notes}"
+              )
+
+              # Write to a temp file to avoid command-line length limits.
+              with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as tmp:
+                  tmp.write(new_body)
+                  tmp_path = tmp.name
+
+              try:
+                  subprocess.run(
+                      ["gh", "release", "edit", release_tag, "--repo", repo, "--notes-file", tmp_path],
+                      check=True,
+                  )
+              finally:
+                  os.unlink(tmp_path)
+              print("Release notes updated with AI summary.")
           except Exception as exc:
               print(f"Warning: AI summary skipped ({exc}). Keeping auto-generated notes.")
               sys.exit(0)
-
-          new_body = (
-              f"## What's new in {release_ver}\n\n"
-              f"{summary}\n\n"
-              f"---\n\n"
-              f"## Full Changelog\n\n"
-              f"{notes}"
-          )
-
-          subprocess.run(
-              ["gh", "release", "edit", release_tag, "--repo", repo, "--notes", new_body],
-              check=True,
-          )
-          print("Release notes updated with AI summary.")
           EOF
 
       - name: Open mergeback PR
