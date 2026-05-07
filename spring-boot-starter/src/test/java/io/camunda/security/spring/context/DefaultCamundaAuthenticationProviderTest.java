@@ -9,34 +9,30 @@ package io.camunda.security.spring.context;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.context.CamundaAuthenticationHolder;
-import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.api.model.CamundaAuthentication;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+@ExtendWith(MockitoExtension.class)
 public class DefaultCamundaAuthenticationProviderTest {
 
-  private CamundaAuthenticationHolder holder;
-  private CamundaAuthenticationConverter<Authentication> authenticationConverter;
-  private CamundaAuthenticationProvider authenticationProvider;
-
-  @BeforeEach
-  void setup() {
-    authenticationConverter = mock(CamundaAuthenticationConverter.class);
-    holder = mock(CamundaAuthenticationHolder.class);
-    authenticationProvider =
-        new DefaultCamundaAuthenticationProvider(holder, authenticationConverter);
-  }
+  @Mock private CamundaAuthenticationHolder holder;
+  @Mock private CamundaAuthenticationConverter<Authentication> authenticationConverter;
+  @Mock private Authentication springAuthentication;
+  @InjectMocks private DefaultCamundaAuthenticationProvider authenticationProvider;
 
   @AfterEach
   void tearDown() {
@@ -48,9 +44,7 @@ public class DefaultCamundaAuthenticationProviderTest {
     // given
     final var expectedAuthentication = CamundaAuthentication.of(b -> b.user("foo"));
 
-    final var mockAuthentication = mock(Authentication.class);
-    when(mockAuthentication.getPrincipal()).thenReturn("foo");
-    SecurityContextHolder.getContext().setAuthentication(mockAuthentication);
+    SecurityContextHolder.getContext().setAuthentication(springAuthentication);
     when(holder.get()).thenReturn(expectedAuthentication);
 
     // when
@@ -66,10 +60,8 @@ public class DefaultCamundaAuthenticationProviderTest {
     // given
     final var expectedAuthentication = CamundaAuthentication.of(b -> b.user("foo"));
 
-    final var mockAuthentication = mock(Authentication.class);
-    when(mockAuthentication.getPrincipal()).thenReturn("foo");
-    SecurityContextHolder.getContext().setAuthentication(mockAuthentication);
-    when(authenticationConverter.convert(eq(mockAuthentication)))
+    SecurityContextHolder.getContext().setAuthentication(springAuthentication);
+    when(authenticationConverter.convert(eq(springAuthentication)))
         .thenReturn(expectedAuthentication);
 
     // when
@@ -86,11 +78,9 @@ public class DefaultCamundaAuthenticationProviderTest {
     // given
     final var expectedAuthentication = CamundaAuthentication.of(b -> b.user("foo"));
 
-    final var mockAuthentication = mock(Authentication.class);
-    when(mockAuthentication.getPrincipal()).thenReturn("foo");
-    SecurityContextHolder.getContext().setAuthentication(mockAuthentication);
+    SecurityContextHolder.getContext().setAuthentication(springAuthentication);
     when(holder.get()).thenReturn(null);
-    when(authenticationConverter.convert(eq(mockAuthentication)))
+    when(authenticationConverter.convert(eq(springAuthentication)))
         .thenReturn(expectedAuthentication);
 
     // when
@@ -99,7 +89,7 @@ public class DefaultCamundaAuthenticationProviderTest {
     // then
     assertThat(actualAuthentication).isEqualTo(expectedAuthentication);
     verify(holder).get();
-    verify(authenticationConverter).convert(eq(mockAuthentication));
+    verify(authenticationConverter).convert(eq(springAuthentication));
     verify(holder).set(eq(expectedAuthentication));
   }
 
@@ -108,10 +98,8 @@ public class DefaultCamundaAuthenticationProviderTest {
     // given
     final var expectedAuthentication = CamundaAuthentication.anonymous();
 
-    final var mockAuthentication = mock(Authentication.class);
-    when(mockAuthentication.getPrincipal()).thenReturn("foo");
-    SecurityContextHolder.getContext().setAuthentication(mockAuthentication);
-    when(authenticationConverter.convert(eq(mockAuthentication)))
+    SecurityContextHolder.getContext().setAuthentication(springAuthentication);
+    when(authenticationConverter.convert(eq(springAuthentication)))
         .thenReturn(expectedAuthentication);
 
     // when
@@ -128,8 +116,7 @@ public class DefaultCamundaAuthenticationProviderTest {
     // given
     final var expectedAuthentication = CamundaAuthentication.anonymous();
 
-    final var mockAuthentication = mock(Authentication.class);
-    SecurityContextHolder.getContext().setAuthentication(mockAuthentication);
+    SecurityContextHolder.getContext().setAuthentication(springAuthentication);
     when(holder.get()).thenReturn(expectedAuthentication);
 
     // when
@@ -142,16 +129,12 @@ public class DefaultCamundaAuthenticationProviderTest {
 
   @Test
   void shouldClearHolderWhenSpringAuthenticationIsMissing() {
-    // given
-    final var expectedAuthentication = CamundaAuthentication.anonymous();
-    when(authenticationConverter.convert((Authentication) null)).thenReturn(expectedAuthentication);
-
     // when
     final var actualAuthentication = authenticationProvider.getCamundaAuthentication();
 
     // then
-    assertThat(actualAuthentication).isEqualTo(expectedAuthentication);
+    assertThat(actualAuthentication).isNull();
     verify(holder).clear();
-    verify(authenticationConverter).convert((Authentication) null);
+    verifyNoInteractions(authenticationConverter);
   }
 }

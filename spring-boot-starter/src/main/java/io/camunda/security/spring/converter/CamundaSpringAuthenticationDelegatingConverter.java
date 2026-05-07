@@ -89,7 +89,6 @@ public class CamundaSpringAuthenticationDelegatingConverter
                               .map(Authentication::getClass)
                               .map(Class::getName)
                               .orElse("null"));
-              LOG.error(message);
               return new CamundaAuthenticationException(message);
             });
   }
