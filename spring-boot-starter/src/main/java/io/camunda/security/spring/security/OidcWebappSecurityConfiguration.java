@@ -16,6 +16,7 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
+import io.camunda.security.spring.filter.AdminUserCheckFilter;
 import io.camunda.security.spring.filter.OAuth2RefreshTokenFilter;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
@@ -74,6 +75,7 @@ public class OidcWebappSecurityConfiguration {
       final ObjectProvider<OidcUserService> oidcUserServiceProvider,
       final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers,
       final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
+      final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider,
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort)
       throws Exception {
@@ -136,6 +138,11 @@ public class OidcWebappSecurityConfiguration {
         new OAuth2RefreshTokenFilter(
             authorizedClientRepository, authorizedClientManager, logoutHandler),
         AuthorizationFilter.class);
+
+    // Admin-user check runs before webapp authorization so an unprovisioned system redirects to
+    // the setup UI before permission checks against unrelated web apps.
+    SecurityFilterChainSupport.addFilterAfterIfAvailable(
+        filterChainBuilder, adminUserCheckFilterProvider, AuthorizationFilter.class);
 
     SecurityFilterChainSupport.addFilterAfterIfAvailable(
         filterChainBuilder, webAppAuthorizationFilterProvider, AuthorizationFilter.class);
