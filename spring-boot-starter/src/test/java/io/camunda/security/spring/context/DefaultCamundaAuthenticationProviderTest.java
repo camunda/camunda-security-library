@@ -82,6 +82,28 @@ public class DefaultCamundaAuthenticationProviderTest {
   }
 
   @Test
+  void shouldConvertWhenHolderReturnsNull() {
+    // given
+    final var expectedAuthentication = CamundaAuthentication.of(b -> b.user("foo"));
+
+    final var mockAuthentication = mock(Authentication.class);
+    when(mockAuthentication.getPrincipal()).thenReturn("foo");
+    SecurityContextHolder.getContext().setAuthentication(mockAuthentication);
+    when(holder.get()).thenReturn(null);
+    when(authenticationConverter.convert(eq(mockAuthentication)))
+        .thenReturn(expectedAuthentication);
+
+    // when
+    final var actualAuthentication = authenticationProvider.getCamundaAuthentication();
+
+    // then
+    assertThat(actualAuthentication).isEqualTo(expectedAuthentication);
+    verify(holder).get();
+    verify(authenticationConverter).convert(eq(mockAuthentication));
+    verify(holder).set(eq(expectedAuthentication));
+  }
+
+  @Test
   void shouldConvertButNotCacheIfAnonymous() {
     // given
     final var expectedAuthentication = CamundaAuthentication.anonymous();
@@ -116,5 +138,20 @@ public class DefaultCamundaAuthenticationProviderTest {
     // then
     assertThat(actualAuthentication).isNotNull();
     assertThat(actualAuthentication).isEqualTo(expectedAuthentication);
+  }
+
+  @Test
+  void shouldClearHolderWhenSpringAuthenticationIsMissing() {
+    // given
+    final var expectedAuthentication = CamundaAuthentication.anonymous();
+    when(authenticationConverter.convert((Authentication) null)).thenReturn(expectedAuthentication);
+
+    // when
+    final var actualAuthentication = authenticationProvider.getCamundaAuthentication();
+
+    // then
+    assertThat(actualAuthentication).isEqualTo(expectedAuthentication);
+    verify(holder).clear();
+    verify(authenticationConverter).convert((Authentication) null);
   }
 }
