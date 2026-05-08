@@ -38,7 +38,7 @@ The core question for this ADR is:
 Two host-pluggable SPIs are introduced alongside the lifted filter:
 
 - **`AdminUserPresencePort`** (`io.camunda.security.core.port.out`) — `boolean adminUserExists()`. No-arg, framework-free. The host's implementation decides whether to consult static configuration, live storage, or any combination. The OC source's two-step (config + role-services) check collapses into one host-defined boolean — the library no longer encodes the OC-specific ordering between the two.
-- **`AdminUserMissingHandler`** (`io.camunda.security.spring.spi`) — `void handle(HttpServletRequest, HttpServletResponse)`. Hosts implement to choose the response shape. The library supplies a default `RedirectingAdminUserMissingHandler` that preserves the OC-derived `<contextPath>/admin/setup` redirect; it backs off via `@ConditionalOnMissingBean(AdminUserMissingHandler.class)` when a host registers its own.
+- **`AdminUserMissingHandler`** (`io.camunda.security.spring.spi`) — `void handle(HttpServletRequest, HttpServletResponse) throws IOException, ServletException`. Hosts implement to choose the response shape. The library supplies a default `RedirectingAdminUserMissingHandler` that preserves the OC-derived `<contextPath>/admin/setup` redirect; it backs off via `@ConditionalOnMissingBean(AdminUserMissingHandler.class)` when a host registers its own.
 
 Bypass paths reuse the existing `SecurityPathPort`:
 
