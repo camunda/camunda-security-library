@@ -349,7 +349,7 @@ jobs:
                       info["adopters_docs"].append(f)
                   
                   # Filter for API classes (Java files in api/src/main/java)
-                  api_files = [f for f in changed_files if f.startswith("api/src/main/java") and f.endswith(".java")]
+                  api_files = [f for f in changed_files if f.startswith("api/src/main/java/") and f.endswith(".java")]
                   for f in sorted(api_files):
                       # Extract class name from file path
                       parts = f.split("/")
