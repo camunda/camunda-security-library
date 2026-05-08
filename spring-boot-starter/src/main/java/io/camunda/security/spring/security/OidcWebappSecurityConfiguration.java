@@ -233,12 +233,13 @@ public class OidcWebappSecurityConfiguration {
 
   private static String resolveOauthRedirectTarget(
       final ClientRegistrationRepository clientRegistrationRepository) {
+    final var defaultTarget = "/oauth2/authorization/" + OIDC_REGISTRATION_ID;
     if (!(clientRegistrationRepository instanceof final Iterable<?> iterable)) {
-      return "/oauth2/authorization/" + OIDC_REGISTRATION_ID;
+      return defaultTarget;
     }
     final var iterator = iterable.iterator();
     if (!iterator.hasNext()) {
-      return "/oauth2/authorization/" + OIDC_REGISTRATION_ID;
+      return defaultTarget;
     }
     final Object first = iterator.next();
     if (iterator.hasNext()) {
@@ -252,7 +253,7 @@ public class OidcWebappSecurityConfiguration {
                 registration) {
       return "/oauth2/authorization/" + registration.getRegistrationId();
     }
-    return "/oauth2/authorization/" + OIDC_REGISTRATION_ID;
+    return defaultTarget;
   }
 
   private static ObjectPostProcessor<BearerTokenAuthenticationFilter>
