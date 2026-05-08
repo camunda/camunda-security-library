@@ -33,15 +33,15 @@ import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.csrf.CsrfToken;
 
 /**
- * Filter chain that protects webapp UI paths with form-based Basic authentication. Login and logout
- * return 204 No Content with the CSRF token surfaced as a response header.
+ * Filter chain serving webapp UI paths under HTTP Basic authentication. The chain itself permits
+ * all webapp requests at the request-authorization layer so the SPA shell can load for
+ * unauthenticated browser navigation; authentication is then driven by the SPA against {@code
+ * LOGIN_URL} (handled by the form-login configurer below). Login and logout return 204 No Content
+ * with the CSRF token surfaced as a response header.
  *
- * <p>All webapp paths are permitted at the request-authorization level so the SPA shell can load
- * for an unauthenticated browser request. The SPA then performs its own client-side login flow
- * against {@code LOGIN_URL} (which the form-login configurer below handles). After authentication,
- * downstream filters such as {@link WebAppAuthorizationCheckFilter} and {@link
- * AdminUserCheckFilter} still run so per-web-app permission and admin-presence checks apply on
- * every authenticated request — only the request-matcher level is permissive.
+ * <p>After authentication, downstream filters such as {@link WebAppAuthorizationCheckFilter} and
+ * {@link AdminUserCheckFilter} still run so per-web-app permission and admin-presence checks apply
+ * on every authenticated request — only the request-matcher level is permissive.
  */
 @Configuration
 @ConditionalOnProperty(
