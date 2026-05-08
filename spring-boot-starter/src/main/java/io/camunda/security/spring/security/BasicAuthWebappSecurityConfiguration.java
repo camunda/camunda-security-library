@@ -35,6 +35,13 @@ import org.springframework.security.web.csrf.CsrfToken;
 /**
  * Filter chain that protects webapp UI paths with form-based Basic authentication. Login and logout
  * return 204 No Content with the CSRF token surfaced as a response header.
+ *
+ * <p>All webapp paths are permitted at the request-authorization level so the SPA shell can load
+ * for an unauthenticated browser request. The SPA then performs its own client-side login flow
+ * against {@code LOGIN_URL} (which the form-login configurer below handles). After authentication,
+ * downstream filters such as {@link WebAppAuthorizationCheckFilter} and {@link
+ * AdminUserCheckFilter} still run so per-web-app permission and admin-presence checks apply on
+ * every authenticated request — only the request-matcher level is permissive.
  */
 @Configuration
 @ConditionalOnProperty(
@@ -58,23 +65,9 @@ public class BasicAuthWebappSecurityConfiguration {
       throws Exception {
     LOG.info("Web Applications Login/Logout is set up with Basic Authentication.");
 
-    // Form-login flow needs LOGIN_URL/LOGOUT_URL reachable without auth; static UI assets the
-    // host declares via SecurityPathPort.unauthenticatedWebappPaths() are also permitted.
-    // Everything else under webappPaths() requires authentication so the formLogin redirect
-    // fires for unauthenticated navigations.
-    final var permittedPaths = new java.util.ArrayList<String>();
-    permittedPaths.add(LOGIN_URL);
-    permittedPaths.add(LOGOUT_URL);
-    permittedPaths.addAll(pathPort.unauthenticatedWebappPaths());
-
     final var filterChainBuilder =
         http.securityMatcher(pathPort.webappPaths().toArray(String[]::new))
-            .authorizeHttpRequests(
-                auth ->
-                    auth.requestMatchers(permittedPaths.toArray(String[]::new))
-                        .permitAll()
-                        .anyRequest()
-                        .authenticated())
+            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
             .cors(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable)
             .formLogin(
