@@ -351,8 +351,9 @@ jobs:
                           info["api_classes"].append(classname)
                   
               except Exception as e:
-                  # Silently fail - this is informational only
-                  pass
+                  # Keep release non-blocking, but allow opt-in diagnostics when debugging.
+                  if os.environ.get("RELEASE_DEBUG_GIT_INFO", "").lower() in ("1", "true", "yes", "on"):
+                      print(f"Warning: failed to extract git info for release notes: {e}", file=sys.stderr)
               
               return info
 
