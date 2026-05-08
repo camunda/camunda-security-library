@@ -410,8 +410,12 @@ jobs:
               max_notes_len = MAX_TOTAL_INPUT - len(prompt_prefix) - len(structural_suffix)
               
               # If notes need truncation, reserve space for truncation marker
-              if len(notes) > max_notes_len and max_notes_len > len(TRUNCATION_MARKER):
-                  notes_content = notes[:max_notes_len - len(TRUNCATION_MARKER)] + TRUNCATION_MARKER
+              if len(notes) > max_notes_len:
+                  if max_notes_len > len(TRUNCATION_MARKER):
+                      notes_content = notes[:max_notes_len - len(TRUNCATION_MARKER)] + TRUNCATION_MARKER
+                  else:
+                      # Not enough space for notes with truncation marker
+                      notes_content = ""
               elif max_notes_len > 0:
                   notes_content = notes[:max_notes_len]
               else:
