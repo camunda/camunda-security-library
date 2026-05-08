@@ -90,12 +90,29 @@ public class OidcWebappSecurityConfiguration {
                     auth.requestMatchers(
                             pathPort.unauthenticatedWebappPaths().toArray(String[]::new))
                         .permitAll()
-                        // LOGIN_URL and LOGOUT_URL must be reachable anonymously so the
-                        // delegating entry point's fallback to LOGIN_URL (multi-IdP
-                        // provider-selection page rendered by the host) does not loop:
-                        // an anonymous request to /login would otherwise re-trigger the
-                        // entry point and redirect to /login forever. Mirrors the
-                        // basic-auth chain shape and keeps logout symmetric.
+                        // Permit LOGIN_URL and LOGOUT_URL explicitly even though Spring
+                        // Security's default oauth2Login filters typically intercept them
+                        // before the authorization rule evaluates:
+                        //
+                        //   - GET /login is normally handled by DefaultLoginPageGeneratingFilter
+                        //     (registered by oauth2Login() when no custom loginPage is set),
+                        //     which renders the auto-generated provider-selection page and
+                        //     terminates the chain before AuthorizationFilter runs.
+                        //   - POST /logout is handled by LogoutFilter for the same reason.
+                        //
+                        // That's how the legacy host chains in OC and Hub avoided a redirect
+                        // loop without needing explicit permitAll on these paths. We register
+                        // them defensively for two cases the implicit handling does not cover:
+                        //
+                        //   1. The delegating entry point falls back to LOGIN_URL for
+                        //      multi-IdP deployments. If a host ever registers a custom
+                        //      loginPage("/login") backed by its own controller,
+                        //      DefaultLoginPageGeneratingFilter drops out and an anonymous
+                        //      GET /login would otherwise re-trigger the entry point and
+                        //      redirect to /login forever.
+                        //   2. Mirrors the basic-auth chain's permittedPaths shape and keeps
+                        //      logout symmetric, so the matcher set is independent of which
+                        //      framework filters happen to be active.
                         .requestMatchers(LOGIN_URL, LOGOUT_URL)
                         .permitAll()
                         .anyRequest()
