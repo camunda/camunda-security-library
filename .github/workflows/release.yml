@@ -322,13 +322,24 @@ jobs:
                           )
                           changed_files = set()
                   
+                  def get_adr_title(path, slug):
+                      try:
+                          with open(path, "r", encoding="utf-8") as adr_file:
+                              for raw_line in adr_file:
+                                  line = raw_line.strip()
+                                  if line.startswith("# "):
+                                      return line[2:].strip()
+                      except OSError as e:
+                          print(f"Warning: failed to read ADR title from {path}: {e}")
+                      return slug.replace("-", " ")
+
                   # Filter for ADRs
                   adr_files = [f for f in changed_files if f.startswith("docs/adr/") and f.endswith(".md")]
                   for f in sorted(adr_files):
                       match = re.search(r"(\d{4})-(.+)\.md", f)
                       if match:
-                          num, title = match.groups()
-                          title = title.replace("-", " ").title()
+                          num, slug = match.groups()
+                          title = get_adr_title(f, slug)
                           info["adrs"].append(f"ADR-{num}: {title}")
                   
                   # Filter for adopters docs
