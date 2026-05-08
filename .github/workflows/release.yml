@@ -431,10 +431,10 @@ jobs:
                   else:
                       # Not enough space for meaningful notes content
                       notes_content = ""
-              elif max_notes_len >= MIN_MEANINGFUL_LENGTH:
+              elif max_notes_len >= MIN_MEANINGFUL_LENGTH and len(notes) >= MIN_MEANINGFUL_LENGTH:
                   notes_content = notes[:max_notes_len]
               else:
-                  # Available space too small to be useful
+                  # Available space or actual notes too small to be useful
                   notes_content = ""
 
               payload = {
