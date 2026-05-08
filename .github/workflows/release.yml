@@ -408,7 +408,14 @@ jobs:
               structural_suffix = f"\n\nKey structural changes in this release:\n{structural_info}" if structural_info else ""
               prompt_prefix = f"Generate release notes for version {release_ver}:\n\n"
               max_notes_len = MAX_TOTAL_INPUT - len(prompt_prefix) - len(structural_suffix)
-              notes_content = notes[:max_notes_len] if max_notes_len > 0 else ""
+              
+              # If notes need truncation, reserve space for truncation marker
+              if len(notes) > max_notes_len and max_notes_len > len(TRUNCATION_MARKER):
+                  notes_content = notes[:max_notes_len - len(TRUNCATION_MARKER)] + TRUNCATION_MARKER
+              elif max_notes_len > 0:
+                  notes_content = notes[:max_notes_len]
+              else:
+                  notes_content = ""
 
               payload = {
                   "model": "gpt-4o-mini",
