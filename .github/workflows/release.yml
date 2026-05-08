@@ -338,8 +338,8 @@ jobs:
                   for f in sorted(adr_files):
                       match = re.search(r"(\d{4})-(.+)\.md", f)
                       if match:
-                          num, slug = match.groups()
-                          title = get_adr_title(f, slug)
+                          num, adr_slug = match.groups()
+                          title = get_adr_title(f, adr_slug)
                           info["adrs"].append(f"ADR-{num}: {title}")
                   
                   # Filter for adopters docs
@@ -412,10 +412,13 @@ jobs:
               MAX_STRUCTURAL_INFO = 1500
               MIN_MEANINGFUL_LENGTH = 100  # Minimum characters for meaningful content
               TRUNCATION_MARKER = "\n\n... (truncated due to size limits)\n"
+              MIN_TRUNCATED_CONTENT_BUDGET = len(TRUNCATION_MARKER) + MIN_MEANINGFUL_LENGTH
               
               # Cap structural_info by characters, accounting for truncation marker
               if len(structural_info) > MAX_STRUCTURAL_INFO:
-                  structural_info_content = structural_info[:MAX_STRUCTURAL_INFO - len(TRUNCATION_MARKER)] + TRUNCATION_MARKER
+                  # Guard against negative slice (though unlikely with current constants)
+                  truncate_at = max(0, MAX_STRUCTURAL_INFO - len(TRUNCATION_MARKER))
+                  structural_info_content = structural_info[:truncate_at] + TRUNCATION_MARKER
               else:
                   structural_info_content = structural_info
               
@@ -431,7 +434,7 @@ jobs:
                   notes_content = ""
               elif len(notes) > max_notes_len:
                   # Notes need truncation
-                  if max_notes_len > len(TRUNCATION_MARKER) + MIN_MEANINGFUL_LENGTH:
+                  if max_notes_len > MIN_TRUNCATED_CONTENT_BUDGET:
                       notes_content = notes[:max_notes_len - len(TRUNCATION_MARKER)] + TRUNCATION_MARKER
                   else:
                       # Not enough space for meaningful truncated notes
