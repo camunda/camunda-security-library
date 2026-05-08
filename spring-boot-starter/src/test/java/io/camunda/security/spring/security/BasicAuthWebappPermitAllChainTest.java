@@ -77,6 +77,11 @@ class BasicAuthWebappPermitAllChainTest {
           final var response = new MockHttpServletResponse();
           final var nextChain = new MockFilterChain();
 
+          // Defensive precondition: if the chain's securityMatcher ever stops matching this path
+          // (e.g. someone drops "/operate/**" from webappPaths()), FilterChainProxy would fall
+          // through to nextChain and the request would appear successful for the wrong reason.
+          assertThat(chain.matches(request)).isTrue();
+
           proxy.doFilter(request, response, nextChain);
 
           // permit-all means the chain hands off to the next filter (i.e. downstream MVC) rather
@@ -103,6 +108,11 @@ class BasicAuthWebappPermitAllChainTest {
           request.setParameter("password", "wrong");
           final var response = new MockHttpServletResponse();
           final var nextChain = new MockFilterChain();
+
+          // Defensive precondition: if "/login" ever drops out of webappPaths(), the chain would
+          // not match and FilterChainProxy would silently fall through to nextChain, masking the
+          // form-login configurer behaviour this test asserts.
+          assertThat(chain.matches(request)).isTrue();
 
           proxy.doFilter(request, response, nextChain);
 
