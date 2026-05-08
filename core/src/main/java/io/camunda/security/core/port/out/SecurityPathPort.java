@@ -66,9 +66,14 @@ public interface SecurityPathPort {
   }
 
   /**
-   * Path patterns the admin-user setup filter passes through without consulting {@code
-   * AdminUserPresencePort} — typically the setup endpoint itself plus any static assets the setup
-   * UI needs to render. Patterns use Spring Security's ant-style syntax. Default empty.
+   * Path prefixes the admin-user setup filter passes through without consulting {@code
+   * AdminUserPresencePort} — typically the setup endpoint itself plus any static-assets prefix the
+   * setup UI needs to render. Matched against the request's path <em>within the application</em>
+   * (i.e. the URI with the servlet context path stripped), so entries remain independent of the
+   * deployment's context path. Each entry matches when the path equals the entry exactly or starts
+   * with {@code entry + "/"}, so {@code "/admin/setup"} bypasses the setup endpoint without also
+   * bypassing {@code "/admin/setupbar"}. These are not Spring Security ant-style patterns. Default
+   * empty.
    */
   default Set<String> adminFilterBypassPaths() {
     return Set.of();
