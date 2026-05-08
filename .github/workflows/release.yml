@@ -331,7 +331,7 @@ jobs:
                                       return line[2:].strip()
                       except OSError as e:
                           print(f"Warning: failed to read ADR title from {path}: {e}")
-                      return slug.replace("-", " ")
+                      return slug.replace("-", " ").title()
 
                   # Filter for ADRs
                   adr_files = [f for f in changed_files if f.startswith("docs/adr/") and f.endswith(".md")]
@@ -431,10 +431,11 @@ jobs:
                   else:
                       # Not enough space for meaningful notes content
                       notes_content = ""
-              elif max_notes_len >= MIN_MEANINGFUL_LENGTH and len(notes) >= MIN_MEANINGFUL_LENGTH:
+              elif len(notes) >= MIN_MEANINGFUL_LENGTH:
+                  # Notes fit within budget, just check if they meet minimum threshold
                   notes_content = notes[:max_notes_len]
               else:
-                  # Available space or actual notes too small to be useful
+                  # Actual notes too small to be useful
                   notes_content = ""
 
               payload = {
