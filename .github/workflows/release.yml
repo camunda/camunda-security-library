@@ -425,18 +425,20 @@ jobs:
               max_notes_len = MAX_TOTAL_INPUT - len(prompt_prefix) - len(structural_suffix)
               
               # If notes need truncation, reserve space for truncation marker
-              if len(notes) > max_notes_len:
+              # First check if notes meet minimum meaningful length threshold
+              if len(notes) < MIN_MEANINGFUL_LENGTH:
+                  # Notes too small to be useful
+                  notes_content = ""
+              elif len(notes) > max_notes_len:
+                  # Notes need truncation
                   if max_notes_len > len(TRUNCATION_MARKER) + MIN_MEANINGFUL_LENGTH:
                       notes_content = notes[:max_notes_len - len(TRUNCATION_MARKER)] + TRUNCATION_MARKER
                   else:
-                      # Not enough space for meaningful notes content
+                      # Not enough space for meaningful truncated notes
                       notes_content = ""
-              elif len(notes) >= MIN_MEANINGFUL_LENGTH:
-                  # Notes fit within budget, just check if they meet minimum threshold
-                  notes_content = notes[:max_notes_len]
               else:
-                  # Actual notes too small to be useful
-                  notes_content = ""
+                  # Notes fit within budget and meet minimum threshold
+                  notes_content = notes
 
               payload = {
                   "model": "gpt-4o-mini",
