@@ -401,12 +401,12 @@ jobs:
               
               # Cap structural_info by characters
               if len(structural_info) > MAX_STRUCTURAL_INFO:
-                  structural_info = structural_info[:MAX_STRUCTURAL_INFO] + "\n  - ... (truncated)\n"
+                  structural_info = structural_info[:MAX_STRUCTURAL_INFO] + "\n\n... (truncated due to size limits)\n"
               
               # Adjust notes truncation to account for structural_info size
               structural_suffix = f"\n\nKey structural changes in this release:\n{structural_info}" if structural_info else ""
               max_notes_len = MAX_TOTAL_INPUT - len(structural_suffix)
-              notes_content = notes[:max_notes_len] if max_notes_len > 0 else notes[:1000]
+              notes_content = notes[:max_notes_len] if max_notes_len > 0 else ""
 
               payload = {
                   "model": "gpt-4o-mini",
