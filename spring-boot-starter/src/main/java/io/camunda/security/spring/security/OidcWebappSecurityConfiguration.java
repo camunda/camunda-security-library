@@ -56,8 +56,10 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
 
 /**
  * Filter chain that protects webapp UI paths with OIDC OAuth2 login and supports session-based
- * navigation, transparent access-token refresh, and logout. Uses Spring Security's default
- * authorization request resolver.
+ * navigation, transparent access-token refresh, and logout. The OAuth2 authorization request
+ * resolver defaults to Spring Security's default; hosts that register a bean of type {@link
+ * OAuth2AuthorizationRequestResolver} override that default through the {@link ObjectProvider} hook
+ * on {@link #oidcWebappSecurityFilterChain}.
  */
 @Configuration
 @ConditionalOnProperty(name = "camunda.security.authentication.method", havingValue = "oidc")
