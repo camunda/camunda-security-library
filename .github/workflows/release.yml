@@ -398,14 +398,16 @@ jobs:
               # Budget total input size to avoid exceeding API limits
               MAX_TOTAL_INPUT = 4000
               MAX_STRUCTURAL_INFO = 1500
+              TRUNCATION_MARKER = "\n\n... (truncated due to size limits)\n"
               
-              # Cap structural_info by characters
+              # Cap structural_info by characters, accounting for truncation marker
               if len(structural_info) > MAX_STRUCTURAL_INFO:
-                  structural_info = structural_info[:MAX_STRUCTURAL_INFO] + "\n\n... (truncated due to size limits)\n"
+                  structural_info = structural_info[:MAX_STRUCTURAL_INFO - len(TRUNCATION_MARKER)] + TRUNCATION_MARKER
               
-              # Adjust notes truncation to account for structural_info size
+              # Adjust notes truncation to account for structural_info size and prompt prefix
               structural_suffix = f"\n\nKey structural changes in this release:\n{structural_info}" if structural_info else ""
-              max_notes_len = MAX_TOTAL_INPUT - len(structural_suffix)
+              prompt_prefix = f"Generate release notes for version {release_ver}:\n\n"
+              max_notes_len = MAX_TOTAL_INPUT - len(prompt_prefix) - len(structural_suffix)
               notes_content = notes[:max_notes_len] if max_notes_len > 0 else ""
 
               payload = {
@@ -428,7 +430,7 @@ jobs:
                       },
                       {
                           "role": "user",
-                          "content": f"Generate release notes for version {release_ver}:\n\n{notes_content}{structural_suffix}",
+                          "content": f"{prompt_prefix}{notes_content}{structural_suffix}",
                       },
                   ],
                   "max_tokens": 1000,
