@@ -350,24 +350,30 @@ jobs:
 
               # Extract additional information about ADRs, docs, and API changes
               git_info = extract_git_info()
-              
+
+              def format_structural_section(title, items, limit=20):
+                  if not items:
+                      return ""
+                  section = f"\n**{title}:**\n"
+                  for item in items[:limit]:
+                      section += f"  - {item}\n"
+                  if len(items) > limit:
+                      section += f"  - ... and {len(items) - limit} more\n"
+                  return section
+
               structural_info = ""
-              if git_info["adrs"]:
-                  structural_info += "\n**Architecture Decision Records (ADRs) added/modified:**\n"
-                  for adr in git_info["adrs"]:
-                      structural_info += f"  - {adr}\n"
-              
-              if git_info["adopters_docs"]:
-                  structural_info += "\n**Adoption/Integration Documentation added/modified:**\n"
-                  for doc in git_info["adopters_docs"]:
-                      structural_info += f"  - {doc}\n"
-              
-              if git_info["api_classes"]:
-                  structural_info += "\n**Public API classes added/modified:**\n"
-                  for api in sorted(set(git_info["api_classes"]))[:20]:  # Limit to 20 for brevity
-                      structural_info += f"  - {api}\n"
-                  if len(git_info["api_classes"]) > 20:
-                      structural_info += f"  - ... and {len(git_info['api_classes']) - 20} more\n"
+              structural_info += format_structural_section(
+                  "Architecture Decision Records (ADRs) added/modified",
+                  git_info["adrs"],
+              )
+              structural_info += format_structural_section(
+                  "Adoption/Integration Documentation added/modified",
+                  git_info["adopters_docs"],
+              )
+              structural_info += format_structural_section(
+                  "Public API classes added/modified",
+                  sorted(set(git_info["api_classes"])),
+              )
 
               payload = {
                   "model": "gpt-4o-mini",
