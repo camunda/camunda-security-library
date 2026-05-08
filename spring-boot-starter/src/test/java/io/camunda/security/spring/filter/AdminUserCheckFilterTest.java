@@ -54,6 +54,24 @@ class AdminUserCheckFilterTest {
   }
 
   @Test
+  void bypassMatchesIndependentlyOfContextPath() throws Exception {
+    // App deployed under `/operate` — the request URI is `/operate/admin/setup` but the bypass
+    // entry is the context-path-independent `/admin/setup`. The filter must strip the context
+    // path before matching.
+    final var presencePort = new RecordingPresencePort(false);
+    final var missingHandler = new RecordingMissingHandler();
+    final var filter = filter(presencePort, missingHandler, DEFAULT_BYPASS_PATHS);
+
+    final var chain = new MockFilterChain();
+    filter.doFilter(
+        requestUnderContext("/operate", "/admin/setup"), new MockHttpServletResponse(), chain);
+
+    assertThat(chain.getRequest()).isNotNull();
+    assertThat(presencePort.callCount).isZero();
+    assertThat(missingHandler.callCount).isZero();
+  }
+
+  @Test
   void uriThatMerelyExtendsBypassPathDoesNotBypass() throws Exception {
     // `/admin/setupbar` shares a prefix with `/admin/setup` but is a different path — must not
     // bypass. Tightens the match semantics relative to OC's `String#contains` source.
@@ -134,9 +152,16 @@ class AdminUserCheckFilterTest {
     return new AdminUserCheckFilter(presencePort, missingHandler, bypassPaths);
   }
 
-  private static MockHttpServletRequest request(final String uri) {
+  private static MockHttpServletRequest request(final String pathWithinApp) {
+    return requestUnderContext("", pathWithinApp);
+  }
+
+  private static MockHttpServletRequest requestUnderContext(
+      final String contextPath, final String pathWithinApp) {
     final var request = new MockHttpServletRequest();
-    request.setRequestURI(uri);
+    request.setContextPath(contextPath);
+    request.setServletPath(pathWithinApp);
+    request.setRequestURI(contextPath + pathWithinApp);
     return request;
   }
 

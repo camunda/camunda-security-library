@@ -28,13 +28,15 @@ import org.springframework.web.filter.OncePerRequestFilter;
  *       implementation may consult static configuration, live storage, or any combination.
  *   <li>{@link AdminUserMissingHandler} — invoked when no admin user exists. Hosts decide the
  *       response shape (redirect to a setup wizard, JSON 403, RequestDispatcher.forward, etc.).
- *   <li>The set of URI prefixes that bypass the check entirely (typically the setup endpoint plus
+ *   <li>The set of path prefixes that bypass the check entirely (typically the setup endpoint plus
  *       its static-assets prefix, sourced from {@link
- *       io.camunda.security.core.port.out.SecurityPathPort#adminFilterBypassPaths()}). A request
- *       URI bypasses the check when it equals a configured prefix exactly or starts with {@code
- *       prefix + "/"} — so {@code "/admin/setup"} matches the setup endpoint without also matching
- *       unrelated paths like {@code "/admin/setupbar"}, and {@code "/admin/assets"} matches every
- *       sub-path under it.
+ *       io.camunda.security.core.port.out.SecurityPathPort#adminFilterBypassPaths()}). The match is
+ *       performed against the request's path <em>within the application</em> — i.e. the URI with
+ *       the servlet context path stripped — so prefixes remain independent of the deployment's
+ *       context path. A request bypasses the check when its application path equals a configured
+ *       prefix exactly or starts with {@code prefix + "/"} — so {@code "/admin/setup"} matches the
+ *       setup endpoint without also matching unrelated paths like {@code "/admin/setupbar"}, and
+ *       {@code "/admin/assets"} matches every sub-path under it.
  * </ul>
  *
  * <p>If {@link AdminUserPresencePort#adminUserExists()} throws, the filter logs the error and
@@ -91,11 +93,11 @@ public final class AdminUserCheckFilter extends OncePerRequestFilter {
   }
 
   private boolean isBypassed(final HttpServletRequest request) {
-    final String uri = request.getRequestURI();
-    return bypassPaths.stream().anyMatch(prefix -> matchesPrefix(uri, prefix));
+    final String path = RequestPathSupport.pathWithinApplication(request);
+    return bypassPaths.stream().anyMatch(prefix -> matchesPrefix(path, prefix));
   }
 
-  private static boolean matchesPrefix(final String uri, final String prefix) {
-    return uri.equals(prefix) || uri.startsWith(prefix + "/");
+  private static boolean matchesPrefix(final String path, final String prefix) {
+    return path.equals(prefix) || path.startsWith(prefix + "/");
   }
 }
