@@ -395,6 +395,19 @@ jobs:
                   sorted(set(git_info["api_classes"])),
               )
 
+              # Budget total input size to avoid exceeding API limits
+              MAX_TOTAL_INPUT = 4000
+              MAX_STRUCTURAL_INFO = 1500
+              
+              # Cap structural_info by characters
+              if len(structural_info) > MAX_STRUCTURAL_INFO:
+                  structural_info = structural_info[:MAX_STRUCTURAL_INFO] + "\n  - ... (truncated)\n"
+              
+              # Adjust notes truncation to account for structural_info size
+              structural_suffix = f"\n\nKey structural changes in this release:\n{structural_info}" if structural_info else ""
+              max_notes_len = MAX_TOTAL_INPUT - len(structural_suffix)
+              notes_content = notes[:max_notes_len] if max_notes_len > 0 else notes[:1000]
+
               payload = {
                   "model": "gpt-4o-mini",
                   "messages": [
@@ -415,7 +428,7 @@ jobs:
                       },
                       {
                           "role": "user",
-                          "content": f"Generate release notes for version {release_ver}:\n\n{notes[:4000]}" + (f"\n\nKey structural changes in this release:\n{structural_info}" if structural_info else ""),
+                          "content": f"Generate release notes for version {release_ver}:\n\n{notes_content}{structural_suffix}",
                       },
                   ],
                   "max_tokens": 1000,
