@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.security;
 
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.LOGIN_URL;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.LOGOUT_URL;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.OIDC_REGISTRATION_ID;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP_API;
@@ -35,6 +36,7 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
@@ -73,6 +75,7 @@ public class OidcWebappSecurityConfiguration {
       final ObjectProvider<OidcTokenEndpointCustomizer> tokenEndpointCustomizerProvider,
       final ObjectProvider<LogoutSuccessHandler> logoutSuccessHandlerProvider,
       final ObjectProvider<OidcUserService> oidcUserServiceProvider,
+      final ObjectProvider<OAuth2AuthorizationRequestResolver> authorizationRequestResolverProvider,
       final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers,
       final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
       final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider,
@@ -91,7 +94,8 @@ public class OidcWebappSecurityConfiguration {
                         .authenticated())
             .exceptionHandling(
                 eh ->
-                    eh.authenticationEntryPoint(oidcWebappAuthenticationEntryPoint())
+                    eh.authenticationEntryPoint(
+                            oidcWebappAuthenticationEntryPoint(clientRegistrationRepository))
                         .accessDeniedHandler(authFailureHandler))
             .cors(AbstractHttpConfigurer::disable)
             .formLogin(AbstractHttpConfigurer::disable)
@@ -116,6 +120,15 @@ public class OidcWebappSecurityConfiguration {
                   tokenEndpointCustomizerProvider.ifAvailable(oauthLogin::tokenEndpoint);
                   oidcUserServiceProvider.ifAvailable(
                       service -> oauthLogin.userInfoEndpoint(c -> c.oidcUserService(service)));
+                  // Hosts can override the authorization-request resolver to inject custom
+                  // per-client behaviour (e.g. multi-IdP redirects, additional query parameters
+                  // such as RFC 8707 `resource`). Falls back to Spring Security's default when
+                  // no host bean is registered.
+                  authorizationRequestResolverProvider.ifAvailable(
+                      resolver ->
+                          oauthLogin.authorizationEndpoint(
+                              authorization ->
+                                  authorization.authorizationRequestResolver(resolver)));
                 })
             .oidcLogout(oidcLogout -> {})
             .logout(
@@ -164,21 +177,55 @@ public class OidcWebappSecurityConfiguration {
   /**
    * Delegating entry point: requests carrying an {@code Authorization} header receive a 401 via
    * {@link BearerTokenAuthenticationEntryPoint}; everything else (browser navigations) is
-   * redirected to the OAuth2 authorization endpoint.
+   * redirected to a login URL that depends on the configured client registrations.
+   *
+   * <p>When the {@link ClientRegistrationRepository} exposes exactly one registration the redirect
+   * targets {@code /oauth2/authorization/{id}} so the browser is sent straight to the IdP. When
+   * multiple registrations are present (multi-IdP), the redirect targets {@link
+   * CamundaSecurityFilterChainConstants#LOGIN_URL} so the host can render a provider-selection
+   * page. When the repository is not iterable (host-supplied implementation that does not extend
+   * {@link Iterable}) the redirect falls back to {@code /oauth2/authorization/oidc} for backwards
+   * compatibility.
    *
    * <p>Required because both {@code oauth2ResourceServer} and {@code oauth2Login} register their
    * own entry points, and in Spring Security 7.x the resource server's takes precedence — causing
    * browser requests to receive 401 instead of a 302 redirect to the IdP.
    */
-  private static AuthenticationEntryPoint oidcWebappAuthenticationEntryPoint() {
+  private static AuthenticationEntryPoint oidcWebappAuthenticationEntryPoint(
+      final ClientRegistrationRepository clientRegistrationRepository) {
     final var bearerEntryPoint = new BearerTokenAuthenticationEntryPoint();
     final var oauthRedirectEntryPoint =
-        new LoginUrlAuthenticationEntryPoint("/oauth2/authorization/" + OIDC_REGISTRATION_ID);
+        new LoginUrlAuthenticationEntryPoint(
+            resolveOauthRedirectTarget(clientRegistrationRepository));
     final var entryPoints = new LinkedHashMap<RequestMatcher, AuthenticationEntryPoint>();
     entryPoints.put(new RequestHeaderRequestMatcher("Authorization"), bearerEntryPoint);
     final var delegatingEntryPoint = new DelegatingAuthenticationEntryPoint(entryPoints);
     delegatingEntryPoint.setDefaultEntryPoint(oauthRedirectEntryPoint);
     return delegatingEntryPoint;
+  }
+
+  private static String resolveOauthRedirectTarget(
+      final ClientRegistrationRepository clientRegistrationRepository) {
+    if (!(clientRegistrationRepository instanceof final Iterable<?> iterable)) {
+      return "/oauth2/authorization/" + OIDC_REGISTRATION_ID;
+    }
+    final var iterator = iterable.iterator();
+    if (!iterator.hasNext()) {
+      return "/oauth2/authorization/" + OIDC_REGISTRATION_ID;
+    }
+    final Object first = iterator.next();
+    if (iterator.hasNext()) {
+      // Multiple client registrations: redirect to the host's login page so users can pick a
+      // provider.
+      return LOGIN_URL;
+    }
+    if (first
+        instanceof
+        final org.springframework.security.oauth2.client.registration.ClientRegistration
+                registration) {
+      return "/oauth2/authorization/" + registration.getRegistrationId();
+    }
+    return "/oauth2/authorization/" + OIDC_REGISTRATION_ID;
   }
 
   private static ObjectPostProcessor<BearerTokenAuthenticationFilter>
