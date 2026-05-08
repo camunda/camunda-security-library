@@ -42,6 +42,7 @@ Hexagonal architecture naming (replaces traditional controller/service/repo nami
 ## Testing Patterns
 
 - JUnit 5 for all tests
+- Mockito style: use `@ExtendWith(MockitoExtension.class)` with `@Mock` fields, and `@InjectMocks` for the unit under test when possible, instead of `Mockito.mock(...)`
 - Unit tests for domain logic: no Spring context required; instantiate classes directly
 - Integration tests for adapters: use `@SpringBootTest` or Testcontainers to test real I/O
 - Contract tests for APIs: Pact consumer-driven contracts

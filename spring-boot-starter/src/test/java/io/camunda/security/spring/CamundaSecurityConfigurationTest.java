@@ -10,6 +10,7 @@ package io.camunda.security.spring;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.camunda.security.api.model.config.AuthenticationMethod;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
@@ -50,7 +51,8 @@ class CamundaSecurityConfigurationTest {
                   UnprotectedApiSecurityConfiguration.class,
                   AuthFailureHandlerConfiguration.class,
                   OidcBeansConfiguration.class))
-          .withUserConfiguration(StubPaths.class);
+          .withUserConfiguration(StubPaths.class)
+          .withUserConfiguration(StubUserDetailsService.class);
 
   @Test
   void bindsDefaultPropertiesWithoutAuthenticationMethod() {
@@ -60,7 +62,13 @@ class CamundaSecurityConfigurationTest {
           assertThat(ctx)
               .getBean(CamundaSecurityLibraryProperties.class)
               .extracting(p -> p.getAuthentication().getMethod())
-              .isNull();
+              .isEqualTo(AuthenticationMethod.BASIC);
+          // With method defaulting to BASIC, the Basic auth chains must activate
+          assertThat(ctx).hasSingleBean(BasicAuthApiSecurityConfiguration.class);
+          assertThat(ctx).hasSingleBean(BasicAuthWebappSecurityConfiguration.class);
+          // OIDC-specific beans must NOT be present
+          assertThat(ctx).doesNotHaveBean(JwtDecoder.class);
+          assertThat(ctx).doesNotHaveBean(ClientRegistrationRepository.class);
         });
   }
 
@@ -68,7 +76,6 @@ class CamundaSecurityConfigurationTest {
   void basicMethodActivatesBasicChainsAndSuppressesOidcChains() {
     runner
         .withPropertyValues("camunda.security.authentication.method=basic")
-        .withUserConfiguration(StubUserDetailsService.class)
         .run(
             ctx -> {
               assertThat(ctx).hasSingleBean(AuthFailureHandler.class);
