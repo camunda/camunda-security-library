@@ -10,13 +10,22 @@ package io.camunda.security.spring.security;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.camunda.security.api.context.CamundaAuthenticationProvider;
+import io.camunda.security.api.model.Authorization;
+import io.camunda.security.api.model.CamundaAuthentication;
+import io.camunda.security.api.model.ResourceType;
 import io.camunda.security.core.port.out.AdminUserPresencePort;
+import io.camunda.security.core.port.out.AuthorizationRepositoryPort;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.filter.AdminUserCheckFilter;
+import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
+import io.camunda.security.spring.spi.WebAppProvider;
 import jakarta.servlet.Filter;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -60,7 +69,8 @@ class AdminUserCheckFilterChainIntegrationTest {
                   BaseSecurityConfiguration.class,
                   BasicAuthWebappSecurityConfiguration.class,
                   AuthFailureHandlerConfiguration.class,
-                  AdminUserCheckFilterConfiguration.class))
+                  AdminUserCheckFilterConfiguration.class,
+                  WebAppAuthorizationFilterConfiguration.class))
           .withPropertyValues("camunda.security.authentication.method=basic");
 
   private final WebApplicationContextRunner oidcRunner =
@@ -73,7 +83,8 @@ class AdminUserCheckFilterChainIntegrationTest {
                   OidcWebappSecurityConfiguration.class,
                   AuthFailureHandlerConfiguration.class,
                   OidcBeansConfiguration.class,
-                  AdminUserCheckFilterConfiguration.class))
+                  AdminUserCheckFilterConfiguration.class,
+                  WebAppAuthorizationFilterConfiguration.class))
           .withPropertyValues(OIDC_PROPERTIES);
 
   @Test
@@ -118,6 +129,49 @@ class AdminUserCheckFilterChainIntegrationTest {
           assertThat(filtersOf(ctx.getBean(OIDC_CHAIN_BEAN, SecurityFilterChain.class)))
               .noneSatisfy(f -> assertThat(f).isInstanceOf(AdminUserCheckFilter.class));
         });
+  }
+
+  @Test
+  void basicChainPlacesAdminFilterBeforeWebAppFilterWhenBothSpisAreRegistered() {
+    // The chain wiring anchors WebAppAuthorizationCheckFilter on AdminUserCheckFilter when both
+    // are present, so the admin-presence redirect runs before any per-web-app permission check.
+    basicRunner
+        .withUserConfiguration(StubPresencePort.class)
+        .withUserConfiguration(StubAuthorizationRepository.class)
+        .withUserConfiguration(StubWebAppProvider.class)
+        .withUserConfiguration(StubAuthenticationProvider.class)
+        .run(
+            ctx -> {
+              final var filters =
+                  filtersOf(ctx.getBean(BASIC_CHAIN_BEAN, SecurityFilterChain.class));
+              assertThat(indexOfType(filters, AdminUserCheckFilter.class))
+                  .isLessThan(indexOfType(filters, WebAppAuthorizationCheckFilter.class));
+            });
+  }
+
+  @Test
+  void oidcChainPlacesAdminFilterBeforeWebAppFilterWhenBothSpisAreRegistered() {
+    oidcRunner
+        .withUserConfiguration(StubPresencePort.class)
+        .withUserConfiguration(StubAuthorizationRepository.class)
+        .withUserConfiguration(StubWebAppProvider.class)
+        .withUserConfiguration(StubAuthenticationProvider.class)
+        .run(
+            ctx -> {
+              final var filters =
+                  filtersOf(ctx.getBean(OIDC_CHAIN_BEAN, SecurityFilterChain.class));
+              assertThat(indexOfType(filters, AdminUserCheckFilter.class))
+                  .isLessThan(indexOfType(filters, WebAppAuthorizationCheckFilter.class));
+            });
+  }
+
+  private static int indexOfType(final List<Filter> filters, final Class<? extends Filter> type) {
+    for (int i = 0; i < filters.size(); i++) {
+      if (type.isInstance(filters.get(i))) {
+        return i;
+      }
+    }
+    throw new AssertionError("No filter of type " + type.getName() + " in chain");
   }
 
   private static java.util.List<Filter> filtersOf(final SecurityFilterChain chain) {
@@ -169,6 +223,39 @@ class AdminUserCheckFilterChainIntegrationTest {
     @Bean
     AdminUserPresencePort adminUserPresencePort() {
       return () -> true;
+    }
+  }
+
+  @Configuration
+  static class StubAuthorizationRepository {
+
+    @Bean
+    AuthorizationRepositoryPort authorizationRepository() {
+      return new AuthorizationRepositoryPort() {
+        @Override
+        public Set<Authorization> findAuthorizations(
+            final CamundaAuthentication authentication, final ResourceType resourceType) {
+          return Set.of();
+        }
+      };
+    }
+  }
+
+  @Configuration
+  static class StubWebAppProvider {
+
+    @Bean
+    WebAppProvider webAppProvider() {
+      return request -> Optional.of("operate");
+    }
+  }
+
+  @Configuration
+  static class StubAuthenticationProvider {
+
+    @Bean
+    CamundaAuthenticationProvider camundaAuthenticationProvider() {
+      return CamundaAuthentication::anonymous;
     }
   }
 

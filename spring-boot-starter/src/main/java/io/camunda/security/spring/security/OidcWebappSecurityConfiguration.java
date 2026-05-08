@@ -139,13 +139,21 @@ public class OidcWebappSecurityConfiguration {
             authorizedClientRepository, authorizedClientManager, logoutHandler),
         AuthorizationFilter.class);
 
-    // Admin-user check runs before webapp authorization so an unprovisioned system redirects to
-    // the setup UI before permission checks against unrelated web apps.
-    SecurityFilterChainSupport.addFilterAfterIfAvailable(
-        filterChainBuilder, adminUserCheckFilterProvider, AuthorizationFilter.class);
-
-    SecurityFilterChainSupport.addFilterAfterIfAvailable(
-        filterChainBuilder, webAppAuthorizationFilterProvider, AuthorizationFilter.class);
+    // Each optional filter is anchored explicitly on the previous filter in the chain so the
+    // relative order is deterministic regardless of which combination is present. AdminUserCheck
+    // sits after the refresh-token filter so it operates on a freshly-refreshed principal;
+    // WebAppAuthorizationCheck sits after AdminUserCheck (when present) so an unprovisioned
+    // system redirects to setup before any per-web-app permission check fires.
+    final var adminFilter = adminUserCheckFilterProvider.getIfAvailable();
+    if (adminFilter != null) {
+      filterChainBuilder.addFilterAfter(adminFilter, OAuth2RefreshTokenFilter.class);
+    }
+    final var webAppFilter = webAppAuthorizationFilterProvider.getIfAvailable();
+    if (webAppFilter != null) {
+      final var anchor =
+          adminFilter != null ? AdminUserCheckFilter.class : OAuth2RefreshTokenFilter.class;
+      filterChainBuilder.addFilterAfter(webAppFilter, anchor);
+    }
 
     SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
