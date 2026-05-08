@@ -12,7 +12,7 @@ This tour is the single entry point for understanding what you can do here: slas
 
 ## Slash commands
 
-Six AI-agent workflows live in this repo. Four create well-structured GitHub issues; one writes ADRs; one is this tour. Every workflow is defined in `docs/workflows/` and exposed as a Claude Code skill in `.claude/skills/`.
+Six AI-agent workflows live in this repo. Three create well-structured GitHub issues, two write or capture documentation, and one is this tour. Every workflow is defined in `docs/workflows/` and exposed as a Claude Code skill in `.claude/skills/`.
 
 | Command | Use when | Workflow doc |
 |---|---|---|
@@ -23,7 +23,7 @@ Six AI-agent workflows live in this repo. Four create well-structured GitHub iss
 | `/adr` | Capture an architectural decision before/alongside the change that introduces it | [adr.md](adr.md) |
 | `/tour` | This tour — orientation only | [tour.md](tour.md) |
 
-The four issue-creating workflows all produce self-contained issues — a fresh agent session can read them and deliver without further conversation. Shared helpers (setting issue types, native sub-issue linking, how to link files in issue bodies) live in [github-issue-operations.md](github-issue-operations.md).
+The three issue-creating workflows all produce self-contained issues — a fresh agent session can read them and deliver without further conversation. Shared helpers (setting issue types, native sub-issue linking, how to link files in issue bodies) live in [github-issue-operations.md](github-issue-operations.md).
 
 ## Documentation map
 

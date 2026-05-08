@@ -60,7 +60,7 @@ status: Accepted
 
 ## Status
 
-Accepted | Proposed | Superseded by ADR-XXXX
+Accepted
 
 ## Context
 
@@ -96,7 +96,7 @@ Accepted | Proposed | Superseded by ADR-XXXX
 
 #### Notes on each field
 
-- **`status` (frontmatter)** — `Accepted` for live decisions. `Proposed` only when the decision isn't final yet (rare; prefer not to open a PR until it is). `Superseded by ADR-XXXX` once a later ADR replaces this one.
+- **Status** — appears in both the frontmatter (`status: Accepted`) and the body's `## Status` section. Both should match. Default is `Accepted` for live decisions. Use `Proposed` only when the decision isn't final yet (rare; prefer not to open a PR until it is). Change to `Superseded by ADR-XXXX` once a later ADR replaces this one.
 - **Title** — phrase as the decision, not the topic ("Lift webapp authorization filter into CSL", not "Webapp authorization filter").
 - **`Deciders`** — comma-separated names. Required for new ADRs from this workflow onward. Existing ADRs (0001–0010) predate this requirement and are not retroactively updated. For solo work, list just the author; for cross-team agreement, list everyone whose buy-in the decision relies on.
 - **Context** — problem + question. End with one sentence that names the question this ADR answers, e.g. *"What SPI shape lets hosts plug in the web-app-id derivation without duplicating the filter?"*. Don't narrate process.
