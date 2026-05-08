@@ -51,6 +51,9 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      # Required for GitHub Models API access (used in "Generate AI release summary" step)
+      # See: https://docs.github.com/en/github-models/prototyping-with-ai-models
+      models: read
     env:
       DEVELOPMENT_VERSION: ${{ inputs.nextDevelopmentVersion }}
       PUSH_CHANGES: ${{ !inputs.dryRun }}
@@ -265,6 +268,7 @@ jobs:
         run: |
           python3 - <<'EOF'
           import json, os, subprocess, sys, tempfile, urllib.request, urllib.error
+          import re
 
           release_tag  = os.environ["RELEASE_TAG"]
           release_ver  = os.environ["RELEASE_VERSION"]
@@ -274,6 +278,102 @@ jobs:
           if not token:
               print("Warning: no GitHub token found — skipping AI summary.")
               sys.exit(0)
+
+          def extract_git_info():
+              """Extract information about changes to key documentation and API areas."""
+              info = {"adrs": [], "adopters_docs": [], "api_classes": []}
+              
+              try:
+                  # Get all commits since the previous tag
+                  # Try to find the previous tag before this release
+                  result = subprocess.run(
+                      ["git", "describe", "--tags", "--abbrev=0", release_tag + "^"],
+                      capture_output=True, text=True
+                  )
+                  prev_tag = result.stdout.strip() if result.returncode == 0 else "HEAD~100"
+                  
+                  # Get added/modified/renamed files between previous tag and current release.
+                  # Using --diff-filter=AMR excludes deleted files so removed ADRs/docs/API classes
+                  # are not incorrectly reported as added/modified in structural_info.
+                  result = subprocess.run(
+                      ["git", "diff", "--name-only", "--diff-filter=AMR", f"{prev_tag}..{release_tag}"],
+                      capture_output=True, text=True, check=False
+                  )
+                  
+                  if result.returncode == 0:
+                      changed_files = set(line.strip() for line in result.stdout.split("\n") if line.strip())
+                  else:
+                      print(
+                          f"Warning: failed to diff {prev_tag}..{release_tag}; "
+                          f"falling back to files in {release_tag}. git diff stderr: {result.stderr.strip()}"
+                      )
+                      fallback_result = subprocess.run(
+                          ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "--diff-filter=AMR", release_tag],
+                          capture_output=True, text=True, check=False
+                      )
+                      if fallback_result.returncode == 0:
+                          changed_files = set(
+                              line.strip() for line in fallback_result.stdout.split("\n") if line.strip()
+                          )
+                      else:
+                          print(
+                              f"Warning: fallback diff-tree for {release_tag} also failed; "
+                              f"continuing with no changed files. git diff-tree stderr: {fallback_result.stderr.strip()}"
+                          )
+                          changed_files = set()
+                  
+                  def get_adr_title(path, slug):
+                      """Read ADR title from the tag itself to ensure accuracy."""
+                      try:
+                          result = subprocess.run(
+                              ["git", "show", f"{release_tag}:{path}"],
+                              capture_output=True, text=True, check=False
+                          )
+                          if result.returncode == 0:
+                              for raw_line in result.stdout.splitlines():
+                                  line = raw_line.strip()
+                                  if line.startswith("# "):
+                                      return line[2:].strip()
+                          else:
+                              print(f"Warning: failed to read ADR title from tag {release_tag}:{path}: {result.stderr.strip()}", file=sys.stderr)
+                      except Exception as e:
+                          print(f"Warning: failed to read ADR title from {path}: {e}", file=sys.stderr)
+                      return slug.replace("-", " ").title()
+
+                  # Filter for ADRs
+                  adr_files = [f for f in changed_files if f.startswith("docs/adr/") and f.endswith(".md")]
+                  for f in sorted(adr_files):
+                      match = re.search(r"(\d{4})-(.+)\.md", f)
+                      if match:
+                          num, adr_slug = match.groups()
+                          title = get_adr_title(f, adr_slug)
+                          info["adrs"].append(f"ADR-{num}: {title}")
+                  
+                  # Filter for adopters docs
+                  adopters_files = [f for f in changed_files if f.startswith("docs/adopters/") and f.endswith(".md")]
+                  for f in sorted(adopters_files):
+                      # Include full repo-relative path so the model and readers can locate the doc
+                      info["adopters_docs"].append(f)
+                  
+                  # Filter for API classes (Java files in api/src/main/java)
+                  api_files = [f for f in changed_files if f.startswith("api/src/main/java/") and f.endswith(".java")]
+                  for f in sorted(api_files):
+                      # Extract class name from file path
+                      parts = f.split("/")
+                      classname = parts[-1].replace(".java", "")
+                      package_parts = parts[4:-1]  # Get package parts (skip api/src/main/java)
+                      if package_parts:
+                          package = ".".join(package_parts)
+                          info["api_classes"].append(f"{package}.{classname}")
+                      else:
+                          info["api_classes"].append(classname)
+                  
+              except Exception as e:
+                  # Keep release non-blocking, but allow opt-in diagnostics when debugging.
+                  if os.environ.get("RELEASE_DEBUG_GIT_INFO", "").lower() in ("1", "true", "yes", "on"):
+                      print(f"Warning: failed to extract git info for release notes: {e}", file=sys.stderr)
+              
+              return info
 
           try:
               # Fetch the auto-generated notes that GitHub produced in the previous step.
@@ -287,6 +387,67 @@ jobs:
                   print("No release notes found — skipping AI summary.")
                   sys.exit(0)
 
+              # Extract additional information about ADRs, docs, and API changes
+              git_info = extract_git_info()
+
+              def format_structural_section(title, items, limit=20):
+                  if not items:
+                      return ""
+                  section = f"\n**{title}:**\n"
+                  for item in items[:limit]:
+                      section += f"  - {item}\n"
+                  if len(items) > limit:
+                      section += f"  - ... and {len(items) - limit} more\n"
+                  return section
+
+              structural_info = ""
+              structural_info += format_structural_section(
+                  "Architecture Decision Records (ADRs) added/modified",
+                  git_info["adrs"],
+              )
+              structural_info += format_structural_section(
+                  "Adoption/Integration Documentation added/modified",
+                  git_info["adopters_docs"],
+              )
+              structural_info += format_structural_section(
+                  "Public API classes added/modified",
+                  sorted(set(git_info["api_classes"])),
+              )
+
+              # Budget total input size to avoid exceeding API limits
+              MAX_TOTAL_INPUT = 4000
+              MAX_STRUCTURAL_INFO = 1500
+              MIN_MEANINGFUL_LENGTH = 100  # Minimum characters for meaningful content
+              TRUNCATION_MARKER = "\n\n... (truncated due to size limits)\n"
+              MIN_TRUNCATED_CONTENT_BUDGET = len(TRUNCATION_MARKER) + MIN_MEANINGFUL_LENGTH
+              
+              # Cap structural_info by characters, accounting for truncation marker
+              if len(structural_info) > MAX_STRUCTURAL_INFO:
+                  # Guard against negative slice (though unlikely with current constants)
+                  truncate_at = max(0, MAX_STRUCTURAL_INFO - len(TRUNCATION_MARKER))
+                  structural_info_content = structural_info[:truncate_at] + TRUNCATION_MARKER
+              else:
+                  structural_info_content = structural_info
+              
+              # Adjust notes truncation to account for structural_info size and prompt prefix
+              structural_suffix = f"\n\nKey structural changes in this release:\n{structural_info_content}" if structural_info_content else ""
+              prompt_prefix = f"Generate release notes for version {release_ver}:\n\n"
+              overhead = len(prompt_prefix) + len(structural_suffix)
+              max_notes_len = MAX_TOTAL_INPUT - overhead
+              
+              # Handle notes truncation
+              # Only enforce minimum length when truncating; short but complete notes are acceptable
+              if len(notes) > max_notes_len:
+                  # Notes need truncation - ensure truncated result is meaningful
+                  if max_notes_len > MIN_TRUNCATED_CONTENT_BUDGET:
+                      notes_content = notes[:max_notes_len - len(TRUNCATION_MARKER)] + TRUNCATION_MARKER
+                  else:
+                      # Not enough space for meaningful truncated notes
+                      notes_content = ""
+              else:
+                  # Notes fit within budget - include them regardless of length
+                  notes_content = notes
+
               payload = {
                   "model": "gpt-4o-mini",
                   "messages": [
@@ -298,12 +459,16 @@ jobs:
                               "Given a raw list of commits or PR titles, produce concise, structured release notes with: "
                               "a one-short-paragraph executive summary, then bullet-point sections titled "
                               "Breaking Changes (omit entirely if none), New Features, Bug Fixes, and Improvements. "
-                              "Be precise and developer-friendly. Do not invent details not present in the input."
+                              "Be precise and developer-friendly. Do not invent details not present in the input. "
+                              "\n\nWhen mentioned, specifically highlight:\n"
+                              "- New or modified Architecture Decision Records (ADRs) — reference them by their number/title\n"
+                              "- New or modified adoption/integration documentation\n"
+                              "- New or modified public API classes — these are important for library users\n"
                           ),
                       },
                       {
                           "role": "user",
-                          "content": f"Generate release notes for version {release_ver}:\n\n{notes[:4000]}",
+                          "content": f"{prompt_prefix}{notes_content}{structural_suffix}",
                       },
                   ],
                   "max_tokens": 1000,
