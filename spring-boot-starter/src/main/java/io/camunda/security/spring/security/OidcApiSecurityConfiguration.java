@@ -61,7 +61,6 @@ public class OidcApiSecurityConfiguration {
                 oauth2 -> {
                   oauth2
                       .jwt(jwt -> jwt.decoder(jwtDecoder))
-                      .authenticationEntryPoint(authFailureHandler)
                       .accessDeniedHandler(authFailureHandler)
                       .withObjectPostProcessor(postProcessBearerTokenFailureHandler());
                   resourceServerCustomizers
