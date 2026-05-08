@@ -334,6 +334,120 @@ Registering any `WebAppAccessDeniedHandler` bean disables the library default. T
 
 If any of the required beans is missing (and `ResourcePermissionPort` not satisfied either way), the filter bean isn't created. The webapp chain still works — it just doesn't enforce the per-web-app `ACCESS` check. Adopt incrementally by registering the SPIs as you build out the host's authorization data layer.
 
+## Admin user setup
+
+The CSL's `AdminUserCheckFilter` ensures an admin user has been provisioned before letting requests reach the rest of the application. If no admin user exists, the filter hands off to the host so the browser can be sent to a setup wizard (or whatever the host's response shape is). Once an admin user exists, the filter passes every request through. The filter is host-pluggable on two axes:
+
+- **Has an admin user been provisioned?** Implement `AdminUserPresencePort.adminUserExists()`. Hosts answer from any combination of static configuration and live storage — the library has no opinion on the data layer.
+- **What happens when no admin user exists?** The library default redirects to `<contextPath>/admin/setup`. Override `AdminUserMissingHandler` to return JSON, forward, or anything else.
+
+A third concern — which paths bypass the check entirely (typically the setup endpoint plus its static assets) — is declared on the existing `SecurityPathPort` via `adminFilterBypassPaths()`, alongside the host's other path declarations. Activation rationale lives in [ADR-0010](../adr/0010-admin-user-setup-spis.md).
+
+### Activation
+
+Add `AdminUserCheckFilterConfiguration` to your `@Import` list. The filter and its supporting beans are created only when the required SPIs are present; otherwise the chain configurations skip adding the filter:
+
+```java
+@Configuration
+@Import({
+    BaseSecurityConfiguration.class,
+    OidcWebappSecurityConfiguration.class,
+    OidcApiSecurityConfiguration.class,
+    OidcBeansConfiguration.class,
+    AuthFailureHandlerConfiguration.class,
+    AdminUserCheckFilterConfiguration.class
+})
+public class HostSecurityConfiguration {}
+```
+
+### Opting out
+
+If your host doesn't enforce admin-user setup (for example Hub, which doesn't model admins this way), simply omit `AdminUserCheckFilterConfiguration` from your `@Import` list. The chain configurations look up the filter via `ObjectProvider`; when the bean isn't there, the conditional addition is a no-op. Nothing else in the webapp chain changes.
+
+There is no halfway state to worry about — the filter is either fully wired (you imported the configuration and registered the SPIs) or completely absent (you didn't). It's safe to add later when the host has an admin-presence concept in place.
+
+### Static-config-only `AdminUserPresencePort`
+
+A host that bootstraps admin presence from a `@Value`-injected boolean (or any other static configuration) can implement the port as a one-line lambda:
+
+```java
+@Bean
+public AdminUserPresencePort staticAdminUserPresence(
+    @Value("${myapp.admin-user.bootstrapped:false}") final boolean bootstrapped) {
+  return () -> bootstrapped;
+}
+```
+
+### Live-data `AdminUserPresencePort`
+
+A host that consults its authorization storage to determine whether an admin user has been provisioned might combine a static-config check with a live-data lookup, mirroring the OC source behaviour:
+
+```java
+@Bean
+public AdminUserPresencePort liveAdminUserPresence(
+    final MyAuthzConfig authzConfig, final MyRoleService roleService) {
+  return () -> {
+    if (!authzConfig.bootstrappedAdminUsers().isEmpty()) {
+      return true;
+    }
+    return roleService.hasMembers("admin", MemberType.USER);
+  };
+}
+```
+
+The library calls `adminUserExists()` once per request that isn't on a bypass path, so the implementation should either be cheap or cache its result. If the call throws, the filter logs at error and lets the request through — a transient secondary-storage outage must not block users.
+
+### Bypass paths via `SecurityPathPort`
+
+Override `adminFilterBypassPaths()` on your `SecurityPathPort` implementation to declare the setup endpoint plus any prefixes whose sub-paths the setup UI needs to load:
+
+```java
+@Override
+public Set<String> adminFilterBypassPaths() {
+  return Set.of("/admin/setup", "/admin/assets");
+}
+```
+
+Each entry matches the request's path within the application (i.e. the URI with the servlet context path stripped) when the path equals the entry exactly or starts with `entry + "/"`. So `/admin/setup` matches `/admin/setup` (the setup endpoint itself) but not `/admin/setupbar`, and `/admin/assets` matches every sub-path under it.
+
+### Custom `AdminUserMissingHandler` (optional)
+
+The default `RedirectingAdminUserMissingHandler` calls `response.sendRedirect("<contextPath>/admin/setup")`. To return a JSON 503 instead:
+
+```java
+@Bean
+public AdminUserMissingHandler jsonProblemDetailMissingHandler(final ObjectMapper objectMapper) {
+  return (request, response) -> {
+    response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+    response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
+    objectMapper.writeValue(
+        response.getWriter(),
+        Map.of(
+            "type", "about:blank",
+            "title", "Service Unavailable",
+            "status", 503,
+            "detail", "No admin user has been provisioned",
+            "instance", request.getRequestURI()));
+  };
+}
+```
+
+Registering any `AdminUserMissingHandler` bean disables the library default. The handler is invoked exactly once per request that fails the presence check; the filter does not call `filterChain.doFilter(...)` afterwards.
+
+### Required and supplied beans for admin user setup
+
+| Bean | Default | When |
+|---|---|---|
+| `AdminUserPresencePort` | None — host must register | Always required |
+| `SecurityPathPort` | None — host must register | Always required (already present for any CSL chain). Override `adminFilterBypassPaths()` to declare the setup endpoint + asset prefixes |
+| `AdminUserMissingHandler` | `RedirectingAdminUserMissingHandler` (gated on `AdminUserPresencePort` + `@ConditionalOnMissingBean`) | Override for JSON 503, forwards, alternative redirect targets, etc. |
+
+If `AdminUserPresencePort` is absent, the filter bean isn't created. The webapp chain still works — it just doesn't enforce the admin-presence check. Adopt incrementally by registering the port once your host's authorization data layer is ready to answer.
+
+### Filter ordering when both this and `WebAppAuthorizationCheckFilter` are active
+
+When a host activates both `AdminUserCheckFilterConfiguration` and `WebAppAuthorizationFilterConfiguration`, the chain configurations anchor the webapp filter on the admin filter so the admin-presence redirect runs before any per-web-app permission check. The order is structurally guaranteed via `addFilterAfter(WebAppAuthorizationCheckFilter, AdminUserCheckFilter.class)` — not left to insertion-order tiebreakers — so an unprovisioned system always redirects to setup before a missing permission triggers a forbidden response.
+
 ## Failure response contract
 
 `AuthFailureHandler` is an interface; the library's default implementation (`JsonProblemDetailAuthFailureHandler`) returns RFC 7807 problem-detail JSON for every authentication and authorization failure on every chain. Bodies look like:
@@ -379,7 +493,7 @@ Session policy:
 A typical migration from a host-owned `WebSecurityConfig`:
 
 1. Replace your `@Bean SecurityFilterChain` methods by deleting them. Add an `@Import` list for the library's configuration classes — pick the ones that match your auth method and API protection mode (see the [Quickstart](#quickstart) snippet). Per [ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md) hosts opt in to each capability explicitly; nothing activates by simply adding the dependency.
-2. Move whatever you previously hand-rolled into `OidcResourceServerCustomizer` / `OidcTokenEndpointCustomizer` beans where applicable. For per-web-app authorization, register a `WebAppProvider` and `AuthorizationRepositoryPort` and `@Import(WebAppAuthorizationFilterConfiguration.class)` — see [Web app authorization](#web-app-authorization).
+2. Move whatever you previously hand-rolled into `OidcResourceServerCustomizer` / `OidcTokenEndpointCustomizer` beans where applicable. For per-web-app authorization, register a `WebAppProvider` and `AuthorizationRepositoryPort` and `@Import(WebAppAuthorizationFilterConfiguration.class)` — see [Web app authorization](#web-app-authorization). For admin-user setup, register an `AdminUserPresencePort` and `@Import(AdminUserCheckFilterConfiguration.class)` — see [Admin user setup](#admin-user-setup).
 3. Implement `SecurityPathPort` with the path patterns your previous chains used.
 4. Bind your existing security config to `camunda.security.*` properties (or set them explicitly).
 5. If you previously constructed `JwtDecoder` / `ClientRegistrationRepository` / `OAuth2AuthorizedClientRepository` / `OAuth2AuthorizedClientManager` by hand, either delete those beans (the library's defaults will activate) or leave them and the library's defaults back off via `@ConditionalOnMissingBean`.
