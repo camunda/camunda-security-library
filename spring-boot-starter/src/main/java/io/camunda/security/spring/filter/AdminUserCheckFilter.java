@@ -28,11 +28,13 @@ import org.springframework.web.filter.OncePerRequestFilter;
  *       implementation may consult static configuration, live storage, or any combination.
  *   <li>{@link AdminUserMissingHandler} — invoked when no admin user exists. Hosts decide the
  *       response shape (redirect to a setup wizard, JSON 403, RequestDispatcher.forward, etc.).
- *   <li>The set of request-URI fragments that bypass the check entirely (typically the setup
- *       endpoint plus its static assets, sourced from {@link
- *       io.camunda.security.core.port.out.SecurityPathPort#adminFilterBypassPaths()}). The
- *       comparison is plain {@link String#contains(CharSequence)} so a single entry like {@code
- *       "/admin/setup"} matches both the exact URI and any sub-path the setup UI loads.
+ *   <li>The set of URI prefixes that bypass the check entirely (typically the setup endpoint plus
+ *       its static-assets prefix, sourced from {@link
+ *       io.camunda.security.core.port.out.SecurityPathPort#adminFilterBypassPaths()}). A request
+ *       URI bypasses the check when it equals a configured prefix exactly or starts with {@code
+ *       prefix + "/"} — so {@code "/admin/setup"} matches the setup endpoint without also matching
+ *       unrelated paths like {@code "/admin/setupbar"}, and {@code "/admin/assets"} matches every
+ *       sub-path under it.
  * </ul>
  *
  * <p>If {@link AdminUserPresencePort#adminUserExists()} throws, the filter logs the error and
@@ -90,6 +92,10 @@ public final class AdminUserCheckFilter extends OncePerRequestFilter {
 
   private boolean isBypassed(final HttpServletRequest request) {
     final String uri = request.getRequestURI();
-    return bypassPaths.stream().anyMatch(uri::contains);
+    return bypassPaths.stream().anyMatch(prefix -> matchesPrefix(uri, prefix));
+  }
+
+  private static boolean matchesPrefix(final String uri, final String prefix) {
+    return uri.equals(prefix) || uri.startsWith(prefix + "/");
   }
 }

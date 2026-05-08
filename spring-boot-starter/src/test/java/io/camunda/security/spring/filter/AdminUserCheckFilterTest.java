@@ -38,9 +38,9 @@ class AdminUserCheckFilterTest {
   }
 
   @Test
-  void substringBypassPathPassesThroughWithoutCheckingPresence() throws Exception {
-    // OC's source filter used `requestURI.contains(ASSETS_PATH)` — covers any path under the
-    // configured fragment.
+  void subPathBypassPathPassesThroughWithoutCheckingPresence() throws Exception {
+    // A request whose URI starts with `<bypassPath>/` is treated as part of the bypass set —
+    // covers static-asset paths like `/admin/assets/main.css` under the `/admin/assets` prefix.
     final var presencePort = new RecordingPresencePort(false);
     final var missingHandler = new RecordingMissingHandler();
     final var filter = filter(presencePort, missingHandler, DEFAULT_BYPASS_PATHS);
@@ -51,6 +51,21 @@ class AdminUserCheckFilterTest {
     assertThat(chain.getRequest()).isNotNull();
     assertThat(presencePort.callCount).isZero();
     assertThat(missingHandler.callCount).isZero();
+  }
+
+  @Test
+  void uriThatMerelyExtendsBypassPathDoesNotBypass() throws Exception {
+    // `/admin/setupbar` shares a prefix with `/admin/setup` but is a different path — must not
+    // bypass. Tightens the match semantics relative to OC's `String#contains` source.
+    final var presencePort = new RecordingPresencePort(true);
+    final var missingHandler = new RecordingMissingHandler();
+    final var filter = filter(presencePort, missingHandler, DEFAULT_BYPASS_PATHS);
+
+    final var chain = new MockFilterChain();
+    filter.doFilter(request("/admin/setupbar"), new MockHttpServletResponse(), chain);
+
+    assertThat(chain.getRequest()).isNotNull();
+    assertThat(presencePort.callCount).isOne();
   }
 
   @Test
@@ -95,6 +110,9 @@ class AdminUserCheckFilterTest {
     filter.doFilter(request("/operate/processes"), new MockHttpServletResponse(), chain);
 
     assertThat(chain.getRequest()).isNotNull();
+    // The defensive path is only meaningful if the presence check was actually attempted —
+    // assert the call happened so a regression that skipped the check would fail this test.
+    assertThat(presencePort.callCount).isOne();
     assertThat(missingHandler.callCount).isZero();
   }
 
@@ -138,8 +156,11 @@ class AdminUserCheckFilterTest {
   }
 
   private static final class ThrowingPresencePort implements AdminUserPresencePort {
+    int callCount;
+
     @Override
     public boolean adminUserExists() {
+      callCount++;
       throw new RuntimeException("simulated secondary storage outage");
     }
   }
