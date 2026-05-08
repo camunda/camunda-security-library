@@ -94,6 +94,12 @@ class OidcWebappMultiIdpRedirectLoopTest {
           final var request = new MockHttpServletRequest("GET", "/login");
           final var response = new MockHttpServletResponse();
 
+          // Defensive precondition: the loop assertion below is guarded by `if status == 302`,
+          // which silently passes if the chain stops matching /login (e.g. LOGIN_URL drops out of
+          // webappPaths()) because FilterChainProxy then falls through to the mock next chain.
+          // Asserting matches() upfront makes the matcher boundary part of the test contract.
+          assertThat(chain.matches(request)).isTrue();
+
           proxy.doFilter(request, response, new MockFilterChain());
 
           // The chain MUST NOT respond with the loop signature: 302 redirect to /login. Either
@@ -117,6 +123,12 @@ class OidcWebappMultiIdpRedirectLoopTest {
           final var proxy = new FilterChainProxy(java.util.List.of(chain));
           final var request = new MockHttpServletRequest("GET", "/logout");
           final var response = new MockHttpServletResponse();
+
+          // Defensive precondition: the loop assertion below is guarded by `if status == 302`,
+          // which silently passes if the chain stops matching /logout (e.g. LOGOUT_URL drops out
+          // of webappPaths()) because FilterChainProxy then falls through to the mock next chain.
+          // Asserting matches() upfront makes the matcher boundary part of the test contract.
+          assertThat(chain.matches(request)).isTrue();
 
           proxy.doFilter(request, response, new MockFilterChain());
 

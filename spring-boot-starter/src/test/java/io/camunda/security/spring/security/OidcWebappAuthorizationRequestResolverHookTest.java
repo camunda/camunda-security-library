@@ -142,6 +142,13 @@ class OidcWebappAuthorizationRequestResolverHookTest {
           final var request = new MockHttpServletRequest("GET", path);
           final var response = new MockHttpServletResponse();
 
+          // Defensive precondition: the loop assertion below is guarded by `if status == 302`,
+          // which silently passes if the chain stops matching this path (e.g. LOGIN_URL/LOGOUT_URL
+          // drop out of webappPaths()) because FilterChainProxy then falls through to the mock
+          // next chain. Asserting matches() upfront makes the matcher boundary part of the test
+          // contract.
+          assertThat(chain.matches(request)).isTrue();
+
           proxy.doFilter(request, response, new MockFilterChain());
 
           // The chain must not short-circuit anonymous /login or /logout with a 302 to /login —
