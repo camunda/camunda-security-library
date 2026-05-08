@@ -1,4 +1,4 @@
 # GitHub auto-requests review from each of the listed owners whenever a PR
 # touches matching files. The "*" pattern matches everything, so all three
 # are review-requested on every PR.
-*  @Ben-Sheppard @megglos @p-wunderlich
+*  @Ben-Sheppard @megglos @p-wunderlich @marcosbarbero
