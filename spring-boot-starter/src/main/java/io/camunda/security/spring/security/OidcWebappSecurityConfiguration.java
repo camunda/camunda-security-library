@@ -90,6 +90,14 @@ public class OidcWebappSecurityConfiguration {
                     auth.requestMatchers(
                             pathPort.unauthenticatedWebappPaths().toArray(String[]::new))
                         .permitAll()
+                        // LOGIN_URL and LOGOUT_URL must be reachable anonymously so the
+                        // delegating entry point's fallback to LOGIN_URL (multi-IdP
+                        // provider-selection page rendered by the host) does not loop:
+                        // an anonymous request to /login would otherwise re-trigger the
+                        // entry point and redirect to /login forever. Mirrors the
+                        // basic-auth chain shape and keeps logout symmetric.
+                        .requestMatchers(LOGIN_URL, LOGOUT_URL)
+                        .permitAll()
                         .anyRequest()
                         .authenticated())
             .exceptionHandling(
