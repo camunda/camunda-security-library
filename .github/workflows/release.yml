@@ -293,9 +293,11 @@ jobs:
                   )
                   prev_tag = result.stdout.strip() if result.returncode == 0 else "HEAD~100"
                   
-                  # Get changed files between previous tag and current release
+                  # Get added/modified/renamed files between previous tag and current release.
+                  # Using --diff-filter=AMR excludes deleted files so removed ADRs/docs/API classes
+                  # are not incorrectly reported as added/modified in structural_info.
                   result = subprocess.run(
-                      ["git", "log", f"{prev_tag}..{release_tag}", "--name-only", "--pretty=format:"],
+                      ["git", "diff", "--name-only", "--diff-filter=AMR", f"{prev_tag}..{release_tag}"],
                       capture_output=True, text=True, check=False
                   )
                   
