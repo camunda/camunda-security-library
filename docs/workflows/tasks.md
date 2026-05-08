@@ -119,7 +119,11 @@ If you keep the Implementation Plan section in the parent body, edit it to add t
 - [ ] #<this-task-number> — <short description>
 ```
 
-### 6. Confirm with the user
+### 6. Flag ADR-shaped decisions
+
+If the task introduces a port/adapter/SPI, picks between viable approaches, or establishes a convention that other tasks will follow, point the user at the ADR workflow (`/adr` in Claude Code, or [adr.md](adr.md) for other agents). Tasks that just implement the mechanical work of an already-recorded decision don't need a fresh ADR — link the existing one in the Additional Context section instead.
+
+### 7. Confirm with the user
 
 Show the user the created issue URL and a one-line summary. If linked to a parent feature, mention that the parent has been updated. Ask if anything needs adjusting.
 
