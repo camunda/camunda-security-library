@@ -27,22 +27,24 @@ Conventional Commits format: `<type>(<scope>): <subject>`
 
 ## Architecture Decision Records
 
-When a change involves a significant design choice, create an ADR in `docs/adr/`. Err on the side of writing one — a short ADR that captures the reasoning is far more valuable than no record at all.
+ADR-writing is part of the standard implementation flow, not an optional add-on. **Default to writing one** for any architectural change. A short ADR confirming a deliberate choice is more valuable than no record.
 
 **Write an ADR when:**
-- Introducing a new module, port, or adapter
-- Choosing between multiple viable approaches
-- Changing how deployment strategies, policy propagation, or authorization work
+- Introducing a new module, port, adapter, or SPI
+- Choosing between multiple viable approaches (even when one is clearly preferred)
+- Changing how deployment strategies, policy propagation, authentication, or authorization work
 - Adding or replacing a dependency
 - Altering data flow or storage patterns
+- Establishing a project-wide convention (naming, layering, error handling)
 
 **Do not write an ADR for:**
 - Bug fixes that don't change design
 - Style or formatting changes
+- Internal refactors that preserve all public behaviour and don't establish a new convention
 
-Note: even when following an established pattern, if the decision to do so was deliberate and worth recording, write an ADR. The value is in documenting that a conscious choice was made, not just in comparing alternatives.
+Each new ADR carries a `Deciders` line listing the people who agreed the change. Number ADRs sequentially against the highest existing entry in `docs/adr/`.
 
-Number ADRs sequentially. Check `docs/adr/` for the latest number.
+For the full process — when an ADR is required, the body template, the immutability rule for decided ADRs — see [`docs/workflows/adr.md`](../../docs/workflows/adr.md). Claude Code users can invoke it as `/adr`.
 
 ## Git Hooks
 

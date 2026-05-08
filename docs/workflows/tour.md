@@ -12,7 +12,7 @@ This tour is the single entry point for understanding what you can do here: slas
 
 ## Slash commands
 
-Five AI-agent workflows live in this repo. Four create well-structured GitHub issues; one is this tour. Every workflow is defined in `docs/workflows/` and exposed as a Claude Code skill in `.claude/skills/`.
+Six AI-agent workflows live in this repo. Three create well-structured GitHub issues, two write or capture documentation, and one is this tour. Every workflow is defined in `docs/workflows/` and exposed as a Claude Code skill in `.claude/skills/`.
 
 | Command | Use when | Workflow doc |
 |---|---|---|
@@ -20,9 +20,10 @@ Five AI-agent workflows live in this repo. Four create well-structured GitHub is
 | `/task` | A small, independently mergeable unit of work | [tasks.md](tasks.md) |
 | `/bug` | Something is broken; expected behavior isn't happening | [bug-issues.md](bug-issues.md) |
 | `/docs` | Document code, modules, features, or architecture | [documenting-code.md](documenting-code.md) |
+| `/adr` | Capture an architectural decision before/alongside the change that introduces it | [adr.md](adr.md) |
 | `/tour` | This tour — orientation only | [tour.md](tour.md) |
 
-The four issue-creating workflows all produce self-contained issues — a fresh agent session can read them and deliver without further conversation. Shared helpers (setting issue types, native sub-issue linking, how to link files in issue bodies) live in [github-issue-operations.md](github-issue-operations.md).
+The three issue-creating workflows all produce self-contained issues — a fresh agent session can read them and deliver without further conversation. Shared helpers (setting issue types, native sub-issue linking, how to link files in issue bodies) live in [github-issue-operations.md](github-issue-operations.md).
 
 ## Documentation map
 
@@ -61,7 +62,7 @@ Current milestones (with what's open and closed): [GitHub Milestones](https://gi
 - **Commits:** Conventional Commits — `<type>(<scope>): <subject>`. Header max 100 characters, imperative mood, no trailing period.
 - **PRs:** title follows conventional-commits format; squash-merge.
 - **Before every commit:** `mvn verify` must pass — no flaky tests, no skipped tests.
-- **Architectural change?** Write an ADR in [docs/adr/](../adr/). See [workflow.md](../../.claude/docs/workflow.md) for when it applies.
+- **Architectural change?** Write an ADR. Default to writing one whenever a change introduces a new module/port/adapter/SPI, picks between approaches, alters data flow, adds a dependency, or establishes a convention. Use `/adr` (or [adr.md](adr.md)) for the process; see [docs/adr/](../adr/) for prior decisions.
 - **Linking files in issue bodies:** use clickable GitHub blob URLs, not plain paths — see [github-issue-operations.md](github-issue-operations.md).
 
 ## Where to go next

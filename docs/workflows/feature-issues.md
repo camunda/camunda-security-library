@@ -94,7 +94,11 @@ If the feature is non-trivial — meaning it cannot be delivered in a single sma
 
 A feature that can be delivered in one small PR does not need to be broken down. The task workflow is for features that otherwise would not fit in a reviewable change.
 
-### 5. Confirm with the user
+### 5. Flag ADR-shaped decisions
+
+Most features involve at least one architectural decision worth recording — a new port/adapter/SPI, a choice between viable approaches, a new convention. If you spot one, point the user at the ADR workflow (`/adr` in Claude Code, or [adr.md](adr.md) for other agents) so the decision can be captured alongside or before the implementation. ADR-writing is part of the standard flow; default to writing one when the design is non-trivial.
+
+### 6. Confirm with the user
 
 Show the user the created issue URL and a one-line summary. Ask if anything needs adjusting.
 
