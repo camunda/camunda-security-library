@@ -51,6 +51,10 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      # Required for GitHub Models API access (used in "Generate AI release summary" step)
+      # See: https://docs.github.com/en/github-models/prototyping-with-ai-models
+      id-token: write
+      models: read
     env:
       DEVELOPMENT_VERSION: ${{ inputs.nextDevelopmentVersion }}
       PUSH_CHANGES: ${{ !inputs.dryRun }}
