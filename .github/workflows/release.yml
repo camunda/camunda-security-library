@@ -323,14 +323,21 @@ jobs:
                           changed_files = set()
                   
                   def get_adr_title(path, slug):
+                      """Read ADR title from the tag itself to ensure accuracy."""
                       try:
-                          with open(path, "r", encoding="utf-8") as adr_file:
-                              for raw_line in adr_file:
+                          result = subprocess.run(
+                              ["git", "show", f"{release_tag}:{path}"],
+                              capture_output=True, text=True, check=False
+                          )
+                          if result.returncode == 0:
+                              for raw_line in result.stdout.splitlines():
                                   line = raw_line.strip()
                                   if line.startswith("# "):
                                       return line[2:].strip()
-                      except OSError as e:
-                          print(f"Warning: failed to read ADR title from {path}: {e}")
+                          else:
+                              print(f"Warning: failed to read ADR title from tag {release_tag}:{path}: {result.stderr.strip()}", file=sys.stderr)
+                      except Exception as e:
+                          print(f"Warning: failed to read ADR title from {path}: {e}", file=sys.stderr)
                       return slug.replace("-", " ").title()
 
                   # Filter for ADRs
