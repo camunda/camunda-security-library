@@ -64,4 +64,13 @@ public interface SecurityPathPort {
   default Set<String> staticResourceSuffixes() {
     return Set.of(".css", ".js", ".js.map", ".jpg", ".png", ".woff2", ".ico", ".svg");
   }
+
+  /**
+   * Path patterns the admin-user setup filter passes through without consulting {@code
+   * AdminUserPresencePort} — typically the setup endpoint itself plus any static assets the setup
+   * UI needs to render. Patterns use Spring Security's ant-style syntax. Default empty.
+   */
+  default Set<String> adminFilterBypassPaths() {
+    return Set.of();
+  }
 }
