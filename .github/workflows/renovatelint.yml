@@ -18,7 +18,7 @@ jobs:
   renovate-config-validator:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/renovatebot/renovate@sha256:033293a9f48a8c73c6435a0c091746aec14422ce53e4aac7f90f742854a8203d # 43.141.2
+      image: ghcr.io/renovatebot/renovate@sha256:4b00071e644cf836a9331a81db6b95c5db24490e02132778616c49dba8fc5e64 # 43.141.2
       options: --user root
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
