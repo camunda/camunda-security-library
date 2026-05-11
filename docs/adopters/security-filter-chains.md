@@ -177,6 +177,22 @@ Every library-supplied bean has `@ConditionalOnMissingBean`. Define your own bea
 |---|---|
 | `ObjectMapper` | `JacksonAutoConfiguration` — consumed by the default `AuthFailureHandler` |
 
+## Naming conventions
+
+Host implementations of CSL's outbound ports follow the hex naming convention documented in [ADR-0007](../adr/0007-resource-permission-port-and-authorization-repository.md). The `*Port` suffix is reserved for the interface declarations in the library; hosts should not reuse it for their implementations.
+
+| Role | Interface (in the library) | Implementation (in the host) |
+|---|---|---|
+| Outbound port | `*Port` in `core/port/out/` (e.g. `SecurityPathPort`, `AdminUserPresencePort`, `AuthorizationRepositoryPort`) | `*Adapter` |
+| Starter SPI | interface in `spring-boot-starter/.../spi/` (e.g. `WebAppProvider`, `AdminUserMissingHandler`) | `*Adapter` for plain host implementations; descriptive names (e.g. `Redirecting*Handler`) for library-supplied defaults |
+
+For example, OC's host implementations are named:
+
+- `OcSecurityPathAdapter implements SecurityPathPort`
+- `OcWebAppAdapter implements WebAppProvider`
+- `OcAdminUserPresenceAdapter implements AdminUserPresencePort`
+- `OcAuthorizationRepositoryAdapter implements AuthorizationRepositoryPort`
+
 ## Extension hooks
 
 Two extension points let hosts customise specific OAuth2/OIDC concerns without replacing entire chains. Host-specific filter wiring (authorization filters, header rewrites, matcher tweaks) will be addressed in a follow-up PR with a more focused approach than a generic `HttpSecurity` mutator.
