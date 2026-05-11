@@ -63,10 +63,10 @@ naming them `*Port` would falsely imply they participate in the hexagonal core.
 | Interface | Library default | Host implementation |
 |---|---|---|
 | `ResourcePermissionPort` (inbound) | `ResourcePermissionService` | host's own `*Service` if needed |
-| `AuthorizationRepositoryPort` (outbound) | — | `OcAuthorizationRepositoryAdapter`, `HubAuthorizationRepositoryAdapter` |
-| `SecurityPathPort` (outbound) | — | `OcSecurityPathAdapter` |
-| `AdminUserPresencePort` (outbound) | — | `OcAdminUserPresenceAdapter` |
-| `WebAppProvider` (starter SPI) | — | `OcWebAppAdapter` |
+| `AuthorizationRepositoryPort` (outbound) | — | `AuthorizationRepositoryAdapter`, `HubAuthorizationRepositoryAdapter` |
+| `SecurityPathPort` (outbound) | — | `SecurityPathAdapter` |
+| `AdminUserPresencePort` (outbound) | — | `AdminUserPresenceAdapter` |
+| `WebAppProvider` (starter SPI) | — | `WebAppAdapter` |
 | `WebAppAccessDeniedHandler` (starter SPI) | `RedirectingWebAppAccessDeniedHandler` | host's own `*Adapter` |
 | `AdminUserMissingHandler` (starter SPI) | `RedirectingAdminUserMissingHandler` | host's own `*Adapter` |
 

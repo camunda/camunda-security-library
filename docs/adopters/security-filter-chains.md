@@ -190,10 +190,10 @@ The `*Port` suffix is reserved for the interface declarations in the library; ho
 
 OC's host implementations illustrate the convention:
 
-- `OcSecurityPathAdapter implements SecurityPathPort` (outbound port)
-- `OcAdminUserPresenceAdapter implements AdminUserPresencePort` (outbound port)
-- `OcAuthorizationRepositoryAdapter implements AuthorizationRepositoryPort` (outbound port)
-- `OcWebAppAdapter implements WebAppProvider` (starter SPI)
+- `SecurityPathAdapter implements SecurityPathPort` (outbound port)
+- `AdminUserPresenceAdapter implements AdminUserPresencePort` (outbound port)
+- `AuthorizationRepositoryAdapter implements AuthorizationRepositoryPort` (outbound port)
+- `WebAppAdapter implements WebAppProvider` (starter SPI)
 
 ## Extension hooks
 
