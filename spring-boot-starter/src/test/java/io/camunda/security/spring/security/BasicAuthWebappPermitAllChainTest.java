@@ -132,7 +132,7 @@ class BasicAuthWebappPermitAllChainTest {
     // unit-level coverage of WebAppAuthorizationCheckFilter is the documented fallback.
     runner
         .withUserConfiguration(StubAuthorizationRepository.class)
-        .withUserConfiguration(StubWebAppProviderPort.class)
+        .withUserConfiguration(StubWebAppProvider.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .run(
             ctx -> {
@@ -197,7 +197,7 @@ class BasicAuthWebappPermitAllChainTest {
   }
 
   @Configuration
-  static class StubWebAppProviderPort {
+  static class StubWebAppProvider {
 
     @Bean
     WebAppProviderPort webAppProvider() {
