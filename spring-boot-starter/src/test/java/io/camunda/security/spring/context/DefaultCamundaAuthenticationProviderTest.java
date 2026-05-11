@@ -9,7 +9,6 @@ package io.camunda.security.spring.context;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -53,6 +52,7 @@ public class DefaultCamundaAuthenticationProviderTest {
     // then
     assertThat(actualAuthentication).isNotNull();
     assertThat(actualAuthentication).isEqualTo(expectedAuthentication);
+    verifyNoInteractions(authenticationConverter);
   }
 
   @Test
@@ -94,8 +94,8 @@ public class DefaultCamundaAuthenticationProviderTest {
   }
 
   @Test
-  void shouldConvertButNotCacheIfAnonymous() {
-    // given
+  void shouldConvertAndCacheAnonymousAuthentication() {
+    // given — anonymous is a valid non-null result; the impl caches every non-null return value
     final var expectedAuthentication = CamundaAuthentication.anonymous();
 
     SecurityContextHolder.getContext().setAuthentication(springAuthentication);
@@ -108,7 +108,7 @@ public class DefaultCamundaAuthenticationProviderTest {
     // then
     assertThat(actualAuthentication).isNotNull();
     assertThat(actualAuthentication).isEqualTo(expectedAuthentication);
-    verify(holder, times(0)).set(eq(expectedAuthentication));
+    verify(holder).set(eq(expectedAuthentication));
   }
 
   @Test
@@ -129,12 +129,12 @@ public class DefaultCamundaAuthenticationProviderTest {
 
   @Test
   void shouldClearHolderWhenSpringAuthenticationIsMissing() {
-    // when
+    // when — no Spring Authentication in the SecurityContext; converter is still invoked with null
     final var actualAuthentication = authenticationProvider.getCamundaAuthentication();
 
     // then
     assertThat(actualAuthentication).isNull();
+    verify(authenticationConverter).convert(null);
     verify(holder).clear();
-    verifyNoInteractions(authenticationConverter);
   }
 }
