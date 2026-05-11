@@ -1,6 +1,6 @@
 # Adopting the central security filter chains
 
-This guide is for host applications (Hub, Orchestration Cluster gateways, future Camunda services) that embed the Camunda Security Library. It explains how to wire the central filter chains, what host-side beans are required, and how to extend or override library defaults.
+This guide is for host applications (Hub, Orchestration Cluster (OC) gateways, future Camunda services) that embed the Camunda Security Library. It explains how to wire the central filter chains, what host-side beans are required, and how to extend or override library defaults.
 
 For the rationale behind this design — why the chains live in CSL — see [ADR-0006](../adr/0006-central-security-filter-chains.md). For why hosts opt in via explicit `@Import` rather than relying on Spring Boot auto-configuration, see [ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md).
 
@@ -176,24 +176,6 @@ Every library-supplied bean has `@ConditionalOnMissingBean`. Define your own bea
 | Bean | Provided by |
 |---|---|
 | `ObjectMapper` | `JacksonAutoConfiguration` — consumed by the default `AuthFailureHandler` |
-
-## Naming conventions
-
-Host implementations of CSL's extension points follow the conventions codified in [ADR-0011](../adr/0011-host-implementation-naming-conventions.md):
-
-| Role | Interface (in the library) | Implementation (in the host) |
-|---|---|---|
-| Outbound port (core) | `*Port` in `core/port/out/` (e.g. `SecurityPathPort`, `AdminUserPresencePort`, `AuthorizationRepositoryPort`) | `*Adapter` |
-| Outbound port (servlet-coupled) | `*Port` in `io.camunda.security.spring.spi.*` (e.g. `WebAppProviderPort`, `AdminUserMissingHandlerPort`) | `*Adapter` for host implementations; library-supplied defaults use the same `*Adapter` suffix with a strategy prefix (e.g. `Redirecting*Adapter`) |
-
-Servlet-coupled ports live outside `core/port/out/` purely because their signatures speak `jakarta.servlet` types; the role and naming convention are otherwise identical to core ports. The `*Port` suffix is reserved for the interface declarations in the library; hosts should not reuse it for their implementations.
-
-Orchestration Cluster (OC) host implementations illustrate the convention:
-
-- `SecurityPathAdapter implements SecurityPathPort` (outbound port, core)
-- `AdminUserPresenceAdapter implements AdminUserPresencePort` (outbound port, core)
-- `AuthorizationRepositoryAdapter implements AuthorizationRepositoryPort` (outbound port, core)
-- `WebAppAdapter implements WebAppProviderPort` (outbound port, servlet-coupled)
 
 ## Extension hooks
 

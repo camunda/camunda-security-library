@@ -2,9 +2,7 @@
 status: Accepted
 ---
 
-> **Note (2026-05-11):** This ADR uses the original names from when the SPIs were introduced (`WebAppProvider`, `WebAppAccessDeniedHandler`, `RedirectingWebAppAccessDeniedHandler`). The naming convention has since been generalised by [ADR-0011](0011-host-implementation-naming-conventions.md), which renamed the interfaces to `WebAppProviderPort` / `WebAppAccessDeniedHandlerPort` and the default implementation to `RedirectingWebAppAccessDeniedAdapter` to align with the library's universal `*Port` / `*Adapter` suffixes. The decision rationale in this ADR still stands; only the symbol names changed.
-
-# ADR-0009: Web app authorization SPIs (`WebAppProvider`, `WebAppAccessDeniedHandler`)
+# ADR-0009: Web app authorization SPIs (`WebAppProviderPort`, `WebAppAccessDeniedHandlerPort`)
 
 ## Status
 
@@ -39,8 +37,8 @@ The core question for this ADR is:
 
 Two host-pluggable SPIs are introduced alongside the lifted filter:
 
-- **`WebAppProvider`** (`io.camunda.security.spring.spi`) — `Optional<String> webAppFor(HttpServletRequest)`. Hosts implement to return either a constant id or a path-derived id. Returning `Optional.empty()` signals "this request doesn't belong to a web app" and the filter passes through.
-- **`WebAppAccessDeniedHandler`** (`io.camunda.security.spring.spi`) — `void handle(request, response, webApp, authentication)`. Hosts implement to choose the response shape. The library supplies a default `RedirectingWebAppAccessDeniedHandler` that preserves the OC-derived redirect-to-forbidden behaviour; it backs off via `@ConditionalOnMissingBean(WebAppAccessDeniedHandler.class)` when a host registers its own.
+- **`WebAppProviderPort`** (`io.camunda.security.spring.spi`) — `Optional<String> webAppFor(HttpServletRequest)`. Hosts implement to return either a constant id or a path-derived id. Returning `Optional.empty()` signals "this request doesn't belong to a web app" and the filter passes through.
+- **`WebAppAccessDeniedHandlerPort`** (`io.camunda.security.spring.spi`) — `void handle(request, response, webApp, authentication)`. Hosts implement to choose the response shape. The library supplies a default `RedirectingWebAppAccessDeniedAdapter` that preserves the OC-derived redirect-to-forbidden behaviour; it backs off via `@ConditionalOnMissingBean(WebAppAccessDeniedHandlerPort.class)` when a host registers its own.
 
 These sit alongside (not on top of) the authorization SPIs from ADR-0007:
 
@@ -61,20 +59,20 @@ The filter and these SPIs are wired by `WebAppAuthorizationFilterConfiguration` 
 public class HubSecurityConfiguration {}
 ```
 
-Each bean inside `WebAppAuthorizationFilterConfiguration` is gated on the host SPIs it depends on (`@ConditionalOnBean`) and library defaults are gated on `@ConditionalOnMissingBean`. A host that imports the configuration but hasn't yet registered (for example) a `WebAppProvider` gets the chain wired exactly as before — the filter bean isn't created and the chain configuration's `addFilterAfterIfAvailable` call cleanly skips it.
+Each bean inside `WebAppAuthorizationFilterConfiguration` is gated on the host SPIs it depends on (`@ConditionalOnBean`) and library defaults are gated on `@ConditionalOnMissingBean`. A host that imports the configuration but hasn't yet registered (for example) a `WebAppProviderPort` gets the chain wired exactly as before — the filter bean isn't created and the chain configuration's `addFilterAfterIfAvailable` call cleanly skips it.
 
 ### Why these particular SPI boundaries
 
-- **`WebAppProvider` is a single-method interface returning `Optional<String>`** because the only host-specific decision is "what web app id, if any, does this request belong to?". A larger interface (e.g. an SPI that also picks the `ResourceType`) would couple two unrelated decisions; an `Optional` return naturally captures the "no web app, pass through" case without exception-driven control flow.
-- **`WebAppAccessDeniedHandler` is a separate SPI rather than a property template** because hosts choose between substantively different transport behaviours (redirect, JSON 403, forward, custom logging, custom telemetry). That's a behavioural decision, not a configuration value. Reducing it to a property string would either constrain hosts to one shape or balloon into a mini-DSL.
+- **`WebAppProviderPort` is a single-method interface returning `Optional<String>`** because the only host-specific decision is "what web app id, if any, does this request belong to?". A larger interface (e.g. an SPI that also picks the `ResourceType`) would couple two unrelated decisions; an `Optional` return naturally captures the "no web app, pass through" case without exception-driven control flow.
+- **`WebAppAccessDeniedHandlerPort` is a separate SPI rather than a property template** because hosts choose between substantively different transport behaviours (redirect, JSON 403, forward, custom logging, custom telemetry). That's a behavioural decision, not a configuration value. Reducing it to a property string would either constrain hosts to one shape or balloon into a mini-DSL.
 - **`ResourcePermissionPort` is *not* re-exposed as a webapp-specific SPI.** The two-layer authorization surface lives in `core/`; the webapp filter is one of many call sites. Adding a webapp-only port would split the authorization model unnecessarily.
 
 ### Default implementations and override boundaries
 
 | SPI | Default | Override use case |
 |---|---|---|
-| `WebAppProvider` | None — host must register | Always |
-| `WebAppAccessDeniedHandler` | `RedirectingWebAppAccessDeniedHandler` (preserves OC behaviour) | 403 JSON, forward to error page, custom telemetry |
+| `WebAppProviderPort` | None — host must register | Always |
+| `WebAppAccessDeniedHandlerPort` | `RedirectingWebAppAccessDeniedAdapter` (preserves OC behaviour) | 403 JSON, forward to error page, custom telemetry |
 | `ResourcePermissionPort` | `ResourcePermissionService` (exact-id match over `AuthorizationRepositoryPort` records) | Wildcard semantics, caching, instrumentation |
 | `AuthorizationRepositoryPort` | None — host must register | Always |
 
@@ -90,15 +88,15 @@ A companion `FilterRegistrationBean<WebAppAuthorizationCheckFilter>` with `setEn
 
 - Hosts that need per-web-app authorization share the filter implementation; only the host-specific bits (web app derivation, denial response) are pluggable.
 - Hosts that don't enforce per-web-app authorization (no resource→permission concept that maps to `ResourceType.COMPONENT` + `PermissionType.ACCESS`) simply don't `@Import` the configuration. The chain configurations inject the filter via `ObjectProvider`; absence is a clean no-op.
-- Hosts can adopt incrementally — registering a `WebAppProvider` alone is harmless because the filter requires `WebAppProvider` + `ResourcePermissionPort` + `WebAppAccessDeniedHandler` + `CamundaAuthenticationProvider` + `SecurityPathPort` to materialise.
+- Hosts can adopt incrementally — registering a `WebAppProviderPort` alone is harmless because the filter requires `WebAppProviderPort` + `ResourcePermissionPort` + `WebAppAccessDeniedHandlerPort` + `CamundaAuthenticationProvider` + `SecurityPathPort` to materialise.
 - The redirect-to-forbidden default preserves the source behaviour the filter was lifted from; hosts that want a different denial response register one bean.
 - The denial response is a behaviour, not a property — type-safe, testable, and unconstrained.
 - Activation is opt-in per ADR-0008. A host that imports neither `WebAppAuthorizationFilterConfiguration` nor any of its prerequisites sees no behavioural change.
 
 **Negative / accepted trade-offs**
 
-- Hosts must register a `WebAppProvider` and a `ResourcePermissionPort` before the filter activates. The `ResourcePermissionPort` requirement is satisfied either by registering an `AuthorizationRepositoryPort` (the library default `ResourcePermissionService` then materialises) or by registering a custom `ResourcePermissionPort` bean directly. There is no "auto-detect web apps from `SecurityPathPort.webComponentNames()`" fallback. This is intentional: hosts may want different derivation logic from path patterns (case-sensitivity, prefix stripping, multi-tenancy). A future iteration can supply a path-segment derivation default if a clear convention emerges.
-- Two interfaces (`WebAppProvider` and `WebAppAccessDeniedHandler`) live in `io.camunda.security.spring.spi` (the starter module) rather than under `io.camunda.security.core.port.out` because their signatures speak `HttpServletRequest`/`HttpServletResponse`. The `core` module is jakarta-servlet-free by design ([ADR-0006](0006-central-security-filter-chains.md)), so any servlet-coupled SPI must live in the starter.
+- Hosts must register a `WebAppProviderPort` and a `ResourcePermissionPort` before the filter activates. The `ResourcePermissionPort` requirement is satisfied either by registering an `AuthorizationRepositoryPort` (the library default `ResourcePermissionService` then materialises) or by registering a custom `ResourcePermissionPort` bean directly. There is no "auto-detect web apps from `SecurityPathPort.webComponentNames()`" fallback. This is intentional: hosts may want different derivation logic from path patterns (case-sensitivity, prefix stripping, multi-tenancy). A future iteration can supply a path-segment derivation default if a clear convention emerges.
+- Two interfaces (`WebAppProviderPort` and `WebAppAccessDeniedHandlerPort`) live in `io.camunda.security.spring.spi` (the starter module) rather than under `io.camunda.security.core.port.out` because their signatures speak `HttpServletRequest`/`HttpServletResponse`. The `core` module is jakarta-servlet-free by design ([ADR-0006](0006-central-security-filter-chains.md)), so any servlet-coupled SPI must live in the starter.
 
 ## Alternatives Considered
 
