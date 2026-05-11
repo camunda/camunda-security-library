@@ -38,7 +38,7 @@ public class AdminUserCheckFilterConfiguration {
   @ConditionalOnBean(AdminUserPresencePort.class)
   @ConditionalOnMissingBean(AdminUserMissingHandlerPort.class)
   public AdminUserMissingHandlerPort adminUserMissingHandler() {
-    return new RedirectingAdminUserMissingHandler();
+    return new RedirectingAdminUserMissingAdapter();
   }
 
   /**

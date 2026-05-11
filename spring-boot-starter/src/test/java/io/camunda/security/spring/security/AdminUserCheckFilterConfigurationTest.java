@@ -50,7 +50,7 @@ class AdminUserCheckFilterConfigurationTest {
               assertThat(ctx).hasSingleBean(AdminUserCheckFilter.class);
               assertThat(ctx)
                   .getBean(AdminUserMissingHandlerPort.class)
-                  .isInstanceOf(RedirectingAdminUserMissingHandler.class);
+                  .isInstanceOf(RedirectingAdminUserMissingAdapter.class);
             });
   }
 
