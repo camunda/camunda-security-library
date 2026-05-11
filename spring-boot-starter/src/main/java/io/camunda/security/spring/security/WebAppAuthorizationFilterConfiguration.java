@@ -54,7 +54,7 @@ public class WebAppAuthorizationFilterConfiguration {
   @ConditionalOnBean(WebAppProviderPort.class)
   @ConditionalOnMissingBean(WebAppAccessDeniedHandlerPort.class)
   public WebAppAccessDeniedHandlerPort webAppAccessDeniedHandler() {
-    return new RedirectingWebAppAccessDeniedHandler();
+    return new RedirectingWebAppAccessDeniedAdapter();
   }
 
   /**

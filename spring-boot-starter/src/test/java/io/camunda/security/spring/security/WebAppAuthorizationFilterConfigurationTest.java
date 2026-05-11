@@ -83,7 +83,7 @@ class WebAppAuthorizationFilterConfigurationTest {
                   .isInstanceOf(ResourcePermissionService.class);
               assertThat(ctx)
                   .getBean(WebAppAccessDeniedHandlerPort.class)
-                  .isInstanceOf(RedirectingWebAppAccessDeniedHandler.class);
+                  .isInstanceOf(RedirectingWebAppAccessDeniedAdapter.class);
             });
   }
 

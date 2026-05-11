@@ -61,7 +61,7 @@ starter module instead. Their role and naming convention are otherwise identical
 |---|---|---|
 | Inbound port | `*Service` (in `spring-boot-starter/`) | `*Service` (host overrides) |
 | Outbound port (core) | none (host must register) | `*Adapter` (host code) |
-| Outbound port (servlet-coupled) | descriptive name (e.g. `Redirecting*Handler`) — semantic verb prefix conveys behaviour | `*Adapter` (host code) |
+| Outbound port (servlet-coupled) | `Redirecting*Adapter` — semantic verb prefix + `*Adapter` suffix | `*Adapter` (host code) |
 
 ### Examples
 
@@ -72,8 +72,8 @@ starter module instead. Their role and naming convention are otherwise identical
 | `SecurityPathPort` (outbound, core) | — | `SecurityPathAdapter` |
 | `AdminUserPresencePort` (outbound, core) | — | `AdminUserPresenceAdapter` |
 | `WebAppProviderPort` (outbound, servlet-coupled) | — | `WebAppAdapter` |
-| `WebAppAccessDeniedHandlerPort` (outbound, servlet-coupled) | `RedirectingWebAppAccessDeniedHandler` | host's own `*Adapter` |
-| `AdminUserMissingHandlerPort` (outbound, servlet-coupled) | `RedirectingAdminUserMissingHandler` | host's own `*Adapter` |
+| `WebAppAccessDeniedHandlerPort` (outbound, servlet-coupled) | `RedirectingWebAppAccessDeniedAdapter` | host's own `*Adapter` |
+| `AdminUserMissingHandlerPort` (outbound, servlet-coupled) | `RedirectingAdminUserMissingAdapter` | host's own `*Adapter` |
 
 ### Why `*Adapter` for host implementations of outbound ports
 
@@ -82,10 +82,10 @@ an "adapter" — it adapts host infrastructure to the library's contract. The ru
 to core ports and servlet-coupled ports: the host role is identical, only the package location
 differs.
 
-The library-supplied defaults for servlet-coupled ports use descriptive verb-prefixed names
-(`Redirecting*Handler`) rather than `*Adapter` because they aren't adapting host machinery — they
-ship a complete behaviour the host can adopt as-is or override. The descriptive name signals what
-the default does at a glance.
+Library-supplied defaults use the same `*Adapter` suffix for symmetry with host implementations.
+The descriptive verb prefix (`Redirecting`) distinguishes which default behaviour the adapter
+ships; multiple defaults in the future (e.g. `JsonErrorBody*Adapter`) would carry their own
+semantic prefix.
 
 ## Consequences
 

@@ -184,7 +184,7 @@ Host implementations of CSL's extension points follow the conventions codified i
 | Role | Interface (in the library) | Implementation (in the host) |
 |---|---|---|
 | Outbound port (core) | `*Port` in `core/port/out/` (e.g. `SecurityPathPort`, `AdminUserPresencePort`, `AuthorizationRepositoryPort`) | `*Adapter` |
-| Outbound port (servlet-coupled) | `*Port` in `io.camunda.security.spring.spi.*` (e.g. `WebAppProviderPort`, `AdminUserMissingHandlerPort`) | `*Adapter` for host implementations; descriptive names (e.g. `Redirecting*Handler`) for library-supplied defaults |
+| Outbound port (servlet-coupled) | `*Port` in `io.camunda.security.spring.spi.*` (e.g. `WebAppProviderPort`, `AdminUserMissingHandlerPort`) | `*Adapter` for host implementations; library-supplied defaults use the same `*Adapter` suffix with a strategy prefix (e.g. `Redirecting*Adapter`) |
 
 Servlet-coupled ports live outside `core/port/out/` purely because their signatures speak `jakarta.servlet` types; the role and naming convention are otherwise identical to core ports. The `*Port` suffix is reserved for the interface declarations in the library; hosts should not reuse it for their implementations.
 
@@ -317,7 +317,7 @@ The library's default `ResourcePermissionService` then matches by exact resource
 
 ### Custom `WebAppAccessDeniedHandlerPort` (optional)
 
-The default `RedirectingWebAppAccessDeniedHandler` calls `response.sendRedirect("<contextPath>/<webApp>/forbidden")`. To return a 403 JSON body instead:
+The default `RedirectingWebAppAccessDeniedAdapter` calls `response.sendRedirect("<contextPath>/<webApp>/forbidden")`. To return a 403 JSON body instead:
 
 ```java
 @Bean
@@ -348,7 +348,7 @@ Registering any `WebAppAccessDeniedHandlerPort` bean disables the library defaul
 | `SecurityPathPort` | None — host must register | Always required (already present for any CSL chain) |
 | `ResourcePermissionPort` | `ResourcePermissionService` (gated on `AuthorizationRepositoryPort` + `@ConditionalOnMissingBean`) | The filter requires this bean — supply it either by registering an `AuthorizationRepositoryPort` (default service materialises) or by registering a custom `ResourcePermissionPort` directly |
 | `AuthorizationRepositoryPort` | None — host must register | Required when relying on the default `ResourcePermissionService`. Not needed if the host supplies its own `ResourcePermissionPort` |
-| `WebAppAccessDeniedHandlerPort` | `RedirectingWebAppAccessDeniedHandler` (gated on `WebAppProviderPort` + `@ConditionalOnMissingBean`) | Override for JSON 403, forwards, etc. |
+| `WebAppAccessDeniedHandlerPort` | `RedirectingWebAppAccessDeniedAdapter` (gated on `WebAppProviderPort` + `@ConditionalOnMissingBean`) | Override for JSON 403, forwards, etc. |
 
 If any of the required beans is missing (and `ResourcePermissionPort` not satisfied either way), the filter bean isn't created. The webapp chain still works — it just doesn't enforce the per-web-app `ACCESS` check. Adopt incrementally by registering the SPIs as you build out the host's authorization data layer.
 
@@ -430,7 +430,7 @@ Each entry matches the request's path within the application (i.e. the URI with 
 
 ### Custom `AdminUserMissingHandlerPort` (optional)
 
-The default `RedirectingAdminUserMissingHandler` calls `response.sendRedirect("<contextPath>/admin/setup")`. To return a JSON 503 instead:
+The default `RedirectingAdminUserMissingAdapter` calls `response.sendRedirect("<contextPath>/admin/setup")`. To return a JSON 503 instead:
 
 ```java
 @Bean
@@ -458,7 +458,7 @@ Registering any `AdminUserMissingHandlerPort` bean disables the library default.
 |---|---|---|
 | `AdminUserPresencePort` | None — host must register | Always required |
 | `SecurityPathPort` | None — host must register | Always required (already present for any CSL chain). Override `adminFilterBypassPaths()` to declare the setup endpoint + asset prefixes |
-| `AdminUserMissingHandlerPort` | `RedirectingAdminUserMissingHandler` (gated on `AdminUserPresencePort` + `@ConditionalOnMissingBean`) | Override for JSON 503, forwards, alternative redirect targets, etc. |
+| `AdminUserMissingHandlerPort` | `RedirectingAdminUserMissingAdapter` (gated on `AdminUserPresencePort` + `@ConditionalOnMissingBean`) | Override for JSON 503, forwards, alternative redirect targets, etc. |
 
 If `AdminUserPresencePort` is absent, the filter bean isn't created. The webapp chain still works — it just doesn't enforce the admin-presence check. Adopt incrementally by registering the port once your host's authorization data layer is ready to answer.
 

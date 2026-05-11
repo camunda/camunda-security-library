@@ -22,7 +22,7 @@ import java.io.IOException;
  * error page) register their own bean and this default backs off via
  * {@code @ConditionalOnMissingBean}.
  */
-public final class RedirectingWebAppAccessDeniedHandler implements WebAppAccessDeniedHandlerPort {
+public final class RedirectingWebAppAccessDeniedAdapter implements WebAppAccessDeniedHandlerPort {
 
   @Override
   public void handle(

@@ -21,7 +21,7 @@ import java.io.IOException;
  * telemetry) register their own {@link AdminUserMissingHandlerPort} bean and this default backs off
  * via {@code @ConditionalOnMissingBean}.
  */
-public final class RedirectingAdminUserMissingHandler implements AdminUserMissingHandlerPort {
+public final class RedirectingAdminUserMissingAdapter implements AdminUserMissingHandlerPort {
 
   static final String SETUP_PATH = "/admin/setup";
 
