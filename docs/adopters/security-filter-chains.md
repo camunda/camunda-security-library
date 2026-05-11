@@ -183,17 +183,17 @@ Host implementations of CSL's extension points follow the conventions codified i
 
 | Role | Interface (in the library) | Implementation (in the host) |
 |---|---|---|
-| Outbound port | `*Port` in `core/port/out/` (e.g. `SecurityPathPort`, `AdminUserPresencePort`, `AuthorizationRepositoryPort`) | `*Adapter` |
-| Starter SPI | `io.camunda.security.spring.spi.*` (e.g. `WebAppProvider`, `AdminUserMissingHandler`) | `*Adapter` for host implementations; descriptive names (e.g. `Redirecting*Handler`) for library-supplied defaults |
+| Outbound port (core) | `*Port` in `core/port/out/` (e.g. `SecurityPathPort`, `AdminUserPresencePort`, `AuthorizationRepositoryPort`) | `*Adapter` |
+| Outbound port (servlet-coupled) | `*Port` in `io.camunda.security.spring.spi.*` (e.g. `WebAppProviderPort`, `AdminUserMissingHandlerPort`) | `*Adapter` for host implementations; descriptive names (e.g. `Redirecting*Handler`) for library-supplied defaults |
 
-The `*Port` suffix is reserved for the interface declarations in the library; hosts should not reuse it for their implementations.
+Servlet-coupled ports live outside `core/port/out/` purely because their signatures speak `jakarta.servlet` types; the role and naming convention are otherwise identical to core ports. The `*Port` suffix is reserved for the interface declarations in the library; hosts should not reuse it for their implementations.
 
 Orchestration Cluster (OC) host implementations illustrate the convention:
 
-- `SecurityPathAdapter implements SecurityPathPort` (outbound port)
-- `AdminUserPresenceAdapter implements AdminUserPresencePort` (outbound port)
-- `AuthorizationRepositoryAdapter implements AuthorizationRepositoryPort` (outbound port)
-- `WebAppAdapter implements WebAppProvider` (starter SPI)
+- `SecurityPathAdapter implements SecurityPathPort` (outbound port, core)
+- `AdminUserPresenceAdapter implements AdminUserPresencePort` (outbound port, core)
+- `AuthorizationRepositoryAdapter implements AuthorizationRepositoryPort` (outbound port, core)
+- `WebAppAdapter implements WebAppProviderPort` (outbound port, servlet-coupled)
 
 ## Extension hooks
 
@@ -234,8 +234,8 @@ These are looked up via `ObjectProvider#ifAvailable`; absence is fine, the chain
 
 The CSL's `WebAppAuthorizationCheckFilter` enforces per-web-app `ACCESS` permission on every authenticated webapp request. It runs immediately after Spring Security's `AuthorizationFilter` on the webapp chain. The filter is host-pluggable on two axes:
 
-- **Which web app does the request belong to?** A single-web-app host returns a constant; a multi-web-app host derives from the URL path. Implement `WebAppProvider`.
-- **What happens when access is denied?** The library default redirects to `<contextPath>/<webApp>/forbidden`. Override `WebAppAccessDeniedHandler` to return JSON, forward, or anything else.
+- **Which web app does the request belong to?** A single-web-app host returns a constant; a multi-web-app host derives from the URL path. Implement `WebAppProviderPort`.
+- **What happens when access is denied?** The library default redirects to `<contextPath>/<webApp>/forbidden`. Override `WebAppAccessDeniedHandlerPort` to return JSON, forward, or anything else.
 
 The actual permission decision delegates to `ResourcePermissionPort` — see [ADR-0007](../adr/0007-resource-permission-port-and-authorization-repository.md). Hosts implement `AuthorizationRepositoryPort` for the data; the library supplies a default `ResourcePermissionService` that does an exact-id match. Hosts that need different matching semantics override `ResourcePermissionPort` directly. Activation rationale lives in [ADR-0009](../adr/0009-web-app-authorization-spis.md).
 
@@ -262,24 +262,24 @@ If your host doesn't enforce per-web-app authorization (for example Hub, which h
 
 There is no halfway state to worry about — the filter is either fully wired (you imported the configuration and registered the SPIs) or completely absent (you didn't). It's safe to add later when the host's authorization model is ready.
 
-### Single-web-app host: constant `WebAppProvider`
+### Single-web-app host: constant `WebAppProviderPort`
 
 A host that serves a single web app returns a constant id for every request:
 
 ```java
 @Bean
-public WebAppProvider singleWebAppProvider() {
+public WebAppProviderPort singleWebAppProviderPort() {
   return request -> Optional.of("operate");
 }
 ```
 
-### Multi-web-app host: path-derived `WebAppProvider`
+### Multi-web-app host: path-derived `WebAppProviderPort`
 
 A host that routes `/operate/...`, `/tasklist/...`, etc. to different webapps derives the id from the first non-empty path segment:
 
 ```java
 @Bean
-public WebAppProvider pathDerivedWebAppProvider(final SecurityPathPort pathPort) {
+public WebAppProviderPort pathDerivedWebAppProviderPort(final SecurityPathPort pathPort) {
   return request -> {
     final String uri = request.getRequestURI();
     final String contextPath = request.getContextPath();
@@ -315,13 +315,13 @@ public AuthorizationRepositoryPort authorizationRepository(final MyAuthzStore st
 
 The library's default `ResourcePermissionService` then matches by exact resource id and required permission. Hosts that need wildcard semantics, caching, or instrumentation register their own `ResourcePermissionPort` bean — the default backs off via `@ConditionalOnMissingBean`.
 
-### Custom `WebAppAccessDeniedHandler` (optional)
+### Custom `WebAppAccessDeniedHandlerPort` (optional)
 
 The default `RedirectingWebAppAccessDeniedHandler` calls `response.sendRedirect("<contextPath>/<webApp>/forbidden")`. To return a 403 JSON body instead:
 
 ```java
 @Bean
-public WebAppAccessDeniedHandler jsonProblemDetailDeniedHandler(final ObjectMapper objectMapper) {
+public WebAppAccessDeniedHandlerPort jsonProblemDetailDeniedHandler(final ObjectMapper objectMapper) {
   return (request, response, webApp, authentication) -> {
     response.setStatus(HttpServletResponse.SC_FORBIDDEN);
     response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
@@ -337,18 +337,18 @@ public WebAppAccessDeniedHandler jsonProblemDetailDeniedHandler(final ObjectMapp
 }
 ```
 
-Registering any `WebAppAccessDeniedHandler` bean disables the library default. The handler is invoked exactly once per denied request; the filter does not call `filterChain.doFilter(...)` afterwards.
+Registering any `WebAppAccessDeniedHandlerPort` bean disables the library default. The handler is invoked exactly once per denied request; the filter does not call `filterChain.doFilter(...)` afterwards.
 
 ### Required and supplied beans for web app authorization
 
 | Bean | Default | When |
 |---|---|---|
-| `WebAppProvider` | None — host must register | Always required |
+| `WebAppProviderPort` | None — host must register | Always required |
 | `CamundaAuthenticationProvider` | None — host must register | Always required |
 | `SecurityPathPort` | None — host must register | Always required (already present for any CSL chain) |
 | `ResourcePermissionPort` | `ResourcePermissionService` (gated on `AuthorizationRepositoryPort` + `@ConditionalOnMissingBean`) | The filter requires this bean — supply it either by registering an `AuthorizationRepositoryPort` (default service materialises) or by registering a custom `ResourcePermissionPort` directly |
 | `AuthorizationRepositoryPort` | None — host must register | Required when relying on the default `ResourcePermissionService`. Not needed if the host supplies its own `ResourcePermissionPort` |
-| `WebAppAccessDeniedHandler` | `RedirectingWebAppAccessDeniedHandler` (gated on `WebAppProvider` + `@ConditionalOnMissingBean`) | Override for JSON 403, forwards, etc. |
+| `WebAppAccessDeniedHandlerPort` | `RedirectingWebAppAccessDeniedHandler` (gated on `WebAppProviderPort` + `@ConditionalOnMissingBean`) | Override for JSON 403, forwards, etc. |
 
 If any of the required beans is missing (and `ResourcePermissionPort` not satisfied either way), the filter bean isn't created. The webapp chain still works — it just doesn't enforce the per-web-app `ACCESS` check. Adopt incrementally by registering the SPIs as you build out the host's authorization data layer.
 
@@ -357,7 +357,7 @@ If any of the required beans is missing (and `ResourcePermissionPort` not satisf
 The CSL's `AdminUserCheckFilter` ensures an admin user has been provisioned before letting requests reach the rest of the application. If no admin user exists, the filter hands off to the host so the browser can be sent to a setup wizard (or whatever the host's response shape is). Once an admin user exists, the filter passes every request through. The filter is host-pluggable on two axes:
 
 - **Has an admin user been provisioned?** Implement `AdminUserPresencePort.adminUserExists()`. Hosts answer from any combination of static configuration and live storage — the library has no opinion on the data layer.
-- **What happens when no admin user exists?** The library default redirects to `<contextPath>/admin/setup`. Override `AdminUserMissingHandler` to return JSON, forward, or anything else.
+- **What happens when no admin user exists?** The library default redirects to `<contextPath>/admin/setup`. Override `AdminUserMissingHandlerPort` to return JSON, forward, or anything else.
 
 A third concern — which paths bypass the check entirely (typically the setup endpoint plus its static assets) — is declared on the existing `SecurityPathPort` via `adminFilterBypassPaths()`, alongside the host's other path declarations. Activation rationale lives in [ADR-0010](../adr/0010-admin-user-setup-spis.md).
 
@@ -428,13 +428,13 @@ public Set<String> adminFilterBypassPaths() {
 
 Each entry matches the request's path within the application (i.e. the URI with the servlet context path stripped) when the path equals the entry exactly or starts with `entry + "/"`. So `/admin/setup` matches `/admin/setup` (the setup endpoint itself) but not `/admin/setupbar`, and `/admin/assets` matches every sub-path under it.
 
-### Custom `AdminUserMissingHandler` (optional)
+### Custom `AdminUserMissingHandlerPort` (optional)
 
 The default `RedirectingAdminUserMissingHandler` calls `response.sendRedirect("<contextPath>/admin/setup")`. To return a JSON 503 instead:
 
 ```java
 @Bean
-public AdminUserMissingHandler jsonProblemDetailMissingHandler(final ObjectMapper objectMapper) {
+public AdminUserMissingHandlerPort jsonProblemDetailMissingHandler(final ObjectMapper objectMapper) {
   return (request, response) -> {
     response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
     response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
@@ -450,7 +450,7 @@ public AdminUserMissingHandler jsonProblemDetailMissingHandler(final ObjectMappe
 }
 ```
 
-Registering any `AdminUserMissingHandler` bean disables the library default. The handler is invoked exactly once per request that fails the presence check; the filter does not call `filterChain.doFilter(...)` afterwards.
+Registering any `AdminUserMissingHandlerPort` bean disables the library default. The handler is invoked exactly once per request that fails the presence check; the filter does not call `filterChain.doFilter(...)` afterwards.
 
 ### Required and supplied beans for admin user setup
 
@@ -458,7 +458,7 @@ Registering any `AdminUserMissingHandler` bean disables the library default. The
 |---|---|---|
 | `AdminUserPresencePort` | None — host must register | Always required |
 | `SecurityPathPort` | None — host must register | Always required (already present for any CSL chain). Override `adminFilterBypassPaths()` to declare the setup endpoint + asset prefixes |
-| `AdminUserMissingHandler` | `RedirectingAdminUserMissingHandler` (gated on `AdminUserPresencePort` + `@ConditionalOnMissingBean`) | Override for JSON 503, forwards, alternative redirect targets, etc. |
+| `AdminUserMissingHandlerPort` | `RedirectingAdminUserMissingHandler` (gated on `AdminUserPresencePort` + `@ConditionalOnMissingBean`) | Override for JSON 503, forwards, alternative redirect targets, etc. |
 
 If `AdminUserPresencePort` is absent, the filter bean isn't created. The webapp chain still works — it just doesn't enforce the admin-presence check. Adopt incrementally by registering the port once your host's authorization data layer is ready to answer.
 
@@ -511,7 +511,7 @@ Session policy:
 A typical migration from a host-owned `WebSecurityConfig`:
 
 1. Replace your `@Bean SecurityFilterChain` methods by deleting them. Add an `@Import` list for the library's configuration classes — pick the ones that match your auth method and API protection mode (see the [Quickstart](#quickstart) snippet). Per [ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md) hosts opt in to each capability explicitly; nothing activates by simply adding the dependency.
-2. Move whatever you previously hand-rolled into `OidcResourceServerCustomizer` / `OidcTokenEndpointCustomizer` beans where applicable. For per-web-app authorization, register a `WebAppProvider` and `AuthorizationRepositoryPort` and `@Import(WebAppAuthorizationFilterConfiguration.class)` — see [Web app authorization](#web-app-authorization). For admin-user setup, register an `AdminUserPresencePort` and `@Import(AdminUserCheckFilterConfiguration.class)` — see [Admin user setup](#admin-user-setup).
+2. Move whatever you previously hand-rolled into `OidcResourceServerCustomizer` / `OidcTokenEndpointCustomizer` beans where applicable. For per-web-app authorization, register a `WebAppProviderPort` and `AuthorizationRepositoryPort` and `@Import(WebAppAuthorizationFilterConfiguration.class)` — see [Web app authorization](#web-app-authorization). For admin-user setup, register an `AdminUserPresencePort` and `@Import(AdminUserCheckFilterConfiguration.class)` — see [Admin user setup](#admin-user-setup).
 3. Implement `SecurityPathPort` with the path patterns your previous chains used.
 4. Bind your existing security config to `camunda.security.*` properties (or set them explicitly).
 5. If you previously constructed `JwtDecoder` / `ClientRegistrationRepository` / `OAuth2AuthorizedClientRepository` / `OAuth2AuthorizedClientManager` by hand, either delete those beans (the library's defaults will activate) or leave them and the library's defaults back off via `@ConditionalOnMissingBean`.

@@ -10,7 +10,7 @@ package io.camunda.security.spring.security;
 import io.camunda.security.core.port.out.AdminUserPresencePort;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.filter.AdminUserCheckFilter;
-import io.camunda.security.spring.spi.AdminUserMissingHandler;
+import io.camunda.security.spring.spi.AdminUserMissingHandlerPort;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
@@ -29,14 +29,15 @@ import org.springframework.context.annotation.Configuration;
 public class AdminUserCheckFilterConfiguration {
 
   /**
-   * Default {@link AdminUserMissingHandler} that redirects to {@code <contextPath>/admin/setup}.
-   * Only registered when an {@link AdminUserPresencePort} is present (so the filter would otherwise
-   * have something to deny) and the host has not supplied its own handler.
+   * Default {@link AdminUserMissingHandlerPort} that redirects to {@code
+   * <contextPath>/admin/setup}. Only registered when an {@link AdminUserPresencePort} is present
+   * (so the filter would otherwise have something to deny) and the host has not supplied its own
+   * handler.
    */
   @Bean
   @ConditionalOnBean(AdminUserPresencePort.class)
-  @ConditionalOnMissingBean(AdminUserMissingHandler.class)
-  public AdminUserMissingHandler adminUserMissingHandler() {
+  @ConditionalOnMissingBean(AdminUserMissingHandlerPort.class)
+  public AdminUserMissingHandlerPort adminUserMissingHandler() {
     return new RedirectingAdminUserMissingHandler();
   }
 
@@ -48,12 +49,12 @@ public class AdminUserCheckFilterConfiguration {
   @Bean
   @ConditionalOnBean({
     AdminUserPresencePort.class,
-    AdminUserMissingHandler.class,
+    AdminUserMissingHandlerPort.class,
     SecurityPathPort.class
   })
   public AdminUserCheckFilter adminUserCheckFilter(
       final AdminUserPresencePort adminUserPresencePort,
-      final AdminUserMissingHandler adminUserMissingHandler,
+      final AdminUserMissingHandlerPort adminUserMissingHandler,
       final SecurityPathPort securityPathPort) {
     return new AdminUserCheckFilter(
         adminUserPresencePort, adminUserMissingHandler, securityPathPort.adminFilterBypassPaths());

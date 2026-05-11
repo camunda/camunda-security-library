@@ -19,7 +19,7 @@ import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
-import io.camunda.security.spring.spi.WebAppProvider;
+import io.camunda.security.spring.spi.WebAppProviderPort;
 import jakarta.servlet.Filter;
 import java.util.List;
 import java.util.Optional;
@@ -132,7 +132,7 @@ class BasicAuthWebappPermitAllChainTest {
     // unit-level coverage of WebAppAuthorizationCheckFilter is the documented fallback.
     runner
         .withUserConfiguration(StubAuthorizationRepository.class)
-        .withUserConfiguration(StubWebAppProvider.class)
+        .withUserConfiguration(StubWebAppProviderPort.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .run(
             ctx -> {
@@ -197,10 +197,10 @@ class BasicAuthWebappPermitAllChainTest {
   }
 
   @Configuration
-  static class StubWebAppProvider {
+  static class StubWebAppProviderPort {
 
     @Bean
-    WebAppProvider webAppProvider() {
+    WebAppProviderPort webAppProvider() {
       return request -> Optional.of("operate");
     }
   }

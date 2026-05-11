@@ -21,7 +21,7 @@ import java.io.IOException;
  * jakarta.servlet} types; {@code core} is servlet-free by design.
  */
 @FunctionalInterface
-public interface AdminUserMissingHandler {
+public interface AdminUserMissingHandlerPort {
 
   void handle(HttpServletRequest request, HttpServletResponse response)
       throws IOException, ServletException;

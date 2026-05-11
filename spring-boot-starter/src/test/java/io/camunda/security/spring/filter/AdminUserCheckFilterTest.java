@@ -10,7 +10,7 @@ package io.camunda.security.spring.filter;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.camunda.security.core.port.out.AdminUserPresencePort;
-import io.camunda.security.spring.spi.AdminUserMissingHandler;
+import io.camunda.security.spring.spi.AdminUserMissingHandlerPort;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Set;
@@ -147,7 +147,7 @@ class AdminUserCheckFilterTest {
 
   private static AdminUserCheckFilter filter(
       final AdminUserPresencePort presencePort,
-      final AdminUserMissingHandler missingHandler,
+      final AdminUserMissingHandlerPort missingHandler,
       final Set<String> bypassPaths) {
     return new AdminUserCheckFilter(presencePort, missingHandler, bypassPaths);
   }
@@ -190,7 +190,7 @@ class AdminUserCheckFilterTest {
     }
   }
 
-  private static final class RecordingMissingHandler implements AdminUserMissingHandler {
+  private static final class RecordingMissingHandler implements AdminUserMissingHandlerPort {
     int callCount;
     HttpServletRequest lastRequest;
     HttpServletResponse lastResponse;

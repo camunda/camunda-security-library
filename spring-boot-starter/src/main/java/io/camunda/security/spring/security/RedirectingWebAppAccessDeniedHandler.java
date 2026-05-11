@@ -8,13 +8,13 @@
 package io.camunda.security.spring.security;
 
 import io.camunda.security.api.model.CamundaAuthentication;
-import io.camunda.security.spring.spi.WebAppAccessDeniedHandler;
+import io.camunda.security.spring.spi.WebAppAccessDeniedHandlerPort;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 
 /**
- * Default {@link WebAppAccessDeniedHandler} reference implementation. Redirects the browser to
+ * Default {@link WebAppAccessDeniedHandlerPort} reference implementation. Redirects the browser to
  * {@code <contextPath>/<webApp>/forbidden} so the host's webapp shell can render its own forbidden
  * page (preserves the legacy OC behaviour).
  *
@@ -22,7 +22,7 @@ import java.io.IOException;
  * error page) register their own bean and this default backs off via
  * {@code @ConditionalOnMissingBean}.
  */
-public final class RedirectingWebAppAccessDeniedHandler implements WebAppAccessDeniedHandler {
+public final class RedirectingWebAppAccessDeniedHandler implements WebAppAccessDeniedHandlerPort {
 
   @Override
   public void handle(

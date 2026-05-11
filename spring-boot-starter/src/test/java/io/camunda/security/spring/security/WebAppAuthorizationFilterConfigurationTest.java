@@ -18,8 +18,8 @@ import io.camunda.security.core.port.in.ResourcePermissionPort;
 import io.camunda.security.core.port.out.AuthorizationRepositoryPort;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
-import io.camunda.security.spring.spi.WebAppAccessDeniedHandler;
-import io.camunda.security.spring.spi.WebAppProvider;
+import io.camunda.security.spring.spi.WebAppAccessDeniedHandlerPort;
+import io.camunda.security.spring.spi.WebAppProviderPort;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Optional;
@@ -47,7 +47,7 @@ class WebAppAuthorizationFilterConfigurationTest {
     runner.run(
         ctx -> {
           assertThat(ctx).doesNotHaveBean(WebAppAuthorizationCheckFilter.class);
-          assertThat(ctx).doesNotHaveBean(WebAppAccessDeniedHandler.class);
+          assertThat(ctx).doesNotHaveBean(WebAppAccessDeniedHandlerPort.class);
           assertThat(ctx).doesNotHaveBean(ResourcePermissionPort.class);
         });
   }
@@ -55,7 +55,7 @@ class WebAppAuthorizationFilterConfigurationTest {
   @Test
   void authorizationRepositoryAlonePresentWiresDefaultServiceButNoFilterOrHandler() {
     // ResourcePermissionService is the default for ResourcePermissionPort whenever an
-    // AuthorizationRepositoryPort exists, even before WebAppProvider is wired.
+    // AuthorizationRepositoryPort exists, even before WebAppProviderPort is wired.
     runner
         .withUserConfiguration(StubAuthorizationRepository.class)
         .run(
@@ -65,7 +65,7 @@ class WebAppAuthorizationFilterConfigurationTest {
                   .getBean(ResourcePermissionPort.class)
                   .isInstanceOf(ResourcePermissionService.class);
               assertThat(ctx).doesNotHaveBean(WebAppAuthorizationCheckFilter.class);
-              assertThat(ctx).doesNotHaveBean(WebAppAccessDeniedHandler.class);
+              assertThat(ctx).doesNotHaveBean(WebAppAccessDeniedHandlerPort.class);
             });
   }
 
@@ -73,7 +73,7 @@ class WebAppAuthorizationFilterConfigurationTest {
   void allThreeSpisRegisteredCreatesFilterAndDefaults() {
     runner
         .withUserConfiguration(StubAuthorizationRepository.class)
-        .withUserConfiguration(StubWebAppProvider.class)
+        .withUserConfiguration(StubWebAppProviderPort.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .run(
             ctx -> {
@@ -82,7 +82,7 @@ class WebAppAuthorizationFilterConfigurationTest {
                   .getBean(ResourcePermissionPort.class)
                   .isInstanceOf(ResourcePermissionService.class);
               assertThat(ctx)
-                  .getBean(WebAppAccessDeniedHandler.class)
+                  .getBean(WebAppAccessDeniedHandlerPort.class)
                   .isInstanceOf(RedirectingWebAppAccessDeniedHandler.class);
             });
   }
@@ -93,7 +93,7 @@ class WebAppAuthorizationFilterConfigurationTest {
     // back off via @ConditionalOnMissingBean.
     runner
         .withUserConfiguration(StubAuthorizationRepository.class)
-        .withUserConfiguration(StubWebAppProvider.class)
+        .withUserConfiguration(StubWebAppProviderPort.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .withUserConfiguration(CustomResourcePermissionPort.class)
         .run(
@@ -109,14 +109,14 @@ class WebAppAuthorizationFilterConfigurationTest {
   void hostWebAppAccessDeniedHandlerOverridesDefault() {
     runner
         .withUserConfiguration(StubAuthorizationRepository.class)
-        .withUserConfiguration(StubWebAppProvider.class)
+        .withUserConfiguration(StubWebAppProviderPort.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .withUserConfiguration(CustomDeniedHandler.class)
         .run(
             ctx -> {
-              assertThat(ctx).hasSingleBean(WebAppAccessDeniedHandler.class);
+              assertThat(ctx).hasSingleBean(WebAppAccessDeniedHandlerPort.class);
               assertThat(ctx)
-                  .getBean(WebAppAccessDeniedHandler.class)
+                  .getBean(WebAppAccessDeniedHandlerPort.class)
                   .isInstanceOf(CustomDeniedHandler.NoOpHandler.class);
             });
   }
@@ -171,10 +171,10 @@ class WebAppAuthorizationFilterConfigurationTest {
   }
 
   @Configuration
-  static class StubWebAppProvider {
+  static class StubWebAppProviderPort {
 
     @Bean
-    WebAppProvider webAppProvider() {
+    WebAppProviderPort webAppProvider() {
       return request -> Optional.of("operate");
     }
   }
@@ -212,11 +212,11 @@ class WebAppAuthorizationFilterConfigurationTest {
   static class CustomDeniedHandler {
 
     @Bean
-    WebAppAccessDeniedHandler customDeniedHandler() {
+    WebAppAccessDeniedHandlerPort customDeniedHandler() {
       return new NoOpHandler();
     }
 
-    static final class NoOpHandler implements WebAppAccessDeniedHandler {
+    static final class NoOpHandler implements WebAppAccessDeniedHandlerPort {
       @Override
       public void handle(
           final HttpServletRequest request,
