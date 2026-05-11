@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-> **Note (2026-05-11):** This ADR uses the original interface names (`WebAppProvider`, `WebAppAccessDeniedHandler`). The naming convention has since been generalised by [ADR-0011](0011-host-implementation-naming-conventions.md), which renamed these to `WebAppProviderPort` and `WebAppAccessDeniedHandlerPort` to align with the library's universal `*Port` suffix for outbound contracts. The decision rationale in this ADR still stands; only the interface names changed.
+> **Note (2026-05-11):** This ADR uses the original names from when the SPIs were introduced (`WebAppProvider`, `WebAppAccessDeniedHandler`, `RedirectingWebAppAccessDeniedHandler`). The naming convention has since been generalised by [ADR-0011](0011-host-implementation-naming-conventions.md), which renamed the interfaces to `WebAppProviderPort` / `WebAppAccessDeniedHandlerPort` and the default implementation to `RedirectingWebAppAccessDeniedAdapter` to align with the library's universal `*Port` / `*Adapter` suffixes. The decision rationale in this ADR still stands; only the symbol names changed.
 
 # ADR-0009: Web app authorization SPIs (`WebAppProvider`, `WebAppAccessDeniedHandler`)
 

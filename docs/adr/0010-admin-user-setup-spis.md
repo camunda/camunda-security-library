@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-> **Note (2026-05-11):** This ADR uses the original interface name (`AdminUserMissingHandler`). The naming convention has since been generalised by [ADR-0011](0011-host-implementation-naming-conventions.md), which renamed it to `AdminUserMissingHandlerPort` to align with the library's universal `*Port` suffix for outbound contracts. The decision rationale in this ADR still stands; only the interface name changed.
+> **Note (2026-05-11):** This ADR uses the original names from when the SPIs were introduced (`AdminUserMissingHandler`, `RedirectingAdminUserMissingHandler`). The naming convention has since been generalised by [ADR-0011](0011-host-implementation-naming-conventions.md), which renamed the interface to `AdminUserMissingHandlerPort` and the default implementation to `RedirectingAdminUserMissingAdapter` to align with the library's universal `*Port` / `*Adapter` suffixes. The decision rationale in this ADR still stands; only the symbol names changed.
 
 # ADR-0010: Admin-user setup SPIs (`AdminUserPresencePort`, `AdminUserMissingHandler`)
 
