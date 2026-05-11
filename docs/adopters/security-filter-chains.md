@@ -188,7 +188,7 @@ Host implementations of CSL's extension points follow the conventions codified i
 
 The `*Port` suffix is reserved for the interface declarations in the library; hosts should not reuse it for their implementations.
 
-OC's host implementations illustrate the convention:
+Orchestration Cluster (OC) host implementations illustrate the convention:
 
 - `SecurityPathAdapter implements SecurityPathPort` (outbound port)
 - `AdminUserPresenceAdapter implements AdminUserPresencePort` (outbound port)
