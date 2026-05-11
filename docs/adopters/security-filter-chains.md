@@ -179,20 +179,21 @@ Every library-supplied bean has `@ConditionalOnMissingBean`. Define your own bea
 
 ## Naming conventions
 
-Host implementations of CSL's **outbound ports** follow the hex naming convention codified in [ADR-0007](../adr/0007-resource-permission-port-and-authorization-repository.md): the `*Port` suffix is reserved for the interface declarations in `core/port/out/` and hosts implement them as `*Adapter`.
+Host implementations of CSL's extension points follow the conventions codified in [ADR-0011](../adr/0011-host-implementation-naming-conventions.md):
 
 | Role | Interface (in the library) | Implementation (in the host) |
 |---|---|---|
 | Outbound port | `*Port` in `core/port/out/` (e.g. `SecurityPathPort`, `AdminUserPresencePort`, `AuthorizationRepositoryPort`) | `*Adapter` |
+| Starter SPI | `io.camunda.security.spring.spi.*` (e.g. `WebAppProvider`, `AdminUserMissingHandler`) | `*Adapter` for host implementations; descriptive names (e.g. `Redirecting*Handler`) for library-supplied defaults |
 
-For **starter-side SPIs** in the `io.camunda.security.spring.spi` package (e.g. `WebAppProvider`, `WebAppAccessDeniedHandler`, `AdminUserMissingHandler`) — interfaces that speak `jakarta.servlet` types and therefore live outside `core` per [ADR-0006](../adr/0006-central-security-filter-chains.md) — no ADR formally codifies the implementation naming. The convention applied in practice is the same `*Adapter` suffix for plain host implementations; library-supplied defaults use descriptive names (e.g. `Redirecting*Handler`).
+The `*Port` suffix is reserved for the interface declarations in the library; hosts should not reuse it for their implementations.
 
-OC's host implementations illustrate both conventions:
+OC's host implementations illustrate the convention:
 
-- `OcSecurityPathAdapter implements SecurityPathPort` (outbound port, ADR-0007)
-- `OcAdminUserPresenceAdapter implements AdminUserPresencePort` (outbound port, ADR-0007)
-- `OcAuthorizationRepositoryAdapter implements AuthorizationRepositoryPort` (outbound port, ADR-0007)
-- `OcWebAppAdapter implements WebAppProvider` (starter SPI, convention only)
+- `OcSecurityPathAdapter implements SecurityPathPort` (outbound port)
+- `OcAdminUserPresenceAdapter implements AdminUserPresencePort` (outbound port)
+- `OcAuthorizationRepositoryAdapter implements AuthorizationRepositoryPort` (outbound port)
+- `OcWebAppAdapter implements WebAppProvider` (starter SPI)
 
 ## Extension hooks
 
