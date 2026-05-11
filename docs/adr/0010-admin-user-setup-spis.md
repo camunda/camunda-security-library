@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0010: Admin-user setup SPIs (`AdminUserPresencePort`, `AdminUserMissingHandler`)
+# ADR-0010: Admin-user setup SPIs (`AdminUserPresencePort`, `AdminUserMissingHandlerPort`)
 
 ## Status
 
@@ -38,7 +38,7 @@ The core question for this ADR is:
 Two host-pluggable SPIs are introduced alongside the lifted filter:
 
 - **`AdminUserPresencePort`** (`io.camunda.security.core.port.out`) — `boolean adminUserExists()`. No-arg, framework-free. The host's implementation decides whether to consult static configuration, live storage, or any combination. The OC source's two-step (config + role-services) check collapses into one host-defined boolean — the library no longer encodes the OC-specific ordering between the two.
-- **`AdminUserMissingHandler`** (`io.camunda.security.spring.spi`) — `void handle(HttpServletRequest, HttpServletResponse) throws IOException, ServletException`. Hosts implement to choose the response shape. The library supplies a default `RedirectingAdminUserMissingHandler` that preserves the OC-derived `<contextPath>/admin/setup` redirect; it backs off via `@ConditionalOnMissingBean(AdminUserMissingHandler.class)` when a host registers its own.
+- **`AdminUserMissingHandlerPort`** (`io.camunda.security.spring.spi`) — `void handle(HttpServletRequest, HttpServletResponse) throws IOException, ServletException`. Hosts implement to choose the response shape. The library supplies a default `RedirectingAdminUserMissingHandler` that preserves the OC-derived `<contextPath>/admin/setup` redirect; it backs off via `@ConditionalOnMissingBean(AdminUserMissingHandlerPort.class)` when a host registers its own.
 
 Bypass paths reuse the existing `SecurityPathPort`:
 
@@ -63,16 +63,16 @@ Each bean inside `AdminUserCheckFilterConfiguration` is gated on the host SPIs i
 ### Why these particular SPI boundaries
 
 - **`AdminUserPresencePort` collapses the OC two-step check into a single boolean** because the library has no business encoding the OC-specific ordering between static config and live data. Each host knows which sources it has and how to combine them; the library only needs the answer. A larger interface that exposed the static/live split would couple the library to an authorization-model concept (default-roles → admin → users members) that not every host shares. The single-method shape also lets hosts answer instantly from a `@Value`-injected boolean during early bootstrap, without dragging in an entire data layer just to satisfy the contract.
-- **`AdminUserMissingHandler` is a separate SPI rather than a property template** because hosts choose between substantively different transport behaviours (redirect to a host-specific URL, JSON 503, forward to a static page, custom telemetry). That's a behavioural decision, not a configuration value. Reducing it to a property string would either constrain hosts to one shape or balloon into a mini-DSL — the same reasoning as `WebAppAccessDeniedHandler` in [ADR-0009](0009-web-app-authorization-spis.md).
+- **`AdminUserMissingHandlerPort` is a separate SPI rather than a property template** because hosts choose between substantively different transport behaviours (redirect to a host-specific URL, JSON 503, forward to a static page, custom telemetry). That's a behavioural decision, not a configuration value. Reducing it to a property string would either constrain hosts to one shape or balloon into a mini-DSL — the same reasoning as `WebAppAccessDeniedHandlerPort` in [ADR-0009](0009-web-app-authorization-spis.md).
 - **Bypass paths reuse `SecurityPathPort.adminFilterBypassPaths()` rather than a dedicated SPI** because they're paths, and the host already implements `SecurityPathPort` to declare every other security-path concern (api/webapp/unprotected/web-component-names). Splitting path declarations across two ports for the sake of "admin-only" semantics would force hosts to maintain two related interfaces and obscure that the filter is participating in the same path-declaration model as the rest of the chain.
-- **The two SPIs split between `core/port/out/` and `io.camunda.security.spring.spi`** because their signatures differ in framework coupling. `AdminUserPresencePort` speaks only Java types — it lives in `core/port/out/` alongside the framework-free outbound ports. `AdminUserMissingHandler` speaks `HttpServletRequest`/`HttpServletResponse` — and `core` is jakarta-servlet-free by design ([ADR-0006](0006-central-security-filter-chains.md)), so any servlet-coupled SPI must live in the starter. This mirrors the split of `WebAppProvider`/`WebAppAccessDeniedHandler` in [ADR-0009](0009-web-app-authorization-spis.md).
+- **The two SPIs split between `core/port/out/` and `io.camunda.security.spring.spi`** because their signatures differ in framework coupling. `AdminUserPresencePort` speaks only Java types — it lives in `core/port/out/` alongside the framework-free outbound ports. `AdminUserMissingHandlerPort` speaks `HttpServletRequest`/`HttpServletResponse` — and `core` is jakarta-servlet-free by design ([ADR-0006](0006-central-security-filter-chains.md)), so any servlet-coupled SPI must live in the starter. This mirrors the split of `WebAppProviderPort`/`WebAppAccessDeniedHandlerPort` in [ADR-0009](0009-web-app-authorization-spis.md).
 
 ### Default implementations and override boundaries
 
 | SPI | Default | Override use case |
 |---|---|---|
 | `AdminUserPresencePort` | None — host must register | Always |
-| `AdminUserMissingHandler` | `RedirectingAdminUserMissingHandler` (preserves OC behaviour) | JSON 503, alternative redirect target, forward to error page, custom telemetry |
+| `AdminUserMissingHandlerPort` | `RedirectingAdminUserMissingHandler` (preserves OC behaviour) | JSON 503, alternative redirect target, forward to error page, custom telemetry |
 | `SecurityPathPort.adminFilterBypassPaths()` | Empty set (`default` method) | Override to declare the setup endpoint plus any static-asset prefixes the setup UI loads |
 
 ### Filter wiring
@@ -96,12 +96,12 @@ A companion `FilterRegistrationBean<AdminUserCheckFilter>` with `setEnabled(fals
 
 - Hosts must register an `AdminUserPresencePort` before the filter activates. There is no "auto-detect from `SecurityConfiguration.getInitialization().getDefaultRoles()`" fallback. This is intentional: the library doesn't model `SecurityConfiguration`, doesn't depend on `RoleServices`, and doesn't carry zeebe-protocol enums — those are OC-specific authorization-model concerns that don't belong in CSL. A host that wants the OC behaviour reproduces it in a five-line implementation of the port.
 - Bypass paths live on `SecurityPathPort` rather than a dedicated SPI. Hosts that already implement `SecurityPathPort` for other path declarations need to add `adminFilterBypassPaths()` (and the default-empty method makes this a non-breaking source-only change).
-- `AdminUserMissingHandler` lives in `io.camunda.security.spring.spi` (the starter module) rather than under `io.camunda.security.core.port.out` because its signature speaks `HttpServletRequest`/`HttpServletResponse`. Same reasoning as the servlet-coupled SPIs in [ADR-0009](0009-web-app-authorization-spis.md).
+- `AdminUserMissingHandlerPort` lives in `io.camunda.security.spring.spi` (the starter module) rather than under `io.camunda.security.core.port.out` because its signature speaks `HttpServletRequest`/`HttpServletResponse`. Same reasoning as the servlet-coupled SPIs in [ADR-0009](0009-web-app-authorization-spis.md).
 
 ## Alternatives Considered
 
 - **Single combined `AdminUserService` SPI that does both the presence check and the missing-user response.** Rejected — couples two unrelated decisions. A host might want the OC presence behaviour with a JSON 503 response (or vice versa). Splitting them keeps each SPI minimal and recombination free.
 - **`AdminUserPresencePort` accepting a context object with config + storage handles.** Rejected — would force the library to model `SecurityConfiguration` (or some abstraction over it), reintroducing the exact coupling the lift was meant to remove. The host already has access to its own config and storage; the port doesn't need to provide them.
-- **Property template for the missing-user response (`camunda.security.admin-user-missing.redirect-template=...`).** Rejected — same reasoning as `WebAppAccessDeniedHandler` in [ADR-0009](0009-web-app-authorization-spis.md). Covers only the redirect case; hosts wanting JSON or forwards would need an escape hatch that ends up looking like the SPI we'd otherwise have started with.
+- **Property template for the missing-user response (`camunda.security.admin-user-missing.redirect-template=...`).** Rejected — same reasoning as `WebAppAccessDeniedHandlerPort` in [ADR-0009](0009-web-app-authorization-spis.md). Covers only the redirect case; hosts wanting JSON or forwards would need an escape hatch that ends up looking like the SPI we'd otherwise have started with.
 - **Dedicated `AdminFilterPathPort` for bypass paths.** Rejected — `SecurityPathPort` already exists as the host's path-declaration interface. Adding a second port just for the admin filter would split related path concerns across two SPIs without commensurate benefit.
 - **Auto-configuration via `@AutoConfiguration` + `AutoConfiguration.imports`.** Rejected — superseded by [ADR-0008](0008-no-spring-boot-auto-configuration.md). Hosts opt-in via explicit `@Import`.

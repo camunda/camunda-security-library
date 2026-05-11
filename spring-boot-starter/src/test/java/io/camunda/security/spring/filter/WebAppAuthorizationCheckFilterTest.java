@@ -13,8 +13,8 @@ import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.PermissionType;
 import io.camunda.security.api.model.ResourceType;
 import io.camunda.security.core.port.in.ResourcePermissionPort;
-import io.camunda.security.spring.spi.WebAppAccessDeniedHandler;
-import io.camunda.security.spring.spi.WebAppProvider;
+import io.camunda.security.spring.spi.WebAppAccessDeniedHandlerPort;
+import io.camunda.security.spring.spi.WebAppProviderPort;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Optional;
@@ -31,7 +31,7 @@ class WebAppAuthorizationCheckFilterTest {
 
   @Test
   void staticResourcePassesThroughWithoutCheck() throws Exception {
-    final var webAppProvider = new RecordingWebAppProvider("operate");
+    final var webAppProvider = new RecordingWebAppProviderPort("operate");
     final var permissionPort = new RecordingPermissionPort(false);
     final var deniedHandler = new RecordingDeniedHandler();
     final var filter = filter(webAppProvider, permissionPort, deniedHandler, alice());
@@ -47,7 +47,7 @@ class WebAppAuthorizationCheckFilterTest {
 
   @Test
   void forbiddenUrlPassesThroughWithoutCheck() throws Exception {
-    final var webAppProvider = new RecordingWebAppProvider("operate");
+    final var webAppProvider = new RecordingWebAppProviderPort("operate");
     final var permissionPort = new RecordingPermissionPort(false);
     final var deniedHandler = new RecordingDeniedHandler();
     final var filter = filter(webAppProvider, permissionPort, deniedHandler, alice());
@@ -63,7 +63,7 @@ class WebAppAuthorizationCheckFilterTest {
 
   @Test
   void anonymousPrincipalPassesThroughWithoutCheck() throws Exception {
-    final var webAppProvider = new RecordingWebAppProvider("operate");
+    final var webAppProvider = new RecordingWebAppProviderPort("operate");
     final var permissionPort = new RecordingPermissionPort(false);
     final var deniedHandler = new RecordingDeniedHandler();
     final var filter =
@@ -80,7 +80,7 @@ class WebAppAuthorizationCheckFilterTest {
 
   @Test
   void nullPrincipalPassesThroughWithoutCheck() throws Exception {
-    final var webAppProvider = new RecordingWebAppProvider("operate");
+    final var webAppProvider = new RecordingWebAppProviderPort("operate");
     final var permissionPort = new RecordingPermissionPort(false);
     final var deniedHandler = new RecordingDeniedHandler();
     final var filter = filter(webAppProvider, permissionPort, deniedHandler, null);
@@ -96,7 +96,7 @@ class WebAppAuthorizationCheckFilterTest {
 
   @Test
   void emptyWebAppPassesThroughWithoutCheck() throws Exception {
-    final var webAppProvider = new RecordingWebAppProvider(null);
+    final var webAppProvider = new RecordingWebAppProviderPort(null);
     final var permissionPort = new RecordingPermissionPort(false);
     final var deniedHandler = new RecordingDeniedHandler();
     final var filter = filter(webAppProvider, permissionPort, deniedHandler, alice());
@@ -112,7 +112,7 @@ class WebAppAuthorizationCheckFilterTest {
 
   @Test
   void allowedAccessPassesThrough() throws Exception {
-    final var webAppProvider = new RecordingWebAppProvider("operate");
+    final var webAppProvider = new RecordingWebAppProviderPort("operate");
     final var permissionPort = new RecordingPermissionPort(true);
     final var deniedHandler = new RecordingDeniedHandler();
     final var filter = filter(webAppProvider, permissionPort, deniedHandler, alice());
@@ -127,7 +127,7 @@ class WebAppAuthorizationCheckFilterTest {
 
   @Test
   void deniedAccessInvokesHandlerAndDoesNotForwardRequest() throws Exception {
-    final var webAppProvider = new RecordingWebAppProvider("operate");
+    final var webAppProvider = new RecordingWebAppProviderPort("operate");
     final var permissionPort = new RecordingPermissionPort(false);
     final var deniedHandler = new RecordingDeniedHandler();
     final var filter = filter(webAppProvider, permissionPort, deniedHandler, alice());
@@ -148,7 +148,7 @@ class WebAppAuthorizationCheckFilterTest {
   @Test
   void hostSuppliedSuffixesArePassedThrough() throws Exception {
     // Host has added ".json" to its bypass list — the filter must respect it.
-    final var webAppProvider = new RecordingWebAppProvider("operate");
+    final var webAppProvider = new RecordingWebAppProviderPort("operate");
     final var permissionPort = new RecordingPermissionPort(false);
     final var deniedHandler = new RecordingDeniedHandler();
     final var filter =
@@ -165,7 +165,7 @@ class WebAppAuthorizationCheckFilterTest {
 
   @Test
   void filterPassesPermissionCheckShape() throws Exception {
-    final var webAppProvider = new RecordingWebAppProvider("tasklist");
+    final var webAppProvider = new RecordingWebAppProviderPort("tasklist");
     final var permissionPort = new RecordingPermissionPort(true);
     final var deniedHandler = new RecordingDeniedHandler();
     final var filter = filter(webAppProvider, permissionPort, deniedHandler, alice());
@@ -179,9 +179,9 @@ class WebAppAuthorizationCheckFilterTest {
   }
 
   private static WebAppAuthorizationCheckFilter filter(
-      final WebAppProvider webAppProvider,
+      final WebAppProviderPort webAppProvider,
       final ResourcePermissionPort permissionPort,
-      final WebAppAccessDeniedHandler deniedHandler,
+      final WebAppAccessDeniedHandlerPort deniedHandler,
       final CamundaAuthentication authentication) {
     return new WebAppAuthorizationCheckFilter(
         webAppProvider,
@@ -201,11 +201,11 @@ class WebAppAuthorizationCheckFilterTest {
     return CamundaAuthentication.of(b -> b.user("alice").role("admin"));
   }
 
-  private static final class RecordingWebAppProvider implements WebAppProvider {
+  private static final class RecordingWebAppProviderPort implements WebAppProviderPort {
     int callCount;
     private final String webApp;
 
-    RecordingWebAppProvider(final String webApp) {
+    RecordingWebAppProviderPort(final String webApp) {
       this.webApp = webApp;
     }
 
@@ -241,7 +241,7 @@ class WebAppAuthorizationCheckFilterTest {
     }
   }
 
-  private static final class RecordingDeniedHandler implements WebAppAccessDeniedHandler {
+  private static final class RecordingDeniedHandler implements WebAppAccessDeniedHandlerPort {
     int callCount;
     HttpServletRequest lastRequest;
     HttpServletResponse lastResponse;

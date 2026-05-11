@@ -44,9 +44,9 @@ Earlier iterations of this PR experimented with a richer return shape (`Resource
 ### Naming
 
 > **Note:** The naming convention table below has been generalised and superseded by
-> [ADR-0011](0011-host-implementation-naming-conventions.md), which covers inbound ports,
-> outbound ports, and starter SPIs in one place. The table is preserved here for historical
-> context.
+> [ADR-0011](0011-host-implementation-naming-conventions.md), which covers inbound ports
+> and outbound ports (both core and servlet-coupled) in one place. The table is preserved here
+> for historical context.
 
 Per the team's hex convention:
 

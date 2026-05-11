@@ -12,8 +12,8 @@ import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.PermissionType;
 import io.camunda.security.api.model.ResourceType;
 import io.camunda.security.core.port.in.ResourcePermissionPort;
-import io.camunda.security.spring.spi.WebAppAccessDeniedHandler;
-import io.camunda.security.spring.spi.WebAppProvider;
+import io.camunda.security.spring.spi.WebAppAccessDeniedHandlerPort;
+import io.camunda.security.spring.spi.WebAppProviderPort;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -28,11 +28,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * Filter that enforces per-web-app authorization on webapp requests. The host plugs in:
  *
  * <ul>
- *   <li>{@link WebAppProvider} — resolves the request to a web-app id (Hub: constant, OC: derived
- *       from the URL path).
+ *   <li>{@link WebAppProviderPort} — resolves the request to a web-app id (Hub: constant, OC:
+ *       derived from the URL path).
  *   <li>{@link ResourcePermissionPort} — decides whether the principal has {@code ACCESS} on the
  *       resolved web-app.
- *   <li>{@link WebAppAccessDeniedHandler} — invoked when access is denied. Hosts decide the
+ *   <li>{@link WebAppAccessDeniedHandlerPort} — invoked when access is denied. Hosts decide the
  *       response shape (redirect to a forbidden page, 403 JSON, RequestDispatcher.forward, etc.).
  *   <li>{@link CamundaAuthenticationProvider} — supplies the current {@link CamundaAuthentication}.
  *   <li>The set of static-resource URI suffixes the filter passes through without invoking the
@@ -43,7 +43,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * <p>The filter passes through without invoking the access decision when any of the following hold:
  * the request is for {@code /forbidden} (the redirect target), the request URI ends in one of the
  * configured static-resource suffixes, the principal is unauthenticated (null or anonymous), or
- * {@link WebAppProvider#webAppFor(HttpServletRequest)} returns empty.
+ * {@link WebAppProviderPort#webAppFor(HttpServletRequest)} returns empty.
  */
 public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
 
@@ -51,16 +51,16 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
 
   private static final String FORBIDDEN_PATH_SUFFIX = "/forbidden";
 
-  private final WebAppProvider webAppProvider;
+  private final WebAppProviderPort webAppProvider;
   private final ResourcePermissionPort permissionPort;
-  private final WebAppAccessDeniedHandler accessDeniedHandler;
+  private final WebAppAccessDeniedHandlerPort accessDeniedHandler;
   private final CamundaAuthenticationProvider authenticationProvider;
   private final Set<String> staticResourceSuffixes;
 
   public WebAppAuthorizationCheckFilter(
-      final WebAppProvider webAppProvider,
+      final WebAppProviderPort webAppProvider,
       final ResourcePermissionPort permissionPort,
-      final WebAppAccessDeniedHandler accessDeniedHandler,
+      final WebAppAccessDeniedHandlerPort accessDeniedHandler,
       final CamundaAuthenticationProvider authenticationProvider,
       final Set<String> staticResourceSuffixes) {
     this.webAppProvider = webAppProvider;

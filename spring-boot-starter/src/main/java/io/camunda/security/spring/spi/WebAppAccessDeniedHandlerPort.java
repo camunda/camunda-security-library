@@ -19,7 +19,7 @@ import java.io.IOException;
  * access-denied behaviour appropriate for the host.
  */
 @FunctionalInterface
-public interface WebAppAccessDeniedHandler {
+public interface WebAppAccessDeniedHandlerPort {
 
   void handle(
       HttpServletRequest request,

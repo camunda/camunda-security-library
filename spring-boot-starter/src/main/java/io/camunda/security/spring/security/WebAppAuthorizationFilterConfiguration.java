@@ -12,8 +12,8 @@ import io.camunda.security.core.port.in.ResourcePermissionPort;
 import io.camunda.security.core.port.out.AuthorizationRepositoryPort;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
-import io.camunda.security.spring.spi.WebAppAccessDeniedHandler;
-import io.camunda.security.spring.spi.WebAppProvider;
+import io.camunda.security.spring.spi.WebAppAccessDeniedHandlerPort;
+import io.camunda.security.spring.spi.WebAppProviderPort;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
@@ -45,15 +45,15 @@ public class WebAppAuthorizationFilterConfiguration {
   }
 
   /**
-   * Default {@link WebAppAccessDeniedHandler} that redirects to {@code
-   * <contextPath>/<webApp>/forbidden}. Only registered when a {@link WebAppProvider} is present (so
-   * the filter would otherwise have something to deny) and the host has not supplied its own
+   * Default {@link WebAppAccessDeniedHandlerPort} that redirects to {@code
+   * <contextPath>/<webApp>/forbidden}. Only registered when a {@link WebAppProviderPort} is present
+   * (so the filter would otherwise have something to deny) and the host has not supplied its own
    * handler.
    */
   @Bean
-  @ConditionalOnBean(WebAppProvider.class)
-  @ConditionalOnMissingBean(WebAppAccessDeniedHandler.class)
-  public WebAppAccessDeniedHandler webAppAccessDeniedHandler() {
+  @ConditionalOnBean(WebAppProviderPort.class)
+  @ConditionalOnMissingBean(WebAppAccessDeniedHandlerPort.class)
+  public WebAppAccessDeniedHandlerPort webAppAccessDeniedHandler() {
     return new RedirectingWebAppAccessDeniedHandler();
   }
 
@@ -64,16 +64,16 @@ public class WebAppAuthorizationFilterConfiguration {
    */
   @Bean
   @ConditionalOnBean({
-    WebAppProvider.class,
+    WebAppProviderPort.class,
     ResourcePermissionPort.class,
-    WebAppAccessDeniedHandler.class,
+    WebAppAccessDeniedHandlerPort.class,
     CamundaAuthenticationProvider.class,
     SecurityPathPort.class
   })
   public WebAppAuthorizationCheckFilter webAppAuthorizationCheckFilter(
-      final WebAppProvider webAppProvider,
+      final WebAppProviderPort webAppProvider,
       final ResourcePermissionPort resourcePermissionPort,
-      final WebAppAccessDeniedHandler webAppAccessDeniedHandler,
+      final WebAppAccessDeniedHandlerPort webAppAccessDeniedHandler,
       final CamundaAuthenticationProvider authenticationProvider,
       final SecurityPathPort securityPathPort) {
     return new WebAppAuthorizationCheckFilter(

@@ -19,7 +19,7 @@ import java.util.Optional;
  * pass-through.
  */
 @FunctionalInterface
-public interface WebAppProvider {
+public interface WebAppProviderPort {
 
   Optional<String> webAppFor(HttpServletRequest request);
 }

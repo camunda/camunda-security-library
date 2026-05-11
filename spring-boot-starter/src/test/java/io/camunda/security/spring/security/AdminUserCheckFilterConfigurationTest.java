@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.camunda.security.core.port.out.AdminUserPresencePort;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.filter.AdminUserCheckFilter;
-import io.camunda.security.spring.spi.AdminUserMissingHandler;
+import io.camunda.security.spring.spi.AdminUserMissingHandlerPort;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Set;
@@ -37,7 +37,7 @@ class AdminUserCheckFilterConfigurationTest {
     runner.run(
         ctx -> {
           assertThat(ctx).doesNotHaveBean(AdminUserCheckFilter.class);
-          assertThat(ctx).doesNotHaveBean(AdminUserMissingHandler.class);
+          assertThat(ctx).doesNotHaveBean(AdminUserMissingHandlerPort.class);
         });
   }
 
@@ -49,7 +49,7 @@ class AdminUserCheckFilterConfigurationTest {
             ctx -> {
               assertThat(ctx).hasSingleBean(AdminUserCheckFilter.class);
               assertThat(ctx)
-                  .getBean(AdminUserMissingHandler.class)
+                  .getBean(AdminUserMissingHandlerPort.class)
                   .isInstanceOf(RedirectingAdminUserMissingHandler.class);
             });
   }
@@ -61,9 +61,9 @@ class AdminUserCheckFilterConfigurationTest {
         .withUserConfiguration(CustomMissingHandler.class)
         .run(
             ctx -> {
-              assertThat(ctx).hasSingleBean(AdminUserMissingHandler.class);
+              assertThat(ctx).hasSingleBean(AdminUserMissingHandlerPort.class);
               assertThat(ctx)
-                  .getBean(AdminUserMissingHandler.class)
+                  .getBean(AdminUserMissingHandlerPort.class)
                   .isInstanceOf(CustomMissingHandler.NoOpHandler.class);
               assertThat(ctx).hasSingleBean(AdminUserCheckFilter.class);
             });
@@ -121,11 +121,11 @@ class AdminUserCheckFilterConfigurationTest {
   static class CustomMissingHandler {
 
     @Bean
-    AdminUserMissingHandler customMissingHandler() {
+    AdminUserMissingHandlerPort customMissingHandler() {
       return new NoOpHandler();
     }
 
-    static final class NoOpHandler implements AdminUserMissingHandler {
+    static final class NoOpHandler implements AdminUserMissingHandlerPort {
       @Override
       public void handle(final HttpServletRequest request, final HttpServletResponse response) {}
     }

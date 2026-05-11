@@ -8,7 +8,7 @@
 package io.camunda.security.spring.filter;
 
 import io.camunda.security.core.port.out.AdminUserPresencePort;
-import io.camunda.security.spring.spi.AdminUserMissingHandler;
+import io.camunda.security.spring.spi.AdminUserMissingHandlerPort;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -26,7 +26,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * <ul>
  *   <li>{@link AdminUserPresencePort} — reports whether an admin user currently exists. The host's
  *       implementation may consult static configuration, live storage, or any combination.
- *   <li>{@link AdminUserMissingHandler} — invoked when no admin user exists. Hosts decide the
+ *   <li>{@link AdminUserMissingHandlerPort} — invoked when no admin user exists. Hosts decide the
  *       response shape (redirect to a setup wizard, JSON 403, RequestDispatcher.forward, etc.).
  *   <li>The set of path prefixes that bypass the check entirely (typically the setup endpoint plus
  *       its static-assets prefix, sourced from {@link
@@ -48,12 +48,12 @@ public final class AdminUserCheckFilter extends OncePerRequestFilter {
   private static final Logger LOG = LoggerFactory.getLogger(AdminUserCheckFilter.class);
 
   private final AdminUserPresencePort presencePort;
-  private final AdminUserMissingHandler missingHandler;
+  private final AdminUserMissingHandlerPort missingHandler;
   private final Set<String> bypassPaths;
 
   public AdminUserCheckFilter(
       final AdminUserPresencePort presencePort,
-      final AdminUserMissingHandler missingHandler,
+      final AdminUserMissingHandlerPort missingHandler,
       final Set<String> bypassPaths) {
     this.presencePort = presencePort;
     this.missingHandler = missingHandler;
@@ -87,7 +87,7 @@ public final class AdminUserCheckFilter extends OncePerRequestFilter {
     }
 
     LOG.debug(
-        "No admin user provisioned; handing off to AdminUserMissingHandler for {}",
+        "No admin user provisioned; handing off to AdminUserMissingHandlerPort for {}",
         request.getRequestURI());
     missingHandler.handle(request, response);
   }

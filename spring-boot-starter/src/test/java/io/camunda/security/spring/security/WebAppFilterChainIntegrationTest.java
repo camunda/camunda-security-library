@@ -20,7 +20,7 @@ import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
-import io.camunda.security.spring.spi.WebAppProvider;
+import io.camunda.security.spring.spi.WebAppProviderPort;
 import jakarta.servlet.Filter;
 import java.util.Optional;
 import java.util.Set;
@@ -86,7 +86,7 @@ class WebAppFilterChainIntegrationTest {
   void basicChainContainsWebAppAuthorizationFilterWhenSpisAreRegistered() {
     basicRunner
         .withUserConfiguration(StubAuthorizationRepository.class)
-        .withUserConfiguration(StubWebAppProvider.class)
+        .withUserConfiguration(StubWebAppProviderPort.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .run(
             ctx -> {
@@ -111,7 +111,7 @@ class WebAppFilterChainIntegrationTest {
   void oidcChainContainsWebAppAuthorizationFilterWhenSpisAreRegistered() {
     oidcRunner
         .withUserConfiguration(StubAuthorizationRepository.class)
-        .withUserConfiguration(StubWebAppProvider.class)
+        .withUserConfiguration(StubWebAppProviderPort.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .run(
             ctx -> {
@@ -186,10 +186,10 @@ class WebAppFilterChainIntegrationTest {
   }
 
   @Configuration
-  static class StubWebAppProvider {
+  static class StubWebAppProviderPort {
 
     @Bean
-    WebAppProvider webAppProvider() {
+    WebAppProviderPort webAppProvider() {
       return request -> Optional.of("operate");
     }
   }
