@@ -13,8 +13,11 @@ Accepted
 
 The CSL's hexagonal architecture splits extension points across three categories:
 
-1. **Inbound ports** in `core/port/in/` — library-internal contracts the library implements and that
-   library callers (filters, services) invoke against. Example: `ResourcePermissionPort`.
+1. **Inbound ports** in `core/port/in/` — contracts the library defines and supplies a default
+   implementation for (typically in `spring-boot-starter/`); hosts can override the default by
+   registering their own bean of the same port type, in which case the library default backs off
+   via `@ConditionalOnMissingBean`. Example: `ResourcePermissionPort` (default
+   `ResourcePermissionService`).
 2. **Outbound ports (core)** in `core/port/out/` — framework-free contracts the library calls and
    hosts implement. Examples: `SecurityPathPort`, `AuthorizationRepositoryPort`,
    `AdminUserPresencePort`.
