@@ -124,6 +124,27 @@ All properties live under `camunda.security.*`. Spring's relaxed binding accepts
 | `registration-id` | string | `oidc` | Spring Security client registration id. |
 | `client-authentication-method` | string | `client_secret_basic` | Spring Security `ClientAuthenticationMethod` literal. |
 
+### OIDC groups claim extraction
+
+If your IdP exposes group membership in an OIDC claim, configure `camunda.security.authentication.oidc.groupsClaim` to point at that claim.
+
+- Plain claim names such as `groups` are accepted and are normalized to a JSONPath internally.
+- JSONPath expressions such as `$.realm_access.roles` are also accepted.
+- `OidcGroupsClaimValidator` validates the value during configuration binding and rejects malformed JSONPath or plain-claim syntax.
+- `OidcGroupsExtractor` reads the configured claim from the OIDC claims map and returns the groups as a `List<String>`.
+
+Example:
+
+```yaml
+camunda:
+  security:
+    authentication:
+      oidc:
+        groups-claim: groups
+```
+
+In this example, the library treats `groups` as the claim source for group mapping and extracts the claim contents as strings. A single string claim is returned as a one-element list, a string array is returned as-is, and a missing claim yields an empty result. If the claim resolves to a non-string value, extraction fails fast with an `IllegalArgumentException` so the OIDC configuration can be corrected early.
+
 ### `camunda.security.csrf.*`
 
 | Property | Type | Default | Effect |
