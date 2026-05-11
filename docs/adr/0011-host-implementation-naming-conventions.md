@@ -64,7 +64,7 @@ starter module instead. Their role and naming convention are otherwise identical
 |---|---|---|
 | Inbound port | `*Service` (in `spring-boot-starter/`) | `*Service` (host overrides) |
 | Outbound port (core) | none (host must register) | `*Adapter` (host code) |
-| Outbound port (servlet-coupled) | `Redirecting*Adapter` — semantic verb prefix + `*Adapter` suffix | `*Adapter` (host code) |
+| Outbound port (servlet-coupled) | when supplied, a strategy-prefixed `*Adapter` (e.g. `Redirecting*Adapter`); some ports ship no default and the host must register | `*Adapter` (host code) |
 
 ### Examples
 

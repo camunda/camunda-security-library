@@ -86,7 +86,7 @@ class WebAppFilterChainIntegrationTest {
   void basicChainContainsWebAppAuthorizationFilterWhenSpisAreRegistered() {
     basicRunner
         .withUserConfiguration(StubAuthorizationRepository.class)
-        .withUserConfiguration(StubWebAppProviderPort.class)
+        .withUserConfiguration(StubWebAppProvider.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .run(
             ctx -> {
@@ -111,7 +111,7 @@ class WebAppFilterChainIntegrationTest {
   void oidcChainContainsWebAppAuthorizationFilterWhenSpisAreRegistered() {
     oidcRunner
         .withUserConfiguration(StubAuthorizationRepository.class)
-        .withUserConfiguration(StubWebAppProviderPort.class)
+        .withUserConfiguration(StubWebAppProvider.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .run(
             ctx -> {
@@ -186,7 +186,7 @@ class WebAppFilterChainIntegrationTest {
   }
 
   @Configuration
-  static class StubWebAppProviderPort {
+  static class StubWebAppProvider {
 
     @Bean
     WebAppProviderPort webAppProvider() {

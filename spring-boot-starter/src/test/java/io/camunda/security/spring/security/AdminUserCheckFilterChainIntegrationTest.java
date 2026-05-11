@@ -138,7 +138,7 @@ class AdminUserCheckFilterChainIntegrationTest {
     basicRunner
         .withUserConfiguration(StubPresencePort.class)
         .withUserConfiguration(StubAuthorizationRepository.class)
-        .withUserConfiguration(StubWebAppProviderPort.class)
+        .withUserConfiguration(StubWebAppProvider.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .run(
             ctx -> {
@@ -154,7 +154,7 @@ class AdminUserCheckFilterChainIntegrationTest {
     oidcRunner
         .withUserConfiguration(StubPresencePort.class)
         .withUserConfiguration(StubAuthorizationRepository.class)
-        .withUserConfiguration(StubWebAppProviderPort.class)
+        .withUserConfiguration(StubWebAppProvider.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .run(
             ctx -> {
@@ -242,7 +242,7 @@ class AdminUserCheckFilterChainIntegrationTest {
   }
 
   @Configuration
-  static class StubWebAppProviderPort {
+  static class StubWebAppProvider {
 
     @Bean
     WebAppProviderPort webAppProvider() {

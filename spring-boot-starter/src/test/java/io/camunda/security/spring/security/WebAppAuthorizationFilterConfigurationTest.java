@@ -73,7 +73,7 @@ class WebAppAuthorizationFilterConfigurationTest {
   void allThreeSpisRegisteredCreatesFilterAndDefaults() {
     runner
         .withUserConfiguration(StubAuthorizationRepository.class)
-        .withUserConfiguration(StubWebAppProviderPort.class)
+        .withUserConfiguration(StubWebAppProvider.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .run(
             ctx -> {
@@ -93,7 +93,7 @@ class WebAppAuthorizationFilterConfigurationTest {
     // back off via @ConditionalOnMissingBean.
     runner
         .withUserConfiguration(StubAuthorizationRepository.class)
-        .withUserConfiguration(StubWebAppProviderPort.class)
+        .withUserConfiguration(StubWebAppProvider.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .withUserConfiguration(CustomResourcePermissionPort.class)
         .run(
@@ -109,7 +109,7 @@ class WebAppAuthorizationFilterConfigurationTest {
   void hostWebAppAccessDeniedHandlerOverridesDefault() {
     runner
         .withUserConfiguration(StubAuthorizationRepository.class)
-        .withUserConfiguration(StubWebAppProviderPort.class)
+        .withUserConfiguration(StubWebAppProvider.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .withUserConfiguration(CustomDeniedHandler.class)
         .run(
@@ -171,7 +171,7 @@ class WebAppAuthorizationFilterConfigurationTest {
   }
 
   @Configuration
-  static class StubWebAppProviderPort {
+  static class StubWebAppProvider {
 
     @Bean
     WebAppProviderPort webAppProvider() {
