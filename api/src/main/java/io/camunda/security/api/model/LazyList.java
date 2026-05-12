@@ -42,7 +42,7 @@ final class LazyList<T> extends AbstractList<T> implements Serializable {
 
   @Serial private static final long serialVersionUID = 1L;
 
-  private transient Supplier<List<T>> supplier;
+  private transient volatile Supplier<List<T>> supplier;
   private transient volatile List<T> materialised;
 
   LazyList(final Supplier<List<T>> supplier) {
@@ -63,6 +63,10 @@ final class LazyList<T> extends AbstractList<T> implements Serializable {
       }
     }
     return local;
+  }
+
+  boolean hasSupplierReference() {
+    return supplier != null;
   }
 
   @Override

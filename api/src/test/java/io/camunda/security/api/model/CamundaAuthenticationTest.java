@@ -154,7 +154,7 @@ class CamundaAuthenticationTest {
   }
 
   @Test
-  void shouldReleaseSupplierReferenceAfterMaterialization() throws Exception {
+  void shouldReleaseSupplierReferenceAfterMaterialization() {
     final var authentication =
         CamundaAuthentication.of(
             b -> b.user("demo-user").groupIdsSupplier(() -> List.of("group-1", "group-2")));
@@ -162,13 +162,12 @@ class CamundaAuthenticationTest {
     final var groups = authentication.authenticatedGroupIds();
     assertThat(groups).isInstanceOf(LazyList.class);
 
-    final var supplierField = LazyList.class.getDeclaredField("supplier");
-    supplierField.setAccessible(true);
-    assertThat(supplierField.get(groups)).isNotNull();
+    final var lazyGroups = (LazyList<?>) groups;
+    assertThat(lazyGroups.hasSupplierReference()).isTrue();
 
     assertThat(groups).containsExactly("group-1", "group-2");
 
-    assertThat(supplierField.get(groups)).isNull();
+    assertThat(lazyGroups.hasSupplierReference()).isFalse();
   }
 
   @Test
