@@ -39,9 +39,12 @@ import org.springframework.security.web.DefaultSecurityFilterChain;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * Verifies that {@link AdminUserCheckFilter} ends up in the OIDC and Basic-auth webapp filter
- * chains when (and only when) a host registers the required SPIs alongside the explicit
- * {@code @Import(AdminUserCheckFilterConfiguration.class)}.
+ * Verifies the chain-assembly contract for {@link AdminUserCheckFilter}: the bean is created
+ * whenever a host registers the required SPIs alongside the explicit
+ * {@code @Import(AdminUserCheckFilterConfiguration.class)}, but only the Basic-auth webapp chain
+ * wires it via {@code addFilterAfter(...)}. The OIDC webapp chain intentionally omits the filter
+ * even when the bean is present (see ADR-0011 and GH-189). Hosts that need the check on a custom
+ * OIDC chain are expected to compose the bean themselves.
  */
 class AdminUserCheckFilterChainIntegrationTest {
 
@@ -110,14 +113,19 @@ class AdminUserCheckFilterChainIntegrationTest {
   }
 
   @Test
-  void oidcChainContainsAdminUserCheckFilterWhenSpiIsRegistered() {
+  void oidcChainOmitsAdminUserCheckFilterEvenWhenBeanIsPresent() {
+    // GH-189 / ADR-0011: the OIDC chain configuration does not add the admin-user check filter,
+    // even when the bean exists in the context. Admin provisioning under OIDC is driven by IdP
+    // claims and the filter has no signal to distinguish "no admin yet" from "this user's
+    // membership has not been projected yet" — so the chain must not 302 to /admin/setup. A
+    // host that wants this check under OIDC owns the wiring.
     oidcRunner
         .withUserConfiguration(StubPresencePort.class)
         .run(
             ctx -> {
               assertThat(ctx).hasSingleBean(AdminUserCheckFilter.class);
               assertThat(filtersOf(ctx.getBean(OIDC_CHAIN_BEAN, SecurityFilterChain.class)))
-                  .anySatisfy(f -> assertThat(f).isInstanceOf(AdminUserCheckFilter.class));
+                  .noneSatisfy(f -> assertThat(f).isInstanceOf(AdminUserCheckFilter.class));
             });
   }
 
@@ -144,22 +152,6 @@ class AdminUserCheckFilterChainIntegrationTest {
             ctx -> {
               final var filters =
                   filtersOf(ctx.getBean(BASIC_CHAIN_BEAN, SecurityFilterChain.class));
-              assertThat(indexOfType(filters, AdminUserCheckFilter.class))
-                  .isLessThan(indexOfType(filters, WebAppAuthorizationCheckFilter.class));
-            });
-  }
-
-  @Test
-  void oidcChainPlacesAdminFilterBeforeWebAppFilterWhenBothSpisAreRegistered() {
-    oidcRunner
-        .withUserConfiguration(StubPresencePort.class)
-        .withUserConfiguration(StubAuthorizationRepository.class)
-        .withUserConfiguration(StubWebAppProvider.class)
-        .withUserConfiguration(StubAuthenticationProvider.class)
-        .run(
-            ctx -> {
-              final var filters =
-                  filtersOf(ctx.getBean(OIDC_CHAIN_BEAN, SecurityFilterChain.class));
               assertThat(indexOfType(filters, AdminUserCheckFilter.class))
                   .isLessThan(indexOfType(filters, WebAppAuthorizationCheckFilter.class));
             });
