@@ -57,25 +57,67 @@ Concretely:
 imports a configuration class can still override individual beans without touching the
 configuration class itself.
 
+### Optional opt-in umbrella `@AutoConfiguration`
+
+The CSL ships a single optional umbrella class —
+`io.camunda.security.spring.CamundaSecurityAutoConfiguration` — that `@Import`s every CSL
+configuration class. The umbrella is annotated `@AutoConfiguration` but is **not** registered in
+CSL's `AutoConfiguration.imports`, so the rule above still holds: adding the Maven dependency
+alone activates nothing.
+
+Hosts that want the full CSL stack with a single opt-in can activate the umbrella by either:
+
+- annotating one of their own configuration classes with
+  `@ImportAutoConfiguration(CamundaSecurityAutoConfiguration.class)`, or
+- listing it in their own
+  `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` file.
+
+When the host opts in this way, Spring loads the umbrella in the deferred auto-configuration
+phase — after every host `@Configuration` class has been parsed. The CSL's `@ConditionalOnBean`
+and `@ConditionalOnMissingBean` gates then evaluate against the full bean graph and behave as
+documented, so host-supplied SPIs are visible and host overrides correctly displace the library
+defaults.
+
+Hosts that prefer fine-grained control can still `@Import` individual CSL configuration classes
+directly. In that path Spring evaluates the conditional gates against a partial bean graph (the
+condition evaluator runs as each user `@Configuration` is parsed, and the host's own
+`@Configuration` siblings may not be parsed yet). Adopters following the fine-grained path
+therefore accept the conditional-bean fragility and work around it where needed — for example by
+eagerly registering the host SPIs that CSL configurations depend on.
+
 ### What this means for adopters
 
 Hosts include the `camunda-security-library-spring-boot-starter` dependency in their `pom.xml`
-and then explicitly activate the configurations they need:
+and explicitly opt in. Two paths:
 
-```java
-@Configuration
-@Import({
-    BaseSecurityConfiguration.class,
-    OidcApiSecurityConfiguration.class,
-    OidcWebappSecurityConfiguration.class,
-    OidcBeansConfiguration.class,
-    AuthFailureHandlerConfiguration.class
-})
-public class HubSecurityConfiguration {}
-```
+1. **Umbrella (single opt-in for the full CSL stack):**
 
-Nothing activates unless the host opts in. If a CSL configuration class is not yet ready for a
-given host, the host simply does not import it.
+   ```java
+   @ImportAutoConfiguration(CamundaSecurityAutoConfiguration.class)
+   public class HubSecurityConfiguration {}
+   ```
+
+   Or, equivalently, list `io.camunda.security.spring.CamundaSecurityAutoConfiguration` in the
+   host's own `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`.
+
+2. **Fine-grained `@Import`** when activating only part of CSL or while individual configurations
+   are still being adopted:
+
+   ```java
+   @Configuration
+   @Import({
+       BaseSecurityConfiguration.class,
+       OidcApiSecurityConfiguration.class,
+       OidcWebappSecurityConfiguration.class,
+       OidcBeansConfiguration.class,
+       AuthFailureHandlerConfiguration.class
+   })
+   public class HubSecurityConfiguration {}
+   ```
+
+Nothing activates unless the host opts in via one of these two paths. If a CSL configuration is
+not yet ready for a given host, the host simply omits it from the `@Import` list (path 2) or
+defers adopting the umbrella (path 1).
 
 ### Migration path
 

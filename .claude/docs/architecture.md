@@ -6,7 +6,7 @@ The CSL is a multi-module Maven library. Modules will be added as implementation
 
 - `api/` — Public, host-facing surface: model records adopters consume (`api/model/`), context interfaces hosts implement (`api/context/`), and configuration records bound by Spring in the starter (`api/model/config/`). No dependencies on `core/`.
 - `core/` — Framework-free domain logic and port interfaces. For new code, contracts live under `port/in/` and `port/out/`. Depends on `api/` so port signatures can speak the public model types directly. Zero Spring or zeebe-protocol dependencies (enforced by `DomainArchTest`).
-- `spring-boot-starter/` — Spring configuration classes for filter chains, authentication beans, and related infrastructure. **No Spring Boot auto-configuration is used** (see [ADR-0008](../../docs/adr/0008-no-spring-boot-auto-configuration.md)): there is no `AutoConfiguration.imports` file. Host applications explicitly `@Import` the configuration classes they are ready to activate. Every library-supplied bean has `@ConditionalOnMissingBean` so hosts can override individual beans without touching the configuration class.
+- `spring-boot-starter/` — Spring configuration classes for filter chains, authentication beans, and related infrastructure. **No Spring Boot auto-configuration is registered by CSL** (see [ADR-0008](../../docs/adr/0008-no-spring-boot-auto-configuration.md)): there is no `AutoConfiguration.imports` file. Hosts opt in either by `@Import`ing individual configuration classes, or by activating the opt-in umbrella `CamundaSecurityAutoConfiguration` via `@ImportAutoConfiguration` / their own `AutoConfiguration.imports`. Every library-supplied bean has `@ConditionalOnMissingBean` so hosts can override individual beans without touching the configuration class.
 
 ## Key Boundaries
 
@@ -76,7 +76,7 @@ Caller invokes a `*Port` method with domain types
 - Configuration classes (non-record classes bound via `@ConfigurationProperties`):
   - **Data model** (plain, no Spring deps): `api/model/config/` — e.g., `AuthenticationConfiguration`, `OidcConfiguration`
   - **Spring binding logic**: `spring-boot-starter/` — @ConfigurationProperties binds `api/model/config/` classes
-- Configuration, default beans, conditional activation → `spring-boot-starter/` (under `io.camunda.security.spring.*`). Use plain `@Configuration`, not `@AutoConfiguration`. Do not register classes in `AutoConfiguration.imports` — hosts must explicitly `@Import` them.
+- Configuration, default beans, conditional activation → `spring-boot-starter/` (under `io.camunda.security.spring.*`). Use plain `@Configuration`, not `@AutoConfiguration` — only the umbrella `CamundaSecurityAutoConfiguration` carries that annotation, and it is intentionally left out of `AutoConfiguration.imports`. Do not register library configuration classes in `AutoConfiguration.imports`; hosts opt in via `@Import` of individual classes or `@ImportAutoConfiguration(CamundaSecurityAutoConfiguration.class)`. When adding a new library configuration class, also add it to the umbrella's `@Import` list (and to `CamundaSecurityAutoConfigurationTest`).
 
 ## What Not to Touch
 
