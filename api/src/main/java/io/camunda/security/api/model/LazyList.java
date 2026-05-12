@@ -42,7 +42,7 @@ final class LazyList<T> extends AbstractList<T> implements Serializable {
 
   @Serial private static final long serialVersionUID = 1L;
 
-  private final transient Supplier<List<T>> supplier;
+  private transient Supplier<List<T>> supplier;
   private transient volatile List<T> materialised;
 
   LazyList(final Supplier<List<T>> supplier) {
@@ -58,6 +58,7 @@ final class LazyList<T> extends AbstractList<T> implements Serializable {
           final var produced = supplier.get();
           local = produced == null ? List.of() : List.copyOf(produced);
           materialised = local;
+          supplier = null;
         }
       }
     }
