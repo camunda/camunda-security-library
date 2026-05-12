@@ -22,7 +22,7 @@ YOU MUST write tests where there are logic branches — not blanket coverage for
 
 YOU MUST run `mvn verify` before presenting work as complete. A clean run means no test failures and `BUILD SUCCESS`.
 
-IMPORTANT: Do NOT create or modify `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`. The CSL does not use Spring Boot auto-configuration (ADR-0008). If you find yourself writing `@AutoConfiguration` or editing the imports file, stop — see ADR-0008 and the conventions doc instead.
+IMPORTANT: Do NOT create or modify `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` in CSL itself — nothing must activate from adding the Maven dependency alone (ADR-0008). The single permitted use of `@AutoConfiguration` in the library is the opt-in umbrella `io.camunda.security.spring.CamundaSecurityAutoConfiguration`, which is deliberately left out of `AutoConfiguration.imports` so hosts activate it explicitly (via `@ImportAutoConfiguration` or their own imports file). If you find yourself writing `@AutoConfiguration` on any other class, or registering anything in CSL's `AutoConfiguration.imports`, stop — see ADR-0008 and the conventions doc instead.
 
 ## Hard Rules
 
