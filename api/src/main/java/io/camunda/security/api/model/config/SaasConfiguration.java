@@ -13,10 +13,13 @@ public final class SaasConfiguration {
   private String clusterId;
 
   public boolean isConfigured() {
-    if (organizationId != null && clusterId != null) {
+    final boolean organizationConfigured = organizationId != null && !organizationId.isBlank();
+    final boolean clusterConfigured = clusterId != null && !clusterId.isBlank();
+
+    if (organizationConfigured && clusterConfigured) {
       return true;
     }
-    if (organizationId == null && clusterId == null) {
+    if (!organizationConfigured && !clusterConfigured) {
       return false;
     }
     throw new IllegalStateException("Must configure both organizationId and clusterId");
