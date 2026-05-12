@@ -225,6 +225,22 @@ class CamundaAuthenticationTest {
   }
 
   @Test
+  void shouldRejectNullSupplierInputs() {
+    assertThatExceptionOfType(NullPointerException.class)
+        .isThrownBy(() -> new CamundaAuthentication.Builder().groupIdsSupplier(null))
+        .withMessage("groupIds supplier must not be null");
+    assertThatExceptionOfType(NullPointerException.class)
+        .isThrownBy(() -> new CamundaAuthentication.Builder().roleIdsSupplier(null))
+        .withMessage("roleIds supplier must not be null");
+    assertThatExceptionOfType(NullPointerException.class)
+        .isThrownBy(() -> new CamundaAuthentication.Builder().tenantsSupplier(null))
+        .withMessage("tenants supplier must not be null");
+    assertThatExceptionOfType(NullPointerException.class)
+        .isThrownBy(() -> new CamundaAuthentication.Builder().mappingRulesSupplier(null))
+        .withMessage("mappingRules supplier must not be null");
+  }
+
+  @Test
   void shouldRejectBothEagerValuesAndSupplierForSameField() {
     assertThatExceptionOfType(IllegalStateException.class)
         .isThrownBy(

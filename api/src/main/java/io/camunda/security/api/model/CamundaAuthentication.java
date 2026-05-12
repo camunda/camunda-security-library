@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -139,7 +140,7 @@ public record CamundaAuthentication(
     }
 
     public Builder groupIdsSupplier(final Supplier<List<String>> supplier) {
-      groupIdsSupplier = supplier;
+      groupIdsSupplier = Objects.requireNonNull(supplier, "groupIds supplier must not be null");
       return this;
     }
 
@@ -155,7 +156,7 @@ public record CamundaAuthentication(
     }
 
     public Builder roleIdsSupplier(final Supplier<List<String>> supplier) {
-      roleIdsSupplier = supplier;
+      roleIdsSupplier = Objects.requireNonNull(supplier, "roleIds supplier must not be null");
       return this;
     }
 
@@ -171,7 +172,7 @@ public record CamundaAuthentication(
     }
 
     public Builder tenantsSupplier(final Supplier<List<String>> supplier) {
-      tenantsSupplier = supplier;
+      tenantsSupplier = Objects.requireNonNull(supplier, "tenants supplier must not be null");
       return this;
     }
 
@@ -187,7 +188,8 @@ public record CamundaAuthentication(
     }
 
     public Builder mappingRulesSupplier(final Supplier<List<String>> supplier) {
-      mappingRulesSupplier = supplier;
+      mappingRulesSupplier =
+          Objects.requireNonNull(supplier, "mappingRules supplier must not be null");
       return this;
     }
 
