@@ -36,7 +36,7 @@ class AuthenticationConfigurationTest {
   }
 
   @Test
-  void shouldDisableCamundaGroupsAndUsersInOICDAuthWithGroupsClaim() {
+  void shouldDisableCamundaGroupsAndUsersInOIDCAuthWithGroupsClaim() {
     // given:
     final var config = new AuthenticationConfiguration();
     config.setMethod(AuthenticationMethod.OIDC);
@@ -45,5 +45,17 @@ class AuthenticationConfigurationTest {
     // expect:
     assertThat(config.isCamundaUsersEnabled()).isFalse();
     assertThat(config.isCamundaGroupsEnabled()).isFalse();
+  }
+
+  @Test
+  void shouldEnableCamundaGroupsWhenOidcConfigurationIsNull() {
+    // given:
+    final var config = new AuthenticationConfiguration();
+    config.setMethod(AuthenticationMethod.OIDC);
+    config.setOidc(null);
+
+    // expect:
+    assertThat(config.isCamundaUsersEnabled()).isFalse();
+    assertThat(config.isCamundaGroupsEnabled()).isTrue();
   }
 }

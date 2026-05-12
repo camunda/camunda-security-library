@@ -150,7 +150,7 @@ public final class AssertionConfiguration {
     LOWER
   }
 
-  /** Defines the encoding of thd digest bytes into the <code>kid</code> string. */
+  /** Defines the encoding of the digest bytes into the <code>kid</code> string. */
   public enum KidEncoding {
     HEX,
     BASE64URL

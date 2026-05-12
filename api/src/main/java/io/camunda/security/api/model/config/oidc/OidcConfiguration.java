@@ -13,7 +13,6 @@ import static io.camunda.security.api.model.config.AssertionConfiguration.KidSou
 
 import io.camunda.security.api.model.config.AssertionConfiguration;
 import io.camunda.security.api.model.config.oidc.validator.OidcGroupsClaimValidator;
-import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
@@ -65,9 +64,10 @@ public class OidcConfiguration {
   private OidcUserInfoAugmentationConfiguration userInfoAugmentation =
       new OidcUserInfoAugmentationConfiguration();
 
-  @PostConstruct
   public void validate() {
-    assertionConfiguration.validate();
+    if (assertionConfiguration != null) {
+      assertionConfiguration.validate();
+    }
   }
 
   public List<String> getResource() {
@@ -131,6 +131,10 @@ public class OidcConfiguration {
   }
 
   public void setGrantType(final String grantType) {
+    if (grantType != null && !grantType.isBlank() && !"authorization_code".equals(grantType)) {
+      throw new IllegalArgumentException(
+          "OIDC grantType configuration is currently unsupported in this version and must not be set.");
+    }
     this.grantType = grantType;
   }
 
@@ -318,6 +322,9 @@ public class OidcConfiguration {
   }
 
   public boolean isSet() {
+    final AssertionConfiguration currentAssertionConfiguration = assertionConfiguration;
+    final var currentKeystoreConfiguration =
+        currentAssertionConfiguration != null ? currentAssertionConfiguration.getKeystore() : null;
     return issuerUri != null
         || clientId != null
         || clientName != null
@@ -342,14 +349,16 @@ public class OidcConfiguration {
         || preferIdTokenClaims
         || organizationId != null
         || !CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC.equals(clientAuthenticationMethod)
-        || assertionConfiguration.getKeystore().getPath() != null
-        || assertionConfiguration.getKeystore().getPassword() != null
-        || assertionConfiguration.getKeystore().getKeyAlias() != null
-        || assertionConfiguration.getKeystore().getKeyPassword() != null
-        || assertionConfiguration.getKidSource() != KidSource.PUBLIC_KEY
-        || assertionConfiguration.getKidDigestAlgorithm() != KidDigestAlgorithm.SHA256
-        || assertionConfiguration.getKidEncoding() != KidEncoding.BASE64URL
-        || assertionConfiguration.getKidCase() != null
+        || currentAssertionConfiguration == null
+        || currentKeystoreConfiguration == null
+        || currentKeystoreConfiguration.getPath() != null
+        || currentKeystoreConfiguration.getPassword() != null
+        || currentKeystoreConfiguration.getKeyAlias() != null
+        || currentKeystoreConfiguration.getKeyPassword() != null
+        || currentAssertionConfiguration.getKidSource() != KidSource.PUBLIC_KEY
+        || currentAssertionConfiguration.getKidDigestAlgorithm() != KidDigestAlgorithm.SHA256
+        || currentAssertionConfiguration.getKidEncoding() != KidEncoding.BASE64URL
+        || currentAssertionConfiguration.getKidCase() != null
         || !DEFAULT_CLOCK_SKEW.equals(clockSkew);
   }
 

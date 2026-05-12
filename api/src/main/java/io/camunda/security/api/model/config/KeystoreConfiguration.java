@@ -8,7 +8,11 @@
 package io.camunda.security.api.model.config;
 
 import java.io.FileInputStream;
+import java.io.IOException;
 import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.CertificateException;
 
 /** Configures PKCS12 keystore access for loading private keys used by security components. */
 public class KeystoreConfiguration {
@@ -49,12 +53,21 @@ public class KeystoreConfiguration {
     this.keyPassword = keyPassword;
   }
 
-  public KeyStore loadKeystore() throws Exception {
+  public KeyStore loadKeystore()
+      throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException {
+    validateRequiredField(path, "path");
+    validateRequiredField(password, "password");
     final KeyStore keyStore = KeyStore.getInstance("PKCS12");
     try (final FileInputStream fis = new FileInputStream(getPath())) {
       keyStore.load(fis, getPassword().toCharArray());
     }
     return keyStore;
+  }
+
+  private static void validateRequiredField(final String value, final String fieldName) {
+    if (value == null || value.isBlank()) {
+      throw new IllegalStateException("Keystore " + fieldName + " must be configured");
+    }
   }
 
   public static Builder builder() {

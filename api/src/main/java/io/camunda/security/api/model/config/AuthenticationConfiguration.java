@@ -89,7 +89,10 @@ public class AuthenticationConfiguration {
 
   /** Camunda-managed groups are disabled when OIDC is active and a groups claim is configured. */
   public boolean isCamundaGroupsEnabled() {
-    return !(getMethod() == AuthenticationMethod.OIDC && getOidc().isGroupsClaimConfigured());
+    final var oidcConfiguration = getOidc();
+    return !(getMethod() == AuthenticationMethod.OIDC
+        && oidcConfiguration != null
+        && oidcConfiguration.isGroupsClaimConfigured());
   }
 
   /** Camunda-managed users are disabled when OIDC authentication is active. */
