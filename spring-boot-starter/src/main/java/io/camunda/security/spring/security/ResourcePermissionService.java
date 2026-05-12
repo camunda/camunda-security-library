@@ -19,11 +19,13 @@ import io.camunda.security.core.port.out.AuthorizationRepositoryPort;
  * {@link ResourceType}, then returns {@code true} when any record matches the requested resource id
  * and carries the requested {@link PermissionType}.
  *
- * <p>Wildcard semantics (a grant on "all resources of this type") is not handled here yet — the
- * comparison is exact-id only. When a use case needs wildcard support, it can be added as a single
- * change to the matching predicate without affecting the host SPI.
+ * <p>A grant whose {@code resourceId} equals {@value #WILDCARD_RESOURCE_ID} represents "all
+ * resources of this type" and matches any concrete id. This aligns with the wildcard convention
+ * used elsewhere on the platform (e.g. {@code io.camunda.security.impl.AuthorizationChecker}).
  */
 public final class ResourcePermissionService implements ResourcePermissionPort {
+
+  private static final String WILDCARD_RESOURCE_ID = "*";
 
   private final AuthorizationRepositoryPort repository;
 
@@ -40,7 +42,11 @@ public final class ResourcePermissionService implements ResourcePermissionPort {
     return repository.findAuthorizations(authentication, resourceType).stream()
         .anyMatch(
             authorization ->
-                authorization.resourceId().equals(resourceId)
+                matchesResourceId(authorization.resourceId(), resourceId)
                     && authorization.permissionTypes().contains(permissionType));
+  }
+
+  private static boolean matchesResourceId(final String grantedResourceId, final String requested) {
+    return WILDCARD_RESOURCE_ID.equals(grantedResourceId) || grantedResourceId.equals(requested);
   }
 }

@@ -39,6 +39,33 @@ class ResourcePermissionServiceTest {
   }
 
   @Test
+  void returnsTrueWhenGrantUsesWildcardResourceId() {
+    // A grant on "*" represents "all resources of this type" and must authorize any concrete id.
+    final var repository =
+        new StubRepository(
+            Set.of(new Authorization(ResourceType.COMPONENT, "*", Set.of(PermissionType.ACCESS))));
+    final var service = new ResourcePermissionService(repository);
+
+    assertThat(
+            service.hasPermission(
+                authentication, ResourceType.COMPONENT, "operate", PermissionType.ACCESS))
+        .isTrue();
+  }
+
+  @Test
+  void returnsFalseWhenWildcardGrantLacksRequestedPermission() {
+    final var repository =
+        new StubRepository(
+            Set.of(new Authorization(ResourceType.USER, "*", Set.of(PermissionType.READ))));
+    final var service = new ResourcePermissionService(repository);
+
+    assertThat(
+            service.hasPermission(
+                authentication, ResourceType.USER, "alice", PermissionType.UPDATE))
+        .isFalse();
+  }
+
+  @Test
   void returnsFalseWhenGrantsCoverDifferentResourceIds() {
     // Alice has ACCESS to "tasklist" but not to "operate" — must not over-authorize.
     final var repository =
