@@ -17,7 +17,6 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
-import io.camunda.security.spring.filter.AdminUserCheckFilter;
 import io.camunda.security.spring.filter.OAuth2RefreshTokenFilter;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
@@ -80,7 +79,6 @@ public class OidcWebappSecurityConfiguration {
       final ObjectProvider<OAuth2AuthorizationRequestResolver> authorizationRequestResolverProvider,
       final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers,
       final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
-      final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider,
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort)
       throws Exception {
@@ -179,20 +177,15 @@ public class OidcWebappSecurityConfiguration {
             authorizedClientRepository, authorizedClientManager, logoutHandler),
         AuthorizationFilter.class);
 
-    // Each optional filter is anchored explicitly on the previous filter in the chain so the
-    // relative order is deterministic regardless of which combination is present. AdminUserCheck
-    // sits after the refresh-token filter so it operates on a freshly-refreshed principal;
-    // WebAppAuthorizationCheck sits after AdminUserCheck (when present) so an unprovisioned
-    // system redirects to setup before any per-web-app permission check fires.
-    final var adminFilter = adminUserCheckFilterProvider.getIfAvailable();
-    if (adminFilter != null) {
-      filterChainBuilder.addFilterAfter(adminFilter, OAuth2RefreshTokenFilter.class);
-    }
+    // The admin-user setup filter is intentionally NOT wired into the OIDC chain (see ADR-0011
+    // and GH-189): under OIDC, admin provisioning is driven by IdP claims and mapping rules, and
+    // the filter has no signal that distinguishes "no admin yet" from "this user's membership
+    // has not been projected yet" — so a freshly IdP-authenticated user would otherwise be
+    // 302'd to /admin/setup. WebAppAuthorizationCheck sits directly after the refresh-token
+    // filter when present.
     final var webAppFilter = webAppAuthorizationFilterProvider.getIfAvailable();
     if (webAppFilter != null) {
-      final var anchor =
-          adminFilter != null ? AdminUserCheckFilter.class : OAuth2RefreshTokenFilter.class;
-      filterChainBuilder.addFilterAfter(webAppFilter, anchor);
+      filterChainBuilder.addFilterAfter(webAppFilter, OAuth2RefreshTokenFilter.class);
     }
 
     SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
