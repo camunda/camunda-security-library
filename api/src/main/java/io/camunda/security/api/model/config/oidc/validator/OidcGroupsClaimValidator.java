@@ -17,10 +17,13 @@ public final class OidcGroupsClaimValidator {
       return;
     }
 
+    if ("$".equals(groupsClaim)) {
+      throw new IllegalArgumentException(
+          "groupsClaim JSONPath must not refer to the root object: " + groupsClaim);
+    }
+
     if (groupsClaim.startsWith("$")
-        && !("$".equals(groupsClaim)
-            || groupsClaim.startsWith("$.")
-            || groupsClaim.startsWith("$["))) {
+        && !(groupsClaim.startsWith("$.") || groupsClaim.startsWith("$["))) {
       throw new IllegalArgumentException("Invalid groups claim JSONPath: " + groupsClaim);
     }
 

@@ -21,7 +21,7 @@ import java.util.Map;
 public final class OidcGroupsExtractor {
 
   public static final String DERIVED_GROUPS_ARE_NOT_STRING_ARRAY =
-      "Group's list derived from (%s) is not a string array. Please check your OIDC configuration.";
+      "Group list derived from (%s) is not a string array. Please check your OIDC configuration.";
 
   private static final Configuration JSON_PATH_CONFIGURATION =
       Configuration.builder().options(Option.DEFAULT_PATH_LEAF_TO_NULL).build();

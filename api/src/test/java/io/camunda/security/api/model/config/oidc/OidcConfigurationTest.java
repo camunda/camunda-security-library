@@ -19,6 +19,7 @@ import java.util.Set;
 import java.util.stream.Stream;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -69,7 +70,7 @@ public class OidcConfigurationTest {
             OidcConfiguration.builder().authorizeRequestConfiguration(null).build(),
             true),
         Arguments.of(
-            "authorizeRequestConfiguration is set to null",
+            "authorizeRequestConfiguration has additional parameters",
             OidcConfiguration.builder()
                 .authorizeRequestConfiguration(
                     AuthorizeRequestConfiguration.builder().additionalParameter("k1", "v1").build())
@@ -77,10 +78,6 @@ public class OidcConfigurationTest {
             true),
         Arguments.of(
             "grantType is set to empty", OidcConfiguration.builder().grantType("").build(), true),
-        Arguments.of(
-            "grantType is set",
-            OidcConfiguration.builder().grantType("client_credentials").build(),
-            true),
         Arguments.of(
             "clientIdClaim is set",
             OidcConfiguration.builder().clientIdClaim("cclaim").build(),
@@ -119,7 +116,8 @@ public class OidcConfigurationTest {
             "redirectUri is set",
             OidcConfiguration.builder().redirectUri("redirect").build(),
             true),
-        Arguments.of("tokeUri is set", OidcConfiguration.builder().tokenUri("token").build(), true),
+        Arguments.of(
+            "tokenUri is set", OidcConfiguration.builder().tokenUri("token").build(), true),
         Arguments.of(
             "organizationId is set",
             OidcConfiguration.builder().organizationId("org").build(),
@@ -204,6 +202,17 @@ public class OidcConfigurationTest {
                 .build(),
             true),
         Arguments.of(
+            "AssertionConfiguration is set to null",
+            OidcConfiguration.builder().assertionConfiguration(null).build(),
+            true),
+        Arguments.of(
+            "AssertionConfiguration.keystore is set to null",
+            OidcConfiguration.builder()
+                .assertionConfiguration(
+                    AssertionConfiguration.builder().keystoreConfiguration(null).build())
+                .build(),
+            true),
+        Arguments.of(
             "clockSkew is set",
             OidcConfiguration.builder().clockSkew(DEFAULT_CLOCK_SKEW.plusSeconds(1)).build(),
             true),
@@ -240,5 +249,13 @@ public class OidcConfigurationTest {
                 .assertionConfiguration(AssertionConfiguration.builder().build())
                 .build(),
             false));
+  }
+
+  @Test
+  void shouldRejectUnsupportedGrantType() {
+    Assertions.assertThatThrownBy(
+            () -> OidcConfiguration.builder().grantType("client_credentials").build())
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("grantType configuration is currently unsupported");
   }
 }

@@ -23,7 +23,7 @@ public class AuthorizeRequestConfiguration {
   }
 
   public boolean isSet() {
-    return additionalParameters != null;
+    return additionalParameters != null && !additionalParameters.isEmpty();
   }
 
   public static Builder builder() {
@@ -44,6 +44,9 @@ public class AuthorizeRequestConfiguration {
     }
 
     public Builder additionalParameters(final Map<String, Object> additionalParameters) {
+      if (additionalParameters == null) {
+        throw new IllegalArgumentException("additionalParameters must not be null");
+      }
       this.additionalParameters.putAll(additionalParameters);
       return this;
     }

@@ -38,6 +38,16 @@ class OidcGroupsExtractorTest {
   }
 
   @Test
+  void shouldExtractGroupListFromNestedJsonPath() {
+    final OidcGroupsExtractor extractor = new OidcGroupsExtractor("$.realm_access.roles");
+
+    assertThat(
+            extractor.extract(
+                Map.of("realm_access", Map.of("roles", List.of("admin", "developer")))))
+        .containsExactly("admin", "developer");
+  }
+
+  @Test
   void shouldReturnEmptyListWhenPathNotFound() {
     final OidcGroupsExtractor extractor = new OidcGroupsExtractor("groups");
 

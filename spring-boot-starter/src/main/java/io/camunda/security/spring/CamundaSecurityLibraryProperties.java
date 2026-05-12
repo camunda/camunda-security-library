@@ -10,6 +10,8 @@ package io.camunda.security.spring;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.CsrfConfiguration;
 import io.camunda.security.api.model.config.headers.HeaderConfiguration;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import jakarta.annotation.PostConstruct;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /** Binds {@code camunda.security.*} configuration values for the CSL filter chains. */
@@ -42,5 +44,25 @@ public class CamundaSecurityLibraryProperties {
 
   public void setHttpHeaders(final HeaderConfiguration httpHeaders) {
     this.httpHeaders = httpHeaders;
+  }
+
+  @PostConstruct
+  void validate() {
+    if (authentication == null) {
+      return;
+    }
+
+    validateOidcConfiguration(authentication.getOidc());
+
+    final var providers = authentication.getProviders();
+    if (providers != null && providers.getOidc() != null) {
+      providers.getOidc().values().forEach(this::validateOidcConfiguration);
+    }
+  }
+
+  private void validateOidcConfiguration(final OidcConfiguration oidcConfiguration) {
+    if (oidcConfiguration != null) {
+      oidcConfiguration.validate();
+    }
   }
 }

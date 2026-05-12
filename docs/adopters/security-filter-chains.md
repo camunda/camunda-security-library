@@ -130,7 +130,7 @@ If your IdP exposes group membership in an OIDC claim, configure `camunda.securi
 
 - Plain claim names such as `groups` are accepted and are normalized to a JSONPath internally.
 - JSONPath expressions such as `$.realm_access.roles` are also accepted.
-- `OidcGroupsClaimValidator` validates the value during configuration binding and rejects malformed JSONPath or plain-claim syntax.
+- `OidcGroupsClaimValidator` validates the value during configuration binding and enforces the supported plain-claim and JSONPath-style formats, but does not guarantee full JSONPath syntax validation at bind time.
 - `OidcGroupsExtractor` reads the configured claim from the OIDC claims map and returns the groups as a `List<String>`.
 
 Example:
@@ -143,7 +143,7 @@ camunda:
         groups-claim: groups
 ```
 
-In this example, the library treats `groups` as the claim source for group mapping and extracts the claim contents as strings. A single string claim is returned as a one-element list, a string array is returned as-is, and a missing claim yields an empty result. If the claim resolves to a non-string value, extraction fails fast with an `IllegalArgumentException` so the OIDC configuration can be corrected early.
+In this example, the library treats `groups` as the claim source for group mapping and extracts the claim contents as strings. A single string claim is returned as a one-element list, a list-valued claim is returned as a `List<String>`, and a missing claim yields an empty result. If the claim resolves to a non-string value, extraction fails fast with an `IllegalArgumentException` so the OIDC configuration can be corrected early.
 
 ### `camunda.security.csrf.*`
 
