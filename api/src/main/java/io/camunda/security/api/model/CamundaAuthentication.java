@@ -71,7 +71,7 @@ public record CamundaAuthentication(
     if (values == null) {
       return List.of();
     }
-    if (values instanceof LazyList<T>) {
+    if (values instanceof LazyList<?>) {
       return values;
     }
     return List.copyOf(values);
