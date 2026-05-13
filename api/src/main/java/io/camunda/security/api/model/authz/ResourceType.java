@@ -17,41 +17,35 @@ import java.util.stream.Collectors;
 
 /** Resource types subject to authorization checks. */
 public enum ResourceType {
-  AUDIT_LOG(PermissionType.READ),
+  /** Common identity and authorization resources. */
   AUTHORIZATION(
       PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE, PermissionType.DELETE),
-  BATCH(
-      PermissionType.CREATE,
-      PermissionType.CREATE_BATCH_OPERATION_CANCEL_PROCESS_INSTANCE,
-      PermissionType.CREATE_BATCH_OPERATION_DELETE_PROCESS_INSTANCE,
-      PermissionType.CREATE_BATCH_OPERATION_MIGRATE_PROCESS_INSTANCE,
-      PermissionType.CREATE_BATCH_OPERATION_MODIFY_PROCESS_INSTANCE,
-      PermissionType.CREATE_BATCH_OPERATION_RESOLVE_INCIDENT,
-      PermissionType.CREATE_BATCH_OPERATION_DELETE_DECISION_INSTANCE,
-      PermissionType.CREATE_BATCH_OPERATION_DELETE_DECISION_DEFINITION,
-      PermissionType.CREATE_BATCH_OPERATION_DELETE_PROCESS_DEFINITION,
-      PermissionType.READ,
-      PermissionType.UPDATE),
-  COMPONENT(PermissionType.ACCESS),
-  CLUSTER_VARIABLE(
-      PermissionType.CREATE, PermissionType.DELETE, PermissionType.UPDATE, PermissionType.READ),
-  DECISION_DEFINITION(
-      PermissionType.CREATE_DECISION_INSTANCE,
-      PermissionType.READ_DECISION_DEFINITION,
-      PermissionType.READ_DECISION_INSTANCE,
-      PermissionType.DELETE_DECISION_INSTANCE),
-  DECISION_REQUIREMENTS_DEFINITION(PermissionType.READ),
-  DOCUMENT(PermissionType.CREATE, PermissionType.READ, PermissionType.DELETE),
-  EXPRESSION(PermissionType.EVALUATE),
-  GLOBAL_LISTENER(
-      PermissionType.CREATE_TASK_LISTENER,
-      PermissionType.READ_TASK_LISTENER,
-      PermissionType.UPDATE_TASK_LISTENER,
-      PermissionType.DELETE_TASK_LISTENER),
+  USER(PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE, PermissionType.DELETE),
   GROUP(PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE, PermissionType.DELETE),
+  ROLE(PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE, PermissionType.DELETE),
+  TENANT(PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE, PermissionType.DELETE),
   MAPPING_RULE(
       PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE, PermissionType.DELETE),
+  RESOURCE(
+      PermissionType.CREATE,
+      PermissionType.READ,
+      PermissionType.DELETE_DRD,
+      PermissionType.DELETE_FORM,
+      PermissionType.DELETE_PROCESS,
+      PermissionType.DELETE_RESOURCE),
+  COMPONENT(PermissionType.ACCESS),
+  SYSTEM(
+      PermissionType.READ,
+      PermissionType.READ_USAGE_METRIC,
+      PermissionType.READ_JOB_METRIC,
+      PermissionType.UPDATE),
+  AUDIT_LOG(PermissionType.READ),
+  DOCUMENT(PermissionType.CREATE, PermissionType.READ, PermissionType.DELETE),
   MESSAGE(PermissionType.CREATE, PermissionType.READ),
+  CLUSTER_VARIABLE(
+      PermissionType.CREATE, PermissionType.DELETE, PermissionType.UPDATE, PermissionType.READ),
+
+  /** Engine-related resources. */
   PROCESS_DEFINITION(
       PermissionType.CREATE_PROCESS_INSTANCE,
       PermissionType.CLAIM_USER_TASK,
@@ -64,24 +58,35 @@ public enum ResourceType {
       PermissionType.COMPLETE_USER_TASK,
       PermissionType.CANCEL_PROCESS_INSTANCE,
       PermissionType.DELETE_PROCESS_INSTANCE),
-  RESOURCE(
-      PermissionType.CREATE,
-      PermissionType.READ,
-      PermissionType.DELETE_DRD,
-      PermissionType.DELETE_FORM,
-      PermissionType.DELETE_PROCESS,
-      PermissionType.DELETE_RESOURCE),
-  ROLE(PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE, PermissionType.DELETE),
-  SYSTEM(
-      PermissionType.READ,
-      PermissionType.READ_USAGE_METRIC,
-      PermissionType.READ_JOB_METRIC,
-      PermissionType.UPDATE),
-  TENANT(PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE, PermissionType.DELETE),
-  UNSPECIFIED(),
-  USER(PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE, PermissionType.DELETE),
   USER_TASK(
-      PermissionType.READ, PermissionType.UPDATE, PermissionType.CLAIM, PermissionType.COMPLETE);
+      PermissionType.READ, PermissionType.UPDATE, PermissionType.CLAIM, PermissionType.COMPLETE),
+  DECISION_DEFINITION(
+      PermissionType.CREATE_DECISION_INSTANCE,
+      PermissionType.READ_DECISION_DEFINITION,
+      PermissionType.READ_DECISION_INSTANCE,
+      PermissionType.DELETE_DECISION_INSTANCE),
+  DECISION_REQUIREMENTS_DEFINITION(PermissionType.READ),
+  BATCH(
+      PermissionType.CREATE,
+      PermissionType.CREATE_BATCH_OPERATION_CANCEL_PROCESS_INSTANCE,
+      PermissionType.CREATE_BATCH_OPERATION_DELETE_PROCESS_INSTANCE,
+      PermissionType.CREATE_BATCH_OPERATION_MIGRATE_PROCESS_INSTANCE,
+      PermissionType.CREATE_BATCH_OPERATION_MODIFY_PROCESS_INSTANCE,
+      PermissionType.CREATE_BATCH_OPERATION_RESOLVE_INCIDENT,
+      PermissionType.CREATE_BATCH_OPERATION_DELETE_DECISION_INSTANCE,
+      PermissionType.CREATE_BATCH_OPERATION_DELETE_DECISION_DEFINITION,
+      PermissionType.CREATE_BATCH_OPERATION_DELETE_PROCESS_DEFINITION,
+      PermissionType.READ,
+      PermissionType.UPDATE),
+  GLOBAL_LISTENER(
+      PermissionType.CREATE_TASK_LISTENER,
+      PermissionType.READ_TASK_LISTENER,
+      PermissionType.UPDATE_TASK_LISTENER,
+      PermissionType.DELETE_TASK_LISTENER),
+  EXPRESSION(PermissionType.EVALUATE),
+
+  /** Internal default when no resource was set. */
+  UNSPECIFIED();
 
   private final Set<PermissionType> supportedPermissionTypes;
 
