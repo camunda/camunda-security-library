@@ -471,7 +471,7 @@ When a host activates both `AdminUserCheckFilterConfiguration` and `WebAppAuthor
 
 ## OIDC logout
 
-When `authentication.method=oidc` and a host imports [`OidcWebappLogoutConfiguration`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/security/OidcWebappLogoutConfiguration.java), the CSL registers a default `LogoutSuccessHandler` — [`CamundaOidcLogoutSuccessHandler`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/security/CamundaOidcLogoutSuccessHandler.java) — that extends Spring Security's `OidcClientInitiatedLogoutSuccessHandler` with two additions over plain RP-initiated logout. Activation rationale lives in [ADR-0011](../adr/0011-oidc-logout-success-handler.md).
+When `authentication.method=oidc` and a host imports [`OidcWebappLogoutConfiguration`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/security/OidcWebappLogoutConfiguration.java), the CSL registers a default `LogoutSuccessHandler` — [`CamundaOidcLogoutSuccessHandler`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/security/CamundaOidcLogoutSuccessHandler.java) — that extends Spring Security's `OidcClientInitiatedLogoutSuccessHandler` with two additions over plain RP-initiated logout. Activation rationale lives in [ADR-0012](../adr/0012-oidc-logout-success-handler.md).
 
 **What ships by default**
 
@@ -484,7 +484,15 @@ The handler is multi-IdP-aware — it looks up the `ClientRegistration` by the p
 
 **Activation**
 
-Add `OidcWebappLogoutConfiguration` to your `@Import` list alongside `OidcWebappSecurityConfiguration`:
+`OidcWebappLogoutConfiguration` is included in the `CamundaSecurityAutoConfiguration` umbrella, so hosts activating CSL via the recommended opt-in path get the default `LogoutSuccessHandler` automatically:
+
+```java
+@Configuration
+@ImportAutoConfiguration(CamundaSecurityAutoConfiguration.class)
+public class HostSecurityConfiguration {}
+```
+
+Hosts using the fine-grained `@Import` activation path need to import the logout configuration explicitly alongside the chain configuration:
 
 ```java
 @Configuration
@@ -519,26 +527,16 @@ The CSL stores the attribute; rendering the post-logout page (or redirecting to 
 Register your own `LogoutSuccessHandler` bean. The CSL default backs off and the chain wires your bean instead:
 
 ```java
-@Configuration
-@Import({
-    BaseSecurityConfiguration.class,
-    OidcBeansConfiguration.class,
-    OidcWebappSecurityConfiguration.class,
-    OidcWebappLogoutConfiguration.class,
-})
-public class HostSecurityConfiguration {
-
-  @Bean
-  LogoutSuccessHandler hostLogoutSuccessHandler(
-      final ClientRegistrationRepository clientRegistrationRepository) {
-    final var handler = new OidcClientInitiatedLogoutSuccessHandler(clientRegistrationRepository);
-    handler.setPostLogoutRedirectUri("{baseUrl}/host-specific-logged-out");
-    return handler;
-  }
+@Bean
+LogoutSuccessHandler hostLogoutSuccessHandler(
+    final ClientRegistrationRepository clientRegistrationRepository) {
+  final var handler = new OidcClientInitiatedLogoutSuccessHandler(clientRegistrationRepository);
+  handler.setPostLogoutRedirectUri("{baseUrl}/host-specific-logged-out");
+  return handler;
 }
 ```
 
-Hosts that want to opt out of OIDC logout entirely can skip importing `OidcWebappLogoutConfiguration` — the chain's `ObjectProvider<LogoutSuccessHandler>` falls back to Spring Security's defaults when no bean is present.
+Hosts activating CSL via the fine-grained `@Import` path that want to opt out of OIDC logout entirely can skip importing `OidcWebappLogoutConfiguration` — the chain's `ObjectProvider<LogoutSuccessHandler>` falls back to Spring Security's defaults when no bean is present. Hosts using the umbrella always have the default available; registering a custom bean is the override path.
 
 ## Failure response contract
 

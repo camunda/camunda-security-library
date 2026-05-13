@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0011: Ship `CamundaOidcLogoutSuccessHandler` as the default OIDC `LogoutSuccessHandler`
+# ADR-0012: Ship `CamundaOidcLogoutSuccessHandler` as the default OIDC `LogoutSuccessHandler`
 
 **Deciders**: Ben Sheppard
 
@@ -33,7 +33,7 @@ The CSL ships a default `LogoutSuccessHandler` for the OIDC webapp chain, behind
 - **`OidcWebappLogoutConfiguration`** (sibling `@Configuration` to `OidcWebappSecurityConfiguration`) — gated on `camunda.security.authentication.method=oidc` and exposes the bean. Kept separate from the chain configuration so the wiring can be slice-tested via `ApplicationContextRunner` without standing up the full Spring Security filter stack.
 - **Public `POST_LOGOUT_REDIRECT_ATTRIBUTE` and `REDIRECT_MESSAGE_ATTRIBUTE` constants on `CamundaOidcLogoutSuccessHandler`.** Hosts that render a post-logout page reference these constants instead of hard-coding the strings.
 
-Activation follows [ADR-0008](0008-no-spring-boot-auto-configuration.md): nothing activates by adding the dependency. The host explicitly `@Import`s `OidcWebappSecurityConfiguration` and `OidcWebappLogoutConfiguration` (or a parent config that imports both) when ready.
+Activation follows [ADR-0008](0008-no-spring-boot-auto-configuration.md): nothing activates by adding the dependency. `OidcWebappLogoutConfiguration` is included in the `CamundaSecurityAutoConfiguration` umbrella, so hosts activating CSL via `@ImportAutoConfiguration(CamundaSecurityAutoConfiguration.class)` get the default logout handler automatically. Hosts using the fine-grained `@Import` path bring it in by listing `OidcWebappLogoutConfiguration` alongside `OidcWebappSecurityConfiguration`.
 
 ### Why these particular boundaries
 

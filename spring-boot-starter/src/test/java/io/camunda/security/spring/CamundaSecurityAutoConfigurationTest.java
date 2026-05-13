@@ -16,6 +16,7 @@ import io.camunda.security.spring.security.BaseSecurityConfiguration;
 import io.camunda.security.spring.security.BasicAuthApiSecurityConfiguration;
 import io.camunda.security.spring.security.BasicAuthWebappSecurityConfiguration;
 import io.camunda.security.spring.security.OidcApiSecurityConfiguration;
+import io.camunda.security.spring.security.OidcWebappLogoutConfiguration;
 import io.camunda.security.spring.security.OidcWebappSecurityConfiguration;
 import io.camunda.security.spring.security.UnprotectedApiSecurityConfiguration;
 import io.camunda.security.spring.security.WebAppAuthorizationFilterConfiguration;
@@ -73,6 +74,7 @@ class CamundaSecurityAutoConfigurationTest {
             BasicAuthWebappSecurityConfiguration.class,
             OidcApiSecurityConfiguration.class,
             OidcWebappSecurityConfiguration.class,
+            OidcWebappLogoutConfiguration.class,
             UnprotectedApiSecurityConfiguration.class,
             AuthFailureHandlerConfiguration.class,
             OidcBeansConfiguration.class,
