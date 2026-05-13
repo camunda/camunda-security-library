@@ -7,9 +7,6 @@
  */
 package io.camunda.security.spring.security;
 
-import static io.camunda.security.spring.security.CamundaWebappAttributes.POST_LOGOUT_REDIRECT_ATTRIBUTE;
-import static io.camunda.security.spring.security.CamundaWebappAttributes.REDIRECT_MESSAGE_ATTRIBUTE;
-
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Objects;
@@ -30,8 +27,8 @@ import org.springframework.web.util.UriComponentsBuilder;
  *
  * <ul>
  *   <li>Stores a validated {@code Referer} header as the post-logout redirect URI under {@link
- *       CamundaWebappAttributes#POST_LOGOUT_REDIRECT_ATTRIBUTE}, so the host application can
- *       navigate back to the originating page after IdP logout.
+ *       #POST_LOGOUT_REDIRECT_ATTRIBUTE}, so the host application can navigate back to the
+ *       originating page after IdP logout.
  *   <li>Propagates the OIDC user claim {@code login_hint} as a {@code logout_hint} query parameter
  *       to the provider's end-session endpoint when available, so the IdP can terminate the right
  *       session for users with multiple active identities.
@@ -41,6 +38,19 @@ import org.springframework.web.util.UriComponentsBuilder;
  * (same-origin check).
  */
 public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLogoutSuccessHandler {
+
+  /**
+   * Session attribute under which the validated, same-origin {@code Referer} is stored as the
+   * post-logout redirect URI. Hosts that render a post-logout page read this attribute via the
+   * constant to keep the contract stable.
+   */
+  public static final String POST_LOGOUT_REDIRECT_ATTRIBUTE = "postLogoutRedirect";
+
+  /**
+   * Request attribute used to surface a human-readable explanation when RP-initiated logout cannot
+   * reach the IdP (for example, no {@code end_session_endpoint} was published).
+   */
+  public static final String REDIRECT_MESSAGE_ATTRIBUTE = "redirectMessage";
 
   private static final Logger LOG = LoggerFactory.getLogger(CamundaOidcLogoutSuccessHandler.class);
 

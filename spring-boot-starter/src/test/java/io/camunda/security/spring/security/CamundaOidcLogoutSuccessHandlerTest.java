@@ -7,8 +7,8 @@
  */
 package io.camunda.security.spring.security;
 
-import static io.camunda.security.spring.security.CamundaWebappAttributes.POST_LOGOUT_REDIRECT_ATTRIBUTE;
-import static io.camunda.security.spring.security.CamundaWebappAttributes.REDIRECT_MESSAGE_ATTRIBUTE;
+import static io.camunda.security.spring.security.CamundaOidcLogoutSuccessHandler.POST_LOGOUT_REDIRECT_ATTRIBUTE;
+import static io.camunda.security.spring.security.CamundaOidcLogoutSuccessHandler.REDIRECT_MESSAGE_ATTRIBUTE;
 import static java.time.Instant.now;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;

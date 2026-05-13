@@ -475,10 +475,10 @@ When `authentication.method=oidc` and a host imports [`OidcWebappLogoutConfigura
 
 **What ships by default**
 
-1. **Post-logout redirect from the `Referer` header.** When the `Referer` on the logout request points back to the same scheme/host/port as the current application, the URL is stored on the HTTP session under [`CamundaWebappAttributes.POST_LOGOUT_REDIRECT_ATTRIBUTE`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/security/CamundaWebappAttributes.java) (string `"postLogoutRedirect"`). Cross-origin referers and CR/LF-injection attempts are rejected. Hosts that render a post-logout page read the session attribute via the constant — not the literal string — to keep the contract stable.
+1. **Post-logout redirect from the `Referer` header.** When the `Referer` on the logout request points back to the same scheme/host/port as the current application, the URL is stored on the HTTP session under [`CamundaOidcLogoutSuccessHandler.POST_LOGOUT_REDIRECT_ATTRIBUTE`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/security/CamundaOidcLogoutSuccessHandler.java) (string `"postLogoutRedirect"`). Cross-origin referers and CR/LF-injection attempts are rejected. Hosts that render a post-logout page read the session attribute via the constant — not the literal string — to keep the contract stable.
 2. **`login_hint` → `logout_hint` propagation.** When the OIDC user has a `login_hint` claim, it is appended as a `logout_hint` query parameter to the IdP's end-session URL. This lets providers that maintain multiple sessions per user terminate the correct one.
 
-If the IdP's discovery document does not expose `end_session_endpoint`, the local session is still terminated and a human-readable explanation is set on the request under `CamundaWebappAttributes.REDIRECT_MESSAGE_ATTRIBUTE` so a downstream page can render it.
+If the IdP's discovery document does not expose `end_session_endpoint`, the local session is still terminated and a human-readable explanation is set on the request under `CamundaOidcLogoutSuccessHandler.REDIRECT_MESSAGE_ATTRIBUTE` so a downstream page can render it.
 
 The handler is multi-IdP-aware — it looks up the `ClientRegistration` by the principal's `authorizedClientRegistrationId`.
 
@@ -502,7 +502,7 @@ The bean is `@ConditionalOnMissingBean(LogoutSuccessHandler.class)` — a host-r
 **Reading the post-logout redirect URL**
 
 ```java
-import static io.camunda.security.spring.security.CamundaWebappAttributes.POST_LOGOUT_REDIRECT_ATTRIBUTE;
+import static io.camunda.security.spring.security.CamundaOidcLogoutSuccessHandler.POST_LOGOUT_REDIRECT_ATTRIBUTE;
 
 @GetMapping("/logged-out")
 public String loggedOut(final HttpSession session, final Model model) {
