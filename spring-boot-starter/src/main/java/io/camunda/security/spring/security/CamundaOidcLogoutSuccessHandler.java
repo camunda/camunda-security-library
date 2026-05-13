@@ -9,6 +9,8 @@ package io.camunda.security.spring.security;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,8 +49,10 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
   public static final String POST_LOGOUT_REDIRECT_ATTRIBUTE = "postLogoutRedirect";
 
   /**
-   * Request attribute used to surface a human-readable explanation when RP-initiated logout cannot
-   * reach the IdP (for example, no {@code end_session_endpoint} was published).
+   * Session attribute used to surface a human-readable explanation when RP-initiated logout cannot
+   * reach the IdP (for example, no {@code end_session_endpoint} was published). Stored on the
+   * session — not the request — so the message survives the redirect that the {@link
+   * LogoutSuccessHandler} issues and is readable by the post-logout page on the subsequent request.
    */
   public static final String REDIRECT_MESSAGE_ATTRIBUTE = "redirectMessage";
 
@@ -86,7 +90,9 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
               + "The local session has been terminated, but the IdP session will still be active. "
               + "Falling back to '{}' without logout hint.",
           baseLogoutUrl);
-      request.setAttribute(REDIRECT_MESSAGE_ATTRIBUTE, END_SESSION_UNAVAILABLE_MESSAGE);
+      request
+          .getSession()
+          .setAttribute(REDIRECT_MESSAGE_ATTRIBUTE, END_SESSION_UNAVAILABLE_MESSAGE);
       return baseLogoutUrl;
     }
 
@@ -134,24 +140,43 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
   }
 
   /**
-   * Same-origin check for the post-logout redirect URI. The redirect is only honoured when it
-   * points back to the same scheme/host/port as the request that triggered logout. Header-injection
-   * attempts (CR/LF) and blank values are rejected.
+   * Same-origin check for the post-logout redirect URI. The redirect is only honoured when its
+   * scheme, host, and effective port (default ports normalised) match those of the request that
+   * triggered logout. Header-injection attempts (CR/LF), blank values, and non-absolute or
+   * unparseable URLs are rejected.
+   *
+   * <p>Explicit scheme/host/port comparison is used rather than a prefix check on the base URL — a
+   * {@code startsWith}-style check is vulnerable to host-confusion bypasses such as {@code
+   * https://app.example.com.evil.com/} and {@code https://app.example.com@evil.com/}.
    */
   private static boolean isSameOriginRedirect(final HttpServletRequest request, final String url) {
-    if (url == null || url.isBlank()) {
+    if (url == null || url.isBlank() || url.indexOf('\r') >= 0 || url.indexOf('\n') >= 0) {
       return false;
     }
-    if (url.contains("\r") || url.contains("\n")) {
+    final URI candidate;
+    final URI requestUri;
+    try {
+      candidate = new URI(url);
+      requestUri = new URI(UrlUtils.buildFullRequestUrl(request));
+    } catch (final URISyntaxException ignored) {
       return false;
     }
-    final String baseUrl =
-        UriComponentsBuilder.fromUriString(UrlUtils.buildFullRequestUrl(request))
-            .replacePath(null)
-            .replaceQuery(null)
-            .fragment(null)
-            .build()
-            .toUriString();
-    return url.startsWith(baseUrl);
+    if (!candidate.isAbsolute() || candidate.getHost() == null) {
+      return false;
+    }
+    return Objects.equals(candidate.getScheme(), requestUri.getScheme())
+        && Objects.equals(candidate.getHost(), requestUri.getHost())
+        && effectivePort(candidate) == effectivePort(requestUri);
+  }
+
+  private static int effectivePort(final URI uri) {
+    if (uri.getPort() != -1) {
+      return uri.getPort();
+    }
+    return switch (uri.getScheme()) {
+      case "http" -> 80;
+      case "https" -> 443;
+      default -> -1;
+    };
   }
 }

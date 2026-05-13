@@ -103,18 +103,72 @@ class CamundaOidcLogoutSuccessHandlerTest {
   }
 
   @Test
-  void missingEndSessionEndpointFallsBackToDefaultTargetUrl() {
+  void missingEndSessionEndpointStoresRedirectMessageOnSession() {
     final MockHttpServletRequest request = requestWithReferer(SAME_ORIGIN_REFERER);
+    final HttpSession session = request.getSession(true);
     when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
         .thenReturn(clientRegistrationWithoutEndSessionEndpoint());
 
     handler.determineTargetUrl(
         request, new MockHttpServletResponse(), oidcAuthentication("user@camunda.com"));
 
-    assertThat(request.getAttribute(REDIRECT_MESSAGE_ATTRIBUTE))
+    assertThat(session.getAttribute(REDIRECT_MESSAGE_ATTRIBUTE))
         .isEqualTo(
             "The identity provider's end_session_endpoint is not available. "
                 + "The local session has been terminated, but the IdP session will still be active.");
+  }
+
+  @Test
+  void hostConfusionPrefixedRefererIsNotStoredOnSession() {
+    final MockHttpServletRequest request =
+        requestWithReferer("https://camunda.com.evil.com/component/ui/page");
+    final HttpSession session = request.getSession(true);
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    handler.determineTargetUrl(request, new MockHttpServletResponse(), oidcAuthentication(null));
+
+    assertThat(session.getAttribute(POST_LOGOUT_REDIRECT_ATTRIBUTE)).isNull();
+  }
+
+  @Test
+  void userInfoBypassRefererIsNotStoredOnSession() {
+    final MockHttpServletRequest request =
+        requestWithReferer("https://camunda.com@evil.com/component/ui/page");
+    final HttpSession session = request.getSession(true);
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    handler.determineTargetUrl(request, new MockHttpServletResponse(), oidcAuthentication(null));
+
+    assertThat(session.getAttribute(POST_LOGOUT_REDIRECT_ATTRIBUTE)).isNull();
+  }
+
+  @Test
+  void mismatchedPortRefererIsNotStoredOnSession() {
+    final MockHttpServletRequest request =
+        requestWithReferer("https://camunda.com:8443/component/ui/page");
+    final HttpSession session = request.getSession(true);
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    handler.determineTargetUrl(request, new MockHttpServletResponse(), oidcAuthentication(null));
+
+    assertThat(session.getAttribute(POST_LOGOUT_REDIRECT_ATTRIBUTE)).isNull();
+  }
+
+  @Test
+  void explicitDefaultPortRefererIsAcceptedAsSameOrigin() {
+    final MockHttpServletRequest request =
+        requestWithReferer("https://camunda.com:443/component/ui/page");
+    final HttpSession session = request.getSession(true);
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    handler.determineTargetUrl(request, new MockHttpServletResponse(), oidcAuthentication(null));
+
+    assertThat(session.getAttribute(POST_LOGOUT_REDIRECT_ATTRIBUTE))
+        .isEqualTo("https://camunda.com:443/component/ui/page");
   }
 
   @Test
