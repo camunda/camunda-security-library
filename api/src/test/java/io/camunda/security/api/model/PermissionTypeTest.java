@@ -9,6 +9,7 @@ package io.camunda.security.api.model;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.camunda.security.api.model.authz.PermissionType;
 import org.junit.jupiter.api.Test;
 
 class PermissionTypeTest {

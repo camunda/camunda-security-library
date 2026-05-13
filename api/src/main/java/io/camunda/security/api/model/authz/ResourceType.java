@@ -5,7 +5,7 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.api.model;
+package io.camunda.security.api.model.authz;
 
 import java.util.Arrays;
 import java.util.Comparator;
@@ -15,11 +15,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/**
- * Resource types subject to authorization checks. Migrated from {@code
- * io.camunda.zeebe.protocol.record.value.AuthorizationResourceType} so the CSL surface stays free
- * of the zeebe-protocol dependency.
- */
+/** Resource types subject to authorization checks. */
 public enum ResourceType {
   AUDIT_LOG(PermissionType.READ),
   AUTHORIZATION(

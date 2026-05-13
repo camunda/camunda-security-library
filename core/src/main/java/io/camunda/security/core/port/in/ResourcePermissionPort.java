@@ -8,8 +8,8 @@
 package io.camunda.security.core.port.in;
 
 import io.camunda.security.api.model.CamundaAuthentication;
-import io.camunda.security.api.model.PermissionType;
-import io.camunda.security.api.model.ResourceType;
+import io.camunda.security.api.model.authz.PermissionType;
+import io.camunda.security.api.model.authz.ResourceType;
 
 /**
  * Inbound port for resource-permission decisions. Answers "does this principal have this {@link

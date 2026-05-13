@@ -10,10 +10,10 @@ package io.camunda.security.spring.security;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
-import io.camunda.security.api.model.Authorization;
 import io.camunda.security.api.model.CamundaAuthentication;
-import io.camunda.security.api.model.PermissionType;
-import io.camunda.security.api.model.ResourceType;
+import io.camunda.security.api.model.authz.Authorization;
+import io.camunda.security.api.model.authz.PermissionType;
+import io.camunda.security.api.model.authz.ResourceType;
 import io.camunda.security.core.port.in.ResourcePermissionPort;
 import io.camunda.security.core.port.out.AuthorizationRepositoryPort;
 import io.camunda.security.core.port.out.SecurityPathPort;
