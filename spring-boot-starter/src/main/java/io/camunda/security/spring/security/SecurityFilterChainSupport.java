@@ -98,6 +98,13 @@ final class SecurityFilterChainSupport {
    * Filter that adds the CSRF token to the response header for authenticated GET requests and login
    * POST responses. Browser-based clients read the token from the response header and include it on
    * subsequent state-changing requests.
+   *
+   * <p>The header must be written <b>before</b> dispatching the chain. {@link
+   * HttpServletResponse#setHeader} is a no-op once the response is committed, and any downstream
+   * filter that flushes the response buffer during chain processing — gzip compression, large
+   * bodies — silently strips a post-chain write. The {@link CsrfToken} request attribute is
+   * populated by the upstream {@code CsrfFilter} (we are registered via {@code addFilterAfter(_,
+   * CsrfFilter.class)}), so it is available at filter entry.
    */
   static OncePerRequestFilter csrfTokenResponseHeaderFilter() {
     return new OncePerRequestFilter() {
@@ -107,24 +114,30 @@ final class SecurityFilterChainSupport {
           final HttpServletResponse response,
           final FilterChain filterChain)
           throws ServletException, IOException {
+        writeCsrfTokenHeaderIfApplicable(request, response);
         filterChain.doFilter(request, response);
-        final Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated()) {
-          return;
-        }
-        final String path = request.getRequestURI();
-        final String method = request.getMethod();
-        final boolean isGetOrLogin =
-            "GET".equalsIgnoreCase(method) || (path != null && path.contains(LOGIN_URL));
-        final boolean isLogout = path != null && path.contains(LOGOUT_URL);
-        if (isGetOrLogin && !isLogout) {
-          final CsrfToken token = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
-          if (token != null) {
-            response.setHeader(X_CSRF_TOKEN, token.getToken());
-          }
-        }
       }
     };
+  }
+
+  private static void writeCsrfTokenHeaderIfApplicable(
+      final HttpServletRequest request, final HttpServletResponse response) {
+    final Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    if (auth == null || !auth.isAuthenticated()) {
+      return;
+    }
+    final String path = request.getRequestURI();
+    final String method = request.getMethod();
+    final boolean isGetOrLogin =
+        "GET".equalsIgnoreCase(method) || (path != null && path.contains(LOGIN_URL));
+    final boolean isLogout = path != null && path.contains(LOGOUT_URL);
+    if (!isGetOrLogin || isLogout) {
+      return;
+    }
+    final CsrfToken token = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
+    if (token != null) {
+      response.setHeader(X_CSRF_TOKEN, token.getToken());
+    }
   }
 
   /**
