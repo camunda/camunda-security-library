@@ -30,16 +30,23 @@ public class OidcConfiguration {
           CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC,
           CLIENT_AUTHENTICATION_METHOD_PRIVATE_KEY_JWT);
   public static final Duration DEFAULT_CLOCK_SKEW = Duration.ofSeconds(60);
+  public static final String DEFAULT_GRANT_TYPE = "authorization_code";
+  public static final String DEFAULT_ID_TOKEN_ALGORITHM = "RS256";
+  public static final String DEFAULT_USERNAME_CLAIM = "sub";
+  public static final String DEFAULT_REGISTRATION_ID = "oidc";
+  public static final List<String> DEFAULT_SCOPE = Arrays.asList("openid", "profile");
+  public static final boolean DEFAULT_IDP_LOGOUT_ENABLED = true;
+  public static final boolean DEFAULT_USER_INFO_ENABLED = true;
 
   private String issuerUri;
   private String clientName;
   private String clientId;
-  private String registrationId = "oidc";
+  private String registrationId = DEFAULT_REGISTRATION_ID;
   private String clientSecret;
-  private String idTokenAlgorithm = "RS256";
-  private String grantType = "authorization_code";
+  private String idTokenAlgorithm = DEFAULT_ID_TOKEN_ALGORITHM;
+  private String grantType = DEFAULT_GRANT_TYPE;
   private String redirectUri;
-  private List<String> scope = Arrays.asList("openid", "profile");
+  private List<String> scope = DEFAULT_SCOPE;
   private String jwkSetUri;
   private List<String> additionalJwkSetUris;
   private String authorizationUri;
@@ -49,7 +56,7 @@ public class OidcConfiguration {
   private AuthorizeRequestConfiguration authorizeRequestConfiguration =
       new AuthorizeRequestConfiguration();
   private Set<String> audiences;
-  private String usernameClaim = "sub";
+  private String usernameClaim = DEFAULT_USERNAME_CLAIM;
   private String clientIdClaim;
   private String groupsClaim;
   private boolean preferUsernameClaim;
@@ -59,8 +66,8 @@ public class OidcConfiguration {
   private String clientAuthenticationMethod = CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC;
   private AssertionConfiguration assertionConfiguration = new AssertionConfiguration();
   private Duration clockSkew = DEFAULT_CLOCK_SKEW;
-  private boolean idpLogoutEnabled = true;
-  private boolean userInfoEnabled = true;
+  private boolean idpLogoutEnabled = DEFAULT_IDP_LOGOUT_ENABLED;
+  private boolean userInfoEnabled = DEFAULT_USER_INFO_ENABLED;
   private OidcUserInfoAugmentationConfiguration userInfoAugmentation =
       new OidcUserInfoAugmentationConfiguration();
 
@@ -131,10 +138,6 @@ public class OidcConfiguration {
   }
 
   public void setGrantType(final String grantType) {
-    if (grantType != null && !grantType.isBlank() && !"authorization_code".equals(grantType)) {
-      throw new IllegalArgumentException(
-          "OIDC grantType configuration is currently unsupported in this version and must not be set.");
-    }
     this.grantType = grantType;
   }
 
@@ -321,7 +324,16 @@ public class OidcConfiguration {
     this.userInfoAugmentation = userInfoAugmentation;
   }
 
-  public boolean isSet() {
+  /**
+   * Returns whether any OIDC property deviates from the default configuration.
+   *
+   * <p>This includes direct OIDC fields as well as nested assertion/keystore settings. The method
+   * is used by higher-level configuration validation to detect when OIDC settings are present and
+   * should therefore be considered active.
+   *
+   * @return {@code true} when at least one property is non-default; {@code false} otherwise
+   */
+  public boolean isAnyPropertySet() {
     final AssertionConfiguration currentAssertionConfiguration = assertionConfiguration;
     final var currentKeystoreConfiguration =
         currentAssertionConfiguration != null ? currentAssertionConfiguration.getKeystore() : null;
@@ -329,10 +341,10 @@ public class OidcConfiguration {
         || clientId != null
         || clientName != null
         || clientSecret != null
-        || !"RS256".equals(idTokenAlgorithm)
-        || !"authorization_code".equals(grantType)
+        || !DEFAULT_ID_TOKEN_ALGORITHM.equals(idTokenAlgorithm)
+        || !DEFAULT_GRANT_TYPE.equals(grantType)
         || redirectUri != null
-        || !Arrays.asList("openid", "profile").equals(scope)
+        || !DEFAULT_SCOPE.equals(scope)
         || jwkSetUri != null
         || additionalJwkSetUris != null
         || authorizationUri != null
@@ -341,7 +353,7 @@ public class OidcConfiguration {
         || userInfoUri != null
         || authorizeRequestConfiguration == null
         || authorizeRequestConfiguration.isSet()
-        || !"sub".equals(usernameClaim)
+        || !DEFAULT_USERNAME_CLAIM.equals(usernameClaim)
         || audiences != null
         || clientIdClaim != null
         || groupsClaim != null
@@ -370,12 +382,12 @@ public class OidcConfiguration {
     private String issuerUri;
     private String clientId;
     private String clientName;
-    private String registrationId = "oidc";
+    private String registrationId = DEFAULT_REGISTRATION_ID;
     private String clientSecret;
-    private String idTokenAlgorithm = "RS256";
-    private String grantType = "authorization_code";
+    private String idTokenAlgorithm = DEFAULT_ID_TOKEN_ALGORITHM;
+    private String grantType = DEFAULT_GRANT_TYPE;
     private String redirectUri;
-    private List<String> scope = Arrays.asList("openid", "profile");
+    private List<String> scope = DEFAULT_SCOPE;
     private String jwkSetUri;
     private List<String> additionalJwkSetUris;
     private String authorizationUri;
@@ -385,7 +397,7 @@ public class OidcConfiguration {
     private AuthorizeRequestConfiguration authorizeRequestConfiguration =
         new AuthorizeRequestConfiguration();
     private Set<String> audiences;
-    private String usernameClaim = "sub";
+    private String usernameClaim = DEFAULT_USERNAME_CLAIM;
     private String clientIdClaim;
     private String groupsClaim;
     private boolean preferUsernameClaim;
@@ -394,8 +406,8 @@ public class OidcConfiguration {
     private String clientAuthenticationMethod = CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC;
     private AssertionConfiguration assertionConfiguration = new AssertionConfiguration();
     private Duration clockSkew = DEFAULT_CLOCK_SKEW;
-    private boolean idpLogoutEnabled = true;
-    private boolean userInfoEnabled = true;
+    private boolean idpLogoutEnabled = DEFAULT_IDP_LOGOUT_ENABLED;
+    private boolean userInfoEnabled = DEFAULT_USER_INFO_ENABLED;
     private OidcUserInfoAugmentationConfiguration userInfoAugmentation =
         new OidcUserInfoAugmentationConfiguration();
 

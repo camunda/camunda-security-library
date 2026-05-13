@@ -7,7 +7,12 @@
  */
 package io.camunda.security.api.model.config.oidc;
 
+import static io.camunda.security.api.model.config.oidc.OidcConfiguration.CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC;
 import static io.camunda.security.api.model.config.oidc.OidcConfiguration.DEFAULT_CLOCK_SKEW;
+import static io.camunda.security.api.model.config.oidc.OidcConfiguration.DEFAULT_GRANT_TYPE;
+import static io.camunda.security.api.model.config.oidc.OidcConfiguration.DEFAULT_ID_TOKEN_ALGORITHM;
+import static io.camunda.security.api.model.config.oidc.OidcConfiguration.DEFAULT_SCOPE;
+import static io.camunda.security.api.model.config.oidc.OidcConfiguration.DEFAULT_USERNAME_CLAIM;
 
 import io.camunda.security.api.model.config.AssertionConfiguration;
 import io.camunda.security.api.model.config.AssertionConfiguration.KidDigestAlgorithm;
@@ -19,7 +24,6 @@ import java.util.Set;
 import java.util.stream.Stream;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -28,12 +32,12 @@ public class OidcConfigurationTest {
 
   @ParameterizedTest(name = "{index}: {0}")
   @MethodSource("oidcAuthentications")
-  @DisplayName("Check OIDC configuration is set")
-  void testIsSet(
+  @DisplayName("Check OIDC configuration any property is set")
+  void testIsAnyPropertySet(
       final String description,
       final OidcConfiguration oidcAuthenticationConfiguration,
       final boolean expected) {
-    Assertions.assertThat(oidcAuthenticationConfiguration.isSet())
+    Assertions.assertThat(oidcAuthenticationConfiguration.isAnyPropertySet())
         .withFailMessage(description)
         .isEqualTo(expected);
   }
@@ -63,7 +67,7 @@ public class OidcConfigurationTest {
             true),
         Arguments.of(
             "default idTokenAlgorithm is set",
-            OidcConfiguration.builder().idTokenAlgorithm("RS256").build(),
+            OidcConfiguration.builder().idTokenAlgorithm(DEFAULT_ID_TOKEN_ALGORITHM).build(),
             false),
         Arguments.of(
             "authorizeRequestConfiguration is set to null",
@@ -225,19 +229,21 @@ public class OidcConfigurationTest {
             false),
         Arguments.of(
             "default grantType is set",
-            OidcConfiguration.builder().grantType("authorization_code").build(),
+            OidcConfiguration.builder().grantType(DEFAULT_GRANT_TYPE).build(),
             false),
         Arguments.of(
             "default usernameClaim is set",
-            OidcConfiguration.builder().usernameClaim("sub").build(),
+            OidcConfiguration.builder().usernameClaim(DEFAULT_USERNAME_CLAIM).build(),
             false),
         Arguments.of(
             "default scope is set",
-            OidcConfiguration.builder().scope(List.of("openid", "profile")).build(),
+            OidcConfiguration.builder().scope(DEFAULT_SCOPE).build(),
             false),
         Arguments.of(
             "default clientAuthenticationMethod is set",
-            OidcConfiguration.builder().clientAuthenticationMethod("client_secret_basic").build(),
+            OidcConfiguration.builder()
+                .clientAuthenticationMethod(CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC)
+                .build(),
             false),
         Arguments.of(
             "default clockSkew is set",
@@ -249,13 +255,5 @@ public class OidcConfigurationTest {
                 .assertionConfiguration(AssertionConfiguration.builder().build())
                 .build(),
             false));
-  }
-
-  @Test
-  void shouldRejectUnsupportedGrantType() {
-    Assertions.assertThatThrownBy(
-            () -> OidcConfiguration.builder().grantType("client_credentials").build())
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("grantType configuration is currently unsupported");
   }
 }
