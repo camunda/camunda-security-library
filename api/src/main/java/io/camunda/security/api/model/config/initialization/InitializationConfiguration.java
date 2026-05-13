@@ -16,13 +16,13 @@ public class InitializationConfiguration {
   public static final String DEFAULT_USER_NAME = "Demo";
   public static final String DEFAULT_USER_EMAIL = "demo@example.com";
 
-  private List<ConfiguredUser> users = new ArrayList<>();
-  private List<ConfiguredMappingRule> mappingRules = new ArrayList<>();
-  private Map<String, Map<String, Collection<String>>> defaultRoles = new HashMap<>();
-  private List<ConfiguredAuthorization> authorizations = new ArrayList<>();
-  private List<ConfiguredTenant> tenants = new ArrayList<>();
-  private List<ConfiguredGroup> groups = new ArrayList<>();
-  private List<ConfiguredRole> roles = new ArrayList<>();
+  private List<ConfiguredUser> users = List.of();
+  private List<ConfiguredMappingRule> mappingRules = List.of();
+  private Map<String, Map<String, Collection<String>>> defaultRoles = Map.of();
+  private List<ConfiguredAuthorization> authorizations = List.of();
+  private List<ConfiguredTenant> tenants = List.of();
+  private List<ConfiguredGroup> groups = List.of();
+  private List<ConfiguredRole> roles = List.of();
 
   public List<ConfiguredUser> getUsers() {
     return users;
