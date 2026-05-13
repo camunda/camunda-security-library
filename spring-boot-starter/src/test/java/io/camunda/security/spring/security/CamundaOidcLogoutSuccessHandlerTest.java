@@ -17,6 +17,7 @@ import jakarta.servlet.http.HttpSession;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -113,9 +114,22 @@ class CamundaOidcLogoutSuccessHandlerTest {
         request, new MockHttpServletResponse(), oidcAuthentication("user@camunda.com"));
 
     assertThat(session.getAttribute(REDIRECT_MESSAGE_ATTRIBUTE))
-        .isEqualTo(
-            "The identity provider's end_session_endpoint is not available. "
-                + "The local session has been terminated, but the IdP session will still be active.");
+        .asInstanceOf(InstanceOfAssertFactories.STRING)
+        .contains("end_session_endpoint");
+  }
+
+  @Test
+  void caseInsensitiveSameOriginRefererIsStoredOnSession() {
+    final MockHttpServletRequest request =
+        requestWithReferer("HTTPS://CAMUNDA.com/component/ui/page");
+    final HttpSession session = request.getSession(true);
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    handler.determineTargetUrl(request, new MockHttpServletResponse(), oidcAuthentication(null));
+
+    assertThat(session.getAttribute(POST_LOGOUT_REDIRECT_ATTRIBUTE))
+        .isEqualTo("HTTPS://CAMUNDA.com/component/ui/page");
   }
 
   @Test

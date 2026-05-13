@@ -164,19 +164,28 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
     if (!candidate.isAbsolute() || candidate.getHost() == null) {
       return false;
     }
-    return Objects.equals(candidate.getScheme(), requestUri.getScheme())
-        && Objects.equals(candidate.getHost(), requestUri.getHost())
+    // URI scheme (RFC 3986 §3.1) and DNS host names are case-insensitive — compare with
+    // equalsIgnoreCase so a referer like HTTPS://Camunda.com/ is not wrongly rejected.
+    return equalsIgnoreCase(candidate.getScheme(), requestUri.getScheme())
+        && equalsIgnoreCase(candidate.getHost(), requestUri.getHost())
         && effectivePort(candidate) == effectivePort(requestUri);
+  }
+
+  private static boolean equalsIgnoreCase(final String a, final String b) {
+    return a == null ? b == null : a.equalsIgnoreCase(b);
   }
 
   private static int effectivePort(final URI uri) {
     if (uri.getPort() != -1) {
       return uri.getPort();
     }
-    return switch (uri.getScheme()) {
-      case "http" -> 80;
-      case "https" -> 443;
-      default -> -1;
-    };
+    final String scheme = uri.getScheme();
+    if ("http".equalsIgnoreCase(scheme)) {
+      return 80;
+    }
+    if ("https".equalsIgnoreCase(scheme)) {
+      return 443;
+    }
+    return -1;
   }
 }
