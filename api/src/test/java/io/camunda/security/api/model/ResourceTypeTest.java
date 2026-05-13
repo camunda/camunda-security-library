@@ -10,6 +10,8 @@ package io.camunda.security.api.model;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.camunda.security.api.model.authz.PermissionType;
+import io.camunda.security.api.model.authz.ResourceType;
 import org.junit.jupiter.api.Test;
 
 class ResourceTypeTest {

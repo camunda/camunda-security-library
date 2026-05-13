@@ -9,8 +9,8 @@ package io.camunda.security.spring.filter;
 
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.api.model.CamundaAuthentication;
-import io.camunda.security.api.model.PermissionType;
-import io.camunda.security.api.model.ResourceType;
+import io.camunda.security.api.model.authz.PermissionType;
+import io.camunda.security.api.model.authz.ResourceType;
 import io.camunda.security.core.port.in.ResourcePermissionPort;
 import io.camunda.security.spring.spi.WebAppAccessDeniedHandlerPort;
 import io.camunda.security.spring.spi.WebAppProviderPort;

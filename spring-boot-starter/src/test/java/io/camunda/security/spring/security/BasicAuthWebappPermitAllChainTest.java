@@ -11,9 +11,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
-import io.camunda.security.api.model.Authorization;
 import io.camunda.security.api.model.CamundaAuthentication;
-import io.camunda.security.api.model.ResourceType;
+import io.camunda.security.api.model.authz.Authorization;
+import io.camunda.security.api.model.authz.ResourceType;
 import io.camunda.security.core.port.out.AuthorizationRepositoryPort;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
