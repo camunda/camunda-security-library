@@ -24,8 +24,6 @@ public class ConfiguredAuthorization {
   private String resourcePropertyName;
   private Set<PermissionType> permissions;
 
-  /** Default constructor for Spring Boot binding */
-  @SuppressWarnings("unused")
   public ConfiguredAuthorization() {}
 
   private ConfiguredAuthorization(
@@ -103,7 +101,6 @@ public class ConfiguredAuthorization {
     return resourcePropertyName != null && !resourcePropertyName.isBlank();
   }
 
-  // --- Spring Boot setters ---
   public void setOwnerType(final AuthorizationOwnerType ownerType) {
     this.ownerType = ownerType;
   }

@@ -5,13 +5,11 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.api.model;
+package io.camunda.security.api.model.authz;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import io.camunda.security.api.model.authz.PermissionType;
-import io.camunda.security.api.model.authz.ResourceType;
 import org.junit.jupiter.api.Test;
 
 class ResourceTypeTest {
