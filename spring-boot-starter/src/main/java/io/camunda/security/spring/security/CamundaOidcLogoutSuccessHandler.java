@@ -15,6 +15,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.client.oidc.web.logout.OidcClientInitiatedLogoutSuccessHandler;
@@ -61,7 +62,7 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
       final HttpServletResponse response,
       final Authentication authentication) {
 
-    final String referer = request.getHeader("referer");
+    final String referer = request.getHeader(HttpHeaders.REFERER);
     if (isSameOriginRedirect(request, referer)) {
       request.getSession().setAttribute(POST_LOGOUT_REDIRECT_ATTRIBUTE, referer);
     }
