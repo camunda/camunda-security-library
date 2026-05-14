@@ -61,6 +61,31 @@ class OidcBeansConfigurationJwtDecoderTest {
   }
 
   @Test
+  void shouldFailWithInformativeErrorWhenMultipleProviderSourcesAndNoFlatBlock() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.keycloak.client-id=kc-client",
+            "camunda.security.authentication.providers.oidc.keycloak.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.providers.oidc.keycloak.authorization-uri=https://kc.example.com/auth",
+            "camunda.security.authentication.providers.oidc.keycloak.token-uri=https://kc.example.com/token",
+            "camunda.security.authentication.providers.oidc.keycloak.jwk-set-uri=https://kc.example.com/jwks",
+            "camunda.security.authentication.providers.oidc.azure.client-id=az-client",
+            "camunda.security.authentication.providers.oidc.azure.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.providers.oidc.azure.authorization-uri=https://az.example.com/auth",
+            "camunda.security.authentication.providers.oidc.azure.token-uri=https://az.example.com/token",
+            "camunda.security.authentication.providers.oidc.azure.jwk-set-uri=https://az.example.com/jwks")
+        .run(
+            ctx -> {
+              assertThat(ctx).hasFailed();
+              assertThat(ctx.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalStateException.class)
+                  .hasMessageContaining("multiple providers")
+                  .hasMessageContaining("custom @Bean JwtDecoder");
+            });
+  }
+
+  @Test
   void shouldFailWithInformativeErrorWhenNoSourceAvailable() {
     runner
         .withPropertyValues(

@@ -46,22 +46,15 @@ public class OidcBeansConfiguration {
   @Bean
   @ConditionalOnMissingBean
   public JwtDecoder jwtDecoder(final CamundaSecurityLibraryProperties properties) {
-    // Single-decoder model: prefer the flat block, otherwise fall back to the first providers entry
-    // so providers-only configurations still produce a working decoder. Hosts needing per-audience
-    // decoding override the bean.
+    // Single-decoder model: pick the flat block when configured, otherwise the sole providers entry
+    // with a JWT source. When multiple providers are configured without a flat block, the host must
+    // register their own JwtDecoder bean — a single decoder cannot correctly validate tokens from
+    // multiple IdPs, so the library refuses to guess.
     final OidcConfiguration source = pickJwtDecoderSource(properties.getAuthentication());
-    if (source != null) {
-      if (StringUtils.hasText(source.getJwkSetUri())) {
-        return NimbusJwtDecoder.withJwkSetUri(source.getJwkSetUri()).build();
-      }
-      if (StringUtils.hasText(source.getIssuerUri())) {
-        return NimbusJwtDecoder.withIssuerLocation(source.getIssuerUri()).build();
-      }
+    if (StringUtils.hasText(source.getJwkSetUri())) {
+      return NimbusJwtDecoder.withJwkSetUri(source.getJwkSetUri()).build();
     }
-    throw new IllegalStateException(
-        "Cannot build JwtDecoder: set issuer-uri or jwk-set-uri under"
-            + " camunda.security.authentication.oidc.* or under at least one"
-            + " camunda.security.authentication.providers.oidc.<id>.* entry.");
+    return NimbusJwtDecoder.withIssuerLocation(source.getIssuerUri()).build();
   }
 
   private static OidcConfiguration pickJwtDecoderSource(
@@ -70,10 +63,24 @@ public class OidcBeansConfiguration {
     if (hasJwtSource(flat)) {
       return flat;
     }
-    return authentication.getProviders().getOidc().values().stream()
-        .filter(OidcBeansConfiguration::hasJwtSource)
-        .findFirst()
-        .orElse(null);
+    final var providerSources =
+        authentication.getProviders().getOidc().values().stream()
+            .filter(OidcBeansConfiguration::hasJwtSource)
+            .toList();
+    if (providerSources.size() == 1) {
+      return providerSources.get(0);
+    }
+    if (providerSources.isEmpty()) {
+      throw new IllegalStateException(
+          "Cannot build JwtDecoder: set issuer-uri or jwk-set-uri under"
+              + " camunda.security.authentication.oidc.* or under at least one"
+              + " camunda.security.authentication.providers.oidc.<id>.* entry.");
+    }
+    throw new IllegalStateException(
+        "Cannot build a single JwtDecoder when multiple providers are configured under"
+            + " camunda.security.authentication.providers.oidc.* and the flat oidc block has no"
+            + " issuer-uri or jwk-set-uri. Either configure the flat block to pin the resource-server"
+            + " audience, or register a custom @Bean JwtDecoder in the host application.");
   }
 
   private static boolean hasJwtSource(final OidcConfiguration oidc) {
