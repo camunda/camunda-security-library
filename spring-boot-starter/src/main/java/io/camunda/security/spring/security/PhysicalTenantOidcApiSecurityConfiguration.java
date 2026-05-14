@@ -51,17 +51,27 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
 @Conditional(ProtectedOidcApiCondition.class)
 public class PhysicalTenantOidcApiSecurityConfiguration {
 
+  /**
+   * Reserved tenant id whose configuration is the top-level {@code
+   * camunda.security.authentication.oidc.*} slot — see ADR-0012.
+   */
+  static final String DEFAULT_TENANT_ID = "default";
+
   private static final Logger LOG =
       LoggerFactory.getLogger(PhysicalTenantOidcApiSecurityConfiguration.class);
 
   @Bean
   @ConditionalOnMissingBean
   public PhysicalTenantAuthenticationManagers physicalTenantAuthenticationManagers(
-      final CamundaSecurityLibraryProperties properties) {
+      final CamundaSecurityLibraryProperties properties, final JwtDecoder defaultJwtDecoder) {
     final List<PhysicalTenantConfiguration> tenants = requireConfiguredTenants(properties);
     final Map<String, AuthenticationManager> managersByTenantId = new LinkedHashMap<>();
+    managersByTenantId.put(DEFAULT_TENANT_ID, authenticationManagerFor(defaultJwtDecoder));
+    LOG.info(
+        "Registered physical tenant OIDC AuthenticationManager for the implicit 'default' tenant"
+            + " (top-level camunda.security.authentication.oidc.*).");
     for (final PhysicalTenantConfiguration tenant : tenants) {
-      managersByTenantId.put(tenant.getId(), authenticationManagerFor(tenant));
+      managersByTenantId.put(tenant.getId(), authenticationManagerFor(jwtDecoderFor(tenant)));
       LOG.info(
           "Registered physical tenant OIDC AuthenticationManager for tenant '{}'.", tenant.getId());
     }
@@ -78,7 +88,10 @@ public class PhysicalTenantOidcApiSecurityConfiguration {
       throws Exception {
     final List<PhysicalTenantConfiguration> tenants = requireConfiguredTenants(properties);
 
-    final List<RequestMatcher> tenantMatchers = new ArrayList<>(tenants.size());
+    final List<RequestMatcher> tenantMatchers = new ArrayList<>(tenants.size() + 1);
+    tenantMatchers.add(
+        PathPatternRequestMatcher.withDefaults()
+            .matcher("/physical-tenants/" + DEFAULT_TENANT_ID + "/**"));
     for (final PhysicalTenantConfiguration tenant : tenants) {
       tenantMatchers.add(
           PathPatternRequestMatcher.withDefaults()
@@ -125,9 +138,8 @@ public class PhysicalTenantOidcApiSecurityConfiguration {
     return tenants;
   }
 
-  private static AuthenticationManager authenticationManagerFor(
-      final PhysicalTenantConfiguration tenant) {
-    return new ProviderManager(new JwtAuthenticationProvider(jwtDecoderFor(tenant)));
+  private static AuthenticationManager authenticationManagerFor(final JwtDecoder jwtDecoder) {
+    return new ProviderManager(new JwtAuthenticationProvider(jwtDecoder));
   }
 
   private static JwtDecoder jwtDecoderFor(final PhysicalTenantConfiguration tenant) {

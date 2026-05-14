@@ -20,6 +20,7 @@ import java.util.regex.Pattern;
 public class PhysicalTenantConfiguration {
 
   static final Pattern ID_PATTERN = Pattern.compile("[a-zA-Z0-9_-]+");
+  static final String RESERVED_DEFAULT_ID = "default";
 
   private String id;
   private OidcConfiguration oidc = new OidcConfiguration();
@@ -29,6 +30,12 @@ public class PhysicalTenantConfiguration {
   }
 
   public void setId(final String id) {
+    if (RESERVED_DEFAULT_ID.equals(id)) {
+      throw new IllegalArgumentException(
+          "Physical-tenant id 'default' is reserved. The default tenant's profile is the top-level"
+              + " camunda.security.authentication.oidc.* slot; do not configure it under"
+              + " camunda.security.physical-tenants[]. See ADR-0012.");
+    }
     if (id != null && !ID_PATTERN.matcher(id).matches()) {
       throw new IllegalArgumentException(
           "Invalid physical-tenant id '"

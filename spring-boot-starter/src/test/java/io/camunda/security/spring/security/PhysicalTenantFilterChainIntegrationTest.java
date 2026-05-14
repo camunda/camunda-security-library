@@ -124,6 +124,30 @@ class PhysicalTenantFilterChainIntegrationTest {
   }
 
   @Test
+  void defaultTenantChainAcceptsDefaultTokenAtDefaultPrefix() throws Exception {
+    runner.run(
+        ctx -> {
+          final MockMvc mvc = mvc(ctx);
+          mvc.perform(
+                  get("/physical-tenants/default/v2/x")
+                      .header("Authorization", "Bearer " + DEFAULT_TOKEN))
+              .andExpect(status().isOk());
+        });
+  }
+
+  @Test
+  void defaultTenantChainRejectsTenantTokenAtDefaultPrefix() throws Exception {
+    runner.run(
+        ctx -> {
+          final MockMvc mvc = mvc(ctx);
+          mvc.perform(
+                  get("/physical-tenants/default/v2/x")
+                      .header("Authorization", "Bearer " + ACME_TOKEN))
+              .andExpect(status().isUnauthorized());
+        });
+  }
+
+  @Test
   void unknownTenantFallsToCatchAllDeny() throws Exception {
     runner.run(
         ctx -> {
@@ -232,6 +256,7 @@ class PhysicalTenantFilterChainIntegrationTest {
     PhysicalTenantAuthenticationManagers physicalTenantAuthenticationManagers() {
       return new PhysicalTenantAuthenticationManagers(
           Map.of(
+              "default", stubManager(DEFAULT_TOKEN, "default-user"),
               "acme", stubManager(ACME_TOKEN, "acme-user"),
               "globex", stubManager(GLOBEX_TOKEN, "globex-user")));
     }

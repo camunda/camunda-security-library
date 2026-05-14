@@ -12,6 +12,8 @@ status: Accepted
 
 Accepted
 
+> Scope of this ADR is the **per-tenant chain shape**: how the library handles requests that arrive at the security layer with a `/physical-tenants/{tenantId}/...` prefix. How non-prefixed requests are handled in Multi-Engine deployments, and how the `default` tenant is resolved, are the subject of [ADR-0012](0012-default-tenant-rewrite-and-implicit-default-tenant.md) — read both together for the full Multi-Engine picture.
+
 ## Context
 
 A platform initiative ("physical tenants") introduces tenant-scoped path namespaces of the form `/physical-tenants/{tenantId}/**`, where different tenants may live behind different IDPs with distinct OIDC profiles (issuer, client id, audience, JWK set, etc.) inside the same host process. Feature [#200](https://github.com/camunda/camunda-security-library/issues/200) tracks the work.
@@ -110,11 +112,11 @@ The set of tenants and their settings is bound from `camunda.security.physical-t
 
 This is "static" in the configuration sense — *resolving* the tenant id from the URL on every request is normal request handling, not dynamic configuration. Dynamic configuration (a runtime port that resolves tenant config per request) is deferred — see Out of Scope.
 
-### Top-level chains are unchanged
+### Existing chain classes are not modified
 
-`OidcWebappSecurityConfiguration`, `BasicAuthWebappSecurityConfiguration`, `OidcApiSecurityConfiguration`, `BasicAuthApiSecurityConfiguration`, `UnprotectedApiSecurityConfiguration`, and `BaseSecurityConfiguration` are not modified. Their matchers do not match `/physical-tenants/{id}/...`; the new per-tenant chain handles those paths. The top-level chains continue to serve every non-prefixed request, including deployments that do not enable physical tenants.
+`OidcWebappSecurityConfiguration`, `BasicAuthWebappSecurityConfiguration`, `OidcApiSecurityConfiguration`, `BasicAuthApiSecurityConfiguration`, `UnprotectedApiSecurityConfiguration`, and `BaseSecurityConfiguration` are not modified by this ADR. Their `securityMatcher`s do not match `/physical-tenants/{id}/...`; the new per-tenant chain handles those paths.
 
-A deployment that does not opt in by `@Import`ing `PhysicalTenantOidcApiSecurityConfiguration` sees no behaviour change.
+A deployment that does not opt in by `@Import`ing `PhysicalTenantOidcApiSecurityConfiguration` sees no chain-shape change from this ADR. How requests that lack a `/physical-tenants/` prefix are routed in Multi-Engine deployments is the subject of [ADR-0012](0012-default-tenant-rewrite-and-implicit-default-tenant.md).
 
 ### Hydration deferred
 
@@ -166,5 +168,4 @@ Out of scope (each will warrant its own ADR if non-trivial):
 - **`ImportBeanDefinitionRegistrar` driven by a new `@EnablePhysicalTenants` annotation.** Rejected — introduces a public annotation that duplicates the existing `@Import`-based activation model from [ADR-0008](0008-no-spring-boot-auto-configuration.md). Adopters already opt in by importing a configuration class; a second switch adds surface area without removing any.
 - **Broad `securityMatcher("/physical-tenants/*/**")` with a deny-everything `AuthenticationManager` returned by the resolver for unknown tenants.** Rejected — semantically muddier. An unknown tenant is an unknown route, not an authentication failure; surfacing it as 401 differs from how every other unconfigured path on the server behaves (404 via the catch-all). The narrow-matcher approach gives the same failure mode and leaves the resolver branch-free.
 - **Per-tenant `method` field on `PhysicalTenantConfiguration`.** Rejected — the product constraint is method-uniformity across a deployment. Adding the field would imply mixed-method deployments are supported, which they are not. Adding it later (additively) is straightforward if the constraint changes.
-- **Drop the top-level `camunda.security.authentication.oidc.*` slot and require every IDP profile to live under `physical-tenants[]`.** Rejected — would force every existing adopter to rewrite YAML for a feature most of them will not adopt. The two-slot model is more disruptive at the documentation layer (two paths to learn) and substantially less disruptive at the migration layer (zero forced changes).
 - **Use `JwtIssuerAuthenticationManagerResolver` keyed by JWT `iss` claim rather than a custom path-keyed resolver.** Rejected — would mean that any token issued by the acme IDP is accepted at `/physical-tenants/globex/**` (and vice versa) because the resolver keys off the token, not the path. The path-keyed resolver enforces tenant–path binding by construction: the path decides which decoder runs; mismatched tokens fail decode.
