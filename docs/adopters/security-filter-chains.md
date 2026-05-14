@@ -228,7 +228,7 @@ public OidcTokenEndpointCustomizer privateKeyJwtCustomizer(MyJwkProvider jwks) {
 
 ### Other host beans the chains pick up automatically
 
-- `LogoutSuccessHandler` — wired into the OIDC webapp chain for IdP-coordinated logout.
+- `LogoutSuccessHandler` — wired into the OIDC webapp chain for IdP-coordinated logout. The CSL ships a default (`CamundaOidcLogoutSuccessHandler`) via `OidcBeansConfiguration` when `authentication.method=oidc` and the host activates CSL through the `CamundaSecurityAutoConfiguration` umbrella; a host-registered bean replaces it. See [OIDC logout](#oidc-logout).
 - `OidcUserService` — wired into the OIDC user-info endpoint.
 
 These are looked up via `ObjectProvider#ifAvailable`; absence is fine, the chain falls back to Spring Security defaults.
@@ -468,6 +468,62 @@ If `AdminUserPresencePort` is absent, the filter bean isn't created. The webapp 
 ### Filter ordering when both this and `WebAppAuthorizationCheckFilter` are active
 
 When a host activates both `AdminUserCheckFilterConfiguration` and `WebAppAuthorizationFilterConfiguration`, the chain configurations anchor the webapp filter on the admin filter so the admin-presence redirect runs before any per-web-app permission check. The order is structurally guaranteed via `addFilterAfter(WebAppAuthorizationCheckFilter, AdminUserCheckFilter.class)` — not left to insertion-order tiebreakers — so an unprovisioned system always redirects to setup before a missing permission triggers a forbidden response.
+
+## OIDC logout
+
+When `authentication.method=oidc` and a host activates CSL via the `CamundaSecurityAutoConfiguration` umbrella, [`OidcBeansConfiguration`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/oidc/OidcBeansConfiguration.java) registers a default `LogoutSuccessHandler` — [`CamundaOidcLogoutSuccessHandler`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/security/CamundaOidcLogoutSuccessHandler.java) — that extends Spring Security's `OidcClientInitiatedLogoutSuccessHandler` with two additions over plain RP-initiated logout. Activation rationale lives in [ADR-0012](../adr/0012-oidc-logout-success-handler.md).
+
+**What ships by default**
+
+1. **Post-logout redirect from the `Referer` header.** When the `Referer` on the logout request matches the current application's scheme, host, and effective port (default ports normalised), the URL is stored on the HTTP session under [`CamundaOidcLogoutSuccessHandler.POST_LOGOUT_REDIRECT_ATTRIBUTE`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/security/CamundaOidcLogoutSuccessHandler.java) (string `"postLogoutRedirect"`). Cross-origin referers, host-confusion attempts (`https://app.example.com.evil.com/`, `https://app.example.com@evil.com/`), CR/LF-injection, and unparseable URLs are rejected. Hosts that render a post-logout page read the session attribute via the constant — not the literal string — to keep the contract stable.
+2. **`login_hint` → `logout_hint` propagation.** When the OIDC user has a `login_hint` claim, it is appended as a `logout_hint` query parameter to the IdP's end-session URL. This lets providers that maintain multiple sessions per user terminate the correct one.
+
+If the IdP's discovery document does not expose `end_session_endpoint`, the local session is still terminated and a human-readable explanation is stored on the session under `CamundaOidcLogoutSuccessHandler.REDIRECT_MESSAGE_ATTRIBUTE` so a post-logout page on the subsequent request can render it.
+
+The handler is multi-IdP-aware — it looks up the `ClientRegistration` by the principal's `authorizedClientRegistrationId`.
+
+**Activation**
+
+The bean lives in `OidcBeansConfiguration` (already a member of the `CamundaSecurityAutoConfiguration` umbrella), so hosts activating CSL via the recommended opt-in path get the default `LogoutSuccessHandler` automatically:
+
+```java
+@Configuration
+@ImportAutoConfiguration(CamundaSecurityAutoConfiguration.class)
+public class HostSecurityConfiguration {}
+```
+
+The bean is `@ConditionalOnMissingBean(LogoutSuccessHandler.class)` — a host-registered bean wins. The umbrella is the activation path that makes `@ConditionalOnMissingBean` evaluate reliably; see [ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md) for the rationale.
+
+**Reading the post-logout redirect URL**
+
+```java
+import static io.camunda.security.spring.security.CamundaOidcLogoutSuccessHandler.POST_LOGOUT_REDIRECT_ATTRIBUTE;
+
+@GetMapping("/logged-out")
+public String loggedOut(final HttpSession session, final Model model) {
+  final Object target = session.getAttribute(POST_LOGOUT_REDIRECT_ATTRIBUTE);
+  model.addAttribute("returnTo", target instanceof String s ? s : "/");
+  return "logged-out";
+}
+```
+
+The CSL stores the attribute; rendering the post-logout page (or redirecting to the stored URL) remains a host concern.
+
+**Overriding the default**
+
+Register your own `LogoutSuccessHandler` bean. The CSL default backs off and the chain wires your bean instead:
+
+```java
+@Bean
+LogoutSuccessHandler hostLogoutSuccessHandler(
+    final ClientRegistrationRepository clientRegistrationRepository) {
+  final var handler = new OidcClientInitiatedLogoutSuccessHandler(clientRegistrationRepository);
+  handler.setPostLogoutRedirectUri("{baseUrl}/host-specific-logged-out");
+  return handler;
+}
+```
+
+Registering a custom `LogoutSuccessHandler` bean is the only override path — there is no opt-out flag.
 
 ## Failure response contract
 
