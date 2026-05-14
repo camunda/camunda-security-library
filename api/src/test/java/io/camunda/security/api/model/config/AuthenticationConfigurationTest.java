@@ -48,13 +48,15 @@ class AuthenticationConfigurationTest {
   }
 
   @Test
-  void shouldEnableCamundaGroupsWhenOidcConfigurationIsNull() {
+  void shouldEnableCamundaGroupsWhenOidcGroupsClaimIsNotConfigured() {
     // given:
     final var config = new AuthenticationConfiguration();
     config.setMethod(AuthenticationMethod.OIDC);
     config.setOidc(null);
 
-    // expect:
+    // expect: setOidc(null) is normalised to a fresh OidcConfiguration; with no groups claim
+    // configured, Camunda-managed groups remain enabled.
+    assertThat(config.getOidc()).isNotNull();
     assertThat(config.isCamundaUsersEnabled()).isFalse();
     assertThat(config.isCamundaGroupsEnabled()).isTrue();
   }

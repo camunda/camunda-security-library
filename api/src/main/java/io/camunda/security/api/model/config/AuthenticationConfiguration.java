@@ -76,7 +76,7 @@ public class AuthenticationConfiguration {
   }
 
   public void setOidc(final OidcConfiguration oidc) {
-    this.oidc = oidc;
+    this.oidc = oidc != null ? oidc : new OidcConfiguration();
   }
 
   public OidcProvidersConfiguration getProviders() {
