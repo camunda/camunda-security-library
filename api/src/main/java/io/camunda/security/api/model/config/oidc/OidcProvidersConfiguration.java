@@ -7,12 +7,13 @@
  */
 package io.camunda.security.api.model.config.oidc;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /** Configures named authentication providers keyed by provider identifier. */
 public class OidcProvidersConfiguration {
 
-  private Map<String, OidcConfiguration> oidc;
+  private Map<String, OidcConfiguration> oidc = new LinkedHashMap<>();
 
   public Map<String, OidcConfiguration> getOidc() {
     return oidc;

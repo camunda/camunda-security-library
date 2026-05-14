@@ -45,7 +45,7 @@ public class AuthenticationConfiguration {
   /** OIDC-specific settings (only consulted when {@code method == OIDC}). */
   private OidcConfiguration oidc = new OidcConfiguration();
 
-  private OidcProvidersConfiguration providers;
+  private OidcProvidersConfiguration providers = new OidcProvidersConfiguration();
 
   public AuthenticationMethod getMethod() {
     return method;
