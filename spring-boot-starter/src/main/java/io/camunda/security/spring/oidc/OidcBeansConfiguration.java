@@ -10,11 +10,8 @@ package io.camunda.security.spring.oidc;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.security.CamundaOidcLogoutSuccessHandler;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -44,14 +41,6 @@ import org.springframework.security.web.authentication.logout.LogoutSuccessHandl
 @ConditionalOnProperty(name = "camunda.security.authentication.method", havingValue = "oidc")
 public class OidcBeansConfiguration {
 
-  static final String DEPRECATION_BOTH_SHAPES_SET =
-      "Both camunda.security.authentication.oidc.* and"
-          + " camunda.security.authentication.providers.oidc.* are configured."
-          + " The flat shape is deprecated and ignored when providers.oidc is non-empty;"
-          + " remove the flat block once migration is complete.";
-
-  private static final Logger LOG = LoggerFactory.getLogger(OidcBeansConfiguration.class);
-
   @Bean
   @ConditionalOnMissingBean
   public JwtDecoder jwtDecoder(final CamundaSecurityLibraryProperties properties) {
@@ -73,20 +62,31 @@ public class OidcBeansConfiguration {
   public ClientRegistrationRepository clientRegistrationRepository(
       final CamundaSecurityLibraryProperties properties) {
     final var authentication = properties.getAuthentication();
-    final Map<String, OidcConfiguration> providers = authentication.getProviders().getOidc();
     final OidcConfiguration flat = authentication.getOidc();
+    final Map<String, OidcConfiguration> providers = authentication.getProviders().getOidc();
 
-    if (!providers.isEmpty()) {
-      if (isFlatShapeConfigured(flat)) {
-        LOG.warn(DEPRECATION_BOTH_SHAPES_SET);
-      }
-      final List<ClientRegistration> registrations = new ArrayList<>(providers.size());
-      providers.forEach((id, oidc) -> registrations.add(buildClientRegistration(id, oidc)));
-      return new InMemoryClientRegistrationRepository(registrations);
+    // Mirrors OC's OidcAuthenticationConfigurationRepository: the flat block contributes a single
+    // registration under its own registrationId when clientId is set; the providers map is merged
+    // on top so a colliding provider id overwrites the flat entry.
+    final Map<String, OidcConfiguration> sources = new LinkedHashMap<>();
+    if (flat.getClientId() != null && !flat.getClientId().isBlank()) {
+      sources.put(flat.getRegistrationId(), flat);
+    }
+    sources.putAll(providers);
+
+    if (sources.isEmpty()) {
+      throw new IllegalStateException(
+          "Cannot build ClientRegistrationRepository: set"
+              + " camunda.security.authentication.oidc.client-id (with issuer-uri or explicit"
+              + " endpoints), or one or more"
+              + " camunda.security.authentication.providers.oidc.<id>.* entries.");
     }
 
-    return new InMemoryClientRegistrationRepository(
-        buildClientRegistration(flat.getRegistrationId(), flat));
+    final var registrations =
+        sources.entrySet().stream()
+            .map(e -> buildClientRegistration(e.getKey(), e.getValue()))
+            .toList();
+    return new InMemoryClientRegistrationRepository(registrations);
   }
 
   /**
@@ -119,23 +119,14 @@ public class OidcBeansConfiguration {
         || oidc.getTokenUri() == null
         || oidc.getJwkSetUri() == null) {
       throw new IllegalStateException(
-          "Cannot build ClientRegistrationRepository: set"
-              + " camunda.security.authentication.oidc.issuer-uri,"
-              + " or all of authorization-uri, token-uri, and jwk-set-uri.");
+          "Cannot build ClientRegistration: set issuer-uri, or all of authorization-uri,"
+              + " token-uri, and jwk-set-uri.");
     }
     return ClientRegistration.withRegistrationId(oidc.getRegistrationId())
         .authorizationUri(oidc.getAuthorizationUri())
         .tokenUri(oidc.getTokenUri())
         .userInfoUri(oidc.getUserInfoUri())
         .jwkSetUri(oidc.getJwkSetUri());
-  }
-
-  private static boolean isFlatShapeConfigured(final OidcConfiguration flat) {
-    return (flat.getIssuerUri() != null && !flat.getIssuerUri().isBlank())
-        || flat.getAuthorizationUri() != null
-        || flat.getTokenUri() != null
-        || flat.getJwkSetUri() != null
-        || flat.getClientId() != null;
   }
 
   @Bean

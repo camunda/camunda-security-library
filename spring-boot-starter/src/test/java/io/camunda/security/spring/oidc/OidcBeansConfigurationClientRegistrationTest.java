@@ -11,11 +11,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import org.springframework.boot.test.system.CapturedOutput;
-import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
@@ -25,12 +22,14 @@ import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepo
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 
 /**
- * Verifies the {@link ClientRegistrationRepository} produced by {@link OidcBeansConfiguration} for
- * the flat {@code authentication.oidc.*} shape and the multi-provider {@code
- * authentication.providers.oidc.*} shape. Uses explicit endpoint URIs throughout so no network is
- * required for OIDC discovery; the discovery path is covered by integration tests.
+ * Verifies the {@link ClientRegistrationRepository} produced by {@link OidcBeansConfiguration}.
+ * Flat {@code authentication.oidc.*} and multi-provider {@code authentication.providers.oidc.*} are
+ * additive: the flat block contributes one registration keyed by its own {@code registrationId}
+ * when {@code clientId} is set, and the providers map is merged on top so a colliding provider id
+ * overwrites the flat entry — mirroring OC's {@code OidcAuthenticationConfigurationRepository}.
+ * Uses explicit endpoint URIs throughout so no network is required for OIDC discovery; the
+ * discovery path is covered by integration tests.
  */
-@ExtendWith(OutputCaptureExtension.class)
 class OidcBeansConfigurationClientRegistrationTest {
 
   private final ApplicationContextRunner runner =
@@ -89,7 +88,7 @@ class OidcBeansConfigurationClientRegistrationTest {
   }
 
   @Test
-  void shouldPreferProvidersAndLogDeprecationWhenBothShapesAreSet(final CapturedOutput output) {
+  void shouldRegisterFlatAndProvidersAdditivelyWhenBothShapesAreSet() {
     runner
         .withPropertyValues(
             "camunda.security.authentication.oidc.client-id=flat-client",
@@ -105,10 +104,55 @@ class OidcBeansConfigurationClientRegistrationTest {
         .run(
             ctx -> {
               final var repository = ctx.getBean(ClientRegistrationRepository.class);
+              final var flat = repository.findByRegistrationId("oidc");
+              final var foo = repository.findByRegistrationId("foo");
+              assertThat(flat).isNotNull();
+              assertThat(flat.getClientId()).isEqualTo("flat-client");
+              assertThat(foo).isNotNull();
+              assertThat(foo.getClientId()).isEqualTo("foo-client");
+            });
+  }
+
+  @Test
+  void shouldLetProviderEntryOverwriteFlatOnRegistrationIdCollision() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=flat-client",
+            "camunda.security.authentication.oidc.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
+            "camunda.security.authentication.oidc.token-uri=https://flat.example.com/token",
+            "camunda.security.authentication.oidc.jwk-set-uri=https://flat.example.com/jwks",
+            "camunda.security.authentication.providers.oidc.oidc.client-id=provider-client",
+            "camunda.security.authentication.providers.oidc.oidc.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.providers.oidc.oidc.authorization-uri=https://provider.example.com/auth",
+            "camunda.security.authentication.providers.oidc.oidc.token-uri=https://provider.example.com/token",
+            "camunda.security.authentication.providers.oidc.oidc.jwk-set-uri=https://provider.example.com/jwks")
+        .run(
+            ctx -> {
+              final var repository = ctx.getBean(ClientRegistrationRepository.class);
+              final var registration = repository.findByRegistrationId("oidc");
+              assertThat(registration).isNotNull();
+              assertThat(registration.getClientId()).isEqualTo("provider-client");
+            });
+  }
+
+  @Test
+  void shouldIgnoreFlatBlockWhenClientIdIsAbsent() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
+            "camunda.security.authentication.oidc.token-uri=https://flat.example.com/token",
+            "camunda.security.authentication.oidc.jwk-set-uri=https://flat.example.com/jwks",
+            "camunda.security.authentication.providers.oidc.foo.client-id=foo-client",
+            "camunda.security.authentication.providers.oidc.foo.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.providers.oidc.foo.authorization-uri=https://foo.example.com/auth",
+            "camunda.security.authentication.providers.oidc.foo.token-uri=https://foo.example.com/token",
+            "camunda.security.authentication.providers.oidc.foo.jwk-set-uri=https://foo.example.com/jwks")
+        .run(
+            ctx -> {
+              final var repository = ctx.getBean(ClientRegistrationRepository.class);
               assertThat(repository.findByRegistrationId("foo")).isNotNull();
               assertThat(repository.findByRegistrationId("oidc")).isNull();
-              assertThat(output.getAll())
-                  .contains(OidcBeansConfiguration.DEPRECATION_BOTH_SHAPES_SET);
             });
   }
 
@@ -120,8 +164,8 @@ class OidcBeansConfigurationClientRegistrationTest {
           assertThat(ctx.getStartupFailure())
               .rootCause()
               .isInstanceOf(IllegalStateException.class)
-              .hasMessageContaining("issuer-uri")
-              .hasMessageContaining("authorization-uri");
+              .hasMessageContaining("client-id")
+              .hasMessageContaining("providers.oidc");
         });
   }
 
