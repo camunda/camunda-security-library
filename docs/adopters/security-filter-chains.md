@@ -124,6 +124,76 @@ All properties live under `camunda.security.*`. Spring's relaxed binding accepts
 | `registration-id` | string | `oidc` | Spring Security client registration id. |
 | `client-authentication-method` | string | `client_secret_basic` | Spring Security `ClientAuthenticationMethod` literal. |
 
+### Multi-IdP OIDC (`camunda.security.authentication.providers.oidc.<id>.*`)
+
+The library supports multiple OIDC providers by binding a map of `OidcConfiguration` instances under `camunda.security.authentication.providers.oidc.<id>.*`. Each map key becomes the Spring Security `registrationId`, so login routing works through Spring's standard `/oauth2/authorization/<id>` URL — no chain customisation is required. The shape mirrors OC's [`ProvidersConfiguration`](https://github.com/camunda/camunda/blob/main/security/security-core/src/main/java/io/camunda/security/configuration/ProvidersConfiguration.java) so hosts migrating from OC keep their existing configuration. See [ADR-0013](../adr/0013-multi-idp-oidc-configuration.md) for the design rationale.
+
+The properties under each provider entry are the same as the flat `oidc.*` block. Two-provider example:
+
+```yaml
+camunda:
+  security:
+    authentication:
+      method: oidc
+      providers:
+        oidc:
+          keycloak:
+            issuer-uri: https://keycloak.example.com/realms/camunda
+            client-id: camunda-keycloak
+            client-secret: ${KEYCLOAK_SECRET}
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+          azure:
+            issuer-uri: https://login.microsoftonline.com/<tenant-id>/v2.0
+            client-id: camunda-azure
+            client-secret: ${AZURE_SECRET}
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+```
+
+With this configuration, users start a login at `/oauth2/authorization/keycloak` or `/oauth2/authorization/azure`.
+
+#### Combining the flat and providers shapes
+
+The flat `oidc.*` block and the `providers.oidc.*` map are **additive**. When `oidc.client-id` is non-blank, the flat block contributes a `ClientRegistration` under its own `registration-id` (default `oidc`); the providers map is then merged on top, so a colliding provider id overwrites the flat entry. This matches OC's [`OidcAuthenticationConfigurationRepository`](https://github.com/camunda/camunda/blob/main/authentication/src/main/java/io/camunda/authentication/config/OidcAuthenticationConfigurationRepository.java), so hosts migrating from OC with both blocks set behave identically.
+
+Migrating a single-IdP host to the providers shape:
+
+```yaml
+# Before — flat shape only
+camunda:
+  security:
+    authentication:
+      method: oidc
+      oidc:
+        issuer-uri: https://keycloak.example.com/realms/camunda
+        client-id: camunda
+        client-secret: ${KEYCLOAK_SECRET}
+
+# After — providers shape, login URL becomes /oauth2/authorization/keycloak
+camunda:
+  security:
+    authentication:
+      method: oidc
+      providers:
+        oidc:
+          keycloak:
+            issuer-uri: https://keycloak.example.com/realms/camunda
+            client-id: camunda
+            client-secret: ${KEYCLOAK_SECRET}
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+```
+
+The flat shape stays supported indefinitely — there is no deprecation. Migrate when adding a second provider, or stay on the flat shape if a single IdP is all the host needs.
+
+#### Resource-server `JwtDecoder` selection
+
+The library ships a single `JwtDecoder` bean. With multiple providers, a single decoder cannot correctly validate tokens from every IdP (each carries its own signing keys and audience), so selection is deterministic and explicit:
+
+1. The flat `oidc.*` block is preferred if it has an `issuer-uri` or `jwk-set-uri`.
+2. Otherwise, if exactly one entry under `providers.oidc.*` has such a source, that entry is used.
+3. Otherwise (no source anywhere, or multiple providers with sources and no flat block), startup fails with an `IllegalStateException`.
+
+When startup fails because of rule 3, either pin the flat block as the resource-server audience or register a custom `@Bean JwtDecoder` in the host application — `OidcBeansConfiguration` backs off via `@ConditionalOnMissingBean`.
+
 ### OIDC groups claim extraction
 
 If your IdP exposes group membership in an OIDC claim, configure `camunda.security.authentication.oidc.groupsClaim` to point at that claim.
