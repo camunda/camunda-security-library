@@ -9,6 +9,7 @@ package io.camunda.security.spring;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -42,6 +43,14 @@ class CamundaSecurityLibraryPropertiesTest {
           assertThat(properties.getAuthentication().getProviders()).isNotNull();
           assertThat(properties.getAuthentication().getProviders().getOidc()).isEmpty();
         });
+  }
+
+  @Test
+  void shouldRestoreEmptyProvidersWhenSetterCalledWithNull() {
+    final var authentication = new AuthenticationConfiguration();
+    authentication.setProviders(null);
+    assertThat(authentication.getProviders()).isNotNull();
+    assertThat(authentication.getProviders().getOidc()).isEmpty();
   }
 
   @Test

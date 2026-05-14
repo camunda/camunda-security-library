@@ -84,7 +84,7 @@ public class AuthenticationConfiguration {
   }
 
   public void setProviders(final OidcProvidersConfiguration providers) {
-    this.providers = providers;
+    this.providers = providers != null ? providers : new OidcProvidersConfiguration();
   }
 
   /** Camunda-managed groups are disabled when OIDC is active and a groups claim is configured. */
