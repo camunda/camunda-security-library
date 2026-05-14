@@ -128,7 +128,9 @@ All properties live under `camunda.security.*`. Spring's relaxed binding accepts
 
 The library supports multiple OIDC providers by binding a map of `OidcConfiguration` instances under `camunda.security.authentication.providers.oidc.<id>.*`. Each map key becomes the Spring Security `registrationId`, so login routing works through Spring's standard `/oauth2/authorization/<id>` URL — no chain customisation is required. The shape mirrors OC's [`ProvidersConfiguration`](https://github.com/camunda/camunda/blob/main/security/security-core/src/main/java/io/camunda/security/configuration/ProvidersConfiguration.java) so hosts migrating from OC keep their existing configuration. See [ADR-0013](../adr/0013-multi-idp-oidc-configuration.md) for the design rationale.
 
-The properties under each provider entry are the same as the flat `oidc.*` block. Two-provider example:
+Each entry under `providers.oidc.<id>` accepts the same properties as the flat `oidc.*` block, with one exception: `registration-id` is ignored — the map key is always used as the Spring Security registration id. Configuring `providers.oidc.keycloak.registration-id: something-else` does not change the registration id; the value is silently overwritten by `keycloak`.
+
+Two-provider example:
 
 ```yaml
 camunda:
@@ -150,6 +152,8 @@ camunda:
 ```
 
 With this configuration, users start a login at `/oauth2/authorization/keycloak` or `/oauth2/authorization/azure`.
+
+> **Important — `JwtDecoder` selection.** The configuration above has no flat `oidc.*` block, and the library's default `JwtDecoder` refuses to auto-pick across multiple providers (see [JwtDecoder selection rules](#resource-server-jwtdecoder-selection) below). As shown, startup fails with an `IllegalStateException` because both the OIDC webapp chain and the OIDC API chain depend on the `JwtDecoder` bean. To run this two-provider configuration, either add a flat `oidc.*` block to pin the resource-server audience, or register a custom `@Bean JwtDecoder` in the host application — `OidcBeansConfiguration` backs off via `@ConditionalOnMissingBean` so the library's default no longer activates.
 
 #### Combining the flat and providers shapes
 
