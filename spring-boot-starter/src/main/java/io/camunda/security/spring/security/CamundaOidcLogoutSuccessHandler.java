@@ -83,19 +83,10 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
 
     final String baseLogoutUrl = super.determineTargetUrl(request, response, authentication);
 
-    // Spring returns getDefaultTargetUrl() when no end_session_endpoint is published by the IdP.
-    if (Objects.equals(baseLogoutUrl, getDefaultTargetUrl())) {
-      LOG.trace(
-          "Unable to determine end-session endpoint for OIDC logout. "
-              + "The local session has been terminated, but the IdP session will still be active. "
-              + "Falling back to '{}' without logout hint.",
-          baseLogoutUrl);
-      request
-          .getSession()
-          .setAttribute(REDIRECT_MESSAGE_ATTRIBUTE, END_SESSION_UNAVAILABLE_MESSAGE);
-      return baseLogoutUrl;
-    }
-
+    // Validate the auth context first. Spring's super.determineTargetUrl returns
+    // getDefaultTargetUrl() for ANY non-OIDC authentication context (non-OAuth2, non-OidcUser, or
+    // unknown registration), not just for a missing end_session_endpoint — so the end-session
+    // diagnostic must only fire once we know we're looking at a valid OIDC session.
     if (!(authentication instanceof final OAuth2AuthenticationToken oauth)) {
       LOG.trace(
           "Authentication is not of type OAuth2AuthenticationToken: '{}'. "
@@ -122,6 +113,20 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
           "Principal is not of type OidcUser: '{}'. Falling back to '{}' without logout hint.",
           oauth.getPrincipal(),
           baseLogoutUrl);
+      return baseLogoutUrl;
+    }
+
+    // With a confirmed OIDC session in hand, an equality with getDefaultTargetUrl() can be
+    // attributed to the IdP not publishing end_session_endpoint in its discovery metadata.
+    if (Objects.equals(baseLogoutUrl, getDefaultTargetUrl())) {
+      LOG.trace(
+          "Unable to determine end-session endpoint for OIDC logout. "
+              + "The local session has been terminated, but the IdP session will still be active. "
+              + "Falling back to '{}' without logout hint.",
+          baseLogoutUrl);
+      request
+          .getSession()
+          .setAttribute(REDIRECT_MESSAGE_ATTRIBUTE, END_SESSION_UNAVAILABLE_MESSAGE);
       return baseLogoutUrl;
     }
 

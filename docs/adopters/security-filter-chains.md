@@ -228,7 +228,7 @@ public OidcTokenEndpointCustomizer privateKeyJwtCustomizer(MyJwkProvider jwks) {
 
 ### Other host beans the chains pick up automatically
 
-- `LogoutSuccessHandler` — wired into the OIDC webapp chain for IdP-coordinated logout. The CSL ships a default (`CamundaOidcLogoutSuccessHandler`) when `OidcWebappLogoutConfiguration` is imported; a host-registered bean replaces it. See [OIDC logout](#oidc-logout).
+- `LogoutSuccessHandler` — wired into the OIDC webapp chain for IdP-coordinated logout. The CSL ships a default (`CamundaOidcLogoutSuccessHandler`) via `OidcBeansConfiguration` when `authentication.method=oidc` and the host activates CSL through the `CamundaSecurityAutoConfiguration` umbrella; a host-registered bean replaces it. See [OIDC logout](#oidc-logout).
 - `OidcUserService` — wired into the OIDC user-info endpoint.
 
 These are looked up via `ObjectProvider#ifAvailable`; absence is fine, the chain falls back to Spring Security defaults.

@@ -186,6 +186,44 @@ class CamundaOidcLogoutSuccessHandlerTest {
   }
 
   @Test
+  void carriageReturnInjectedRefererIsNotStoredOnSession() {
+    final MockHttpServletRequest request =
+        requestWithReferer("https://camunda.com/component\r\nSet-Cookie: x=y");
+    final HttpSession session = request.getSession(true);
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    handler.determineTargetUrl(request, new MockHttpServletResponse(), oidcAuthentication(null));
+
+    assertThat(session.getAttribute(POST_LOGOUT_REDIRECT_ATTRIBUTE)).isNull();
+  }
+
+  @Test
+  void relativeRefererIsNotStoredOnSession() {
+    final MockHttpServletRequest request = requestWithReferer("/component/ui/page");
+    final HttpSession session = request.getSession(true);
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    handler.determineTargetUrl(request, new MockHttpServletResponse(), oidcAuthentication(null));
+
+    assertThat(session.getAttribute(POST_LOGOUT_REDIRECT_ATTRIBUTE)).isNull();
+  }
+
+  @Test
+  void unparseableRefererIsNotStoredOnSession() {
+    final MockHttpServletRequest request =
+        requestWithReferer("https://camunda.com/path with space");
+    final HttpSession session = request.getSession(true);
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    handler.determineTargetUrl(request, new MockHttpServletResponse(), oidcAuthentication(null));
+
+    assertThat(session.getAttribute(POST_LOGOUT_REDIRECT_ATTRIBUTE)).isNull();
+  }
+
+  @Test
   void nonOAuth2AuthenticationFallsBackWithoutLogoutHint() {
     final MockHttpServletRequest request = requestWithReferer(SAME_ORIGIN_REFERER);
     final Authentication authentication =
