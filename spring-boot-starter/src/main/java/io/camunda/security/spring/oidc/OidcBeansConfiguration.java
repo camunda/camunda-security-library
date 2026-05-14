@@ -10,6 +10,11 @@ package io.camunda.security.spring.oidc;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.security.CamundaOidcLogoutSuccessHandler;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -39,6 +44,14 @@ import org.springframework.security.web.authentication.logout.LogoutSuccessHandl
 @ConditionalOnProperty(name = "camunda.security.authentication.method", havingValue = "oidc")
 public class OidcBeansConfiguration {
 
+  static final String DEPRECATION_BOTH_SHAPES_SET =
+      "Both camunda.security.authentication.oidc.* and"
+          + " camunda.security.authentication.providers.oidc.* are configured."
+          + " The flat shape is deprecated and ignored when providers.oidc is non-empty;"
+          + " remove the flat block once migration is complete.";
+
+  private static final Logger LOG = LoggerFactory.getLogger(OidcBeansConfiguration.class);
+
   @Bean
   @ConditionalOnMissingBean
   public JwtDecoder jwtDecoder(final CamundaSecurityLibraryProperties properties) {
@@ -59,28 +72,44 @@ public class OidcBeansConfiguration {
   @ConditionalOnMissingBean
   public ClientRegistrationRepository clientRegistrationRepository(
       final CamundaSecurityLibraryProperties properties) {
-    final OidcConfiguration oidc = properties.getAuthentication().getOidc();
-    final ClientRegistration.Builder builder = clientRegistrationBuilder(oidc);
-    final ClientRegistration registration =
-        builder
-            .registrationId(oidc.getRegistrationId())
-            .clientId(oidc.getClientId())
-            .clientSecret(oidc.getClientSecret())
-            .clientAuthenticationMethod(
-                new ClientAuthenticationMethod(oidc.getClientAuthenticationMethod()))
-            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-            .redirectUri(oidc.getRedirectUri())
-            .scope(oidc.getScope())
-            .build();
-    return new InMemoryClientRegistrationRepository(registration);
+    final var authentication = properties.getAuthentication();
+    final Map<String, OidcConfiguration> providers = authentication.getProviders().getOidc();
+    final OidcConfiguration flat = authentication.getOidc();
+
+    if (!providers.isEmpty()) {
+      if (isFlatShapeConfigured(flat)) {
+        LOG.warn(DEPRECATION_BOTH_SHAPES_SET);
+      }
+      final List<ClientRegistration> registrations = new ArrayList<>(providers.size());
+      providers.forEach((id, oidc) -> registrations.add(buildClientRegistration(id, oidc)));
+      return new InMemoryClientRegistrationRepository(registrations);
+    }
+
+    return new InMemoryClientRegistrationRepository(
+        buildClientRegistration(flat.getRegistrationId(), flat));
   }
 
   /**
-   * Builds the {@link ClientRegistration.Builder} from {@link OidcConfiguration}. When {@code
+   * Builds a single {@link ClientRegistration} from {@link OidcConfiguration}. When {@code
    * issuer-uri} is set, OIDC discovery populates the authorization/token/user-info/jwk-set URIs
-   * automatically. Adopters who only have explicit endpoints fall through to the empty-builder path
-   * and must set those URIs explicitly.
+   * automatically. Otherwise the explicit endpoints must be configured. The {@code registrationId}
+   * argument is the map key in the multi-provider shape and {@link
+   * OidcConfiguration#getRegistrationId()} in the legacy flat shape.
    */
+  private static ClientRegistration buildClientRegistration(
+      final String registrationId, final OidcConfiguration oidc) {
+    return clientRegistrationBuilder(oidc)
+        .registrationId(registrationId)
+        .clientId(oidc.getClientId())
+        .clientSecret(oidc.getClientSecret())
+        .clientAuthenticationMethod(
+            new ClientAuthenticationMethod(oidc.getClientAuthenticationMethod()))
+        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+        .redirectUri(oidc.getRedirectUri())
+        .scope(oidc.getScope())
+        .build();
+  }
+
   private static ClientRegistration.Builder clientRegistrationBuilder(
       final OidcConfiguration oidc) {
     if (oidc.getIssuerUri() != null && !oidc.getIssuerUri().isBlank()) {
@@ -99,6 +128,14 @@ public class OidcBeansConfiguration {
         .tokenUri(oidc.getTokenUri())
         .userInfoUri(oidc.getUserInfoUri())
         .jwkSetUri(oidc.getJwkSetUri());
+  }
+
+  private static boolean isFlatShapeConfigured(final OidcConfiguration flat) {
+    return (flat.getIssuerUri() != null && !flat.getIssuerUri().isBlank())
+        || flat.getAuthorizationUri() != null
+        || flat.getTokenUri() != null
+        || flat.getJwkSetUri() != null
+        || flat.getClientId() != null;
   }
 
   @Bean
