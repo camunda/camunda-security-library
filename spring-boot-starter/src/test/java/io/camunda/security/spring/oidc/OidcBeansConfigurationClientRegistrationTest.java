@@ -189,6 +189,27 @@ class OidcBeansConfigurationClientRegistrationTest {
   }
 
   @Test
+  void shouldFailWithActionableErrorWhenFlatRegistrationIdIsBlank() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=flat-client",
+            "camunda.security.authentication.oidc.registration-id=",
+            "camunda.security.authentication.oidc.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
+            "camunda.security.authentication.oidc.token-uri=https://flat.example.com/token",
+            "camunda.security.authentication.oidc.jwk-set-uri=https://flat.example.com/jwks")
+        .run(
+            ctx -> {
+              assertThat(ctx).hasFailed();
+              assertThat(ctx.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalStateException.class)
+                  .hasMessageContaining("registrationId")
+                  .hasMessageContaining("registration-id");
+            });
+  }
+
+  @Test
   void shouldReportRegistrationIdAndBothShapesWhenBuilderFailsForProvider() {
     runner
         .withPropertyValues(

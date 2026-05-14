@@ -128,6 +128,13 @@ public class OidcBeansConfiguration {
    */
   private static ClientRegistration buildClientRegistration(
       final String registrationId, final OidcConfiguration oidc) {
+    if (!StringUtils.hasText(registrationId)) {
+      throw new IllegalStateException(
+          "OIDC registrationId must be non-blank: set"
+              + " camunda.security.authentication.oidc.registration-id (flat block)"
+              + " or use a non-blank key under"
+              + " camunda.security.authentication.providers.oidc.<id>.*");
+    }
     return clientRegistrationBuilder(registrationId, oidc)
         .registrationId(registrationId)
         .clientId(oidc.getClientId())
