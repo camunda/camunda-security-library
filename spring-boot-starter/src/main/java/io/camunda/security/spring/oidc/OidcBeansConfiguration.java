@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.oidc;
 
+import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.security.CamundaOidcLogoutSuccessHandler;
@@ -44,17 +45,39 @@ public class OidcBeansConfiguration {
   @Bean
   @ConditionalOnMissingBean
   public JwtDecoder jwtDecoder(final CamundaSecurityLibraryProperties properties) {
-    final OidcConfiguration oidc = properties.getAuthentication().getOidc();
-    if (oidc.getJwkSetUri() != null && !oidc.getJwkSetUri().isBlank()) {
-      return NimbusJwtDecoder.withJwkSetUri(oidc.getJwkSetUri()).build();
-    }
-    if (oidc.getIssuerUri() != null && !oidc.getIssuerUri().isBlank()) {
-      return NimbusJwtDecoder.withIssuerLocation(oidc.getIssuerUri()).build();
+    // Single-decoder model: prefer the flat block, otherwise fall back to the first providers entry
+    // so providers-only configurations still produce a working decoder. Hosts needing per-audience
+    // decoding override the bean.
+    final OidcConfiguration source = pickJwtDecoderSource(properties.getAuthentication());
+    if (source != null) {
+      if (source.getJwkSetUri() != null && !source.getJwkSetUri().isBlank()) {
+        return NimbusJwtDecoder.withJwkSetUri(source.getJwkSetUri()).build();
+      }
+      if (source.getIssuerUri() != null && !source.getIssuerUri().isBlank()) {
+        return NimbusJwtDecoder.withIssuerLocation(source.getIssuerUri()).build();
+      }
     }
     throw new IllegalStateException(
-        "Cannot build JwtDecoder: set either"
-            + " camunda.security.authentication.oidc.jwk-set-uri"
-            + " or camunda.security.authentication.oidc.issuer-uri.");
+        "Cannot build JwtDecoder: set issuer-uri or jwk-set-uri under"
+            + " camunda.security.authentication.oidc.* or under at least one"
+            + " camunda.security.authentication.providers.oidc.<id>.* entry.");
+  }
+
+  private static OidcConfiguration pickJwtDecoderSource(
+      final AuthenticationConfiguration authentication) {
+    final OidcConfiguration flat = authentication.getOidc();
+    if (hasJwtSource(flat)) {
+      return flat;
+    }
+    return authentication.getProviders().getOidc().values().stream()
+        .filter(OidcBeansConfiguration::hasJwtSource)
+        .findFirst()
+        .orElse(null);
+  }
+
+  private static boolean hasJwtSource(final OidcConfiguration oidc) {
+    return (oidc.getJwkSetUri() != null && !oidc.getJwkSetUri().isBlank())
+        || (oidc.getIssuerUri() != null && !oidc.getIssuerUri().isBlank());
   }
 
   @Bean
@@ -98,7 +121,7 @@ public class OidcBeansConfiguration {
    */
   private static ClientRegistration buildClientRegistration(
       final String registrationId, final OidcConfiguration oidc) {
-    return clientRegistrationBuilder(oidc)
+    return clientRegistrationBuilder(registrationId, oidc)
         .registrationId(registrationId)
         .clientId(oidc.getClientId())
         .clientSecret(oidc.getClientSecret())
@@ -111,7 +134,7 @@ public class OidcBeansConfiguration {
   }
 
   private static ClientRegistration.Builder clientRegistrationBuilder(
-      final OidcConfiguration oidc) {
+      final String registrationId, final OidcConfiguration oidc) {
     if (oidc.getIssuerUri() != null && !oidc.getIssuerUri().isBlank()) {
       return ClientRegistrations.fromIssuerLocation(oidc.getIssuerUri());
     }
@@ -119,10 +142,15 @@ public class OidcBeansConfiguration {
         || oidc.getTokenUri() == null
         || oidc.getJwkSetUri() == null) {
       throw new IllegalStateException(
-          "Cannot build ClientRegistration: set issuer-uri, or all of authorization-uri,"
-              + " token-uri, and jwk-set-uri.");
+          "Cannot build ClientRegistration '"
+              + registrationId
+              + "': set issuer-uri, or all of authorization-uri, token-uri, and jwk-set-uri,"
+              + " under camunda.security.authentication.oidc.* (flat) or"
+              + " camunda.security.authentication.providers.oidc."
+              + registrationId
+              + ".*");
     }
-    return ClientRegistration.withRegistrationId(oidc.getRegistrationId())
+    return ClientRegistration.withRegistrationId(registrationId)
         .authorizationUri(oidc.getAuthorizationUri())
         .tokenUri(oidc.getTokenUri())
         .userInfoUri(oidc.getUserInfoUri())

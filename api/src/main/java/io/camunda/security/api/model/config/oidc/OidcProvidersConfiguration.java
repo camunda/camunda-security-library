@@ -20,6 +20,6 @@ public class OidcProvidersConfiguration {
   }
 
   public void setOidc(final Map<String, OidcConfiguration> oidc) {
-    this.oidc = oidc;
+    this.oidc = oidc != null ? oidc : new LinkedHashMap<>();
   }
 }

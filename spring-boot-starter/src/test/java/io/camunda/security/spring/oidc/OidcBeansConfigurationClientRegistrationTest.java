@@ -169,6 +169,23 @@ class OidcBeansConfigurationClientRegistrationTest {
         });
   }
 
+  @Test
+  void shouldReportRegistrationIdAndBothShapesWhenBuilderFailsForProvider() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.foo.client-id=foo-client",
+            "camunda.security.authentication.providers.oidc.foo.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}")
+        .run(
+            ctx -> {
+              assertThat(ctx).hasFailed();
+              assertThat(ctx.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalStateException.class)
+                  .hasMessageContaining("'foo'")
+                  .hasMessageContaining("providers.oidc.foo");
+            });
+  }
+
   /**
    * Provides stub beans for the OIDC infrastructure {@link OidcBeansConfiguration} would otherwise
    * eagerly create (JwtDecoder, OAuth2AuthorizedClientRepository, OAuth2AuthorizedClientManager).

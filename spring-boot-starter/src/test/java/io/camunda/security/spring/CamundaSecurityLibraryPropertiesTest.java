@@ -10,6 +10,7 @@ package io.camunda.security.spring;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
+import io.camunda.security.api.model.config.oidc.OidcProvidersConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -51,6 +52,13 @@ class CamundaSecurityLibraryPropertiesTest {
     authentication.setProviders(null);
     assertThat(authentication.getProviders()).isNotNull();
     assertThat(authentication.getProviders().getOidc()).isEmpty();
+  }
+
+  @Test
+  void shouldRestoreEmptyOidcMapWhenProvidersSetterCalledWithNull() {
+    final var providers = new OidcProvidersConfiguration();
+    providers.setOidc(null);
+    assertThat(providers.getOidc()).isNotNull().isEmpty();
   }
 
   @Test
