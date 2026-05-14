@@ -95,6 +95,14 @@ A deployment with `physical-tenants[]` empty sees no behaviour change from this 
 
 The rewrite model is strictly additive on top of the existing chains. Adopters who never set `physical-tenants[]` cannot tell this ADR shipped.
 
+### Session-cookie upgrade compatibility (forward note)
+
+Pre-Multi-Engine adopters carry browser sessions backed by the existing top-level cookie (`camunda-session`, `Path=/`). When such an adopter activates Multi-Engine with the rewrite, every existing request to `/v2/x` is rewritten to `/physical-tenants/default/v2/x` and is served by the default-tenant chain. To preserve those sessions across the upgrade, the **default tenant retains the legacy cookie identity** (`camunda-session`, `Path=/`) rather than adopting the per-tenant `camunda-session-{id}` / `Path=/physical-tenants/{id}/` shape that configured tenants follow.
+
+This is a deliberate asymmetry: configured tenants get scoped cookies; the `default` tenant keeps the unscoped legacy cookie because it is the upgrade path. Cross-tenant cookie pollution does not materialise in practice — each tenant chain's session repository reads only its own cookie name, so the default's `camunda-session` is ignored by `acme`'s chain even if the browser sends it.
+
+The session-cookie design itself lives in [#208](https://github.com/camunda/camunda-security-library/issues/208) — this ADR pins the upgrade-compat constraint that #208's implementation must respect.
+
 ## Consequences
 
 **Positive**
