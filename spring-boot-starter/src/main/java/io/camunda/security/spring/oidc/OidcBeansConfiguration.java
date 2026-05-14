@@ -31,6 +31,7 @@ import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
+import org.springframework.util.StringUtils;
 
 /**
  * Provides default OIDC infrastructure beans ({@link JwtDecoder}, {@link
@@ -50,10 +51,10 @@ public class OidcBeansConfiguration {
     // decoding override the bean.
     final OidcConfiguration source = pickJwtDecoderSource(properties.getAuthentication());
     if (source != null) {
-      if (source.getJwkSetUri() != null && !source.getJwkSetUri().isBlank()) {
+      if (StringUtils.hasText(source.getJwkSetUri())) {
         return NimbusJwtDecoder.withJwkSetUri(source.getJwkSetUri()).build();
       }
-      if (source.getIssuerUri() != null && !source.getIssuerUri().isBlank()) {
+      if (StringUtils.hasText(source.getIssuerUri())) {
         return NimbusJwtDecoder.withIssuerLocation(source.getIssuerUri()).build();
       }
     }
@@ -76,8 +77,7 @@ public class OidcBeansConfiguration {
   }
 
   private static boolean hasJwtSource(final OidcConfiguration oidc) {
-    return (oidc.getJwkSetUri() != null && !oidc.getJwkSetUri().isBlank())
-        || (oidc.getIssuerUri() != null && !oidc.getIssuerUri().isBlank());
+    return StringUtils.hasText(oidc.getJwkSetUri()) || StringUtils.hasText(oidc.getIssuerUri());
   }
 
   @Bean
@@ -92,7 +92,7 @@ public class OidcBeansConfiguration {
     // registration under its own registrationId when clientId is set; the providers map is merged
     // on top so a colliding provider id overwrites the flat entry.
     final Map<String, OidcConfiguration> sources = new LinkedHashMap<>();
-    if (flat.getClientId() != null && !flat.getClientId().isBlank()) {
+    if (StringUtils.hasText(flat.getClientId())) {
       sources.put(flat.getRegistrationId(), flat);
     }
     sources.putAll(providers);
@@ -135,12 +135,12 @@ public class OidcBeansConfiguration {
 
   private static ClientRegistration.Builder clientRegistrationBuilder(
       final String registrationId, final OidcConfiguration oidc) {
-    if (oidc.getIssuerUri() != null && !oidc.getIssuerUri().isBlank()) {
+    if (StringUtils.hasText(oidc.getIssuerUri())) {
       return ClientRegistrations.fromIssuerLocation(oidc.getIssuerUri());
     }
-    if (oidc.getAuthorizationUri() == null
-        || oidc.getTokenUri() == null
-        || oidc.getJwkSetUri() == null) {
+    if (!StringUtils.hasText(oidc.getAuthorizationUri())
+        || !StringUtils.hasText(oidc.getTokenUri())
+        || !StringUtils.hasText(oidc.getJwkSetUri())) {
       throw new IllegalStateException(
           "Cannot build ClientRegistration '"
               + registrationId

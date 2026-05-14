@@ -27,8 +27,8 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
  * additive: the flat block contributes one registration keyed by its own {@code registrationId}
  * when {@code clientId} is set, and the providers map is merged on top so a colliding provider id
  * overwrites the flat entry — mirroring OC's {@code OidcAuthenticationConfigurationRepository}.
- * Uses explicit endpoint URIs throughout so no network is required for OIDC discovery; the
- * discovery path is covered by integration tests.
+ * Uses explicit endpoint URIs throughout so no network is required; the {@code issuer-uri}
+ * discovery path is exercised by the host-side integration tests, not here.
  */
 class OidcBeansConfigurationClientRegistrationTest {
 
@@ -167,6 +167,25 @@ class OidcBeansConfigurationClientRegistrationTest {
               .hasMessageContaining("client-id")
               .hasMessageContaining("providers.oidc");
         });
+  }
+
+  @Test
+  void shouldTreatBlankEndpointUrisAsMissing() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.foo.client-id=foo-client",
+            "camunda.security.authentication.providers.oidc.foo.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.providers.oidc.foo.authorization-uri=",
+            "camunda.security.authentication.providers.oidc.foo.token-uri=https://foo.example.com/token",
+            "camunda.security.authentication.providers.oidc.foo.jwk-set-uri=https://foo.example.com/jwks")
+        .run(
+            ctx -> {
+              assertThat(ctx).hasFailed();
+              assertThat(ctx.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalStateException.class)
+                  .hasMessageContaining("'foo'");
+            });
   }
 
   @Test
