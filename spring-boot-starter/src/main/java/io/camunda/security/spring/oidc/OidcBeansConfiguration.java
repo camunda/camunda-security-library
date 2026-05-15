@@ -87,7 +87,13 @@ public class OidcBeansConfiguration {
     // with a JWT source. When multiple providers are configured without a flat block, the host must
     // register their own JwtDecoder bean — a single decoder cannot correctly validate tokens from
     // multiple IdPs, so the library refuses to guess.
-    final OidcConfiguration source = pickJwtDecoderSource(properties.getAuthentication());
+    final AuthenticationConfiguration authentication = properties.getAuthentication();
+    // Specific-error pre-check: if any OidcConfiguration sets additional-jwk-set-uris without
+    // a primary jwk-set-uri, fail with an actionable message before falling through to the generic
+    // "set issuer-uri or jwk-set-uri" error. Keeps the misconfiguration discoverable even when
+    // the only thing the host has configured is the additional list.
+    requireExplicitPrimaryWhenAdditionalSet(authentication);
+    final OidcConfiguration source = pickJwtDecoderSource(authentication);
     final List<String> additionalJwkSetUris = source.getAdditionalJwkSetUris();
     if (hasNonBlankEntries(additionalJwkSetUris)) {
       return compositeJwtDecoder(source, additionalJwkSetUris);
@@ -102,6 +108,34 @@ public class OidcBeansConfiguration {
     return builder.build();
   }
 
+  private static void requireExplicitPrimaryWhenAdditionalSet(
+      final AuthenticationConfiguration authentication) {
+    final var flat = authentication.getOidc();
+    if (hasNonBlankEntries(flat.getAdditionalJwkSetUris())
+        && !StringUtils.hasText(flat.getJwkSetUri())) {
+      throw missingPrimaryJwkSetUri();
+    }
+    authentication
+        .getProviders()
+        .getOidc()
+        .values()
+        .forEach(
+            provider -> {
+              if (hasNonBlankEntries(provider.getAdditionalJwkSetUris())
+                  && !StringUtils.hasText(provider.getJwkSetUri())) {
+                throw missingPrimaryJwkSetUri();
+              }
+            });
+  }
+
+  private static IllegalStateException missingPrimaryJwkSetUri() {
+    return new IllegalStateException(
+        "Cannot build JwtDecoder with additional-jwk-set-uris when the primary jwk-set-uri is"
+            + " unset: set camunda.security.authentication.oidc.jwk-set-uri (or"
+            + " providers.oidc.<id>.jwk-set-uri) explicitly. Discovery via issuer-uri is not"
+            + " supported when additional-jwk-set-uris is configured.");
+  }
+
   /**
    * Builds a {@link NimbusJwtDecoder} backed by a {@link CompositeJWKSource} when {@code
    * additional-jwk-set-uris} is non-empty. The primary {@code jwk-set-uri} is queried first, then
@@ -113,11 +147,7 @@ public class OidcBeansConfiguration {
   private static JwtDecoder compositeJwtDecoder(
       final OidcConfiguration source, final List<String> additionalJwkSetUris) {
     if (!StringUtils.hasText(source.getJwkSetUri())) {
-      throw new IllegalStateException(
-          "Cannot build JwtDecoder with additional-jwk-set-uris when the primary jwk-set-uri is"
-              + " unset: set camunda.security.authentication.oidc.jwk-set-uri (or"
-              + " providers.oidc.<id>.jwk-set-uri) explicitly. Discovery via issuer-uri is not"
-              + " supported when additional-jwk-set-uris is configured.");
+      throw missingPrimaryJwkSetUri();
     }
     final List<JWKSource<SecurityContext>> sources =
         java.util.stream.Stream.concat(

@@ -133,6 +133,29 @@ class OidcBeansConfigurationJwtDecoderTest {
   }
 
   @Test
+  void shouldReportAdditionalJwkSetUrisErrorWhenNoPrimaryAnywhere() {
+    // Only the additional list is set — no jwk-set-uri, no issuer-uri anywhere. The specific
+    // additional-jwk-set-uris error must surface in preference to the generic "set issuer-uri or
+    // jwk-set-uri" message.
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=flat-client",
+            "camunda.security.authentication.oidc.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
+            "camunda.security.authentication.oidc.token-uri=https://flat.example.com/token",
+            "camunda.security.authentication.oidc.additional-jwk-set-uris[0]=https://secondary.example.com/jwks")
+        .run(
+            ctx -> {
+              assertThat(ctx).hasFailed();
+              assertThat(ctx.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalStateException.class)
+                  .hasMessageContaining("additional-jwk-set-uris")
+                  .hasMessageContaining("jwk-set-uri");
+            });
+  }
+
+  @Test
   void shouldFailWithInformativeErrorWhenNoSourceAvailable() {
     runner
         .withPropertyValues(
