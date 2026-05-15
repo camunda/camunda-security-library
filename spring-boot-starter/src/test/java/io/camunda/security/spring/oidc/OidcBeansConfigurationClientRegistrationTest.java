@@ -271,6 +271,8 @@ class OidcBeansConfigurationClientRegistrationTest {
               final var repository = ctx.getBean(ClientRegistrationRepository.class);
               final var keycloak = repository.findByRegistrationId("keycloak");
               final var azure = repository.findByRegistrationId("azure");
+              assertThat(keycloak).isNotNull();
+              assertThat(azure).isNotNull();
               assertThat(keycloak.getProviderDetails().getUserInfoEndpoint().getUri())
                   .isEqualTo("https://kc.example.com/userinfo");
               assertThat(azure.getProviderDetails().getUserInfoEndpoint().getUri()).isNull();
