@@ -135,16 +135,20 @@ public class OidcBeansConfiguration {
               + " or use a non-blank key under"
               + " camunda.security.authentication.providers.oidc.<id>.*");
     }
-    return clientRegistrationBuilder(registrationId, oidc)
-        .registrationId(registrationId)
-        .clientId(oidc.getClientId())
-        .clientSecret(oidc.getClientSecret())
-        .clientAuthenticationMethod(
-            new ClientAuthenticationMethod(oidc.getClientAuthenticationMethod()))
-        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-        .redirectUri(oidc.getRedirectUri())
-        .scope(oidc.getScope())
-        .build();
+    final ClientRegistration.Builder builder =
+        clientRegistrationBuilder(registrationId, oidc)
+            .registrationId(registrationId)
+            .clientId(oidc.getClientId())
+            .clientSecret(oidc.getClientSecret())
+            .clientAuthenticationMethod(
+                new ClientAuthenticationMethod(oidc.getClientAuthenticationMethod()))
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri(oidc.getRedirectUri())
+            .scope(oidc.getScope());
+    if (!oidc.isUserInfoEnabled()) {
+      builder.userInfoUri(null);
+    }
+    return builder.build();
   }
 
   private static ClientRegistration.Builder clientRegistrationBuilder(

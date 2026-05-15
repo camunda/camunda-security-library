@@ -210,6 +210,76 @@ class OidcBeansConfigurationClientRegistrationTest {
   }
 
   @Test
+  void shouldPopulateUserInfoUriOnRegistrationByDefault() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.foo.client-id=foo-client",
+            "camunda.security.authentication.providers.oidc.foo.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.providers.oidc.foo.authorization-uri=https://foo.example.com/auth",
+            "camunda.security.authentication.providers.oidc.foo.token-uri=https://foo.example.com/token",
+            "camunda.security.authentication.providers.oidc.foo.jwk-set-uri=https://foo.example.com/jwks",
+            "camunda.security.authentication.providers.oidc.foo.user-info-uri=https://foo.example.com/userinfo")
+        .run(
+            ctx -> {
+              final var repository = ctx.getBean(ClientRegistrationRepository.class);
+              final var registration = repository.findByRegistrationId("foo");
+              assertThat(registration).isNotNull();
+              assertThat(registration.getProviderDetails().getUserInfoEndpoint().getUri())
+                  .isEqualTo("https://foo.example.com/userinfo");
+            });
+  }
+
+  @Test
+  void shouldNullUserInfoUriOnRegistrationWhenUserInfoEnabledIsFalse() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.foo.client-id=foo-client",
+            "camunda.security.authentication.providers.oidc.foo.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.providers.oidc.foo.authorization-uri=https://foo.example.com/auth",
+            "camunda.security.authentication.providers.oidc.foo.token-uri=https://foo.example.com/token",
+            "camunda.security.authentication.providers.oidc.foo.jwk-set-uri=https://foo.example.com/jwks",
+            "camunda.security.authentication.providers.oidc.foo.user-info-uri=https://foo.example.com/userinfo",
+            "camunda.security.authentication.providers.oidc.foo.user-info-enabled=false")
+        .run(
+            ctx -> {
+              final var repository = ctx.getBean(ClientRegistrationRepository.class);
+              final var registration = repository.findByRegistrationId("foo");
+              assertThat(registration).isNotNull();
+              assertThat(registration.getProviderDetails().getUserInfoEndpoint().getUri()).isNull();
+            });
+  }
+
+  @Test
+  void shouldHonourUserInfoEnabledPerProvider() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.keycloak.client-id=kc-client",
+            "camunda.security.authentication.providers.oidc.keycloak.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.providers.oidc.keycloak.authorization-uri=https://kc.example.com/auth",
+            "camunda.security.authentication.providers.oidc.keycloak.token-uri=https://kc.example.com/token",
+            "camunda.security.authentication.providers.oidc.keycloak.jwk-set-uri=https://kc.example.com/jwks",
+            "camunda.security.authentication.providers.oidc.keycloak.user-info-uri=https://kc.example.com/userinfo",
+            "camunda.security.authentication.providers.oidc.azure.client-id=az-client",
+            "camunda.security.authentication.providers.oidc.azure.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.providers.oidc.azure.authorization-uri=https://az.example.com/auth",
+            "camunda.security.authentication.providers.oidc.azure.token-uri=https://az.example.com/token",
+            "camunda.security.authentication.providers.oidc.azure.jwk-set-uri=https://az.example.com/jwks",
+            "camunda.security.authentication.providers.oidc.azure.user-info-uri=https://az.example.com/userinfo",
+            "camunda.security.authentication.providers.oidc.azure.user-info-enabled=false")
+        .run(
+            ctx -> {
+              final var repository = ctx.getBean(ClientRegistrationRepository.class);
+              final var keycloak = repository.findByRegistrationId("keycloak");
+              final var azure = repository.findByRegistrationId("azure");
+              assertThat(keycloak).isNotNull();
+              assertThat(azure).isNotNull();
+              assertThat(keycloak.getProviderDetails().getUserInfoEndpoint().getUri())
+                  .isEqualTo("https://kc.example.com/userinfo");
+              assertThat(azure.getProviderDetails().getUserInfoEndpoint().getUri()).isNull();
+            });
+  }
+
+  @Test
   void shouldReportRegistrationIdAndBothShapesWhenBuilderFailsForProvider() {
     runner
         .withPropertyValues(
