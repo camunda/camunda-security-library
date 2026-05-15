@@ -10,7 +10,6 @@ package io.camunda.security.spring.oidc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -24,18 +23,24 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 final class CompositeJWKSourceTest {
 
-  private final JWKSelector selector = mock(JWKSelector.class);
-  private final JWK jwk = mock(JWK.class);
+  @Mock private JWKSelector selector;
+  @Mock private JWK jwk;
+  @Mock private JWKSource<SecurityContext> sourceA;
+  @Mock private JWKSource<SecurityContext> sourceB;
+  @Mock private JWKSource<SecurityContext> sourceC;
 
   @Test
   void shouldReturnKeysFromFirstSourceWhenNonEmpty() throws KeySourceException {
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceA = mock(JWKSource.class);
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceB = mock(JWKSource.class);
     when(sourceA.get(any(), any())).thenReturn(List.of(jwk));
 
     final var composite = new CompositeJWKSource<>(List.of(sourceA, sourceB));
@@ -46,10 +51,6 @@ final class CompositeJWKSourceTest {
 
   @Test
   void shouldFallToSecondSourceWhenFirstReturnsEmpty() throws KeySourceException {
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceA = mock(JWKSource.class);
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceB = mock(JWKSource.class);
     when(sourceA.get(any(), any())).thenReturn(List.of());
     when(sourceB.get(any(), any())).thenReturn(List.of(jwk));
 
@@ -60,10 +61,6 @@ final class CompositeJWKSourceTest {
 
   @Test
   void shouldFallToSecondSourceWhenFirstThrowsKeySourceException() throws KeySourceException {
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceA = mock(JWKSource.class);
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceB = mock(JWKSource.class);
     when(sourceA.get(any(), any())).thenThrow(new KeySourceException("source A failed"));
     when(sourceB.get(any(), any())).thenReturn(List.of(jwk));
 
@@ -74,10 +71,6 @@ final class CompositeJWKSourceTest {
 
   @Test
   void shouldRethrowLastExceptionWhenAllSourcesFail() throws KeySourceException {
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceA = mock(JWKSource.class);
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceB = mock(JWKSource.class);
     when(sourceA.get(any(), any())).thenThrow(new KeySourceException("source A failed"));
     when(sourceB.get(any(), any())).thenThrow(new KeySourceException("source B failed"));
 
@@ -90,10 +83,6 @@ final class CompositeJWKSourceTest {
 
   @Test
   void shouldReturnEmptyListWhenAllSourcesReturnEmpty() throws KeySourceException {
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceA = mock(JWKSource.class);
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceB = mock(JWKSource.class);
     when(sourceA.get(any(), any())).thenReturn(List.of());
     when(sourceB.get(any(), any())).thenReturn(List.of());
 
@@ -104,21 +93,15 @@ final class CompositeJWKSourceTest {
 
   @Test
   void shouldWorkWithSingleSource() throws KeySourceException {
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> source = mock(JWKSource.class);
-    when(source.get(any(), any())).thenReturn(List.of(jwk));
+    when(sourceA.get(any(), any())).thenReturn(List.of(jwk));
 
-    final var composite = new CompositeJWKSource<>(List.of(source));
+    final var composite = new CompositeJWKSource<>(List.of(sourceA));
 
     assertThat(composite.get(selector, null)).containsExactly(jwk);
   }
 
   @Test
   void shouldHandleNullReturnFromSourceAsEmpty() throws KeySourceException {
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceA = mock(JWKSource.class);
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceB = mock(JWKSource.class);
     when(sourceA.get(any(), any())).thenReturn(null);
     when(sourceB.get(any(), any())).thenReturn(List.of(jwk));
 
@@ -129,12 +112,10 @@ final class CompositeJWKSourceTest {
 
   @Test
   void shouldPreserveImmutabilityOfSourceList() throws KeySourceException {
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> source = mock(JWKSource.class);
-    when(source.get(any(), any())).thenReturn(List.of(jwk));
+    when(sourceA.get(any(), any())).thenReturn(List.of(jwk));
 
     final var mutableList = new ArrayList<JWKSource<SecurityContext>>();
-    mutableList.add(source);
+    mutableList.add(sourceA);
     final var composite = new CompositeJWKSource<>(mutableList);
     mutableList.clear();
 
@@ -152,12 +133,6 @@ final class CompositeJWKSourceTest {
   @Test
   @DisplayName("Three sources: key found at third after first two return empty")
   void shouldFallThroughMultipleSourcesToFindKey() throws KeySourceException {
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceA = mock(JWKSource.class);
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceB = mock(JWKSource.class);
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceC = mock(JWKSource.class);
     when(sourceA.get(any(), any())).thenReturn(List.of());
     when(sourceB.get(any(), any())).thenReturn(List.of());
     when(sourceC.get(any(), any())).thenReturn(List.of(jwk));
@@ -170,12 +145,6 @@ final class CompositeJWKSourceTest {
   @Test
   @DisplayName("Three sources: first throws, second empty, third returns keys")
   void shouldHandleMixedFailureModesAcrossMultipleSources() throws KeySourceException {
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceA = mock(JWKSource.class);
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceB = mock(JWKSource.class);
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceC = mock(JWKSource.class);
     when(sourceA.get(any(), any())).thenThrow(new KeySourceException("source A network error"));
     when(sourceB.get(any(), any())).thenReturn(List.of());
     when(sourceC.get(any(), any())).thenReturn(List.of(jwk));
@@ -188,10 +157,6 @@ final class CompositeJWKSourceTest {
   @Test
   @DisplayName("RuntimeException from source propagates immediately without trying next sources")
   void shouldPropagateRuntimeExceptionWithoutCatching() throws KeySourceException {
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceA = mock(JWKSource.class);
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceB = mock(JWKSource.class);
     when(sourceA.get(any(), any())).thenThrow(new NullPointerException("unexpected NPE"));
 
     final var composite = new CompositeJWKSource<>(List.of(sourceA, sourceB));
@@ -205,12 +170,6 @@ final class CompositeJWKSourceTest {
   @Test
   @DisplayName("Short-circuit: when first source has keys, remaining sources are never called")
   void shouldShortCircuitAndNotCallRemainingSourcesAfterMatch() throws KeySourceException {
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceA = mock(JWKSource.class);
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceB = mock(JWKSource.class);
-    @SuppressWarnings("unchecked")
-    final JWKSource<SecurityContext> sourceC = mock(JWKSource.class);
     when(sourceA.get(any(), any())).thenReturn(List.of(jwk));
 
     final var composite = new CompositeJWKSource<>(List.of(sourceA, sourceB, sourceC));

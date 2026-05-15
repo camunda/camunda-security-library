@@ -72,6 +72,16 @@ This deliberately diverges from the issue's original wording ("logs a warning at
 
 The semantics ("a failing source does not break the others") are still satisfied — just at decode time rather than startup.
 
+### Uniform algorithm set across all decoder paths
+
+All three decoder paths — single-URI, discovery, composite — use the same RSA + EC family algorithm set (`RS256/384/512`, `ES256/384/512`). This deliberately overrides Spring's narrower `NimbusJwtDecoder.withJwkSetUri(...).build()` default (RS256-only) on the non-composite paths by calling `.jwsAlgorithm(...)` for each algorithm on the Spring builder. Reasons:
+
+- **Match the monorepo.** The monorepo's [`JWSKeySelectorFactory`](https://github.com/camunda/camunda/blob/main/authentication/src/main/java/io/camunda/authentication/config/JWSKeySelectorFactory.java) uses the same RSA+EC set everywhere. Adopters relying on EC algorithms today regress on OC adoption (#38) if CSL defaults to RS256-only.
+- **No silent drift when enabling `additional-jwk-set-uris`.** A host that adds the property should not discover that the composite path quietly accepts ES256 tokens that the single-URI path rejected. Aligning both paths to the broader set removes that surprise.
+- **Industry-default coverage.** RS256/384/512 + ES256/384/512 covers every algorithm a public-issuer IdP is likely to use; rejecting EC by default would be more surprising than accepting it.
+
+Hosts that want a narrower set should register their own `@Bean JwtDecoder` — the `@ConditionalOnMissingBean` back-off keeps that path open.
+
 ### `kid` collision: primary wins
 
 When multiple JWK Sets publish a key with the same `kid` (unlikely but possible during a rotation), the **first source that returns a non-empty match wins**. Since the primary `jwk-set-uri` is always queried first and the composite short-circuits on the first non-empty result, the primary's key is used. Adopters who need to override this should reorder their `additional-jwk-set-uris` — but in practice `kid` values are designed to be unique per signing key.

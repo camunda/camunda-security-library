@@ -34,13 +34,13 @@ import org.slf4j.LoggerFactory;
  *
  * @param <C> the security context type
  */
-public final class CompositeJWKSource<C extends SecurityContext> implements JWKSource<C> {
+final class CompositeJWKSource<C extends SecurityContext> implements JWKSource<C> {
 
   private static final Logger LOG = LoggerFactory.getLogger(CompositeJWKSource.class);
 
   private final List<JWKSource<C>> sources;
 
-  public CompositeJWKSource(final List<JWKSource<C>> sources) {
+  CompositeJWKSource(final List<JWKSource<C>> sources) {
     this.sources = List.copyOf(sources);
   }
 

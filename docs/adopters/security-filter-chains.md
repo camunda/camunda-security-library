@@ -209,6 +209,7 @@ camunda:
     authentication:
       method: oidc
       oidc:
+        issuer-uri: https://primary-idp.example.com/
         client-id: camunda
         client-secret: ${CLIENT_SECRET}
         redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
@@ -217,6 +218,8 @@ camunda:
           - https://secondary-idp.example.com/.well-known/jwks.json
           - https://legacy-idp.example.com/.well-known/jwks.json
 ```
+
+`issuer-uri` is set alongside `jwk-set-uri` here because `ClientRegistration` construction requires either `issuer-uri` (for discovery of authorization/token endpoints) or all three of `authorization-uri`/`token-uri`/`jwk-set-uri` explicitly. The `additional-jwk-set-uris` wiring is independent of which path you choose to populate the registration; the only constraint is that the primary `jwk-set-uri` is set explicitly (the `JwtDecoder` does not consume discovered JWKS endpoints when additional URIs are configured).
 
 The default `JwtDecoder` queries the primary `jwk-set-uri` first, then each entry in `additional-jwk-set-uris` in declared order. The first source that resolves the token's `kid` wins. If an additional URI is unreachable, the failure is logged at WARN and the next source is tried — a failing additional URI does not break validation against the primary or other working URIs.
 

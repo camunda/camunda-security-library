@@ -39,6 +39,7 @@ import org.springframework.security.oauth2.client.web.HttpSessionOAuth2Authorize
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
@@ -54,7 +55,22 @@ import org.springframework.util.StringUtils;
 @ConditionalOnProperty(name = "camunda.security.authentication.method", havingValue = "oidc")
 public class OidcBeansConfiguration {
 
-  // RSA + EC families — same defaults Nimbus/Spring use when no algorithm is pinned.
+  // RSA + EC families. Applied uniformly to every path so enabling
+  // additional-jwk-set-uris does not silently widen or narrow the accepted set
+  // relative to the single-URI / discovery paths. Matches the monorepo's
+  // JWSKeySelectorFactory default; broader than Spring's RS256-only default for
+  // NimbusJwtDecoder.withJwkSetUri(...).build(), which we override on every path.
+  private static final Set<SignatureAlgorithm> DEFAULT_SIGNATURE_ALGORITHMS =
+      Set.of(
+          SignatureAlgorithm.RS256,
+          SignatureAlgorithm.RS384,
+          SignatureAlgorithm.RS512,
+          SignatureAlgorithm.ES256,
+          SignatureAlgorithm.ES384,
+          SignatureAlgorithm.ES512);
+
+  // Same algorithm set in the Nimbus type used by the composite path's
+  // JWSVerificationKeySelector. Kept in lockstep with DEFAULT_SIGNATURE_ALGORITHMS above.
   private static final Set<JWSAlgorithm> DEFAULT_JWS_ALGORITHMS =
       Set.of(
           JWSAlgorithm.RS256,
@@ -77,9 +93,13 @@ public class OidcBeansConfiguration {
       return compositeJwtDecoder(source, additionalJwkSetUris);
     }
     if (StringUtils.hasText(source.getJwkSetUri())) {
-      return NimbusJwtDecoder.withJwkSetUri(source.getJwkSetUri()).build();
+      final var builder = NimbusJwtDecoder.withJwkSetUri(source.getJwkSetUri());
+      DEFAULT_SIGNATURE_ALGORITHMS.forEach(builder::jwsAlgorithm);
+      return builder.build();
     }
-    return NimbusJwtDecoder.withIssuerLocation(source.getIssuerUri()).build();
+    final var builder = NimbusJwtDecoder.withIssuerLocation(source.getIssuerUri());
+    DEFAULT_SIGNATURE_ALGORITHMS.forEach(builder::jwsAlgorithm);
+    return builder.build();
   }
 
   /**
