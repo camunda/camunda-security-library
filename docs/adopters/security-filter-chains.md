@@ -116,7 +116,7 @@ All properties live under `camunda.security.*`. Spring's relaxed binding accepts
 | `client-id` | string | unset | OAuth2 client id. |
 | `client-secret` | string | unset | OAuth2 client secret. |
 | `jwk-set-uri` | string | unset | Explicit JWK set URI. If unset, derived from `issuer-uri`. |
-| `additional-jwk-set-uris` | list&lt;string&gt; | empty | Reserved for multi-JWKS-source hosts; not consumed by the default beans. |
+| `additional-jwk-set-uris` | list&lt;string&gt; | empty | Secondary JWK Set URIs consulted when the primary `jwk-set-uri` does not resolve a token's signing key. See [Multiple JWK Set URIs](#multiple-jwk-set-uris) below and [ADR-0015](../adr/0015-additional-jwk-set-uris-composite-decoder.md). |
 | `authorization-uri`, `token-uri`, `user-info-uri` | string | unset | Endpoint overrides for non-discovery flows. |
 | `user-info-enabled` | boolean | `true` | When `false`, the built `ClientRegistration` has its `userInfoUri` nulled so Spring Security does not call the IdP's UserInfo endpoint after token exchange. See [Disabling the UserInfo fetch](#disabling-the-userinfo-fetch) below and [ADR-0014](../adr/0014-oidc-user-info-enabled-toggle.md). |
 | `redirect-uri` | string | unset | OAuth2 redirect-uri template. |
@@ -198,6 +198,34 @@ The library ships a single `JwtDecoder` bean. With multiple providers, a single 
 3. Otherwise (no source anywhere, or multiple providers with sources and no flat block), startup fails with an `IllegalStateException`.
 
 When startup fails because of rule 3, either pin the flat block as the resource-server audience or register a custom `@Bean JwtDecoder` in the host application — `OidcBeansConfiguration` backs off via `@ConditionalOnMissingBean`.
+
+#### Multiple JWK Set URIs
+
+When the IdP publishes signing keys across more than one JWK Set endpoint (typically during a key-rotation window or when an identity gateway federates multiple backends), set `additional-jwk-set-uris` alongside the primary `jwk-set-uri`:
+
+```yaml
+camunda:
+  security:
+    authentication:
+      method: oidc
+      oidc:
+        client-id: camunda
+        client-secret: ${CLIENT_SECRET}
+        redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+        jwk-set-uri: https://primary-idp.example.com/.well-known/jwks.json
+        additional-jwk-set-uris:
+          - https://secondary-idp.example.com/.well-known/jwks.json
+          - https://legacy-idp.example.com/.well-known/jwks.json
+```
+
+The default `JwtDecoder` queries the primary `jwk-set-uri` first, then each entry in `additional-jwk-set-uris` in declared order. The first source that resolves the token's `kid` wins. If an additional URI is unreachable, the failure is logged at WARN and the next source is tried — a failing additional URI does not break validation against the primary or other working URIs.
+
+Two constraints to be aware of:
+
+- **Explicit `jwk-set-uri` is required.** Discovery via `issuer-uri` alone is not supported when `additional-jwk-set-uris` is set. Set `jwk-set-uri` explicitly even if it points at the same endpoint the discovery document would resolve to. Startup fails with an actionable error otherwise.
+- **`kid` collision precedence.** If two JWK Sets publish a key with the same `kid` (unlikely in practice), the primary `jwk-set-uri` wins because it is queried first. Reorder `additional-jwk-set-uris` to change precedence among the additional URIs.
+
+See [ADR-0015](../adr/0015-additional-jwk-set-uris-composite-decoder.md) for the design rationale, the choice of composite `JWKSource` over Spring's `JwtIssuerAuthenticationManagerResolver`, and the lazy failure model.
 
 #### Disabling the UserInfo fetch
 

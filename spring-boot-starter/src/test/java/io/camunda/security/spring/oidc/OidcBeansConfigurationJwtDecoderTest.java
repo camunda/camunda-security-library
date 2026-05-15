@@ -86,6 +86,53 @@ class OidcBeansConfigurationJwtDecoderTest {
   }
 
   @Test
+  void shouldBuildJwtDecoderWithAdditionalJwkSetUris() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=flat-client",
+            "camunda.security.authentication.oidc.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
+            "camunda.security.authentication.oidc.token-uri=https://flat.example.com/token",
+            "camunda.security.authentication.oidc.jwk-set-uri=https://primary.example.com/jwks",
+            "camunda.security.authentication.oidc.additional-jwk-set-uris[0]=https://secondary.example.com/jwks",
+            "camunda.security.authentication.oidc.additional-jwk-set-uris[1]=https://tertiary.example.com/jwks")
+        .run(ctx -> assertThat(ctx).hasSingleBean(JwtDecoder.class));
+  }
+
+  @Test
+  void shouldIgnoreBlankAdditionalJwkSetUris() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=flat-client",
+            "camunda.security.authentication.oidc.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
+            "camunda.security.authentication.oidc.token-uri=https://flat.example.com/token",
+            "camunda.security.authentication.oidc.jwk-set-uri=https://primary.example.com/jwks",
+            "camunda.security.authentication.oidc.additional-jwk-set-uris[0]=",
+            "camunda.security.authentication.oidc.additional-jwk-set-uris[1]=https://secondary.example.com/jwks")
+        .run(ctx -> assertThat(ctx).hasSingleBean(JwtDecoder.class));
+  }
+
+  @Test
+  void shouldFailWhenAdditionalJwkSetUrisIsSetButPrimaryJwkSetUriIsMissing() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=flat-client",
+            "camunda.security.authentication.oidc.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.oidc.issuer-uri=https://flat.example.com",
+            "camunda.security.authentication.oidc.additional-jwk-set-uris[0]=https://secondary.example.com/jwks")
+        .run(
+            ctx -> {
+              assertThat(ctx).hasFailed();
+              assertThat(ctx.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalStateException.class)
+                  .hasMessageContaining("additional-jwk-set-uris")
+                  .hasMessageContaining("jwk-set-uri");
+            });
+  }
+
+  @Test
   void shouldFailWithInformativeErrorWhenNoSourceAvailable() {
     runner
         .withPropertyValues(

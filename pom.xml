@@ -39,6 +39,7 @@
         <spring-boot.version>4.0.6</spring-boot.version>
         <archunit.version>1.4.2</archunit.version>
         <testcontainers.version>2.0.5</testcontainers.version>
+        <nimbus-jose-jwt.version>10.4</nimbus-jose-jwt.version>
         <plugin.version.enforcer>3.6.2</plugin.version.enforcer>
         <plugin.version.spotless>3.4.0</plugin.version.spotless>
         <plugin.version.google-java-format>1.23.0</plugin.version.google-java-format>
@@ -99,6 +100,19 @@
                 <groupId>com.tngtech.archunit</groupId>
                 <artifactId>archunit-junit5-engine</artifactId>
                 <version>${archunit.version}</version>
+            </dependency>
+            <!--
+              Pinned because Spring Boot 4.0.x's BOM does not manage
+              nimbus-jose-jwt directly; it is pulled in transitively via
+              spring-security-oauth2-jose → oauth2-oidc-sdk. CSL references
+              Nimbus types directly from CompositeJWKSource and the composite
+              JwtDecoder wiring, so the version is pinned here to keep the
+              compile classpath aligned with the transitive runtime classpath.
+            -->
+            <dependency>
+                <groupId>com.nimbusds</groupId>
+                <artifactId>nimbus-jose-jwt</artifactId>
+                <version>${nimbus-jose-jwt.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

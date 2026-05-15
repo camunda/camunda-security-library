@@ -7,12 +7,23 @@
  */
 package io.camunda.security.spring.oidc;
 
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.jwk.source.JWKSource;
+import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
+import com.nimbusds.jose.proc.JWSVerificationKeySelector;
+import com.nimbusds.jose.proc.SecurityContext;
+import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.security.CamundaOidcLogoutSuccessHandler;
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URL;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -43,6 +54,16 @@ import org.springframework.util.StringUtils;
 @ConditionalOnProperty(name = "camunda.security.authentication.method", havingValue = "oidc")
 public class OidcBeansConfiguration {
 
+  // RSA + EC families — same defaults Nimbus/Spring use when no algorithm is pinned.
+  private static final Set<JWSAlgorithm> DEFAULT_JWS_ALGORITHMS =
+      Set.of(
+          JWSAlgorithm.RS256,
+          JWSAlgorithm.RS384,
+          JWSAlgorithm.RS512,
+          JWSAlgorithm.ES256,
+          JWSAlgorithm.ES384,
+          JWSAlgorithm.ES512);
+
   @Bean
   @ConditionalOnMissingBean
   public JwtDecoder jwtDecoder(final CamundaSecurityLibraryProperties properties) {
@@ -51,10 +72,65 @@ public class OidcBeansConfiguration {
     // register their own JwtDecoder bean — a single decoder cannot correctly validate tokens from
     // multiple IdPs, so the library refuses to guess.
     final OidcConfiguration source = pickJwtDecoderSource(properties.getAuthentication());
+    final List<String> additionalJwkSetUris = source.getAdditionalJwkSetUris();
+    if (hasNonBlankEntries(additionalJwkSetUris)) {
+      return compositeJwtDecoder(source, additionalJwkSetUris);
+    }
     if (StringUtils.hasText(source.getJwkSetUri())) {
       return NimbusJwtDecoder.withJwkSetUri(source.getJwkSetUri()).build();
     }
     return NimbusJwtDecoder.withIssuerLocation(source.getIssuerUri()).build();
+  }
+
+  /**
+   * Builds a {@link NimbusJwtDecoder} backed by a {@link CompositeJWKSource} when {@code
+   * additional-jwk-set-uris} is non-empty. The primary {@code jwk-set-uri} is queried first, then
+   * each additional URI in declared order; the first source that resolves the token's signing key
+   * wins. A failing source falls through to the next rather than failing the decode (see {@link
+   * CompositeJWKSource}). Discovery via {@code issuer-uri} is not supported here — an explicit
+   * primary {@code jwk-set-uri} must be set alongside the additional URIs.
+   */
+  private static JwtDecoder compositeJwtDecoder(
+      final OidcConfiguration source, final List<String> additionalJwkSetUris) {
+    if (!StringUtils.hasText(source.getJwkSetUri())) {
+      throw new IllegalStateException(
+          "Cannot build JwtDecoder with additional-jwk-set-uris when the primary jwk-set-uri is"
+              + " unset: set camunda.security.authentication.oidc.jwk-set-uri (or"
+              + " providers.oidc.<id>.jwk-set-uri) explicitly. Discovery via issuer-uri is not"
+              + " supported when additional-jwk-set-uris is configured.");
+    }
+    final List<JWKSource<SecurityContext>> sources =
+        java.util.stream.Stream.concat(
+                java.util.stream.Stream.of(source.getJwkSetUri()),
+                additionalJwkSetUris.stream().filter(StringUtils::hasText))
+            .map(OidcBeansConfiguration::createJwkSource)
+            .toList();
+    final var composite = new CompositeJWKSource<SecurityContext>(sources);
+    final var keySelector = new JWSVerificationKeySelector<>(DEFAULT_JWS_ALGORITHMS, composite);
+    final var jwtProcessor = new DefaultJWTProcessor<SecurityContext>();
+    jwtProcessor.setJWSKeySelector(keySelector);
+    return new NimbusJwtDecoder(jwtProcessor);
+  }
+
+  private static JWKSource<SecurityContext> createJwkSource(final String jwkSetUri) {
+    return JWKSourceBuilder.create(toUrl(jwkSetUri))
+        .refreshAheadCache(false)
+        .rateLimited(false)
+        .cache(true)
+        .build();
+  }
+
+  private static URL toUrl(final String jwkSetUri) {
+    try {
+      return URI.create(jwkSetUri).toURL();
+    } catch (final MalformedURLException ex) {
+      throw new IllegalArgumentException(
+          "Invalid JWK Set URI '" + jwkSetUri + "': " + ex.getMessage(), ex);
+    }
+  }
+
+  private static boolean hasNonBlankEntries(final List<String> uris) {
+    return uris != null && uris.stream().anyMatch(StringUtils::hasText);
   }
 
   private static OidcConfiguration pickJwtDecoderSource(
