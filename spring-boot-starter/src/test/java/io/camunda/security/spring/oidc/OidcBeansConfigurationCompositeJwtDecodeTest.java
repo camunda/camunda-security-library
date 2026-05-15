@@ -8,6 +8,7 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
@@ -49,6 +50,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtException;
 
 /**
  * End-to-end decode test for the composite {@code JwtDecoder} path in {@link
@@ -111,6 +113,62 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
     runDecodeTest(secondary);
   }
 
+  @Test
+  void shouldDecodeEcTokenOnSingleUriPath() throws Exception {
+    // No additional-jwk-set-uris configured — exercises the single-URI builder path. Proves the
+    // uniform RSA+EC algorithm set is applied to that path too (Spring's default would be
+    // RS256-only).
+    primary = JwksTestServer.startEc("primary-ec");
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=flat-client",
+            "camunda.security.authentication.oidc.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
+            "camunda.security.authentication.oidc.token-uri=https://flat.example.com/token",
+            "camunda.security.authentication.oidc.jwk-set-uri=" + primary.jwksUri())
+        .run(
+            ctx -> {
+              final var decoder = ctx.getBean(JwtDecoder.class);
+              final var token = sign(primary, null);
+
+              final var jwt = decoder.decode(token);
+
+              assertThat(jwt.getSubject()).isEqualTo("alice");
+              assertThat(jwt.getHeaders()).containsEntry("kid", primary.kid());
+            });
+  }
+
+  @Test
+  void shouldRejectTokenWithWrongIssuerOnCompositePath() throws Exception {
+    // issuer-uri is set alongside jwk-set-uri + additional-jwk-set-uris. The composite decoder
+    // must apply the issuer validator — a token signed by a valid key but carrying a different
+    // 'iss' claim must be rejected.
+    primary = JwksTestServer.startRsa("primary-rsa");
+    secondary = JwksTestServer.startRsa("secondary-rsa");
+    final var expectedIssuer = "https://expected-issuer.example.com";
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=flat-client",
+            "camunda.security.authentication.oidc.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
+            "camunda.security.authentication.oidc.token-uri=https://flat.example.com/token",
+            "camunda.security.authentication.oidc.issuer-uri=" + expectedIssuer,
+            "camunda.security.authentication.oidc.jwk-set-uri=" + primary.jwksUri(),
+            "camunda.security.authentication.oidc.additional-jwk-set-uris[0]="
+                + secondary.jwksUri())
+        .run(
+            ctx -> {
+              final var decoder = ctx.getBean(JwtDecoder.class);
+              final var goodToken = sign(primary, expectedIssuer);
+              final var spoofedToken = sign(primary, "https://attacker.example.com");
+
+              assertThat(decoder.decode(goodToken).getIssuer().toString())
+                  .isEqualTo(expectedIssuer);
+              assertThatThrownBy(() -> decoder.decode(spoofedToken))
+                  .isInstanceOf(JwtException.class);
+            });
+  }
+
   private void runDecodeTest(final JwksTestServer signingKey) {
     runner
         .withPropertyValues(
@@ -124,7 +182,7 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
         .run(
             ctx -> {
               final var decoder = ctx.getBean(JwtDecoder.class);
-              final var token = sign(signingKey);
+              final var token = sign(signingKey, null);
 
               final var jwt = decoder.decode(token);
 
@@ -133,15 +191,16 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
             });
   }
 
-  private static String sign(final JwksTestServer key) throws JOSEException {
+  private static String sign(final JwksTestServer key, final String issuer) throws JOSEException {
     final var header = new JWSHeader.Builder(key.algorithm()).keyID(key.kid()).build();
-    final var claims =
-        new JWTClaimsSet.Builder()
-            .subject("alice")
-            .issueTime(Date.from(Instant.now()))
-            .expirationTime(Date.from(Instant.now().plusSeconds(60)))
-            .build();
-    final var jwt = new SignedJWT(header, claims);
+    final var claims = new JWTClaimsSet.Builder().subject("alice");
+    if (issuer != null) {
+      claims.issuer(issuer);
+    }
+    claims
+        .issueTime(Date.from(Instant.now()))
+        .expirationTime(Date.from(Instant.now().plusSeconds(60)));
+    final var jwt = new SignedJWT(header, claims.build());
     jwt.sign(key.signer());
     return jwt.serialize();
   }

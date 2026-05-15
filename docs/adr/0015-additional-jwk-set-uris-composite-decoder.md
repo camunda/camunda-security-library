@@ -47,6 +47,8 @@ When `additional-jwk-set-uris` is non-empty, an **explicit** primary `jwk-set-ur
 
 > Cannot build JwtDecoder with additional-jwk-set-uris when the primary jwk-set-uri is unset: set `camunda.security.authentication.oidc.jwk-set-uri` (or `providers.oidc.<id>.jwk-set-uri`) explicitly. Discovery via issuer-uri is not supported when additional-jwk-set-uris is configured.
 
+**Issuer validation.** After construction, if `source.getIssuerUri()` is set, the decoder's validator is set to `JwtValidators.createDefaultWithIssuer(issuerUri)` — the same validator chain Spring's `withIssuerLocation(...)` builder applies. This is done uniformly across all three paths (single-URI, discovery, composite) so the composite path does not silently drop the `iss` check when an adopter has both `issuer-uri` and `additional-jwk-set-uris` configured.
+
 ### Why these particular boundaries
 
 - **Custom `CompositeJWKSource` over a Spring/Nimbus built-in.** `NimbusJwtDecoder.withJwkSetUri(uri)` accepts only one URI and exposes no hook for replacing the underlying `JWKSource`. Nimbus's `JWKSourceBuilder` is single-URL only. `JwtIssuerAuthenticationManagerResolver` routes by `iss` at the filter level (wrong scope: this issue is within-one-issuer key rotation, not `iss` routing; and wrong injection shape: CSL exposes a single `@Bean JwtDecoder`, not a per-request `AuthenticationManager`). The composite class is ~40 lines wrapping a public Nimbus interface; the only alternative is a custom HTTP client that re-implements caching, which would be significantly more code and risk.

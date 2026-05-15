@@ -41,6 +41,7 @@ import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.util.StringUtils;
@@ -95,17 +96,26 @@ public class OidcBeansConfiguration {
     requireExplicitPrimaryWhenAdditionalSet(authentication);
     final OidcConfiguration source = pickJwtDecoderSource(authentication);
     final List<String> additionalJwkSetUris = source.getAdditionalJwkSetUris();
+    final NimbusJwtDecoder decoder;
     if (hasNonBlankEntries(additionalJwkSetUris)) {
-      return compositeJwtDecoder(source, additionalJwkSetUris);
-    }
-    if (StringUtils.hasText(source.getJwkSetUri())) {
+      decoder = compositeJwtDecoder(source, additionalJwkSetUris);
+    } else if (StringUtils.hasText(source.getJwkSetUri())) {
       final var builder = NimbusJwtDecoder.withJwkSetUri(source.getJwkSetUri());
       DEFAULT_SIGNATURE_ALGORITHMS.forEach(builder::jwsAlgorithm);
-      return builder.build();
+      decoder = builder.build();
+    } else {
+      final var builder = NimbusJwtDecoder.withIssuerLocation(source.getIssuerUri());
+      DEFAULT_SIGNATURE_ALGORITHMS.forEach(builder::jwsAlgorithm);
+      decoder = builder.build();
     }
-    final var builder = NimbusJwtDecoder.withIssuerLocation(source.getIssuerUri());
-    DEFAULT_SIGNATURE_ALGORITHMS.forEach(builder::jwsAlgorithm);
-    return builder.build();
+    // Apply issuer-claim validation uniformly when issuer-uri is set. withIssuerLocation already
+    // wires this; calling setJwtValidator again is harmless (it overrides with the same effective
+    // validators). The composite path and the explicit jwk-set-uri path would otherwise skip the
+    // 'iss' check entirely.
+    if (StringUtils.hasText(source.getIssuerUri())) {
+      decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(source.getIssuerUri()));
+    }
+    return decoder;
   }
 
   private static void requireExplicitPrimaryWhenAdditionalSet(
@@ -144,7 +154,7 @@ public class OidcBeansConfiguration {
    * CompositeJWKSource}). Discovery via {@code issuer-uri} is not supported here — an explicit
    * primary {@code jwk-set-uri} must be set alongside the additional URIs.
    */
-  private static JwtDecoder compositeJwtDecoder(
+  private static NimbusJwtDecoder compositeJwtDecoder(
       final OidcConfiguration source, final List<String> additionalJwkSetUris) {
     if (!StringUtils.hasText(source.getJwkSetUri())) {
       throw missingPrimaryJwkSetUri();
