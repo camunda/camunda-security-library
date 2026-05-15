@@ -118,6 +118,7 @@ All properties live under `camunda.security.*`. Spring's relaxed binding accepts
 | `jwk-set-uri` | string | unset | Explicit JWK set URI. If unset, derived from `issuer-uri`. |
 | `additional-jwk-set-uris` | list&lt;string&gt; | empty | Reserved for multi-JWKS-source hosts; not consumed by the default beans. |
 | `authorization-uri`, `token-uri`, `user-info-uri` | string | unset | Endpoint overrides for non-discovery flows. |
+| `user-info-enabled` | boolean | `true` | When `false`, the built `ClientRegistration` has its `userInfoUri` nulled so Spring Security does not call the IdP's UserInfo endpoint after token exchange. See [Disabling the UserInfo fetch](#disabling-the-userinfo-fetch) below and [ADR-0014](../adr/0014-oidc-user-info-enabled-toggle.md). |
 | `redirect-uri` | string | unset | OAuth2 redirect-uri template. |
 | `scope` | list&lt;string&gt; | `[openid, profile]` | OAuth2 scopes requested. |
 | `audiences` | list&lt;string&gt; | empty | Reserved; not consumed by the default beans. |
@@ -197,6 +198,35 @@ The library ships a single `JwtDecoder` bean. With multiple providers, a single 
 3. Otherwise (no source anywhere, or multiple providers with sources and no flat block), startup fails with an `IllegalStateException`.
 
 When startup fails because of rule 3, either pin the flat block as the resource-server audience or register a custom `@Bean JwtDecoder` in the host application — `OidcBeansConfiguration` backs off via `@ConditionalOnMissingBean`.
+
+#### Disabling the UserInfo fetch
+
+By default Spring Security calls the IdP's UserInfo endpoint after token exchange and merges the returned claims into the `OidcUser`. Some IdPs do not implement `/userinfo`, and some hosts prefer to source claims only from the ID token. Set `user-info-enabled: false` on either the flat block or any provider entry to skip the fetch on that registration — the library nulls `userInfoUri` on the built `ClientRegistration`, so Spring Security has nothing to call.
+
+The flag is per-provider. A multi-IdP deployment can fetch UserInfo from one IdP and skip it on another:
+
+```yaml
+camunda:
+  security:
+    authentication:
+      method: oidc
+      providers:
+        oidc:
+          keycloak:
+            issuer-uri: https://keycloak.example.com/realms/camunda
+            client-id: camunda-keycloak
+            client-secret: ${KEYCLOAK_SECRET}
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            # user-info-enabled defaults to true — Spring fetches UserInfo
+          azure:
+            issuer-uri: https://login.microsoftonline.com/<tenant-id>/v2.0
+            client-id: camunda-azure
+            client-secret: ${AZURE_SECRET}
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            user-info-enabled: false   # skip the /userinfo call for Azure
+```
+
+A host-supplied `OidcUserService` bean still takes precedence in both modes (see [ADR-0014](../adr/0014-oidc-user-info-enabled-toggle.md)) — `user-info-enabled` only governs the library's default wiring.
 
 ### OIDC groups claim extraction
 
