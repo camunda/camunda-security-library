@@ -48,14 +48,19 @@ final class CompositeJWKSource<C extends SecurityContext> implements JWKSource<C
   public List<JWK> get(final JWKSelector jwkSelector, final C context) throws KeySourceException {
     KeySourceException lastException = null;
 
-    for (final JWKSource<C> source : sources) {
+    for (int i = 0; i < sources.size(); i++) {
+      final JWKSource<C> source = sources.get(i);
       try {
         final List<JWK> keys = source.get(jwkSelector, context);
         if (keys != null && !keys.isEmpty()) {
           return keys;
         }
       } catch (final KeySourceException e) {
-        LOG.warn("JWK source [{}] failed, trying next source", source, e);
+        if (i < sources.size() - 1) {
+          LOG.warn("JWK source [{}] failed, trying next source", source, e);
+        } else {
+          LOG.warn("JWK source [{}] failed; no further sources to try", source, e);
+        }
         lastException = e;
       }
     }
