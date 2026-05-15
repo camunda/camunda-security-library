@@ -143,7 +143,7 @@ public class OidcBeansConfiguration {
   private static URL toUrl(final String jwkSetUri) {
     try {
       return URI.create(jwkSetUri).toURL();
-    } catch (final MalformedURLException ex) {
+    } catch (final MalformedURLException | IllegalArgumentException ex) {
       throw new IllegalArgumentException(
           "Invalid JWK Set URI '" + jwkSetUri + "': " + ex.getMessage(), ex);
     }

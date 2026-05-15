@@ -321,7 +321,7 @@ Every library-supplied bean has `@ConditionalOnMissingBean`. Define your own bea
 
 | Bean | When | Override use case |
 |---|---|---|
-| `JwtDecoder` | `method=oidc` | Custom JWT validators (audience, issuer pinning), multi-JWKS-source hosts |
+| `JwtDecoder` | `method=oidc` | Custom JWT validators (audience, issuer pinning), narrower or custom JWS algorithm sets, multi-issuer routing. Multi-JWKS for a single issuer is now built in — see [Multiple JWK Set URIs](#multiple-jwk-set-uris). |
 | `ClientRegistrationRepository` | `method=oidc` | Multi-IdP support, dynamic client registration |
 | `OAuth2AuthorizedClientRepository` | `method=oidc` | Custom session storage |
 | `OAuth2AuthorizedClientManager` | `method=oidc` | Custom OAuth2 client provider chain |
