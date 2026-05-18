@@ -38,7 +38,7 @@ class ConfiguredTenantTest {
   }
 
   @Test
-  void shouldAllowNullListComponents() {
+  void shouldAllowNullOptionalComponents() {
     final var tenant = new ConfiguredTenant("tenant-1", null, null, null, null, null, null, null);
 
     assertThat(tenant.tenantId()).isEqualTo("tenant-1");
