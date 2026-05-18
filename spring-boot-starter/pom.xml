@@ -75,6 +75,17 @@
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-oauth2-jose</artifactId>
         </dependency>
+        <!--
+          Nimbus JOSE+JWT — directly referenced by CompositeJWKSource and the
+          composite JwtDecoder path in OidcBeansConfiguration. Brought in
+          transitively by spring-security-oauth2-jose; declared explicitly
+          because source code references nimbus types directly. Version is
+          managed in the parent pom's dependencyManagement.
+        -->
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>nimbus-jose-jwt</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-web</artifactId>
