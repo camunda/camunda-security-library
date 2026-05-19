@@ -20,10 +20,12 @@ public final class CamundaSecurityFilterChainConstants {
   public static final String OIDC_REGISTRATION_ID = "oidc";
 
   /** Property key for {@code AuthenticationMethod} (BASIC | OIDC). */
-  static final String AUTHENTICATION_METHOD_PROPERTY = "camunda.security.authentication.method";
+  public static final String AUTHENTICATION_METHOD_PROPERTY =
+      "camunda.security.authentication.method";
 
   /** Property key for the dev-mode unprotected-API toggle. */
-  static final String UNPROTECTED_API_PROPERTY = "camunda.security.authentication.unprotected-api";
+  public static final String UNPROTECTED_API_PROPERTY =
+      "camunda.security.authentication.unprotected-api";
 
   static final int ORDER_UNPROTECTED = 0;
   static final int ORDER_WEBAPP_API = 1;
