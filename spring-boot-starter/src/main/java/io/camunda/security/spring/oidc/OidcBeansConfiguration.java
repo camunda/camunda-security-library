@@ -258,9 +258,11 @@ public class OidcBeansConfiguration {
   /**
    * Builds a single {@link ClientRegistration} from {@link OidcConfiguration}. When {@code
    * issuer-uri} is set, OIDC discovery populates the authorization/token/user-info/jwk-set URIs
-   * automatically. Otherwise the explicit endpoints must be configured. The {@code registrationId}
-   * argument is the map key in the multi-provider shape and {@link
-   * OidcConfiguration#getRegistrationId()} in the legacy flat shape.
+   * automatically; any explicitly-configured endpoint URI on {@link OidcConfiguration} then
+   * overrides the discovered value. When {@code issuer-uri} is unset, all of authorization-uri,
+   * token-uri, and jwk-set-uri must be configured explicitly. The {@code registrationId} argument
+   * is the map key in the multi-provider shape and {@link OidcConfiguration#getRegistrationId()} in
+   * the legacy flat shape.
    */
   private static ClientRegistration buildClientRegistration(
       final String registrationId, final OidcConfiguration oidc) {
@@ -287,14 +289,30 @@ public class OidcBeansConfiguration {
     return builder.build();
   }
 
+  /**
+   * Builds the base {@link ClientRegistration.Builder}: discovery via {@code issuer-uri} when set,
+   * otherwise an empty builder; in both cases any explicitly-configured endpoint URI on {@link
+   * OidcConfiguration} overrides the discovered value. A non-blank value on the configuration
+   * always wins; a null/blank value leaves the discovered value untouched.
+   *
+   * <p>Mirrors OC's previous {@code ClientRegistrationFactory} so that adopters can rely on
+   * explicit overrides to plug gaps in incomplete IdP discovery metadata (older Keycloak realms,
+   * custom STS endpoints, proxies that rewrite discovery documents). See
+   * camunda/camunda-security-library#233.
+   */
   private static ClientRegistration.Builder clientRegistrationBuilder(
       final String registrationId, final OidcConfiguration oidc) {
-    if (StringUtils.hasText(oidc.getIssuerUri())) {
-      return ClientRegistrations.fromIssuerLocation(oidc.getIssuerUri());
-    }
-    if (!StringUtils.hasText(oidc.getAuthorizationUri())
-        || !StringUtils.hasText(oidc.getTokenUri())
-        || !StringUtils.hasText(oidc.getJwkSetUri())) {
+    final boolean hasIssuer = StringUtils.hasText(oidc.getIssuerUri());
+    final ClientRegistration.Builder builder =
+        hasIssuer
+            ? ClientRegistrations.fromIssuerLocation(oidc.getIssuerUri())
+                .registrationId(registrationId)
+            : ClientRegistration.withRegistrationId(registrationId);
+
+    if (!hasIssuer
+        && (!StringUtils.hasText(oidc.getAuthorizationUri())
+            || !StringUtils.hasText(oidc.getTokenUri())
+            || !StringUtils.hasText(oidc.getJwkSetUri()))) {
       throw new IllegalStateException(
           "Cannot build ClientRegistration '"
               + registrationId
@@ -304,11 +322,27 @@ public class OidcBeansConfiguration {
               + registrationId
               + ".*");
     }
-    return ClientRegistration.withRegistrationId(registrationId)
-        .authorizationUri(oidc.getAuthorizationUri())
-        .tokenUri(oidc.getTokenUri())
-        .userInfoUri(oidc.getUserInfoUri())
-        .jwkSetUri(oidc.getJwkSetUri());
+
+    if (StringUtils.hasText(oidc.getAuthorizationUri())) {
+      builder.authorizationUri(oidc.getAuthorizationUri());
+    }
+    if (StringUtils.hasText(oidc.getTokenUri())) {
+      builder.tokenUri(oidc.getTokenUri());
+    }
+    if (StringUtils.hasText(oidc.getJwkSetUri())) {
+      builder.jwkSetUri(oidc.getJwkSetUri());
+    }
+    if (StringUtils.hasText(oidc.getUserInfoUri())) {
+      builder.userInfoUri(oidc.getUserInfoUri());
+    }
+    if (StringUtils.hasText(oidc.getEndSessionEndpointUri())) {
+      // Spring's ClientRegistration carries end_session_endpoint via providerConfigurationMetadata.
+      // Setting the map replaces the discovered metadata wholesale, so seed it with only the
+      // explicit override; discovery already populated the builder's other endpoints individually.
+      builder.providerConfigurationMetadata(
+          Map.of("end_session_endpoint", oidc.getEndSessionEndpointUri()));
+    }
+    return builder;
   }
 
   @Bean
