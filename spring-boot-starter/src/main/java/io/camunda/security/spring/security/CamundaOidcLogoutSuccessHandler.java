@@ -52,6 +52,7 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
    * Session attribute used to surface a human-readable explanation when RP-initiated logout cannot
    * reach the IdP (for example, no {@code end_session_endpoint} was published). Stored on the
    * session — not the request — so the message survives the redirect that the {@link
+   * org.springframework.security.web.authentication.logout.LogoutSuccessHandler
    * LogoutSuccessHandler} issues and is readable by the post-logout page on the subsequent request.
    */
   public static final String REDIRECT_MESSAGE_ATTRIBUTE = "redirectMessage";
