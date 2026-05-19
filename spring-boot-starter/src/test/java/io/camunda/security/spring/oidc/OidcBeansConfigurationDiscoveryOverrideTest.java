@@ -149,6 +149,38 @@ final class OidcBeansConfigurationDiscoveryOverrideTest {
   }
 
   @Test
+  void explicitEndSessionEndpointSurvivesDiscoveryAndBuild() throws Exception {
+    // Spring's ClientRegistration carries end_session_endpoint via providerConfigurationMetadata,
+    // not a typed field, so the override path is easy to break silently. This test asserts the
+    // explicit URI is present on the built registration's metadata map.
+    server =
+        DiscoveryTestServer.start(
+            """
+            {
+              "issuer": "%s",
+              "authorization_endpoint": "https://discovered.example.com/auth",
+              "token_endpoint": "https://discovered.example.com/token",
+              "jwks_uri": "https://discovered.example.com/jwks",
+              "subject_types_supported": ["public"]
+            }""");
+
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.foo.client-id=foo",
+            "camunda.security.authentication.providers.oidc.foo.redirect-uri=https://app/cb",
+            "camunda.security.authentication.providers.oidc.foo.issuer-uri=" + server.issuerUri(),
+            "camunda.security.authentication.providers.oidc.foo.end-session-endpoint-uri=https://explicit.example.com/logout")
+        .run(
+            ctx -> {
+              final var registration =
+                  ctx.getBean(ClientRegistrationRepository.class).findByRegistrationId("foo");
+              assertThat(registration).isNotNull();
+              assertThat(registration.getProviderDetails().getConfigurationMetadata())
+                  .containsEntry("end_session_endpoint", "https://explicit.example.com/logout");
+            });
+  }
+
+  @Test
   void discoveredValuesAreKeptWhenExplicitUrisAreUnset() throws Exception {
     server =
         DiscoveryTestServer.start(
