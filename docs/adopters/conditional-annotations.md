@@ -16,7 +16,7 @@ security-related runtime conditions. All annotations are applicable to both
 
 | Annotation | Activates when |
 |---|---|
-| [`@ConditionalOnAuthenticationMethod`](#conditionalauthenticationmethod) | The configured authentication method matches the given value |
+| [`@ConditionalOnAuthenticationMethod`](#conditionalonauthenticationmethod) | The configured authentication method matches the given value |
 | [`@ConditionalOnProtectedApi`](#conditionalonprotectedapi) | `camunda.security.authentication.unprotected-api` is `false` (the default) |
 | [`@ConditionalOnUnprotectedApi`](#conditionalonunprotectedapi) | `camunda.security.authentication.unprotected-api` is `true` |
 | [`@ConditionalOnInternalUserManagement`](#conditionaloninternalusermanagement) | The configured authentication method is **not** `OIDC` |
