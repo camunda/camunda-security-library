@@ -9,6 +9,7 @@ package io.camunda.security.api.model.authz;
 
 public enum DefaultRole {
   ADMIN("admin"),
+  READONLY_ADMIN("readonly-admin"),
   RPA("rpa"),
   CONNECTORS("connectors"),
   APP_INTEGRATIONS("app-integrations"),
