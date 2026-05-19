@@ -108,6 +108,26 @@ All properties live under `camunda.security.*`. Spring's relaxed binding accepts
 | `method` | `BASIC` \| `OIDC` | unset | Selects the auth-mode chains. If unset, only the unprotected-paths and catch-all chains run; protected API and webapp chains are inactive. |
 | `unprotected-api` | boolean | `false` | When `true`, swaps the protected API chain for a permit-all variant. Development only. |
 
+The property key strings for `method` and `unprotected-api` are exposed as public constants in [`CamundaSecurityFilterChainConstants`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/security/CamundaSecurityFilterChainConstants.java) so hosts can reference them without hardcoding the literal string:
+
+```java
+import io.camunda.security.spring.security.CamundaSecurityFilterChainConstants;
+
+// e.g. when writing a custom @Conditional or reading the property programmatically
+environment.getProperty(CamundaSecurityFilterChainConstants.AUTHENTICATION_METHOD_PROPERTY);
+environment.getProperty(CamundaSecurityFilterChainConstants.UNPROTECTED_API_PROPERTY);
+```
+
+Use the constants in `@ConditionalOnProperty` declarations to avoid typos and to surface any future key renames at compile time:
+
+```java
+@ConditionalOnProperty(
+    name = CamundaSecurityFilterChainConstants.AUTHENTICATION_METHOD_PROPERTY,
+    havingValue = "oidc")
+```
+
+For most conditional use cases the CSL ships purpose-built meta-annotations (see [Conditional annotations](./conditional-annotations.md)) that are type-safe and encode the correct defaults — prefer those over raw `@ConditionalOnProperty` strings in host code.
+
 ### `camunda.security.authentication.oidc.*` (consulted when `method=oidc`)
 
 | Property | Type | Default | Effect |
