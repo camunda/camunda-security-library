@@ -283,6 +283,9 @@ public class OidcBeansConfiguration {
             .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
             .redirectUri(oidc.getRedirectUri())
             .scope(oidc.getScope());
+    if (StringUtils.hasText(oidc.getClientName())) {
+      builder.clientName(oidc.getClientName());
+    }
     if (!oidc.isUserInfoEnabled()) {
       builder.userInfoUri(null);
     }

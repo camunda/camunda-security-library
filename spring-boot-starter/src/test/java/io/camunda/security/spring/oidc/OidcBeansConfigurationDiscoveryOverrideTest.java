@@ -181,6 +181,37 @@ final class OidcBeansConfigurationDiscoveryOverrideTest {
   }
 
   @Test
+  void explicitClientNameIsAppliedWhenSet() throws Exception {
+    // OC's previous ClientRegistrationFactory honoured a configured client-name; verify CSL does
+    // the same. Spring defaults the client name to the registrationId when unset, so this only
+    // matters for adopters who override it for display (e.g., on a login page).
+    server =
+        DiscoveryTestServer.start(
+            """
+            {
+              "issuer": "%s",
+              "authorization_endpoint": "https://discovered.example.com/auth",
+              "token_endpoint": "https://discovered.example.com/token",
+              "jwks_uri": "https://discovered.example.com/jwks",
+              "subject_types_supported": ["public"]
+            }""");
+
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.foo.client-id=foo",
+            "camunda.security.authentication.providers.oidc.foo.client-name=Foo Login",
+            "camunda.security.authentication.providers.oidc.foo.redirect-uri=https://app/cb",
+            "camunda.security.authentication.providers.oidc.foo.issuer-uri=" + server.issuerUri())
+        .run(
+            ctx -> {
+              final var registration =
+                  ctx.getBean(ClientRegistrationRepository.class).findByRegistrationId("foo");
+              assertThat(registration).isNotNull();
+              assertThat(registration.getClientName()).isEqualTo("Foo Login");
+            });
+  }
+
+  @Test
   void discoveredValuesAreKeptWhenExplicitUrisAreUnset() throws Exception {
     server =
         DiscoveryTestServer.start(
