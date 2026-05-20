@@ -21,19 +21,25 @@ public record ConfiguredMappingRule(String mappingRuleId, String claimName, Stri
     ensureNotNullOrEmpty("claimValue", claimValue);
   }
 
-  /** @deprecated Use {@link #mappingRuleId()} instead. */
+  /**
+   * @deprecated Use {@link #mappingRuleId()} instead.
+   */
   @Deprecated
   public String getMappingRuleId() {
     return mappingRuleId;
   }
 
-  /** @deprecated Use {@link #claimName()} instead. */
+  /**
+   * @deprecated Use {@link #claimName()} instead.
+   */
   @Deprecated
   public String getClaimName() {
     return claimName;
   }
 
-  /** @deprecated Use {@link #claimValue()} instead. */
+  /**
+   * @deprecated Use {@link #claimValue()} instead.
+   */
   @Deprecated
   public String getClaimValue() {
     return claimValue;
