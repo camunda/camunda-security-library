@@ -279,17 +279,17 @@ camunda:
 
 A host-supplied `OidcUserService` bean still takes precedence in both modes (see [ADR-0014](../adr/0014-oidc-user-info-enabled-toggle.md)) — `user-info-enabled` only governs the library's default wiring.
 
-### Customising the authorisation request (`resource`, `additional_parameters`)
+### Customizing the authorization request (`resource`, `additional-parameters`)
 
-CSL ships a default `OAuth2AuthorizationRequestResolver` (`CamundaOidcAuthorizationRequestResolver`) from `OidcBeansConfiguration`. It wraps Spring Security's `DefaultOAuth2AuthorizationRequestResolver` per registration and injects two `OidcConfiguration` properties into the outgoing OAuth2 authorisation request. Hosts that need different customizer logic register their own `OAuth2AuthorizationRequestResolver` bean; CSL backs off via `@ConditionalOnMissingBean`.
+CSL ships a default `OAuth2AuthorizationRequestResolver` (`CamundaOidcAuthorizationRequestResolver`) from `OidcBeansConfiguration`. It wraps Spring Security's `DefaultOAuth2AuthorizationRequestResolver` per registration and injects two `OidcConfiguration` properties into the outgoing OAuth2 authorization request. Hosts that need different customizer logic register their own `OAuth2AuthorizationRequestResolver` bean; CSL backs off via `@ConditionalOnMissingBean`.
 
 #### `resource` (RFC 8707)
 
-When `resource` is set on a provider, every entry in the list is added as a `resource` query parameter on the IdP authorisation URL. Use this when the IdP requires an explicit audience for the issued access token.
+When `resource` is set on a provider, every entry in the list is added as a `resource` query parameter on the IdP authorization URL. Use this when the IdP requires an explicit audience for the issued access token.
 
 #### `authorize-request.additional-parameters`
 
-Arbitrary key/value pairs that are appended verbatim to the authorisation request. Useful for IdP-specific extensions such as `prompt`, `audience`, or vendor-specific switches. Values are passed through unchanged — the library does not interpret them.
+Arbitrary key/value pairs that are appended verbatim to the authorization request. Useful for IdP-specific extensions such as `prompt`, `audience`, or vendor-specific switches. Values are passed through unchanged — the library does not interpret them.
 
 #### Worked example
 

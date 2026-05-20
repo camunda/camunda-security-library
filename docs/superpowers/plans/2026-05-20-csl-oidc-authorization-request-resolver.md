@@ -12,7 +12,7 @@
 
 **Reference files:**
 - Spec: `docs/superpowers/specs/2026-05-20-csl-oidc-authorization-request-resolver-design.md`
-- OC implementation to lift: `/Users/ben.sheppard/code/camunda/authentication/src/main/java/io/camunda/authentication/config/ClientAwareOAuth2AuthorizationRequestResolver.java`
+- OC implementation to lift: `camunda/camunda: authentication/src/main/java/io/camunda/authentication/config/ClientAwareOAuth2AuthorizationRequestResolver.java`
 - Wiring target: `spring-boot-starter/src/main/java/io/camunda/security/spring/oidc/OidcBeansConfiguration.java`
 - Properties model: `api/src/main/java/io/camunda/security/api/model/config/oidc/OidcConfiguration.java` and `AuthorizeRequestConfiguration.java`
 - Existing hook test to update: `spring-boot-starter/src/test/java/io/camunda/security/spring/security/OidcWebappAuthorizationRequestResolverHookTest.java`

@@ -81,16 +81,7 @@ public final class CamundaOidcAuthorizationRequestResolver
     if (registrationId == null || registrationId.isBlank()) {
       return null;
     }
-    ensureClientRegistrationExists(registrationId);
     return Optional.of(getOrCreateResolver(registrationId)).map(requestSupplier).orElse(null);
-  }
-
-  private void ensureClientRegistrationExists(final String registrationId) {
-    final var registration = clientRegistrationRepository.findByRegistrationId(registrationId);
-    if (registration == null) {
-      throw new IllegalArgumentException(
-          ERROR_INVALID_CLIENT_REGISTRATION_ID.formatted(registrationId));
-    }
   }
 
   private OAuth2AuthorizationRequestResolver getOrCreateResolver(final String registrationId) {
@@ -98,6 +89,11 @@ public final class CamundaOidcAuthorizationRequestResolver
   }
 
   private OAuth2AuthorizationRequestResolver createResolver(final String registrationId) {
+    final var registration = clientRegistrationRepository.findByRegistrationId(registrationId);
+    if (registration == null) {
+      throw new IllegalArgumentException(
+          ERROR_INVALID_CLIENT_REGISTRATION_ID.formatted(registrationId));
+    }
     final var resolver =
         new DefaultOAuth2AuthorizationRequestResolver(
             clientRegistrationRepository, AUTHORIZATION_REQUEST_BASE_URI);

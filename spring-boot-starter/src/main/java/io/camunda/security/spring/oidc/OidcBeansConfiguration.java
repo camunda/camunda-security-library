@@ -232,7 +232,7 @@ public class OidcBeansConfiguration {
    * overwrites the flat entry. Identical merge semantics to OC's {@code
    * OidcAuthenticationConfigurationRepository}.
    */
-  static Map<String, OidcConfiguration> buildOidcSources(
+  private static Map<String, OidcConfiguration> buildOidcSources(
       final AuthenticationConfiguration authentication) {
     final OidcConfiguration flat = authentication.getOidc();
     final Map<String, OidcConfiguration> providers = authentication.getProviders().getOidc();
