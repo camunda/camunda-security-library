@@ -21,22 +21,9 @@ class ConfiguredMappingRuleTest {
   void shouldStoreAllFieldsFromConstructor() {
     final var rule = new ConfiguredMappingRule("rule-1", "claim", "value");
 
-    assertThat(rule.getMappingRuleId()).isEqualTo("rule-1");
-    assertThat(rule.getClaimName()).isEqualTo("claim");
-    assertThat(rule.getClaimValue()).isEqualTo("value");
-  }
-
-  @Test
-  void shouldUpdateFieldsViaSetters() {
-    final var rule = new ConfiguredMappingRule("rule-1", "claim", "value");
-
-    rule.setMappingRuleId("rule-2");
-    rule.setClaimName("claim2");
-    rule.setClaimValue("value2");
-
-    assertThat(rule.getMappingRuleId()).isEqualTo("rule-2");
-    assertThat(rule.getClaimName()).isEqualTo("claim2");
-    assertThat(rule.getClaimValue()).isEqualTo("value2");
+    assertThat(rule.mappingRuleId()).isEqualTo("rule-1");
+    assertThat(rule.claimName()).isEqualTo("claim");
+    assertThat(rule.claimValue()).isEqualTo("value");
   }
 
   @ParameterizedTest
@@ -62,39 +49,6 @@ class ConfiguredMappingRuleTest {
   @ValueSource(strings = {""})
   void constructorShouldRejectInvalidClaimValue(final String invalid) {
     assertThatThrownBy(() -> new ConfiguredMappingRule("rule-1", "claim", invalid))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("claimValue");
-  }
-
-  @ParameterizedTest
-  @NullSource
-  @ValueSource(strings = {""})
-  void setMappingRuleIdShouldRejectInvalid(final String invalid) {
-    final var rule = new ConfiguredMappingRule("rule-1", "claim", "value");
-
-    assertThatThrownBy(() -> rule.setMappingRuleId(invalid))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("mappingRuleId");
-  }
-
-  @ParameterizedTest
-  @NullSource
-  @ValueSource(strings = {""})
-  void setClaimNameShouldRejectInvalid(final String invalid) {
-    final var rule = new ConfiguredMappingRule("rule-1", "claim", "value");
-
-    assertThatThrownBy(() -> rule.setClaimName(invalid))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("claimName");
-  }
-
-  @ParameterizedTest
-  @NullSource
-  @ValueSource(strings = {""})
-  void setClaimValueShouldRejectInvalid(final String invalid) {
-    final var rule = new ConfiguredMappingRule("rule-1", "claim", "value");
-
-    assertThatThrownBy(() -> rule.setClaimValue(invalid))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("claimValue");
   }
