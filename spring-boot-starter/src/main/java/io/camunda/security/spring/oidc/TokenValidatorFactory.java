@@ -68,7 +68,9 @@ public class TokenValidatorFactory {
 
     validators.add(new JwtTimestampValidator(clockSkew));
 
-    if (providerConfig != null && providerConfig.getAudiences() != null) {
+    if (providerConfig != null
+        && providerConfig.getAudiences() != null
+        && !providerConfig.getAudiences().isEmpty()) {
       validators.add(new AudienceValidator(providerConfig.getAudiences()));
     }
 

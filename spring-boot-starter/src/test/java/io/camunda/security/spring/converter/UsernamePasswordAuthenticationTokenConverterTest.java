@@ -51,13 +51,13 @@ class UsernamePasswordAuthenticationTokenConverterTest {
   }
 
   @Test
-  void setsGroupsRolesTenantsFromMemberships() {
+  void setsGroupsRolesTenantsAndMappingRulesFromMemberships() {
     final var memberships =
         new Memberships(
             new Groups(List.of("g1", "g2")),
             new Roles(List.of("r1")),
             new Tenants(List.of("t1")),
-            new MappingRules(List.of()));
+            new MappingRules(List.of("mr1")));
     when(membershipPort.resolveMembershipsForUser(eq("alice"))).thenReturn(memberships);
 
     final var auth = converter.convert(new UsernamePasswordAuthenticationToken("alice", "pw"));
@@ -65,6 +65,7 @@ class UsernamePasswordAuthenticationTokenConverterTest {
     assertThat(auth.authenticatedGroupIds()).containsExactlyInAnyOrder("g1", "g2");
     assertThat(auth.authenticatedRoleIds()).containsExactly("r1");
     assertThat(auth.authenticatedTenantIds()).containsExactly("t1");
+    assertThat(auth.authenticatedMappingRuleIds()).containsExactly("mr1");
   }
 
   @Test

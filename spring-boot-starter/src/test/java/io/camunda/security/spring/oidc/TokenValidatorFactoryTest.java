@@ -8,8 +8,7 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.time.Duration;
@@ -17,18 +16,31 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
 
+@ExtendWith(MockitoExtension.class)
 class TokenValidatorFactoryTest {
+
+  @Mock private ClientRegistration registration;
+
+  @BeforeEach
+  void setUp() {
+    // lenient — not every test consults the provider map by registration ID.
+    lenient().when(registration.getRegistrationId()).thenReturn("rid");
+  }
 
   @Test
   void shouldComposeTimestampOnlyWhenNoAudiencesOrExtras() {
-    final var registration = mockRegistration("rid");
     final var factory = new TokenValidatorFactory(Map.of(), Duration.ofSeconds(60), List.of());
 
     final var validator = factory.createTokenValidator(registration);
@@ -41,7 +53,6 @@ class TokenValidatorFactoryTest {
   void shouldIncludeAudienceValidatorWhenConfiguredForRegistration() {
     final var oidc = new OidcConfiguration();
     oidc.setAudiences(Set.of("expected-audience"));
-    final var registration = mockRegistration("rid");
 
     final var factory =
         new TokenValidatorFactory(Map.of("rid", oidc), Duration.ofSeconds(60), List.of());
@@ -54,13 +65,23 @@ class TokenValidatorFactoryTest {
   }
 
   @Test
+  void shouldSkipAudienceValidatorWhenAudiencesEmpty() {
+    final var oidc = new OidcConfiguration();
+    oidc.setAudiences(Set.of());
+
+    final var factory =
+        new TokenValidatorFactory(Map.of("rid", oidc), Duration.ofSeconds(60), List.of());
+
+    // AudienceValidator throws on an empty set — factory must skip it instead of constructing.
+    final var validator = factory.createTokenValidator(registration);
+
+    assertThat(validator.validate(validJwt()).hasErrors()).isFalse();
+  }
+
+  @Test
   void shouldAppendExtraValidators() {
-    final var registration = mockRegistration("rid");
     final OAuth2TokenValidator<Jwt> alwaysFail =
-        t ->
-            OAuth2TokenValidatorResult.failure(
-                new org.springframework.security.oauth2.core.OAuth2Error(
-                    "boom", "always fails", null));
+        t -> OAuth2TokenValidatorResult.failure(new OAuth2Error("boom", "always fails", null));
 
     final var factory =
         new TokenValidatorFactory(Map.of(), Duration.ofSeconds(60), List.of(alwaysFail));
@@ -68,12 +89,6 @@ class TokenValidatorFactoryTest {
     final var validator = factory.createTokenValidator(registration);
 
     assertThat(validator.validate(validJwt()).hasErrors()).isTrue();
-  }
-
-  private static ClientRegistration mockRegistration(final String id) {
-    final var r = mock(ClientRegistration.class);
-    when(r.getRegistrationId()).thenReturn(id);
-    return r;
   }
 
   private static Jwt validJwt() {

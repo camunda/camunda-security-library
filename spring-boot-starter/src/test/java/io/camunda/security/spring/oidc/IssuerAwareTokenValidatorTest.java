@@ -8,7 +8,7 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import java.time.Duration;
@@ -16,6 +16,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistration.ProviderDetails;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
@@ -23,30 +26,48 @@ import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
 
+@ExtendWith(MockitoExtension.class)
 class IssuerAwareTokenValidatorTest {
 
+  @Mock private ClientRegistration clientRegistration;
+  @Mock private ProviderDetails providerDetails;
+
   @Test
-  void shouldThrowExceptionWhenIssuerUnknown() {
+  void shouldRejectWhenIssuerUnknown() {
     final var validator = new IssuerAwareTokenValidator(List.of(), new NoopTokenValidatorFactory());
     final var jwt = createJwtWithIssuer("unknown-issuer");
 
     final var result = validator.validate(jwt);
 
     assertThat(result.hasErrors()).isTrue();
-
-    final var errors = result.getErrors();
-    assertThat(errors).hasSize(1);
-
-    final var error = errors.iterator().next();
+    final var error = result.getErrors().iterator().next();
     assertThat(error.getErrorCode()).isEqualTo(OAuth2ErrorCodes.INVALID_TOKEN);
     assertThat(error.getDescription()).isEqualTo("Token issuer 'unknown-issuer' is not trusted");
   }
 
   @Test
+  void shouldRejectWhenIssuerClaimAbsent() {
+    final var validator = new IssuerAwareTokenValidator(List.of(), new NoopTokenValidatorFactory());
+    final var jwt =
+        new Jwt(
+            "tv",
+            Instant.now(),
+            Instant.now().plusSeconds(60),
+            Map.of("alg", "RS256"),
+            Map.of("sub", "alice"));
+
+    final var result = validator.validate(jwt);
+
+    assertThat(result.hasErrors()).isTrue();
+    final var error = result.getErrors().iterator().next();
+    assertThat(error.getErrorCode()).isEqualTo(OAuth2ErrorCodes.INVALID_TOKEN);
+    assertThat(error.getDescription())
+        .isEqualTo("Token is missing or has a blank 'iss' (issuer) claim");
+  }
+
+  @Test
   void shouldAcceptJwtWithKnownIssuer() {
-    final var providerDetails = mock(ProviderDetails.class);
-    when(providerDetails.getIssuerUri()).thenReturn("known-issuer");
-    final var clientRegistration = mock(ClientRegistration.class);
+    lenient().when(providerDetails.getIssuerUri()).thenReturn("known-issuer");
     when(clientRegistration.getProviderDetails()).thenReturn(providerDetails);
 
     final var validator =
@@ -58,7 +79,7 @@ class IssuerAwareTokenValidatorTest {
 
   private static Jwt createJwtWithIssuer(final String issuer) {
     return new Jwt(
-        "token-value",
+        "tv",
         Instant.now(),
         Instant.now().plusSeconds(60),
         Map.of("alg", "RS256"),

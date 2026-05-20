@@ -63,16 +63,24 @@ public final class OidcPrincipalLoader {
                     .formatted(path.getPath()));
       };
     } catch (final JsonPathException e) {
-      LOG.debug("Failed to evaluate expression {} on claims {}", path, claims, e);
+      // Avoid logging claim values — they may contain PII even at DEBUG. Log the path and the
+      // set of claim keys only.
+      LOG.debug(
+          "Failed to evaluate expression {} on claims with keys {}", path, claims.keySet(), e);
       return null;
     }
   }
 
   private static String sanitize(final String claim) {
     // If the claim starts with a dollar sign, it is already a JSONPath expression.
-    // Otherwise, wrap it with the dollar sign to denote a JSONPath. Quote it to handle cases
-    // where the claim name contains special characters.
-    return claim.startsWith("$") ? claim : "$['" + claim + "']";
+    // Otherwise, wrap it with the dollar sign to denote a JSONPath. Escape backslashes and
+    // single quotes in the claim name before quoting so claim names containing those characters
+    // produce a valid JSONPath rather than breaking principal extraction.
+    if (claim.startsWith("$")) {
+      return claim;
+    }
+    final var escaped = claim.replace("\\", "\\\\").replace("'", "\\'");
+    return "$['" + escaped + "']";
   }
 
   public record OidcPrincipals(String username, String clientId) {}

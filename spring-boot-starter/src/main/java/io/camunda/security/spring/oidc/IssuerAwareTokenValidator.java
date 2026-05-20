@@ -52,6 +52,15 @@ public class IssuerAwareTokenValidator implements OAuth2TokenValidator<Jwt> {
   @Override
   public OAuth2TokenValidatorResult validate(final Jwt token) {
     final var issuer = token.getClaimAsString(CLAIM_ISSUER);
+
+    if (issuer == null || issuer.isBlank()) {
+      return OAuth2TokenValidatorResult.failure(
+          new OAuth2Error(
+              OAuth2ErrorCodes.INVALID_TOKEN,
+              "Token is missing or has a blank 'iss' (issuer) claim",
+              null));
+    }
+
     final var registration = getClientRegistrationByIssuer(issuer);
 
     if (registration == null) {

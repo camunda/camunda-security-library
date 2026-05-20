@@ -44,4 +44,12 @@ class OidcPrincipalLoaderTest {
     assertThat(principals.username()).isNull();
     assertThat(principals.clientId()).isNull();
   }
+
+  @Test
+  void escapesSingleQuotesAndBackslashesInClaimName() {
+    // Claim name containing a single quote — would produce invalid JSONPath without escaping.
+    final var loader = new OidcPrincipalLoader("user's name", null);
+    final var principals = loader.load(Map.of("user's name", "alice"));
+    assertThat(principals.username()).isEqualTo("alice");
+  }
 }
