@@ -279,6 +279,51 @@ camunda:
 
 A host-supplied `OidcUserService` bean still takes precedence in both modes (see [ADR-0014](../adr/0014-oidc-user-info-enabled-toggle.md)) — `user-info-enabled` only governs the library's default wiring.
 
+### Customising the authorisation request (`resource`, `additional_parameters`)
+
+CSL ships a default `OAuth2AuthorizationRequestResolver` (`CamundaOidcAuthorizationRequestResolver`) from `OidcBeansConfiguration`. It wraps Spring Security's `DefaultOAuth2AuthorizationRequestResolver` per registration and injects two `OidcConfiguration` properties into the outgoing OAuth2 authorisation request. Hosts that need different customizer logic register their own `OAuth2AuthorizationRequestResolver` bean; CSL backs off via `@ConditionalOnMissingBean`.
+
+#### `resource` (RFC 8707)
+
+When `resource` is set on a provider, every entry in the list is added as a `resource` query parameter on the IdP authorisation URL. Use this when the IdP requires an explicit audience for the issued access token.
+
+#### `authorize-request.additional-parameters`
+
+Arbitrary key/value pairs that are appended verbatim to the authorisation request. Useful for IdP-specific extensions such as `prompt`, `audience`, or vendor-specific switches. Values are passed through unchanged — the library does not interpret them.
+
+#### Worked example
+
+Both knobs are valid on the flat block and on any `providers.oidc.<id>.*` entry:
+
+```yaml
+camunda:
+  security:
+    authentication:
+      method: oidc
+      oidc:
+        issuer-uri: https://idp.example.com
+        client-id: camunda
+        client-secret: ${OIDC_SECRET}
+        redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+        resource:
+          - https://api.example.com
+        authorize-request:
+          additional-parameters:
+            prompt: consent
+            audience: https://api.example.com
+      providers:
+        oidc:
+          partner:
+            issuer-uri: https://partner.example.com
+            client-id: camunda-partner
+            client-secret: ${PARTNER_SECRET}
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            resource:
+              - https://partner-api.example.com
+```
+
+If you need behaviour the customizer does not cover (e.g. PKCE forcing, claims request, dynamic per-request parameters), register your own `OAuth2AuthorizationRequestResolver` bean — CSL's default will back off and the OIDC webapp chain will pick yours up automatically.
+
 ### OIDC groups claim extraction
 
 If your IdP exposes group membership in an OIDC claim, configure `camunda.security.authentication.oidc.groupsClaim` to point at that claim.
