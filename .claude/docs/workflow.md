@@ -53,7 +53,7 @@ Three hooks ship with the project in `.mvn/hooks/` and run directly from that di
 | Hook | What it does |
 |---|---|
 | `pre-push` | Runs `./mvnw -T 1C verify -DskipITs` and blocks the push on failure. |
-| `pre-commit` | Runs `spotless:apply` on staged `.java` files and re-stages the results. Aborts if a partially-staged file is reformatted, to avoid silently swallowing unstaged hunks. No-op until `spotless-maven-plugin` is configured. |
+| `pre-commit` | Runs `spotless:apply` on staged `.java` files and re-stages the results. Aborts if a partially-staged file is reformatted, to avoid silently swallowing unstaged hunks. |
 | `commit-msg` | Enforces Conventional Commits on the header line, including the 100-char limit. Merge, revert, fixup, and squash commits are exempt. |
 
 **Bypass a single git operation:** `git push --no-verify` / `git commit --no-verify`.
@@ -69,3 +69,4 @@ Run the full verification sequence before every commit:
 1. Code must compile cleanly
 2. All tests must pass
 3. No flaky tests — if a test fails intermittently, fix it before committing. Do not skip or retry.
+4. Code must be formatted — the pre-commit hook runs `spotless:apply` automatically on staged `.java` files. Do not skip it (`--no-verify`).
