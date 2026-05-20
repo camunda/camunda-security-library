@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
+import io.camunda.security.spring.oidc.CamundaOidcAuthorizationRequestResolver;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
 import jakarta.servlet.Filter;
 import jakarta.servlet.http.HttpServletRequest;
@@ -72,15 +73,37 @@ class OidcWebappAuthorizationRequestResolverHookTest {
           .withPropertyValues(OIDC_PROPERTIES);
 
   @Test
-  void chainBuildsWithoutHostResolver() {
-    // Without a host bean of type OAuth2AuthorizationRequestResolver, Spring Security's default
-    // resolver is used and the chain still builds — the SPI hook is opt-in.
+  void chainBuildsWithCslDefaultResolverWhenNoHostResolverPresent() {
+    // CSL's OidcBeansConfiguration now ships a default CamundaOidcAuthorizationRequestResolver
+    // under @ConditionalOnMissingBean(OAuth2AuthorizationRequestResolver.class). Without a host
+    // bean of that type, the chain consumes CSL's default through the same SPI hook this test
+    // class otherwise verifies host beans flow through. Asserting on the instance type (rather
+    // than just bean presence) confirms the wiring is the lifted resolver, not a stray Spring
+    // default.
     runner.run(
         ctx -> {
           assertThat(ctx).hasNotFailed();
-          assertThat(ctx).doesNotHaveBean(OAuth2AuthorizationRequestResolver.class);
-          assertThat(ctx.getBean(OIDC_CHAIN_BEAN, SecurityFilterChain.class))
-              .isInstanceOf(DefaultSecurityFilterChain.class);
+          assertThat(ctx).hasSingleBean(OAuth2AuthorizationRequestResolver.class);
+          assertThat(ctx.getBean(OAuth2AuthorizationRequestResolver.class))
+              .isInstanceOf(CamundaOidcAuthorizationRequestResolver.class);
+
+          final var chain = ctx.getBean(OIDC_CHAIN_BEAN, SecurityFilterChain.class);
+          assertThat(chain).isInstanceOf(DefaultSecurityFilterChain.class);
+          final var redirectFilter =
+              filtersOf(chain).stream()
+                  .filter(OAuth2AuthorizationRequestRedirectFilter.class::isInstance)
+                  .map(OAuth2AuthorizationRequestRedirectFilter.class::cast)
+                  .findFirst()
+                  .orElseThrow(
+                      () ->
+                          new AssertionError(
+                              "OAuth2AuthorizationRequestRedirectFilter not present in chain"));
+          final var field =
+              OAuth2AuthorizationRequestRedirectFilter.class.getDeclaredField(
+                  "authorizationRequestResolver");
+          field.setAccessible(true);
+          assertThat(field.get(redirectFilter))
+              .isInstanceOf(CamundaOidcAuthorizationRequestResolver.class);
         });
   }
 

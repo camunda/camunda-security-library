@@ -9,7 +9,9 @@ package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.security.CamundaOidcLogoutSuccessHandler;
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -18,7 +20,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 
@@ -46,7 +50,9 @@ class OidcBeansConfigurationTest {
       new ApplicationContextRunner()
           .withPropertyValues("camunda.security.authentication.method=oidc")
           .withUserConfiguration(StubOidcInfrastructure.class)
-          .withConfiguration(AutoConfigurations.of(OidcBeansConfiguration.class));
+          .withConfiguration(
+              AutoConfigurations.of(
+                  CamundaSecurityConfiguration.class, OidcBeansConfiguration.class));
 
   @Test
   void defaultCamundaOidcLogoutSuccessHandlerIsRegisteredWhenNoHostBeanPresent() {
@@ -69,6 +75,30 @@ class OidcBeansConfigurationTest {
               assertThat(ctx)
                   .getBean(LogoutSuccessHandler.class)
                   .isInstanceOf(HostLogoutSuccessHandler.NoOpLogoutSuccessHandler.class);
+            });
+  }
+
+  @Test
+  void defaultCamundaOidcAuthorizationRequestResolverIsRegisteredWhenNoHostBeanPresent() {
+    runner.run(
+        ctx -> {
+          assertThat(ctx).hasSingleBean(OAuth2AuthorizationRequestResolver.class);
+          assertThat(ctx)
+              .getBean(OAuth2AuthorizationRequestResolver.class)
+              .isInstanceOf(CamundaOidcAuthorizationRequestResolver.class);
+        });
+  }
+
+  @Test
+  void hostRegisteredAuthorizationRequestResolverSuppressesTheDefault() {
+    runner
+        .withUserConfiguration(HostAuthorizationRequestResolver.class)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasSingleBean(OAuth2AuthorizationRequestResolver.class);
+              assertThat(ctx)
+                  .getBean(OAuth2AuthorizationRequestResolver.class)
+                  .isInstanceOf(HostAuthorizationRequestResolver.NoOpResolver.class);
             });
   }
 
@@ -113,6 +143,28 @@ class OidcBeansConfigurationTest {
           final jakarta.servlet.http.HttpServletRequest request,
           final jakarta.servlet.http.HttpServletResponse response,
           final org.springframework.security.core.Authentication authentication) {}
+    }
+  }
+
+  @Configuration
+  static class HostAuthorizationRequestResolver {
+
+    @Bean
+    OAuth2AuthorizationRequestResolver hostAuthorizationRequestResolver() {
+      return new NoOpResolver();
+    }
+
+    static final class NoOpResolver implements OAuth2AuthorizationRequestResolver {
+      @Override
+      public OAuth2AuthorizationRequest resolve(final HttpServletRequest request) {
+        return null;
+      }
+
+      @Override
+      public OAuth2AuthorizationRequest resolve(
+          final HttpServletRequest request, final String clientRegistrationId) {
+        return null;
+      }
     }
   }
 }

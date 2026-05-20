@@ -36,6 +36,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
@@ -223,22 +224,32 @@ public class OidcBeansConfiguration {
     return StringUtils.hasText(oidc.getJwkSetUri()) || StringUtils.hasText(oidc.getIssuerUri());
   }
 
-  @Bean
-  @ConditionalOnMissingBean
-  public ClientRegistrationRepository clientRegistrationRepository(
-      final CamundaSecurityLibraryProperties properties) {
-    final var authentication = properties.getAuthentication();
+  /**
+   * Merges the flat {@code authentication.oidc.*} block and the {@code
+   * authentication.providers.oidc.*} map into a single {@link OidcConfiguration} map keyed by
+   * registrationId. The flat block contributes one entry under {@code flat.getRegistrationId()}
+   * when {@code clientId} is set; provider entries are put on top so a colliding provider id
+   * overwrites the flat entry. Identical merge semantics to OC's {@code
+   * OidcAuthenticationConfigurationRepository}.
+   */
+  private static Map<String, OidcConfiguration> buildOidcSources(
+      final AuthenticationConfiguration authentication) {
     final OidcConfiguration flat = authentication.getOidc();
     final Map<String, OidcConfiguration> providers = authentication.getProviders().getOidc();
-
-    // Mirrors OC's OidcAuthenticationConfigurationRepository: the flat block contributes a single
-    // registration under its own registrationId when clientId is set; the providers map is merged
-    // on top so a colliding provider id overwrites the flat entry.
     final Map<String, OidcConfiguration> sources = new LinkedHashMap<>();
     if (StringUtils.hasText(flat.getClientId())) {
       sources.put(flat.getRegistrationId(), flat);
     }
     sources.putAll(providers);
+    return sources;
+  }
+
+  @Bean
+  @ConditionalOnMissingBean
+  public ClientRegistrationRepository clientRegistrationRepository(
+      final CamundaSecurityLibraryProperties properties) {
+    final var authentication = properties.getAuthentication();
+    final Map<String, OidcConfiguration> sources = buildOidcSources(authentication);
 
     if (sources.isEmpty()) {
       throw new IllegalStateException(
@@ -346,6 +357,28 @@ public class OidcBeansConfiguration {
           Map.of("end_session_endpoint", oidc.getEndSessionEndpointUri()));
     }
     return builder;
+  }
+
+  /**
+   * Default {@link OAuth2AuthorizationRequestResolver} for the OIDC webapp chain. Injects
+   * per-provider {@code additional_parameters} and the RFC 8707 {@code resource} parameter from
+   * {@link OidcConfiguration} into the outgoing {@link
+   * org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest}. Backs off via
+   * {@link ConditionalOnMissingBean} when the host registers its own resolver — e.g. OC's existing
+   * {@code ClientAwareOAuth2AuthorizationRequestResolver}, until the monorepo cleanup PR removes
+   * it.
+   *
+   * <p>The {@link OidcConfiguration} sources map is built from the same flat-plus-providers merge
+   * as {@link #clientRegistrationRepository(CamundaSecurityLibraryProperties)} via {@link
+   * #buildOidcSources(AuthenticationConfiguration)} so registrationIds stay aligned.
+   */
+  @Bean
+  @ConditionalOnMissingBean(OAuth2AuthorizationRequestResolver.class)
+  public OAuth2AuthorizationRequestResolver oauth2AuthorizationRequestResolver(
+      final ClientRegistrationRepository clientRegistrationRepository,
+      final CamundaSecurityLibraryProperties properties) {
+    return new CamundaOidcAuthorizationRequestResolver(
+        clientRegistrationRepository, buildOidcSources(properties.getAuthentication()));
   }
 
   @Bean
