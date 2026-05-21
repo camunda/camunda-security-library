@@ -12,7 +12,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import io.camunda.security.api.model.auth.Memberships;
+import io.camunda.security.api.model.auth.MembershipProvider;
 import io.camunda.security.core.port.out.MembershipPort;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -27,6 +27,7 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 class UsernamePasswordAuthenticationTokenConverterTest {
 
   @Mock private MembershipPort membershipPort;
+  @Mock private MembershipProvider provider;
   @InjectMocks private UsernamePasswordAuthenticationTokenConverter converter;
 
   @Test
@@ -41,28 +42,39 @@ class UsernamePasswordAuthenticationTokenConverterTest {
 
   @Test
   void setsUsernameOnAuthentication() {
-    when(membershipPort.resolveMembershipsForUser(eq("alice"))).thenReturn(Memberships.empty());
+    when(membershipPort.createProviderForUser(eq("alice"))).thenReturn(provider);
     final var auth = converter.convert(new UsernamePasswordAuthenticationToken("alice", "pw"));
     assertThat(auth.authenticatedUsername()).isEqualTo("alice");
   }
 
   @Test
-  void setsGroupsRolesTenantsAndMappingRulesFromMemberships() {
-    final var memberships =
-        new Memberships(List.of("g1", "g2"), List.of("r1"), List.of("t1"), List.of("mr1"));
-    when(membershipPort.resolveMembershipsForUser(eq("alice"))).thenReturn(memberships);
+  void wiresGroupsRolesTenantsFromProvider() {
+    when(membershipPort.createProviderForUser(eq("alice"))).thenReturn(provider);
+    when(provider.groups()).thenReturn(List.of("g1", "g2"));
+    when(provider.roles()).thenReturn(List.of("r1"));
+    when(provider.tenants()).thenReturn(List.of("t1"));
 
     final var auth = converter.convert(new UsernamePasswordAuthenticationToken("alice", "pw"));
 
     assertThat(auth.authenticatedGroupIds()).containsExactlyInAnyOrder("g1", "g2");
     assertThat(auth.authenticatedRoleIds()).containsExactly("r1");
     assertThat(auth.authenticatedTenantIds()).containsExactly("t1");
-    assertThat(auth.authenticatedMappingRuleIds()).containsExactly("mr1");
+  }
+
+  @Test
+  void mappingRulesSupplierNotWiredForBasicAuth() {
+    when(membershipPort.createProviderForUser(eq("alice"))).thenReturn(provider);
+
+    final var auth = converter.convert(new UsernamePasswordAuthenticationToken("alice", "pw"));
+
+    // BASIC has no claims; converter intentionally does not wire mappingRulesSupplier, so the
+    // record's default empty list is returned without ever calling the provider.
+    assertThat(auth.authenticatedMappingRuleIds()).isEmpty();
   }
 
   @Test
   void claimsAreEmpty() {
-    when(membershipPort.resolveMembershipsForUser(eq("alice"))).thenReturn(Memberships.empty());
+    when(membershipPort.createProviderForUser(eq("alice"))).thenReturn(provider);
     final var auth = converter.convert(new UsernamePasswordAuthenticationToken("alice", "pw"));
     assertThat(auth.claims()).isEmpty();
   }

@@ -33,13 +33,15 @@ public final class UsernamePasswordAuthenticationTokenConverter
   @Override
   public CamundaAuthentication convert(final Authentication authentication) {
     final var username = authentication.getName();
-    final var memberships = membershipPort.resolveMembershipsForUser(username);
+    final var memberships = membershipPort.createProviderForUser(username);
+    // BASIC auth has no token claims and never produces CLIENT principals; mappingRulesSupplier
+    // is deliberately not wired so authenticatedMappingRuleIds() returns the record's default
+    // empty list without invoking the provider.
     return CamundaAuthentication.of(
         a ->
             a.user(username)
-                .groupIds(memberships.groupIds())
-                .roleIds(memberships.roleIds())
-                .tenants(memberships.tenantIds())
-                .mappingRules(memberships.mappingRuleIds()));
+                .groupIdsSupplier(memberships::groups)
+                .roleIdsSupplier(memberships::roles)
+                .tenantsSupplier(memberships::tenants));
   }
 }
