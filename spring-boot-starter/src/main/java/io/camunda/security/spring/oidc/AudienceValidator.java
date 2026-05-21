@@ -30,7 +30,7 @@ public final class AudienceValidator implements OAuth2TokenValidator<Jwt> {
    * @param validAudiences the valid audiences. Must not be empty.
    */
   public AudienceValidator(final Set<String> validAudiences) {
-    if (validAudiences.isEmpty()) {
+    if (validAudiences == null || validAudiences.isEmpty()) {
       throw new IllegalArgumentException("At least one valid audience must be provided");
     }
     this.validAudiences = Set.copyOf(validAudiences);

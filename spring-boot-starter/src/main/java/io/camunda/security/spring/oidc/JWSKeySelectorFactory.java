@@ -113,7 +113,7 @@ public class JWSKeySelectorFactory {
   protected URL toURL(final String jwkSetUri) {
     try {
       return URI.create(jwkSetUri).toURL();
-    } catch (final MalformedURLException ex) {
+    } catch (final MalformedURLException | IllegalArgumentException ex) {
       throw new IllegalArgumentException(
           ERROR_INVALID_JWK_SET_URI.formatted(jwkSetUri, ex.getMessage()), ex);
     }

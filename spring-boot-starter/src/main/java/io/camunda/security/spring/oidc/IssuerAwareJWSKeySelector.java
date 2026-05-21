@@ -70,9 +70,16 @@ public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelecto
       throw new KeySourceException(ERROR_MISSING_ISSUER);
     }
 
-    return selectors
-        .computeIfAbsent(issuer, this::createJWSKeySelector)
-        .selectJWSKeys(jwsHeader, securityContext);
+    try {
+      return selectors
+          .computeIfAbsent(issuer, this::createJWSKeySelector)
+          .selectJWSKeys(jwsHeader, securityContext);
+    } catch (final IllegalArgumentException ex) {
+      // getClientRegistrationByIssuer throws IllegalArgumentException for unknown issuers.
+      // selectKeys is declared to throw KeySourceException; NimbusJwtDecoder only maps the
+      // latter to invalid_token, so wrap to surface the right response code to the caller.
+      throw new KeySourceException(ex.getMessage(), ex);
+    }
   }
 
   /**

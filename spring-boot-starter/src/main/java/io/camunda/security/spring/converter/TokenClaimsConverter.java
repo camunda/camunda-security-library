@@ -41,7 +41,7 @@ public final class TokenClaimsConverter {
 
     if (username == null && clientId == null) {
       throw new OAuth2AuthenticationException(
-          new OAuth2Error(OAuth2ErrorCodes.INVALID_CLIENT),
+          new OAuth2Error(OAuth2ErrorCodes.INVALID_TOKEN),
           "Neither username claim (%s) nor clientId claim (%s) could be found in the claims."
               .formatted(usernameClaim, clientIdClaim));
     }

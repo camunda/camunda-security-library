@@ -23,6 +23,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 
 @ExtendWith(MockitoExtension.class)
 class TokenClaimsConverterTest {
@@ -72,7 +73,12 @@ class TokenClaimsConverterTest {
   void throwsWhenNeitherClaimPresent() {
     final var converter = new TokenClaimsConverter(oidcConfig, membershipPort);
     assertThatThrownBy(() -> converter.convert(Map.of("other", "value")))
-        .isInstanceOf(OAuth2AuthenticationException.class);
+        .isInstanceOfSatisfying(
+            OAuth2AuthenticationException.class,
+            ex ->
+                assertThat(ex.getError().getErrorCode())
+                    .as("RFC 6750: missing required claims is invalid_token, not invalid_client")
+                    .isEqualTo(OAuth2ErrorCodes.INVALID_TOKEN));
   }
 
   @Test
