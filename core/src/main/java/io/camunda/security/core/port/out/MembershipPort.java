@@ -7,23 +7,37 @@
  */
 package io.camunda.security.core.port.out;
 
-import io.camunda.security.api.model.auth.Memberships;
+import io.camunda.security.api.model.auth.MembershipProvider;
 import java.util.Map;
 
 /**
- * Outbound port the host implements to resolve group, role, tenant, and mapping-rule memberships
- * for a principal. The library's authentication converters call this port; the host owns where the
- * data comes from (search index, RDBMS, in-memory, …).
+ * Outbound port the host implements to provide per-field membership resolution for an authenticated
+ * principal. The host returns a {@link MembershipProvider} whose accessor methods the library wires
+ * as {@code *Supplier} fields on the produced {@code CamundaAuthentication}, so each membership
+ * type is resolved only when its field is actually read.
+ *
+ * <p>The library does not prescribe how the provider is implemented — eager precomputation wrapped
+ * behind the accessors, fully lazy with per-method memoisation, or anything in between is a host
+ * concern. The contract is just "given a principal, return an object that answers groups / roles /
+ * tenants / mapping rules".
  */
 public interface MembershipPort {
 
-  /** Resolves memberships for an OIDC principal identified by token claims. */
-  Memberships resolveMemberships(
+  /**
+   * Returns a per-field accessor for an OIDC-style principal identified by token claims.
+   *
+   * @param tokenClaims the raw claims carried by the authentication token (may be queried by the
+   *     host's provider implementation, e.g. for OIDC groups-claim extraction)
+   * @param principalId the principal ID (username or client ID)
+   * @param principalType USER or CLIENT
+   */
+  MembershipProvider createProvider(
       Map<String, Object> tokenClaims, String principalId, PrincipalType principalType);
 
-  /** Resolves memberships for a username/password principal. */
-  Memberships resolveMembershipsForUser(String username);
+  /** Returns a per-field accessor for a BASIC-style principal (username, no claims, USER type). */
+  MembershipProvider createProviderForUser(String username);
 
+  /** Identity type of the authenticated principal. */
   enum PrincipalType {
     USER,
     CLIENT

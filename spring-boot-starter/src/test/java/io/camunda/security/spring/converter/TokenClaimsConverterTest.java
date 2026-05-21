@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
-import io.camunda.security.api.model.auth.Memberships;
+import io.camunda.security.api.model.auth.MembershipProvider;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.core.port.out.MembershipPort.PrincipalType;
@@ -29,6 +29,7 @@ import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 class TokenClaimsConverterTest {
 
   @Mock private MembershipPort membershipPort;
+  @Mock private MembershipProvider provider;
   private OidcConfiguration oidcConfig;
 
   @BeforeEach
@@ -41,9 +42,10 @@ class TokenClaimsConverterTest {
   @Test
   void convertsUserPrincipalFromClaims() {
     final var claims = Map.<String, Object>of("sub", "alice", "azp", "client1");
-    final var memberships = new Memberships(List.of("g1"), List.of("r1"), List.of("t1"), List.of());
-    when(membershipPort.resolveMemberships(claims, "alice", PrincipalType.USER))
-        .thenReturn(memberships);
+    when(membershipPort.createProvider(claims, "alice", PrincipalType.USER)).thenReturn(provider);
+    when(provider.groups()).thenReturn(List.of("g1"));
+    when(provider.roles()).thenReturn(List.of("r1"));
+    when(provider.tenants()).thenReturn(List.of("t1"));
     oidcConfig.setPreferUsernameClaim(true);
 
     final var converter = new TokenClaimsConverter(oidcConfig, membershipPort);
@@ -60,8 +62,8 @@ class TokenClaimsConverterTest {
   void convertsClientPrincipalWhenNoUsername() {
     oidcConfig.setUsernameClaim(null);
     final var claims = Map.<String, Object>of("azp", "service-client");
-    when(membershipPort.resolveMemberships(claims, "service-client", PrincipalType.CLIENT))
-        .thenReturn(Memberships.empty());
+    when(membershipPort.createProvider(claims, "service-client", PrincipalType.CLIENT))
+        .thenReturn(provider);
 
     final var converter = new TokenClaimsConverter(oidcConfig, membershipPort);
     final var auth = converter.convert(claims);
@@ -85,8 +87,7 @@ class TokenClaimsConverterTest {
   void preferUsernameClaimFlagSelectsUser() {
     oidcConfig.setPreferUsernameClaim(true);
     final var claims = Map.<String, Object>of("sub", "alice", "azp", "client1");
-    when(membershipPort.resolveMemberships(claims, "alice", PrincipalType.USER))
-        .thenReturn(Memberships.empty());
+    when(membershipPort.createProvider(claims, "alice", PrincipalType.USER)).thenReturn(provider);
 
     final var converter = new TokenClaimsConverter(oidcConfig, membershipPort);
     final var auth = converter.convert(claims);
