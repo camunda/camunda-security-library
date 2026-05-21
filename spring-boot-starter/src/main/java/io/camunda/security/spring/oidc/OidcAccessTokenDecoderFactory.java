@@ -10,6 +10,7 @@ package io.camunda.security.spring.oidc;
 import static com.nimbusds.jose.JOSEObjectType.JWT;
 
 import com.nimbusds.jose.JOSEObjectType;
+import com.nimbusds.jose.KeySourceException;
 import com.nimbusds.jose.proc.DefaultJOSEObjectTypeVerifier;
 import com.nimbusds.jose.proc.JOSEObjectTypeVerifier;
 import com.nimbusds.jose.proc.SecurityContext;
@@ -25,8 +26,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.jwt.JwtTypeValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
@@ -89,7 +92,7 @@ public class OidcAccessTokenDecoderFactory {
     final var jwtProcessor =
         createIssuerAwareJwtProcessor(clientRegistrations, additionalJwkSetUrisByIssuer);
     final var jwtValidator = createIssuerAwareJwtValidator(clientRegistrations);
-    return createNimbusJwtDecoder(jwtProcessor, jwtValidator);
+    return wrapKeySourceFailuresAsBadJwt(createNimbusJwtDecoder(jwtProcessor, jwtValidator));
   }
 
   /**
@@ -142,7 +145,46 @@ public class OidcAccessTokenDecoderFactory {
     LOG.debug("Additional JWK Set URIs: {}", additionalJwkSetUris);
     final var jwtProcessor = createJwtProcessor(clientRegistration, additionalJwkSetUris);
     final var jwtValidator = createJwtValidator(clientRegistration);
-    return createNimbusJwtDecoder(jwtProcessor, jwtValidator);
+    return wrapKeySourceFailuresAsBadJwt(createNimbusJwtDecoder(jwtProcessor, jwtValidator));
+  }
+
+  /**
+   * Wraps a {@link JwtDecoder} so failures caused by {@link BadJwtKeySourceException} are mapped
+   * from the generic {@link JwtException} that {@link NimbusJwtDecoder} produces to a {@link
+   * BadJwtException}.
+   *
+   * <p>Why this matters: Spring Security's {@code JwtAuthenticationProvider} only translates {@link
+   * BadJwtException} (and its {@code InvalidBearerTokenException} sibling) into the {@code
+   * invalid_token} response. A plain {@link JwtException} becomes {@code
+   * AuthenticationServiceException} and surfaces as HTTP 500. {@link IssuerAwareJWSKeySelector}
+   * throws {@link BadJwtKeySourceException} for token-level faults (unknown or missing {@code iss}
+   * claim) — semantically those are bad tokens and the resource server should answer with HTTP 401
+   * {@code invalid_token}.
+   *
+   * <p>The wrap deliberately matches only the {@link BadJwtKeySourceException} marker, not the
+   * generic {@link KeySourceException} base type. Plain {@link KeySourceException} is reused by
+   * other parts of the stack (e.g. {@link CompositeJWKSource} for JWKS retrieval failures, Nimbus's
+   * {@code RemoteJWKSet} for I/O errors); those are infrastructure faults and should keep their
+   * {@link JwtException} mapping so an IdP outage surfaces as a 500 rather than a misleading 401.
+   *
+   * <p>{@link NimbusJwtDecoder} catches {@link KeySourceException} (a {@code JOSEException}) and
+   * rewraps it as a {@link JwtException} rather than a {@link BadJwtException}; this wrap restores
+   * the correct response code at the boundary every adopter of CSL consumes, without disguising
+   * outages as authentication failures.
+   */
+  static JwtDecoder wrapKeySourceFailuresAsBadJwt(final JwtDecoder delegate) {
+    return token -> {
+      try {
+        return delegate.decode(token);
+      } catch (final BadJwtException ex) {
+        throw ex;
+      } catch (final JwtException ex) {
+        if (ex.getCause() instanceof BadJwtKeySourceException) {
+          throw new BadJwtException(ex.getMessage(), ex.getCause());
+        }
+        throw ex;
+      }
+    };
   }
 
   /**
