@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring;
 
+import io.camunda.security.spring.context.CamundaAuthenticationBeansConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
 import io.camunda.security.spring.security.AdminUserCheckFilterConfiguration;
@@ -46,6 +47,7 @@ import org.springframework.context.annotation.Import;
 @AutoConfiguration
 @Import({
   CamundaSecurityConfiguration.class,
+  CamundaAuthenticationBeansConfiguration.class,
   BaseSecurityConfiguration.class,
   BasicAuthApiSecurityConfiguration.class,
   BasicAuthWebappSecurityConfiguration.class,
