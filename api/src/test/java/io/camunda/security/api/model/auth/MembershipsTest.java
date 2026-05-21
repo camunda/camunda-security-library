@@ -17,23 +17,18 @@ class MembershipsTest {
   @Test
   void emptyMembershipsHaveNoMembers() {
     final var m = Memberships.empty();
-    assertThat(m.groups().groupIds()).isEmpty();
-    assertThat(m.roles().roleIds()).isEmpty();
-    assertThat(m.tenants().tenantIds()).isEmpty();
-    assertThat(m.mappingRules().mappingRuleIds()).isEmpty();
+    assertThat(m.groupIds()).isEmpty();
+    assertThat(m.roleIds()).isEmpty();
+    assertThat(m.tenantIds()).isEmpty();
+    assertThat(m.mappingRuleIds()).isEmpty();
   }
 
   @Test
   void membershipsHoldProvidedValues() {
-    final var m =
-        new Memberships(
-            new Groups(List.of("g1")),
-            new Roles(List.of("r1")),
-            new Tenants(List.of("t1")),
-            new MappingRules(List.of("mr1")));
-    assertThat(m.groups().groupIds()).containsExactly("g1");
-    assertThat(m.roles().roleIds()).containsExactly("r1");
-    assertThat(m.tenants().tenantIds()).containsExactly("t1");
-    assertThat(m.mappingRules().mappingRuleIds()).containsExactly("mr1");
+    final var m = new Memberships(List.of("g1"), List.of("r1"), List.of("t1"), List.of("mr1"));
+    assertThat(m.groupIds()).containsExactly("g1");
+    assertThat(m.roleIds()).containsExactly("r1");
+    assertThat(m.tenantIds()).containsExactly("t1");
+    assertThat(m.mappingRuleIds()).containsExactly("mr1");
   }
 }

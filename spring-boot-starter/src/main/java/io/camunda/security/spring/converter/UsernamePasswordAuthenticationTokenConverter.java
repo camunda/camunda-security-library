@@ -37,9 +37,9 @@ public final class UsernamePasswordAuthenticationTokenConverter
     return CamundaAuthentication.of(
         a ->
             a.user(username)
-                .groupIds(memberships.groups().groupIds())
-                .roleIds(memberships.roles().roleIds())
-                .tenants(memberships.tenants().tenantIds())
-                .mappingRules(memberships.mappingRules().mappingRuleIds()));
+                .groupIds(memberships.groupIds())
+                .roleIds(memberships.roleIds())
+                .tenants(memberships.tenantIds())
+                .mappingRules(memberships.mappingRuleIds()));
   }
 }

@@ -11,11 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
-import io.camunda.security.api.model.auth.Groups;
-import io.camunda.security.api.model.auth.MappingRules;
 import io.camunda.security.api.model.auth.Memberships;
-import io.camunda.security.api.model.auth.Roles;
-import io.camunda.security.api.model.auth.Tenants;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.core.port.out.MembershipPort.PrincipalType;
@@ -44,12 +40,7 @@ class TokenClaimsConverterTest {
   @Test
   void convertsUserPrincipalFromClaims() {
     final var claims = Map.<String, Object>of("sub", "alice", "azp", "client1");
-    final var memberships =
-        new Memberships(
-            new Groups(List.of("g1")),
-            new Roles(List.of("r1")),
-            new Tenants(List.of("t1")),
-            new MappingRules(List.of()));
+    final var memberships = new Memberships(List.of("g1"), List.of("r1"), List.of("t1"), List.of());
     when(membershipPort.resolveMemberships(claims, "alice", PrincipalType.USER))
         .thenReturn(memberships);
     oidcConfig.setPreferUsernameClaim(true);

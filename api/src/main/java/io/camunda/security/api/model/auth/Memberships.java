@@ -9,13 +9,17 @@ package io.camunda.security.api.model.auth;
 
 import java.util.List;
 
-public record Memberships(Groups groups, Roles roles, Tenants tenants, MappingRules mappingRules) {
+/**
+ * Group, role, tenant, and mapping-rule memberships resolved for a principal by the host's {@code
+ * MembershipPort} implementation.
+ */
+public record Memberships(
+    List<String> groupIds,
+    List<String> roleIds,
+    List<String> tenantIds,
+    List<String> mappingRuleIds) {
 
   public static Memberships empty() {
-    return new Memberships(
-        new Groups(List.of()),
-        new Roles(List.of()),
-        new Tenants(List.of()),
-        new MappingRules(List.of()));
+    return new Memberships(List.of(), List.of(), List.of(), List.of());
   }
 }

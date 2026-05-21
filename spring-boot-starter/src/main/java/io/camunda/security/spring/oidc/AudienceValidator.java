@@ -10,8 +10,6 @@ package io.camunda.security.spring.oidc;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
@@ -24,7 +22,6 @@ import org.springframework.security.oauth2.jwt.Jwt;
  */
 public final class AudienceValidator implements OAuth2TokenValidator<Jwt> {
 
-  private static final Logger LOG = LoggerFactory.getLogger(AudienceValidator.class);
   private final Set<String> validAudiences;
 
   /**
@@ -50,10 +47,6 @@ public final class AudienceValidator implements OAuth2TokenValidator<Jwt> {
       }
     }
 
-    LOG.debug(
-        "Rejected token with audiences '{}', expected at least one of '{}'",
-        tokenAudiences,
-        validAudiences);
     return OAuth2TokenValidatorResult.failure(
         new OAuth2Error(
             OAuth2ErrorCodes.INVALID_TOKEN,

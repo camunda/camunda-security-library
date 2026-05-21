@@ -66,10 +66,10 @@ public final class TokenClaimsConverter {
           } else {
             a.user(principalName);
           }
-          return a.groupIds(memberships.groups().groupIds())
-              .roleIds(memberships.roles().roleIds())
-              .tenants(memberships.tenants().tenantIds())
-              .mappingRules(memberships.mappingRules().mappingRuleIds())
+          return a.groupIds(memberships.groupIds())
+              .roleIds(memberships.roleIds())
+              .tenants(memberships.tenantIds())
+              .mappingRules(memberships.mappingRuleIds())
               .claims(tokenClaims);
         });
   }

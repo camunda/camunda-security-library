@@ -12,11 +12,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import io.camunda.security.api.model.auth.Groups;
-import io.camunda.security.api.model.auth.MappingRules;
 import io.camunda.security.api.model.auth.Memberships;
-import io.camunda.security.api.model.auth.Roles;
-import io.camunda.security.api.model.auth.Tenants;
 import io.camunda.security.core.port.out.MembershipPort;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -53,11 +49,7 @@ class UsernamePasswordAuthenticationTokenConverterTest {
   @Test
   void setsGroupsRolesTenantsAndMappingRulesFromMemberships() {
     final var memberships =
-        new Memberships(
-            new Groups(List.of("g1", "g2")),
-            new Roles(List.of("r1")),
-            new Tenants(List.of("t1")),
-            new MappingRules(List.of("mr1")));
+        new Memberships(List.of("g1", "g2"), List.of("r1"), List.of("t1"), List.of("mr1"));
     when(membershipPort.resolveMembershipsForUser(eq("alice"))).thenReturn(memberships);
 
     final var auth = converter.convert(new UsernamePasswordAuthenticationToken("alice", "pw"));
