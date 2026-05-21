@@ -30,10 +30,10 @@
       "addLabels": ["automerge"]
     },
     {
-      "description": "Skip digest updates for the renovate bot image used by renovatelint — it is a lint-only container and the digest churn is pure review noise.",
+      "description": "Skip non-major updates for the renovate bot image used by renovatelint — it is a lint-only container and the frequent minor/patch/digest churn is pure review noise. Major bumps still surface so we don't drift indefinitely.",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["ghcr.io/renovatebot/renovate"],
-      "matchUpdateTypes": ["digest"],
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
       "enabled": false
     }
   ]
