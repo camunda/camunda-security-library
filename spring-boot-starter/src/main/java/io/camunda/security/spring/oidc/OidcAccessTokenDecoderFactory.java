@@ -149,20 +149,28 @@ public class OidcAccessTokenDecoderFactory {
   }
 
   /**
-   * Wraps a {@link JwtDecoder} so failures with a {@link KeySourceException} cause are mapped from
-   * the generic {@link JwtException} that {@link NimbusJwtDecoder} produces to a {@link
+   * Wraps a {@link JwtDecoder} so failures caused by {@link BadJwtKeySourceException} are mapped
+   * from the generic {@link JwtException} that {@link NimbusJwtDecoder} produces to a {@link
    * BadJwtException}.
    *
    * <p>Why this matters: Spring Security's {@code JwtAuthenticationProvider} only translates {@link
    * BadJwtException} (and its {@code InvalidBearerTokenException} sibling) into the {@code
    * invalid_token} response. A plain {@link JwtException} becomes {@code
-   * AuthenticationServiceException} and surfaces as a 500. {@link IssuerAwareJWSKeySelector} throws
-   * {@link KeySourceException} for an unknown {@code iss} claim — semantically that's a bad token,
-   * not a service-level failure, and resource servers should answer with 401 {@code invalid_token}.
+   * AuthenticationServiceException} and surfaces as HTTP 500. {@link IssuerAwareJWSKeySelector}
+   * throws {@link BadJwtKeySourceException} for token-level faults (unknown or missing {@code iss}
+   * claim) — semantically those are bad tokens and the resource server should answer with HTTP 401
+   * {@code invalid_token}.
+   *
+   * <p>The wrap deliberately matches only the {@link BadJwtKeySourceException} marker, not the
+   * generic {@link KeySourceException} base type. Plain {@link KeySourceException} is reused by
+   * other parts of the stack (e.g. {@link CompositeJWKSource} for JWKS retrieval failures, Nimbus's
+   * {@code RemoteJWKSet} for I/O errors); those are infrastructure faults and should keep their
+   * {@link JwtException} mapping so an IdP outage surfaces as a 500 rather than a misleading 401.
    *
    * <p>{@link NimbusJwtDecoder} catches {@link KeySourceException} (a {@code JOSEException}) and
    * rewraps it as a {@link JwtException} rather than a {@link BadJwtException}; this wrap restores
-   * the correct response code at the boundary every adopter of CSL consumes.
+   * the correct response code at the boundary every adopter of CSL consumes, without disguising
+   * outages as authentication failures.
    */
   static JwtDecoder wrapKeySourceFailuresAsBadJwt(final JwtDecoder delegate) {
     return token -> {
@@ -171,7 +179,7 @@ public class OidcAccessTokenDecoderFactory {
       } catch (final BadJwtException ex) {
         throw ex;
       } catch (final JwtException ex) {
-        if (ex.getCause() instanceof KeySourceException) {
+        if (ex.getCause() instanceof BadJwtKeySourceException) {
           throw new BadJwtException(ex.getMessage(), ex.getCause());
         }
         throw ex;

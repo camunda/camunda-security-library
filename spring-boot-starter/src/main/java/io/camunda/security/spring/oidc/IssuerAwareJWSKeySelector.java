@@ -67,7 +67,9 @@ public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelecto
     final var issuer = jwtClaimsSet.getIssuer();
 
     if (issuer == null || issuer.isBlank()) {
-      throw new KeySourceException(ERROR_MISSING_ISSUER);
+      // Token-level fault (the token doesn't carry an issuer) — use the marker subtype so
+      // OidcAccessTokenDecoderFactory remaps to BadJwtException → 401 invalid_token.
+      throw new BadJwtKeySourceException(ERROR_MISSING_ISSUER);
     }
 
     try {
@@ -76,9 +78,11 @@ public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelecto
           .selectJWSKeys(jwsHeader, securityContext);
     } catch (final IllegalArgumentException ex) {
       // getClientRegistrationByIssuer throws IllegalArgumentException for unknown issuers.
-      // selectKeys is declared to throw KeySourceException; NimbusJwtDecoder only maps the
-      // latter to invalid_token, so wrap to surface the right response code to the caller.
-      throw new KeySourceException(ex.getMessage(), ex);
+      // selectKeys is declared to throw KeySourceException; using the BadJwtKeySourceException
+      // marker subtype lets OidcAccessTokenDecoderFactory distinguish this client-fault case
+      // from infrastructure-fault KeySourceExceptions (e.g. JWKS outage) and map only the
+      // former to BadJwtException → 401 invalid_token.
+      throw new BadJwtKeySourceException(ex.getMessage(), ex);
     }
   }
 

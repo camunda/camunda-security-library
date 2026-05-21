@@ -12,7 +12,6 @@ import static org.mockito.Mockito.when;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
-import com.nimbusds.jose.KeySourceException;
 import com.nimbusds.jwt.JWTClaimsSet;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -30,7 +29,7 @@ class IssuerAwareJWSKeySelectorTest {
   @Mock private ProviderDetails providerDetails;
 
   @Test
-  void shouldThrowKeySourceExceptionForUnknownIssuer() {
+  void shouldThrowBadJwtKeySourceExceptionForUnknownIssuer() {
     when(clientRegistration.getProviderDetails()).thenReturn(providerDetails);
     when(providerDetails.getIssuerUri()).thenReturn("https://known-issuer");
 
@@ -39,22 +38,25 @@ class IssuerAwareJWSKeySelectorTest {
     final var claims = new JWTClaimsSet.Builder().issuer("https://other-issuer").build();
     final var header = new JWSHeader(JWSAlgorithm.RS256);
 
-    // The internal lookup throws IllegalArgumentException for unknown issuers, but the
-    // selectKeys contract is to throw KeySourceException so NimbusJwtDecoder maps it to
-    // invalid_token. Wrapping is verified here.
+    // The internal lookup throws IllegalArgumentException for unknown issuers; selectKeys must
+    // wrap that as the BadJwtKeySourceException marker subtype so
+    // OidcAccessTokenDecoderFactory maps it to BadJwtException → 401 invalid_token rather than
+    // a generic 500.
     assertThatThrownBy(() -> selector.selectKeys(header, claims, null))
-        .isInstanceOf(KeySourceException.class)
+        .isInstanceOf(BadJwtKeySourceException.class)
         .hasMessageContaining("https://other-issuer");
   }
 
   @Test
-  void shouldThrowKeySourceExceptionForMissingIssuer() {
+  void shouldThrowBadJwtKeySourceExceptionForMissingIssuer() {
     final var selector = new IssuerAwareJWSKeySelector(List.of(), jwsKeySelectorFactory);
     final var claims = new JWTClaimsSet.Builder().build();
     final var header = new JWSHeader(JWSAlgorithm.RS256);
 
+    // Missing 'iss' is a token-level fault — should use the marker subtype, not bare
+    // KeySourceException, so the caller surfaces a 401 invalid_token rather than a 500.
     assertThatThrownBy(() -> selector.selectKeys(header, claims, null))
-        .isInstanceOf(KeySourceException.class)
+        .isInstanceOf(BadJwtKeySourceException.class)
         .hasMessageContaining("Missing or empty");
   }
 }
