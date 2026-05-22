@@ -20,9 +20,10 @@ import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 
 /**
  * Converts OIDC token claims into a {@link CamundaAuthentication} with lazily-resolved membership
- * fields. The converter wires four chained {@link LazyList} instances — each backed by one {@link
- * MembershipPort} method and capturing a reference to the upstream lists — so each membership type
- * is resolved only when its field is first read, and the chain runs at most once per step.
+ * fields. The converter wires four chained lazy lists via {@link CamundaAuthentication#lazyList} —
+ * each backed by one {@link MembershipPort} method and capturing a reference to the upstream lists
+ * — so each membership type is resolved only when its field is first read, and the chain runs at
+ * most once per step.
  */
 public final class LazyTokenClaimsConverter {
 
