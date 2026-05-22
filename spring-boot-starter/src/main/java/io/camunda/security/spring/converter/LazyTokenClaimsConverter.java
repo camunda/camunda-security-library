@@ -8,11 +8,11 @@
 package io.camunda.security.spring.converter;
 
 import io.camunda.security.api.model.CamundaAuthentication;
-import io.camunda.security.api.model.auth.MembershipPort;
-import io.camunda.security.api.model.auth.MembershipPort.PrincipalType;
-import io.camunda.security.api.model.auth.MembershipQuery;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.oidc.OidcPrincipalLoader;
+import io.camunda.security.core.port.out.MembershipPort;
+import io.camunda.security.core.port.out.MembershipPort.PrincipalType;
+import io.camunda.security.core.port.out.MembershipQuery;
 import java.util.Map;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;

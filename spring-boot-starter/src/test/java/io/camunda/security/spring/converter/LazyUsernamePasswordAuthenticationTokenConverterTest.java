@@ -14,7 +14,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.camunda.security.api.model.auth.MembershipPort;
+import io.camunda.security.core.port.out.MembershipPort;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,10 +25,10 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 
 @ExtendWith(MockitoExtension.class)
-class UsernamePasswordAuthenticationTokenConverterTest {
+class LazyUsernamePasswordAuthenticationTokenConverterTest {
 
   @Mock private MembershipPort membershipPort;
-  @InjectMocks private UsernamePasswordAuthenticationTokenConverter converter;
+  @InjectMocks private LazyUsernamePasswordAuthenticationTokenConverter converter;
 
   @Test
   void supportsUsernamePasswordToken() {

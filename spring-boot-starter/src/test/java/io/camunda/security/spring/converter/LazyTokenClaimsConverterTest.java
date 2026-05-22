@@ -14,9 +14,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.camunda.security.api.model.auth.MembershipPort;
-import io.camunda.security.api.model.auth.MembershipQuery;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.camunda.security.core.port.out.MembershipPort;
+import io.camunda.security.core.port.out.MembershipQuery;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
