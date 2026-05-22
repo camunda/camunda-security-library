@@ -40,7 +40,7 @@ class OidcUserAuthenticationConverterTest {
 
   @Mock private OAuth2AuthorizedClientRepository authorizedClientRepository;
   @Mock private JwtDecoder jwtDecoder;
-  @Mock private TokenClaimsConverter tokenClaimsConverter;
+  @Mock private LazyTokenClaimsConverter tokenClaimsConverter;
   @Mock private HttpServletRequest request;
   @Mock private OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory;
   @InjectMocks private OidcUserAuthenticationConverter converter;

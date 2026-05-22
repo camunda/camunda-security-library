@@ -9,7 +9,10 @@ package io.camunda.security.spring.converter;
 
 import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.model.CamundaAuthentication;
-import io.camunda.security.core.port.out.MembershipPort;
+import io.camunda.security.api.model.auth.MembershipPort;
+import io.camunda.security.api.model.auth.MembershipPort.PrincipalType;
+import io.camunda.security.api.model.auth.MembershipQuery;
+import java.util.Map;
 import java.util.Optional;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -33,15 +36,22 @@ public final class UsernamePasswordAuthenticationTokenConverter
   @Override
   public CamundaAuthentication convert(final Authentication authentication) {
     final var username = authentication.getName();
-    final var provider = membershipPort.createProviderForUser(username);
-    // BASIC auth has no token claims and never produces CLIENT principals; mappingRulesSupplier
-    // is deliberately not wired so authenticatedMappingRuleIds() returns the record's default
-    // empty list without calling provider.mappingRuleIds().
+    // BASIC auth has no token claims and never produces CLIENT principals. Empty claims means
+    // mappingRuleIds() would return an empty list (no rules can match), so mappingRulesSupplier
+    // is deliberately not wired — authenticatedMappingRuleIds() returns the record default.
+    final var base = new MembershipQuery(Map.of(), username, PrincipalType.USER);
+    final var lazyG = CamundaAuthentication.lazyList(() -> membershipPort.groupIds(base));
+    final var lazyR =
+        CamundaAuthentication.lazyList(() -> membershipPort.roleIds(base.withGroupIds(lazyG)));
+    final var lazyT =
+        CamundaAuthentication.lazyList(
+            () -> membershipPort.tenantIds(base.withGroupIds(lazyG).withRoleIds(lazyR)));
+
     return CamundaAuthentication.of(
         a ->
             a.user(username)
-                .groupIdsSupplier(provider::groupIds)
-                .roleIdsSupplier(provider::roleIds)
-                .tenantsSupplier(provider::tenantIds));
+                .groupIdsSupplier(() -> lazyG)
+                .roleIdsSupplier(() -> lazyR)
+                .tenantsSupplier(() -> lazyT));
   }
 }

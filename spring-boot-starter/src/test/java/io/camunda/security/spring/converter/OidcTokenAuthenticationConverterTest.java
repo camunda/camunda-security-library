@@ -29,7 +29,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 @ExtendWith(MockitoExtension.class)
 class OidcTokenAuthenticationConverterTest {
 
-  @Mock private TokenClaimsConverter tokenClaimsConverter;
+  @Mock private LazyTokenClaimsConverter tokenClaimsConverter;
   @Mock private OidcClaimsProvider claimsProvider;
   @InjectMocks private OidcTokenAuthenticationConverter converter;
 
