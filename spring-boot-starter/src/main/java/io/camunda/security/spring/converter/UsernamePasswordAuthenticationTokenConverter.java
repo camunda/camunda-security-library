@@ -36,7 +36,7 @@ public final class UsernamePasswordAuthenticationTokenConverter
     final var provider = membershipPort.createProviderForUser(username);
     // BASIC auth has no token claims and never produces CLIENT principals; mappingRulesSupplier
     // is deliberately not wired so authenticatedMappingRuleIds() returns the record's default
-    // empty list without invoking the provider.
+    // empty list without calling provider.mappingRuleIds().
     return CamundaAuthentication.of(
         a ->
             a.user(username)
