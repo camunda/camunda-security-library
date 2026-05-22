@@ -193,14 +193,16 @@ public class OidcWebappSecurityConfiguration {
     }
 
     // Spring Security's DefaultLoginPageConfigurer only installs the auto-generated picker filter
-    // when no custom AuthenticationEntryPoint is set. CSL sets one (see
-    // oidcWebappAuthenticationEntryPoint) to delegate bearer vs. browser flows, which means the
-    // picker is never wired in automatically. Multi-IdP deployments therefore 302 anonymous
-    // browser requests to LOGIN_URL and find no handler there (GH-269). Register the picker
-    // explicitly, populated from the standard ClientRegistrationRepository. The filter only
-    // matches GET /login and is a no-op on every other path, so it is safe for single-IdP
-    // deployments too — in that case the entry point still 302s straight to the IdP without ever
-    // reaching /login.
+    // when no custom AuthenticationEntryPoint is set on exceptionHandling. CSL sets one (see
+    // oidcWebappAuthenticationEntryPoint) to redirect browser navigations to the IdP/picker
+    // instead of letting Spring Security 7's resource-server entry point 401 them — a deliberate
+    // UX improvement over OC stable/8.9, which leaves the entry point unset and accepts the 401.
+    // The trade-off is that DefaultLoginPageConfigurer's `entryPoint == null` gate trips and the
+    // picker is silently dropped. Multi-IdP deployments therefore 302 anonymous browsers to
+    // LOGIN_URL and find no handler there (GH-269). Register the picker explicitly, populated
+    // from the standard ClientRegistrationRepository. The filter only matches GET /login and is
+    // a no-op on every other path, so it is safe for single-IdP deployments too — in that case
+    // the entry point still 302s straight to the IdP without ever reaching /login.
     filterChainBuilder.addFilterAfter(
         oauth2LoginPickerFilter(clientRegistrationRepository), CsrfFilter.class);
 
