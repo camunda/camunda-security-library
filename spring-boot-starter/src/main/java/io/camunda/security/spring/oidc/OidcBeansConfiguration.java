@@ -15,12 +15,12 @@ import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.security.CamundaOidcLogoutSuccessHandler;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -224,32 +224,19 @@ public class OidcBeansConfiguration {
     return StringUtils.hasText(oidc.getJwkSetUri()) || StringUtils.hasText(oidc.getIssuerUri());
   }
 
-  /**
-   * Merges the flat {@code authentication.oidc.*} block and the {@code
-   * authentication.providers.oidc.*} map into a single {@link OidcConfiguration} map keyed by
-   * registrationId. The flat block contributes one entry under {@code flat.getRegistrationId()}
-   * when {@code clientId} is set; provider entries are put on top so a colliding provider id
-   * overwrites the flat entry. Identical merge semantics to OC's {@code
-   * OidcAuthenticationConfigurationRepository}.
-   */
-  private static Map<String, OidcConfiguration> buildOidcSources(
-      final AuthenticationConfiguration authentication) {
-    final OidcConfiguration flat = authentication.getOidc();
-    final Map<String, OidcConfiguration> providers = authentication.getProviders().getOidc();
-    final Map<String, OidcConfiguration> sources = new LinkedHashMap<>();
-    if (StringUtils.hasText(flat.getClientId())) {
-      sources.put(flat.getRegistrationId(), flat);
-    }
-    sources.putAll(providers);
-    return sources;
+  @Bean
+  @ConditionalOnMissingBean
+  public OidcProviderConfigurationPort oidcProviderConfigurationPort(
+      final CamundaSecurityLibraryProperties properties) {
+    return new OidcAuthenticationConfigurationRepository(properties);
   }
 
   @Bean
   @ConditionalOnMissingBean
   public ClientRegistrationRepository clientRegistrationRepository(
-      final CamundaSecurityLibraryProperties properties) {
-    final var authentication = properties.getAuthentication();
-    final Map<String, OidcConfiguration> sources = buildOidcSources(authentication);
+      final OidcProviderConfigurationPort oidcProviderConfigurationPort) {
+    final Map<String, OidcConfiguration> sources =
+        oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
 
     if (sources.isEmpty()) {
       throw new IllegalStateException(
@@ -368,17 +355,18 @@ public class OidcBeansConfiguration {
    * {@code ClientAwareOAuth2AuthorizationRequestResolver}, until the monorepo cleanup PR removes
    * it.
    *
-   * <p>The {@link OidcConfiguration} sources map is built from the same flat-plus-providers merge
-   * as {@link #clientRegistrationRepository(CamundaSecurityLibraryProperties)} via {@link
-   * #buildOidcSources(AuthenticationConfiguration)} so registrationIds stay aligned.
+   * <p>The {@link OidcConfiguration} sources map is sourced from {@link
+   * OidcProviderConfigurationPort} so registrationIds stay aligned with those in {@link
+   * #clientRegistrationRepository(OidcProviderConfigurationPort)}.
    */
   @Bean
   @ConditionalOnMissingBean(OAuth2AuthorizationRequestResolver.class)
   public OAuth2AuthorizationRequestResolver oauth2AuthorizationRequestResolver(
       final ClientRegistrationRepository clientRegistrationRepository,
-      final CamundaSecurityLibraryProperties properties) {
+      final OidcProviderConfigurationPort oidcProviderConfigurationPort) {
     return new CamundaOidcAuthorizationRequestResolver(
-        clientRegistrationRepository, buildOidcSources(properties.getAuthentication()));
+        clientRegistrationRepository,
+        oidcProviderConfigurationPort.getOidcAuthenticationConfigurations());
   }
 
   @Bean
