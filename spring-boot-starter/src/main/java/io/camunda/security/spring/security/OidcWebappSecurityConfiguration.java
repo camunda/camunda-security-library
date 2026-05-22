@@ -24,6 +24,7 @@ import io.camunda.security.spring.handler.LoggingAuthenticationFailureHandler;
 import io.camunda.security.spring.handler.OAuth2AuthenticationExceptionHandler;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import java.util.LinkedHashMap;
+import java.util.Map;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -34,6 +35,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
@@ -50,6 +52,8 @@ import org.springframework.security.web.authentication.logout.CompositeLogoutHan
 import org.springframework.security.web.authentication.logout.CookieClearingLogoutHandler;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
+import org.springframework.security.web.authentication.ui.DefaultLoginPageGeneratingFilter;
+import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.util.matcher.RequestHeaderRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 
@@ -188,10 +192,55 @@ public class OidcWebappSecurityConfiguration {
       filterChainBuilder.addFilterAfter(webAppFilter, OAuth2RefreshTokenFilter.class);
     }
 
+    // Spring Security's DefaultLoginPageConfigurer only installs the auto-generated picker filter
+    // when no custom AuthenticationEntryPoint is set. CSL sets one (see
+    // oidcWebappAuthenticationEntryPoint) to delegate bearer vs. browser flows, which means the
+    // picker is never wired in automatically. Multi-IdP deployments therefore 302 anonymous
+    // browser requests to LOGIN_URL and find no handler there (GH-269). Register the picker
+    // explicitly, populated from the standard ClientRegistrationRepository. The filter only
+    // matches GET /login and is a no-op on every other path, so it is safe for single-IdP
+    // deployments too — in that case the entry point still 302s straight to the IdP without ever
+    // reaching /login.
+    filterChainBuilder.addFilterAfter(
+        oauth2LoginPickerFilter(clientRegistrationRepository), CsrfFilter.class);
+
     SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
     return filterChainBuilder.build();
+  }
+
+  private static DefaultLoginPageGeneratingFilter oauth2LoginPickerFilter(
+      final ClientRegistrationRepository clientRegistrationRepository) {
+    final var picker = new DefaultLoginPageGeneratingFilter();
+    picker.setLoginPageUrl(LOGIN_URL);
+    picker.setOauth2LoginEnabled(true);
+    picker.setOauth2AuthenticationUrlToClientName(buildLoginLinks(clientRegistrationRepository));
+    return picker;
+  }
+
+  /**
+   * Builds the {@code /oauth2/authorization/{id}} -> client display name map consumed by {@link
+   * DefaultLoginPageGeneratingFilter#setOauth2AuthenticationUrlToClientName(Map)}. Returns an empty
+   * map when the repository is not iterable (host-supplied implementation that does not extend
+   * {@link Iterable}); the picker then renders without OAuth2 links, which still beats a 404.
+   */
+  private static Map<String, String> buildLoginLinks(
+      final ClientRegistrationRepository clientRegistrationRepository) {
+    final var links = new LinkedHashMap<String, String>();
+    if (!(clientRegistrationRepository instanceof final Iterable<?> iterable)) {
+      return links;
+    }
+    for (final Object candidate : iterable) {
+      if (candidate instanceof final ClientRegistration registration) {
+        final var displayName =
+            registration.getClientName() != null
+                ? registration.getClientName()
+                : registration.getRegistrationId();
+        links.put("/oauth2/authorization/" + registration.getRegistrationId(), displayName);
+      }
+    }
+    return links;
   }
 
   /**
