@@ -5,7 +5,7 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.api.model.auth;
+package io.camunda.security.core.port.out;
 
 import java.util.List;
 

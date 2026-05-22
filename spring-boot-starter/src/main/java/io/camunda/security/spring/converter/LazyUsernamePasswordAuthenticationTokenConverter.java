@@ -9,20 +9,20 @@ package io.camunda.security.spring.converter;
 
 import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.model.CamundaAuthentication;
-import io.camunda.security.api.model.auth.MembershipPort;
-import io.camunda.security.api.model.auth.MembershipPort.PrincipalType;
-import io.camunda.security.api.model.auth.MembershipQuery;
+import io.camunda.security.core.port.out.MembershipPort;
+import io.camunda.security.core.port.out.MembershipPort.PrincipalType;
+import io.camunda.security.core.port.out.MembershipQuery;
 import java.util.Map;
 import java.util.Optional;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 
-public final class UsernamePasswordAuthenticationTokenConverter
+public final class LazyUsernamePasswordAuthenticationTokenConverter
     implements CamundaAuthenticationConverter<Authentication> {
 
   private final MembershipPort membershipPort;
 
-  public UsernamePasswordAuthenticationTokenConverter(final MembershipPort membershipPort) {
+  public LazyUsernamePasswordAuthenticationTokenConverter(final MembershipPort membershipPort) {
     this.membershipPort = membershipPort;
   }
 
