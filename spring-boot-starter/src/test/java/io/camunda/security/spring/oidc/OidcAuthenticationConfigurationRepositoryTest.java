@@ -8,6 +8,7 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcProvidersConfiguration;
@@ -116,5 +117,25 @@ class OidcAuthenticationConfigurationRepositoryTest {
     final var repo = new OidcAuthenticationConfigurationRepository(properties);
 
     assertThat(repo.getOidcAuthenticationConfigurations()).containsOnlyKeys("myCustomId");
+  }
+
+  @Test
+  void shouldReturnImmutableMapThatDoesNotAffectInternalState() {
+    final var oidc = new OidcConfiguration();
+    oidc.setClientId("client1");
+    oidc.setIssuerUri("https://issuer.example.com");
+    properties.getAuthentication().setOidc(oidc);
+
+    final var repo = new OidcAuthenticationConfigurationRepository(properties);
+    final var configurations1 = repo.getOidcAuthenticationConfigurations();
+
+    // Attempt to mutate the returned map
+    assertThat(configurations1).hasSize(1);
+    assertThatThrownBy(() -> configurations1.put("newKey", oidc))
+        .isInstanceOf(UnsupportedOperationException.class);
+
+    // Verify the internal repository state is unchanged and returns a fresh immutable copy
+    final var configurations2 = repo.getOidcAuthenticationConfigurations();
+    assertThat(configurations2).hasSize(1).containsOnlyKeys("oidc");
   }
 }

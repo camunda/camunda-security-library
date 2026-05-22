@@ -9,9 +9,12 @@ package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.security.CamundaOidcLogoutSuccessHandler;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -102,6 +105,35 @@ class OidcBeansConfigurationTest {
             });
   }
 
+  @Test
+  void defaultOidcProviderConfigurationPortIsRegisteredWhenNoHostBeanPresent() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=test-client",
+            "camunda.security.authentication.oidc.issuer-uri=https://issuer.example.com")
+        .run(
+            ctx -> {
+              assertThat(ctx).hasSingleBean(OidcProviderConfigurationPort.class);
+              assertThat(ctx)
+                  .getBean(OidcProviderConfigurationPort.class)
+                  .extracting(p -> p.getOidcAuthenticationConfigurationById("oidc"))
+                  .isNotNull();
+            });
+  }
+
+  @Test
+  void hostRegisteredOidcProviderConfigurationPortSuppressesTheDefault() {
+    runner
+        .withUserConfiguration(HostOidcProviderConfiguration.class)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasSingleBean(OidcProviderConfigurationPort.class);
+              assertThat(ctx)
+                  .getBean(OidcProviderConfigurationPort.class)
+                  .isInstanceOf(HostOidcProviderConfiguration.NoOpPort.class);
+            });
+  }
+
   @Configuration
   static class StubOidcInfrastructure {
 
@@ -164,6 +196,27 @@ class OidcBeansConfigurationTest {
       public OAuth2AuthorizationRequest resolve(
           final HttpServletRequest request, final String clientRegistrationId) {
         return null;
+      }
+    }
+  }
+
+  @Configuration
+  static class HostOidcProviderConfiguration {
+
+    @Bean
+    OidcProviderConfigurationPort hostOidcProviderConfigurationPort() {
+      return new NoOpPort();
+    }
+
+    static final class NoOpPort implements OidcProviderConfigurationPort {
+      @Override
+      public OidcConfiguration getOidcAuthenticationConfigurationById(final String registrationId) {
+        return null;
+      }
+
+      @Override
+      public Map<String, OidcConfiguration> getOidcAuthenticationConfigurations() {
+        return Map.of();
       }
     }
   }
