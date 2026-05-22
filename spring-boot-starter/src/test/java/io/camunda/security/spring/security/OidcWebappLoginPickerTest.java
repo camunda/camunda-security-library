@@ -125,6 +125,34 @@ class OidcWebappLoginPickerTest {
   }
 
   @Test
+  void hostProvidedLoginPickerFilterOverridesLibraryDefault() {
+    // Hosts that ship a branded /login UI (custom client-name map, or all login types disabled
+    // to fall through to a Spring MVC controller) register their own
+    // DefaultLoginPageGeneratingFilter
+    // bean. The library installs that bean instead of building one from the standard
+    // ClientRegistrationRepository — same pattern as the other ObjectProvider hooks on this
+    // chain. This test pins the override by giving the host filter a recognisable login URL
+    // ("/host-login") and asserting that instance is what lands on the chain.
+    runner
+        .withUserConfiguration(HostLoginPickerOverride.class)
+        .run(
+            ctx -> {
+              final var chain =
+                  (DefaultSecurityFilterChain)
+                      ctx.getBean(OIDC_CHAIN_BEAN, SecurityFilterChain.class);
+              final var picker =
+                  chain.getFilters().stream()
+                      .filter(DefaultLoginPageGeneratingFilter.class::isInstance)
+                      .map(DefaultLoginPageGeneratingFilter.class::cast)
+                      .findFirst()
+                      .orElseThrow();
+              assertThat(picker.getLoginPageUrl())
+                  .as("Host-supplied picker bean must replace the library default")
+                  .isEqualTo("/host-login");
+            });
+  }
+
+  @Test
   void csrfTokenResponseHeaderFilterIsRegisteredBeforeLoginPicker() {
     // Both the picker and SecurityFilterChainSupport.csrfTokenResponseHeaderFilter() anchor to
     // CsrfFilter via addFilterAfter, so they share an identical sort position in HttpSecurity's
@@ -207,6 +235,18 @@ class OidcWebappLoginPickerTest {
           return Set.of("operate");
         }
       };
+    }
+  }
+
+  @Configuration
+  static class HostLoginPickerOverride {
+
+    @Bean
+    DefaultLoginPageGeneratingFilter hostLoginPickerFilter() {
+      final var picker = new DefaultLoginPageGeneratingFilter();
+      picker.setLoginPageUrl("/host-login");
+      picker.setOauth2LoginEnabled(true);
+      return picker;
     }
   }
 
