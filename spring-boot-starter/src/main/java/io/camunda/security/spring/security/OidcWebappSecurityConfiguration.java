@@ -192,6 +192,9 @@ public class OidcWebappSecurityConfiguration {
       filterChainBuilder.addFilterAfter(webAppFilter, OAuth2RefreshTokenFilter.class);
     }
 
+    SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
+    SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
+
     // Spring Security's DefaultLoginPageConfigurer only installs the auto-generated picker filter
     // when no custom AuthenticationEntryPoint is set on exceptionHandling. CSL sets one (see
     // oidcWebappAuthenticationEntryPoint) to redirect browser navigations to the IdP/picker
@@ -203,11 +206,17 @@ public class OidcWebappSecurityConfiguration {
     // from the standard ClientRegistrationRepository. The filter only matches GET /login and is
     // a no-op on every other path, so it is safe for single-IdP deployments too — in that case
     // the entry point still 302s straight to the IdP without ever reaching /login.
+    //
+    // Registration order matters: both this filter and SecurityFilterChainSupport's
+    // csrfTokenResponseHeaderFilter anchor to CsrfFilter via addFilterAfter, so they share an
+    // identical position in HttpSecurity's filter list. Spring sorts that list with a stable
+    // comparator, which means insertion order is the tie-break. The picker terminates the chain
+    // for /login responses, and the CSRF header filter uses HttpServletResponse.setHeader (a
+    // no-op after commit) — so the CSRF filter must be inserted first to guarantee it writes
+    // the header before the picker commits the response. This addFilterAfter call therefore
+    // runs after applyCsrfConfiguration above.
     filterChainBuilder.addFilterAfter(
         oauth2LoginPickerFilter(clientRegistrationRepository), CsrfFilter.class);
-
-    SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
-    SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
     return filterChainBuilder.build();
   }

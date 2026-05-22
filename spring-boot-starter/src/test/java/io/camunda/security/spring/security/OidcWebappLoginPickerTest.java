@@ -27,8 +27,11 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.web.DefaultSecurityFilterChain;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.ui.DefaultLoginPageGeneratingFilter;
+import org.springframework.security.web.csrf.CsrfFilter;
 
 /**
  * Regression coverage for GH-269: under multi-IdP OIDC, anonymous {@code GET /login} must reach a
@@ -119,6 +122,49 @@ class OidcWebappLoginPickerTest {
                   .as("picker must list the single OIDC registration")
                   .contains("/oauth2/authorization/oidc");
             });
+  }
+
+  @Test
+  void csrfTokenResponseHeaderFilterIsRegisteredBeforeLoginPicker() {
+    // Both the picker and SecurityFilterChainSupport.csrfTokenResponseHeaderFilter() anchor to
+    // CsrfFilter via addFilterAfter, so they share an identical sort position in HttpSecurity's
+    // filter list. Spring sorts stably, so insertion order is the tie-break. The picker
+    // terminates the chain for /login responses; the CSRF header filter uses
+    // HttpServletResponse.setHeader, which is a no-op once the response is committed. The CSRF
+    // header filter must therefore land EARLIER in the chain than the picker. This test pins
+    // that ordering so a future reorder of OidcWebappSecurityConfiguration cannot silently
+    // regress it (raised by Copilot reviewer on PR #273).
+    runner.run(
+        ctx -> {
+          final var chain =
+              (DefaultSecurityFilterChain) ctx.getBean(OIDC_CHAIN_BEAN, SecurityFilterChain.class);
+          final var filters = chain.getFilters();
+
+          final int csrfIndex = indexOf(filters, CsrfFilter.class);
+          final int pickerIndex = indexOf(filters, DefaultLoginPageGeneratingFilter.class);
+          // The CSRF response-header filter is an anonymous OncePerRequestFilter, so we identify
+          // it positionally: it sits between CsrfFilter and the picker. Asserting that the
+          // picker is at least two positions after CsrfFilter ensures there is room for the
+          // response-header filter to run first.
+          assertThat(csrfIndex).as("CsrfFilter present on chain").isGreaterThanOrEqualTo(0);
+          assertThat(pickerIndex).as("Login picker present on chain").isGreaterThanOrEqualTo(0);
+          assertThat(pickerIndex)
+              .as(
+                  "Login picker must run after csrfTokenResponseHeaderFilter so the CSRF header "
+                      + "is written before the picker commits the /login response")
+              .isGreaterThan(csrfIndex + 1);
+        });
+  }
+
+  private static int indexOf(
+      final java.util.List<jakarta.servlet.Filter> filters,
+      final Class<? extends jakarta.servlet.Filter> type) {
+    for (int i = 0; i < filters.size(); i++) {
+      if (type.isInstance(filters.get(i))) {
+        return i;
+      }
+    }
+    return -1;
   }
 
   @Configuration
