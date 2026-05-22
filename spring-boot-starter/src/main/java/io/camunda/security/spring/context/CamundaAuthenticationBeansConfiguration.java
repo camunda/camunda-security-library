@@ -20,6 +20,8 @@ import io.camunda.security.spring.converter.UnprotectedCamundaAuthenticationConv
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication.Type;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.core.Authentication;
@@ -44,6 +46,7 @@ public class CamundaAuthenticationBeansConfiguration {
   }
 
   @Bean
+  @ConditionalOnWebApplication(type = Type.SERVLET)
   @ConditionalOnMissingBean(name = "requestContextBasedAuthenticationHolder")
   public CamundaAuthenticationHolder requestContextBasedAuthenticationHolder(
       final HttpServletRequest request) {
@@ -51,6 +54,7 @@ public class CamundaAuthenticationBeansConfiguration {
   }
 
   @Bean
+  @ConditionalOnWebApplication(type = Type.SERVLET)
   @ConditionalOnMissingBean(name = "httpSessionBasedAuthenticationHolder")
   public CamundaAuthenticationHolder httpSessionBasedAuthenticationHolder(
       final HttpServletRequest request, final CamundaSecurityLibraryProperties properties) {
