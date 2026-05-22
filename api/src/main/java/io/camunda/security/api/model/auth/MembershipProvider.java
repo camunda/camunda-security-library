@@ -18,14 +18,18 @@ import java.util.List;
  * unchanged on every call) or lazy (defer the underlying work to first call, typically with
  * memoisation). The contract from the library's perspective is just "answer this membership query
  * with a list of IDs".
+ *
+ * <p>Method names follow the {@code *Ids} convention used by {@code CamundaAuthentication}'s
+ * accessors so calling code reads consistently regardless of whether the IDs come from the
+ * authentication object directly or from a freshly created provider.
  */
 public interface MembershipProvider {
 
-  List<String> groups();
+  List<String> groupIds();
 
-  List<String> roles();
+  List<String> roleIds();
 
-  List<String> tenants();
+  List<String> tenantIds();
 
-  List<String> mappingRules();
+  List<String> mappingRuleIds();
 }
