@@ -83,6 +83,7 @@ public class OidcWebappSecurityConfiguration {
       final ObjectProvider<OAuth2AuthorizationRequestResolver> authorizationRequestResolverProvider,
       final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers,
       final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
+      final ObjectProvider<DefaultLoginPageGeneratingFilter> oidcLoginPickerProvider,
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort)
       throws Exception {
@@ -207,6 +208,12 @@ public class OidcWebappSecurityConfiguration {
     // a no-op on every other path, so it is safe for single-IdP deployments too — in that case
     // the entry point still 302s straight to the IdP without ever reaching /login.
     //
+    // Hosts that want to serve a branded picker UI at /login can register their own
+    // DefaultLoginPageGeneratingFilter bean (with their preferred client-name mapping, or with
+    // all login types disabled to fall through to a Spring MVC controller). The
+    // oidcLoginPickerProvider hook installs the host bean if present, otherwise the library
+    // default. Same pattern as the other ObjectProvider hooks on this chain.
+    //
     // Registration order matters: both this filter and SecurityFilterChainSupport's
     // csrfTokenResponseHeaderFilter anchor to CsrfFilter via addFilterAfter, so they share an
     // identical position in HttpSecurity's filter list. Spring sorts that list with a stable
@@ -215,13 +222,15 @@ public class OidcWebappSecurityConfiguration {
     // no-op after commit) — so the CSRF filter must be inserted first to guarantee it writes
     // the header before the picker commits the response. This addFilterAfter call therefore
     // runs after applyCsrfConfiguration above.
-    filterChainBuilder.addFilterAfter(
-        oauth2LoginPickerFilter(clientRegistrationRepository), CsrfFilter.class);
+    final var loginPickerFilter =
+        oidcLoginPickerProvider.getIfAvailable(
+            () -> defaultOauth2LoginPickerFilter(clientRegistrationRepository));
+    filterChainBuilder.addFilterAfter(loginPickerFilter, CsrfFilter.class);
 
     return filterChainBuilder.build();
   }
 
-  private static DefaultLoginPageGeneratingFilter oauth2LoginPickerFilter(
+  private static DefaultLoginPageGeneratingFilter defaultOauth2LoginPickerFilter(
       final ClientRegistrationRepository clientRegistrationRepository) {
     final var picker = new DefaultLoginPageGeneratingFilter();
     picker.setLoginPageUrl(LOGIN_URL);
