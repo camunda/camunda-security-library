@@ -37,7 +37,7 @@ public class OidcUserAuthenticationConverter
 
   private final OAuth2AuthorizedClientRepository authorizedClientRepository;
   private final OidcAccessTokenDecoderFactory accessTokenDecoderFactory;
-  private final TokenClaimsConverter tokenClaimsConverter;
+  private final LazyTokenClaimsConverter tokenClaimsConverter;
   private final HttpServletRequest request;
   private final Map<String, JwtDecoder> jwtDecoders;
   private final Map<String, List<String>> additionalJwkSetUrisByIssuer;
@@ -46,7 +46,7 @@ public class OidcUserAuthenticationConverter
   public OidcUserAuthenticationConverter(
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
       final OidcAccessTokenDecoderFactory accessTokenDecoderFactory,
-      final TokenClaimsConverter tokenClaimsConverter,
+      final LazyTokenClaimsConverter tokenClaimsConverter,
       final HttpServletRequest request) {
     this(
         authorizedClientRepository,
@@ -60,7 +60,7 @@ public class OidcUserAuthenticationConverter
   public OidcUserAuthenticationConverter(
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
       final OidcAccessTokenDecoderFactory accessTokenDecoderFactory,
-      final TokenClaimsConverter tokenClaimsConverter,
+      final LazyTokenClaimsConverter tokenClaimsConverter,
       final HttpServletRequest request,
       final Map<String, List<String>> additionalJwkSetUrisByIssuer) {
     this(
@@ -75,7 +75,7 @@ public class OidcUserAuthenticationConverter
   public OidcUserAuthenticationConverter(
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
       final OidcAccessTokenDecoderFactory accessTokenDecoderFactory,
-      final TokenClaimsConverter tokenClaimsConverter,
+      final LazyTokenClaimsConverter tokenClaimsConverter,
       final HttpServletRequest request,
       final Map<String, List<String>> additionalJwkSetUrisByIssuer,
       final Map<String, Boolean> preferIdTokenClaimsByRegistrationId) {

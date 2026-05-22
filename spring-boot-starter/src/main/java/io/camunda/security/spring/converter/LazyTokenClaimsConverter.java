@@ -8,16 +8,23 @@
 package io.camunda.security.spring.converter;
 
 import io.camunda.security.api.model.CamundaAuthentication;
+import io.camunda.security.api.model.auth.MembershipPort;
+import io.camunda.security.api.model.auth.MembershipPort.PrincipalType;
+import io.camunda.security.api.model.auth.MembershipQuery;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.oidc.OidcPrincipalLoader;
-import io.camunda.security.core.port.out.MembershipPort;
-import io.camunda.security.core.port.out.MembershipPort.PrincipalType;
 import java.util.Map;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 
-public final class TokenClaimsConverter {
+/**
+ * Converts OIDC token claims into a {@link CamundaAuthentication} with lazily-resolved membership
+ * fields. The converter wires four chained {@link LazyList} instances — each backed by one {@link
+ * MembershipPort} method and capturing a reference to the upstream lists — so each membership type
+ * is resolved only when its field is first read, and the chain runs at most once per step.
+ */
+public final class LazyTokenClaimsConverter {
 
   private final OidcPrincipalLoader oidcPrincipalLoader;
   private final boolean preferUsernameClaim;
@@ -25,7 +32,7 @@ public final class TokenClaimsConverter {
   private final String clientIdClaim;
   private final MembershipPort membershipPort;
 
-  public TokenClaimsConverter(
+  public LazyTokenClaimsConverter(
       final OidcConfiguration oidcConfiguration, final MembershipPort membershipPort) {
     this.membershipPort = membershipPort;
     usernameClaim = oidcConfiguration.getUsernameClaim();
@@ -56,7 +63,19 @@ public final class TokenClaimsConverter {
       principalType = PrincipalType.CLIENT;
     }
 
-    final var provider = membershipPort.createProvider(tokenClaims, principalName, principalType);
+    final var base = new MembershipQuery(tokenClaims, principalName, principalType);
+    final var lazyMR = CamundaAuthentication.lazyList(() -> membershipPort.mappingRuleIds(base));
+    final var lazyG =
+        CamundaAuthentication.lazyList(
+            () -> membershipPort.groupIds(base.withMappingRuleIds(lazyMR)));
+    final var lazyR =
+        CamundaAuthentication.lazyList(
+            () -> membershipPort.roleIds(base.withMappingRuleIds(lazyMR).withGroupIds(lazyG)));
+    final var lazyT =
+        CamundaAuthentication.lazyList(
+            () ->
+                membershipPort.tenantIds(
+                    base.withMappingRuleIds(lazyMR).withGroupIds(lazyG).withRoleIds(lazyR)));
 
     return CamundaAuthentication.of(
         a -> {
@@ -65,10 +84,10 @@ public final class TokenClaimsConverter {
           } else {
             a.user(principalName);
           }
-          return a.groupIdsSupplier(provider::groupIds)
-              .roleIdsSupplier(provider::roleIds)
-              .tenantsSupplier(provider::tenantIds)
-              .mappingRulesSupplier(provider::mappingRuleIds)
+          return a.mappingRulesSupplier(() -> lazyMR)
+              .groupIdsSupplier(() -> lazyG)
+              .roleIdsSupplier(() -> lazyR)
+              .tenantsSupplier(() -> lazyT)
               .claims(tokenClaims);
         });
   }

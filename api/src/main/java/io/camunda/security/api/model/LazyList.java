@@ -65,6 +65,15 @@ final class LazyList<T> extends AbstractList<T> implements Serializable {
     return local;
   }
 
+  /**
+   * Returns a {@link List} whose elements are resolved on first read by invoking {@code supplier}
+   * at most once. The concrete type is package-private; callers should bind the result to {@code
+   * List<T>}.
+   */
+  static <T> List<T> of(final Supplier<List<T>> supplier) {
+    return new LazyList<>(supplier);
+  }
+
   boolean hasSupplierReference() {
     return supplier != null;
   }

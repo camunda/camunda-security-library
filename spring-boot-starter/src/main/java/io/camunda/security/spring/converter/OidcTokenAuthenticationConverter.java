@@ -22,7 +22,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
  * <p>The JWT carries claims, but those claims may not be sufficient to identify the principal — an
  * OIDC provider can return additional claims from its UserInfo endpoint that are not present in the
  * JWT itself. This converter therefore delegates to an {@link OidcClaimsProvider} to obtain the
- * final claims map, then to a {@link TokenClaimsConverter} to map those claims to the {@code
+ * final claims map, then to a {@link LazyTokenClaimsConverter} to map those claims to the {@code
  * CamundaAuthentication} principal, memberships, and raw claims.
  *
  * <p>Plug points for hosts:
@@ -31,8 +31,8 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
  *   <li>Provide a custom {@link OidcClaimsProvider} bean to augment JWT claims (for example by
  *       merging the UserInfo response). The default {@code NoopOidcClaimsProvider} returns the JWT
  *       claims unchanged.
- *   <li>Provide a {@code MembershipPort} bean — the {@link TokenClaimsConverter} uses it to resolve
- *       the principal's group, role, tenant, and mapping-rule memberships.
+ *   <li>Provide a {@code MembershipPort} bean — the {@link LazyTokenClaimsConverter} uses it to
+ *       resolve the principal's group, role, tenant, and mapping-rule memberships.
  * </ul>
  *
  * <p>This converter is wired into Spring Security via {@code
@@ -43,7 +43,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 public final class OidcTokenAuthenticationConverter
     implements CamundaAuthenticationConverter<Authentication> {
 
-  private final TokenClaimsConverter tokenClaimsConverter;
+  private final LazyTokenClaimsConverter tokenClaimsConverter;
   private final OidcClaimsProvider claimsProvider;
 
   /**
@@ -54,7 +54,8 @@ public final class OidcTokenAuthenticationConverter
    *     behaviour.
    */
   public OidcTokenAuthenticationConverter(
-      final TokenClaimsConverter tokenClaimsConverter, final OidcClaimsProvider claimsProvider) {
+      final LazyTokenClaimsConverter tokenClaimsConverter,
+      final OidcClaimsProvider claimsProvider) {
     this.tokenClaimsConverter = tokenClaimsConverter;
     this.claimsProvider = claimsProvider;
   }

@@ -98,6 +98,17 @@ public record CamundaAuthentication(
     return builderFunction.apply(new Builder()).build();
   }
 
+  /**
+   * Returns a {@link java.util.List} whose elements are resolved lazily by invoking {@code
+   * supplier} at most once on the first read. Intended for converters that need to wire chained
+   * lazy membership lookups via the {@code *Supplier} builder methods without exposing the
+   * package-private {@link LazyList} type.
+   */
+  public static <T> java.util.List<T> lazyList(
+      final java.util.function.Supplier<java.util.List<T>> supplier) {
+    return LazyList.of(supplier);
+  }
+
   public static final class Builder {
 
     private String username;
