@@ -56,8 +56,7 @@ public final class TokenClaimsConverter {
       principalType = PrincipalType.CLIENT;
     }
 
-    final var memberships =
-        membershipPort.createProvider(tokenClaims, principalName, principalType);
+    final var provider = membershipPort.createProvider(tokenClaims, principalName, principalType);
 
     return CamundaAuthentication.of(
         a -> {
@@ -66,10 +65,10 @@ public final class TokenClaimsConverter {
           } else {
             a.user(principalName);
           }
-          return a.groupIdsSupplier(memberships::groups)
-              .roleIdsSupplier(memberships::roles)
-              .tenantsSupplier(memberships::tenants)
-              .mappingRulesSupplier(memberships::mappingRules)
+          return a.groupIdsSupplier(provider::groupIds)
+              .roleIdsSupplier(provider::roleIds)
+              .tenantsSupplier(provider::tenantIds)
+              .mappingRulesSupplier(provider::mappingRuleIds)
               .claims(tokenClaims);
         });
   }

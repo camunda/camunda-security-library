@@ -43,9 +43,9 @@ class TokenClaimsConverterTest {
   void convertsUserPrincipalFromClaims() {
     final var claims = Map.<String, Object>of("sub", "alice", "azp", "client1");
     when(membershipPort.createProvider(claims, "alice", PrincipalType.USER)).thenReturn(provider);
-    when(provider.groups()).thenReturn(List.of("g1"));
-    when(provider.roles()).thenReturn(List.of("r1"));
-    when(provider.tenants()).thenReturn(List.of("t1"));
+    when(provider.groupIds()).thenReturn(List.of("g1"));
+    when(provider.roleIds()).thenReturn(List.of("r1"));
+    when(provider.tenantIds()).thenReturn(List.of("t1"));
     oidcConfig.setPreferUsernameClaim(true);
 
     final var converter = new TokenClaimsConverter(oidcConfig, membershipPort);

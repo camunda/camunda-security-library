@@ -10,6 +10,8 @@ package io.camunda.security.spring.converter;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.model.auth.MembershipProvider;
@@ -50,9 +52,9 @@ class UsernamePasswordAuthenticationTokenConverterTest {
   @Test
   void wiresGroupsRolesTenantsFromProvider() {
     when(membershipPort.createProviderForUser(eq("alice"))).thenReturn(provider);
-    when(provider.groups()).thenReturn(List.of("g1", "g2"));
-    when(provider.roles()).thenReturn(List.of("r1"));
-    when(provider.tenants()).thenReturn(List.of("t1"));
+    when(provider.groupIds()).thenReturn(List.of("g1", "g2"));
+    when(provider.roleIds()).thenReturn(List.of("r1"));
+    when(provider.tenantIds()).thenReturn(List.of("t1"));
 
     final var auth = converter.convert(new UsernamePasswordAuthenticationToken("alice", "pw"));
 
@@ -67,9 +69,13 @@ class UsernamePasswordAuthenticationTokenConverterTest {
 
     final var auth = converter.convert(new UsernamePasswordAuthenticationToken("alice", "pw"));
 
-    // BASIC has no claims; converter intentionally does not wire mappingRulesSupplier, so the
-    // record's default empty list is returned without ever calling the provider.
+    // BASIC has no claims; converter intentionally does not wire mappingRulesSupplier. Reading
+    // the resulting field must return the record's default empty list *without* going through
+    // the provider — otherwise an accidentally-wired supplier would also produce an empty list
+    // (Mockito's null return is normalised to empty by LazyList) and the omission would be
+    // silently broken.
     assertThat(auth.authenticatedMappingRuleIds()).isEmpty();
+    verify(provider, never()).mappingRuleIds();
   }
 
   @Test
