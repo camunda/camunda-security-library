@@ -1,0 +1,455 @@
+# CSL ports reference
+
+The Camunda Security Library is built around a hexagonal architecture. The library defines all
+cross-cutting contracts as **port interfaces**; host applications (OC, Hub) plug in implementations
+and may override the library's own defaults. This document lists every port, its contract, and where
+implementations live.
+
+There are three categories:
+
+| Category | Package | Direction | Description |
+|---|---|---|---|
+| [Inbound ports](#inbound-ports-coreportin) | `core/port/in/` | Host → library | Use-case contracts the host (or any caller) invokes on the library |
+| [Outbound ports](#outbound-ports-coreportout) | `core/port/out/` | Library → host | Contracts the library calls into the host to fetch data or perform I/O |
+| [Spring SPI ports](#spring-spi-ports-spring-boot-starterspi) | `spring-boot-starter/spi/` | Library → host | Servlet-layer callbacks the library invokes; live in the starter because they speak `jakarta.servlet` types that the framework-free `core/` module cannot import |
+
+> **Dependency:** all port interfaces ship in `camunda-security-library-core` (inbound / outbound)
+> or `camunda-security-library-spring-boot-starter` (Spring SPI). Every library-supplied default
+> bean carries `@ConditionalOnMissingBean` so hosts can override individual beans by registering
+> their own.
+
+---
+
+## Quick reference
+
+### Inbound
+
+| Port | CSL default implementation | OC example override |
+|---|---|---|
+| [`OidcProviderConfigurationPort`](#oidcproviderconfigurationport) | `OidcAuthenticationConfigurationRepository` | _(none — CSL default used)_ |
+| [`ResourcePermissionPort`](#resourcepermissionport) | `ResourcePermissionService` | `IdentityToAdminComponentAliasAdapter` |
+| [`PolicyPort`](#policyport) | _(none — under development)_ | _(none)_ |
+| [`PolicyApplyPort`](#policyapplyport) | _(none — under development)_ | _(none)_ |
+| [`TenantPort`](#tenantport) | _(none — under development)_ | _(none)_ |
+| [`ClusterRegistrationPort`](#clusterregistrationport) | _(none — under development)_ | _(none)_ |
+
+### Outbound
+
+| Port | CSL default implementation | OC example implementation |
+|---|---|---|
+| [`AdminUserPresencePort`](#adminuserpresenceport) | _(none — host must provide)_ | `AdminUserPresenceAdapter` |
+| [`AuthorizationRepositoryPort`](#authorizationrepositoryport) | _(none — host must provide)_ | `AuthorizationRepositoryAdapter` |
+| [`MembershipPort`](#membershipport) | _(none — host must provide)_ | `NoDBMembershipService`, `DefaultMembershipService` |
+| [`SecurityPathPort`](#securitypathport) | _(none — host must provide)_ | `SecurityPathAdapter` |
+| [`PolicyRepositoryPort`](#policyrepositoryport) | _(none — under development)_ | _(none)_ |
+| [`IdpClientPort`](#idpclientport) | _(none — under development)_ | _(none)_ |
+| [`SessionStorePort`](#sessionstoreport) | _(none — under development)_ | _(none)_ |
+| [`OutboxPort`](#outboxport) | _(none — under development)_ | _(none)_ |
+| [`ClusterRegistryPort`](#clusterregistryport) | _(none — under development)_ | _(none)_ |
+| [`FeatureTogglePort`](#featuretoggleport) | _(none — under development)_ | _(none)_ |
+
+### Spring SPI
+
+| Port | CSL default implementation | OC example override |
+|---|---|---|
+| [`AdminUserMissingHandlerPort`](#adminusermissinghandlerport) | `RedirectingAdminUserMissingAdapter` | _(none — CSL default used)_ |
+| [`WebAppAccessDeniedHandlerPort`](#webappaccessdeniedhandlerport) | `RedirectingWebAppAccessDeniedAdapter` | _(none — CSL default used)_ |
+| [`WebAppProviderPort`](#webappproviderport) | _(none — host must provide)_ | `WebAppProviderAdapter` |
+
+---
+
+## Inbound ports (`core/port/in/`)
+
+Inbound ports are the use-case boundary callers invoke on the library. Each port interface lives in
+`core/` so it has zero framework dependencies. The default implementation is typically a
+`*Service` class in `spring-boot-starter/` exposed as a `@ConditionalOnMissingBean` Spring bean;
+hosts that need different behaviour register their own bean of the port type.
+
+---
+
+### `OidcProviderConfigurationPort`
+
+```java
+package io.camunda.security.core.port.in;
+```
+
+Reads the merged OIDC provider configuration keyed by registration ID. The library merges the flat
+`camunda.security.authentication.oidc.*` block with the
+`camunda.security.authentication.providers.oidc.*` map at startup; provider entries overwrite the
+flat entry on key collision.
+
+**Methods**
+
+```java
+OidcConfiguration getOidcAuthenticationConfigurationById(String registrationId);
+Map<String, OidcConfiguration> getOidcAuthenticationConfigurations();
+```
+
+**CSL default:** `OidcAuthenticationConfigurationRepository`
+(`spring-boot-starter/src/main/java/io/camunda/security/spring/oidc/`), exposed via
+`OidcBeansConfiguration`.
+
+**OC:** no override — the CSL default is used directly.
+
+---
+
+### `ResourcePermissionPort`
+
+```java
+package io.camunda.security.core.port.in;
+```
+
+Answers permission questions: "does this principal have this permission on this resource?" The
+default implementation delegates to `AuthorizationRepositoryPort` (outbound) for data and matches
+grants by resource ID and permission type across the principal's authorizations.
+
+**Method**
+
+```java
+boolean hasPermission(
+    CamundaAuthentication authentication,
+    ResourceType resourceType,
+    String resourceId,
+    PermissionType permissionType);
+```
+
+**CSL default:** `ResourcePermissionService`
+(`spring-boot-starter/src/main/java/io/camunda/security/spring/security/`).
+
+**OC example override:** `IdentityToAdminComponentAliasAdapter` — translates Camunda resource types
+to the component aliases Camunda Identity understands before delegating the permission check.
+
+---
+
+### `PolicyPort`
+
+```java
+package io.camunda.security.core.port.in;
+```
+
+Inbound port for queries over the unified policy model (roles, authorizations, mapping rules). Under
+active development — no methods defined yet.
+
+---
+
+### `PolicyApplyPort`
+
+```java
+package io.camunda.security.core.port.in;
+```
+
+Inbound port for applying a policy snapshot received from Hub to the local projection on the OC
+side. Under active development — no methods defined yet.
+
+---
+
+### `TenantPort`
+
+```java
+package io.camunda.security.core.port.in;
+```
+
+Inbound port for tenant lifecycle and lookup operations. Under active development — no methods
+defined yet.
+
+---
+
+### `ClusterRegistrationPort`
+
+```java
+package io.camunda.security.core.port.in;
+```
+
+Inbound port for registering and deregistering Orchestration Clusters against Hub. Under active
+development — no methods defined yet.
+
+---
+
+## Outbound ports (`core/port/out/`)
+
+Outbound ports are contracts the library calls into the host to fetch data or perform I/O. Host
+applications must provide a bean for every outbound port that the library actually uses at runtime.
+Ports marked _under development_ have no methods yet and do not require a host implementation.
+
+---
+
+### `AdminUserPresencePort`
+
+```java
+package io.camunda.security.core.port.out;
+```
+
+Reports whether an admin user has been provisioned. The admin-user setup filter consults this port
+before deciding whether to allow a request through or hand off to
+[`AdminUserMissingHandlerPort`](#adminusermissinghandlerport). Hosts may answer from static
+configuration, a live database lookup, or any combination.
+
+**Method**
+
+```java
+boolean adminUserExists();
+```
+
+**CSL default:** none — the host must supply this bean.
+
+**OC example:** `AdminUserPresenceAdapter` in `authentication/` — looks up whether any user with
+admin roles exists in the primary data store.
+
+---
+
+### `AuthorizationRepositoryPort`
+
+```java
+package io.camunda.security.core.port.out;
+```
+
+Returns authorization records held for a principal on a given resource type. The library's
+`ResourcePermissionService` aggregates these records to answer permission questions. Implementations
+should resolve grants transitively — direct user/client grants plus grants reachable via groups,
+roles, and mapping rules.
+
+**Method**
+
+```java
+Set<Authorization> findAuthorizations(CamundaAuthentication authentication, ResourceType resourceType);
+```
+
+**CSL default:** none — the host must supply this bean.
+
+**OC example:** `AuthorizationRepositoryAdapter` in `authentication/` — queries the authorization
+index (search or RDBMS) for the principal's effective grants.
+
+---
+
+### `MembershipPort`
+
+```java
+package io.camunda.security.core.port.out;
+```
+
+Resolves group, role, tenant, and mapping-rule memberships for a principal. The library's
+authentication converters call this port when building a `CamundaAuthentication`. Hosts own where
+the data comes from — search index, RDBMS, in-memory store, etc.
+
+**Methods**
+
+```java
+Memberships resolveMemberships(Map<String, Object> tokenClaims, String principalId, PrincipalType principalType);
+Memberships resolveMembershipsForUser(String username);
+
+enum PrincipalType { USER, CLIENT }
+```
+
+**CSL default:** none — the host must supply this bean.
+
+**OC examples:**
+- `NoDBMembershipService` — returns empty memberships; active when there is no database available
+  (e.g., in-memory mode).
+- `DefaultMembershipService` (`@Primary`) — resolves memberships from the search index / RDBMS.
+
+---
+
+### `SecurityPathPort`
+
+```java
+package io.camunda.security.core.port.out;
+```
+
+Declares the HTTP path patterns the security filter chains operate on. The library cannot wire its
+filter chains without these — API paths, unprotected endpoints, webapp UI paths, web component
+identifiers, and static-asset suffixes are all host-specific.
+
+**Methods**
+
+```java
+Set<String> apiPaths();
+Set<String> unprotectedApiPaths();
+Set<String> unprotectedPaths();
+Set<String> webappPaths();
+Set<String> webComponentNames();
+
+// default implementations provided — override as needed:
+default Set<String> unauthenticatedWebappPaths();      // paths the OIDC webapp chain skips auth for
+default Set<String> staticResourceSuffixes();           // .css, .js, .png, … (SPA assets)
+default Set<String> adminFilterBypassPaths();           // paths admin-user filter passes through
+```
+
+Path patterns use Spring Security ant-style syntax (`**` for multi-level, `*` for single-level).
+`webComponentNames()` are bare path-segment identifiers, not ant patterns.
+
+**CSL default:** none — the host must supply this bean.
+
+**OC example:** `SecurityPathAdapter` in `authentication/` — returns OC-specific path sets
+(e.g., `/v2/**`, `/login/**`, `/operate/**`).
+
+---
+
+### `PolicyRepositoryPort`
+
+```java
+package io.camunda.security.core.port.out;
+```
+
+Persists and reads the unified policy projection (organizations, tenants, roles, groups, mapping
+rules, principals, authorizations) in local storage. Under active development — no methods defined
+yet.
+
+---
+
+### `IdpClientPort`
+
+```java
+package io.camunda.security.core.port.out;
+```
+
+Communicates with external Identity Providers (OIDC, SAML, and similar protocols). Under active
+development — no methods defined yet.
+
+---
+
+### `SessionStorePort`
+
+```java
+package io.camunda.security.core.port.out;
+```
+
+Stores and retrieves authenticated session state. Under active development — no methods defined yet.
+
+---
+
+### `OutboxPort`
+
+```java
+package io.camunda.security.core.port.out;
+```
+
+Records and dispatches outbox events that carry policy changes from Hub to Orchestration Clusters
+(see ADR-0001 and ADR-0003). Under active development — no methods defined yet.
+
+---
+
+### `ClusterRegistryPort`
+
+```java
+package io.camunda.security.core.port.out;
+```
+
+Reads and maintains the registry of known Orchestration Clusters. Under active development — no
+methods defined yet.
+
+---
+
+### `FeatureTogglePort`
+
+```java
+package io.camunda.security.core.port.out;
+```
+
+Evaluates feature toggle values at runtime. Under active development — no methods defined yet.
+
+---
+
+## Spring SPI ports (`spring-boot-starter/spi/`)
+
+Spring SPI ports are callback interfaces the library calls at the servlet layer. They live in the
+`spring-boot-starter` module — not `core/` — because their signatures use `jakarta.servlet` types
+that the framework-free domain module cannot import.
+
+Like all CSL default beans, defaults are registered with `@ConditionalOnMissingBean`; hosts
+override by registering a bean of the port type before the library configuration runs.
+
+---
+
+### `AdminUserMissingHandlerPort`
+
+```java
+package io.camunda.security.spring.spi;
+```
+
+Decides what to do when the admin-user setup filter detects that no admin user has been provisioned.
+Hosts can redirect to a setup wizard, return a JSON payload, forward to a static page, or apply any
+other behaviour.
+
+**Method**
+
+```java
+void handle(HttpServletRequest request, HttpServletResponse response)
+    throws IOException, ServletException;
+```
+
+**CSL default:** `RedirectingAdminUserMissingAdapter`
+(`spring-boot-starter/src/main/java/io/camunda/security/spring/security/`) — redirects the browser
+to `/admin/setup`.
+
+**OC:** no override — the CSL default is used directly.
+
+---
+
+### `WebAppAccessDeniedHandlerPort`
+
+```java
+package io.camunda.security.spring.spi;
+```
+
+Decides what to do when an authorization filter denies access to a web app. Hosts can return a 403
+JSON body, redirect to an error URL, forward to an error page, or apply any other access-denied
+behaviour.
+
+**Method**
+
+```java
+void handle(
+    HttpServletRequest request,
+    HttpServletResponse response,
+    String webApp,
+    CamundaAuthentication authentication)
+    throws IOException, ServletException;
+```
+
+**CSL default:** `RedirectingWebAppAccessDeniedAdapter`
+(`spring-boot-starter/src/main/java/io/camunda/security/spring/security/`) — redirects the browser
+to `/webapp/forbidden` (with the `webApp` name appended as a query parameter).
+
+**OC:** no override — the CSL default is used directly.
+
+---
+
+### `WebAppProviderPort`
+
+```java
+package io.camunda.security.spring.spi;
+```
+
+Resolves which web app a request belongs to. The library's authorization filters call this SPI;
+returning `Optional.empty()` signals "this request doesn't belong to a web app" and the filter
+treats it as a pass-through. Hub returns a constant; OC derives the web-app name from the URL path.
+
+**Method**
+
+```java
+Optional<String> webAppFor(HttpServletRequest request);
+```
+
+**CSL default:** none — the host must supply this bean.
+
+**OC example:** `WebAppProviderAdapter` in `authentication/` — extracts the first path segment after
+the context path (e.g., `/operate/...` → `"operate"`).
+
+---
+
+## Where implementations live
+
+```
+camunda-security-library/
+├── core/src/main/java/io/camunda/security/core/port/
+│   ├── in/   ← inbound port interfaces
+│   └── out/  ← outbound port interfaces
+└── spring-boot-starter/src/main/java/io/camunda/security/spring/
+    ├── oidc/     ← OidcAuthenticationConfigurationRepository (OidcProviderConfigurationPort default)
+    ├── security/ ← ResourcePermissionService, RedirectingAdminUserMissingAdapter,
+    │               RedirectingWebAppAccessDeniedAdapter
+    └── spi/      ← Spring SPI port interfaces
+```
+
+Host implementations (OC) live in `authentication/src/main/java/io/camunda/authentication/` in the
+`camunda/camunda` monorepo.
