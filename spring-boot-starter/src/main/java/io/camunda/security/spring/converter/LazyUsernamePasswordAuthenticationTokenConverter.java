@@ -40,18 +40,20 @@ public final class LazyUsernamePasswordAuthenticationTokenConverter
     // mappingRuleIds() would return an empty list (no rules can match), so mappingRulesSupplier
     // is deliberately not wired — authenticatedMappingRuleIds() returns the record default.
     final var base = new MembershipQuery(Map.of(), username, PrincipalType.USER);
-    final var lazyG = CamundaAuthentication.lazyList(() -> membershipPort.groupIds(base));
-    final var lazyR =
-        CamundaAuthentication.lazyList(() -> membershipPort.roleIds(base.withGroupIds(lazyG)));
-    final var lazyT =
+    final var lazyGroupIds = CamundaAuthentication.lazyList(() -> membershipPort.groupIds(base));
+    final var lazyRoleIds =
         CamundaAuthentication.lazyList(
-            () -> membershipPort.tenantIds(base.withGroupIds(lazyG).withRoleIds(lazyR)));
+            () -> membershipPort.roleIds(base.withGroupIds(lazyGroupIds)));
+    final var lazyTenantIds =
+        CamundaAuthentication.lazyList(
+            () ->
+                membershipPort.tenantIds(base.withGroupIds(lazyGroupIds).withRoleIds(lazyRoleIds)));
 
     return CamundaAuthentication.of(
         a ->
             a.user(username)
-                .groupIdsSupplier(() -> lazyG)
-                .roleIdsSupplier(() -> lazyR)
-                .tenantsSupplier(() -> lazyT));
+                .groupIdsSupplier(() -> lazyGroupIds)
+                .roleIdsSupplier(() -> lazyRoleIds)
+                .tenantsSupplier(() -> lazyTenantIds));
   }
 }

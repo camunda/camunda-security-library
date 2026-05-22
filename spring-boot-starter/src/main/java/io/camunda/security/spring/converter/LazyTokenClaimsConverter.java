@@ -64,18 +64,23 @@ public final class LazyTokenClaimsConverter {
     }
 
     final var base = new MembershipQuery(tokenClaims, principalName, principalType);
-    final var lazyMR = CamundaAuthentication.lazyList(() -> membershipPort.mappingRuleIds(base));
-    final var lazyG =
+    final var lazyMappingRuleIds =
+        CamundaAuthentication.lazyList(() -> membershipPort.mappingRuleIds(base));
+    final var lazyGroupIds =
         CamundaAuthentication.lazyList(
-            () -> membershipPort.groupIds(base.withMappingRuleIds(lazyMR)));
-    final var lazyR =
+            () -> membershipPort.groupIds(base.withMappingRuleIds(lazyMappingRuleIds)));
+    final var lazyRoleIds =
         CamundaAuthentication.lazyList(
-            () -> membershipPort.roleIds(base.withMappingRuleIds(lazyMR).withGroupIds(lazyG)));
-    final var lazyT =
+            () ->
+                membershipPort.roleIds(
+                    base.withMappingRuleIds(lazyMappingRuleIds).withGroupIds(lazyGroupIds)));
+    final var lazyTenantIds =
         CamundaAuthentication.lazyList(
             () ->
                 membershipPort.tenantIds(
-                    base.withMappingRuleIds(lazyMR).withGroupIds(lazyG).withRoleIds(lazyR)));
+                    base.withMappingRuleIds(lazyMappingRuleIds)
+                        .withGroupIds(lazyGroupIds)
+                        .withRoleIds(lazyRoleIds)));
 
     return CamundaAuthentication.of(
         a -> {
@@ -84,10 +89,10 @@ public final class LazyTokenClaimsConverter {
           } else {
             a.user(principalName);
           }
-          return a.mappingRulesSupplier(() -> lazyMR)
-              .groupIdsSupplier(() -> lazyG)
-              .roleIdsSupplier(() -> lazyR)
-              .tenantsSupplier(() -> lazyT)
+          return a.mappingRulesSupplier(() -> lazyMappingRuleIds)
+              .groupIdsSupplier(() -> lazyGroupIds)
+              .roleIdsSupplier(() -> lazyRoleIds)
+              .tenantsSupplier(() -> lazyTenantIds)
               .claims(tokenClaims);
         });
   }
