@@ -14,9 +14,9 @@ There are three categories:
 | [Spring SPI ports](#spring-spi-ports-spring-boot-starterspi) | `spring-boot-starter/spi/` | Library → host | Servlet-layer callbacks the library invokes; live in the starter because they speak `jakarta.servlet` types that the framework-free `core/` module cannot import |
 
 > **Dependency:** all port interfaces ship in `camunda-security-library-core` (inbound / outbound)
-> or `camunda-security-library-spring-boot-starter` (Spring SPI). Every library-supplied default
-> bean carries `@ConditionalOnMissingBean` so hosts can override individual beans by registering
-> their own.
+> or `camunda-security-library-spring-boot-starter` (Spring SPI). Library-supplied default port
+> implementation beans carry `@ConditionalOnMissingBean` so hosts can override individual beans by
+> registering their own.
 
 ---
 
@@ -228,16 +228,17 @@ package io.camunda.security.core.port.out;
 ```
 
 Resolves group, role, tenant, and mapping-rule memberships for a principal. The library's
-authentication converters call this port when building a `CamundaAuthentication`. Hosts own where
-the data comes from — search index, RDBMS, in-memory store, etc.
+authentication converters call this port when building a `CamundaAuthentication`, resolving each
+membership field independently from a `MembershipQuery`. Hosts own where the data comes from —
+search index, RDBMS, in-memory store, etc.
 
 **Methods**
 
 ```java
-Memberships resolveMemberships(Map<String, Object> tokenClaims, String principalId, PrincipalType principalType);
-Memberships resolveMembershipsForUser(String username);
-
-enum PrincipalType { USER, CLIENT }
+Set<String> mappingRuleIds(MembershipQuery query);
+Set<String> groupIds(MembershipQuery query);
+Set<String> roleIds(MembershipQuery query);
+Set<String> tenantIds(MembershipQuery query);
 ```
 
 **CSL default:** none — the host must supply this bean.

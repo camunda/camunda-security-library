@@ -53,8 +53,8 @@ public class OidcAuthenticationConfigurationRepository implements OidcProviderCo
    * Returns an immutable map of all OIDC authentication configurations keyed by registration ID.
    *
    * <p>This method returns a defensive copy of the internal providers map via {@link Map#copyOf}.
-   * The returned map is immutable and cannot be modified by callers. This prevents accidental
-   * mutations that could otherwise compromise the shared bean's state in the application.
+   * The returned map is structurally immutable and cannot be modified by callers. The contained
+   * {@link OidcConfiguration} instances are shared references and may still be mutable.
    *
    * @return an immutable map of registration IDs to {@link OidcConfiguration} objects; never {@code
    *     null}
