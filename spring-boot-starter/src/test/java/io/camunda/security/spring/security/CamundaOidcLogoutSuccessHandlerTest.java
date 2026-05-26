@@ -8,7 +8,7 @@
 package io.camunda.security.spring.security;
 
 import static io.camunda.security.spring.security.CamundaOidcLogoutSuccessHandler.POST_LOGOUT_REDIRECT_ATTRIBUTE;
-import static io.camunda.security.spring.security.CamundaOidcLogoutSuccessHandler.REDIRECT_MESSAGE_ATTRIBUTE;
+import static io.camunda.security.spring.security.WebappRedirectStrategy.REDIRECT_MESSAGE_ATTRIBUTE;
 import static java.time.Instant.now;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
@@ -104,16 +104,15 @@ class CamundaOidcLogoutSuccessHandlerTest {
   }
 
   @Test
-  void missingEndSessionEndpointStoresRedirectMessageOnSession() {
+  void missingEndSessionEndpointSetsRedirectMessageOnRequest() {
     final MockHttpServletRequest request = requestWithReferer(SAME_ORIGIN_REFERER);
-    final HttpSession session = request.getSession(true);
     when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
         .thenReturn(clientRegistrationWithoutEndSessionEndpoint());
 
     handler.determineTargetUrl(
         request, new MockHttpServletResponse(), oidcAuthentication("user@camunda.com"));
 
-    assertThat(session.getAttribute(REDIRECT_MESSAGE_ATTRIBUTE))
+    assertThat(request.getAttribute(REDIRECT_MESSAGE_ATTRIBUTE))
         .asInstanceOf(InstanceOfAssertFactories.STRING)
         .contains("end_session_endpoint");
   }

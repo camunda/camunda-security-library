@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.oidc;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
@@ -18,12 +19,14 @@ import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.security.CamundaOidcLogoutSuccessHandler;
+import io.camunda.security.spring.security.WebappRedirectStrategy;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -44,6 +47,7 @@ import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.web.RedirectStrategy;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.util.StringUtils;
 
@@ -380,14 +384,32 @@ public class OidcBeansConfiguration {
    * logout behaviour: a same-origin {@code Referer} is stored as the post-logout redirect URI on
    * the session under {@link CamundaOidcLogoutSuccessHandler#POST_LOGOUT_REDIRECT_ATTRIBUTE}, and
    * the OIDC {@code login_hint} claim is forwarded as {@code logout_hint} to the IdP's end-session
-   * endpoint. Backs off via {@link ConditionalOnMissingBean} when the host registers its own {@link
-   * LogoutSuccessHandler}.
+   * endpoint. Wires the {@link WebappRedirectStrategy} when present so logout responses are adapted
+   * for SPA frontends (204/JSON instead of 3xx). Backs off via {@link ConditionalOnMissingBean}
+   * when the host registers its own {@link LogoutSuccessHandler}.
    */
   @Bean
   @ConditionalOnMissingBean(LogoutSuccessHandler.class)
   public LogoutSuccessHandler camundaOidcLogoutSuccessHandler(
-      final ClientRegistrationRepository clientRegistrationRepository) {
-    return new CamundaOidcLogoutSuccessHandler(clientRegistrationRepository);
+      final ClientRegistrationRepository clientRegistrationRepository,
+      final ObjectProvider<RedirectStrategy> redirectStrategyProvider) {
+    final var handler = new CamundaOidcLogoutSuccessHandler(clientRegistrationRepository);
+    redirectStrategyProvider.ifAvailable(handler::setRedirectStrategy);
+    return handler;
+  }
+
+  /**
+   * Default {@link RedirectStrategy} for the OIDC webapp chain. Adapts logout redirects for SPA
+   * frontends: sends {@code 204 No Content} (with an optional {@code X-Logout-Message} header) when
+   * the target is the root path, and {@code 200 OK} with a JSON body containing the redirect URL
+   * otherwise — allowing the JavaScript client to handle navigation. Backs off via {@link
+   * ConditionalOnMissingBean} when the host registers its own {@link RedirectStrategy}.
+   */
+  @Bean
+  @ConditionalOnMissingBean(RedirectStrategy.class)
+  public RedirectStrategy webappRedirectStrategy(
+      final ObjectProvider<ObjectMapper> objectMapperProvider) {
+    return new WebappRedirectStrategy(objectMapperProvider.getIfAvailable(ObjectMapper::new));
   }
 
   @Bean

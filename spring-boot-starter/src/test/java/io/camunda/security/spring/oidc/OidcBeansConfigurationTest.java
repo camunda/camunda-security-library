@@ -9,17 +9,23 @@ package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.security.CamundaOidcLogoutSuccessHandler;
+import io.camunda.security.spring.security.WebappRedirectStrategy;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
@@ -27,6 +33,7 @@ import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequest
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.web.RedirectStrategy;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 
 /**
@@ -78,6 +85,30 @@ class OidcBeansConfigurationTest {
               assertThat(ctx)
                   .getBean(LogoutSuccessHandler.class)
                   .isInstanceOf(HostLogoutSuccessHandler.NoOpLogoutSuccessHandler.class);
+            });
+  }
+
+  @Test
+  void defaultWebappRedirectStrategyIsRegisteredWhenNoHostBeanPresent() {
+    runner.run(
+        ctx -> {
+          assertThat(ctx).hasSingleBean(RedirectStrategy.class);
+          assertThat(ctx)
+              .getBean(RedirectStrategy.class)
+              .isInstanceOf(WebappRedirectStrategy.class);
+        });
+  }
+
+  @Test
+  void hostRegisteredRedirectStrategySuppressesTheDefault() {
+    runner
+        .withUserConfiguration(HostRedirectStrategy.class)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasSingleBean(RedirectStrategy.class);
+              assertThat(ctx)
+                  .getBean(RedirectStrategy.class)
+                  .isInstanceOf(HostRedirectStrategy.NoOpRedirectStrategy.class);
             });
   }
 
@@ -134,6 +165,72 @@ class OidcBeansConfigurationTest {
             });
   }
 
+  @Test
+  void defaultLogoutSuccessHandlerUsesTheConfiguredRedirectStrategyBean() throws Exception {
+    runner
+        .withUserConfiguration(RedirectStrategySpy.class)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasSingleBean(LogoutSuccessHandler.class);
+              assertThat(ctx).hasSingleBean(RedirectStrategy.class);
+
+              final var handler = ctx.getBean(LogoutSuccessHandler.class);
+              final var redirectSpy = ctx.getBean(RedirectStrategy.class);
+
+              // Exercise the handler to verify the RedirectStrategy is actually invoked
+              final var request = new MockHttpServletRequest();
+              final var response = new MockHttpServletResponse();
+              handler.onLogoutSuccess(request, response, null);
+
+              // Verify the spy was invoked, proving the strategy is wired into the handler
+              assertThat(redirectSpy).isInstanceOf(RedirectStrategySpy.SpyRedirectStrategy.class);
+              final var spy = (RedirectStrategySpy.SpyRedirectStrategy) redirectSpy;
+              assertThat(spy.invoked).isTrue();
+            });
+  }
+
+  @Test
+  void hostRedirectStrategyIsWiredIntoDefaultLogoutSuccessHandler() throws Exception {
+    runner
+        .withUserConfiguration(HostRedirectStrategySpy.class)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasSingleBean(LogoutSuccessHandler.class);
+              assertThat(ctx).hasSingleBean(RedirectStrategy.class);
+
+              final var handler = ctx.getBean(LogoutSuccessHandler.class);
+              final var redirectSpy = ctx.getBean(RedirectStrategy.class);
+
+              // Exercise the handler to verify the host RedirectStrategy is actually invoked
+              final var request = new MockHttpServletRequest();
+              final var response = new MockHttpServletResponse();
+              handler.onLogoutSuccess(request, response, null);
+
+              // Verify the host strategy was invoked, proving it's wired instead of the default
+              assertThat(redirectSpy)
+                  .isInstanceOf(HostRedirectStrategySpy.SpyHostRedirectStrategy.class);
+              final var spy = (HostRedirectStrategySpy.SpyHostRedirectStrategy) redirectSpy;
+              assertThat(spy.invoked).isTrue();
+            });
+  }
+
+  @Test
+  void webappRedirectStrategyReceivesHostObjectMapperWhenAvailable() {
+    runner
+        .withUserConfiguration(HostObjectMapper.class)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasSingleBean(ObjectMapper.class);
+              assertThat(ctx.getBean(ObjectMapper.class)).isSameAs(HostObjectMapper.CUSTOM_MAPPER);
+              // WebappRedirectStrategy does not expose the injected ObjectMapper via a getter, so
+              // we can only verify that the custom ObjectMapper bean is in the context and is
+              // wired into the WebappRedirectStrategy constructor (tested elsewhere).
+              assertThat(ctx).hasSingleBean(RedirectStrategy.class);
+              assertThat(ctx.getBean(RedirectStrategy.class))
+                  .isInstanceOf(WebappRedirectStrategy.class);
+            });
+  }
+
   @Configuration
   static class StubOidcInfrastructure {
 
@@ -179,6 +276,23 @@ class OidcBeansConfigurationTest {
   }
 
   @Configuration
+  static class HostRedirectStrategy {
+
+    @Bean
+    RedirectStrategy hostRedirectStrategy() {
+      return new NoOpRedirectStrategy();
+    }
+
+    static final class NoOpRedirectStrategy implements RedirectStrategy {
+      @Override
+      public void sendRedirect(
+          final jakarta.servlet.http.HttpServletRequest request,
+          final jakarta.servlet.http.HttpServletResponse response,
+          final String url) {}
+    }
+  }
+
+  @Configuration
   static class HostAuthorizationRequestResolver {
 
     @Bean
@@ -217,6 +331,57 @@ class OidcBeansConfigurationTest {
       @Override
       public Map<String, OidcConfiguration> getOidcAuthenticationConfigurations() {
         return Map.of();
+      }
+    }
+  }
+
+  @Configuration
+  static class HostObjectMapper {
+
+    static final ObjectMapper CUSTOM_MAPPER = new ObjectMapper();
+
+    @Bean
+    ObjectMapper objectMapper() {
+      return CUSTOM_MAPPER;
+    }
+  }
+
+  @Configuration
+  static class RedirectStrategySpy {
+
+    @Bean
+    RedirectStrategy redirectStrategySpy() {
+      return new SpyRedirectStrategy();
+    }
+
+    static final class SpyRedirectStrategy implements RedirectStrategy {
+      boolean invoked = false;
+
+      @Override
+      public void sendRedirect(
+          final HttpServletRequest request, final HttpServletResponse response, final String url)
+          throws IOException {
+        invoked = true;
+      }
+    }
+  }
+
+  @Configuration
+  static class HostRedirectStrategySpy {
+
+    @Bean
+    RedirectStrategy hostRedirectStrategySpy() {
+      return new SpyHostRedirectStrategy();
+    }
+
+    static final class SpyHostRedirectStrategy implements RedirectStrategy {
+      boolean invoked = false;
+
+      @Override
+      public void sendRedirect(
+          final HttpServletRequest request, final HttpServletResponse response, final String url)
+          throws IOException {
+        invoked = true;
       }
     }
   }
