@@ -24,7 +24,6 @@ import io.camunda.security.spring.handler.LoggingAuthenticationFailureHandler;
 import io.camunda.security.spring.handler.OAuth2AuthenticationExceptionHandler;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import java.util.LinkedHashMap;
-import java.util.Map;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -35,7 +34,6 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
-import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
@@ -196,71 +194,17 @@ public class OidcWebappSecurityConfiguration {
     SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
-    // Spring Security's DefaultLoginPageConfigurer only installs the auto-generated picker filter
-    // when no custom AuthenticationEntryPoint is set on exceptionHandling. CSL sets one (see
-    // oidcWebappAuthenticationEntryPoint) to redirect browser navigations to the IdP/picker
-    // instead of letting Spring Security 7's resource-server entry point 401 them — a deliberate
-    // UX improvement over OC stable/8.9, which leaves the entry point unset and accepts the 401.
-    // The trade-off is that DefaultLoginPageConfigurer's `entryPoint == null` gate trips and the
-    // picker is silently dropped. Multi-IdP deployments therefore 302 anonymous browsers to
-    // LOGIN_URL and find no handler there (GH-269). Register the picker explicitly, populated
-    // from the standard ClientRegistrationRepository. The filter only matches GET /login and is
-    // a no-op on every other path, so it is safe for single-IdP deployments too — in that case
-    // the entry point still 302s straight to the IdP without ever reaching /login.
-    //
-    // Hosts that want to serve a branded picker UI at /login can register their own
-    // DefaultLoginPageGeneratingFilter bean (with their preferred client-name mapping, or with
-    // all login types disabled to fall through to a Spring MVC controller). The
-    // oidcLoginPickerProvider hook installs the host bean if present, otherwise the library
-    // default. Same pattern as the other ObjectProvider hooks on this chain.
-    //
-    // Registration order matters: both this filter and SecurityFilterChainSupport's
-    // csrfTokenResponseHeaderFilter anchor to CsrfFilter via addFilterAfter, so they share an
-    // identical position in HttpSecurity's filter list. Spring sorts that list with a stable
-    // comparator, which means insertion order is the tie-break. The picker terminates the chain
-    // for /login responses, and the CSRF header filter uses HttpServletResponse.setHeader (a
-    // no-op after commit) — so the CSRF filter must be inserted first to guarantee it writes
-    // the header before the picker commits the response. This addFilterAfter call therefore
-    // runs after applyCsrfConfiguration above.
+    // DefaultLoginPageConfigurer's `entryPoint == null` gate is tripped by our custom entry point,
+    // so the picker is silently dropped and multi-IdP deployments 302 to /login and 404 (GH-269).
+    // Must follow applyCsrfConfiguration: both filters anchor to CsrfFilter via addFilterAfter and
+    // stable sort makes insertion order the tie-break — the CSRF header filter must be inserted
+    // first so it writes its header before the picker commits the response.
     final var loginPickerFilter =
         oidcLoginPickerProvider.getIfAvailable(
-            () -> defaultOauth2LoginPickerFilter(clientRegistrationRepository));
+            () -> LoginLinksBuilder.defaultOauth2LoginPickerFilter(clientRegistrationRepository));
     filterChainBuilder.addFilterAfter(loginPickerFilter, CsrfFilter.class);
 
     return filterChainBuilder.build();
-  }
-
-  private static DefaultLoginPageGeneratingFilter defaultOauth2LoginPickerFilter(
-      final ClientRegistrationRepository clientRegistrationRepository) {
-    final var picker = new DefaultLoginPageGeneratingFilter();
-    picker.setLoginPageUrl(LOGIN_URL);
-    picker.setOauth2LoginEnabled(true);
-    picker.setOauth2AuthenticationUrlToClientName(buildLoginLinks(clientRegistrationRepository));
-    return picker;
-  }
-
-  /**
-   * Builds the {@code /oauth2/authorization/{id}} -> client display name map consumed by {@link
-   * DefaultLoginPageGeneratingFilter#setOauth2AuthenticationUrlToClientName(Map)}. Returns an empty
-   * map when the repository is not iterable (host-supplied implementation that does not extend
-   * {@link Iterable}); the picker then renders without OAuth2 links, which still beats a 404.
-   */
-  private static Map<String, String> buildLoginLinks(
-      final ClientRegistrationRepository clientRegistrationRepository) {
-    final var links = new LinkedHashMap<String, String>();
-    if (!(clientRegistrationRepository instanceof final Iterable<?> iterable)) {
-      return links;
-    }
-    for (final Object candidate : iterable) {
-      if (candidate instanceof final ClientRegistration registration) {
-        final var displayName =
-            registration.getClientName() != null
-                ? registration.getClientName()
-                : registration.getRegistrationId();
-        links.put("/oauth2/authorization/" + registration.getRegistrationId(), displayName);
-      }
-    }
-    return links;
   }
 
   /**
