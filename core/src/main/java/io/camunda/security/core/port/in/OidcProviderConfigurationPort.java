@@ -27,8 +27,7 @@ public interface OidcProviderConfigurationPort {
    *
    * <p>The returned map is a defensive copy of the internal configuration state and cannot be
    * mutated. Attempts to modify the returned map will throw {@link UnsupportedOperationException}.
-   * Callers should treat this map as read-only; any mutations to the internal repository must go
-   * through dedicated mutator methods on the repository implementation.
+   * Callers should treat this map as read-only.
    *
    * @return an immutable map of registration IDs to {@link OidcConfiguration} objects; never {@code
    *     null}, may be empty
