@@ -18,7 +18,7 @@ For the platform team: one codebase to maintain, one security surface to audit, 
 
 ## Architecture
 
-The CSL is a **hexagonal (ports and adapters) Spring Boot library** embedded into host applications (Hub, Orchestration Clusters). For new code, interfaces in the core should be modeled as ports: inbound ports model use cases, and outbound ports model dependencies on persistence, IdP clients, engine commands, and outbox delivery. Host applications provide adapters that implement those outbound ports. Some legacy outbound contracts still exist in `core` under `io.camunda.security.core.adapter` and will remain until they are refactored to follow this convention consistently.
+The CSL is a **hexagonal (ports and adapters) Spring Boot library** embedded into host applications (Hub, Orchestration Clusters, Optimize). For new code, interfaces in the core should be modeled as ports: inbound ports model use cases, and outbound ports model dependencies on persistence, IdP clients, engine commands, and outbox delivery. Host applications provide adapters that implement those outbound ports. Some legacy outbound contracts still exist in `core` under `io.camunda.security.core.adapter` and will remain until they are refactored to follow this convention consistently.
 
 No host-specific code leaks into the library domain. Swapping a database, replacing an IdP client, or adding a new deployment topology requires only a new adapter.
 
