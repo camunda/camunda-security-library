@@ -48,6 +48,15 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
    */
   public static final String POST_LOGOUT_REDIRECT_ATTRIBUTE = "postLogoutRedirect";
 
+  /**
+   * Session attribute used to surface a human-readable explanation when RP-initiated logout cannot
+   * reach the IdP (for example, no {@code end_session_endpoint} was published). Stored on the
+   * session — not the request — so the message survives the redirect that the {@link
+   * org.springframework.security.web.authentication.logout.LogoutSuccessHandler
+   * LogoutSuccessHandler} issues and is readable by the post-logout page on the subsequent request.
+   */
+  public static final String REDIRECT_MESSAGE_ATTRIBUTE = "redirectMessage";
+
   private static final Logger LOG = LoggerFactory.getLogger(CamundaOidcLogoutSuccessHandler.class);
 
   private static final String END_SESSION_UNAVAILABLE_MESSAGE =
@@ -116,8 +125,9 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
               + "The local session has been terminated, but the IdP session will still be active. "
               + "Falling back to '{}' without logout hint.",
           baseLogoutUrl);
-      request.setAttribute(
-          WebappRedirectStrategy.REDIRECT_MESSAGE_ATTRIBUTE, END_SESSION_UNAVAILABLE_MESSAGE);
+      request
+          .getSession()
+          .setAttribute(REDIRECT_MESSAGE_ATTRIBUTE, END_SESSION_UNAVAILABLE_MESSAGE);
       return baseLogoutUrl;
     }
 
