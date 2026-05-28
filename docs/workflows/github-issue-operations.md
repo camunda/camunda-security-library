@@ -9,13 +9,13 @@ When an issue body references a file in this repo (an ADR, a workflow doc, a sou
 **Format:**
 
 ```
-[display text](https://github.com/camunda/camunda-security-gateway/blob/main/<path>)
+[display text](https://github.com/camunda/camunda-security-library/blob/main/<path>)
 ```
 
 **Examples:**
 
-- `` [ADR-0002](https://github.com/camunda/camunda-security-gateway/blob/main/docs/adr/0002-placement-of-the-security-gateway-framework.md) `` instead of `` `docs/adr/0002-placement-of-the-security-gateway-framework.md` ``
-- `` [architecture.md](https://github.com/camunda/camunda-security-gateway/blob/main/.claude/docs/architecture.md) `` instead of `` `.claude/docs/architecture.md` ``
+- `` [ADR-0002](https://github.com/camunda/camunda-security-library/blob/main/docs/adr/0002-placement-of-the-security-gateway-framework.md) `` instead of `` `docs/adr/0002-placement-of-the-security-gateway-framework.md` ``
+- `` [architecture.md](https://github.com/camunda/camunda-security-library/blob/main/.claude/docs/architecture.md) `` instead of `` `.claude/docs/architecture.md` ``
 
 **When this applies:**
 - Any narrative reference a reader should be able to follow (Location in Code, Additional Context, referenced ADRs, patterns to follow).
@@ -35,7 +35,7 @@ The repo has these native issue types configured: `Bug`, `Feature`, `Task`, `Epi
 ```bash
 gh api graphql -f query='
 query {
-  repository(owner: "camunda", name: "camunda-security-gateway") {
+  repository(owner: "camunda", name: "camunda-security-library") {
     issueTypes(first: 10) { nodes { id name } }
   }
 }' --jq '.data.repository.issueTypes.nodes[] | select(.name=="Task") | .id'
@@ -48,7 +48,7 @@ Replace `Task` with `Bug` or `Feature` as needed. The returned ID looks like `IT
 Once the issue is created, get its GraphQL node ID and run the mutation:
 
 ```bash
-NODE_ID=$(gh api repos/camunda/camunda-security-gateway/issues/<number> --jq .node_id)
+NODE_ID=$(gh api repos/camunda/camunda-security-library/issues/<number> --jq .node_id)
 gh api graphql -f query="
 mutation {
   updateIssueIssueType(input: {issueId: \"$NODE_ID\", issueTypeId: \"<TYPE_ID>\"}) {
@@ -64,8 +64,8 @@ GitHub supports native parent-child relationships. Use these instead of just men
 ### Link a child to a parent
 
 ```bash
-CHILD_ID=$(gh api repos/camunda/camunda-security-gateway/issues/<child-number> --jq .id)
-gh api -X POST repos/camunda/camunda-security-gateway/issues/<parent-number>/sub_issues \
+CHILD_ID=$(gh api repos/camunda/camunda-security-library/issues/<child-number> --jq .id)
+gh api -X POST repos/camunda/camunda-security-library/issues/<parent-number>/sub_issues \
   -F sub_issue_id=$CHILD_ID
 ```
 
@@ -74,7 +74,7 @@ gh api -X POST repos/camunda/camunda-security-gateway/issues/<parent-number>/sub
 ### Verify
 
 ```bash
-gh api repos/camunda/camunda-security-gateway/issues/<parent-number>/sub_issues \
+gh api repos/camunda/camunda-security-library/issues/<parent-number>/sub_issues \
   --jq '.[] | {number, title}'
 ```
 
@@ -88,11 +88,11 @@ URL=$(gh issue create --title "..." --body "...")
 NUM=$(basename "$URL")
 
 # 2. Look up the Bug type ID
-TYPE_ID=$(gh api graphql -f query='query { repository(owner: "camunda", name: "camunda-security-gateway") { issueTypes(first: 10) { nodes { id name } } } }' \
+TYPE_ID=$(gh api graphql -f query='query { repository(owner: "camunda", name: "camunda-security-library") { issueTypes(first: 10) { nodes { id name } } } }' \
   --jq '.data.repository.issueTypes.nodes[] | select(.name=="Bug") | .id')
 
 # 3. Set the type
-NODE_ID=$(gh api repos/camunda/camunda-security-gateway/issues/$NUM --jq .node_id)
+NODE_ID=$(gh api repos/camunda/camunda-security-library/issues/$NUM --jq .node_id)
 gh api graphql -f query="mutation { updateIssueIssueType(input: {issueId: \"$NODE_ID\", issueTypeId: \"$TYPE_ID\"}) { issue { number } } }"
 ```
 
@@ -106,7 +106,7 @@ NUM=$(basename "$URL")
 # ...
 
 # Link as a sub-issue of the parent feature (#9 in this example)
-CHILD_ID=$(gh api repos/camunda/camunda-security-gateway/issues/$NUM --jq .id)
-gh api -X POST repos/camunda/camunda-security-gateway/issues/9/sub_issues \
+CHILD_ID=$(gh api repos/camunda/camunda-security-library/issues/$NUM --jq .id)
+gh api -X POST repos/camunda/camunda-security-library/issues/9/sub_issues \
   -F sub_issue_id=$CHILD_ID
 ```

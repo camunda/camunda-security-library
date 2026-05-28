@@ -69,7 +69,7 @@ When you write the body, **link in-repo files as clickable GitHub blob URLs**, n
 <Link to parent feature issue — e.g., #NNN — Hub adopts CSL>
 
 ## Runtime Classification
-<No-op refactor | Behavior change — and a brief explanation of why.>
+<One of: `No-op refactor` | `Behavior change (isolated)` | `Behavior change (broad — one-way door)`. Add a brief explanation of why.>
 
 ## Completion Condition
 <What "done" looks like. A state someone can verify: "all X call sites use Y", "class Z is deleted", "feature flag removed".>
@@ -110,5 +110,5 @@ Before creating, verify:
 - [ ] A fresh agent could read this issue and understand what phase it covers without referencing external documents
 - [ ] The completion condition is verifiable — not "work is done" but a specific observable state
 - [ ] CSL Coordination is explicitly addressed (even if the answer is "none required")
-- [ ] Runtime classification is labeled (no-op vs. behavior change)
+- [ ] Runtime classification is labeled — one of `No-op refactor`, `Behavior change (isolated)`, or `Behavior change (broad — one-way door)`
 - [ ] The parent feature is linked as a native sub-issue relationship, not only in body text
