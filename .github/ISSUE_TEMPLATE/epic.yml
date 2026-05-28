@@ -1,0 +1,103 @@
+name: Epic
+description: A coherent phase of work within a feature — groups a set of tasks under a clear completion condition
+type: Epic
+body:
+  - type: markdown
+    attributes:
+      value: |
+        An epic groups a set of related tasks within a parent feature. It represents a phase or milestone — larger than a single task, but scoped enough that it has a clear "done" condition when all its tasks land.
+
+        Every epic has a parent feature, a verifiable completion condition, and an explicit runtime classification (no-op refactor vs. behavior change).
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences describing what phase this is and what it achieves.
+      placeholder: "P2 — Migrate every read-only AuthenticationService call site to CamundaAuthenticationProvider / AuthenticatedUserProvider."
+    validations:
+      required: true
+
+  - type: textarea
+    id: parent-feature
+    attributes:
+      label: Parent Feature
+      description: Link to the parent feature issue. An epic must have a parent feature.
+      placeholder: "Parent: #281 — Hub adopts CSL"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: runtime-classification
+    attributes:
+      label: Runtime Classification
+      description: Does this epic change runtime behavior, or is it a pure refactor?
+      options:
+        - No-op refactor
+        - Behavior change (isolated)
+        - Behavior change (broad — one-way door)
+    validations:
+      required: true
+
+  - type: textarea
+    id: completion-condition
+    attributes:
+      label: Completion Condition
+      description: What "done" looks like — a verifiable state, not a feeling. "All X call sites use Y", "class Z is deleted", "feature flag removed".
+      placeholder: |
+        - `getOptionalAuthenticatedUser()` is deleted
+        - No production code outside CSL infrastructure reads `SecurityContextHolder` directly
+        - All ~22 call sites identified in the P2 audit now inject `CamundaAuthenticationProvider` or `AuthenticatedUserProvider`
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is in scope and what is explicitly deferred to another epic or out of scope entirely.
+      placeholder: |
+        In scope:
+        - Read-only call sites only (queries / "who is the caller" reads)
+        - Both SaaS and Self-Managed modules
+
+        Out of scope:
+        - PermissionEvaluator / SecurityExpressionRoot migration (deferred to P3)
+        - hasElevatedAccess (deferred to P4)
+        - Embedded `getUser()` / `getOrganizationId()` removal (deferred to P5)
+    validations:
+      required: true
+
+  - type: textarea
+    id: csl-coordination
+    attributes:
+      label: CSL Coordination
+      description: Any upstream CSL work that must land before this epic can start. Link issues. Write "None — hub-local adapters are sufficient" if there are no upstream blockers.
+      placeholder: |
+        None — hub-local adapters are sufficient through P5.
+
+        OR
+
+        Requires CSL JWT→CamundaAuthentication converters covering Hub SaaS (Auth0 with custom-claim-prefix) and Hub SM (dual-aud Keycloak/Identity). See #NNN.
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation-plan
+    attributes:
+      label: Implementation Plan
+      description: Checkboxes linking to task issues that will deliver this epic. Populated as tasks are created. Leave empty at epic creation time if the breakdown isn't known yet.
+      placeholder: |
+        - [ ] #NNN — Audit and classify all AuthenticationService call sites
+        - [ ] #NNN — Migrate read-only call sites in modeler-internal-api-common
+        - [ ] #NNN — Delete getOptionalAuthenticatedUser() and finalize cleanup
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Related ADRs, deployment strategy relevance, PR cadence notes, links to plan documents.
+    validations:
+      required: false
