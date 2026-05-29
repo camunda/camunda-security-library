@@ -49,6 +49,27 @@ class CamundaSecurityLibraryPropertiesTest {
   }
 
   @Test
+  void shouldDefaultPersistentSessionToDisabled() {
+    runner.run(
+        context -> {
+          final var properties = context.getBean(CamundaSecurityLibraryProperties.class);
+          assertThat(properties.getSession()).isNotNull();
+          assertThat(properties.getSession().getPersistent().isEnabled()).isFalse();
+        });
+  }
+
+  @Test
+  void shouldBindPersistentSessionEnabled() {
+    runner
+        .withPropertyValues("camunda.security.session.persistent.enabled=true")
+        .run(
+            context -> {
+              final var properties = context.getBean(CamundaSecurityLibraryProperties.class);
+              assertThat(properties.getSession().getPersistent().isEnabled()).isTrue();
+            });
+  }
+
+  @Test
   void shouldRestoreEmptyProvidersWhenSetterCalledWithNull() {
     final var authentication = new AuthenticationConfiguration();
     authentication.setProviders(null);
