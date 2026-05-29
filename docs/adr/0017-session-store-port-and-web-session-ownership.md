@@ -59,12 +59,24 @@ attributes)`.
 `SessionStoreAdapter` delegates to its existing `PersistentWebSessionClient` and maps
 `PersistentSession` ↔ `PersistentWebSessionEntity`.
 
-**Bean wiring, conditional activation, and retry stay host-side.** CSL ships the session classes as
-plain building blocks; it does **not** add a `@Configuration`, is not auto-activated, and adds
-nothing to `AutoConfiguration.imports` (consistent with ADR-0008). OC keeps
-`WebSessionRepositoryConfiguration`, the `@ConditionalOnPersistentWebSessionEnabled` annotation (with
-its legacy property keys), the deletion-task scheduling, and the resilience4j upsert retry inside its
-`SessionStoreAdapter`.
+**CSL provides a host-imported, property-gated `WebSessionConfiguration`.** CSL owns the bean wiring
+for the session lifecycle: `WebSessionConfiguration` (`spring-boot-starter`, `@EnableSpringHttpSession`,
+gated by `@ConditionalOnPersistentWebSessionEnabled`) exposes the `WebSessionRepository`, `WebSessionMapper`,
+`WebSessionAttributeConverter`, and the deletion-task scheduler — each `@ConditionalOnMissingBean`. It is
+**not** auto-activated and is deliberately **left out of the `CamundaSecurityAutoConfiguration` umbrella**
+(an intentional exception to the "add new configs to the umbrella" convention): the host must `@Import` it
+behind its own web/gateway gate, because activation is tied to the OC-only `@ConditionalOnRestGatewayEnabled`
+which CSL cannot reference. The deletion scheduler's `Thread.UncaughtExceptionHandler` is an overridable
+`@ConditionalOnMissingBean` bean so the host can plug in its own fatal-error handling.
+
+**Enablement uses a new canonical CSL property** `camunda.security.session.persistent.enabled` (bound via a
+new `SessionConfiguration` node and checked by CSL's `@ConditionalOnPersistentWebSessionEnabled`). Hosts that
+still use legacy enable-keys bridge them onto this property (OC does so via an `EnvironmentPostProcessor`).
+
+**OC retains only host-specific pieces:** the secondary-storage backend clients + index descriptor, the
+`SessionStorePort` adapter bean (with the resilience4j upsert retry — see below), the `@ConditionalOnRestGatewayEnabled`
+gate, the `FatalErrorHandler`-backed uncaught-exception-handler override, and the legacy-property bridge. OC's
+slim `WebSessionRepositoryConfiguration` `@Import`s CSL's `WebSessionConfiguration`.
 
 **CSL gains one dependency:** `spring-session-core` (version managed by the Spring Boot BOM) in
 `spring-boot-starter/`. No resilience4j dependency is added to CSL, because retry stays in the OC
@@ -96,13 +108,14 @@ dependency into the library.
   adapter. Acceptable: resilience policy is genuinely a property of the storage backend, and the
   port already documents that implementations own infrastructure-failure handling.
 
-### Conditional annotation: keep in OC (chosen) vs move to CSL
+### Conditional annotation and enablement property
 
-The original issue listed `ConditionalOnPersistentWebSessionEnabled` as moving to CSL. It is kept in
-OC instead, alongside `WebSessionRepositoryConfiguration`, because its property keys
-(`camunda.persistent.sessions.enabled` plus legacy `camunda.operate.*` / `camunda.tasklist.*` keys)
-and the `@ConditionalOnRestGatewayEnabled` / secondary-storage gating are OC-specific concerns. CSL
-configuration must not reference OC gateway types.
+`ConditionalOnPersistentWebSessionEnabled` lives in CSL (`io.camunda.security.spring.annotation`) and
+checks the new canonical property `camunda.security.session.persistent.enabled`. The legacy OC keys
+(`camunda.persistent.sessions.enabled` plus `camunda.operate.*` / `camunda.tasklist.*` variants) are
+**bridged** onto the canonical key by an OC `EnvironmentPostProcessor`, so the new property is the single
+source of truth and CSL never references OC-specific keys. The OC-only `@ConditionalOnRestGatewayEnabled`
+and secondary-storage gates remain host-side, applied to OC's config that `@Import`s the CSL one.
 
 ## Consequences
 
@@ -117,6 +130,11 @@ configuration must not reference OC gateway types.
   `PersistentSession` ↔ `PersistentWebSessionEntity` in the OC adapter). This is the cost of the
   dependency inversion; both records carry identical fields.
 - Changing the `SessionStorePort` signature requires updating every adapter that satisfies it.
-- The library and the host share responsibility for the feature: CSL owns the classes, OC owns
-  wiring, gating, scheduling, and retry. This split must be kept clear (documented in
+- The library and the host share responsibility for the feature: CSL owns the session classes,
+  bean wiring (`WebSessionConfiguration`), scheduling, and the enablement property; OC owns the
+  storage backends, the `SessionStorePort` adapter (incl. retry), the gateway gate, the uncaught-handler
+  override, and the legacy-property bridge. This split must be kept clear (documented in
   `docs/adopters/ports.md`).
+- `WebSessionConfiguration` is intentionally excluded from the `CamundaSecurityAutoConfiguration`
+  umbrella, deviating from the "register every config in the umbrella" convention, because activation
+  must be wrapped by the host's OC-only gateway gate.

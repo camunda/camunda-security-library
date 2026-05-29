@@ -36,6 +36,7 @@ public class CamundaSecurityLibraryProperties {
   private CsrfConfiguration csrf = new CsrfConfiguration();
   private HeaderConfiguration httpHeaders = new HeaderConfiguration();
   private SaasConfiguration saas = new SaasConfiguration();
+  private SessionConfiguration session = new SessionConfiguration();
 
   /**
    * The ID validation pattern is configurable with the intention to:
@@ -107,6 +108,14 @@ public class CamundaSecurityLibraryProperties {
 
   public void setCsrf(final CsrfConfiguration csrf) {
     this.csrf = csrf;
+  }
+
+  public SessionConfiguration getSession() {
+    return session;
+  }
+
+  public void setSession(final SessionConfiguration session) {
+    this.session = session;
   }
 
   public String getIdValidationPattern() {
