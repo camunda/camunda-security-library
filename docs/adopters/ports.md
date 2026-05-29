@@ -43,7 +43,7 @@ There are three categories:
 | [`SecurityPathPort`](#securitypathport) | _(none — host must provide)_ | `SecurityPathAdapter` |
 | [`PolicyRepositoryPort`](#policyrepositoryport) | _(none — under development)_ | _(none)_ |
 | [`IdpClientPort`](#idpclientport) | _(none — under development)_ | _(none)_ |
-| [`SessionStorePort`](#sessionstoreport) | _(none — under development)_ | _(none)_ |
+| [`SessionStorePort`](#sessionstoreport) | _(none — host must provide)_ | `SessionStoreAdapter` |
 | [`OutboxPort`](#outboxport) | _(none — under development)_ | _(none)_ |
 | [`ClusterRegistryPort`](#clusterregistryport) | _(none — under development)_ | _(none)_ |
 | [`FeatureTogglePort`](#featuretoggleport) | _(none — under development)_ | _(none)_ |
@@ -314,7 +314,35 @@ development — no methods defined yet.
 package io.camunda.security.core.port.out;
 ```
 
-Stores and retrieves authenticated session state. Under active development — no methods defined yet.
+Stores and retrieves authenticated web-session state. The library owns the session lifecycle — its
+`WebSessionRepository` (a Spring Session `SessionRepository` in `spring-boot-starter/`) creates,
+loads, expires, and deletes sessions, persisting each one through this port. Hosts own where the
+data lives (database, search index, …) and translate the `PersistentSession` boundary record to
+their storage model. Implementations are responsible for handling infrastructure failures (for
+example retrying transient storage errors and not leaking infrastructure exceptions to the caller).
+
+**Methods**
+
+```java
+PersistentSession get(String sessionId);   // null when absent
+void upsert(PersistentSession session);
+void delete(String sessionId);
+List<PersistentSession> getAll();           // used to scan for and evict expired sessions
+```
+
+`PersistentSession` (`api/model/session/`) is a framework-free record:
+`(String id, Long creationTime, Long lastAccessedTime, Long maxInactiveIntervalInSeconds,
+Map<String, byte[]> attributes)` — timestamps in epoch millis, interval in seconds, attribute
+values pre-serialized to bytes.
+
+**CSL default:** none — the host must supply this bean.
+
+**OC example:** `SessionStoreAdapter` in `authentication/` — delegates to the persistent web-session
+storage client (search index or RDBMS) and maps `PersistentSession` ↔ its storage entity. The
+session classes themselves (`WebSession`, `WebSessionRepository`, `WebSessionMapper`,
+`WebSessionDeletionTask`) are wired and gated host-side (see `WebSessionRepositoryConfiguration` and
+`@ConditionalOnPersistentWebSessionEnabled` in OC); CSL ships them as plain building blocks and does
+not auto-activate them.
 
 ---
 
