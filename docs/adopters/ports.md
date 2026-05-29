@@ -337,12 +337,21 @@ values pre-serialized to bytes.
 
 **CSL default:** none — the host must supply this bean.
 
-**OC example:** `SessionStoreAdapter` in `authentication/` — delegates to the persistent web-session
-storage client (search index or RDBMS) and maps `PersistentSession` ↔ its storage entity. The
-session classes themselves (`WebSession`, `WebSessionRepository`, `WebSessionMapper`,
-`WebSessionDeletionTask`) are wired and gated host-side (see `WebSessionRepositoryConfiguration` and
-`@ConditionalOnPersistentWebSessionEnabled` in OC); CSL ships them as plain building blocks and does
-not auto-activate them.
+**Wiring:** CSL provides `WebSessionConfiguration` (`io.camunda.security.spring.session`), which wires
+the `WebSessionRepository`, `WebSessionMapper`, `WebSessionAttributeConverter`, and the expired-session
+deletion scheduler (all `@ConditionalOnMissingBean`) and enables Spring Session. It is **not** in the
+`CamundaSecurityAutoConfiguration` umbrella — the host `@Import`s it explicitly, behind whatever web/gateway
+condition the host needs. Activation is gated by `@ConditionalOnPersistentWebSessionEnabled`
+(`camunda.security.session.persistent.enabled=true`). The deletion thread's
+`Thread.UncaughtExceptionHandler` is an overridable `webSessionDeletionUncaughtExceptionHandler` bean.
+
+**OC example:** OC supplies the `SessionStorePort` bean as `SessionStoreAdapter` in `authentication/`
+— it delegates to the persistent web-session storage client (search index or RDBMS), maps
+`PersistentSession` ↔ its storage entity, and owns the upsert retry. OC's slim
+`WebSessionRepositoryConfiguration` keeps the storage backends, gates on `@ConditionalOnRestGatewayEnabled`,
+`@Import`s CSL's `WebSessionConfiguration`, and overrides `webSessionDeletionUncaughtExceptionHandler` with a
+`FatalErrorHandler`-backed handler. Legacy OC enable-keys are bridged onto
+`camunda.security.session.persistent.enabled` by an OC `EnvironmentPostProcessor`.
 
 ---
 
