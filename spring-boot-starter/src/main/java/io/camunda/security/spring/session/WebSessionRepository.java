@@ -18,7 +18,7 @@ import org.springframework.session.SessionRepository;
 
 public final class WebSessionRepository implements SessionRepository<WebSession> {
 
-  public static final Logger LOGGER = LoggerFactory.getLogger(WebSessionRepository.class);
+  private static final Logger LOGGER = LoggerFactory.getLogger(WebSessionRepository.class);
   private static final String POLLING_HEADER = "x-is-polling";
 
   private final SessionStorePort sessionStorePort;
@@ -97,6 +97,7 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
     if (webSession.isChanged()) {
       LOGGER.debug("Web Session {} changed, save in storage.", webSession);
       sessionStorePort.upsert(webSessionMapper.toPersistentSession(webSession));
+      webSession.clearChangeFlag();
     }
   }
 
@@ -128,8 +129,7 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
     } catch (final Exception e) {
       // This can happen, if it is called outside a dispatcher servlet.
       LOGGER.debug(
-          "Expected Exception: is not possible to access request as currently this is not on a request context",
-          e);
+          "Cannot access HTTP request outside of a request context; treating as non-polling", e);
     }
     return isPollingRequest;
   }

@@ -30,6 +30,6 @@ public record PersistentSession(
     Objects.requireNonNull(creationTime, "creationTime");
     Objects.requireNonNull(lastAccessedTime, "lastAccessedTime");
     Objects.requireNonNull(maxInactiveIntervalInSeconds, "maxInactiveIntervalInSeconds");
-    attributes = attributes != null ? attributes : new HashMap<>();
+    attributes = attributes == null ? new HashMap<>() : new HashMap<>(attributes);
   }
 }

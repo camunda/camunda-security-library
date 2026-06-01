@@ -119,7 +119,9 @@ public class WebSessionConfiguration {
     @Override
     public void run() {
       task.run();
-      executor.schedule(this, delay, TimeUnit.MILLISECONDS);
+      if (!executor.isShutdown()) {
+        executor.schedule(this, delay, TimeUnit.MILLISECONDS);
+      }
     }
   }
 }

@@ -44,6 +44,7 @@ public final class WebSession implements Session {
 
   public WebSession setId(final String id) {
     delegate.setId(id);
+    changed = true;
     return this;
   }
 

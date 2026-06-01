@@ -23,7 +23,7 @@ import org.springframework.core.serializer.support.SerializingConverter;
 
 public final class WebSessionMapper {
 
-  public static final Logger LOGGER = LoggerFactory.getLogger(WebSessionMapper.class);
+  private static final Logger LOGGER = LoggerFactory.getLogger(WebSessionMapper.class);
   private final WebSessionAttributeConverter converter;
 
   public WebSessionMapper(final WebSessionAttributeConverter converter) {
