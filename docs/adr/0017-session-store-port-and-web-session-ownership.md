@@ -138,3 +138,33 @@ and secondary-storage gates remain host-side, applied to OC's config that `@Impo
 - `WebSessionConfiguration` is intentionally excluded from the `CamundaSecurityAutoConfiguration`
   umbrella, deviating from the "register every config in the umbrella" convention, because activation
   must be wrapped by the host's OC-only gateway gate.
+
+## Risks and follow-ups
+
+**Default attribute converter uses Java native serialization.** `SpringBasedWebSessionAttributeConverter`
+— the default `WebSessionAttributeConverter` bean wired by `WebSessionConfiguration` — uses
+`SerializingConverter`/`DeserializingConverter` (Java native serialization) to translate session
+attribute values to and from bytes. This preserves the behaviour migrated from OC unchanged. Two
+known drawbacks come with it:
+
+- **Deserialization risk.** Reading attacker-controllable bytes back through Java native
+  deserialization can be exploited via gadget chains. The session storage is server-side and
+  written exclusively through `SessionStorePort`, so the threat model is "storage tampering" rather
+  than direct user input — but a hardened production deployment should still avoid Java native
+  deserialization as the default.
+- **Upgrade brittleness.** Class renames, package moves, or `serialVersionUID` changes in attribute
+  types break previously-persisted sessions.
+
+The `WebSessionAttributeConverter` bean is `@ConditionalOnMissingBean`, so hosts can register their
+own — for example a JSON converter with explicit DTOs, or a `DeserializingConverter` configured
+with an `ObjectInputFilter` allowlist. Adopter guidance is in `docs/adopters/ports.md` under
+[`SessionStorePort`](../adopters/ports.md#sessionstoreport). Switching the CSL default away from
+Java native serialization is deferred — that would change persisted-session compatibility for every
+existing adopter and is out of scope for the behaviour-preserving migration.
+
+**Session-ID rotation does not delete the previous record.** When `changeSessionId()` (or
+`setId(...)`) rotates a session's ID, `WebSessionRepository.save(...)` writes the new ID through
+`SessionStorePort.upsert(...)` but does **not** delete the previous ID. The old record then remains
+valid in the backing store until natural expiry — a potential session-fixation / parallel-valid-IDs
+hazard and a minor storage leak. This too matches the pre-CSL OC behaviour and is preserved by the
+migration; tracked as a follow-up against `WebSessionRepository`.
