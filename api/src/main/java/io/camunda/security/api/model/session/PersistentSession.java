@@ -31,5 +31,4 @@ public record PersistentSession(
     Objects.requireNonNull(maxInactiveIntervalInSeconds, "maxInactiveIntervalInSeconds");
     attributes = attributes == null ? Map.of() : Map.copyOf(attributes);
   }
-  }
 }
