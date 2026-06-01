@@ -345,6 +345,16 @@ condition the host needs. Activation is gated by `@ConditionalOnPersistentWebSes
 (`camunda.security.session.persistent.enabled=true`). The deletion thread's
 `Thread.UncaughtExceptionHandler` is an overridable `webSessionDeletionUncaughtExceptionHandler` bean.
 
+**Default attribute converter — hardening note:** the bundled `WebSessionAttributeConverter` bean
+(`SpringBasedWebSessionAttributeConverter`) uses Java native serialization
+(`SerializingConverter`/`DeserializingConverter`) for attribute values. Two consequences:
+deserializing attacker-controllable session bytes can be exploited via gadget chains (storage
+tampering is the threat model), and persisted sessions are brittle to class/package renames or
+`serialVersionUID` changes. The bean is `@ConditionalOnMissingBean`, so hardened production
+deployments should register their own `WebSessionAttributeConverter` — e.g. a JSON converter with
+explicit DTOs, or a `DeserializingConverter` configured with an `ObjectInputFilter` allowlist. See
+[ADR-0017 §Risks and follow-ups](../adr/0017-session-store-port-and-web-session-ownership.md#risks-and-follow-ups).
+
 **OC example:** OC supplies the `SessionStorePort` bean as `SessionStoreAdapter` in `authentication/`
 — it delegates to the persistent web-session storage client (search index or RDBMS), maps
 `PersistentSession` ↔ its storage entity, and owns the upsert retry. OC's slim
