@@ -24,5 +24,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.TYPE, ElementType.METHOD})
 @Documented
-@ConditionalOnProperty(name = "camunda.security.session.persistent.enabled", havingValue = "true")
+@ConditionalOnProperty(
+    name = io.camunda.security.api.model.config.SessionConfiguration.PERSISTENT_ENABLED_PROPERTY,
+    havingValue = "true")
 public @interface ConditionalOnPersistentWebSessionEnabled {}
