@@ -59,7 +59,7 @@ mutation {
 
 ## Adding the issue to GitHub Projects
 
-Every issue this repo creates — bug, feature, task, or epic — must be added to **both** org projects:
+Every issue created via the `/bug`, `/feature`, `/task`, or `/epic` workflows must be added to **both** org projects:
 
 | Project | Number | What it is |
 |---|---|---|
