@@ -7,7 +7,6 @@
  */
 package io.camunda.security.api.model.session;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -30,6 +29,7 @@ public record PersistentSession(
     Objects.requireNonNull(creationTime, "creationTime");
     Objects.requireNonNull(lastAccessedTime, "lastAccessedTime");
     Objects.requireNonNull(maxInactiveIntervalInSeconds, "maxInactiveIntervalInSeconds");
-    attributes = attributes == null ? new HashMap<>() : new HashMap<>(attributes);
+    attributes = attributes == null ? Map.of() : Map.copyOf(attributes);
+  }
   }
 }

@@ -53,6 +53,7 @@ public final class WebSessionMapper {
       webSession.setLastAccessedTime(toInstant(lastAccessedTime));
       webSession.setMaxInactiveInterval(toDuration(maxInactiveIntervalInSeconds));
       attributes.forEach(webSession::setAttribute);
+      webSession.clearChangeFlag();
       return webSession;
     } catch (final Exception e) {
       LOGGER.error("The persistent session could not be restored.", e);
