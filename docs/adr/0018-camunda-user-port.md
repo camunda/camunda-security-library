@@ -26,10 +26,11 @@ Two structural constraints shape the decision:
 
 1. **The OC implementations are not portable as-is.**
    `OidcCamundaUserService` and `BasicCamundaUserService` depend on
-   `UserServices`, `TenantServices`, and OAuth2 host wiring — all OC-only.
-   Lifting them as CSL defaults would either pull those services into CSL
-   (large surface, conflicts with Inc-14/Inc-15 boundaries) or invent shim
-   ports (premature port design with no concrete adopter).
+   `UserServices`, `TenantServices`, `ResourceAccessProvider`, and OAuth2
+   host wiring — all OC-only. Lifting them wholesale would either pull those
+   services into CSL (large surface, conflicts with Inc-14/Inc-15 boundaries)
+   or require narrowly-scoped outbound ports so the CSL default can ask the
+   host for the parts it cannot see itself.
 2. **`CamundaUserDTO` references OC's `search.entities.TenantEntity`**
    directly for tenants (while groups and roles are already plain string IDs).
    Moving the record into CSL means decoupling it from search-domain entities
@@ -71,15 +72,28 @@ passes them to the response mapper). `c8Links` is typed as `Map<String, String>`
 enum is host-specific; hosts populate the map with the same string keys the
 existing endpoint already emits.
 
-**`UserConfiguration` (host-imported via the umbrella) provides a CSL-default
-`OidcCamundaUserService`.** It assembles the DTO from the active
-`CamundaAuthentication` (username, tenant/group/role IDs) and the OIDC
-principal carried in the Spring Security context (full name + email), and
-returns the access/id token via `OAuth2AuthorizedClientRepository`. It is
-guarded by `@ConditionalOnAuthenticationMethod(OIDC)` and
-`@ConditionalOnMissingBean(CamundaUserPort.class)`, so OC's
-`@Service`-registered `OidcCamundaUserService` (which still resolves authorized
-components via `ResourceAccessProvider`) wins the bean.
+**`UserConfiguration` (host-imported via the umbrella) provides the OIDC
+default `CamundaUserPort` implementation, `OidcCamundaUserService`.** This is
+the production implementation for OIDC deployments, not a placeholder: it
+assembles the DTO from the active `CamundaAuthentication` (username,
+tenant/group/role IDs) and the OIDC principal carried in the Spring Security
+context (full name + email), and returns the access/id token via
+`OAuth2AuthorizedClientRepository`. It is guarded by
+`@ConditionalOnAuthenticationMethod(OIDC)` and
+`@ConditionalOnMissingBean(CamundaUserPort.class)`.
+
+Authorized components — the one piece of data the CSL-side default cannot
+resolve on its own — flow in via a new outbound `AuthorizedComponentsPort`.
+OC contributes the adapter that delegates to its `ResourceAccessProvider`;
+when no adapter is registered, `UserConfiguration` falls back to a default
+bean that returns an empty list. OC's PR (camunda/camunda#54464) deletes its
+own `OidcCamundaUserService` and contributes only this thin adapter.
+
+The `/v2/authentication/me/token` response contract is preserved
+byte-identically: `getUserToken()` returns the access (or id) token as a JSON
+string literal (escaped + surrounded by quotes), matching OC's pre-migration
+`Json.createValue(token).toString()` output. The endpoint declares
+`application/json`; the body remains a valid JSON value, not raw text.
 
 **No CSL-side default ships for basic auth.** `BasicCamundaUserService` stays
 in OC. It reads secondary-storage user data (`UserServices.getUser`) which CSL
@@ -126,18 +140,21 @@ move to CSL as a default `MembershipPort` implementation.
 
 ### Scope of CSL defaults in this increment
 
-The migration could ship the port only and leave every implementation in OC.
+The migration could ship the port only and leave the OIDC implementation in OC.
 
-- **Chosen for the merged commit:** ship the port + DTO + ADR (commit 1) and
-  a host-imported, exploratory `OidcCamundaUserService` default in
-  spring-boot-starter (commit 2).
-- **Pro:** the second commit demonstrates the contract is implementable
-  inside CSL using only CSL-visible types and gives future adopters a working
-  starting point.
-- **Con:** the default is intentionally minimal — no tenant-name resolution,
-  no authorized-components, no SaaS metadata. If OC's override is universal
-  in practice (today it is), commit 2 carries little weight and can be dropped
-  before merge.
+- **Chosen:** ship the port + DTO + ADR (commit 1) and the production OIDC
+  `OidcCamundaUserService` default in spring-boot-starter (commit 2). The OC
+  PR (camunda/camunda#54464) drops OC's own `OidcCamundaUserService` and
+  consumes the CSL default directly, contributing only the
+  `AuthorizedComponentsAdapter`.
+- **Pro:** OIDC user resolution becomes a shared, reviewable implementation
+  that every OIDC host inherits; OC stops carrying duplicated wiring. The
+  remaining host-specific piece (authorized components) is isolated behind a
+  named outbound port.
+- **Con:** the CSL default does not resolve tenant display names, SaaS
+  metadata, or `c8Links` — adopters that need those must wire them host-side
+  (in OC, `AuthenticationController` enriches tenant names from
+  `TenantServices` before the response mapper runs).
 
 ## Consequences
 
@@ -160,10 +177,21 @@ The migration could ship the port only and leave every implementation in OC.
 
 ## Risks and follow-ups
 
-**CSL-default `OidcCamundaUserService` weight.** The default in commit 2 only
-populates what CSL can see. If every supported deployment registers a richer
-OC implementation, the default is dead code; drop commit 2 before merge in
-that case.
+**Basic-auth deployments must register their own `CamundaUserPort`.** The
+CSL default is gated by `@ConditionalOnAuthenticationMethod(OIDC)`, so a
+host configured for basic authentication does not get a CSL-supplied bean.
+OC supplies `BasicCamundaUserService` host-side; any future basic-auth
+adopter must do the same. Basic auth without secondary storage is already an
+unsupported combination that OC fails fast on (see
+`BasicAuthenticationNoDbConfiguration`), so this matches the existing
+constraint surface.
+
+**`/v2/authentication/me/token` body format is JSON-encoded.** The CSL
+default preserves OC's historical `Json.createValue(token).toString()`
+wrapping, so the body is a JSON string literal (`"<token>"`) rather than the
+raw token. Whether this double-encoding is itself a bug worth fixing on the
+API contract is intentionally out of scope for this increment; revisit
+separately with API-consumer sign-off.
 
 **`IdpClientPort` design deferred.** When a concrete IdP-client adapter
 materialises (token exchange, userinfo fetching, refresh), the empty marker

@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.user;
 
+import com.fasterxml.jackson.core.io.JsonStringEncoder;
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.user.CamundaUserDTO;
@@ -41,6 +42,7 @@ public class OidcCamundaUserService implements CamundaUserPort {
 
   private static final String SALES_PLAN_TYPE = "";
   private static final Map<String, String> C8_LINKS = Map.of();
+  private static final JsonStringEncoder JSON_STRING_ENCODER = JsonStringEncoder.getInstance();
 
   private final CamundaAuthenticationProvider authenticationProvider;
   private final AuthorizedComponentsPort authorizedComponentsPort;
@@ -75,7 +77,18 @@ public class OidcCamundaUserService implements CamundaUserPort {
       throw new UnsupportedOperationException("User is not authenticated or is not a OIDC user");
     }
     return Optional.ofNullable(getToken(authentication, oidcUser))
+        .map(OidcCamundaUserService::toJsonStringLiteral)
         .orElseThrow(() -> new UnsupportedOperationException("User does not have a valid token"));
+  }
+
+  /**
+   * Wraps the raw token in a JSON string literal (escaped + surrounded by quotes) so the {@code
+   * /v2/authentication/me/token} response body stays byte-identical to OC's pre-migration {@code
+   * Json.createValue(token).toString()} behaviour. The endpoint declares {@code application/json},
+   * so the body must be a valid JSON value, not raw text.
+   */
+  private static String toJsonStringLiteral(final String value) {
+    return "\"" + new String(JSON_STRING_ENCODER.quoteAsString(value)) + "\"";
   }
 
   protected CamundaUserDTO toUserDto(final CamundaAuthentication authentication) {
