@@ -18,6 +18,7 @@ import io.camunda.security.spring.security.OidcApiSecurityConfiguration;
 import io.camunda.security.spring.security.OidcWebappSecurityConfiguration;
 import io.camunda.security.spring.security.UnprotectedApiSecurityConfiguration;
 import io.camunda.security.spring.security.WebAppAuthorizationFilterConfiguration;
+import io.camunda.security.spring.user.UserConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.context.annotation.Import;
 
@@ -58,5 +59,6 @@ import org.springframework.context.annotation.Import;
   OidcBeansConfiguration.class,
   WebAppAuthorizationFilterConfiguration.class,
   AdminUserCheckFilterConfiguration.class,
+  UserConfiguration.class,
 })
 public class CamundaSecurityAutoConfiguration {}

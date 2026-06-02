@@ -20,6 +20,7 @@ import io.camunda.security.spring.security.OidcApiSecurityConfiguration;
 import io.camunda.security.spring.security.OidcWebappSecurityConfiguration;
 import io.camunda.security.spring.security.UnprotectedApiSecurityConfiguration;
 import io.camunda.security.spring.security.WebAppAuthorizationFilterConfiguration;
+import io.camunda.security.spring.user.UserConfiguration;
 import java.io.IOException;
 import java.net.URL;
 import java.util.Collections;
@@ -79,6 +80,7 @@ class CamundaSecurityAutoConfigurationTest {
             AuthFailureHandlerConfiguration.class,
             OidcBeansConfiguration.class,
             WebAppAuthorizationFilterConfiguration.class,
-            AdminUserCheckFilterConfiguration.class);
+            AdminUserCheckFilterConfiguration.class,
+            UserConfiguration.class);
   }
 }
