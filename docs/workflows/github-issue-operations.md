@@ -57,6 +57,24 @@ mutation {
 }"
 ```
 
+## Adding the issue to GitHub Projects
+
+Every issue created via the `/bug`, `/feature`, `/task`, or `/epic` workflows must be added to **both** org projects:
+
+| Project | Number | What it is |
+|---|---|---|
+| CSL Delivery | `241` | The library's own delivery board. |
+| Identity | `209` | The Identity team umbrella that aggregates all of the team's work. |
+
+Project 241 may already pick up new issues via the project's built-in auto-add automation, but do not rely on that — add the issue explicitly to both so it never depends on a project-side setting. Re-adding an item that is already on a board is a no-op, so this is always safe to run.
+
+```bash
+gh project item-add 241 --owner camunda --url "$URL"   # CSL Delivery
+gh project item-add 209 --owner camunda --url "$URL"   # Identity team
+```
+
+`$URL` is the full issue URL returned by `gh issue create`. The command is idempotent and accepts the issue URL directly — no project node ID lookup needed.
+
 ## Linking sub-issues (native relationships)
 
 GitHub supports native parent-child relationships. Use these instead of just mentioning issue numbers in the body — the GitHub UI renders progress ("0 of N completed") and shows sub-issues as a proper hierarchy.
@@ -94,6 +112,10 @@ TYPE_ID=$(gh api graphql -f query='query { repository(owner: "camunda", name: "c
 # 3. Set the type
 NODE_ID=$(gh api repos/camunda/camunda-security-library/issues/$NUM --jq .node_id)
 gh api graphql -f query="mutation { updateIssueIssueType(input: {issueId: \"$NODE_ID\", issueTypeId: \"$TYPE_ID\"}) { issue { number } } }"
+
+# 4. Add it to both org projects
+gh project item-add 241 --owner camunda --url "$URL"   # CSL Delivery
+gh project item-add 209 --owner camunda --url "$URL"   # Identity team
 ```
 
 Creating a task and linking it to a parent feature:

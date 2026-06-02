@@ -44,9 +44,11 @@ Use `gh issue create` with the bug template. Every field should give a cold-star
 gh issue create --title "<concise title>" --body "<body>"
 ```
 
-After creation, set the native issue type to `Bug`. See [github-issue-operations.md](https://github.com/camunda/camunda-security-gateway/blob/main/docs/workflows/github-issue-operations.md) for the exact commands. Do not apply a `bug` label — the native type replaces it.
+After creation, set the native issue type to `Bug`. See [github-issue-operations.md](https://github.com/camunda/camunda-security-library/blob/main/docs/workflows/github-issue-operations.md) for the exact commands. Do not apply a `bug` label — the native type replaces it.
 
-When you write the body, **link in-repo files as clickable GitHub blob URLs**, not plain-text paths. See the "Linking files in issue bodies" section of [github-issue-operations.md](https://github.com/camunda/camunda-security-gateway/blob/main/docs/workflows/github-issue-operations.md).
+Then add the issue to both the **CSL Delivery** (`241`) and **Identity** (`209`) org projects — see the "Adding the issue to GitHub Projects" section of [github-issue-operations.md](https://github.com/camunda/camunda-security-library/blob/main/docs/workflows/github-issue-operations.md).
+
+When you write the body, **link in-repo files as clickable GitHub blob URLs**, not plain-text paths. See the "Linking files in issue bodies" section of [github-issue-operations.md](https://github.com/camunda/camunda-security-library/blob/main/docs/workflows/github-issue-operations.md).
 
 **Body structure:**
 

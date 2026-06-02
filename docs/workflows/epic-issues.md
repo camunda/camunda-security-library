@@ -54,6 +54,7 @@ After creation:
 
 1. Set the native issue type to `Epic` — see [github-issue-operations.md](https://github.com/camunda/camunda-security-library/blob/main/docs/workflows/github-issue-operations.md) for the command.
 2. Link it as a native sub-issue of its parent feature — also covered in [github-issue-operations.md](https://github.com/camunda/camunda-security-library/blob/main/docs/workflows/github-issue-operations.md).
+3. Add it to both the **CSL Delivery** (`241`) and **Identity** (`209`) org projects — see the "Adding the issue to GitHub Projects" section of [github-issue-operations.md](https://github.com/camunda/camunda-security-library/blob/main/docs/workflows/github-issue-operations.md).
 
 Do not apply an `epic` label — the native type replaces it.
 
