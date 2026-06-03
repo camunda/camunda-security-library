@@ -95,6 +95,11 @@ public record RequiredAuthorization<T>(
     Predicate<T> condition,
     boolean transitive) {
 
+  public RequiredAuthorization {
+    resourceIds = resourceIds == null ? null : List.copyOf(resourceIds);
+    resourcePropertyNames =
+        resourcePropertyNames == null ? null : Set.copyOf(resourcePropertyNames);
+  }
   // USER TASK property names
   public static final String PROP_ASSIGNEE = "assignee";
   public static final String PROP_CANDIDATE_USERS = "candidateUsers";
@@ -130,7 +135,7 @@ public record RequiredAuthorization<T>(
     return new RequiredAuthorization<>(
         resourceType(),
         permissionType(),
-        List.copyOf(resourceIds),
+        resourceIds,
         resourceIdSupplier(),
         resourcePropertyNames(),
         condition(),
