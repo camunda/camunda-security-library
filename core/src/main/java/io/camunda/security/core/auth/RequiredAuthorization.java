@@ -95,15 +95,16 @@ public record RequiredAuthorization<T>(
     Predicate<T> condition,
     boolean transitive) {
 
+  // USER TASK property names
+  public static final String PROP_ASSIGNEE = "assignee";
+  public static final String PROP_CANDIDATE_USERS = "candidateUsers";
+  public static final String PROP_CANDIDATE_GROUPS = "candidateGroups";
+
   public RequiredAuthorization {
     resourceIds = resourceIds == null ? null : List.copyOf(resourceIds);
     resourcePropertyNames =
         resourcePropertyNames == null ? null : Set.copyOf(resourcePropertyNames);
   }
-  // USER TASK property names
-  public static final String PROP_ASSIGNEE = "assignee";
-  public static final String PROP_CANDIDATE_USERS = "candidateUsers";
-  public static final String PROP_CANDIDATE_GROUPS = "candidateGroups";
 
   public boolean hasAnyResourceIds() {
     return resourceIds != null && !resourceIds.isEmpty();
