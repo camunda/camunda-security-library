@@ -11,6 +11,7 @@ import com.jayway.jsonpath.Configuration;
 import com.jayway.jsonpath.JsonPath;
 import com.jayway.jsonpath.JsonPathException;
 import com.jayway.jsonpath.Option;
+import io.camunda.security.core.jsonpath.JsonPathClaimSanitizer;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
@@ -36,8 +37,14 @@ public final class OidcPrincipalLoader {
   private final ReentrantLock evaluationLock = new ReentrantLock();
 
   public OidcPrincipalLoader(final String usernameClaim, final String clientIdClaim) {
-    usernamePath = usernameClaim != null ? JsonPath.compile(sanitize(usernameClaim)) : null;
-    clientIdPath = clientIdClaim != null ? JsonPath.compile(sanitize(clientIdClaim)) : null;
+    usernamePath =
+        usernameClaim != null
+            ? JsonPath.compile(JsonPathClaimSanitizer.sanitize(usernameClaim))
+            : null;
+    clientIdPath =
+        clientIdClaim != null
+            ? JsonPath.compile(JsonPathClaimSanitizer.sanitize(clientIdClaim))
+            : null;
   }
 
   public OidcPrincipals load(final Map<String, Object> claims) {
@@ -69,18 +76,6 @@ public final class OidcPrincipalLoader {
           "Failed to evaluate expression {} on claims with keys {}", path, claims.keySet(), e);
       return null;
     }
-  }
-
-  private static String sanitize(final String claim) {
-    // If the claim starts with a dollar sign, it is already a JSONPath expression.
-    // Otherwise, wrap it with the dollar sign to denote a JSONPath. Escape backslashes and
-    // single quotes in the claim name before quoting so claim names containing those characters
-    // produce a valid JSONPath rather than breaking principal extraction.
-    if (claim.startsWith("$")) {
-      return claim;
-    }
-    final var escaped = claim.replace("\\", "\\\\").replace("'", "\\'");
-    return "$['" + escaped + "']";
   }
 
   public record OidcPrincipals(String username, String clientId) {}
