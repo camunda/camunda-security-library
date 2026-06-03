@@ -28,7 +28,7 @@ OC's `Authorization<T>` carries Jackson annotations: `@JsonAutoDetect(ANY)`, fou
 
 Prior to this decision CSL guardrails permitted `jackson-annotations` in the domain (runtime Jackson was forbidden). In practice **no CSL production code uses any Jackson annotation today** — the carve-out is unused. Migrating the runtime check spec with annotations intact would introduce the first Jackson coupling in `core/` or `api/`, against the spirit of the framework-free domain.
 
-OC has already solved the equivalent problem for `CamundaAuthentication`: `MsgPackConverter` registers a `CamundaAuthenticationMixin` that supplies snake-case `@JsonProperty` names and `@JsonIgnore` markers on the host-side `ObjectMapper`, leaving the CSL record untouched.
+OC has already solved the equivalent problem for `CamundaAuthentication`: `MsgPackConverter` registers a `CamundaAuthenticationMixin` that supplies snake-case `@JsonProperty` names and `@JsonIgnore` markers on the host-side `ObjectMapper`, leaving the CSL record untouched. This ADR answers: how should CSL name and place the migrated runtime authorization check spec, and how can CSL keep its domain free of Jackson dependencies?
 
 ## Decision
 
@@ -46,7 +46,7 @@ The class is the *atom* on which OC's authorization-check vocabulary is built: `
 
 `RequiredAuthorization` pairs with CSL's existing (implicitly granted) `Authorization`, mirroring the conceptual duality at the heart of every authorization check: *required* (what the caller needs) vs *granted* (what the caller actually has).
 
-## Options Considered
+## Alternatives Considered
 
 ### Option A (chosen): Migrate `Authorization<T>` as `RequiredAuthorization<T>`; strip Jackson; mixin on OC
 
@@ -65,13 +65,13 @@ The class is the *atom* on which OC's authorization-check vocabulary is built: `
 
 ## Consequences
 
-**Positive:**
+**Positive**
 
 - The CSL `core`/`api` modules are guaranteed Jackson-free at compile time. Adopters consume the public types without any Jackson coupling on the classpath.
 - The mixin pattern is consistent across `CamundaAuthentication` and `RequiredAuthorization`: both records live in CSL annotation-free; both have host-side mixins in OC's `MsgPackConverter`.
 - The `Authorization` / `RequiredAuthorization` pair establishes a clear vocabulary — *granted* (data shape returned by repositories) vs *required* (runtime check spec evaluated against the granted set).
 
-**Negative / ongoing obligations:**
+**Negative / accepted trade-offs**
 
 - When `RequiredAuthorization<T>` gains or loses a record component, OC's `RequiredAuthorizationMixin` must be updated to match. Tests in OC's `JsonSerializableToJsonTest` and a `RequiredAuthorization<?>` round-trip in `MsgPackConverterAuthenticationCompatibilityTest` (or a sibling) anchor this: a divergence between record components and mixin will surface as a test failure on the serialized JSON shape.
 - Any future host that wants a custom JSON shape for a CSL type must follow the same pattern (host-side mixin) — adding annotations directly to a CSL record is no longer permitted.
