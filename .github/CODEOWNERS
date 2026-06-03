@@ -1,4 +1,6 @@
-# GitHub auto-requests review from each of the listed owners whenever a PR
-# touches matching files. The "*" pattern matches everything, so all three
-# are review-requested on every PR.
-*  @Ben-Sheppard @megglos @p-wunderlich @marcosbarbero
+# GitHub auto-requests review from the listed owner whenever a PR touches
+# matching files. The "*" pattern matches everything, so the csl-team is
+# review-requested on every PR. For every team member to be requested (rather
+# than a routed subset), the team's code review assignment must be disabled in
+# https://github.com/orgs/camunda/teams/csl-team/settings.
+*  @camunda/csl-team
