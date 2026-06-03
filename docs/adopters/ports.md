@@ -337,31 +337,34 @@ values pre-serialized to bytes.
 
 **CSL default:** none — the host must supply this bean.
 
-**Wiring:** CSL provides `WebSessionConfiguration` (`io.camunda.security.spring.session`), which wires
-the `WebSessionRepository`, `WebSessionMapper`, `WebSessionAttributeConverter`, and the expired-session
-deletion scheduler (all `@ConditionalOnMissingBean`) and enables Spring Session. It is **not** in the
-`CamundaSecurityAutoConfiguration` umbrella — the host `@Import`s it explicitly, behind whatever web/gateway
-condition the host needs. Activation is gated by `@ConditionalOnPersistentWebSessionEnabled`
-(`camunda.security.session.persistent.enabled=true`). The deletion thread's
-`Thread.UncaughtExceptionHandler` is an overridable `webSessionDeletionUncaughtExceptionHandler` bean.
+**Wiring:** CSL provides `WebSessionConfiguration` (`io.camunda.security.spring.session`), which
+wires the `WebSessionRepository`, `WebSessionMapper`, `WebSessionAttributeConverter`, and the
+expired-session deletion scheduler (all `@ConditionalOnMissingBean`) and enables Spring Session. It
+is **not** in the `CamundaSecurityAutoConfiguration` umbrella — the host activates it explicitly
+behind whatever web/gateway condition the host needs. Activation is gated by
+`@ConditionalOnPersistentWebSessionEnabled` (`camunda.security.session.persistent.enabled=true`).
+The deletion thread's `Thread.UncaughtExceptionHandler` is an overridable
+`webSessionDeletionUncaughtExceptionHandler` bean.
 
-**Default attribute converter — hardening note:** the bundled `WebSessionAttributeConverter` bean
-(`SpringBasedWebSessionAttributeConverter`) uses Java native serialization
-(`SerializingConverter`/`DeserializingConverter`) for attribute values. Two consequences:
-deserializing attacker-controllable session bytes can be exploited via gadget chains (storage
-tampering is the threat model), and persisted sessions are brittle to class/package renames or
-`serialVersionUID` changes. The bean is `@ConditionalOnMissingBean`, so hardened production
-deployments should register their own `WebSessionAttributeConverter` — e.g. a JSON converter with
-explicit DTOs, or a `DeserializingConverter` configured with an `ObjectInputFilter` allowlist. See
-[ADR-0017 §Risks and follow-ups](../adr/0017-session-store-port-and-web-session-ownership.md#risks-and-follow-ups).
+> **Activate it with `@ImportAutoConfiguration`, not `@Import`.** A direct `@Import` parses CSL's
+> class before the host's own `@Bean` methods, so the CSL defaults register first and any host
+> override fails with `BeanDefinitionOverrideException` (or silently loses, for unnamed beans).
+> `@ImportAutoConfiguration(WebSessionConfiguration.class)` defers loading to the auto-config
+> phase, so the host's beans are already in the factory when CSL's `@ConditionalOnMissingBean`
+> conditions evaluate. See the [persistent web sessions adopter guide](./persistent-web-sessions.md)
+> for the full end-to-end wiring example, the overridable beans, and a hardening note on the
+> default attribute converter (which uses Java native serialization and should be replaced in
+> production).
 
-**OC example:** OC supplies the `SessionStorePort` bean as `SessionStoreAdapter` in `authentication/`
-— it delegates to the persistent web-session storage client (search index or RDBMS), maps
-`PersistentSession` ↔ its storage entity, and owns the upsert retry. OC's slim
-`WebSessionRepositoryConfiguration` keeps the storage backends, gates on `@ConditionalOnRestGatewayEnabled`,
-`@Import`s CSL's `WebSessionConfiguration`, and overrides `webSessionDeletionUncaughtExceptionHandler` with a
-`FatalErrorHandler`-backed handler. Legacy OC enable-keys are bridged onto
-`camunda.security.session.persistent.enabled` by an OC `EnvironmentPostProcessor`.
+**OC example:** OC supplies the `SessionStorePort` bean as `SessionStoreAdapter` in
+`authentication/` — it delegates to the persistent web-session storage client (search index or
+RDBMS), maps `PersistentSession` ↔ its storage entity, and owns the upsert retry. OC's slim
+`WebSessionRepositoryConfiguration` keeps the storage backends, gates on
+`@ConditionalOnRestGatewayEnabled`, activates CSL via
+`@ImportAutoConfiguration(WebSessionConfiguration.class)`, and overrides
+`webSessionDeletionUncaughtExceptionHandler` with a `FatalErrorHandler`-backed handler. Legacy OC
+enable-keys are bridged onto `camunda.security.session.persistent.enabled` by an OC
+`EnvironmentPostProcessor`.
 
 ---
 
