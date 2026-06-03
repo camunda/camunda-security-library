@@ -194,8 +194,8 @@ class MappingRuleMatcherTest {
 
     /**
      * This test does not actually test new behavior, but covers the code path where the same
-     * expression is used multiples times, exercising the caching logic. It's not strictly
-     * necessary, but nice to have coverage of the cache.
+     * expression is used multiple times, exercising the caching logic. It's not strictly necessary,
+     * but nice to have coverage of the cache.
      */
     @Test
     @DisplayName("multiple rules share same expression (cache exercise)")
@@ -229,6 +229,22 @@ class MappingRuleMatcherTest {
 
       // then
       assertThat(result).extracting(MappingRuleEntity::mappingRuleId).containsExactly("r1");
+    }
+
+    @Test
+    @DisplayName("rule with null claimValue does not throw and does not match a non-null claim")
+    void nullClaimValueIsHandledSafely() {
+      // given — claimValue() is null; the matcher must not NPE on .equals() and must return no
+      // match because the resolved claim is a non-null string.
+      final Map<String, Object> claims = Map.of("sub", "alice");
+      final var rules = List.of(new MappingRuleEntity("r1", "$.sub", null));
+
+      // when
+      final List<MappingRuleEntity> result =
+          MappingRuleMatcher.matchingRules(rules.stream(), claims).toList();
+
+      // then
+      assertThat(result).isEmpty();
     }
 
     @Test

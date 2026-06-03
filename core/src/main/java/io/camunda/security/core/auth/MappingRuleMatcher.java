@@ -11,17 +11,20 @@ import com.jayway.jsonpath.Configuration;
 import com.jayway.jsonpath.JsonPath;
 import com.jayway.jsonpath.JsonPathException;
 import com.jayway.jsonpath.Option;
+import io.camunda.security.core.jsonpath.JsonPathClaimSanitizer;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Matches mapping rules against claims by evaluating JSONPath expressions for each mapping rule.
- * Keeps a cache of compiled JSONPath expressions to avoid recompiling the same expressions multiple
- * times.
+ * Keeps a per-invocation cache of evaluation results so the same expression is compiled and
+ * evaluated at most once per call.
  */
 public final class MappingRuleMatcher {
   private static final Configuration CONFIGURATION =
@@ -55,50 +58,62 @@ public final class MappingRuleMatcher {
     if (claimValue instanceof final Collection<?> claimValues) {
       return claimValues.contains(mappingRule.claimValue());
     }
-    return mappingRule.claimValue().equals(claimValue);
-  }
-
-  private static String sanitize(final String claim) {
-    // If the claim starts with a dollar sign, it is already a JSONPath expression.
-    // Otherwise, wrap it with the dollar sign to denote a JSONPath. Escape backslashes and
-    // single quotes in the claim name before quoting so claim names containing those characters
-    // produce a valid JSONPath rather than silently failing to match.
-    if (claim.startsWith("$")) {
-      return claim;
-    }
-    final var escaped = claim.replace("\\", "\\\\").replace("'", "\\'");
-    return "$['" + escaped + "']";
+    return Objects.equals(mappingRule.claimValue(), claimValue);
   }
 
   /**
    * A short-lived cache for evaluating many expressions against the same claims. Results are cached
-   * so each expression is only evaluated once.
+   * so each expression is only evaluated once — including expressions that resolve to {@code null}
+   * or that consistently fail with {@link JsonPathException}.
+   *
+   * <p>Access is serialized via {@link #evaluationLock} because Jayway JSONPath evaluation is not
+   * thread-safe under concurrent calls (see <a
+   * href="https://github.com/json-path/JsonPath/issues/975">json-path/JsonPath#975</a>), and the
+   * cache itself is a plain {@link HashMap}. The lock guarantees correctness even when the input
+   * stream is parallel.
    */
   private static final class EvaluationCache {
+    private static final Object NULL_RESULT = new Object();
+    private static final Object FAILED_EVALUATION = new Object();
+
     private final Map<String, Object> claims;
     private final Map<String, Object> evaluations = new HashMap<>();
+    private final ReentrantLock evaluationLock = new ReentrantLock();
 
     EvaluationCache(final Map<String, Object> claims) {
       this.claims = claims;
     }
 
     Object evaluate(final String expression) {
-      return evaluations.computeIfAbsent(
-          expression,
-          exp -> {
-            try {
-              return JsonPath.compile(sanitize(exp)).read(claims, CONFIGURATION);
-            } catch (final JsonPathException e) {
-              // Avoid logging claim values — they may contain PII even at DEBUG. Log the
-              // expression and the set of claim keys only.
-              LOG.debug(
-                  "Failed to evaluate expression {} on claims with keys {}",
-                  exp,
-                  claims.keySet(),
-                  e);
-              throw e;
-            }
-          });
+      evaluationLock.lock();
+      try {
+        final Object cached = evaluations.get(expression);
+        if (cached != null) {
+          if (cached == FAILED_EVALUATION) {
+            throw new JsonPathException("Cached failure for expression: " + expression);
+          }
+          return cached == NULL_RESULT ? null : cached;
+        }
+        try {
+          final Object value =
+              JsonPath.compile(JsonPathClaimSanitizer.sanitize(expression))
+                  .read(claims, CONFIGURATION);
+          evaluations.put(expression, value == null ? NULL_RESULT : value);
+          return value;
+        } catch (final JsonPathException e) {
+          // Avoid logging claim values — they may contain PII even at DEBUG. Log the
+          // expression and the set of claim keys only.
+          LOG.debug(
+              "Failed to evaluate expression {} on claims with keys {}",
+              expression,
+              claims.keySet(),
+              e);
+          evaluations.put(expression, FAILED_EVALUATION);
+          throw e;
+        }
+      } finally {
+        evaluationLock.unlock();
+      }
     }
   }
 
