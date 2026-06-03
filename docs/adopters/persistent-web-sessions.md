@@ -11,7 +11,7 @@ For the rationale behind this split — why the lifecycle lives in CSL and the s
 - `WebSessionRepository` — Spring Session `SessionRepository` implementation
 - `WebSessionMapper` + `WebSessionAttributeConverter` — boundary translation between Spring Session and the host-supplied storage backend
 - `persistentWebSessionDeletionTaskExecutor` — scheduled executor that scans for and evicts expired sessions
-- `webSessionDeletionUncaughtExceptionHandler` — default uncaught-exception handler for the deletion thread (logs and continues)
+- `webSessionDeletionUncaughtExceptionHandler` — default uncaught-exception handler for the deletion thread (logs; does not halt the JVM)
 - `@EnableSpringHttpSession` activation
 
 Every bean is `@ConditionalOnMissingBean`, so a host can register its own implementation of any one of them and CSL's default backs off.
@@ -77,11 +77,11 @@ This is the same opt-in path the umbrella `CamundaSecurityAutoConfiguration` doc
 
 | Bean | CSL default | Common host override |
 |---|---|---|
-| `webSessionDeletionUncaughtExceptionHandler` (`UncaughtExceptionHandler`) | Logs and continues | Halt the JVM on a fatal error — e.g. OC uses `FatalErrorHandler.uncaughtExceptionHandler(...)` |
+| `webSessionDeletionUncaughtExceptionHandler` (`UncaughtExceptionHandler`) | Logs (does not halt the JVM) | Halt the JVM on a fatal error — e.g. OC uses `FatalErrorHandler.uncaughtExceptionHandler(...)` |
 | `webSessionAttributeConverter` (`WebSessionAttributeConverter`) | `SpringBasedWebSessionAttributeConverter` (Java native serialization) | **Recommended for production** — see the hardening note below |
 | `webSessionMapper` (`WebSessionMapper`) | Wraps the attribute converter | Custom mapper if you want full control over the `PersistentSession` ↔ Spring Session translation |
 | `webSessionRepository` (`WebSessionRepository`) | Default Spring Session implementation backed by `SessionStorePort` | Rarely needed — overriding implies replacing the whole lifecycle |
-| `persistentWebSessionDeletionTaskExecutor` (`ScheduledThreadPoolExecutor`) | Single-thread scheduled executor with 0 core pool size | Replace if you need different scheduling / instrumentation |
+| `persistentWebSessionDeletionTaskExecutor` (`ScheduledThreadPoolExecutor`) | Single-thread scheduled executor (core pool size 1, core thread timeout enabled) | Replace if you need different scheduling / instrumentation |
 
 For overrides to take effect, activate `WebSessionConfiguration` via `@ImportAutoConfiguration` (see above).
 
