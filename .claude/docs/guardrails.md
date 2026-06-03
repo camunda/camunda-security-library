@@ -33,5 +33,5 @@ IMPORTANT: Do NOT create or modify `META-INF/spring/org.springframework.boot.aut
 - YOU MUST NOT use `System.out.print`, `System.out.println`, or `System.err.print` — use SLF4J (`LOG.debug/info/warn/error`)
 - IMPORTANT: All production classes must be `final` unless they are intentional extension points
 - IMPORTANT: All domain model classes must be records — no mutable model classes
-- YOU MUST NOT introduce Spring, Jakarta Servlet, or Jackson runtime dependencies into the domain module (jackson-annotations are permitted)
+- YOU MUST NOT introduce Spring, Jakarta Servlet, or Jackson dependencies into the domain module — neither runtime (`jackson-databind`, `jackson-core`) nor annotations (`jackson-annotations`). Domain records stay free of serialization concerns; if a host needs custom JSON shape for a CSL type, it registers a Jackson mixin on its own `ObjectMapper` (see ADR-0019 and OC's `MsgPackConverter.CamundaAuthenticationMixin` for the precedent).
 - **Configuration classes:** Public config data models (non-record classes with getters/setters) must be placed in `api/model/config/` to expose them in the public contract. Spring `@ConfigurationProperties` binding logic stays in `spring-boot-starter/`. This keeps the config model framework-agnostic and available to all adopters.
