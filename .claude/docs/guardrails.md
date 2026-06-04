@@ -31,6 +31,8 @@ IMPORTANT: Do NOT create or modify `META-INF/spring/org.springframework.boot.aut
 - YOU MUST NOT add unused dependencies. Every dependency in `pom.xml` must be actively used. If you remove usage of a dependency, remove the dependency itself.
 - IMPORTANT: Follow clean code principles — meaningful names, small focused functions, no duplication, clear intent over comments
 - YOU MUST NOT use `System.out.print`, `System.out.println`, or `System.err.print` — use SLF4J (`LOG.debug/info/warn/error`)
+- YOU MUST include entity identifiers (e.g. organisation ID, tenant ID, principal ID) and the operation name in `ERROR` and `WARN` log statements so failures are diagnosable in production without a debugger.
+- YOU MUST NOT log secrets, tokens, passwords, or PII at any log level.
 - IMPORTANT: All production classes must be `final` unless they are intentional extension points
 - IMPORTANT: All domain model classes must be records — no mutable model classes
 - YOU MUST NOT introduce Spring, Jakarta Servlet, or Jackson runtime dependencies into the domain module (jackson-annotations are permitted)
