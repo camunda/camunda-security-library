@@ -65,6 +65,33 @@ An interface is always a `Port`. Use `port/in/` for inbound ports and `port/out/
 - Domain exceptions propagate out of `*Port` methods unchanged; callers are responsible for translating them to their transport
 - Outbound adapter implementations must never leak infrastructure exceptions into the domain
 
+### Logging
+
+Good logs are the first line of defence when diagnosing production failures. Every change
+that touches observable behaviour must leave enough signal to reconstruct what happened
+without a debugger attached.
+
+**Level discipline:**
+- `DEBUG` — detailed flow tracing; expect it to be disabled in production. Use for
+  operation entry/exit, intermediate state, and retry attempts.
+- `INFO` — significant lifecycle events (e.g. snapshot applied, auth chain selected,
+  strategy activated). Should be sparse enough to scan at a glance.
+- `WARN` — recoverable unexpected conditions; the system continued but something was off.
+- `ERROR` — failures requiring attention. Always include the exception and enough context
+  to identify the affected entity.
+
+**What to include in every non-trivial log statement:**
+- The relevant entity identifiers (e.g. organisation ID, tenant ID, principal ID,
+  strategy name) — as structured MDC fields where the module already uses MDC, otherwise
+  inline in the message.
+- The operation being attempted when a failure occurs, not just the exception class.
+
+**What to avoid:**
+- Secrets, tokens, passwords, or any PII — never log these at any level.
+- `INFO`/`WARN`/`ERROR` in tight loops — use `DEBUG` with an `isDebugEnabled()` guard.
+- Silent catch blocks — if you catch and do not rethrow, log at least at `WARN` with
+  context explaining what was swallowed and why.
+
 ### Testing
 
 - Unit tests for domain logic (no Spring context)
@@ -91,6 +118,24 @@ mvn verify
 - Commit format: Conventional Commits — `<type>(<scope>): <subject>`
 - Squash-merge to keep main history clean
 - A pre-push hook will enforce quality gates before code reaches the remote
+
+### User documentation
+
+CSL is a library, but changes to it can surface as user-visible behaviour in the host
+applications it is embedded in (security configuration, authentication flows, OIDC
+settings, error responses, supported property values).
+
+Before completing any PR:
+1. Check whether the change affects anything a host-application operator or end-user
+   would observe or configure.
+2. If it does, identify the relevant section in
+   [camunda/camunda-docs](https://github.com/camunda/camunda-docs) and add a note to
+   the PR description: which page needs updating and what the update should say.
+3. If the docs change is well-scoped (e.g. a new config property or changed default),
+   include a concrete proposed diff or wording — don't leave it as "docs TBD".
+
+Reviewers should treat a missing docs note for a user-visible change as a blocker,
+the same way they would treat a missing test.
 
 ## Agent Workflows
 
