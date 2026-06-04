@@ -421,5 +421,39 @@
                 <git.hooks.configure.skip>true</git.hooks.configure.skip>
             </properties>
         </profile>
+
+        <!--
+            Override of the central-publishing-maven-plugin inherited from
+            camunda-release-parent's central-sonatype-publish profile.
+
+            The release parent activates -Pcentral-sonatype-publish during
+            release:perform (via the maven-release-plugin <arguments>) and
+            configures central-publishing-maven-plugin with autoPublish=false,
+            which leaves the deployment parked at VALIDATED in the Sonatype
+            Central Portal and requires a manual "Publish" click.
+
+            We keep using the release parent for everything else; this profile
+            shares the same id (central-sonatype-publish), so Maven merges it
+            into the inherited profile and the child plugin <configuration>
+            wins for autoPublish. All other settings (executions, deployment
+            name, skipPublishing, checksums, server id) continue to come from
+            the parent. autoPublish=true lets the Central Portal publish
+            automatically once validation passes, matching Management Identity.
+        -->
+        <profile>
+            <id>central-sonatype-publish</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <configuration>
+                            <autoPublish>true</autoPublish>
+                            <waitUntil>published</waitUntil>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 </project>
