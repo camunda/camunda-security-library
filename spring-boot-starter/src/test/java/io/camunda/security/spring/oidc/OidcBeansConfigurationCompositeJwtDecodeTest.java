@@ -46,9 +46,13 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 
@@ -126,6 +130,11 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
             "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
             "camunda.security.authentication.oidc.token-uri=https://flat.example.com/token",
             "camunda.security.authentication.oidc.jwk-set-uri=" + primary.jwksUri())
+        .withBean(
+            ClientRegistrationRepository.class,
+            () ->
+                new InMemoryClientRegistrationRepository(
+                    testRegistration("oidc", primary.jwksUri(), null)))
         .run(
             ctx -> {
               final var decoder = ctx.getBean(JwtDecoder.class);
@@ -156,6 +165,11 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
             "camunda.security.authentication.oidc.jwk-set-uri=" + primary.jwksUri(),
             "camunda.security.authentication.oidc.additional-jwk-set-uris[0]="
                 + secondary.jwksUri())
+        .withBean(
+            ClientRegistrationRepository.class,
+            () ->
+                new InMemoryClientRegistrationRepository(
+                    testRegistration("oidc", primary.jwksUri(), expectedIssuer)))
         .run(
             ctx -> {
               final var decoder = ctx.getBean(JwtDecoder.class);
@@ -179,6 +193,11 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
             "camunda.security.authentication.oidc.jwk-set-uri=" + primary.jwksUri(),
             "camunda.security.authentication.oidc.additional-jwk-set-uris[0]="
                 + secondary.jwksUri())
+        .withBean(
+            ClientRegistrationRepository.class,
+            () ->
+                new InMemoryClientRegistrationRepository(
+                    testRegistration("oidc", primary.jwksUri(), null)))
         .run(
             ctx -> {
               final var decoder = ctx.getBean(JwtDecoder.class);
@@ -189,6 +208,23 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
               assertThat(jwt.getSubject()).isEqualTo("alice");
               assertThat(jwt.getHeaders()).containsEntry("kid", signingKey.kid());
             });
+  }
+
+  private static ClientRegistration testRegistration(
+      final String registrationId, final String jwkSetUri, final String issuerUri) {
+    final var builder =
+        ClientRegistration.withRegistrationId(registrationId)
+            .clientId("test-client")
+            .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .authorizationUri("https://example.com/auth")
+            .tokenUri("https://example.com/token")
+            .jwkSetUri(jwkSetUri)
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}");
+    if (issuerUri != null) {
+      builder.issuerUri(issuerUri);
+    }
+    return builder.build();
   }
 
   private static String sign(final JwksTestServer key, final String issuer) throws JOSEException {
@@ -296,13 +332,13 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
     }
   }
 
+  /**
+   * Stubs the OIDC infrastructure beans other than {@link JwtDecoder} and {@link
+   * ClientRegistrationRepository} so the bean under test is the one exercised. Each test provides
+   * its own {@link InMemoryClientRegistrationRepository} via {@code runner.withBean(...)}.
+   */
   @Configuration
   static class StubOidcInfrastructure {
-
-    @Bean
-    ClientRegistrationRepository clientRegistrationRepository() {
-      return registrationId -> null;
-    }
 
     @Bean
     OAuth2AuthorizedClientRepository authorizedClientRepository() {
