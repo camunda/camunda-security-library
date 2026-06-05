@@ -1,5 +1,5 @@
 ---
-status: Accepted
+status: Superseded by ADR-0020
 ---
 
 # ADR-0013: Multi-IdP OIDC configuration via additive `providers.oidc.<id>.*` shape
@@ -8,7 +8,7 @@ status: Accepted
 
 ## Status
 
-Accepted
+Superseded by [ADR-0020](0020-issuer-aware-jwt-decoder.md)
 
 ## Context
 
