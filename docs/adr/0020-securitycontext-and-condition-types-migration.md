@@ -28,7 +28,7 @@ classes in OC's `security-core/auth/` that depend on it are:
 This decision covers the first five. `BrokerRequestAuthorizationConverter` is host-specific
 (depends on Zeebe claim keys and engine security config) and stays in OC.
 
-## Decisions
+## Decision
 
 ### 1. Migrate `SecurityContext` and the four condition types to `core/auth/`
 
