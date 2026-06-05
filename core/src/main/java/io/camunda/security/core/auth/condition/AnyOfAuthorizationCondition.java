@@ -38,9 +38,13 @@ public record AnyOfAuthorizationCondition(List<RequiredAuthorization<?>> authori
     return authorizations().stream()
         .filter(
             auth -> {
-              @SuppressWarnings("unchecked")
-              final RequiredAuthorization<T> typedAuth = (RequiredAuthorization<T>) auth;
-              return typedAuth.appliesTo(document);
+              try {
+                @SuppressWarnings("unchecked")
+                final RequiredAuthorization<T> typedAuth = (RequiredAuthorization<T>) auth;
+                return typedAuth.appliesTo(document);
+              } catch (final ClassCastException e) {
+                return false;
+              }
             })
         .toList();
   }
