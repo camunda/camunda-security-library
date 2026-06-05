@@ -42,9 +42,16 @@ public final class CamundaUserDetailsService implements UserDetailsService {
     }
 
     final CamundaUserDetails user = userDetailsPort.loadUser(username);
-    if (user == null) {
-      LOG.debug("No user found for username '{}'", username);
-      throw new UsernameNotFoundException(username);
+    if (user == null
+        || user.username() == null
+        || user.username().isBlank()
+        || user.password() == null) {
+      // Fail closed: a missing user — or an adapter that returned an incomplete record — is an
+      // authentication failure, not an internal error (an invalid record would otherwise make
+      // User.withUsername(...)/.password(...) throw IllegalArgumentException). The username is not
+      // echoed: it can be PII and may carry control characters (log forging).
+      LOG.debug("Basic-auth user resolution did not yield a usable account");
+      throw new UsernameNotFoundException("User not found");
     }
 
     return User.withUsername(user.username())
