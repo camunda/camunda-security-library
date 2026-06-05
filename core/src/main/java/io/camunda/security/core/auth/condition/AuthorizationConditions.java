@@ -1,0 +1,36 @@
+/*
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH under
+ * one or more contributor license agreements. See the NOTICE file distributed
+ * with this work for additional information regarding copyright ownership.
+ * Licensed under the Camunda License 1.0. You may not use this file
+ * except in compliance with the Camunda License 1.0.
+ */
+package io.camunda.security.core.auth.condition;
+
+import io.camunda.security.core.auth.RequiredAuthorization;
+import java.util.Arrays;
+import java.util.List;
+
+/**
+ * Factory helpers for building {@link AuthorizationCondition} instances when constructing a {@link
+ * io.camunda.security.core.auth.SecurityContext}.
+ */
+public final class AuthorizationConditions {
+
+  private AuthorizationConditions() {}
+
+  /** Wraps a single authorization as an authorization condition. */
+  public static AuthorizationCondition single(final RequiredAuthorization<?> authorization) {
+    return new SingleAuthorizationCondition(authorization);
+  }
+
+  /** Combines multiple authorizations as a disjunctive authorization condition. */
+  public static AuthorizationCondition anyOf(final List<RequiredAuthorization<?>> authorizations) {
+    return new AnyOfAuthorizationCondition(authorizations);
+  }
+
+  /** Combines multiple authorizations as a disjunctive authorization condition. */
+  public static AuthorizationCondition anyOf(final RequiredAuthorization<?>... authorizations) {
+    return anyOf(Arrays.asList(authorizations));
+  }
+}
