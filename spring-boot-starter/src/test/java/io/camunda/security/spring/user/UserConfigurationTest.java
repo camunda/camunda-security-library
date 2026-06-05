@@ -8,13 +8,11 @@
 package io.camunda.security.spring.user;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.api.model.user.CamundaUserDTO;
 import io.camunda.security.core.port.in.CamundaUserPort;
 import io.camunda.security.core.port.out.UserDetailsPort;
-import io.camunda.security.core.port.out.UserDetailsPort.CamundaUserDetails;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -22,10 +20,6 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -139,43 +133,10 @@ class UserConfigurationTest {
                     .isSameAs(HostPasswordEncoderConfiguration.NOOP));
   }
 
-  @Test
-  void authenticatesValidCredentialsAndRejectsBadOnes() {
-    runner
-        .withPropertyValues("camunda.security.authentication.method=basic")
-        .withUserConfiguration(HostUserDetailsPortConfiguration.class)
-        .run(
-            ctx -> {
-              final var encoder = ctx.getBean(PasswordEncoder.class);
-              final var userDetailsService = ctx.getBean(UserDetailsService.class);
-
-              // Re-register the resolvable user with a hash produced by the CSL default encoder so
-              // the provider validates against the same encoding scheme.
-              final var port = ctx.getBean(UserDetailsPort.class);
-              Mockito.when(port.loadUser("alice"))
-                  .thenReturn(new CamundaUserDetails("alice", encoder.encode("s3cret")));
-
-              final var provider = new DaoAuthenticationProvider(userDetailsService);
-              provider.setPasswordEncoder(encoder);
-
-              final Authentication ok =
-                  provider.authenticate(new UsernamePasswordAuthenticationToken("alice", "s3cret"));
-              assertThat(ok.isAuthenticated()).isTrue();
-              assertThat(ok.getName()).isEqualTo("alice");
-
-              assertThatThrownBy(
-                      () ->
-                          provider.authenticate(
-                              new UsernamePasswordAuthenticationToken("alice", "wrong")))
-                  .isInstanceOf(BadCredentialsException.class);
-
-              assertThatThrownBy(
-                      () ->
-                          provider.authenticate(
-                              new UsernamePasswordAuthenticationToken("ghost", "s3cret")))
-                  .isInstanceOf(BadCredentialsException.class);
-            });
-  }
+  // End-to-end credential verification through the real basic-auth chain (proving Spring Boot
+  // assembles the AuthenticationManager from the CSL UserDetailsService + PasswordEncoder beans)
+  // lives in BasicAuthApiChainAuthenticationTest. This class covers conditional bean
+  // wiring/back-off.
 
   @Configuration
   static class HostCamundaUserPortConfiguration {
