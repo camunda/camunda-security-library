@@ -123,6 +123,15 @@ class TokenValidatorFactoryTest {
 
     final var result = validator.validate(wrongIssuerJwt);
     assertThat(result.hasErrors()).isTrue();
+
+    final var correctIssuerJwt =
+        Jwt.withTokenValue("token2")
+            .header("alg", "RS256")
+            .issuer("https://expected-issuer.example.com")
+            .issuedAt(Instant.now())
+            .expiresAt(Instant.now().plusSeconds(60))
+            .build();
+    assertThat(validator.validate(correctIssuerJwt).hasErrors()).isFalse();
   }
 
   @Test
