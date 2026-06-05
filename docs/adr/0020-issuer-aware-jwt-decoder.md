@@ -8,8 +8,7 @@ status: Accepted
 
 ## Status
 
-Accepted. Supersedes the "decoder punt" decision in the `Single JwtDecoder with explicit
-selection rules` section of [ADR-0013](0013-multi-idp-oidc-configuration.md).
+Accepted
 
 ## Context
 

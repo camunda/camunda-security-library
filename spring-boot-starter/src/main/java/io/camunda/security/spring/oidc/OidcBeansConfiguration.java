@@ -123,7 +123,8 @@ public class OidcBeansConfiguration {
         .collect(
             Collectors.toMap(
                 reg -> reg.getProviderDetails().getIssuerUri(),
-                reg -> providers.get(reg.getRegistrationId()).getAdditionalJwkSetUris()));
+                reg -> providers.get(reg.getRegistrationId()).getAdditionalJwkSetUris(),
+                (a, b) -> a));
   }
 
   @Bean
