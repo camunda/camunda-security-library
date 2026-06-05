@@ -22,6 +22,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
@@ -89,6 +91,69 @@ class TokenValidatorFactoryTest {
     final var validator = factory.createTokenValidator(registration);
 
     assertThat(validator.validate(validJwt()).hasErrors()).isTrue();
+  }
+
+  @Test
+  void shouldAddIssuerValidatorWhenIssuerUriIsConfigured() {
+    final var oidc =
+        OidcConfiguration.builder().issuerUri("https://expected-issuer.example.com").build();
+    final var factory =
+        new TokenValidatorFactory(Map.of("rid", oidc), Duration.ofSeconds(60), List.of());
+
+    final var reg =
+        ClientRegistration.withRegistrationId("rid")
+            .jwkSetUri("https://ignored.example.com/jwks")
+            .issuerUri("https://expected-issuer.example.com")
+            .authorizationUri("https://example.com/auth")
+            .tokenUri("https://example.com/token")
+            .clientId("client")
+            .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .build();
+    final var validator = factory.createTokenValidator(reg);
+
+    final var wrongIssuerJwt =
+        Jwt.withTokenValue("token")
+            .header("alg", "RS256")
+            .issuer("https://wrong.example.com")
+            .issuedAt(Instant.now())
+            .expiresAt(Instant.now().plusSeconds(60))
+            .build();
+
+    final var result = validator.validate(wrongIssuerJwt);
+    assertThat(result.hasErrors()).isTrue();
+  }
+
+  @Test
+  void shouldNotAddIssuerValidatorWhenIssuerUriIsAbsent() {
+    final var oidc = OidcConfiguration.builder().jwkSetUri("https://example.com/jwks").build();
+    final var factory =
+        new TokenValidatorFactory(Map.of("rid", oidc), Duration.ofSeconds(60), List.of());
+
+    final var reg =
+        ClientRegistration.withRegistrationId("rid")
+            .jwkSetUri("https://example.com/jwks")
+            .authorizationUri("https://example.com/auth")
+            .tokenUri("https://example.com/token")
+            .clientId("client")
+            .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .build();
+    final var validator = factory.createTokenValidator(reg);
+
+    final var tokenWithAnyIssuer =
+        Jwt.withTokenValue("token")
+            .header("alg", "RS256")
+            .issuer("https://anything.example.com")
+            .issuedAt(Instant.now())
+            .expiresAt(Instant.now().plusSeconds(60))
+            .build();
+
+    // No issuer validator → issuer claim is unchecked, only timestamp is validated
+    final var result = validator.validate(tokenWithAnyIssuer);
+    assertThat(result.hasErrors()).isFalse();
   }
 
   private static Jwt validJwt() {
