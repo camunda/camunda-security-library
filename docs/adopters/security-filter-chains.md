@@ -174,7 +174,9 @@ camunda:
 
 With this configuration, users start a login at `/oauth2/authorization/keycloak` or `/oauth2/authorization/azure`.
 
-> **Important — `JwtDecoder` selection.** The configuration above has no flat `oidc.*` block, and the library's default `JwtDecoder` refuses to auto-pick across multiple providers (see [JwtDecoder selection rules](#resource-server-jwtdecoder-selection) below). As shown, startup fails with an `IllegalStateException` because both the OIDC webapp chain and the OIDC API chain depend on the `JwtDecoder` bean. To run this two-provider configuration, either add a flat `oidc.*` block to pin the resource-server audience, or register a custom `@Bean JwtDecoder` in the host application — `OidcBeansConfiguration` backs off via `@ConditionalOnMissingBean` so the library's default no longer activates.
+> **Multi-provider token validation** works automatically — the library builds an issuer-aware
+> `JwtDecoder` when multiple providers are configured. No flat `oidc.*` block or custom
+> `@Bean JwtDecoder` is required. See [JwtDecoder selection rules](#resource-server-jwtdecoder-selection).
 
 #### Combining the flat and providers shapes
 
@@ -211,13 +213,28 @@ The flat shape stays supported indefinitely — there is no deprecation. Migrate
 
 #### Resource-server `JwtDecoder` selection
 
-The library ships a single `JwtDecoder` bean. With multiple providers, a single decoder cannot correctly validate tokens from every IdP (each carries its own signing keys and audience), so selection is deterministic and explicit:
+The library ships a single `JwtDecoder` bean that automatically selects the appropriate
+validation strategy based on the number of configured OIDC providers:
 
-1. The flat `oidc.*` block is preferred if it has an `issuer-uri` or `jwk-set-uri`.
-2. Otherwise, if exactly one entry under `providers.oidc.*` has such a source, that entry is used.
-3. Otherwise (no source anywhere, or multiple providers with sources and no flat block), startup fails with an `IllegalStateException`.
+- **Single provider** (flat `oidc.*` block or single `providers.oidc.<id>` entry): a single-issuer
+  `NimbusJwtDecoder` is built from the registration's JWK set URI. Behaviour is identical to prior
+  releases — no configuration change required.
+- **Multiple providers** (two or more entries across flat and providers shapes): an **issuer-aware**
+  decoder is built. When a token arrives, the library reads its `iss` claim and routes key selection
+  and validation to the matching registration. A token whose `iss` matches no configured provider
+  fails with `BadJwtException("Unknown issuer 'X'")`. All provider registrations must have an
+  `issuer-uri` configured; startup fails with a message listing any offending registration ids
+  otherwise.
 
-When startup fails because of rule 3, either pin the flat block as the resource-server audience or register a custom `@Bean JwtDecoder` in the host application — `OidcBeansConfiguration` backs off via `@ConditionalOnMissingBean`.
+For the issuer-aware path, per-provider `audiences` and `additional-jwk-set-uris` are honoured
+independently — a token from provider A is validated against A's audience list and A's JWK set
+URIs only.
+
+A host-supplied `@Bean JwtDecoder` continues to take precedence via `@ConditionalOnMissingBean`.
+The library's default `JWSKeySelectorFactory`, `TokenValidatorFactory`, and
+`OidcAccessTokenDecoderFactory` beans are also overridable independently.
+
+See [ADR-0020](../adr/0020-issuer-aware-jwt-decoder.md) for the design rationale.
 
 #### Multiple JWK Set URIs
 
