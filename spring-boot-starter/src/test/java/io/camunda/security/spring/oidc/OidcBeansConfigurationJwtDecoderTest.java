@@ -50,11 +50,6 @@ class OidcBeansConfigurationJwtDecoderTest {
             "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
             "camunda.security.authentication.oidc.token-uri=https://flat.example.com/token",
             "camunda.security.authentication.oidc.jwk-set-uri=https://flat.example.com/jwks")
-        .withBean(
-            ClientRegistrationRepository.class,
-            () ->
-                new InMemoryClientRegistrationRepository(
-                    testRegistration("oidc", "https://flat.example.com/jwks", null)))
         .run(ctx -> assertThat(ctx).hasSingleBean(JwtDecoder.class));
   }
 
@@ -67,11 +62,6 @@ class OidcBeansConfigurationJwtDecoderTest {
             "camunda.security.authentication.providers.oidc.foo.authorization-uri=https://foo.example.com/auth",
             "camunda.security.authentication.providers.oidc.foo.token-uri=https://foo.example.com/token",
             "camunda.security.authentication.providers.oidc.foo.jwk-set-uri=https://foo.example.com/jwks")
-        .withBean(
-            ClientRegistrationRepository.class,
-            () ->
-                new InMemoryClientRegistrationRepository(
-                    testRegistration("foo", "https://foo.example.com/jwks", null)))
         .run(ctx -> assertThat(ctx).hasSingleBean(JwtDecoder.class));
   }
 
@@ -91,15 +81,7 @@ class OidcBeansConfigurationJwtDecoderTest {
             "camunda.security.authentication.providers.oidc.azure.authorization-uri=https://az.example.com/auth",
             "camunda.security.authentication.providers.oidc.azure.token-uri=https://az.example.com/token",
             "camunda.security.authentication.providers.oidc.azure.jwk-set-uri=https://az.example.com/jwks")
-        .withBean(
-            ClientRegistrationRepository.class,
-            () ->
-                new InMemoryClientRegistrationRepository(
-                    List.of(
-                        testRegistration(
-                            "keycloak", "https://kc.example.com/jwks", "https://kc.example.com"),
-                        testRegistration(
-                            "azure", "https://az.example.com/jwks", "https://az.example.com"))))
+        .withUserConfiguration(TwoProviderRegistrations.class)
         .run(ctx -> assertThat(ctx).hasSingleBean(JwtDecoder.class));
   }
 
@@ -114,11 +96,6 @@ class OidcBeansConfigurationJwtDecoderTest {
             "camunda.security.authentication.oidc.jwk-set-uri=https://primary.example.com/jwks",
             "camunda.security.authentication.oidc.additional-jwk-set-uris[0]=https://secondary.example.com/jwks",
             "camunda.security.authentication.oidc.additional-jwk-set-uris[1]=https://tertiary.example.com/jwks")
-        .withBean(
-            ClientRegistrationRepository.class,
-            () ->
-                new InMemoryClientRegistrationRepository(
-                    testRegistration("oidc", "https://primary.example.com/jwks", null)))
         .run(ctx -> assertThat(ctx).hasSingleBean(JwtDecoder.class));
   }
 
@@ -133,11 +110,6 @@ class OidcBeansConfigurationJwtDecoderTest {
             "camunda.security.authentication.oidc.jwk-set-uri=https://primary.example.com/jwks",
             "camunda.security.authentication.oidc.additional-jwk-set-uris[0]=",
             "camunda.security.authentication.oidc.additional-jwk-set-uris[1]=https://secondary.example.com/jwks")
-        .withBean(
-            ClientRegistrationRepository.class,
-            () ->
-                new InMemoryClientRegistrationRepository(
-                    testRegistration("oidc", "https://primary.example.com/jwks", null)))
         .run(ctx -> assertThat(ctx).hasSingleBean(JwtDecoder.class));
   }
 
@@ -146,19 +118,7 @@ class OidcBeansConfigurationJwtDecoderTest {
     runner
         .withPropertyValues(
             "camunda.security.authentication.oidc.additional-jwk-set-uris[0]=https://secondary.example.com/jwks")
-        .withBean(
-            ClientRegistrationRepository.class,
-            () ->
-                new InMemoryClientRegistrationRepository(
-                    ClientRegistration.withRegistrationId("oidc")
-                        .clientId("flat-client")
-                        .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-                        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                        .authorizationUri("https://flat.example.com/auth")
-                        .tokenUri("https://flat.example.com/token")
-                        .issuerUri("https://flat.example.com")
-                        .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
-                        .build()))
+        .withUserConfiguration(NoJwkSetUriRegistration.class)
         .run(
             ctx -> {
               assertThat(ctx).hasFailed();
@@ -186,11 +146,7 @@ class OidcBeansConfigurationJwtDecoderTest {
     return builder.build();
   }
 
-  /**
-   * Stubs the OIDC infrastructure beans other than {@link JwtDecoder} and {@link
-   * ClientRegistrationRepository} so the bean under test is the one exercised. Each test provides
-   * its own {@link InMemoryClientRegistrationRepository} via {@code runner.withBean(...)}.
-   */
+  /** Stubs OIDC infrastructure beans other than {@link JwtDecoder}. */
   @Configuration
   static class StubOidcInfrastructure {
 
@@ -202,6 +158,38 @@ class OidcBeansConfigurationJwtDecoderTest {
     @Bean
     OAuth2AuthorizedClientManager authorizedClientManager() {
       return request -> null;
+    }
+  }
+
+  /** Two-provider repository for the multi-issuer test — bypasses OIDC discovery. */
+  @Configuration
+  static class TwoProviderRegistrations {
+
+    @Bean
+    ClientRegistrationRepository clientRegistrationRepository() {
+      return new InMemoryClientRegistrationRepository(
+          List.of(
+              testRegistration("keycloak", "https://kc.example.com/jwks", "https://kc.example.com"),
+              testRegistration("azure", "https://az.example.com/jwks", "https://az.example.com")));
+    }
+  }
+
+  /** Single registration without a jwk-set-uri — used to test the failure path. */
+  @Configuration
+  static class NoJwkSetUriRegistration {
+
+    @Bean
+    ClientRegistrationRepository clientRegistrationRepository() {
+      return new InMemoryClientRegistrationRepository(
+          ClientRegistration.withRegistrationId("oidc")
+              .clientId("flat-client")
+              .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+              .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+              .authorizationUri("https://flat.example.com/auth")
+              .tokenUri("https://flat.example.com/token")
+              .issuerUri("https://flat.example.com")
+              .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+              .build());
     }
   }
 }
