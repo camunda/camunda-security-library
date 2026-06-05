@@ -83,6 +83,12 @@ public class OidcBeansConfiguration {
       final OidcProviderConfigurationPort oidcProviderConfigurationPort,
       final OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory) {
     final var registrations = iterableRegistrations(clientRegistrationRepository);
+    if (registrations.isEmpty()) {
+      throw new IllegalStateException(
+          "ClientRegistrationRepository is empty — at least one OIDC provider must be configured."
+              + " Set camunda.security.authentication.oidc.* (flat) or one or more"
+              + " camunda.security.authentication.providers.oidc.<id>.* entries.");
+    }
     final var providers = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
     if (registrations.size() == 1) {
       final var reg = registrations.get(0);

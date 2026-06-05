@@ -108,6 +108,21 @@ class OidcBeansConfigurationJwtDecoderTest {
   }
 
   @Test
+  void shouldFailWithInformativeErrorWhenRegistrationRepositoryIsEmpty() {
+    runner
+        .withUserConfiguration(EmptyRegistrationRepository.class)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasFailed();
+              assertThat(ctx.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalStateException.class)
+                  .hasMessageContaining("empty")
+                  .hasMessageContaining("providers.oidc");
+            });
+  }
+
+  @Test
   void shouldFailWithInformativeErrorWhenOnlyAdditionalJwkSetUrisConfigured() {
     runner
         .withPropertyValues(
@@ -255,6 +270,30 @@ class OidcBeansConfigurationJwtDecoderTest {
           List.of(
               testRegistration("keycloak", "https://kc.example.com/jwks", "https://kc.example.com"),
               testRegistration("azure", "https://az.example.com/jwks", "https://az.example.com")));
+    }
+  }
+
+  /** Empty repository — used to test the empty-registrations failure path in {@code jwtDecoder}. */
+  @Configuration
+  static class EmptyRegistrationRepository {
+
+    @Bean
+    ClientRegistrationRepository clientRegistrationRepository() {
+      return new EmptyIterableClientRegistrationRepository();
+    }
+
+    private static final class EmptyIterableClientRegistrationRepository
+        implements ClientRegistrationRepository, Iterable<ClientRegistration> {
+
+      @Override
+      public ClientRegistration findByRegistrationId(final String registrationId) {
+        return null;
+      }
+
+      @Override
+      public java.util.Iterator<ClientRegistration> iterator() {
+        return java.util.Collections.emptyIterator();
+      }
     }
   }
 
