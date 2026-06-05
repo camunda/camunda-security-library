@@ -17,7 +17,9 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
+import org.springframework.util.StringUtils;
 
 /**
  * A factory for creating {@link OAuth2TokenValidator} instances for validating {@link Jwt} tokens.
@@ -26,6 +28,8 @@ import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
  *
  * <ul>
  *   <li>A {@link JwtTimestampValidator} using the configured clock skew
+ *   <li>A {@link JwtIssuerValidator} when the matched {@link OidcConfiguration} declares an issuer
+ *       URI
  *   <li>An {@link AudienceValidator} when the matched {@link OidcConfiguration} declares audiences
  *   <li>Any extra validators supplied by the host (e.g. SaaS organization/cluster validators)
  * </ul>
@@ -67,6 +71,10 @@ public class TokenValidatorFactory {
     final var validators = new LinkedList<OAuth2TokenValidator<Jwt>>();
 
     validators.add(new JwtTimestampValidator(clockSkew));
+
+    if (providerConfig != null && StringUtils.hasText(providerConfig.getIssuerUri())) {
+      validators.add(new JwtIssuerValidator(providerConfig.getIssuerUri()));
+    }
 
     if (providerConfig != null
         && providerConfig.getAudiences() != null
