@@ -130,11 +130,6 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
             "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
             "camunda.security.authentication.oidc.token-uri=https://flat.example.com/token",
             "camunda.security.authentication.oidc.jwk-set-uri=" + primary.jwksUri())
-        .withBean(
-            ClientRegistrationRepository.class,
-            () ->
-                new InMemoryClientRegistrationRepository(
-                    testRegistration("oidc", primary.jwksUri(), null)))
         .run(
             ctx -> {
               final var decoder = ctx.getBean(JwtDecoder.class);
@@ -193,11 +188,6 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
             "camunda.security.authentication.oidc.jwk-set-uri=" + primary.jwksUri(),
             "camunda.security.authentication.oidc.additional-jwk-set-uris[0]="
                 + secondary.jwksUri())
-        .withBean(
-            ClientRegistrationRepository.class,
-            () ->
-                new InMemoryClientRegistrationRepository(
-                    testRegistration("oidc", primary.jwksUri(), null)))
         .run(
             ctx -> {
               final var decoder = ctx.getBean(JwtDecoder.class);
@@ -332,11 +322,7 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
     }
   }
 
-  /**
-   * Stubs the OIDC infrastructure beans other than {@link JwtDecoder} and {@link
-   * ClientRegistrationRepository} so the bean under test is the one exercised. Each test provides
-   * its own {@link InMemoryClientRegistrationRepository} via {@code runner.withBean(...)}.
-   */
+  /** Stubs OIDC infrastructure beans other than {@link JwtDecoder}. */
   @Configuration
   static class StubOidcInfrastructure {
 
