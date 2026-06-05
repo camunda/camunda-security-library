@@ -45,8 +45,33 @@ class CamundaUserDetailsServiceTest {
     when(userDetailsPort.loadUser("ghost")).thenReturn(null);
 
     assertThatThrownBy(() -> service.loadUserByUsername("ghost"))
+        .isInstanceOf(UsernameNotFoundException.class);
+  }
+
+  @Test
+  void doesNotEchoUsernameInNotFoundException() {
+    when(userDetailsPort.loadUser("alice")).thenReturn(null);
+
+    // The username can be PII / carry control characters — it must not leak into the exception.
+    assertThatThrownBy(() -> service.loadUserByUsername("alice"))
         .isInstanceOf(UsernameNotFoundException.class)
-        .hasMessageContaining("ghost");
+        .hasMessageNotContaining("alice");
+  }
+
+  @Test
+  void failsClosedWhenPortReturnsRecordWithNullPassword() {
+    when(userDetailsPort.loadUser("alice")).thenReturn(new CamundaUserDetails("alice", null));
+
+    assertThatThrownBy(() -> service.loadUserByUsername("alice"))
+        .isInstanceOf(UsernameNotFoundException.class);
+  }
+
+  @Test
+  void failsClosedWhenPortReturnsRecordWithBlankUsername() {
+    when(userDetailsPort.loadUser("alice")).thenReturn(new CamundaUserDetails("  ", "{noop}pw"));
+
+    assertThatThrownBy(() -> service.loadUserByUsername("alice"))
+        .isInstanceOf(UsernameNotFoundException.class);
   }
 
   @Test
