@@ -192,7 +192,7 @@ public record RequiredAuthorization<T>(
         && resourceIds.stream().anyMatch(id -> WILDCARD.getResourceId().equals(id));
   }
 
-  public static class Builder<T> {
+  public static final class Builder<T> {
     private AuthorizationResourceType resourceType;
     private PermissionType permissionType;
     private List<String> resourceIds;
@@ -381,8 +381,12 @@ public record RequiredAuthorization<T>(
     }
 
     /**
-     * Fluent connector indicating the next condition is an OR alternative. This is purely for
-     * readability.
+     * No-op fluent connector for readability only. This method does <strong>not</strong> compose
+     * conditions: {@link #condition(Predicate)} is set-only, so a subsequent {@code condition(y)}
+     * call <em>overwrites</em> any prior {@code condition(x)} regardless of an {@code or()} call in
+     * between. The actual OR-composition of multiple {@code RequiredAuthorization} specs lives in
+     * OC's {@code AuthorizationCondition}, which is not part of this class (and was not migrated
+     * alongside this record per ADR-0019).
      */
     public Builder<T> or() {
       return this;
