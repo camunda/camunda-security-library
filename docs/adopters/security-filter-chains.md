@@ -86,6 +86,8 @@ camunda:
       method: basic
 ```
 
+Under basic auth the library resolves users through the outbound [`UserDetailsPort`](./ports.md#userdetailsport): the host provides a `UserDetailsPort` adapter (a scope-agnostic username lookup), and CSL supplies the `UserDetailsService` (`CamundaUserDetailsService`) plus a default delegating `PasswordEncoder`. Spring Boot assembles the global `AuthenticationManager` from those two beans, so the `BasicAuthApiSecurityConfiguration` / `BasicAuthWebappSecurityConfiguration` chains need no extra wiring. Both library beans are `@ConditionalOnMissingBean`, so a host can register its own `UserDetailsService` or `PasswordEncoder` to override the default; without a `UserDetailsPort` bean the CSL `UserDetailsService` does not activate. See [ADR-0021](../adr/0021-user-details-port.md).
+
 For local development without authentication, set:
 
 ```yaml

@@ -41,6 +41,7 @@ There are three categories:
 | [`AuthorizationRepositoryPort`](#authorizationrepositoryport) | _(none — host must provide)_ | `AuthorizationRepositoryAdapter` |
 | [`MembershipPort`](#membershipport) | _(none — host must provide)_ | `NoDBMembershipService`, `DefaultMembershipService` |
 | [`SecurityPathPort`](#securitypathport) | _(none — host must provide)_ | `SecurityPathAdapter` |
+| [`UserDetailsPort`](#userdetailsport) | _(none — host must provide)_ | `UserDetailsAdapter` |
 | [`PolicyRepositoryPort`](#policyrepositoryport) | _(none — under development)_ | _(none)_ |
 | [`IdpClientPort`](#idpclientport) | _(none — under development)_ | _(none)_ |
 | [`SessionStorePort`](#sessionstoreport) | _(none — host must provide)_ | `SessionStoreAdapter` |
@@ -282,6 +283,44 @@ Path patterns use Spring Security ant-style syntax (`**` for multi-level, `*` fo
 
 **OC example:** `SecurityPathAdapter` in `authentication/` — returns OC-specific path sets
 (e.g., `/v2/**`, `/login/**`, `/operate/**`).
+
+---
+
+### `UserDetailsPort`
+
+```java
+package io.camunda.security.core.port.out;
+```
+
+Resolves a user by username for HTTP Basic authentication credential verification. The library owns
+the Spring Security plumbing — it supplies the `UserDetailsService` (`CamundaUserDetailsService`,
+delegating to this port) and a default delegating `PasswordEncoder`, and Spring Boot assembles the
+global `AuthenticationManager` from them. The host only provides this scope-agnostic lookup: it
+resolves any tenant/scope internally (for example from the request context), so the port carries
+**no scope parameter**.
+
+**Method**
+
+```java
+CamundaUserDetails loadUser(String username);   // null when no such user exists
+```
+
+`CamundaUserDetails` (nested in the port) is a framework-free record:
+`(String username, String password)` — the username and the stored password hash the library uses to
+verify basic credentials. Returning `null` makes the library throw `UsernameNotFoundException`.
+
+**CSL default:** none — the host must supply this bean. The CSL `UserDetailsService` only activates
+when a `UserDetailsPort` bean is present (`@ConditionalOnBean(UserDetailsPort.class)`), the auth
+method is `basic`, and no host `UserDetailsService` is already registered.
+
+**Wiring:** `UserConfiguration` (`io.camunda.security.spring.user`, in the
+`CamundaSecurityAutoConfiguration` umbrella) registers `camundaUserDetailsService` and a default
+`passwordEncoder` (`PasswordEncoderFactories.createDelegatingPasswordEncoder()`), both basic-auth
+only and both `@ConditionalOnMissingBean` so a host can override either. See ADR-0021.
+
+**OC example:** `UserDetailsAdapter` in `authentication/` — looks up the user from secondary storage
+(`UserServices.getUser`) and returns `new CamundaUserDetails(username, password)`, replacing OC's
+previous hand-rolled `CamundaUserDetailsService`.
 
 ---
 
