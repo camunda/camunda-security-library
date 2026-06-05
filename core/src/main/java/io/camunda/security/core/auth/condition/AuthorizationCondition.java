@@ -29,7 +29,7 @@ public sealed interface AuthorizationCondition
     if (this instanceof SingleAuthorizationCondition(RequiredAuthorization<?> authorization)) {
       return List.of(authorization);
     }
-    if (this instanceof AnyOfAuthorizationCondition(List<RequiredAuthorization<?>> children)) {
+    if (this instanceof AnyOfAuthorizationCondition(var children)) {
       return children;
     }
     throw new IllegalStateException("Unknown AuthorizationCondition type: " + getClass());
