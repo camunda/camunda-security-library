@@ -29,8 +29,8 @@ import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -60,8 +60,8 @@ final class OidcBeansConfigurationMultiIssuerDecodeTest {
   private static final String KEYCLOAK_ISSUER = "https://keycloak.example.com/realms/camunda";
   private static final String AZURE_ISSUER = "https://login.microsoftonline.com/tenant/v2.0";
 
-  private JwksTestServer keycloak;
-  private JwksTestServer azure;
+  private static JwksTestServer keycloak;
+  private static JwksTestServer azure;
 
   private final ApplicationContextRunner runner =
       new ApplicationContextRunner()
@@ -71,14 +71,14 @@ final class OidcBeansConfigurationMultiIssuerDecodeTest {
               AutoConfigurations.of(
                   CamundaSecurityConfiguration.class, OidcBeansConfiguration.class));
 
-  @BeforeEach
-  void startServers() throws Exception {
+  @BeforeAll
+  static void startServers() throws Exception {
     keycloak = JwksTestServer.start("keycloak-rsa");
     azure = JwksTestServer.start("azure-rsa");
   }
 
-  @AfterEach
-  void stopServers() {
+  @AfterAll
+  static void stopServers() {
     keycloak.stop();
     azure.stop();
   }
