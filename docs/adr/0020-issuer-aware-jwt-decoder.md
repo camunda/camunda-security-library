@@ -43,7 +43,7 @@ with a registration-count switch:
 - **1 registration** (flat block or single `providers.oidc.<id>` entry): `OidcAccessTokenDecoderFactory.createAccessTokenDecoder(reg, additionalJwkSetUris)` — no behavioural change for single-IdP deployments.
 - **>1 registrations** (multiple `providers.oidc.*` entries, with or without a flat block): `OidcAccessTokenDecoderFactory.createIssuerAwareAccessTokenDecoder(registrations, additionalJwkSetUrisByIssuer)` — issuer-aware path using `IssuerAwareJWSKeySelector` and `IssuerAwareTokenValidator`.
 
-All registrations for the issuer-aware path must carry an `issuer-uri` (validated at startup by `OidcAccessTokenDecoderFactory.validateClientRegistrationsHaveIssuer`). A token whose `iss` claim matches no configured provider fails with `BadJwtException("Unknown issuer 'X'")` — the message names the issuer to aid diagnosis.
+All registrations for the issuer-aware path must carry an `issuer-uri` (validated at startup by `OidcAccessTokenDecoderFactory.validateClientRegistrationsHaveIssuer`). A token whose `iss` claim matches no configured provider fails with a `BadJwtException` whose message matches `"Unknown issuer '<iss>'. No matching client registration found."` — the message names the issuer to aid diagnosis.
 
 Three new `@ConditionalOnMissingBean` beans are added to `OidcBeansConfiguration`:
 `JWSKeySelectorFactory`, `TokenValidatorFactory`, and `OidcAccessTokenDecoderFactory`. Hosts can

@@ -222,7 +222,7 @@ validation strategy based on the number of configured OIDC providers:
 - **Multiple providers** (two or more entries across flat and providers shapes): an **issuer-aware**
   decoder is built. When a token arrives, the library reads its `iss` claim and routes key selection
   and validation to the matching registration. A token whose `iss` matches no configured provider
-  fails with `BadJwtException("Unknown issuer 'X'")`. All provider registrations must have an
+  fails with a `BadJwtException` whose message matches `"Unknown issuer '<iss>'. No matching client registration found."`. All provider registrations must have an
   `issuer-uri` configured; startup fails with a message listing any offending registration ids
   otherwise.
 
