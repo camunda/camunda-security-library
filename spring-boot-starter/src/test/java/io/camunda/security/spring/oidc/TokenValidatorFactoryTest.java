@@ -26,6 +26,7 @@ import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -122,7 +123,13 @@ class TokenValidatorFactoryTest {
             .build();
 
     final var result = validator.validate(wrongIssuerJwt);
-    assertThat(result.hasErrors()).isTrue();
+    assertThat(result.getErrors())
+        .isNotEmpty()
+        .anySatisfy(
+            e -> {
+              assertThat(e.getErrorCode()).isEqualTo(OAuth2ErrorCodes.INVALID_TOKEN);
+              assertThat(e.getDescription()).contains("iss");
+            });
 
     final var correctIssuerJwt =
         Jwt.withTokenValue("token2")
