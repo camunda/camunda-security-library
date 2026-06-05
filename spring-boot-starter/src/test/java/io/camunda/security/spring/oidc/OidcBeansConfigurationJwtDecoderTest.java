@@ -90,19 +90,64 @@ class OidcBeansConfigurationJwtDecoderTest {
             ctx -> {
               assertThat(ctx).hasSingleBean(JwtDecoder.class);
               final var decoder = ctx.getBean(JwtDecoder.class);
-              // IssuerAwareJWSKeySelector rejects unknown issuers before signature verification,
-              // proving the issuer-routing path is wired (not a plain single-issuer decoder).
-              final var header =
-                  Base64.getUrlEncoder()
-                      .withoutPadding()
-                      .encodeToString("{\"alg\":\"RS256\"}".getBytes(UTF_8));
-              final var payload =
-                  Base64.getUrlEncoder()
-                      .withoutPadding()
-                      .encodeToString("{\"iss\":\"https://unknown.example.com\"}".getBytes(UTF_8));
-              assertThatThrownBy(() -> decoder.decode(header + "." + payload + ".fakesig"))
+              // Both registered issuers route past the issuer check to the JWK fetch step.
+              // The JWK URIs are unreachable in tests, so we get a network/fetch error —
+              // but not "Unknown issuer", which proves the routing reached the right provider.
+              assertThatThrownBy(() -> decoder.decode(tokenWithIssuer("https://kc.example.com")))
+                  .isInstanceOf(JwtException.class)
+                  .hasMessageNotContaining("Unknown issuer");
+              assertThatThrownBy(() -> decoder.decode(tokenWithIssuer("https://az.example.com")))
+                  .isInstanceOf(JwtException.class)
+                  .hasMessageNotContaining("Unknown issuer");
+              // An unregistered issuer must be rejected before the JWK fetch.
+              assertThatThrownBy(
+                      () -> decoder.decode(tokenWithIssuer("https://unknown.example.com")))
                   .isInstanceOf(JwtException.class)
                   .hasMessageContaining("Unknown issuer");
+            });
+  }
+
+  @Test
+  void shouldFailWithInformativeErrorWhenOnlyAdditionalJwkSetUrisConfigured() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=flat-client",
+            "camunda.security.authentication.oidc.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
+            "camunda.security.authentication.oidc.token-uri=https://flat.example.com/token",
+            "camunda.security.authentication.oidc.additional-jwk-set-uris[0]=https://secondary.example.com/jwks")
+        // additional-jwk-set-uris without a primary jwk-set-uri or issuer-uri:
+        // clientRegistrationRepository fails with an actionable error
+        .run(
+            ctx -> {
+              assertThat(ctx).hasFailed();
+              assertThat(ctx.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalStateException.class)
+                  .hasMessageContaining("issuer-uri")
+                  .hasMessageContaining("jwk-set-uri");
+            });
+  }
+
+  @Test
+  void shouldFailWithInformativeErrorWhenNoSourceAvailable() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=flat-client",
+            "camunda.security.authentication.oidc.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
+            "camunda.security.authentication.oidc.token-uri=https://flat.example.com/token")
+        // no issuer-uri, no jwk-set-uri: clientRegistrationRepository fails with an
+        // actionable error before jwtDecoder is even attempted
+        .run(
+            ctx -> {
+              assertThat(ctx).hasFailed();
+              assertThat(ctx.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalStateException.class)
+                  .hasMessageContaining("issuer-uri")
+                  .hasMessageContaining("jwk-set-uri")
+                  .hasMessageContaining("providers.oidc");
             });
   }
 
@@ -148,6 +193,18 @@ class OidcBeansConfigurationJwtDecoderTest {
                   .isInstanceOf(IllegalArgumentException.class)
                   .hasMessageContaining("jwk-set-uri");
             });
+  }
+
+  private static String tokenWithIssuer(final String issuer) {
+    final var header =
+        Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString("{\"alg\":\"RS256\"}".getBytes(UTF_8));
+    final var payload =
+        Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString(("{\"iss\":\"" + issuer + "\"}").getBytes(UTF_8));
+    return header + "." + payload + ".fakesig";
   }
 
   private static ClientRegistration testRegistration(
