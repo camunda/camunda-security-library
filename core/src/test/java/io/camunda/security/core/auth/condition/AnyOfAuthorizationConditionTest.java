@@ -39,6 +39,14 @@ class AnyOfAuthorizationConditionTest {
   }
 
   @Test
+  void shouldRejectListWithNullElement() {
+    final var listWithNull = new java.util.ArrayList<RequiredAuthorization<?>>();
+    listWithNull.add(null);
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> new AnyOfAuthorizationCondition(listWithNull));
+  }
+
+  @Test
   void shouldMakeDefensiveCopy() {
     final var list = new java.util.ArrayList<RequiredAuthorization<?>>();
     list.add(auth("id1"));
