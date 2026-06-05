@@ -27,6 +27,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.DefaultSecurityFilterChain;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
@@ -257,6 +258,18 @@ class OidcWebappLoginPickerTest {
     ClientRegistrationRepository clientRegistrationRepository() {
       return new InMemoryClientRegistrationRepository(
           stubRegistration("oidc"), stubRegistration("oidc-secondary"));
+    }
+
+    /**
+     * Stub decoder: these tests exercise the security filter chain and login picker, not JWT
+     * decoding. The stub registrations have no issuer-uri, so the library's default jwtDecoder
+     * (which requires issuer-uri for multi-provider setups) must be overridden here.
+     */
+    @Bean
+    JwtDecoder jwtDecoder() {
+      return token -> {
+        throw new UnsupportedOperationException("stub — not called in this test");
+      };
     }
 
     private static ClientRegistration stubRegistration(final String registrationId) {
