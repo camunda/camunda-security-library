@@ -7,9 +7,12 @@
  */
 package io.camunda.security.spring.oidc;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.camunda.security.spring.CamundaSecurityConfiguration;
+import java.util.Base64;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -25,6 +28,7 @@ import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepo
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtException;
 
 /**
  * Verifies the single {@link JwtDecoder} bean resolves correctly across the additive configuration
@@ -82,7 +86,24 @@ class OidcBeansConfigurationJwtDecoderTest {
             "camunda.security.authentication.providers.oidc.azure.token-uri=https://az.example.com/token",
             "camunda.security.authentication.providers.oidc.azure.jwk-set-uri=https://az.example.com/jwks")
         .withUserConfiguration(TwoProviderRegistrations.class)
-        .run(ctx -> assertThat(ctx).hasSingleBean(JwtDecoder.class));
+        .run(
+            ctx -> {
+              assertThat(ctx).hasSingleBean(JwtDecoder.class);
+              final var decoder = ctx.getBean(JwtDecoder.class);
+              // IssuerAwareJWSKeySelector rejects unknown issuers before signature verification,
+              // proving the issuer-routing path is wired (not a plain single-issuer decoder).
+              final var header =
+                  Base64.getUrlEncoder()
+                      .withoutPadding()
+                      .encodeToString("{\"alg\":\"RS256\"}".getBytes(UTF_8));
+              final var payload =
+                  Base64.getUrlEncoder()
+                      .withoutPadding()
+                      .encodeToString("{\"iss\":\"https://unknown.example.com\"}".getBytes(UTF_8));
+              assertThatThrownBy(() -> decoder.decode(header + "." + payload + ".fakesig"))
+                  .isInstanceOf(JwtException.class)
+                  .hasMessageContaining("Unknown issuer");
+            });
   }
 
   @Test
@@ -161,7 +182,13 @@ class OidcBeansConfigurationJwtDecoderTest {
     }
   }
 
-  /** Two-provider repository for the multi-issuer test — bypasses OIDC discovery. */
+  /**
+   * Provides a pre-built two-provider {@link ClientRegistrationRepository} for the multi-issuer
+   * test. In production, CSL's {@code clientRegistrationRepository} bean builds registrations via
+   * {@code ClientRegistrations.fromIssuerLocation(issuerUri)} (OIDC discovery). The test properties
+   * use fake URIs that cannot do real discovery, so this class supplies equivalent registrations
+   * directly, bypassing the network call.
+   */
   @Configuration
   static class TwoProviderRegistrations {
 
