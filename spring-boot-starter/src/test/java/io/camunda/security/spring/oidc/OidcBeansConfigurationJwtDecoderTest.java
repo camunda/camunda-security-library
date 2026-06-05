@@ -31,9 +31,10 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 
 /**
- * Verifies the single {@link JwtDecoder} bean resolves correctly across the additive configuration
- * shapes: it picks the flat block when configured, otherwise the first {@code providers.oidc} entry
- * with a usable issuer or JWK source. Per-audience decoding remains a host concern.
+ * Verifies the single {@link JwtDecoder} bean resolves correctly across all configuration shapes.
+ * With one registration a single-issuer {@code NimbusJwtDecoder} is built; with multiple
+ * registrations an issuer-aware decoder is built; with zero registrations startup fails. Per-issuer
+ * audience enforcement and additional JWK set URIs are also covered.
  */
 class OidcBeansConfigurationJwtDecoderTest {
 
