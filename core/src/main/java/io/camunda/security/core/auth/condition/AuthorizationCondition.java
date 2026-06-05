@@ -26,12 +26,9 @@ public sealed interface AuthorizationCondition
 
   /** Returns the underlying authorizations (single returns a size-1 list). */
   default List<RequiredAuthorization<?>> authorizations() {
-    if (this instanceof SingleAuthorizationCondition(RequiredAuthorization<?> authorization)) {
-      return List.of(authorization);
-    }
-    if (this instanceof AnyOfAuthorizationCondition(var children)) {
-      return children;
-    }
-    throw new IllegalStateException("Unknown AuthorizationCondition type: " + getClass());
+    return switch (this) {
+      case SingleAuthorizationCondition(var authorization) -> List.of(authorization);
+      case AnyOfAuthorizationCondition(var children) -> children;
+    };
   }
 }

@@ -28,6 +28,9 @@ classes in OC's `security-core/auth/` that depend on it are:
 This decision covers the first five. `BrokerRequestAuthorizationConverter` is host-specific
 (depends on Zeebe claim keys and engine security config) and stays in OC.
 
+The question this ADR answers: which of these classes belong in CSL `core/`, and what changes are
+required during migration?
+
 ## Decision
 
 Migrate `SecurityContext`, `AuthorizationCondition`, `SingleAuthorizationCondition`,
@@ -37,13 +40,13 @@ and `io.camunda.security.core.auth.condition`.
 ### Seal `AuthorizationCondition`
 
 OC's `AuthorizationCondition` is an open interface, but its sole `default` method
-(`authorizations()`) already pattern-matches on exactly two concrete record types and throws
-`IllegalStateException` for anything else. This is a sealed type in everything but the keyword.
+(`authorizations()`) already assumes exactly two concrete record types. This is a sealed type in
+everything but the keyword.
 
 We make it explicit: `sealed interface AuthorizationCondition permits
-SingleAuthorizationCondition, AnyOfAuthorizationCondition`. The compiler enforces exhaustiveness
-at switch/pattern-match sites; third-party subtypes that the `authorizations()` default cannot
-handle are rejected at compile time rather than at runtime.
+SingleAuthorizationCondition, AnyOfAuthorizationCondition`. The `authorizations()` default method
+is expressed as an exhaustive `switch` over the two permitted subtypes — no `IllegalStateException`
+fallthrough needed. Third-party subtypes are rejected at compile time rather than at runtime.
 
 ### Strip Jackson annotations from `SecurityContext`
 

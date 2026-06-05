@@ -9,6 +9,7 @@ package io.camunda.security.core.auth.condition;
 
 import io.camunda.security.core.auth.RequiredAuthorization;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Disjunctive {@link AuthorizationCondition} that grants access when any child authorization is
@@ -18,12 +19,17 @@ public record AnyOfAuthorizationCondition(List<RequiredAuthorization<?>> authori
     implements AuthorizationCondition {
 
   /**
-   * @throws IllegalArgumentException when {@code authorizations} is {@code null} or empty
+   * @throws IllegalArgumentException when {@code authorizations} is {@code null}, empty, or
+   *     contains a {@code null} element
    */
   public AnyOfAuthorizationCondition {
     if (authorizations == null || authorizations.isEmpty()) {
       throw new IllegalArgumentException(
           "AnyOfAuthorizationCondition requires at least one authorization");
+    }
+    if (authorizations.stream().anyMatch(Objects::isNull)) {
+      throw new IllegalArgumentException(
+          "AnyOfAuthorizationCondition requires non-null authorizations");
     }
     authorizations = List.copyOf(authorizations);
   }
