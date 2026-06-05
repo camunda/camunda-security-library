@@ -35,6 +35,9 @@ chain, `OidcUserAuthenticationConverter`, any host bean that injects `JwtDecoder
 also requires discovery metadata for each issuer at startup, which conflicts with the explicit-URI
 configuration model CSL supports.
 
+How should CSL build a single `JwtDecoder` bean that correctly validates tokens from multiple
+configured IdPs without requiring hosts to register their own override?
+
 ## Decision
 
 Replace the property-reading single-decoder selection logic in `OidcBeansConfiguration#jwtDecoder`
