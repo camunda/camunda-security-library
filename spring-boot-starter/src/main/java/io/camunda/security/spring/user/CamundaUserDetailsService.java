@@ -38,18 +38,21 @@ public final class CamundaUserDetailsService implements UserDetailsService {
   @Override
   public UserDetails loadUserByUsername(final String username) {
     if (username == null || username.isBlank()) {
-      throw new UsernameNotFoundException("Username must not be null or blank");
+      throw new UsernameNotFoundException("User not found");
     }
 
     final CamundaUserDetails user = userDetailsPort.loadUser(username);
     if (user == null
         || user.username() == null
         || user.username().isBlank()
-        || user.password() == null) {
+        || user.password() == null
+        || user.password().isBlank()) {
       // Fail closed: a missing user — or an adapter that returned an incomplete record — is an
-      // authentication failure, not an internal error (an invalid record would otherwise make
-      // User.withUsername(...)/.password(...) throw IllegalArgumentException). The username is not
-      // echoed: it can be PII and may carry control characters (log forging).
+      // authentication failure, not an internal error. An invalid record would otherwise make
+      // User.withUsername(...) throw IllegalArgumentException, or a blank password make the
+      // DelegatingPasswordEncoder throw during matching. The username is never echoed: it can be
+      // PII and may carry control characters (log forging), and the message is surfaced verbatim by
+      // the RFC 7807 failure handler.
       LOG.debug("Basic-auth user resolution did not yield a usable account");
       throw new UsernameNotFoundException("User not found");
     }

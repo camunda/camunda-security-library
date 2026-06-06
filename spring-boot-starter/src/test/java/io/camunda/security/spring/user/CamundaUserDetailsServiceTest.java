@@ -67,6 +67,16 @@ class CamundaUserDetailsServiceTest {
   }
 
   @Test
+  void failsClosedWhenPortReturnsRecordWithBlankPassword() {
+    // A blank password builds a User Spring accepts, but DelegatingPasswordEncoder.matches(...)
+    // would then throw — so treat it as an unusable record (clean rejection, not a 500).
+    when(userDetailsPort.loadUser("alice")).thenReturn(new CamundaUserDetails("alice", "  "));
+
+    assertThatThrownBy(() -> service.loadUserByUsername("alice"))
+        .isInstanceOf(UsernameNotFoundException.class);
+  }
+
+  @Test
   void failsClosedWhenPortReturnsRecordWithBlankUsername() {
     when(userDetailsPort.loadUser("alice")).thenReturn(new CamundaUserDetails("  ", "{noop}pw"));
 
