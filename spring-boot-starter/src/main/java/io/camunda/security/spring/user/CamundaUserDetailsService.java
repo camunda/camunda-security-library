@@ -10,8 +10,6 @@ package io.camunda.security.spring.user;
 import io.camunda.security.core.port.out.UserDetailsPort;
 import io.camunda.security.core.port.out.UserDetailsPort.CamundaUserDetails;
 import java.util.Collections;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -26,8 +24,6 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
  * authorization ports), so basic-auth here only verifies credentials and establishes identity.
  */
 public final class CamundaUserDetailsService implements UserDetailsService {
-
-  private static final Logger LOG = LoggerFactory.getLogger(CamundaUserDetailsService.class);
 
   private final UserDetailsPort userDetailsPort;
 
@@ -50,10 +46,8 @@ public final class CamundaUserDetailsService implements UserDetailsService {
       // Fail closed: a missing user — or an adapter that returned an incomplete record — is an
       // authentication failure, not an internal error. An invalid record would otherwise make
       // User.withUsername(...) throw IllegalArgumentException, or a blank password make the
-      // DelegatingPasswordEncoder throw during matching. The username is never echoed: it can be
-      // PII and may carry control characters (log forging), and the message is surfaced verbatim by
-      // the RFC 7807 failure handler.
-      LOG.debug("Basic-auth user resolution did not yield a usable account");
+      // DelegatingPasswordEncoder throw during matching. The message stays generic and omits the
+      // username (it can be PII) since the RFC 7807 failure handler surfaces it verbatim.
       throw new UsernameNotFoundException("User not found");
     }
 
