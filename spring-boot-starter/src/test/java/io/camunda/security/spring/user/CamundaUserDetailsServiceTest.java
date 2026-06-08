@@ -11,8 +11,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
-import io.camunda.security.core.port.out.UserDetailsPort;
-import io.camunda.security.core.port.out.UserDetailsPort.CamundaUserDetails;
+import io.camunda.security.core.port.out.BasicAuthUserDetailsPort;
+import io.camunda.security.core.port.out.BasicAuthUserDetailsPort.CamundaUserDetails;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -24,7 +24,7 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 @ExtendWith(MockitoExtension.class)
 class CamundaUserDetailsServiceTest {
 
-  @Mock private UserDetailsPort userDetailsPort;
+  @Mock private BasicAuthUserDetailsPort userDetailsPort;
 
   @InjectMocks private CamundaUserDetailsService service;
 

@@ -11,7 +11,7 @@ import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.api.model.config.AuthenticationMethod;
 import io.camunda.security.core.port.in.CamundaUserPort;
 import io.camunda.security.core.port.out.AuthorizedComponentsPort;
-import io.camunda.security.core.port.out.UserDetailsPort;
+import io.camunda.security.core.port.out.BasicAuthUserDetailsPort;
 import io.camunda.security.spring.annotation.ConditionalOnAuthenticationMethod;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -32,11 +32,12 @@ import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepo
  * defaults back off via {@code @ConditionalOnMissingBean}.
  *
  * <p>For HTTP Basic deployments it also provides the {@link UserDetailsService} that backs the
- * basic-auth chains (delegating to the host-supplied {@link UserDetailsPort}) and a default
- * delegating {@link PasswordEncoder}. Both are guarded so a host can override them; the {@code
- * UserDetailsService} only activates when a {@link UserDetailsPort} bean is present. Spring Boot's
- * {@code InitializeUserDetailsBeanManagerConfigurer} assembles the global {@code
- * AuthenticationManager} from these two beans, so the basic-auth filter chains need no change.
+ * basic-auth chains (delegating to the host-supplied {@link BasicAuthUserDetailsPort}) and a
+ * default delegating {@link PasswordEncoder}. Both are guarded so a host can override them; the
+ * {@code UserDetailsService} only activates when a {@link BasicAuthUserDetailsPort} bean is
+ * present. Spring Boot's {@code InitializeUserDetailsBeanManagerConfigurer} assembles the global
+ * {@code AuthenticationManager} from these two beans, so the basic-auth filter chains need no
+ * change.
  */
 @Configuration
 public class UserConfiguration {
@@ -61,9 +62,10 @@ public class UserConfiguration {
 
   @Bean
   @ConditionalOnMissingBean(UserDetailsService.class)
-  @ConditionalOnBean(UserDetailsPort.class)
+  @ConditionalOnBean(BasicAuthUserDetailsPort.class)
   @ConditionalOnAuthenticationMethod(AuthenticationMethod.BASIC)
-  public UserDetailsService camundaUserDetailsService(final UserDetailsPort userDetailsPort) {
+  public UserDetailsService camundaUserDetailsService(
+      final BasicAuthUserDetailsPort userDetailsPort) {
     return new CamundaUserDetailsService(userDetailsPort);
   }
 

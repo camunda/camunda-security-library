@@ -21,7 +21,7 @@ package io.camunda.security.core.port.out;
  * appropriate Spring Security {@code UsernameNotFoundException}.
  */
 @FunctionalInterface
-public interface UserDetailsPort {
+public interface BasicAuthUserDetailsPort {
 
   /**
    * Resolves a user by username for basic-auth credential verification. The host resolves any
