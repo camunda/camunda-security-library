@@ -1,0 +1,60 @@
+/*
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH under
+ * one or more contributor license agreements. See the NOTICE file distributed
+ * with this work for additional information regarding copyright ownership.
+ * Licensed under the Camunda License 1.0. You may not use this file
+ * except in compliance with the Camunda License 1.0.
+ */
+package io.camunda.security.core.reader;
+
+import io.camunda.security.core.auth.RequiredAuthorization;
+import io.camunda.security.core.auth.condition.AuthorizationCondition;
+import io.camunda.security.core.auth.condition.AuthorizationConditions;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+import java.util.function.Predicate;
+
+public record AuthorizationCheck(boolean enabled, AuthorizationCondition authorizationCondition) {
+
+  public static AuthorizationCheck enabled(final RequiredAuthorization<?> authorization) {
+    return enabled(AuthorizationConditions.single(authorization));
+  }
+
+  public static AuthorizationCheck enabled(final AuthorizationCondition authorizationCondition) {
+    return new AuthorizationCheck(true, authorizationCondition);
+  }
+
+  public static AuthorizationCheck disabled() {
+    return new AuthorizationCheck(false, null);
+  }
+
+  public List<RequiredAuthorization<?>> authorizations() {
+    return Optional.ofNullable(authorizationCondition)
+        .map(AuthorizationCondition::authorizations)
+        .orElse(Collections.emptyList());
+  }
+
+  public boolean hasAnyResourceAccess() {
+    return !enabled || hasAnyResourceIdAccess() || hasAnyResourcePropertyAccess();
+  }
+
+  private boolean hasAnyResourceIdAccess() {
+    return anyAuthorizationMatches(RequiredAuthorization::hasAnyResourceIds);
+  }
+
+  private boolean hasAnyResourcePropertyAccess() {
+    return anyAuthorizationMatches(RequiredAuthorization::hasAnyResourcePropertyNames);
+  }
+
+  private boolean anyAuthorizationMatches(final Predicate<RequiredAuthorization<?>> predicate) {
+    if (authorizationCondition == null) {
+      return false;
+    }
+    final var auths = authorizationCondition.authorizations();
+    if (auths == null || auths.isEmpty()) {
+      return false;
+    }
+    return auths.stream().anyMatch(predicate);
+  }
+}
