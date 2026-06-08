@@ -96,6 +96,27 @@ This **replaces OC's hand-rolled `CamundaUserDetailsService`**: OC contributes a
 thin `UserDetailsAdapter` implementing the port (companion camunda/camunda PR)
 and deletes the duplicated service and its bean.
 
+## Consequences
+
+**Positive**
+
+- Basic-auth user resolution becomes a shared, reviewable CSL implementation;
+  every basic-auth adopter inherits the Spring Security plumbing and a default
+  `PasswordEncoder`.
+- `core/` stays framework-free; the new port imports only JDK types.
+- OC drops its hand-rolled `CamundaUserDetailsService` and the
+  `// TODO use the contextual physicalTenantId`, retaining only a thin adapter —
+  the structural home for future per-physical-tenant scope resolution.
+
+**Negative / accepted trade-offs**
+
+- Basic-auth deployments must register a `UserDetailsPort` bean, or the
+  basic-auth chains have no user resolution (the service bean does not activate
+  without the port).
+- The umbrella `@Import` list already carries `UserConfiguration`; no umbrella
+  change was needed. The two new beans must stay gated (`@ConditionalOnMissingBean`)
+  so hosts can override them.
+
 ## Alternatives Considered
 
 ### Outbound port with no scope parameter (chosen) vs scope-carrying port
@@ -138,24 +159,3 @@ The port could return Spring Security's `UserDetails` directly.
   behaviour the adapter is lifted from.
 - **Con:** `null` returns; the contract is documented and the only caller (CSL)
   handles it in one place.
-
-## Consequences
-
-**Positive**
-
-- Basic-auth user resolution becomes a shared, reviewable CSL implementation;
-  every basic-auth adopter inherits the Spring Security plumbing and a default
-  `PasswordEncoder`.
-- `core/` stays framework-free; the new port imports only JDK types.
-- OC drops its hand-rolled `CamundaUserDetailsService` and the
-  `// TODO use the contextual physicalTenantId`, retaining only a thin adapter —
-  the structural home for future per-physical-tenant scope resolution.
-
-**Negative / accepted trade-offs**
-
-- Basic-auth deployments must register a `UserDetailsPort` bean, or the
-  basic-auth chains have no user resolution (the service bean does not activate
-  without the port).
-- The umbrella `@Import` list already carries `UserConfiguration`; no umbrella
-  change was needed. The two new beans must stay gated (`@ConditionalOnMissingBean`)
-  so hosts can override them.
