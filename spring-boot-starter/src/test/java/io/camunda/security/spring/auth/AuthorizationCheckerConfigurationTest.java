@@ -44,7 +44,6 @@ class AuthorizationCheckerConfigurationTest {
 
   @Test
   void hostCanOverrideAuthorizationChecker() {
-    final AuthorizationChecker hostChecker = new AuthorizationChecker(new NoopPort());
     runner
         .withBean(AuthorizationScopeRepositoryPort.class, NoopPort::new)
         .withUserConfiguration(HostCheckerConfiguration.class)

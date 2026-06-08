@@ -23,12 +23,11 @@ import java.util.List;
 public record TenantCheck(boolean enabled, List<String> tenantIds) {
 
   /**
-   * Creates an enabled check scoping access to the supplied tenant IDs.
-   *
-   * @param tenantIds the tenant IDs the principal is permitted to access; must not be {@code null}
+   * Creates an enabled check scoping access to the supplied tenant IDs. A {@code null} argument is
+   * treated as an empty list, producing an enabled check with no accessible tenants.
    */
   public static TenantCheck enabled(final List<String> tenantIds) {
-    return new TenantCheck(true, tenantIds);
+    return new TenantCheck(true, tenantIds != null ? tenantIds : List.of());
   }
 
   /** Creates a disabled check — tenant scoping is not enforced and all tenants are accessible. */
@@ -37,9 +36,11 @@ public record TenantCheck(boolean enabled, List<String> tenantIds) {
   }
 
   /**
-   * Returns {@code true} when no tenant filter needs to be applied to a query. This is the case
-   * when the check is disabled (tenant isolation off) or when at least one tenant ID is present for
-   * the search backend to use as a filter.
+   * Returns {@code true} when the request has access to at least one tenant. This is the case when
+   * the check is disabled (tenant isolation off, all tenants accessible) or when enabled and at
+   * least one tenant ID is present for the backend to use as a filter.
+   *
+   * <p>Returns {@code false} when tenant isolation is enabled but no tenant IDs were resolved.
    */
   public boolean hasAnyTenantAccess() {
     return !enabled || hasAnyTenantIdAccess();

@@ -174,7 +174,7 @@ public final class AuthorizationChecker {
     if (mappingRules != null && !mappingRules.isEmpty()) {
       ownerTypeToOwnerIds.put(EntityType.MAPPING_RULE, new HashSet<>(mappingRules));
     }
-    LOG.debug("Resolved authorization principals: {}", ownerTypeToOwnerIds);
+    LOG.debug("Resolved authorization owner types: {}", ownerTypeToOwnerIds.keySet());
     return ownerTypeToOwnerIds;
   }
 }
