@@ -7,8 +7,8 @@
  */
 package io.camunda.security.spring.user;
 
-import io.camunda.security.core.port.out.UserDetailsPort;
-import io.camunda.security.core.port.out.UserDetailsPort.CamundaUserDetails;
+import io.camunda.security.core.port.out.BasicAuthUserDetailsPort;
+import io.camunda.security.core.port.out.BasicAuthUserDetailsPort.CamundaUserDetails;
 import java.util.Collections;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -17,17 +17,17 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
 /**
  * CSL-default Spring Security {@link UserDetailsService} backing the HTTP Basic authentication
- * chains. It delegates user resolution to the host-supplied {@link UserDetailsPort} and maps the
- * framework-free {@link CamundaUserDetails} record onto Spring Security's {@link User}.
+ * chains. It delegates user resolution to the host-supplied {@link BasicAuthUserDetailsPort} and
+ * maps the framework-free {@link CamundaUserDetails} record onto Spring Security's {@link User}.
  *
  * <p>Authorities are intentionally empty: CSL performs authorization separately (via its
  * authorization ports), so basic-auth here only verifies credentials and establishes identity.
  */
 public final class CamundaUserDetailsService implements UserDetailsService {
 
-  private final UserDetailsPort userDetailsPort;
+  private final BasicAuthUserDetailsPort userDetailsPort;
 
-  public CamundaUserDetailsService(final UserDetailsPort userDetailsPort) {
+  public CamundaUserDetailsService(final BasicAuthUserDetailsPort userDetailsPort) {
     this.userDetailsPort = userDetailsPort;
   }
 

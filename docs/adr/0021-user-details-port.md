@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0021: UserDetailsPort for basic-auth user resolution
+# ADR-0021: BasicAuthUserDetailsPort for basic-auth user resolution
 
 **Deciders**: Sebastian Bathke (megglos)
 
@@ -37,7 +37,7 @@ knowing about tenant or scope?
 
 ## Decision
 
-**A new outbound port `UserDetailsPort` lives in `core/port/out/`.** It is
+**A new outbound port `BasicAuthUserDetailsPort` lives in `core/port/out/`.** It is
 framework-free (no Spring/Jakarta/Jackson — enforced by `DomainArchTest`) and
 host-must-provide (no CSL default), like `SecurityPathPort` and `MembershipPort`.
 It is a `@FunctionalInterface` with a single method:
@@ -57,7 +57,7 @@ record CamundaUserDetails(String username, String password) {}
 
 **CSL owns the Spring Security plumbing.** `spring-boot-starter` adds
 `CamundaUserDetailsService` (`final`, implements Spring's `UserDetailsService`),
-which delegates to `UserDetailsPort`, throws `UsernameNotFoundException` on a
+which delegates to `BasicAuthUserDetailsPort`, throws `UsernameNotFoundException` on a
 blank username or a `null` port result, and otherwise maps the record onto Spring
 `User.withUsername(...).password(...)` (whose status flags default to active).
 Authorities are empty — CSL performs authorization separately.
@@ -66,9 +66,9 @@ Authorities are empty — CSL performs authorization separately.
 
 ```java
 @Bean @ConditionalOnMissingBean(UserDetailsService.class)
-      @ConditionalOnBean(UserDetailsPort.class)
+      @ConditionalOnBean(BasicAuthUserDetailsPort.class)
       @ConditionalOnAuthenticationMethod(BASIC)
-UserDetailsService camundaUserDetailsService(UserDetailsPort port) { ... }
+UserDetailsService camundaUserDetailsService(BasicAuthUserDetailsPort port) { ... }
 
 @Bean @ConditionalOnMissingBean(PasswordEncoder.class)
       @ConditionalOnAuthenticationMethod(BASIC)
@@ -77,7 +77,7 @@ PasswordEncoder passwordEncoder() {
 }
 ```
 
-The `UserDetailsService` only activates when the host provides a `UserDetailsPort`
+The `UserDetailsService` only activates when the host provides a `BasicAuthUserDetailsPort`
 bean (`@ConditionalOnBean`); `@ConditionalOnMissingBean(UserDetailsService.class)`
 means hosts that already register their own single `UserDetailsService` are
 unchanged. CSL also ships a default delegating `PasswordEncoder` for basic-auth;
@@ -110,7 +110,7 @@ and deletes the duplicated service and its bean.
 
 **Negative / accepted trade-offs**
 
-- Basic-auth deployments must register a `UserDetailsPort` bean, or the
+- Basic-auth deployments must register a `BasicAuthUserDetailsPort` bean, or the
   basic-auth chains have no user resolution (the service bean does not activate
   without the port).
 - The umbrella `@Import` list already carries `UserConfiguration`; no umbrella

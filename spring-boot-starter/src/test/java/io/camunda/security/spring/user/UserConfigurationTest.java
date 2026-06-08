@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.api.model.user.CamundaUserDTO;
 import io.camunda.security.core.port.in.CamundaUserPort;
-import io.camunda.security.core.port.out.UserDetailsPort;
+import io.camunda.security.core.port.out.BasicAuthUserDetailsPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -164,9 +164,9 @@ class UserConfigurationTest {
   static class HostUserDetailsPortConfiguration {
 
     @Bean
-    UserDetailsPort hostUserDetailsPort() {
+    BasicAuthUserDetailsPort hostUserDetailsPort() {
       // A mock so individual tests can stub specific usernames as needed.
-      return Mockito.mock(UserDetailsPort.class);
+      return Mockito.mock(BasicAuthUserDetailsPort.class);
     }
   }
 

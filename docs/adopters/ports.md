@@ -41,7 +41,7 @@ There are three categories:
 | [`AuthorizationRepositoryPort`](#authorizationrepositoryport) | _(none — host must provide)_ | `AuthorizationRepositoryAdapter` |
 | [`MembershipPort`](#membershipport) | _(none — host must provide)_ | `NoDBMembershipService`, `DefaultMembershipService` |
 | [`SecurityPathPort`](#securitypathport) | _(none — host must provide)_ | `SecurityPathAdapter` |
-| [`UserDetailsPort`](#userdetailsport) | _(none — host must provide)_ | `UserDetailsAdapter` |
+| [`BasicAuthUserDetailsPort`](#basicauthuserdetailsport) | _(none — host must provide)_ | `UserDetailsAdapter` |
 | [`PolicyRepositoryPort`](#policyrepositoryport) | _(none — under development)_ | _(none)_ |
 | [`IdpClientPort`](#idpclientport) | _(none — under development)_ | _(none)_ |
 | [`SessionStorePort`](#sessionstoreport) | _(none — host must provide)_ | `SessionStoreAdapter` |
@@ -286,7 +286,7 @@ Path patterns use Spring Security ant-style syntax (`**` for multi-level, `*` fo
 
 ---
 
-### `UserDetailsPort`
+### `BasicAuthUserDetailsPort`
 
 ```java
 package io.camunda.security.core.port.out;
@@ -310,7 +310,7 @@ CamundaUserDetails loadUser(String username);   // null when no such user exists
 verify basic credentials. Returning `null` makes the library throw `UsernameNotFoundException`.
 
 **CSL default:** none — the host must supply this bean. The CSL `UserDetailsService` only activates
-when a `UserDetailsPort` bean is present (`@ConditionalOnBean(UserDetailsPort.class)`), the auth
+when a `BasicAuthUserDetailsPort` bean is present (`@ConditionalOnBean(BasicAuthUserDetailsPort.class)`), the auth
 method is `basic`, and no host `UserDetailsService` is already registered.
 
 **Wiring:** `UserConfiguration` (`io.camunda.security.spring.user`, in the

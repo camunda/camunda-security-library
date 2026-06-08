@@ -10,9 +10,9 @@ package io.camunda.security.spring.security;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.camunda.security.core.port.out.BasicAuthUserDetailsPort;
+import io.camunda.security.core.port.out.BasicAuthUserDetailsPort.CamundaUserDetails;
 import io.camunda.security.core.port.out.SecurityPathPort;
-import io.camunda.security.core.port.out.UserDetailsPort;
-import io.camunda.security.core.port.out.UserDetailsPort.CamundaUserDetails;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.user.UserConfiguration;
@@ -105,7 +105,7 @@ class BasicAuthApiChainAuthenticationTest {
     // Encode with the context's own PasswordEncoder so the provider validates against the same
     // encoding scheme that CSL wires into the chain.
     final var encoder = ctx.getBean(PasswordEncoder.class);
-    final var port = ctx.getBean(UserDetailsPort.class);
+    final var port = ctx.getBean(BasicAuthUserDetailsPort.class);
     Mockito.when(port.loadUser(username))
         .thenReturn(new CamundaUserDetails(username, encoder.encode(rawPassword)));
   }
@@ -139,9 +139,9 @@ class BasicAuthApiChainAuthenticationTest {
   static class StubUserDetailsPort {
 
     @Bean
-    UserDetailsPort userDetailsPort() {
+    BasicAuthUserDetailsPort userDetailsPort() {
       // A mock so each test stubs the resolvable user with a hash from the context encoder.
-      return Mockito.mock(UserDetailsPort.class);
+      return Mockito.mock(BasicAuthUserDetailsPort.class);
     }
   }
 
