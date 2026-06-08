@@ -14,10 +14,27 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * Spring configuration that wires an {@link AuthorizationChecker} bean when the host provides an
+ * {@link AuthorizationScopeRepositoryPort}.
+ *
+ * <p>This class is activated when the host explicitly imports it (directly or via the {@link
+ * io.camunda.security.spring.CamundaSecurityAutoConfiguration} umbrella) and an {@link
+ * AuthorizationScopeRepositoryPort} bean is present in the application context. Hosts that need a
+ * custom {@link AuthorizationChecker} can register their own bean; the {@link
+ * ConditionalOnMissingBean} on the factory method ensures the library-supplied default backs off.
+ */
 @Configuration
 @ConditionalOnBean(AuthorizationScopeRepositoryPort.class)
 public class AuthorizationCheckerConfiguration {
 
+  /**
+   * Provides the default {@link AuthorizationChecker} backed by the host-supplied {@link
+   * AuthorizationScopeRepositoryPort}. Back-off is handled by {@link ConditionalOnMissingBean}: if
+   * the host registers its own {@link AuthorizationChecker} bean this method is skipped.
+   *
+   * @param scopeRepository the authorization store adapter provided by the host
+   */
   @Bean
   @ConditionalOnMissingBean
   public AuthorizationChecker authorizationChecker(

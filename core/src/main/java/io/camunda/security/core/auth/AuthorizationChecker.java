@@ -24,16 +24,53 @@ import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Evaluates authorization queries against the host's authorization store via {@link
+ * AuthorizationScopeRepositoryPort}.
+ *
+ * <p>Resolves the principal identity from a {@link CamundaAuthentication} into a map of {@link
+ * io.camunda.security.api.model.authz.EntityType}-to-IDs and delegates to the port. Returns empty
+ * results (rather than throwing) when the authentication carries no identifiable principal — this
+ * covers anonymous and unset authentication contexts.
+ *
+ * <p>The three public methods correspond to the three query patterns used by OC:
+ *
+ * <ul>
+ *   <li>{@link #retrieveAuthorizedAuthorizationScopes} — bulk scope fetch for search pre-filtering
+ *   <li>{@link #isAuthorized} — point check for get-by-id operations
+ *   <li>{@link #collectPermissionTypes} — permission discovery for resource detail views
+ * </ul>
+ *
+ * <p>Wired as a Spring bean by {@link
+ * io.camunda.security.spring.auth.AuthorizationCheckerConfiguration} when the host provides an
+ * {@link AuthorizationScopeRepositoryPort} bean.
+ */
 public final class AuthorizationChecker {
 
   private static final Logger LOG = LoggerFactory.getLogger(AuthorizationChecker.class);
 
   private final AuthorizationScopeRepositoryPort scopeRepository;
 
+  /**
+   * Creates a new checker backed by the given port.
+   *
+   * @param scopeRepository the host-supplied authorization store adapter
+   */
   public AuthorizationChecker(final AuthorizationScopeRepositoryPort scopeRepository) {
     this.scopeRepository = scopeRepository;
   }
 
+  /**
+   * Returns all {@link AuthorizationScope} records the principal holds for the resource type and
+   * permission declared in {@code authorization}. Used to populate pre-query filters in search
+   * backends.
+   *
+   * <p>Returns an empty list when the authentication carries no identifiable principal (anonymous
+   * or unset).
+   *
+   * @param authentication the resolved authentication context of the caller
+   * @param authorization the authorization requirement specifying the resource type and permission
+   */
   public List<AuthorizationScope> retrieveAuthorizedAuthorizationScopes(
       final CamundaAuthentication authentication, final RequiredAuthorization<?> authorization) {
     return getOrElseDefaultResult(
@@ -52,6 +89,17 @@ public final class AuthorizationChecker {
         List::of);
   }
 
+  /**
+   * Returns {@code true} if the principal holds an authorization record that covers {@code
+   * authorizationScope} for the resource type and permission declared in {@code authorization}.
+   * Always checks both the wildcard scope and the specific scope so wildcard grants are honoured.
+   *
+   * <p>Returns {@code false} when the authentication carries no identifiable principal.
+   *
+   * @param authorizationScope the specific scope (resource ID) being accessed
+   * @param authentication the resolved authentication context of the caller
+   * @param authorization the authorization requirement specifying the resource type and permission
+   */
   public boolean isAuthorized(
       final AuthorizationScope authorizationScope,
       final CamundaAuthentication authentication,
@@ -69,6 +117,17 @@ public final class AuthorizationChecker {
         () -> false);
   }
 
+  /**
+   * Returns all {@link PermissionType} values the principal holds on {@code resourceId} for {@code
+   * resourceType}. Checks both the wildcard resource and the specific ID so wildcard grants
+   * contribute to the result set.
+   *
+   * <p>Returns an empty set when the authentication carries no identifiable principal.
+   *
+   * @param resourceId the specific resource ID to collect permissions for
+   * @param resourceType the type of the resource
+   * @param authentication the resolved authentication context of the caller
+   */
   public Set<PermissionType> collectPermissionTypes(
       final String resourceId,
       final AuthorizationResourceType resourceType,
