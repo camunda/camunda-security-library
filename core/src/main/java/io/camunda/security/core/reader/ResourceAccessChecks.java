@@ -120,6 +120,7 @@ public record ResourceAccessChecks(
     if (!tenantCheck.hasAnyTenantAccess()) {
       return Collections.emptyList();
     }
-    return tenantCheck.tenantIds();
+    final var ids = tenantCheck.tenantIds();
+    return ids != null ? ids : Collections.emptyList();
   }
 }

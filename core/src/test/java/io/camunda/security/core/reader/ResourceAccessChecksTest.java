@@ -364,4 +364,40 @@ class ResourceAccessChecksTest {
       assertThat(checks.authorizationCheck().hasAnyResourceAccess()).isTrue();
     }
   }
+
+  @Nested
+  class GetAuthorizedTenantIds {
+
+    @Test
+    void shouldReturnEmptyListWhenFullyDisabled() {
+      final var checks = ResourceAccessChecks.disabled();
+
+      assertThat(checks.getAuthorizedTenantIds()).isEmpty();
+    }
+
+    @Test
+    void shouldReturnEmptyListWhenTenantCheckDisabled() {
+      final var checks =
+          ResourceAccessChecks.of(AuthorizationCheck.disabled(), TenantCheck.disabled());
+
+      assertThat(checks.getAuthorizedTenantIds()).isEmpty();
+    }
+
+    @Test
+    void shouldReturnTenantIdsWhenEnabled() {
+      final var checks =
+          ResourceAccessChecks.of(
+              AuthorizationCheck.disabled(), TenantCheck.enabled(List.of("t1", "t2")));
+
+      assertThat(checks.getAuthorizedTenantIds()).containsExactly("t1", "t2");
+    }
+
+    @Test
+    void shouldReturnEmptyListWhenEnabledWithEmptyList() {
+      final var checks =
+          ResourceAccessChecks.of(AuthorizationCheck.disabled(), TenantCheck.enabled(List.of()));
+
+      assertThat(checks.getAuthorizedTenantIds()).isEmpty();
+    }
+  }
 }

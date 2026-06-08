@@ -63,10 +63,11 @@ public record AuthorizationCheck(boolean enabled, AuthorizationCondition authori
   }
 
   /**
-   * Returns {@code true} when the caller should be permitted to access resources without further
-   * filtering. This is the case when the check is disabled, or when at least one of the underlying
-   * authorizations carries resource IDs or resource property names that a search backend can use to
-   * scope the query.
+   * Returns {@code true} when the caller has access to at least one resource. This is the case when
+   * the check is disabled (authorization not enforced) or when at least one underlying
+   * authorization carries resource IDs or resource property names that a search backend can use to
+   * scope the query. Returns {@code false} when authorization is enabled but no scoping information
+   * is present.
    */
   public boolean hasAnyResourceAccess() {
     return !enabled || hasAnyResourceIdAccess() || hasAnyResourcePropertyAccess();
