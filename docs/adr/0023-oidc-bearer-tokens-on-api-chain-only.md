@@ -4,7 +4,7 @@ status: Accepted
 
 # ADR-0023: OIDC bearer-token validation lives on the API chain only
 
-**Deciders**: Sebastian Bathke (megglos)
+**Deciders**: Ben Sheppard (Ben-Sheppard), Patrick Wunderlich (p-wunderlich), Sebastian Bathke (megglos)
 
 ## Status
 
