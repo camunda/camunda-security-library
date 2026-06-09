@@ -21,7 +21,7 @@ import java.util.Set;
  *
  * <p>All methods receive a pre-resolved map of {@link EntityType} to owner IDs so the port does not
  * depend on {@link io.camunda.security.api.model.CamundaAuthentication} directly — the caller
- * (typically {@link io.camunda.security.core.auth.AuthorizationChecker}) is responsible for
+ * (typically {@link io.camunda.security.core.authz.AuthorizationChecker}) is responsible for
  * extracting the relevant principal identities from the authentication object before invoking the
  * port.
  *

@@ -7,7 +7,7 @@
  */
 package io.camunda.security.spring;
 
-import io.camunda.security.spring.auth.AuthorizationCheckerConfiguration;
+import io.camunda.security.spring.authz.AuthorizationCheckerConfiguration;
 import io.camunda.security.spring.context.CamundaAuthenticationBeansConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;

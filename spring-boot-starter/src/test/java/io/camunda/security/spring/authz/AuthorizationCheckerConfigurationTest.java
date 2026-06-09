@@ -5,7 +5,7 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.spring.auth;
+package io.camunda.security.spring.authz;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -13,7 +13,7 @@ import io.camunda.security.api.model.authz.AuthorizationResourceType;
 import io.camunda.security.api.model.authz.AuthorizationScope;
 import io.camunda.security.api.model.authz.EntityType;
 import io.camunda.security.api.model.authz.PermissionType;
-import io.camunda.security.core.auth.AuthorizationChecker;
+import io.camunda.security.core.authz.AuthorizationChecker;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
 import java.util.List;
 import java.util.Map;

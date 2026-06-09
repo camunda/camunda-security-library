@@ -5,13 +5,14 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.core.auth;
+package io.camunda.security.core.authz;
 
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.authz.AuthorizationResourceType;
 import io.camunda.security.api.model.authz.AuthorizationScope;
 import io.camunda.security.api.model.authz.EntityType;
 import io.camunda.security.api.model.authz.PermissionType;
+import io.camunda.security.core.auth.RequiredAuthorization;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -42,7 +43,7 @@ import org.slf4j.LoggerFactory;
  * </ul>
  *
  * <p>Wired as a Spring bean by {@link
- * io.camunda.security.spring.auth.AuthorizationCheckerConfiguration} when the host provides an
+ * io.camunda.security.spring.authz.AuthorizationCheckerConfiguration} when the host provides an
  * {@link AuthorizationScopeRepositoryPort} bean.
  */
 public final class AuthorizationChecker {
