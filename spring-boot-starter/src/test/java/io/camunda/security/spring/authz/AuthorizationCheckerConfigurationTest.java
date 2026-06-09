@@ -43,6 +43,17 @@ class AuthorizationCheckerConfigurationTest {
   }
 
   @Test
+  void beanIsRegisteredWhenPortIsDefinedInSeparateUserConfiguration() {
+    // Simulates the correct host pattern: port in a separate @Configuration, checker activated via
+    // AutoConfigurations (which models the CamundaSecurityAutoConfiguration umbrella path). The
+    // @ConditionalOnBean sees the port because the user config is processed before auto-configs.
+    new ApplicationContextRunner()
+        .withUserConfiguration(SeparatePortConfiguration.class)
+        .withConfiguration(AutoConfigurations.of(AuthorizationCheckerConfiguration.class))
+        .run(ctx -> assertThat(ctx).hasSingleBean(AuthorizationChecker.class));
+  }
+
+  @Test
   void hostCanOverrideAuthorizationChecker() {
     runner
         .withBean(AuthorizationScopeRepositoryPort.class, NoopPort::new)
@@ -79,6 +90,14 @@ class AuthorizationCheckerConfigurationTest {
         final AuthorizationResourceType resourceType,
         final List<String> resourceIds) {
       return Set.of();
+    }
+  }
+
+  @Configuration
+  static class SeparatePortConfiguration {
+    @Bean
+    AuthorizationScopeRepositoryPort separatePort() {
+      return new NoopPort();
     }
   }
 

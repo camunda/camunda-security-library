@@ -42,9 +42,10 @@ import org.slf4j.LoggerFactory;
  *   <li>{@link #collectPermissionTypes} — permission discovery for resource detail views
  * </ul>
  *
- * <p>Wired as a Spring bean by {@link
- * io.camunda.security.spring.authz.AuthorizationCheckerConfiguration} when the host provides an
- * {@link AuthorizationScopeRepositoryPort} bean.
+ * <p>Wired as a Spring bean by {@code AuthorizationCheckerConfiguration} (in {@code
+ * io.camunda.security.spring.authz}) when the host provides an {@link
+ * AuthorizationScopeRepositoryPort} bean. The {@code @link} is intentionally omitted — {@code core}
+ * has no compile dependency on {@code spring-boot-starter}.
  */
 public final class AuthorizationChecker {
 
@@ -58,7 +59,7 @@ public final class AuthorizationChecker {
    * @param scopeRepository the host-supplied authorization store adapter
    */
   public AuthorizationChecker(final AuthorizationScopeRepositoryPort scopeRepository) {
-    this.scopeRepository = scopeRepository;
+    this.scopeRepository = java.util.Objects.requireNonNull(scopeRepository, "scopeRepository");
   }
 
   /**

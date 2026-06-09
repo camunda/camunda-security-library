@@ -23,6 +23,16 @@ import org.springframework.context.annotation.Configuration;
  * AuthorizationScopeRepositoryPort} bean is present in the application context. Hosts that need a
  * custom {@link AuthorizationChecker} can register their own bean; the {@link
  * ConditionalOnMissingBean} on the factory method ensures the library-supplied default backs off.
+ *
+ * <p><strong>Ordering note:</strong> {@link ConditionalOnBean} is evaluated when this class is
+ * imported. Hosts MUST NOT {@code @Import} this class from the same plain {@code @Configuration}
+ * that also defines the {@link AuthorizationScopeRepositoryPort} bean — Spring processes the
+ * {@code @Import}ed class before the importing class's own {@code @Bean} methods, so the condition
+ * would evaluate before the port is registered and the {@link AuthorizationChecker} bean would be
+ * silently skipped. The safe activation path is the {@link
+ * io.camunda.security.spring.CamundaSecurityAutoConfiguration} umbrella: as an
+ * {@code @AutoConfiguration}, it is processed after all regular {@code @Configuration} classes, so
+ * the condition reliably sees the host-provided port.
  */
 @Configuration
 @ConditionalOnBean(AuthorizationScopeRepositoryPort.class)
