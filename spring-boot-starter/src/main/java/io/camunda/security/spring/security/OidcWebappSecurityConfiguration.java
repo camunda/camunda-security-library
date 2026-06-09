@@ -20,7 +20,6 @@ import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.filter.OAuth2RefreshTokenFilter;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
-import io.camunda.security.spring.handler.LoggingAuthenticationFailureHandler;
 import io.camunda.security.spring.handler.OAuth2AuthenticationExceptionHandler;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import java.util.LinkedHashMap;
@@ -29,7 +28,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
-import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
@@ -37,13 +35,10 @@ import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
-import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
-import org.springframework.security.web.authentication.AuthenticationEntryPointFailureHandler;
 import org.springframework.security.web.authentication.DelegatingAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.logout.CompositeLogoutHandler;
@@ -72,14 +67,12 @@ public class OidcWebappSecurityConfiguration {
       final HttpSecurity http,
       final AuthFailureHandler authFailureHandler,
       final ClientRegistrationRepository clientRegistrationRepository,
-      final JwtDecoder jwtDecoder,
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
       final OAuth2AuthorizedClientManager authorizedClientManager,
       final ObjectProvider<OidcTokenEndpointCustomizer> tokenEndpointCustomizerProvider,
       final ObjectProvider<LogoutSuccessHandler> logoutSuccessHandlerProvider,
       final ObjectProvider<OidcUserService> oidcUserServiceProvider,
       final ObjectProvider<OAuth2AuthorizationRequestResolver> authorizationRequestResolverProvider,
-      final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers,
       final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
       final ObjectProvider<DefaultLoginPageGeneratingFilter> oidcLoginPickerProvider,
       final CamundaSecurityLibraryProperties properties,
@@ -128,15 +121,13 @@ public class OidcWebappSecurityConfiguration {
             .cors(AbstractHttpConfigurer::disable)
             .formLogin(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable)
-            .oauth2ResourceServer(
-                oauth2 -> {
-                  oauth2
-                      .jwt(jwt -> jwt.decoder(jwtDecoder))
-                      .withObjectPostProcessor(postProcessBearerTokenFailureHandler());
-                  resourceServerCustomizers
-                      .orderedStream()
-                      .forEach(customizer -> customizer.customize(oauth2));
-                })
+            // No oauth2ResourceServer here: the webapp chain authenticates users interactively via
+            // oauth2Login and serves them from the resulting session. Bearer/JWT (client
+            // credentials, direct API access) is the dedicated API chain's responsibility — see
+            // OidcApiSecurityConfiguration. A bearer token presented to a webapp path is therefore
+            // not authenticated here; it falls through to the delegating entry point below, which
+            // returns 401 for Authorization-bearing requests (see
+            // oidcWebappAuthenticationEntryPoint).
             .oauth2Login(
                 oauthLogin -> {
                   oauthLogin
@@ -220,9 +211,11 @@ public class OidcWebappSecurityConfiguration {
    * {@link Iterable}) the redirect falls back to {@code /oauth2/authorization/oidc} for backwards
    * compatibility.
    *
-   * <p>Required because both {@code oauth2ResourceServer} and {@code oauth2Login} register their
-   * own entry points, and in Spring Security 7.x the resource server's takes precedence — causing
-   * browser requests to receive 401 instead of a 302 redirect to the IdP.
+   * <p>The webapp chain has no {@code oauth2ResourceServer}, so it does not authenticate bearer
+   * tokens (that is the dedicated API chain's job — see {@link OidcApiSecurityConfiguration}). The
+   * delegation is kept deliberately as a UX choice: an API-style caller that presents an {@code
+   * Authorization} header to a webapp path receives a clean 401 rather than a browser-oriented 302
+   * redirect to the IdP, while genuine browser navigations are still redirected to log in.
    */
   private static AuthenticationEntryPoint oidcWebappAuthenticationEntryPoint(
       final ClientRegistrationRepository clientRegistrationRepository) {
@@ -260,20 +253,5 @@ public class OidcWebappSecurityConfiguration {
       return "/oauth2/authorization/" + registration.getRegistrationId();
     }
     return defaultTarget;
-  }
-
-  private static ObjectPostProcessor<BearerTokenAuthenticationFilter>
-      postProcessBearerTokenFailureHandler() {
-    return new ObjectPostProcessor<>() {
-      @Override
-      public <O extends BearerTokenAuthenticationFilter> O postProcess(final O filter) {
-        final var defaultFailureHandler =
-            new AuthenticationEntryPointFailureHandler(new BearerTokenAuthenticationEntryPoint());
-        final var loggingFailureHandler =
-            new LoggingAuthenticationFailureHandler(defaultFailureHandler);
-        filter.setAuthenticationFailureHandler(loggingFailureHandler);
-        return filter;
-      }
-    };
   }
 }
