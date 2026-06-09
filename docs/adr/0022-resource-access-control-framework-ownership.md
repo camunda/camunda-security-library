@@ -24,7 +24,7 @@ search-layer `AuthorizationReader`, preventing migration to CSL without introduc
 dependency in CSL's domain.
 
 This is Increment 15 of the ongoing migration of OC security concerns into the Camunda Security
-Library. ADR-0019 established the `RequiredAuthorization<T>` naming (formerly `Authorization<T>`)
+Library. [ADR-0019](0019-authorization-runtime-check-migration-and-no-jackson-in-domain.md) established the `RequiredAuthorization<T>` naming (formerly `Authorization<T>`)
 that the reader framework and checker operate on.
 
 The core question: should the reader framework and authorization checker live in OC (where their
@@ -34,7 +34,7 @@ callers and implementations live) or in CSL (where the port contracts they suppo
 
 1. The 8 reader-framework classes (`AuthorizationCheck`, `ResourceAccess`, `ResourceAccessChecks`,
    `ResourceAccessController`, `ResourceAccessProvider`, `TenantAccess`, `TenantAccessProvider`,
-   `TenantCheck`) are moved to CSL `core` under `io.camunda.security.core.reader`. All references
+   `TenantCheck`) are moved to CSL `core` under `io.camunda.security.core.authz`. All references
    to `Authorization<T>` are updated to `RequiredAuthorization<T>` (the Inc 14 rename).
 
 2. A new outbound port `AuthorizationScopeRepositoryPort` is introduced in CSL
@@ -42,11 +42,11 @@ callers and implementations live) or in CSL (where the port contracts they suppo
    `findAuthorizedScopes`, `hasAuthorizedScope`, and `findPermissionTypes`. The port receives
    pre-resolved owner-type-to-ids maps so it does not depend on `CamundaAuthentication` directly.
 
-3. `AuthorizationChecker` is moved to CSL `core/auth`, rewritten against
+3. `AuthorizationChecker` is moved to CSL `core/authz`, rewritten against
    `AuthorizationScopeRepositoryPort`, and updated to use `RequiredAuthorization<T>`.
 
 4. CSL `spring-boot-starter` ships `AuthorizationCheckerConfiguration` (in
-   `io.camunda.security.spring.auth`) conditional on `AuthorizationScopeRepositoryPort` being
+   `io.camunda.security.spring.authz`) conditional on `AuthorizationScopeRepositoryPort` being
    present. It is registered in the `CamundaSecurityAutoConfiguration` umbrella.
 
 5. OC provides `SearchAuthorizationScopeRepository` in `security-services`, backed by
@@ -91,7 +91,7 @@ callers and implementations live) or in CSL (where the port contracts they suppo
 - OC's `dist/AuthorizationCheckerConfiguration` must be renamed to
   `AuthorizationScopeRepositoryConfiguration` to avoid a simple-name collision with CSL's
   `AuthorizationCheckerConfiguration`.
-- All `io.camunda.security.reader.*` imports in OC become `io.camunda.security.core.reader.*`,
+- All `io.camunda.security.reader.*` imports in OC become `io.camunda.security.core.authz.*`,
   requiring a bulk import update across several OC modules.
 
 ## Alternatives Considered
