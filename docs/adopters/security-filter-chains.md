@@ -423,7 +423,9 @@ Two extension points let hosts customise specific OAuth2/OIDC concerns without r
 
 ### `OidcResourceServerCustomizer` — customise the OAuth2 resource-server DSL
 
-Both OIDC chains route through every `OidcResourceServerCustomizer` bean inside `oauth2ResourceServer(...)`. Use this for RFC 9728 protected-resource metadata, custom JWT validators, or swapping the bearer-token entry point.
+The OIDC **API** chain (`OidcApiSecurityConfiguration`) routes through every `OidcResourceServerCustomizer` bean inside `oauth2ResourceServer(...)`. Use this for RFC 9728 protected-resource metadata, custom JWT validators, or swapping the bearer-token entry point.
+
+> The OIDC **webapp** chain has no resource server — it authenticates users interactively via `oauth2Login` and serves them from the resulting session; JWT bearer tokens are validated only on the API chain. Consequently `OidcResourceServerCustomizer` beans apply to the API chain only and have no effect on webapp paths. A bearer token presented to a webapp path is not authenticated there; the chain's delegating entry point returns `401` for `Authorization`-bearing requests.
 
 ```java
 @Bean
