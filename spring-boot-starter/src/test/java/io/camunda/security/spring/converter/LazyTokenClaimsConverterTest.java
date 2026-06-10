@@ -17,6 +17,7 @@ import static org.mockito.Mockito.when;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.core.port.out.MembershipQuery;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -68,6 +69,19 @@ class LazyTokenClaimsConverterTest {
     verify(membershipPort, never()).groupIds(any());
     verify(membershipPort, never()).roleIds(any());
     verify(membershipPort, never()).tenantIds(any());
+  }
+
+  @Test
+  void convertsClaimsContainingNullValues() {
+    // IdPs may emit JSON null claim values (e.g. an unset profile field); see GH-385.
+    final var claims = new HashMap<String, Object>();
+    claims.put("sub", "alice");
+    claims.put("family_name", null);
+
+    final var auth = new LazyTokenClaimsConverter(oidcConfig, membershipPort).convert(claims);
+
+    assertThat(auth.authenticatedUsername()).isEqualTo("alice");
+    assertThat(auth.claims()).hasSize(1).containsEntry("sub", "alice");
   }
 
   @Test

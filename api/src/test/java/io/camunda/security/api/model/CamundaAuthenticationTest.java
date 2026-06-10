@@ -100,6 +100,31 @@ class CamundaAuthenticationTest {
   }
 
   @Test
+  void shouldDropNullValuedClaimsFromBuilder() {
+    final var claims = new HashMap<String, Object>();
+    claims.put("sub", "demo-user");
+    claims.put("family_name", null);
+
+    final var authentication = CamundaAuthentication.of(b -> b.user("demo-user").claims(claims));
+
+    assertThat(authentication.claims()).hasSize(1).containsEntry("sub", "demo-user");
+  }
+
+  @Test
+  void shouldDropNullValuedClaimsFromConstructor() {
+    final var claims = new HashMap<String, Object>();
+    claims.put("sub", "demo-user");
+    claims.put("family_name", null);
+
+    final var authentication =
+        new CamundaAuthentication("demo-user", null, false, null, null, null, null, claims);
+
+    assertThat(authentication.claims()).hasSize(1).containsEntry("sub", "demo-user");
+    assertThatThrownBy(() -> authentication.claims().put("scope", "read"))
+        .isInstanceOf(UnsupportedOperationException.class);
+  }
+
+  @Test
   void shouldNotMutatePreviouslyBuiltAuthenticationWhenBuilderIsReused() {
     final var builder = new CamundaAuthentication.Builder().user("demo-user").group("group-1");
 
