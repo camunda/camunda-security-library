@@ -61,10 +61,10 @@ public final class AuthorizationValidator {
         default -> identifierValidator.validateId(ownerId, "ownerId", violations);
       }
     } else {
+      if (ownerType == null) {
+        violations.add(ERROR_MESSAGE_EMPTY_ATTRIBUTE.formatted("ownerType"));
+      }
       identifierValidator.validateId(ownerId, "ownerId", violations);
-    }
-    if (ownerType == null) {
-      violations.add(ERROR_MESSAGE_EMPTY_ATTRIBUTE.formatted("ownerType"));
     }
 
     // resource validation

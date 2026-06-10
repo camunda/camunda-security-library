@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0022: Dedicated `validation` module for entity validators
+# ADR-0024: Dedicated `validation` module for entity validators
 
 **Deciders**: Patrick Wunderlich (p-wunderlich)
 
@@ -13,8 +13,7 @@ Accepted
 ## Context
 
 OC's `security/security-validation` module owns validators for entities (User, Group,
-Role, Tenant, MappingRule, Authorization, ClusterVariable) that are defined and owned
-by CSL. Keeping them in OC means every CSL adopter must either re-implement the same
+Role, Tenant, MappingRule, Authorization) that are defined and owned by CSL. Keeping them in OC means every CSL adopter must either re-implement the same
 logic or vendor it, leading to drift. Increment 16 (#246) moves these validators into
 CSL so any host inherits consistent constraint enforcement out of the box.
 

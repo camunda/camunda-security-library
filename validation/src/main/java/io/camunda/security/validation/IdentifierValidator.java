@@ -15,7 +15,7 @@ import static java.util.Collections.emptyList;
 import io.camunda.security.api.model.authz.EntityType;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 public final class IdentifierValidator {
@@ -23,7 +23,7 @@ public final class IdentifierValidator {
   /** Stricter validation for tenant IDs */
   public static final Pattern TENANT_ID_MASK = Pattern.compile("^[\\w\\.-]{1,31}$");
 
-  static final String DEFAULT_TENANT_ID = "<default>";
+  public static final String DEFAULT_TENANT_ID = "<default>";
 
   private static final int TENANT_ID_MAX_LENGTH = 31;
 
@@ -76,7 +76,7 @@ public final class IdentifierValidator {
       final String id,
       final String propertyName,
       final List<String> violations,
-      final Function<String, Boolean> alternativeCheck) {
+      final Predicate<String> alternativeCheck) {
     validateIdInternal(
         id,
         propertyName,
@@ -121,13 +121,13 @@ public final class IdentifierValidator {
       final String propertyName,
       final List<String> violations,
       final Pattern idPattern,
-      final Function<String, Boolean> alternativeCheck,
+      final Predicate<String> alternativeCheck,
       final int maxLength) {
     if (id == null || id.isBlank()) {
       violations.add(ERROR_MESSAGE_EMPTY_ATTRIBUTE.formatted(propertyName));
     } else if (id.length() > maxLength) {
       violations.add(ERROR_MESSAGE_TOO_MANY_CHARACTERS.formatted(propertyName, maxLength));
-    } else if (!(idPattern.matcher(id).matches() || alternativeCheck.apply(id))) {
+    } else if (!(idPattern.matcher(id).matches() || alternativeCheck.test(id))) {
       violations.add(ERROR_MESSAGE_ILLEGAL_CHARACTER.formatted(propertyName, idPattern));
     }
   }
