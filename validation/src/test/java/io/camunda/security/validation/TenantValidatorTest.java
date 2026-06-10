@@ -27,7 +27,10 @@ class TenantValidatorTest {
     final List<String> violations = VALIDATOR.validateCreate(null, "");
 
     // then:
-    assertThat(violations).containsExactlyInAnyOrder("No tenantId provided", "No name provided");
+    assertThat(violations)
+        .containsExactlyInAnyOrder(
+            ErrorMessages.ERROR_MESSAGE_EMPTY_ATTRIBUTE.formatted("tenantId"),
+            ErrorMessages.ERROR_MESSAGE_EMPTY_ATTRIBUTE.formatted("name"));
   }
 
   @Test

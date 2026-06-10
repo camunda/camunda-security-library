@@ -33,15 +33,15 @@ public final class GroupValidator {
   }
 
   public List<String> validateMember(
-      final String roleId, final String memberId, final EntityType memberType) {
+      final String groupId, final String memberId, final EntityType memberType) {
     final List<String> violations = new ArrayList<>();
-    validateGroupId(roleId, violations);
+    validateGroupId(groupId, violations);
     identifierValidator.validateMemberId(memberId, memberType, violations);
     return violations;
   }
 
   private void validateGroupId(final String id, final List<String> violations) {
-    identifierValidator.validateId(id, "groupId", violations);
+    identifierValidator.validateGroupId(id, violations);
   }
 
   private static void validateGroupName(final String name, final List<String> violations) {

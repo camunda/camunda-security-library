@@ -51,8 +51,7 @@ public final class RoleValidator {
   private static void validateRoleName(final String name, final List<String> violations) {
     if (name == null || name.isBlank()) {
       violations.add(ERROR_MESSAGE_EMPTY_ATTRIBUTE.formatted("name"));
-    }
-    if (name != null && name.length() > ValidationConstants.MAX_FIELD_LENGTH) {
+    } else if (name.length() > ValidationConstants.MAX_FIELD_LENGTH) {
       violations.add(
           ERROR_MESSAGE_TOO_MANY_CHARACTERS.formatted(
               "name", ValidationConstants.MAX_FIELD_LENGTH));
