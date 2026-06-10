@@ -33,7 +33,7 @@ public final class AuthorizationValidator {
    * property-based) and validates accordingly.
    *
    * <p>As enum values are only checked for null-values and there are different enum types that
-   * might be checked, they are typed as Enum<?>.
+   * might be checked, they are typed as {@code Enum<?>}.
    *
    * @param ownerId the owner identifier
    * @param ownerType the owner type enum
