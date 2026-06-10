@@ -10,6 +10,7 @@ package io.camunda.security.api.model;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -24,6 +25,10 @@ import java.util.function.Supplier;
  * <p>Either {@code authenticatedUsername} or {@code authenticatedClientId} must be set, but not
  * both, unless the authentication represents an anonymous user {@code anonymousUser} in which case
  * both can be null.
+ *
+ * <p>Claim entries with {@code null} values — as emitted by some identity providers for unset
+ * profile fields — are discarded during normalization: a null-valued claim is indistinguishable
+ * from an absent claim for every consumer of this record.
  *
  * <p>Membership fields ({@code authenticatedGroupIds}, {@code authenticatedRoleIds}, {@code
  * authenticatedTenantIds}, {@code authenticatedMappingRuleIds}) may be supplied eagerly via the
@@ -79,7 +84,14 @@ public record CamundaAuthentication(
   }
 
   private static <K, V> Map<K, V> immutableMapOrEmpty(final Map<K, V> values) {
-    return values == null ? Map.of() : Map.copyOf(values);
+    if (values == null) {
+      return Map.of();
+    }
+    // Claims originate from external IdPs, which may emit JSON null claim values. All consumers
+    // treat a null-valued claim as absent, so drop such entries — Map.copyOf rejects null values.
+    final Map<K, V> withoutNullValues = new LinkedHashMap<>(values);
+    withoutNullValues.values().removeIf(Objects::isNull);
+    return Map.copyOf(withoutNullValues);
   }
 
   public boolean isAnonymous() {
@@ -205,7 +217,8 @@ public record CamundaAuthentication(
     }
 
     public Builder claims(final Map<String, Object> value) {
-      claims = value == null ? null : Map.copyOf(value);
+      // Snapshot only — must tolerate null values; the canonical constructor normalizes.
+      claims = value == null ? null : new LinkedHashMap<>(value);
       return this;
     }
 
