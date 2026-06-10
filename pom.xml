@@ -338,6 +338,30 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-checkstyle-plugin</artifactId>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>verify-javadoc</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                        <configuration>
+                            <!--
+                                Check HTML correctness and syntax on every verify run so
+                                malformed Javadoc (e.g. unescaped angle brackets) is caught
+                                in PRs, not only during release:perform. The "missing" linter
+                                is excluded so that not every public type must carry a comment
+                                (too strict for a library in early development).
+                            -->
+                            <doclint>html,syntax</doclint>
+                            <quiet>true</quiet>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 
