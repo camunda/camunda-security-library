@@ -39,7 +39,7 @@ class TenantValidatorTest {
   }
 
   @Test
-  void shouldSuccessfullyConfigure() {
+  void shouldReturnNoViolationsForValidCreate() {
     // when:
     final List<String> violations = VALIDATOR.validateCreate("foo", "Foo");
 
