@@ -23,7 +23,7 @@ public final class IdentifierValidator {
   /** Stricter validation for tenant IDs */
   public static final Pattern TENANT_ID_MASK = Pattern.compile("^[\\w\\.-]{1,31}$");
 
-  private static final String DEFAULT_TENANT_ID = "<default>";
+  static final String DEFAULT_TENANT_ID = "<default>";
 
   private static final int TENANT_ID_MAX_LENGTH = 31;
 
@@ -87,19 +87,29 @@ public final class IdentifierValidator {
   }
 
   public void validateTenantId(final String id, final List<String> violations) {
+    validateTenantId(id, "tenantId", violations);
+  }
+
+  public void validateTenantId(
+      final String id, final String propertyName, final List<String> violations) {
     validateIdInternal(
         id,
-        "tenantId",
+        propertyName,
         violations,
         TENANT_ID_MASK,
-        IdentifierValidator.DEFAULT_TENANT_ID::equals,
+        DEFAULT_TENANT_ID::equals,
         TENANT_ID_MAX_LENGTH);
   }
 
   public void validateGroupId(final String id, final List<String> violations) {
+    validateGroupId(id, "groupId", violations);
+  }
+
+  public void validateGroupId(
+      final String id, final String propertyName, final List<String> violations) {
     validateIdInternal(
         id,
-        "groupId",
+        propertyName,
         violations,
         groupIdPattern,
         s -> false,

@@ -196,6 +196,18 @@ class UserValidatorTest {
     assertThat(violations).isEmpty();
   }
 
+  @Test
+  void shouldReportOnlyLengthViolationWhenEmailIsBothTooLongAndInvalidFormat() {
+    final String longInvalidEmail = "a".repeat(ValidationConstants.MAX_FIELD_LENGTH + 1);
+
+    final List<String> violations = VALIDATOR.validateUpdateRequest(null, longInvalidEmail);
+
+    assertThat(violations)
+        .containsExactly(
+            ERROR_MESSAGE_TOO_MANY_CHARACTERS.formatted(
+                "email", ValidationConstants.MAX_FIELD_LENGTH));
+  }
+
   @ParameterizedTest
   @ValueSource(
       strings = {"user@example.com", "user+tag@sub.domain.org", "first.last@company.co.uk"})

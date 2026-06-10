@@ -8,6 +8,7 @@
 package io.camunda.security.validation;
 
 import static io.camunda.security.api.model.authz.AuthorizationScope.WILDCARD_CHAR;
+import static io.camunda.security.validation.ErrorMessages.ERROR_MESSAGE_TOO_MANY_CHARACTERS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Named.named;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
@@ -29,7 +30,7 @@ class AuthorizationValidatorTest {
   private static final AuthorizationValidator VALIDATOR =
       new AuthorizationValidator(
           new IdentifierValidator(
-              Pattern.compile("^[a-zA-Z0-9_~@.+-]+$"), Pattern.compile("^[a-zA-Z0-9_~@.+-]+$")));
+              Pattern.compile("^[a-zA-Z0-9_~@.+-]+$"), Pattern.compile("^[a-zA-Z0-9_~@.+/-]+$")));
 
   @ParameterizedTest(name = "{index}: {0}")
   @MethodSource("validAuthorizationCases")
@@ -100,6 +101,24 @@ class AuthorizationValidatorTest {
                     AuthorizationOwnerType.USER,
                     AuthorizationResourceType.RESOURCE,
                     "propertyName",
+                    permissions))),
+        arguments(
+            named(
+                "GROUP owner with slash in ID (bring-your-own-groups)",
+                TestAuthorization.idBased(
+                    "org/team",
+                    AuthorizationOwnerType.GROUP,
+                    AuthorizationResourceType.RESOURCE,
+                    "resource-123",
+                    permissions))),
+        arguments(
+            named(
+                "TENANT owner with <default> ID",
+                TestAuthorization.idBased(
+                    "<default>",
+                    AuthorizationOwnerType.TENANT,
+                    AuthorizationResourceType.RESOURCE,
+                    "resource-123",
                     permissions))));
   }
 
@@ -217,6 +236,17 @@ class AuthorizationValidatorTest {
                     WILDCARD_CHAR,
                     permissions)),
             "The provided resourcePropertyName contains illegal characters. It must match the pattern '^[a-zA-Z0-9_~@.+-]+$'"),
+        // ownerType-aware ownerId validation
+        arguments(
+            named(
+                "TENANT owner with ownerId exceeding 31 characters",
+                TestAuthorization.idBased(
+                    "a".repeat(32),
+                    AuthorizationOwnerType.TENANT,
+                    AuthorizationResourceType.RESOURCE,
+                    "resource-123",
+                    permissions)),
+            ERROR_MESSAGE_TOO_MANY_CHARACTERS.formatted("ownerId", 31)),
         // Mutually exclusive identifiers
         arguments(
             named(
