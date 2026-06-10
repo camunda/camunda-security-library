@@ -37,11 +37,11 @@ import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWrite
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /** Shared helpers for assembling CSL security filter chains. */
-final class SecurityFilterChainSupport {
+public final class SecurityFilterChainSupport {
 
   private SecurityFilterChainSupport() {}
 
-  static CookieCsrfTokenRepository cookieCsrfTokenRepository(
+  public static CookieCsrfTokenRepository cookieCsrfTokenRepository(
       final CamundaSecurityLibraryProperties properties) {
     final CookieCsrfTokenRepository repository = new CookieCsrfTokenRepository();
     repository.setHeaderName(X_CSRF_TOKEN);
@@ -57,7 +57,7 @@ final class SecurityFilterChainSupport {
    * header filter that includes the CSRF token on authenticated GET/login responses. When disabled,
    * CSRF protection is turned off entirely.
    */
-  static void applyCsrfConfiguration(
+  public static void applyCsrfConfiguration(
       final HttpSecurity http,
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort)
@@ -87,7 +87,7 @@ final class SecurityFilterChainSupport {
    * provider has a bean. No-op when the provider is empty, so chain configurations can opt-in to
    * library-supplied filters without hard-wiring the dependency.
    */
-  static <F extends Filter> void addFilterAfterIfAvailable(
+  public static <F extends Filter> void addFilterAfterIfAvailable(
       final HttpSecurity http,
       final ObjectProvider<F> provider,
       final Class<? extends Filter> afterFilter) {
@@ -106,7 +106,7 @@ final class SecurityFilterChainSupport {
    * populated by the upstream {@code CsrfFilter} (we are registered via {@code addFilterAfter(_,
    * CsrfFilter.class)}), so it is available at filter entry.
    */
-  static OncePerRequestFilter csrfTokenResponseHeaderFilter() {
+  public static OncePerRequestFilter csrfTokenResponseHeaderFilter() {
     return new OncePerRequestFilter() {
       @Override
       protected void doFilterInternal(
@@ -144,8 +144,8 @@ final class SecurityFilterChainSupport {
    * Configures HTTP security response headers from {@link HeaderConfiguration}. Each header can be
    * individually enabled/disabled and customized via {@code camunda.security.http-headers.*}.
    */
-  static void setupSecureHeaders(final HttpSecurity http, final HeaderConfiguration headerConfig)
-      throws Exception {
+  public static void setupSecureHeaders(
+      final HttpSecurity http, final HeaderConfiguration headerConfig) throws Exception {
     http.headers(
         headers -> {
           if (headerConfig.getContentTypeOptions().isDisabled()) {

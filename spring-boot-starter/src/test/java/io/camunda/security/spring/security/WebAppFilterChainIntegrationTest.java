@@ -20,6 +20,7 @@ import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
+import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.spi.WebAppProviderPort;
 import jakarta.servlet.Filter;
 import java.util.Optional;
@@ -79,6 +80,7 @@ class WebAppFilterChainIntegrationTest {
                   OidcWebappSecurityConfiguration.class,
                   AuthFailureHandlerConfiguration.class,
                   OidcBeansConfiguration.class,
+                  ScopedOidcInfrastructureConfiguration.class,
                   WebAppAuthorizationFilterConfiguration.class))
           .withPropertyValues(OIDC_PROPERTIES);
 

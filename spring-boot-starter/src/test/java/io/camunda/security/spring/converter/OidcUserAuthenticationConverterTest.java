@@ -47,9 +47,13 @@ class OidcUserAuthenticationConverterTest {
 
   @BeforeEach
   void setUp() {
-    // lenient: not all tests reach the decoder factory
+    // lenient: not all tests reach the decoder factory. The first matcher is typed to
+    // ClientRegistration to bind the createAccessTokenDecoder(ClientRegistration, List<String>)
+    // overload explicitly and keep the stub readable.
     lenient()
-        .when(oidcAccessTokenDecoderFactory.createAccessTokenDecoder(any(), any()))
+        .when(
+            oidcAccessTokenDecoderFactory.createAccessTokenDecoder(
+                any(ClientRegistration.class), any()))
         .thenReturn(jwtDecoder);
   }
 

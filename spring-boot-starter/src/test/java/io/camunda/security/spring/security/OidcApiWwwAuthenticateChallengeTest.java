@@ -14,6 +14,7 @@ import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
+import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -59,9 +60,13 @@ class OidcApiWwwAuthenticateChallengeTest {
               AutoConfigurations.of(
                   CamundaSecurityConfiguration.class,
                   BaseSecurityConfiguration.class,
+                  // No manual ScopedApiSecurityChainBuilderConfiguration import: it is @Imported by
+                  // OidcApiSecurityConfiguration, so the individual-import path must be
+                  // self-contained.
                   OidcApiSecurityConfiguration.class,
                   AuthFailureHandlerConfiguration.class,
-                  OidcBeansConfiguration.class))
+                  OidcBeansConfiguration.class,
+                  ScopedOidcInfrastructureConfiguration.class))
           .withPropertyValues(OIDC_PROPERTIES);
 
   @Test

@@ -1,0 +1,217 @@
+/*
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH under
+ * one or more contributor license agreements. See the NOTICE file distributed
+ * with this work for additional information regarding copyright ownership.
+ * Licensed under the Camunda License 1.0. You may not use this file
+ * except in compliance with the Camunda License 1.0.
+ */
+package io.camunda.security.spring.scope;
+
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP_API;
+
+import io.camunda.security.api.context.CamundaSecurityScopeProvider;
+import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
+import io.camunda.security.spring.CamundaSecurityLibraryProperties;
+import io.camunda.security.spring.oidc.ScopedJwtDecoderFactory;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.NoSuchBeanDefinitionException;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
+import org.springframework.beans.factory.support.RootBeanDefinition;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.SecurityFilterChain;
+
+/**
+ * {@link BeanDefinitionRegistryPostProcessor} that discovers all {@link
+ * CamundaSecurityScopeProvider} beans and registers one {@link SecurityFilterChain} bean definition
+ * per {@link ScopedSecurityDescriptor}.
+ *
+ * <p>Declared {@code static} (via the enclosing {@link ScopedApiSecurityConfiguration}'s {@code
+ * static @Bean} method) so Spring does not need to instantiate the enclosing {@code @Configuration}
+ * class before the post-processor runs.
+ */
+final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcessor {
+
+  private static final Logger LOG = LoggerFactory.getLogger(ScopedApiChainRegistrar.class);
+
+  @Override
+  public void postProcessBeanDefinitionRegistry(final BeanDefinitionRegistry registry)
+      throws BeansException {
+    // The registry is a DefaultListableBeanFactory at runtime which also implements
+    // ConfigurableListableBeanFactory — we need that interface to call getBean().
+    if (!(registry instanceof ConfigurableListableBeanFactory beanFactory)) {
+      LOG.warn(
+          "ScopedApiChainRegistrar: registry is not a ConfigurableListableBeanFactory ({}); "
+              + "skipping scoped chain registration",
+          registry.getClass().getName());
+      return;
+    }
+
+    final var providerNames = beanFactory.getBeanNamesForType(CamundaSecurityScopeProvider.class);
+    if (providerNames.length == 0) {
+      LOG.debug("No CamundaSecurityScopeProvider beans found — no scoped chains registered");
+      return;
+    }
+
+    final var descriptors = collectDescriptors(beanFactory, providerNames);
+
+    if (descriptors.isEmpty()) {
+      LOG.debug("CamundaSecurityScopeProvider(s) returned no descriptors — nothing to register");
+      return;
+    }
+
+    rejectDuplicateBasePaths(descriptors);
+
+    LOG.info(
+        "Registering {} scoped API security chain(s) from CamundaSecurityScopeProvider(s)",
+        descriptors.size());
+
+    registerChains(registry, beanFactory, descriptors);
+  }
+
+  @Override
+  public void postProcessBeanFactory(final ConfigurableListableBeanFactory beanFactory)
+      throws BeansException {
+    // Nothing needed here — all work is done in postProcessBeanDefinitionRegistry.
+  }
+
+  private static List<ScopedSecurityDescriptor> collectDescriptors(
+      final ConfigurableListableBeanFactory beanFactory, final String[] providerNames) {
+    final List<ScopedSecurityDescriptor> descriptors = new ArrayList<>();
+    for (final var providerBeanName : providerNames) {
+      final var provider =
+          beanFactory.getBean(providerBeanName, CamundaSecurityScopeProvider.class);
+      final var returned = provider.get();
+      if (returned == null) {
+        throw new IllegalStateException(
+            "CamundaSecurityScopeProvider bean '"
+                + providerBeanName
+                + "' returned null; it must return a (possibly empty) list of descriptors");
+      }
+      for (final var descriptor : returned) {
+        if (descriptor == null) {
+          throw new IllegalStateException(
+              "CamundaSecurityScopeProvider bean '"
+                  + providerBeanName
+                  + "' returned a list containing a null element");
+        }
+        descriptors.add(descriptor);
+      }
+    }
+    return descriptors;
+  }
+
+  private static void rejectDuplicateBasePaths(final List<ScopedSecurityDescriptor> descriptors) {
+    final var seen = new HashSet<String>();
+    final var duplicates = new LinkedHashSet<String>();
+    for (final var d : descriptors) {
+      final var normalized = ScopedApiSecurityChainBuilder.normalizeBasePath(d.basePath());
+      if (!seen.add(normalized)) {
+        duplicates.add(normalized);
+      }
+    }
+    if (!duplicates.isEmpty()) {
+      throw new IllegalStateException(
+          "Duplicate scope basePath(s) contributed by CamundaSecurityScopeProvider beans: "
+              + duplicates
+              + ". Each contributed scope must have a unique basePath.");
+    }
+  }
+
+  private static void registerChains(
+      final BeanDefinitionRegistry registry,
+      final ConfigurableListableBeanFactory beanFactory,
+      final List<ScopedSecurityDescriptor> descriptors) {
+    for (int i = 0; i < descriptors.size(); i++) {
+      final var descriptor = descriptors.get(i);
+      final var beanName =
+          "scopedApiSecurityFilterChain-" + i + "-" + sanitizeBasePath(descriptor.basePath());
+      final var bd =
+          new RootBeanDefinition(
+              OrderedSecurityFilterChainWrapper.class, () -> buildChain(beanFactory, descriptor));
+      registry.registerBeanDefinition(beanName, bd);
+      LOG.debug(
+          "Registered scoped chain bean '{}' for basePath={}", beanName, descriptor.basePath());
+    }
+  }
+
+  private static OrderedSecurityFilterChainWrapper buildChain(
+      final ConfigurableListableBeanFactory beanFactory,
+      final ScopedSecurityDescriptor descriptor) {
+    try {
+      // HttpSecurity is a prototype bean — each call produces a fresh, independent instance.
+      final var http = beanFactory.getBean(HttpSecurity.class);
+      final var builder = beanFactory.getBean(ScopedApiSecurityChainBuilder.class);
+      final var properties = beanFactory.getBean(CamundaSecurityLibraryProperties.class);
+      final SecurityFilterChain chain;
+      if (properties.getAuthentication().isUnprotectedApi()) {
+        chain = builder.buildUnprotectedScopedApiChain(http, descriptor.basePath());
+      } else {
+        chain =
+            builder.buildScopedApiChain(
+                http,
+                descriptor.basePath(),
+                descriptor.authentication(),
+                () -> {
+                  try {
+                    final var decoderFactory = beanFactory.getBean(ScopedJwtDecoderFactory.class);
+                    return decoderFactory.buildIssuerAwareDecoder(descriptor.authentication());
+                  } catch (final NoSuchBeanDefinitionException missing) {
+                    throw new IllegalStateException(
+                        "Cannot build the OIDC scoped API chain for basePath="
+                            + descriptor.basePath()
+                            + ": required bean "
+                            + ScopedJwtDecoderFactory.class.getName()
+                            + " is not present. It is normally provided unconditionally by"
+                            + " ScopedOidcInfrastructureConfiguration (activated via the"
+                            + " CamundaSecurityAutoConfiguration umbrella), independently of"
+                            + " camunda.security.authentication.method. Ensure that configuration"
+                            + " is imported, or register an equivalent ScopedJwtDecoderFactory"
+                            + " bean.",
+                        missing);
+                  }
+                });
+      }
+      return new OrderedSecurityFilterChainWrapper(chain, ORDER_WEBAPP_API);
+    } catch (final IllegalStateException ex) {
+      throw ex;
+    } catch (final Exception ex) {
+      throw new IllegalStateException(
+          "Failed to build scoped API security chain for basePath=" + descriptor.basePath(), ex);
+    }
+  }
+
+  /**
+   * Sanitizes a basePath for use as part of a Spring bean name. Strips a leading {@code /},
+   * replaces every run of non-alphanumeric characters with a single {@code -}, and trims leading
+   * and trailing {@code -}.
+   *
+   * <p>Example: {@code /some/base-path} → {@code some-base-path}.
+   *
+   * <p>The leading index in the caller's bean name guarantees uniqueness even if two distinct
+   * basePaths sanitize to the same string.
+   *
+   * @param basePath the raw basePath; may be {@code null} (returned as empty string)
+   * @return the sanitized basePath fragment
+   */
+  // package-private (not private) so ScopedApiChainRegistrarTest can exercise it directly.
+  static String sanitizeBasePath(final String basePath) {
+    if (basePath == null) {
+      return "";
+    }
+    String s = basePath;
+    if (s.startsWith("/")) {
+      s = s.substring(1);
+    }
+    s = s.replaceAll("[^A-Za-z0-9]+", "-");
+    s = s.replaceAll("^-+|-+$", "");
+    return s;
+  }
+}

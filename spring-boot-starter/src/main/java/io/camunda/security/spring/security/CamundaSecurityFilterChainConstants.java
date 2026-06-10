@@ -27,9 +27,9 @@ public final class CamundaSecurityFilterChainConstants {
   public static final String UNPROTECTED_API_PROPERTY =
       "camunda.security.authentication.unprotected-api";
 
-  static final int ORDER_UNPROTECTED = 0;
-  static final int ORDER_WEBAPP_API = 1;
-  static final int ORDER_UNHANDLED = 2;
+  public static final int ORDER_UNPROTECTED = 0;
+  public static final int ORDER_WEBAPP_API = 1;
+  public static final int ORDER_UNHANDLED = 2;
 
   private CamundaSecurityFilterChainConstants() {}
 }
