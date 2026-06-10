@@ -9,7 +9,6 @@ package io.camunda.security.validation;
 
 import static io.camunda.security.validation.ErrorMessages.ERROR_MESSAGE_EMPTY_ATTRIBUTE;
 import static io.camunda.security.validation.ErrorMessages.ERROR_MESSAGE_TOO_MANY_CHARACTERS;
-import static java.util.Collections.emptyList;
 
 import io.camunda.security.api.model.authz.EntityType;
 import java.util.ArrayList;
@@ -31,13 +30,7 @@ public final class RoleValidator {
   }
 
   public List<String> validateMembers(final List<String> memberIds, final EntityType memberType) {
-    if (memberIds == null) {
-      return emptyList();
-    }
-    final List<String> violations = new ArrayList<>();
-    memberIds.forEach(
-        memberId -> identifierValidator.validateMemberId(memberId, memberType, violations));
-    return violations;
+    return identifierValidator.validateMembers(memberIds, memberType);
   }
 
   public List<String> validateMember(
