@@ -27,7 +27,9 @@ class OidcAuthenticationConfigurationRepositoryTest {
 
   @Test
   void shouldReturnEmptyMapWhenNeitherFlatNorProvidersConfigured() {
-    final var repo = new OidcAuthenticationConfigurationRepository(properties);
+    final var repo =
+        new OidcAuthenticationConfigurationRepository(
+            properties, new ScopedClientRegistrationFactory());
     assertThat(repo.getOidcAuthenticationConfigurations()).isEmpty();
   }
 
@@ -38,7 +40,9 @@ class OidcAuthenticationConfigurationRepositoryTest {
     oidc.setIssuerUri("https://issuer1.example.com");
     properties.getAuthentication().setOidc(oidc);
 
-    final var repo = new OidcAuthenticationConfigurationRepository(properties);
+    final var repo =
+        new OidcAuthenticationConfigurationRepository(
+            properties, new ScopedClientRegistrationFactory());
 
     assertThat(repo.getOidcAuthenticationConfigurations()).containsOnlyKeys("oidc");
     assertThat(repo.getOidcAuthenticationConfigurations().get("oidc").getClientId())
@@ -51,7 +55,9 @@ class OidcAuthenticationConfigurationRepositoryTest {
     oidc.setClientId("");
     properties.getAuthentication().setOidc(oidc);
 
-    final var repo = new OidcAuthenticationConfigurationRepository(properties);
+    final var repo =
+        new OidcAuthenticationConfigurationRepository(
+            properties, new ScopedClientRegistrationFactory());
     assertThat(repo.getOidcAuthenticationConfigurations()).isEmpty();
   }
 
@@ -64,7 +70,9 @@ class OidcAuthenticationConfigurationRepositoryTest {
     providers.getOidc().put("myProvider", providerOidc);
     properties.getAuthentication().setProviders(providers);
 
-    final var repo = new OidcAuthenticationConfigurationRepository(properties);
+    final var repo =
+        new OidcAuthenticationConfigurationRepository(
+            properties, new ScopedClientRegistrationFactory());
 
     assertThat(repo.getOidcAuthenticationConfigurations()).containsOnlyKeys("myProvider");
     assertThat(repo.getOidcAuthenticationConfigurations().get("myProvider").getClientId())
@@ -86,7 +94,9 @@ class OidcAuthenticationConfigurationRepositoryTest {
     providers.getOidc().put("oidc", override); // same key — provider overwrites flat
     properties.getAuthentication().setProviders(providers);
 
-    final var repo = new OidcAuthenticationConfigurationRepository(properties);
+    final var repo =
+        new OidcAuthenticationConfigurationRepository(
+            properties, new ScopedClientRegistrationFactory());
 
     assertThat(repo.getOidcAuthenticationConfigurations()).containsOnlyKeys("oidc");
     assertThat(repo.getOidcAuthenticationConfigurations().get("oidc").getClientId())
@@ -100,7 +110,9 @@ class OidcAuthenticationConfigurationRepositoryTest {
     oidc.setIssuerUri("https://issuer.example.com");
     properties.getAuthentication().setOidc(oidc);
 
-    final var repo = new OidcAuthenticationConfigurationRepository(properties);
+    final var repo =
+        new OidcAuthenticationConfigurationRepository(
+            properties, new ScopedClientRegistrationFactory());
 
     assertThat(repo.getOidcAuthenticationConfigurationById("oidc")).isNotNull();
     assertThat(repo.getOidcAuthenticationConfigurationById("unknown")).isNull();
@@ -114,7 +126,9 @@ class OidcAuthenticationConfigurationRepositoryTest {
     oidc.setIssuerUri("https://issuer.example.com");
     properties.getAuthentication().setOidc(oidc);
 
-    final var repo = new OidcAuthenticationConfigurationRepository(properties);
+    final var repo =
+        new OidcAuthenticationConfigurationRepository(
+            properties, new ScopedClientRegistrationFactory());
 
     assertThat(repo.getOidcAuthenticationConfigurations()).containsOnlyKeys("myCustomId");
   }
@@ -126,7 +140,9 @@ class OidcAuthenticationConfigurationRepositoryTest {
     oidc.setIssuerUri("https://issuer.example.com");
     properties.getAuthentication().setOidc(oidc);
 
-    final var repo = new OidcAuthenticationConfigurationRepository(properties);
+    final var repo =
+        new OidcAuthenticationConfigurationRepository(
+            properties, new ScopedClientRegistrationFactory());
     final var configurations1 = repo.getOidcAuthenticationConfigurations();
 
     // Attempt to mutate the returned map

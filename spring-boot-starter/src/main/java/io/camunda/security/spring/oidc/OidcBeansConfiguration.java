@@ -14,48 +14,52 @@ import io.camunda.security.spring.security.CamundaOidcLogoutSuccessHandler;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProviderBuilder;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
-import org.springframework.security.oauth2.client.registration.ClientRegistrations;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
-import org.springframework.security.oauth2.core.AuthorizationGrantType;
-import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
-import org.springframework.util.StringUtils;
 
 /**
  * Provides default OIDC infrastructure beans ({@link JwtDecoder}, {@link
  * ClientRegistrationRepository}, {@link OAuth2AuthorizedClientRepository}, {@link
  * OAuth2AuthorizedClientManager}) when {@code camunda.security.authentication.method=oidc}. Hosts
  * that need custom wiring can override any bean via {@code @ConditionalOnMissingBean} back-off.
+ *
+ * <p>The per-scope OIDC factories ({@code JWSKeySelectorFactory}, {@code
+ * ScopedClientRegistrationFactory}, {@code OidcAccessTokenDecoderFactory}, {@code
+ * ScopedJwtDecoderFactory}) are declared in the unconditional {@link
+ * ScopedOidcInfrastructureConfiguration} so they are available regardless of the global
+ * authentication method. Because the {@link #jwtDecoder} and {@link #clientRegistrationRepository}
+ * beans here consume {@code OidcAccessTokenDecoderFactory} / {@code
+ * ScopedClientRegistrationFactory} from that configuration, it is {@code @Import}ed so a host that
+ * opts in by importing only {@code OidcBeansConfiguration} (the documented quickstart) still gets a
+ * working context. Its beans are {@code @ConditionalOnMissingBean}, so importing it here and via
+ * the {@code CamundaSecurityAutoConfiguration} umbrella is idempotent.
  */
 @Configuration
 @ConditionalOnProperty(name = "camunda.security.authentication.method", havingValue = "oidc")
+@Import(ScopedOidcInfrastructureConfiguration.class)
 public class OidcBeansConfiguration {
 
   @Bean
   @ConditionalOnMissingBean
   public OidcProviderConfigurationPort oidcProviderConfigurationPort(
-      final CamundaSecurityLibraryProperties properties) {
-    return new OidcAuthenticationConfigurationRepository(properties);
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
-  public JWSKeySelectorFactory jwsKeySelectorFactory() {
-    return new JWSKeySelectorFactory();
+      final CamundaSecurityLibraryProperties properties,
+      final ScopedClientRegistrationFactory scopedClientRegistrationFactory) {
+    return new OidcAuthenticationConfigurationRepository(
+        properties, scopedClientRegistrationFactory);
   }
 
   @Bean
@@ -70,34 +74,13 @@ public class OidcBeansConfiguration {
 
   @Bean
   @ConditionalOnMissingBean
-  public OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory(
-      final JWSKeySelectorFactory jwsKeySelectorFactory,
-      final TokenValidatorFactory tokenValidatorFactory) {
-    return new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
-  }
-
-  @Bean
-  @ConditionalOnMissingBean
   public JwtDecoder jwtDecoder(
       final ClientRegistrationRepository clientRegistrationRepository,
       final OidcProviderConfigurationPort oidcProviderConfigurationPort,
       final OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory) {
     final var registrations = iterableRegistrations(clientRegistrationRepository);
-    if (registrations.isEmpty()) {
-      throw new IllegalStateException(
-          "ClientRegistrationRepository is empty — at least one OIDC provider must be configured."
-              + " Set camunda.security.authentication.oidc.* (flat) or one or more"
-              + " camunda.security.authentication.providers.oidc.<id>.* entries.");
-    }
     final var providers = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
-    if (registrations.size() == 1) {
-      final var reg = registrations.get(0);
-      final var config = providers.get(reg.getRegistrationId());
-      final var additional = config != null ? config.getAdditionalJwkSetUris() : null;
-      return oidcAccessTokenDecoderFactory.createAccessTokenDecoder(reg, additional);
-    }
-    return oidcAccessTokenDecoderFactory.createIssuerAwareAccessTokenDecoder(
-        registrations, buildAdditionalJwkSetUrisByIssuer(registrations, providers));
+    return oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(registrations, providers);
   }
 
   @SuppressWarnings("unchecked")
@@ -114,25 +97,6 @@ public class OidcBeansConfiguration {
     return result;
   }
 
-  private static Map<String, List<String>> buildAdditionalJwkSetUrisByIssuer(
-      final List<ClientRegistration> registrations,
-      final Map<String, OidcConfiguration> providers) {
-    return registrations.stream()
-        .filter(
-            reg -> {
-              final var config = providers.get(reg.getRegistrationId());
-              return config != null
-                  && config.getAdditionalJwkSetUris() != null
-                  && config.getAdditionalJwkSetUris().stream().anyMatch(StringUtils::hasText)
-                  && StringUtils.hasText(reg.getProviderDetails().getIssuerUri());
-            })
-        .collect(
-            Collectors.toMap(
-                reg -> reg.getProviderDetails().getIssuerUri(),
-                reg -> providers.get(reg.getRegistrationId()).getAdditionalJwkSetUris(),
-                (a, b) -> a));
-  }
-
   @Bean
   @ConditionalOnMissingBean
   public AssertionJwkProvider assertionJwkProvider(
@@ -143,7 +107,8 @@ public class OidcBeansConfiguration {
   @Bean
   @ConditionalOnMissingBean
   public ClientRegistrationRepository clientRegistrationRepository(
-      final OidcProviderConfigurationPort oidcProviderConfigurationPort) {
+      final OidcProviderConfigurationPort oidcProviderConfigurationPort,
+      final ScopedClientRegistrationFactory factory) {
     final Map<String, OidcConfiguration> sources =
         oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
 
@@ -155,104 +120,8 @@ public class OidcBeansConfiguration {
               + " camunda.security.authentication.providers.oidc.<id>.* entries.");
     }
 
-    final var registrations =
-        sources.entrySet().stream()
-            .map(e -> buildClientRegistration(e.getKey(), e.getValue()))
-            .toList();
+    final var registrations = factory.createFromProviderMap(sources);
     return new InMemoryClientRegistrationRepository(registrations);
-  }
-
-  /**
-   * Builds a single {@link ClientRegistration} from {@link OidcConfiguration}. When {@code
-   * issuer-uri} is set, OIDC discovery populates the authorization/token/user-info/jwk-set URIs
-   * automatically; any explicitly-configured endpoint URI on {@link OidcConfiguration} then
-   * overrides the discovered value. When {@code issuer-uri} is unset, all of authorization-uri,
-   * token-uri, and jwk-set-uri must be configured explicitly. The {@code registrationId} argument
-   * is the map key in the multi-provider shape and {@link OidcConfiguration#getRegistrationId()} in
-   * the legacy flat shape.
-   */
-  private static ClientRegistration buildClientRegistration(
-      final String registrationId, final OidcConfiguration oidc) {
-    if (!StringUtils.hasText(registrationId)) {
-      throw new IllegalStateException(
-          "OIDC registrationId must be non-blank: set"
-              + " camunda.security.authentication.oidc.registration-id (flat block)"
-              + " or use a non-blank key under"
-              + " camunda.security.authentication.providers.oidc.<id>.*");
-    }
-    final ClientRegistration.Builder builder =
-        clientRegistrationBuilder(registrationId, oidc)
-            .registrationId(registrationId)
-            .clientId(oidc.getClientId())
-            .clientSecret(oidc.getClientSecret())
-            .clientAuthenticationMethod(
-                new ClientAuthenticationMethod(oidc.getClientAuthenticationMethod()))
-            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-            .redirectUri(oidc.getRedirectUri())
-            .scope(oidc.getScope());
-    if (StringUtils.hasText(oidc.getClientName())) {
-      builder.clientName(oidc.getClientName());
-    }
-    if (!oidc.isUserInfoEnabled()) {
-      builder.userInfoUri(null);
-    }
-    return builder.build();
-  }
-
-  /**
-   * Builds the base {@link ClientRegistration.Builder}: discovery via {@code issuer-uri} when set,
-   * otherwise an empty builder; in both cases any explicitly-configured endpoint URI on {@link
-   * OidcConfiguration} overrides the discovered value. A non-blank value on the configuration
-   * always wins; a null/blank value leaves the discovered value untouched.
-   *
-   * <p>Mirrors OC's previous {@code ClientRegistrationFactory} so that adopters can rely on
-   * explicit overrides to plug gaps in incomplete IdP discovery metadata (older Keycloak realms,
-   * custom STS endpoints, proxies that rewrite discovery documents). See
-   * camunda/camunda-security-library#233.
-   */
-  private static ClientRegistration.Builder clientRegistrationBuilder(
-      final String registrationId, final OidcConfiguration oidc) {
-    final boolean hasIssuer = StringUtils.hasText(oidc.getIssuerUri());
-    final ClientRegistration.Builder builder =
-        hasIssuer
-            ? ClientRegistrations.fromIssuerLocation(oidc.getIssuerUri())
-                .registrationId(registrationId)
-            : ClientRegistration.withRegistrationId(registrationId);
-
-    if (!hasIssuer
-        && (!StringUtils.hasText(oidc.getAuthorizationUri())
-            || !StringUtils.hasText(oidc.getTokenUri())
-            || !StringUtils.hasText(oidc.getJwkSetUri()))) {
-      throw new IllegalStateException(
-          "Cannot build ClientRegistration '"
-              + registrationId
-              + "': set issuer-uri, or all of authorization-uri, token-uri, and jwk-set-uri,"
-              + " under camunda.security.authentication.oidc.* (flat) or"
-              + " camunda.security.authentication.providers.oidc."
-              + registrationId
-              + ".*");
-    }
-
-    if (StringUtils.hasText(oidc.getAuthorizationUri())) {
-      builder.authorizationUri(oidc.getAuthorizationUri());
-    }
-    if (StringUtils.hasText(oidc.getTokenUri())) {
-      builder.tokenUri(oidc.getTokenUri());
-    }
-    if (StringUtils.hasText(oidc.getJwkSetUri())) {
-      builder.jwkSetUri(oidc.getJwkSetUri());
-    }
-    if (StringUtils.hasText(oidc.getUserInfoUri())) {
-      builder.userInfoUri(oidc.getUserInfoUri());
-    }
-    if (StringUtils.hasText(oidc.getEndSessionEndpointUri())) {
-      // Spring's ClientRegistration carries end_session_endpoint via providerConfigurationMetadata.
-      // Setting the map replaces the discovered metadata wholesale, so seed it with only the
-      // explicit override; discovery already populated the builder's other endpoints individually.
-      builder.providerConfigurationMetadata(
-          Map.of("end_session_endpoint", oidc.getEndSessionEndpointUri()));
-    }
-    return builder;
   }
 
   /**
@@ -266,7 +135,7 @@ public class OidcBeansConfiguration {
    *
    * <p>The {@link OidcConfiguration} sources map is sourced from {@link
    * OidcProviderConfigurationPort} so registrationIds stay aligned with those in {@link
-   * #clientRegistrationRepository(OidcProviderConfigurationPort)}.
+   * #clientRegistrationRepository(OidcProviderConfigurationPort, ScopedClientRegistrationFactory)}.
    */
   @Bean
   @ConditionalOnMissingBean(OAuth2AuthorizationRequestResolver.class)

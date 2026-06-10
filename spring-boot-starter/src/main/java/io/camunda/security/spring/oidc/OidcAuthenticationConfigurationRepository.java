@@ -10,9 +10,7 @@ package io.camunda.security.spring.oidc;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
-import java.util.LinkedHashMap;
 import java.util.Map;
-import org.springframework.util.StringUtils;
 
 /**
  * Default implementation of {@link OidcProviderConfigurationPort}. Merges the flat {@code
@@ -25,23 +23,19 @@ public class OidcAuthenticationConfigurationRepository implements OidcProviderCo
 
   public static final String REGISTRATION_ID = OidcConfiguration.DEFAULT_REGISTRATION_ID;
 
+  private final ScopedClientRegistrationFactory clientRegistrationFactory;
   private final Map<String, OidcConfiguration> providers;
 
   public OidcAuthenticationConfigurationRepository(
-      final CamundaSecurityLibraryProperties securityConfiguration) {
+      final CamundaSecurityLibraryProperties securityConfiguration,
+      final ScopedClientRegistrationFactory clientRegistrationFactory) {
+    this.clientRegistrationFactory = clientRegistrationFactory;
     providers = initializeProviders(securityConfiguration);
   }
 
   protected Map<String, OidcConfiguration> initializeProviders(
       final CamundaSecurityLibraryProperties securityConfiguration) {
-    final var authentication = securityConfiguration.getAuthentication();
-    final var flat = authentication.getOidc();
-    final Map<String, OidcConfiguration> result = new LinkedHashMap<>();
-    if (StringUtils.hasText(flat.getClientId())) {
-      result.put(flat.getRegistrationId(), flat);
-    }
-    result.putAll(authentication.getProviders().getOidc());
-    return result;
+    return clientRegistrationFactory.flatten(securityConfiguration.getAuthentication());
   }
 
   @Override
