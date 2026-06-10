@@ -53,6 +53,9 @@ class BasicAuthApiChainAuthenticationTest {
               AutoConfigurations.of(
                   CamundaSecurityConfiguration.class,
                   BaseSecurityConfiguration.class,
+                  // No manual ScopedApiSecurityChainBuilderConfiguration import: it is @Imported by
+                  // BasicAuthApiSecurityConfiguration, so the individual-import path is
+                  // self-contained.
                   BasicAuthApiSecurityConfiguration.class,
                   AuthFailureHandlerConfiguration.class,
                   UserConfiguration.class))
