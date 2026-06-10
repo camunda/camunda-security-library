@@ -14,7 +14,8 @@ public final class ErrorMessages {
   public static final String ERROR_MESSAGE_EMPTY_UPDATE_CHANGESET =
       """
       No update data provided. Provide at least an "action" or a non-null value \
-      for a supported attribute in the "changeset\"""";
+      for a supported attribute in the "changeset"\
+      """;
   public static final String ERROR_MESSAGE_EMPTY_ATTRIBUTE = "No %s provided";
   public static final String ERROR_MESSAGE_INVALID_ATTRIBUTE_VALUE =
       "The value for %s is '%s' but must be %s";
