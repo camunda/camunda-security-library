@@ -70,7 +70,7 @@ public record CamundaAuthentication(
     authenticatedRoleIds = listOrEmpty(authenticatedRoleIds);
     authenticatedTenantIds = listOrEmpty(authenticatedTenantIds);
     authenticatedMappingRuleIds = listOrEmpty(authenticatedMappingRuleIds);
-    claims = immutableMapOrEmpty(claims);
+    claims = immutableClaimsWithoutNullValues(claims);
   }
 
   private static <T> List<T> listOrEmpty(final List<T> values) {
@@ -83,13 +83,14 @@ public record CamundaAuthentication(
     return List.copyOf(values);
   }
 
-  private static <K, V> Map<K, V> immutableMapOrEmpty(final Map<K, V> values) {
-    if (values == null) {
+  private static Map<String, Object> immutableClaimsWithoutNullValues(
+      final Map<String, Object> claims) {
+    if (claims == null) {
       return Map.of();
     }
     // Claims originate from external IdPs, which may emit JSON null claim values. All consumers
     // treat a null-valued claim as absent, so drop such entries — Map.copyOf rejects null values.
-    final Map<K, V> withoutNullValues = new LinkedHashMap<>(values);
+    final Map<String, Object> withoutNullValues = new LinkedHashMap<>(claims);
     withoutNullValues.values().removeIf(Objects::isNull);
     return Map.copyOf(withoutNullValues);
   }
