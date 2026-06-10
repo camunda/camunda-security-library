@@ -17,10 +17,12 @@ import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.proc.ConfigurableJWTProcessor;
 import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import com.nimbusds.jwt.proc.JWTProcessor;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -32,6 +34,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.jwt.JwtTypeValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.util.StringUtils;
 
 /**
  * Factory for creating {@link JwtDecoder} instances tailored for decoding access tokens issued by
@@ -77,6 +80,10 @@ public class OidcAccessTokenDecoderFactory {
    * Creates a {@link JwtDecoder} that supports multiple OIDC Providers by resolving issuer-specific
    * keys and validation logic at runtime, with support for additional JWK Set URIs per issuer.
    *
+   * <p>Uses the injected singleton {@link TokenValidatorFactory}. Callers that need validators
+   * built from a specific provider map should use {@link #createIssuerAwareAccessTokenDecoder(List,
+   * Map, TokenValidatorFactory)} instead.
+   *
    * @param clientRegistrations the list of client registrations to support
    * @param additionalJwkSetUrisByIssuer a map of issuer URI to additional JWK Set URIs
    * @return a {@link JwtDecoder} capable of handling multiple issuers with multi-JWKS support
@@ -85,13 +92,32 @@ public class OidcAccessTokenDecoderFactory {
   public JwtDecoder createIssuerAwareAccessTokenDecoder(
       final List<ClientRegistration> clientRegistrations,
       final Map<String, List<String>> additionalJwkSetUrisByIssuer) {
+    return createIssuerAwareAccessTokenDecoder(
+        clientRegistrations, additionalJwkSetUrisByIssuer, tokenValidatorFactory);
+  }
+
+  /**
+   * Creates a {@link JwtDecoder} that supports multiple OIDC Providers by resolving issuer-specific
+   * keys and validation logic at runtime, with support for additional JWK Set URIs per issuer,
+   * using the supplied {@link TokenValidatorFactory} for building token validators.
+   *
+   * @param clientRegistrations the list of client registrations to support
+   * @param additionalJwkSetUrisByIssuer a map of issuer URI to additional JWK Set URIs
+   * @param validatorFactory the {@link TokenValidatorFactory} to use for building token validators
+   * @return a {@link JwtDecoder} capable of handling multiple issuers with multi-JWKS support
+   * @throws IllegalArgumentException if any registration is missing an issuer URI
+   */
+  public JwtDecoder createIssuerAwareAccessTokenDecoder(
+      final List<ClientRegistration> clientRegistrations,
+      final Map<String, List<String>> additionalJwkSetUrisByIssuer,
+      final TokenValidatorFactory validatorFactory) {
     LOG.debug(
         "Creating an Issuer Aware JwtDecoder for multiple OIDC Providers: {}",
         clientRegistrations.size());
     validateClientRegistrationsHaveIssuer(clientRegistrations);
     final var jwtProcessor =
         createIssuerAwareJwtProcessor(clientRegistrations, additionalJwkSetUrisByIssuer);
-    final var jwtValidator = createIssuerAwareJwtValidator(clientRegistrations);
+    final var jwtValidator = createIssuerAwareJwtValidator(clientRegistrations, validatorFactory);
     return wrapKeySourceFailuresAsBadJwt(createNimbusJwtDecoder(jwtProcessor, jwtValidator));
   }
 
@@ -134,6 +160,10 @@ public class OidcAccessTokenDecoderFactory {
    * Creates a {@link JwtDecoder} for a single OIDC Identity Provider with optional additional JWK
    * Set URIs.
    *
+   * <p>Uses the injected singleton {@link TokenValidatorFactory}. Callers that need validators
+   * built from a specific provider map should use {@link
+   * #createAccessTokenDecoder(ClientRegistration, List, TokenValidatorFactory)} instead.
+   *
    * @param clientRegistration the client registration to use
    * @param additionalJwkSetUris additional JWK Set URIs for key resolution
    * @return a {@link JwtDecoder} for that client
@@ -141,11 +171,93 @@ public class OidcAccessTokenDecoderFactory {
    */
   public JwtDecoder createAccessTokenDecoder(
       final ClientRegistration clientRegistration, final List<String> additionalJwkSetUris) {
+    return createAccessTokenDecoder(
+        clientRegistration, additionalJwkSetUris, tokenValidatorFactory);
+  }
+
+  /**
+   * Creates a {@link JwtDecoder} for a single OIDC Identity Provider with optional additional JWK
+   * Set URIs, using the supplied {@link TokenValidatorFactory} for building the token validator.
+   *
+   * @param clientRegistration the client registration to use
+   * @param additionalJwkSetUris additional JWK Set URIs for key resolution
+   * @param validatorFactory the {@link TokenValidatorFactory} to use for building the token
+   *     validator
+   * @return a {@link JwtDecoder} for that client
+   * @throws IllegalArgumentException if the registration is missing a JWK Set URI
+   */
+  public JwtDecoder createAccessTokenDecoder(
+      final ClientRegistration clientRegistration,
+      final List<String> additionalJwkSetUris,
+      final TokenValidatorFactory validatorFactory) {
     LOG.debug("Creating JwtDecoder for OIDC Provider {}", clientRegistration.getRegistrationId());
     LOG.debug("Additional JWK Set URIs: {}", additionalJwkSetUris);
     final var jwtProcessor = createJwtProcessor(clientRegistration, additionalJwkSetUris);
-    final var jwtValidator = createJwtValidator(clientRegistration);
+    final var jwtValidator = createJwtValidator(clientRegistration, validatorFactory);
     return wrapKeySourceFailuresAsBadJwt(createNimbusJwtDecoder(jwtProcessor, jwtValidator));
+  }
+
+  /**
+   * Selects between a single-issuer and an issuer-aware multi-issuer {@link JwtDecoder} based on
+   * the number of registrations — the single authoritative place for this decision.
+   *
+   * <p>Delegates to {@link #createAccessTokenDecoder(ClientRegistration, List)} for a single
+   * registration, and to {@link #createIssuerAwareAccessTokenDecoder(List, Map)} for multiple
+   * registrations. Per-provider {@code additional-jwk-set-uris} are forwarded in both cases.
+   *
+   * <p>Uses the injected singleton {@link TokenValidatorFactory} for building token validators.
+   * Callers that need validators built from a specific provider map (e.g. a per-scope factory)
+   * should use {@link #selectAccessTokenDecoder(List, Map, TokenValidatorFactory)} instead.
+   *
+   * @param registrations the list of client registrations; must not be empty
+   * @param providersById the provider configuration map keyed by registrationId, used to resolve
+   *     per-provider {@code additional-jwk-set-uris}
+   * @return a {@link JwtDecoder} appropriate for the given registrations
+   * @throws IllegalStateException if {@code registrations} is empty
+   */
+  public JwtDecoder selectAccessTokenDecoder(
+      final List<ClientRegistration> registrations,
+      final Map<String, OidcConfiguration> providersById) {
+    return selectAccessTokenDecoder(registrations, providersById, tokenValidatorFactory);
+  }
+
+  /**
+   * Selects between a single-issuer and an issuer-aware multi-issuer {@link JwtDecoder} based on
+   * the number of registrations, using the supplied {@link TokenValidatorFactory} for building
+   * token validators.
+   *
+   * <p>This overload allows callers to provide a scope-specific {@link TokenValidatorFactory} so
+   * that audience and issuer-claim validation are performed against the scope's own provider
+   * configuration rather than a global singleton. The global path (via {@link
+   * #selectAccessTokenDecoder(List, Map)}) delegates here with the singleton factory.
+   *
+   * @param registrations the list of client registrations; must not be empty
+   * @param providersById the provider configuration map keyed by registrationId, used to resolve
+   *     per-provider {@code additional-jwk-set-uris}
+   * @param validatorFactory the {@link TokenValidatorFactory} to use for building token validators
+   * @return a {@link JwtDecoder} appropriate for the given registrations
+   * @throws IllegalStateException if {@code registrations} is empty
+   */
+  public JwtDecoder selectAccessTokenDecoder(
+      final List<ClientRegistration> registrations,
+      final Map<String, OidcConfiguration> providersById,
+      final TokenValidatorFactory validatorFactory) {
+    if (registrations.isEmpty()) {
+      throw new IllegalStateException(
+          "ClientRegistrationRepository is empty — at least one OIDC provider must be configured."
+              + " Set camunda.security.authentication.oidc.* (flat) or one or more"
+              + " camunda.security.authentication.providers.oidc.<id>.* entries.");
+    }
+    if (registrations.size() == 1) {
+      final var reg = registrations.get(0);
+      final var config = providersById.get(reg.getRegistrationId());
+      final var additional = config != null ? config.getAdditionalJwkSetUris() : null;
+      return createAccessTokenDecoder(reg, additional, validatorFactory);
+    }
+    return createIssuerAwareAccessTokenDecoder(
+        registrations,
+        buildAdditionalJwkSetUrisByIssuer(registrations, providersById),
+        validatorFactory);
   }
 
   /**
@@ -296,25 +408,54 @@ public class OidcAccessTokenDecoderFactory {
   }
 
   /**
-   * Creates a {@link Jwt} validator that supports multiple issuers.
+   * Creates a {@link Jwt} validator that supports multiple issuers, using the injected singleton
+   * {@link TokenValidatorFactory}.
    *
    * @param clientRegistrations the list of client registrations
    * @return a token validator aware of multiple issuers
    */
   protected OAuth2TokenValidator<Jwt> createIssuerAwareJwtValidator(
       final List<ClientRegistration> clientRegistrations) {
-    return new IssuerAwareTokenValidator(clientRegistrations, tokenValidatorFactory);
+    return createIssuerAwareJwtValidator(clientRegistrations, tokenValidatorFactory);
   }
 
   /**
-   * Creates a token validator for a single OIDC Identity Provider.
+   * Creates a {@link Jwt} validator that supports multiple issuers, using the supplied {@link
+   * TokenValidatorFactory}.
+   *
+   * @param clientRegistrations the list of client registrations
+   * @param validatorFactory the {@link TokenValidatorFactory} to use
+   * @return a token validator aware of multiple issuers
+   */
+  protected OAuth2TokenValidator<Jwt> createIssuerAwareJwtValidator(
+      final List<ClientRegistration> clientRegistrations,
+      final TokenValidatorFactory validatorFactory) {
+    return new IssuerAwareTokenValidator(clientRegistrations, validatorFactory);
+  }
+
+  /**
+   * Creates a token validator for a single OIDC Identity Provider, using the injected singleton
+   * {@link TokenValidatorFactory}.
    *
    * @param clientRegistration the client registration
    * @return a token validator for the issuer
    */
   protected OAuth2TokenValidator<Jwt> createJwtValidator(
       final ClientRegistration clientRegistration) {
-    return tokenValidatorFactory.createTokenValidator(clientRegistration);
+    return createJwtValidator(clientRegistration, tokenValidatorFactory);
+  }
+
+  /**
+   * Creates a token validator for a single OIDC Identity Provider, using the supplied {@link
+   * TokenValidatorFactory}.
+   *
+   * @param clientRegistration the client registration
+   * @param validatorFactory the {@link TokenValidatorFactory} to use
+   * @return a token validator for the issuer
+   */
+  protected OAuth2TokenValidator<Jwt> createJwtValidator(
+      final ClientRegistration clientRegistration, final TokenValidatorFactory validatorFactory) {
+    return validatorFactory.createTokenValidator(clientRegistration);
   }
 
   /**
@@ -324,5 +465,33 @@ public class OidcAccessTokenDecoderFactory {
    */
   protected JOSEObjectTypeVerifier<SecurityContext> createJOSEObjectTypeVerifier() {
     return new DefaultJOSEObjectTypeVerifier<>(JWT, AT_JWT, null);
+  }
+
+  /**
+   * Builds a map of issuer URI to additional JWK Set URIs from the given registrations and provider
+   * configuration. Only registrations with a non-empty {@code additional-jwk-set-uris} list and a
+   * non-blank {@code issuerUri} contribute an entry.
+   *
+   * @param registrations the list of client registrations
+   * @param providers the provider configuration map keyed by registrationId
+   * @return a map of issuer URI to additional JWK Set URIs; empty if none configured
+   */
+  private static Map<String, List<String>> buildAdditionalJwkSetUrisByIssuer(
+      final List<ClientRegistration> registrations,
+      final Map<String, OidcConfiguration> providers) {
+    return registrations.stream()
+        .filter(
+            reg -> {
+              final var config = providers.get(reg.getRegistrationId());
+              return config != null
+                  && config.getAdditionalJwkSetUris() != null
+                  && config.getAdditionalJwkSetUris().stream().anyMatch(StringUtils::hasText)
+                  && StringUtils.hasText(reg.getProviderDetails().getIssuerUri());
+            })
+        .collect(
+            Collectors.toMap(
+                reg -> reg.getProviderDetails().getIssuerUri(),
+                reg -> providers.get(reg.getRegistrationId()).getAdditionalJwkSetUris(),
+                (a, b) -> a));
   }
 }
