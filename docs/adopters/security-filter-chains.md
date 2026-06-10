@@ -419,7 +419,67 @@ Many library-supplied infrastructure beans intended to be overridden (including 
 
 ## Extension hooks
 
-Two extension points let hosts customise specific OAuth2/OIDC concerns without replacing entire chains. Host-specific filter wiring (authorization filters, header rewrites, matcher tweaks) will be addressed in a follow-up PR with a more focused approach than a generic `HttpSecurity` mutator.
+Three extension points let hosts contribute additional path-scoped API chains or customise specific OAuth2/OIDC concerns without replacing entire chains. Host-specific filter wiring (authorization filters, header rewrites, matcher tweaks) will be addressed in a follow-up PR with a more focused approach than a generic `HttpSecurity` mutator.
+
+### `CamundaSecurityScopeProvider` — contribute path-scoped API chains
+
+When a host needs to expose additional path-scoped API surfaces — each with its own isolated set of OIDC providers or a per-scope basic-auth authority — it implements `CamundaSecurityScopeProvider` and registers it as a bean. CSL builds one `SecurityFilterChain` per returned descriptor alongside its own chains; no action is required when no provider bean is present.
+
+```java
+public interface CamundaSecurityScopeProvider {
+  List<ScopedSecurityDescriptor> get();
+}
+```
+
+**The descriptor.** `ScopedSecurityDescriptor(String basePath, AuthenticationConfiguration authentication)` carries two fields:
+
+- `basePath` — the scope's path prefix. CSL derives the chain's security matchers by prefixing each entry from `SecurityPathPort.apiPaths()` (and `SecurityPathPort.unprotectedApiPaths()`) with `basePath`. The API surface is host-defined: when the host's `apiPaths()` is `{"/v2/**"}`, a `basePath` of `/scopes/abc` produces a matcher of `/scopes/abc/v2/**`; a host with `apiPaths()={"/api/**"}` produces `/scopes/abc/api/**` instead. Keeping the descriptor surface-agnostic means that if a future surface type (e.g. a scope-specific webapp) is added, the same descriptor record is reused without changing the host contract.
+- `authentication` — a (merged) `AuthenticationConfiguration` carrying only the OIDC providers or auth method for this scope. CSL builds a dedicated `JwtDecoder` from this configuration via `ScopedJwtDecoderFactory.buildIssuerAwareDecoder(AuthenticationConfiguration)`. The isolation is structural: a per-scope `TokenValidatorFactory` is built from the scope's own merged provider configuration, so both issuer and audience validation are enforced using the scope's values. Concretely: a token whose `iss` claim matches none of the scope's providers fails with an informative `BadJwtException`; a token whose `aud` claim does not include any of the scope's configured audiences is also rejected, even when two scopes share the same issuer (shared-IdP / physical-tenant isolation). The auth method (OIDC resource-server or HTTP Basic) is selected from `authentication.getMethod()`.
+
+**Declaring the provider bean.** The collector that enumerates descriptors runs during Spring's bean-definition registration phase, before the enclosing `@Configuration` class is constructed. It calls `getBean` on each `CamundaSecurityScopeProvider` at that point. If the provider is a non-static `@Bean` on a `@Configuration` class that uses inter-`@Bean` method references (CGLIB enhancement), Spring will instantiate the configuration class too early and log:
+
+> "Cannot enhance @Configuration bean definition ... created too early"
+
+The configuration class then loses CGLIB proxy behaviour silently — inter-`@Bean` calls will not route through the Spring container. To avoid this, declare the provider as one of:
+
+- a **`static @Bean`** on the host `@Configuration` (preferred), or
+- a `@Bean` on a **`@Configuration(proxyBeanMethods = false)`** class, or
+- a **standalone `@Component`** or `@Service` bean without inter-bean method references.
+
+**Example.**
+
+```java
+@Configuration
+public class HostScopeConfiguration {
+
+  // IMPORTANT: declare as static @Bean to avoid the "created too early" CGLIB warning.
+  @Bean
+  public static CamundaSecurityScopeProvider hostScopeProvider(final MyScopes myScopes) {
+    return () ->
+        myScopes.all().stream()
+            .map(
+                scope ->
+                    new ScopedSecurityDescriptor(
+                        "/scopes/" + scope.id(), scope.authenticationConfiguration()))
+            .toList();
+  }
+}
+```
+
+How each scope's `AuthenticationConfiguration` is assembled (which providers it carries, per-provider overrides, the auth method) is entirely the host's concern — CSL only consumes the finished configuration.
+
+**Per-scope auth method independence.** Each scope selects its own authentication method via the
+descriptor's `authentication.getMethod()`, independently of the cluster's global
+`camunda.security.authentication.method`. CSL provides the per-scope OIDC infrastructure
+(`ScopedJwtDecoderFactory`, `ScopedClientRegistrationFactory`, `OidcAccessTokenDecoderFactory`,
+`JWSKeySelectorFactory`) through the unconditional `ScopedOidcInfrastructureConfiguration` class,
+which is always active as a member of the `CamundaSecurityAutoConfiguration` umbrella. A host can
+therefore contribute an OIDC-scoped descriptor even when the cluster's global method is `basic` —
+no global OIDC configuration is required and no additional `@Import` is needed.
+
+**Dev-mode note.** When `camunda.security.authentication.unprotected-api=true` is set globally, all contributed scoped chains are also built as permit-all — the descriptor's `authentication.method` is ignored in this mode. This matches the global chain behaviour in dev environments, but means per-scope security is not enforced when the flag is on. Don't set this flag in production or any environment where per-scope isolation is a requirement.
+
+**Activation.** `ScopedApiSecurityConfiguration` is part of the `CamundaSecurityAutoConfiguration` umbrella — no additional `@Import` is needed when a host uses the umbrella. Hosts that `@Import` individual CSL configurations must add `ScopedApiSecurityConfiguration.class` to their `@Import` list. See [ADR-0025](../adr/0025-camunda-security-scope-provider-spi.md) for the design rationale.
 
 ### `OidcResourceServerCustomizer` — customise the OAuth2 resource-server DSL
 
