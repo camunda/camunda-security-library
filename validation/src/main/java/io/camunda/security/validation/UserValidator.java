@@ -44,14 +44,13 @@ public final class UserValidator {
 
   private static void validateUserEmail(final String email, final List<String> violations) {
     if (email != null && !email.isBlank()) {
-      if (!EmailValidator.getInstance().isValid(email)) {
+      if (email.length() > ValidationConstants.MAX_FIELD_LENGTH) {
+        violations.add(
+            ERROR_MESSAGE_TOO_MANY_CHARACTERS.formatted(
+                "email", ValidationConstants.MAX_FIELD_LENGTH));
+      } else if (!EmailValidator.getInstance().isValid(email)) {
         violations.add(ERROR_MESSAGE_INVALID_EMAIL.formatted(email));
       }
-    }
-    if (email != null && email.length() > ValidationConstants.MAX_FIELD_LENGTH) {
-      violations.add(
-          ERROR_MESSAGE_TOO_MANY_CHARACTERS.formatted(
-              "email", ValidationConstants.MAX_FIELD_LENGTH));
     }
   }
 

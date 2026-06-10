@@ -9,6 +9,7 @@ package io.camunda.security.validation;
 
 import static io.camunda.security.validation.ErrorMessages.ERROR_MESSAGE_EMPTY_ATTRIBUTE;
 
+import io.camunda.security.api.model.authz.AuthorizationOwnerType;
 import io.camunda.security.api.model.authz.AuthorizationScope;
 import java.util.ArrayList;
 import java.util.List;
@@ -53,7 +54,15 @@ public final class AuthorizationValidator {
     final var violations = new ArrayList<String>();
 
     // owner validation
-    identifierValidator.validateId(ownerId, "ownerId", violations);
+    if (ownerType instanceof final AuthorizationOwnerType authOwnerType) {
+      switch (authOwnerType) {
+        case GROUP -> identifierValidator.validateGroupId(ownerId, "ownerId", violations);
+        case TENANT -> identifierValidator.validateTenantId(ownerId, "ownerId", violations);
+        default -> identifierValidator.validateId(ownerId, "ownerId", violations);
+      }
+    } else {
+      identifierValidator.validateId(ownerId, "ownerId", violations);
+    }
     if (ownerType == null) {
       violations.add(ERROR_MESSAGE_EMPTY_ATTRIBUTE.formatted("ownerType"));
     }
