@@ -48,6 +48,10 @@ public final class IdentifierValidator {
 
   public void validateMemberId(
       final String entityId, final EntityType entityType, final List<String> violations) {
+    if (entityType == null) {
+      validateId(entityId, "entityId", violations);
+      return;
+    }
     if (entityType == EntityType.GROUP) {
       validateGroupId(entityId, violations);
       return;
