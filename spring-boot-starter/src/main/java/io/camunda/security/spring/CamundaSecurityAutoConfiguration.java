@@ -11,6 +11,7 @@ import io.camunda.security.spring.authz.AuthorizationCheckerConfiguration;
 import io.camunda.security.spring.context.CamundaAuthenticationBeansConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
+import io.camunda.security.spring.oidc.OidcClaimsProviderConfiguration;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.scope.ScopedApiSecurityChainBuilderConfiguration;
 import io.camunda.security.spring.scope.ScopedApiSecurityConfiguration;
@@ -64,6 +65,7 @@ import org.springframework.context.annotation.Import;
   UnprotectedApiSecurityConfiguration.class,
   AuthFailureHandlerConfiguration.class,
   OidcBeansConfiguration.class,
+  OidcClaimsProviderConfiguration.class,
   ScopedOidcInfrastructureConfiguration.class,
   WebAppAuthorizationFilterConfiguration.class,
   AdminUserCheckFilterConfiguration.class,
