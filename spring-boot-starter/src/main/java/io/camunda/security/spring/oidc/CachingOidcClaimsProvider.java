@@ -23,7 +23,7 @@ import org.slf4j.LoggerFactory;
  * {@link OidcClaimsProvider} that enriches JWT claims with additional claims from the OIDC UserInfo
  * endpoint. Claims are cached per token value using Caffeine; a negative cache entry is stored on
  * any fetch failure so a degraded IdP does not hammer retries. JWT claims always win on conflict
- * (JWT-wins invariant, see ADR-0019).
+ * (JWT-wins invariant, see ADR-0026).
  */
 public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
 
