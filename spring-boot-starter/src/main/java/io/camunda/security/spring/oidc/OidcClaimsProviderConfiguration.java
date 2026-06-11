@@ -13,11 +13,13 @@ import io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfigu
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -41,6 +43,20 @@ public class OidcClaimsProviderConfiguration {
 
   private static final Logger LOG = LoggerFactory.getLogger(OidcClaimsProviderConfiguration.class);
 
+  /**
+   * JDK HTTP client used by {@link CachingOidcClaimsProvider} to call the IdP's UserInfo endpoint.
+   * Hosts can override by registering a bean named {@code oidcUserInfoHttpClient} — for example to
+   * supply a custom SSL context via {@code spring.ssl.bundle.*}.
+   */
+  @Bean(destroyMethod = "close", name = "oidcUserInfoHttpClient")
+  @ConditionalOnMissingBean(name = "oidcUserInfoHttpClient")
+  HttpClient oidcUserInfoHttpClient() {
+    return HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(2))
+        .followRedirects(HttpClient.Redirect.NEVER)
+        .build();
+  }
+
   @Bean
   @ConditionalOnProperty(
       name = "camunda.security.authentication.oidc.user-info-augmentation.enabled",
@@ -49,12 +65,13 @@ public class OidcClaimsProviderConfiguration {
   OidcClaimsProvider cachingOidcClaimsProvider(
       final ClientRegistrationRepository clientRegistrationRepository,
       final CamundaSecurityLibraryProperties properties,
+      @Qualifier("oidcUserInfoHttpClient") final HttpClient httpClient,
       @Autowired(required = false) final MeterRegistry meterRegistry) {
     final OidcUserInfoAugmentationConfiguration config =
         properties.getAuthentication().getOidc().getUserInfoAugmentation();
     final Map<String, String> uriByIssuer = buildUserInfoUriByIssuer(clientRegistrationRepository);
     return new CachingOidcClaimsProvider(
-        new OidcUserInfoHttpClient(HttpClient.newHttpClient(), new ObjectMapper()),
+        new OidcUserInfoHttpClient(httpClient, new ObjectMapper()),
         uriByIssuer,
         config,
         meterRegistry);
