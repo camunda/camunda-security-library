@@ -175,7 +175,7 @@ class CachingOidcClaimsProviderTest {
   }
 
   @Test
-  void negativeCacheReturnsjwtClaimsUnchanged() {
+  void negativeCacheReturnsJwtClaimsUnchanged() {
     when(fetcher.fetch(any(), any())).thenThrow(new OidcUserInfoFetchException("down"));
     final Map<String, Object> jwt = Map.of("sub", "alice", "iss", ISSUER);
     final var p = provider(URI_BY_ISSUER);

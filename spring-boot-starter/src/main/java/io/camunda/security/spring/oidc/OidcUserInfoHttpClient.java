@@ -35,6 +35,7 @@ final class OidcUserInfoHttpClient implements OidcUserInfoFetcher {
         HttpRequest.newBuilder()
             .uri(URI.create(userInfoUri))
             .header("Authorization", "Bearer " + bearerToken)
+            .header("Accept", "application/json")
             .GET()
             .build();
 

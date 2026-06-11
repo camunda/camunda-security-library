@@ -82,16 +82,16 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
   @Override
   public Map<String, Object> claimsFor(
       final Map<String, Object> jwtClaims, final String tokenValue) {
-    final String issuer = (String) jwtClaims.get("iss");
+    final String issuer = jwtClaims.get("iss") instanceof final String s ? s : null;
     if (issuer == null) {
-      LOG.warn("JWT has no 'iss' claim; returning JWT claims unchanged");
+      LOG.debug("JWT has no 'iss' claim; returning JWT claims unchanged");
       return jwtClaims;
     }
 
     final String userInfoUri = userInfoUriByIssuer.get(issuer);
 
     if (userInfoUri == null || userInfoUri.isBlank()) {
-      LOG.warn(
+      LOG.debug(
           "No UserInfo URI configured for issuer '{}'; returning JWT claims unchanged", issuer);
       return jwtClaims;
     }
@@ -119,7 +119,7 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
     try {
       final Map<String, Object> userInfoClaims = fetcher.fetch(userInfoUri, tokenValue);
       validateSub(jwtClaims, userInfoClaims, issuer);
-      final Map<String, Object> merged = merge(jwtClaims, userInfoClaims);
+      final Map<String, Object> merged = Map.copyOf(merge(jwtClaims, userInfoClaims));
       recordFetch(issuer, "success", System.nanoTime() - startNanos);
       cache.put(tokenValue, merged);
       return merged;

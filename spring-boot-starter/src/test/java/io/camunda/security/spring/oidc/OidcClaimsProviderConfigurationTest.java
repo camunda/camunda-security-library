@@ -10,6 +10,7 @@ package io.camunda.security.spring.oidc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import java.util.Map;
@@ -26,6 +27,7 @@ class OidcClaimsProviderConfigurationTest {
       new ApplicationContextRunner()
           .withPropertyValues("camunda.security.authentication.method=oidc")
           .withUserConfiguration(StubClientRegistrationRepository.class)
+          .withUserConfiguration(StubObjectMapper.class)
           .withConfiguration(
               AutoConfigurations.of(
                   CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class));
@@ -96,6 +98,14 @@ class OidcClaimsProviderConfigurationTest {
           final Map<String, Object> jwtClaims, final String tokenValue) {
         return jwtClaims;
       }
+    }
+  }
+
+  @Configuration
+  static class StubObjectMapper {
+    @Bean
+    ObjectMapper objectMapper() {
+      return new ObjectMapper();
     }
   }
 }

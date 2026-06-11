@@ -65,16 +65,14 @@ public class OidcClaimsProviderConfiguration {
   OidcClaimsProvider cachingOidcClaimsProvider(
       final ClientRegistrationRepository clientRegistrationRepository,
       final CamundaSecurityLibraryProperties properties,
+      final ObjectMapper objectMapper,
       @Qualifier("oidcUserInfoHttpClient") final HttpClient httpClient,
       @Autowired(required = false) final MeterRegistry meterRegistry) {
     final OidcUserInfoAugmentationConfiguration config =
         properties.getAuthentication().getOidc().getUserInfoAugmentation();
     final Map<String, String> uriByIssuer = buildUserInfoUriByIssuer(clientRegistrationRepository);
     return new CachingOidcClaimsProvider(
-        new OidcUserInfoHttpClient(httpClient, new ObjectMapper()),
-        uriByIssuer,
-        config,
-        meterRegistry);
+        new OidcUserInfoHttpClient(httpClient, objectMapper), uriByIssuer, config, meterRegistry);
   }
 
   @Bean
