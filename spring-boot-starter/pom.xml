@@ -124,6 +124,24 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
+        <!--
+          Caffeine — backing cache for CachingOidcClaimsProvider. Version managed by
+          spring-boot-dependencies; no explicit version needed.
+        -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+        <!--
+          Micrometer — optional; used for UserInfo cache/fetch metrics when
+          spring-boot-actuator is present in the host. Declared optional so it does
+          not propagate to host classpaths that don't want it.
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+            <optional>true</optional>
+        </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
