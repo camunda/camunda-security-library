@@ -97,10 +97,18 @@ Add an opt-in `CachingOidcClaimsProvider` to the CSL OIDC chain:
 ADR-0014's `userInfoEnabled` toggle controls whether the `ClientRegistration`
 built by `OidcBeansConfiguration` includes a `userInfoUri` at all — i.e.
 whether Spring Security calls UserInfo during the *webapp login* flow. This
-ADR's augmentation is orthogonal: it operates at *request time* on bearer-token
-authentication, not at login time. The two settings are independent; enabling
-augmentation does not require `userInfoEnabled=true`, but both features require
-the IdP's `/userinfo` endpoint to be reachable.
+ADR's augmentation operates at *request time* on bearer-token authentication,
+not at login time, so the two serve different purposes.
+
+However, the augmentation implementation derives the per-issuer UserInfo URI
+from `ClientRegistration.getProviderDetails().getUserInfoEndpoint().getUri()`.
+When `user-info-enabled=false`, `ScopedClientRegistrationFactory` nulls that
+field, which means augmentation silently has no URI to call and behaves as a
+no-op even when `user-info-augmentation.enabled=true`. In practice, any
+deployment that wants claim augmentation must therefore have
+`user-info-enabled=true` (the default) so the URI is populated in the
+`ClientRegistration`. A future improvement could add an explicit
+`user-info-augmentation.uri-by-issuer` property to break this coupling.
 
 ## Consequences
 

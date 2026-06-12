@@ -168,6 +168,11 @@ operates on every authenticated API request using the bearer token.
   authorization-relevant claims (groups, roles, custom attributes) from the
   access token. Augmentation fetches these at request time and merges them in.
 
+> **Note:** augmentation sources the UserInfo endpoint URI from the
+> `ClientRegistration`. Setting `user-info-enabled: false` nulls that URI, so
+> augmentation silently has nothing to call. Leave `user-info-enabled` at its
+> default (`true`) when enabling augmentation.
+
 **JWT-wins invariant.** UserInfo claims are merged additively: JWT claims always
 win on any conflict. The UserInfo response can never override `sub`, `iss`,
 `aud`, `exp`, or any other claim that is already present in the signed token.
