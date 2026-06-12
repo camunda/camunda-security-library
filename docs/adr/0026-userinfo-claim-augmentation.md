@@ -67,8 +67,8 @@ Add an opt-in `CachingOidcClaimsProvider` to the CSL OIDC chain:
 - **Per-issuer routing.** The provider builds an `issuer → userInfoUri` map from
   `ClientRegistration`s at startup. On each call the JWT's `iss` claim selects
   the target URL. An unknown issuer is treated as fail-open (DEBUG log, JWT
-  claims returned; WARN would spam logs on every request). This dovetails with the multi-IdP configuration shape
-  introduced in ADR-0013.
+  claims returned; WARN would spam logs on every request). This dovetails with
+  the multi-IdP configuration shape introduced in ADR-0013.
 
 - **HTTP client.** `java.net.http.HttpClient` (JDK built-in, no extra dep).
   Wrapped behind a package-private `OidcUserInfoFetcher` interface so unit tests
@@ -85,12 +85,12 @@ Add an opt-in `CachingOidcClaimsProvider` to the CSL OIDC chain:
   (the constructor accepts a nullable `MeterRegistry`).
 
 - **Bean wiring.** `OidcClaimsProviderConfiguration` is a plain `@Configuration`
-  activated by `camunda.security.authentication.method=oidc`. It declares the
-  caching bean first (guarded by `@ConditionalOnProperty` for `enabled=true`)
-  and the noop second (guarded only by `@ConditionalOnMissingBean`). Declaration
-  order ensures that when the caching bean registers, the noop backs off; when
-  the property is absent, the noop registers. A host-supplied
-  `OidcClaimsProvider` bean suppresses both.
+  activated by `camunda.security.authentication.method=oidc`. The caching bean
+  carries `@ConditionalOnProperty(enabled=true)` plus `@ConditionalOnMissingBean`; the
+  noop carries `@ConditionalOnProperty(enabled=false, matchIfMissing=true)` plus
+  `@ConditionalOnMissingBean`. The explicit property condition on the noop means its
+  registration is deterministic regardless of bean declaration order. A
+  host-supplied `OidcClaimsProvider` bean suppresses both via `@ConditionalOnMissingBean`.
 
 ## Relationship to ADR-0014 / #156
 

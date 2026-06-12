@@ -89,4 +89,11 @@ class OidcUserInfoHttpClientTest {
         .isInstanceOf(OidcUserInfoFetchException.class)
         .hasMessageContaining("parse");
   }
+
+  @Test
+  void throwsOnInvalidUri() {
+    assertThatThrownBy(() -> underTest.fetch("not a valid uri ://{{", "token"))
+        .isInstanceOf(OidcUserInfoFetchException.class)
+        .hasMessageContaining("Invalid UserInfo URI");
+  }
 }

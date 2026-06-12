@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
+import java.net.http.HttpClient;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.Map;
@@ -79,6 +80,15 @@ class OidcClaimsProviderConfigurationTest {
         .run(ctx -> assertThat(ctx).doesNotHaveBean(OidcClaimsProvider.class));
   }
 
+  @Test
+  void hostCanOverrideOidcUserInfoHttpClientBean() {
+    // Context must start cleanly — if @ConditionalOnMissingBean(name) didn't back off,
+    // Spring would throw BeanDefinitionOverrideException on the duplicate name.
+    runner
+        .withUserConfiguration(HostHttpClientConfig.class)
+        .run(ctx -> assertThat(ctx).hasNotFailed());
+  }
+
   @Configuration
   static class StubClientRegistrationRepository {
     @Bean
@@ -121,6 +131,14 @@ class OidcClaimsProviderConfigurationTest {
     @Bean
     ObjectMapper objectMapper() {
       return new ObjectMapper();
+    }
+  }
+
+  @Configuration
+  static class HostHttpClientConfig {
+    @Bean(name = "oidcUserInfoHttpClient")
+    HttpClient customHttpClient() {
+      return HttpClient.newHttpClient();
     }
   }
 }

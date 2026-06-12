@@ -162,6 +162,15 @@ class CachingOidcClaimsProviderTest {
     verifyNoInteractions(fetcher);
   }
 
+  @Test
+  void blankTokenValueReturnsJwtClaimsWithoutFetching() {
+    final Map<String, Object> jwt = Map.of("sub", "alice", "iss", ISSUER);
+
+    assertThat(provider(URI_BY_ISSUER).claimsFor(jwt, "")).isSameAs(jwt);
+    assertThat(provider(URI_BY_ISSUER).claimsFor(jwt, "   ")).isSameAs(jwt);
+    verifyNoInteractions(fetcher);
+  }
+
   // --- Fail-open and sub validation ---
 
   @Test
