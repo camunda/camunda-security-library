@@ -302,6 +302,30 @@ class CachingOidcClaimsProviderTest {
     assertThat(result).doesNotContainKey("groups");
   }
 
+  @Test
+  void missingUserInfoSubTriggersFailOpen() {
+    // UserInfo without sub violates OIDC §5.3.2 — augmentation must be rejected.
+    when(fetcher.fetch(any(), any())).thenReturn(Map.of("groups", List.of("admin"))); // no sub
+    final Map<String, Object> jwt = Map.of("sub", "alice", "iss", ISSUER, "scope", "openid");
+
+    final Map<String, Object> result = provider(URI_BY_ISSUER).claimsFor(jwt, "tok");
+
+    assertThat(result).isSameAs(jwt);
+    assertThat(result).doesNotContainKey("groups");
+  }
+
+  @Test
+  void bothSubsMissingTriggersFailOpen() {
+    // Neither JWT nor UserInfo has sub — no identity binding is possible; must not merge.
+    when(fetcher.fetch(any(), any())).thenReturn(Map.of("groups", List.of("admin"))); // no sub
+    final Map<String, Object> jwt = Map.of("iss", ISSUER, "scope", "openid"); // no sub
+
+    final Map<String, Object> result = provider(URI_BY_ISSUER).claimsFor(jwt, "tok");
+
+    assertThat(result).isSameAs(jwt);
+    assertThat(result).doesNotContainKey("groups");
+  }
+
   // --- Negative caching ---
 
   @Test

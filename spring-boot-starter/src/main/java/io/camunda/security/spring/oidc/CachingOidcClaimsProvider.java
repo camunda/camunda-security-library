@@ -193,7 +193,15 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
       final String issuer) {
     final Object jwtSub = jwtClaims.get("sub");
     final Object userInfoSub = userInfoClaims.get("sub");
-    if (jwtSub == null && userInfoSub != null) {
+    if (userInfoSub == null) {
+      // OIDC §5.3.2 requires the UserInfo response to contain sub. A missing sub means we cannot
+      // bind the response to any subject — reject to prevent merging unbounded claims.
+      throw new IllegalStateException(
+          "UserInfo response from issuer '"
+              + issuer
+              + "' is missing the required 'sub' claim (OIDC §5.3.2)");
+    }
+    if (jwtSub == null) {
       throw new IllegalStateException(
           "UserInfo sub='"
               + userInfoSub
@@ -201,7 +209,7 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
               + issuer
               + "' but JWT has no 'sub'; rejecting to prevent subject injection");
     }
-    if (jwtSub != null && !jwtSub.equals(userInfoSub)) {
+    if (!jwtSub.equals(userInfoSub)) {
       throw new IllegalStateException(
           "OIDC §5.3.2 sub mismatch for issuer '"
               + issuer
