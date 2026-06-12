@@ -82,6 +82,10 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
   @Override
   public Map<String, Object> claimsFor(
       final Map<String, Object> jwtClaims, final String tokenValue) {
+    if (tokenValue == null || tokenValue.isBlank()) {
+      LOG.debug("Token value is absent; returning JWT claims unchanged");
+      return jwtClaims;
+    }
     final String issuer = jwtClaims.get("iss") instanceof final String s ? s : null;
     if (issuer == null) {
       LOG.debug("JWT has no 'iss' claim; returning JWT claims unchanged");
@@ -131,15 +135,13 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
           e.getMessage(),
           e);
       recordFetch(issuer, "failure", System.nanoTime() - startNanos);
-      storeNegativeEntry(tokenValue, jwtClaims);
+      storeNegativeEntry(tokenValue);
       return jwtClaims;
     }
   }
 
-  private void storeNegativeEntry(final String tokenValue, final Map<String, Object> jwtClaims) {
-    final Map<String, Object> negative = new HashMap<>(jwtClaims);
-    negative.put(NEGATIVE_SENTINEL, Boolean.TRUE);
-    cache.put(tokenValue, negative);
+  private void storeNegativeEntry(final String tokenValue) {
+    cache.put(tokenValue, Map.of(NEGATIVE_SENTINEL, Boolean.TRUE));
   }
 
   private static void validateSub(
@@ -148,6 +150,14 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
       final String issuer) {
     final Object jwtSub = jwtClaims.get("sub");
     final Object userInfoSub = userInfoClaims.get("sub");
+    if (jwtSub == null && userInfoSub != null) {
+      throw new IllegalStateException(
+          "UserInfo sub='"
+              + userInfoSub
+              + "' for issuer '"
+              + issuer
+              + "' but JWT has no 'sub'; rejecting to prevent subject injection");
+    }
     if (jwtSub != null && !jwtSub.equals(userInfoSub)) {
       throw new IllegalStateException(
           "OIDC §5.3.2 sub mismatch for issuer '"

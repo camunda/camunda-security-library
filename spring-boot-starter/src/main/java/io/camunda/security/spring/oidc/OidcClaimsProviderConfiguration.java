@@ -48,7 +48,7 @@ public class OidcClaimsProviderConfiguration {
    * Hosts can override by registering a bean named {@code oidcUserInfoHttpClient} — for example to
    * supply a custom SSL context via {@code spring.ssl.bundle.*}.
    */
-  @Bean(destroyMethod = "close", name = "oidcUserInfoHttpClient")
+  @Bean(name = "oidcUserInfoHttpClient")
   @ConditionalOnMissingBean(name = "oidcUserInfoHttpClient")
   HttpClient oidcUserInfoHttpClient() {
     return HttpClient.newBuilder()

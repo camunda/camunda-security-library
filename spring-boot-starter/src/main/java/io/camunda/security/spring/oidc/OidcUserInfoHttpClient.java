@@ -14,6 +14,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.Map;
 
 /** Calls the OIDC UserInfo endpoint using {@link HttpClient} and parses the JSON response. */
@@ -31,11 +32,18 @@ final class OidcUserInfoHttpClient implements OidcUserInfoFetcher {
 
   @Override
   public Map<String, Object> fetch(final String userInfoUri, final String bearerToken) {
+    final URI uri;
+    try {
+      uri = URI.create(userInfoUri);
+    } catch (final IllegalArgumentException e) {
+      throw new OidcUserInfoFetchException("Invalid UserInfo URI: " + userInfoUri, e);
+    }
     final HttpRequest request =
         HttpRequest.newBuilder()
-            .uri(URI.create(userInfoUri))
+            .uri(uri)
             .header("Authorization", "Bearer " + bearerToken)
             .header("Accept", "application/json")
+            .timeout(Duration.ofSeconds(10))
             .GET()
             .build();
 

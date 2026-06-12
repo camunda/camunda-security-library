@@ -66,8 +66,8 @@ Add an opt-in `CachingOidcClaimsProvider` to the CSL OIDC chain:
 
 - **Per-issuer routing.** The provider builds an `issuer → userInfoUri` map from
   `ClientRegistration`s at startup. On each call the JWT's `iss` claim selects
-  the target URL. An unknown issuer is treated as fail-open (WARN log, JWT
-  claims returned). This dovetails with the multi-IdP configuration shape
+  the target URL. An unknown issuer is treated as fail-open (DEBUG log, JWT
+  claims returned; WARN would spam logs on every request). This dovetails with the multi-IdP configuration shape
   introduced in ADR-0013.
 
 - **HTTP client.** `java.net.http.HttpClient` (JDK built-in, no extra dep).
@@ -80,8 +80,9 @@ Add an opt-in `CachingOidcClaimsProvider` to the CSL OIDC chain:
     miss / negative_hit)
   - `camunda.oidc.userinfo.fetch` (Timer, tags: `issuer`, `outcome`: success /
     failure)
-  Micrometer is declared `optional` in the pom; if no `MeterRegistry` bean is
-  present the provider functions without instrumentation.
+  Micrometer is a required dependency of the starter; if no `MeterRegistry` bean is
+  present in the application context the provider functions without instrumentation
+  (the constructor accepts a nullable `MeterRegistry`).
 
 - **Bean wiring.** `OidcClaimsProviderConfiguration` is a plain `@Configuration`
   activated by `camunda.security.authentication.method=oidc`. It declares the

@@ -8,17 +8,19 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
+import java.util.Collections;
+import java.util.Iterator;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 
 class OidcClaimsProviderConfigurationTest {
@@ -81,7 +83,20 @@ class OidcClaimsProviderConfigurationTest {
   static class StubClientRegistrationRepository {
     @Bean
     ClientRegistrationRepository clientRegistrationRepository() {
-      return mock(ClientRegistrationRepository.class);
+      return new EmptyIterableClientRegistrationRepository();
+    }
+
+    static final class EmptyIterableClientRegistrationRepository
+        implements ClientRegistrationRepository, Iterable<ClientRegistration> {
+      @Override
+      public ClientRegistration findByRegistrationId(final String registrationId) {
+        return null;
+      }
+
+      @Override
+      public Iterator<ClientRegistration> iterator() {
+        return Collections.emptyIterator();
+      }
     }
   }
 

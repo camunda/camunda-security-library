@@ -136,6 +136,16 @@ class CachingOidcClaimsProviderTest {
     verifyNoInteractions(fetcher);
   }
 
+  @Test
+  void nullTokenValueReturnsJwtClaimsWithoutFetching() {
+    final Map<String, Object> jwt = Map.of("sub", "alice", "iss", ISSUER);
+
+    final Map<String, Object> result = provider(URI_BY_ISSUER).claimsFor(jwt, null);
+
+    assertThat(result).isSameAs(jwt);
+    verifyNoInteractions(fetcher);
+  }
+
   // --- Fail-open and sub validation ---
 
   @Test
@@ -157,6 +167,19 @@ class CachingOidcClaimsProviderTest {
     final Map<String, Object> result = provider(URI_BY_ISSUER).claimsFor(jwt, "tok");
 
     assertThat(result).isSameAs(jwt);
+    assertThat(result).doesNotContainKey("groups");
+  }
+
+  @Test
+  void userInfoSubInjectionWhenJwtHasNoSubTriggersFailOpen() {
+    when(fetcher.fetch(any(), any()))
+        .thenReturn(Map.of("sub", "injected", "groups", List.of("admin")));
+    final Map<String, Object> jwt = Map.of("iss", ISSUER); // no sub in JWT
+
+    final Map<String, Object> result = provider(URI_BY_ISSUER).claimsFor(jwt, "tok");
+
+    assertThat(result).isSameAs(jwt);
+    assertThat(result).doesNotContainKey("sub");
     assertThat(result).doesNotContainKey("groups");
   }
 
