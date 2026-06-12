@@ -13,6 +13,7 @@ import com.github.benmanes.caffeine.cache.Expiry;
 import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfiguration;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -110,38 +111,36 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
       return cached;
     }
 
+    // Miss: cache.get() is atomic per key — at most one fetch in flight per token value,
+    // preventing stampedes when many concurrent requests arrive with the same bearer token.
     recordCacheResult(issuer, "miss");
-    return fetchAndCache(jwtClaims, tokenValue, issuer, userInfoUri);
-  }
-
-  private Map<String, Object> fetchAndCache(
-      final Map<String, Object> jwtClaims,
-      final String tokenValue,
-      final String issuer,
-      final String userInfoUri) {
-    final long startNanos = System.nanoTime();
-    try {
-      final Map<String, Object> userInfoClaims = fetcher.fetch(userInfoUri, tokenValue);
-      validateSub(jwtClaims, userInfoClaims, issuer);
-      final Map<String, Object> merged = Map.copyOf(merge(jwtClaims, userInfoClaims));
-      recordFetch(issuer, "success", System.nanoTime() - startNanos);
-      cache.put(tokenValue, merged);
-      return merged;
-    } catch (final Exception e) {
-      LOG.error(
-          "UserInfo fetch failed for issuer '{}' at '{}': {}; returning JWT claims unchanged",
-          issuer,
-          userInfoUri,
-          e.getMessage(),
-          e);
-      recordFetch(issuer, "failure", System.nanoTime() - startNanos);
-      storeNegativeEntry(tokenValue);
-      return jwtClaims;
-    }
-  }
-
-  private void storeNegativeEntry(final String tokenValue) {
-    cache.put(tokenValue, Map.of(NEGATIVE_SENTINEL, Boolean.TRUE));
+    final Map<String, Object> entry =
+        cache.get(
+            tokenValue,
+            k -> {
+              final long startNanos = System.nanoTime();
+              try {
+                final Map<String, Object> userInfoClaims = fetcher.fetch(userInfoUri, k);
+                validateSub(jwtClaims, userInfoClaims, issuer);
+                // unmodifiableMap instead of Map.copyOf: preserves null claim values from
+                // UserInfo responses that Map.copyOf would reject with NullPointerException.
+                final Map<String, Object> merged =
+                    Collections.unmodifiableMap(merge(jwtClaims, userInfoClaims));
+                recordFetch(issuer, "success", System.nanoTime() - startNanos);
+                return merged;
+              } catch (final Exception e) {
+                LOG.error(
+                    "UserInfo fetch failed for issuer '{}' at '{}': {}; returning JWT"
+                        + " claims unchanged",
+                    issuer,
+                    userInfoUri,
+                    e.getMessage(),
+                    e);
+                recordFetch(issuer, "failure", System.nanoTime() - startNanos);
+                return Map.of(NEGATIVE_SENTINEL, Boolean.TRUE);
+              }
+            });
+    return isNegative(entry) ? jwtClaims : entry;
   }
 
   private static void validateSub(

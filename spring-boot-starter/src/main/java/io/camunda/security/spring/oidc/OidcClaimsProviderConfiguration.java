@@ -87,7 +87,6 @@ public class OidcClaimsProviderConfiguration {
    * org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository}
    * is). Returns an empty map if the repository is not iterable.
    */
-  @SuppressWarnings("unchecked")
   private static Map<String, String> buildUserInfoUriByIssuer(
       final ClientRegistrationRepository repo) {
     if (!(repo instanceof Iterable)) {
@@ -98,7 +97,10 @@ public class OidcClaimsProviderConfiguration {
       return Map.of();
     }
     final Map<String, String> map = new HashMap<>();
-    for (final ClientRegistration reg : (Iterable<ClientRegistration>) repo) {
+    for (final Object item : (Iterable<?>) repo) {
+      if (!(item instanceof final ClientRegistration reg)) {
+        continue;
+      }
       final String issuerUri = reg.getProviderDetails().getIssuerUri();
       final String userInfoUri = reg.getProviderDetails().getUserInfoEndpoint().getUri();
       if (issuerUri != null

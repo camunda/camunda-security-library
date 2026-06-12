@@ -19,6 +19,7 @@ import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfiguration;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -56,6 +57,21 @@ class CachingOidcClaimsProviderTest {
     assertThat(result).containsEntry("sub", "alice"); // JWT wins
     assertThat(result).containsEntry("exp", 9999L); // JWT-only claim preserved
     assertThat(result).containsKey("groups"); // UserInfo-only claim contributed
+  }
+
+  @Test
+  void userInfoResponseWithNullClaimValueDoesNotThrow() {
+    final Map<String, Object> userInfoWithNull = new HashMap<>();
+    userInfoWithNull.put("sub", "alice");
+    userInfoWithNull.put("department", null); // JSON null — valid in UserInfo responses
+    when(fetcher.fetch(any(), any())).thenReturn(userInfoWithNull);
+    final Map<String, Object> jwt = Map.of("sub", "alice", "iss", ISSUER);
+
+    final Map<String, Object> result = provider(URI_BY_ISSUER).claimsFor(jwt, "tok");
+
+    assertThat(result).containsEntry("sub", "alice");
+    // null-valued UserInfo claims are included without throwing NullPointerException
+    assertThat(result).containsKey("department");
   }
 
   @Test
