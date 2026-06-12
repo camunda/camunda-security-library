@@ -17,11 +17,14 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.github.benmanes.caffeine.cache.Ticker;
 import io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfiguration;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -408,5 +411,59 @@ class CachingOidcClaimsProviderTest {
     final Map<String, Object> jwt = Map.of("sub", "alice", "iss", ISSUER, "scope", "openid");
 
     assertThatNoException().isThrownBy(() -> p.claimsFor(jwt, "tok1"));
+  }
+
+  // --- TTL / expiry ---
+
+  @Test
+  void positiveEntryExpiresAfterCacheTtl() {
+    when(fetcher.fetch(any(), any())).thenReturn(Map.of("sub", "alice", "groups", List.of("eng")));
+    final var ticker = new FakeTicker();
+    final var config = defaultConfig();
+    final var p = new CachingOidcClaimsProvider(fetcher, URI_BY_ISSUER, config, null, ticker);
+    final Map<String, Object> jwt =
+        Map.<String, Object>of(
+            "sub", "alice", "iss", ISSUER, "iat", 1000L, "exp", 9999L, "scope", "openid");
+
+    p.claimsFor(jwt, "tok1"); // miss → fetched and cached
+    ticker.advance(config.getCacheTtl().plus(Duration.ofNanos(1)));
+    p.claimsFor(jwt, "tok1"); // entry expired → refetched
+
+    verify(fetcher, times(2)).fetch(any(), any());
+  }
+
+  @Test
+  void negativeEntryExpiresAfterNegativeCacheTtl() {
+    // Negative TTL (5s default) is shorter than the positive TTL (5min default).
+    // After advancing past negativeCacheTtl, the entry is re-fetched.
+    when(fetcher.fetch(any(), any())).thenThrow(new OidcUserInfoFetchException("down"));
+    final var ticker = new FakeTicker();
+    final var config = defaultConfig();
+    final var p = new CachingOidcClaimsProvider(fetcher, URI_BY_ISSUER, config, null, ticker);
+    final Map<String, Object> jwt =
+        Map.<String, Object>of(
+            "sub", "alice", "iss", ISSUER, "iat", 1000L, "exp", 9999L, "scope", "openid");
+
+    p.claimsFor(jwt, "tok1"); // miss → fails → negative entry cached
+    // advance past negativeCacheTtl but well within cacheTtl
+    ticker.advance(config.getNegativeCacheTtl().plus(Duration.ofNanos(1)));
+    p.claimsFor(jwt, "tok1"); // negative entry expired → fetcher called again
+
+    verify(fetcher, times(2)).fetch(any(), any());
+  }
+
+  // --- Helpers ---
+
+  static final class FakeTicker implements Ticker {
+    private final AtomicLong nanos = new AtomicLong(0);
+
+    @Override
+    public long read() {
+      return nanos.get();
+    }
+
+    void advance(final Duration duration) {
+      nanos.addAndGet(duration.toNanos());
+    }
   }
 }

@@ -23,6 +23,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
 
 class OidcClaimsProviderConfigurationTest {
 
@@ -97,6 +99,28 @@ class OidcClaimsProviderConfigurationTest {
         .run(ctx -> assertThat(ctx).hasNotFailed());
   }
 
+  @Test
+  void routingMapIsPopulatedFromClientRegistrationsWithUserInfoUri() {
+    // Uses a real InMemoryClientRegistrationRepository (Iterable) with one registration that has
+    // userInfoUri and one that does not, to verify buildUserInfoUriByIssuer filters nulls cleanly.
+    new ApplicationContextRunner()
+        .withPropertyValues(
+            "camunda.security.authentication.method=oidc",
+            "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
+        .withUserConfiguration(PopulatedClientRegistrationRepository.class)
+        .withUserConfiguration(StubObjectMapper.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class))
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              assertThat(ctx).hasSingleBean(OidcClaimsProvider.class);
+              assertThat(ctx.getBean(OidcClaimsProvider.class))
+                  .isInstanceOf(CachingOidcClaimsProvider.class);
+            });
+  }
+
   @Configuration
   static class StubClientRegistrationRepository {
     @Bean
@@ -147,6 +171,34 @@ class OidcClaimsProviderConfigurationTest {
     @Bean(name = "oidcUserInfoHttpClient")
     HttpClient customHttpClient() {
       return HttpClient.newHttpClient();
+    }
+  }
+
+  @Configuration
+  static class PopulatedClientRegistrationRepository {
+    @Bean
+    ClientRegistrationRepository clientRegistrationRepository() {
+      final ClientRegistration withUserInfo =
+          ClientRegistration.withRegistrationId("idp-a")
+              .clientId("client-a")
+              .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+              .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+              .authorizationUri("https://idp-a.example/oauth2/authorize")
+              .tokenUri("https://idp-a.example/oauth2/token")
+              .userInfoUri("https://idp-a.example/userinfo")
+              .issuerUri("https://idp-a.example")
+              .build();
+      // A registration without userInfoUri — the routing map builder should skip it without error.
+      final ClientRegistration withoutUserInfo =
+          ClientRegistration.withRegistrationId("idp-b")
+              .clientId("client-b")
+              .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+              .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+              .authorizationUri("https://idp-b.example/oauth2/authorize")
+              .tokenUri("https://idp-b.example/oauth2/token")
+              .issuerUri("https://idp-b.example")
+              .build();
+      return new InMemoryClientRegistrationRepository(withUserInfo, withoutUserInfo);
     }
   }
 }

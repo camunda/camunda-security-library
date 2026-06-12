@@ -10,6 +10,7 @@ package io.camunda.security.spring.oidc;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.Expiry;
+import com.github.benmanes.caffeine.cache.Ticker;
 import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfiguration;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -51,6 +52,19 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
       final Map<String, String> userInfoUriByIssuer,
       final OidcUserInfoAugmentationConfiguration config,
       final MeterRegistry meterRegistry) {
+    this(fetcher, userInfoUriByIssuer, config, meterRegistry, Ticker.systemTicker());
+  }
+
+  /**
+   * Package-private — for tests only. Accepts a custom {@link Ticker} to enable virtual-time TTL
+   * testing.
+   */
+  CachingOidcClaimsProvider(
+      final OidcUserInfoFetcher fetcher,
+      final Map<String, String> userInfoUriByIssuer,
+      final OidcUserInfoAugmentationConfiguration config,
+      final MeterRegistry meterRegistry,
+      final Ticker ticker) {
     this.fetcher = fetcher;
     this.userInfoUriByIssuer = Map.copyOf(userInfoUriByIssuer);
     this.meterRegistry = meterRegistry;
@@ -62,6 +76,7 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
     this.cache =
         Caffeine.newBuilder()
             .maximumSize(config.getCacheMaxSize())
+            .ticker(ticker)
             .expireAfter(
                 new Expiry<String, Map<String, Object>>() {
                   @Override
