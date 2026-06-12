@@ -49,6 +49,9 @@ public class OidcClaimsProviderConfiguration {
    * supply a custom SSL context via {@code spring.ssl.bundle.*}.
    */
   @Bean(name = "oidcUserInfoHttpClient")
+  @ConditionalOnProperty(
+      name = "camunda.security.authentication.oidc.user-info-augmentation.enabled",
+      havingValue = "true")
   @ConditionalOnMissingBean(name = "oidcUserInfoHttpClient")
   HttpClient oidcUserInfoHttpClient() {
     return HttpClient.newBuilder()
@@ -71,6 +74,13 @@ public class OidcClaimsProviderConfiguration {
     final OidcUserInfoAugmentationConfiguration config =
         properties.getAuthentication().getOidc().getUserInfoAugmentation();
     final Map<String, String> uriByIssuer = buildUserInfoUriByIssuer(clientRegistrationRepository);
+    if (uriByIssuer.isEmpty()) {
+      LOG.warn(
+          "UserInfo augmentation is enabled but no ClientRegistration has a userInfoUri;"
+              + " augmentation will silently skip every request. Ensure"
+              + " camunda.security.authentication.oidc.user-info-enabled=true (the default)"
+              + " and that the IdP's discovery document includes a userinfo_endpoint.");
+    }
     return new CachingOidcClaimsProvider(
         new OidcUserInfoHttpClient(httpClient, objectMapper), uriByIssuer, config, meterRegistry);
   }

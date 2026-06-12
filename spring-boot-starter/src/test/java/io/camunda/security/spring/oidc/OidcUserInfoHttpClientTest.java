@@ -16,7 +16,10 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,7 +31,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class OidcUserInfoHttpClientTest {
 
   @Mock private HttpClient httpClient;
-  @Mock private HttpResponse<String> response;
+  @Mock private HttpResponse<byte[]> response;
 
   private OidcUserInfoHttpClient underTest;
 
@@ -37,10 +40,21 @@ class OidcUserInfoHttpClientTest {
     underTest = new OidcUserInfoHttpClient(httpClient, new ObjectMapper());
   }
 
+  private static HttpHeaders headersOf(final String contentType) {
+    return HttpHeaders.of(Map.of("Content-Type", List.of(contentType)), (k, v) -> true);
+  }
+
+  private static HttpHeaders emptyHeaders() {
+    return HttpHeaders.of(Map.of(), (k, v) -> true);
+  }
+
   @Test
   void returnsParsedClaimsOnSuccess() throws Exception {
     when(response.statusCode()).thenReturn(200);
-    when(response.body()).thenReturn("{\"sub\":\"alice\",\"groups\":[\"eng\",\"ops\"]}");
+    when(response.body())
+        .thenReturn(
+            "{\"sub\":\"alice\",\"groups\":[\"eng\",\"ops\"]}".getBytes(StandardCharsets.UTF_8));
+    when(response.headers()).thenReturn(emptyHeaders());
     doReturn(response).when(httpClient).send(any(), any());
 
     final Map<String, Object> result =
@@ -82,7 +96,8 @@ class OidcUserInfoHttpClientTest {
   @Test
   void throwsOnMalformedJson() throws Exception {
     when(response.statusCode()).thenReturn(200);
-    when(response.body()).thenReturn("not-valid-json{{");
+    when(response.body()).thenReturn("not-valid-json{{".getBytes(StandardCharsets.UTF_8));
+    when(response.headers()).thenReturn(emptyHeaders());
     doReturn(response).when(httpClient).send(any(), any());
 
     assertThatThrownBy(() -> underTest.fetch("https://idp.example/userinfo", "token"))
@@ -95,5 +110,28 @@ class OidcUserInfoHttpClientTest {
     assertThatThrownBy(() -> underTest.fetch("not a valid uri ://{{", "token"))
         .isInstanceOf(OidcUserInfoFetchException.class)
         .hasMessageContaining("Invalid UserInfo URI");
+  }
+
+  @Test
+  void throwsWhenResponseBodyExceedsSizeLimit() throws Exception {
+    when(response.statusCode()).thenReturn(200);
+    when(response.body()).thenReturn(new byte[OidcUserInfoHttpClient.MAX_BODY_BYTES + 1]);
+    doReturn(response).when(httpClient).send(any(), any());
+
+    assertThatThrownBy(() -> underTest.fetch("https://idp.example/userinfo", "token"))
+        .isInstanceOf(OidcUserInfoFetchException.class)
+        .hasMessageContaining("exceeds");
+  }
+
+  @Test
+  void throwsWhenContentTypeIsSignedJwt() throws Exception {
+    when(response.statusCode()).thenReturn(200);
+    when(response.body()).thenReturn(new byte[0]);
+    when(response.headers()).thenReturn(headersOf("application/jwt"));
+    doReturn(response).when(httpClient).send(any(), any());
+
+    assertThatThrownBy(() -> underTest.fetch("https://idp.example/userinfo", "token"))
+        .isInstanceOf(OidcUserInfoFetchException.class)
+        .hasMessageContaining("application/jwt");
   }
 }

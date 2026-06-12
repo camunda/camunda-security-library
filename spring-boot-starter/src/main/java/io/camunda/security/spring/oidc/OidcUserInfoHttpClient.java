@@ -20,6 +20,11 @@ import java.util.Map;
 /** Calls the OIDC UserInfo endpoint using {@link HttpClient} and parses the JSON response. */
 final class OidcUserInfoHttpClient implements OidcUserInfoFetcher {
 
+  /**
+   * Maximum response body size; responses larger than this are rejected to prevent heap exhaustion.
+   */
+  static final int MAX_BODY_BYTES = 1024 * 1024; // 1 MiB
+
   private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
   private final HttpClient httpClient;
@@ -47,9 +52,9 @@ final class OidcUserInfoHttpClient implements OidcUserInfoFetcher {
             .GET()
             .build();
 
-    final HttpResponse<String> response;
+    final HttpResponse<byte[]> response;
     try {
-      response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+      response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new OidcUserInfoFetchException(
@@ -64,8 +69,28 @@ final class OidcUserInfoHttpClient implements OidcUserInfoFetcher {
           "UserInfo endpoint returned HTTP " + response.statusCode() + " at " + userInfoUri);
     }
 
+    final byte[] body = response.body();
+    if (body.length > MAX_BODY_BYTES) {
+      throw new OidcUserInfoFetchException(
+          "UserInfo response from "
+              + userInfoUri
+              + " exceeds the "
+              + MAX_BODY_BYTES
+              + "-byte limit");
+    }
+
+    final String contentType = response.headers().firstValue("Content-Type").orElse("");
+    if (contentType.startsWith("application/jwt")) {
+      throw new OidcUserInfoFetchException(
+          "UserInfo endpoint at "
+              + userInfoUri
+              + " returned a signed JWT (Content-Type: "
+              + contentType
+              + "); only application/json responses are supported (OIDC §5.3.2)");
+    }
+
     try {
-      return objectMapper.readValue(response.body(), MAP_TYPE);
+      return objectMapper.readValue(body, MAP_TYPE);
     } catch (final IOException e) {
       throw new OidcUserInfoFetchException(
           "Failed to parse UserInfo response from " + userInfoUri, e);

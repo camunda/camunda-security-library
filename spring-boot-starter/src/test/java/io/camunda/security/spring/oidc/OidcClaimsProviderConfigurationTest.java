@@ -71,6 +71,12 @@ class OidcClaimsProviderConfigurationTest {
   }
 
   @Test
+  void httpClientBeanNotCreatedWhenAugmentationIsDisabled() {
+    // When augmentation is off, the JDK HttpClient (and its connection pool) should not exist.
+    runner.run(ctx -> assertThat(ctx).doesNotHaveBean("oidcUserInfoHttpClient"));
+  }
+
+  @Test
   void noBeansRegisteredWhenMethodIsNotOidc() {
     new ApplicationContextRunner()
         .withPropertyValues("camunda.security.authentication.method=basic")
@@ -85,6 +91,8 @@ class OidcClaimsProviderConfigurationTest {
     // Context must start cleanly — if @ConditionalOnMissingBean(name) didn't back off,
     // Spring would throw BeanDefinitionOverrideException on the duplicate name.
     runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
         .withUserConfiguration(HostHttpClientConfig.class)
         .run(ctx -> assertThat(ctx).hasNotFailed());
   }

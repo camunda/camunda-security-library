@@ -104,6 +104,11 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
       return jwtClaims;
     }
 
+    if (!hasOpenidScope(jwtClaims)) {
+      LOG.debug("JWT for issuer '{}' has no openid scope; skipping UserInfo augmentation", issuer);
+      return jwtClaims;
+    }
+
     final String userInfoUri = userInfoUriByIssuer.get(issuer);
 
     if (userInfoUri == null || userInfoUri.isBlank()) {
@@ -233,6 +238,35 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
       return n.longValue();
     }
     return null;
+  }
+
+  /**
+   * Returns {@code true} when the JWT carries the {@code openid} scope. OIDC §5.3 only defines the
+   * UserInfo endpoint for openid-scoped tokens; M2M / client-credentials tokens typically lack it.
+   * Skipping augmentation for out-of-scope tokens avoids guaranteed-to-fail fetches and the ERROR
+   * noise and negative-cache churn they produce.
+   *
+   * <p>Checks {@code scope} (space-separated string, RFC 8693) and {@code scp} (list, used by some
+   * IdPs including Microsoft) so that both claim shapes are handled.
+   */
+  static boolean hasOpenidScope(final Map<String, Object> jwtClaims) {
+    final Object scope = jwtClaims.get("scope");
+    if (scope instanceof final String s) {
+      for (final String part : s.split("\\s+")) {
+        if ("openid".equals(part)) {
+          return true;
+        }
+      }
+    }
+    final Object scp = jwtClaims.get("scp");
+    if (scp instanceof final Iterable<?> list) {
+      for (final Object item : list) {
+        if ("openid".equals(item)) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   private static boolean isNegative(final Map<String, Object> entry) {

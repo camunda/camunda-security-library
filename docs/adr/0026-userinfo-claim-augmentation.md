@@ -77,12 +77,14 @@ Add an opt-in `CachingOidcClaimsProvider` to the CSL OIDC chain:
   Wrapped behind a package-private `OidcUserInfoFetcher` interface so unit tests
   can inject a mock without spawning a real HTTP server.
 
-- **Micrometer metrics (optional).** Two instruments, metric names matching the
-  monorepo so existing dashboards carry over:
+- **Micrometer metrics (optional).** Two instruments with metric names matching
+  the monorepo reference. Tag shapes intentionally diverge to carry more context:
   - `camunda.oidc.userinfo.cache` (Counter, tags: `issuer`, `result`: hit /
-    miss / negative_hit)
+    miss / negative_hit). The monorepo's counter omits `issuer` and `negative_hit`.
   - `camunda.oidc.userinfo.fetch` (Timer, tags: `issuer`, `outcome`: success /
-    failure)
+    failure). The monorepo uses an untagged Timer and a separate failure Counter
+    under the same name; this implementation unifies them into one tagged Timer.
+  Existing dashboard queries built on the monorepo tag shapes will need adjustment.
   Micrometer is a required dependency of the starter; if no `MeterRegistry` bean is
   present in the application context the provider functions without instrumentation
   (the constructor accepts a nullable `MeterRegistry`).
