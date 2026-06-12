@@ -4,7 +4,7 @@ status: Accepted
 
 # ADR-0026: UserInfo claim augmentation
 
-**Deciders**: <!-- fill in before merging -->
+**Deciders**: Ben Sheppard
 
 ## Status
 
