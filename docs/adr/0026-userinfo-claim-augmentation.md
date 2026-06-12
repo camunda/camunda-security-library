@@ -119,7 +119,7 @@ deployment that wants claim augmentation must therefore have
 
 - Hosts that set `user-info-augmentation.enabled=true` get claims from UserInfo
   merged into every authenticated request's claims map, at the cost of one
-  (cached) HTTP call per unique token value.
+  (cached) HTTP call per unique token identity (`iss+jti` or `iss+sub+iat+exp`).
 - A failing `/userinfo` degrades gracefully: the first failure adds a negative
   entry; retries are suppressed for `negativeCacheTtl`; authentication continues
   throughout.

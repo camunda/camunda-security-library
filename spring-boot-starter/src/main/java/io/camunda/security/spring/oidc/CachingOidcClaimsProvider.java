@@ -234,13 +234,15 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
     }
     final Object jti = jwtClaims.get("jti");
     if (jti instanceof final String s && !s.isBlank()) {
-      return "jti:" + issuer + ":" + s;
+      // \0 separator: JWT claim values are JSON-decoded strings and cannot contain literal null
+      // bytes, so this delimiter is collision-free regardless of issuer or jti content.
+      return "jti\0" + issuer + "\0" + s;
     }
     final Object sub = jwtClaims.get("sub");
     final Long iat = epochSecond(jwtClaims.get("iat"));
     final Long exp = epochSecond(jwtClaims.get("exp"));
     if (sub instanceof String && iat != null && exp != null) {
-      return "sie:" + issuer + ":" + sub + ":" + iat + ":" + exp;
+      return "sie\0" + issuer + "\0" + sub + "\0" + iat + "\0" + exp;
     }
     return null;
   }

@@ -142,7 +142,7 @@ For most conditional use cases the CSL ships purpose-built meta-annotations (see
 | `authorization-uri`, `token-uri`, `user-info-uri` | string | unset | Endpoint overrides for non-discovery flows. |
 | `user-info-enabled` | boolean | `true` | When `false`, the built `ClientRegistration` has its `userInfoUri` nulled so Spring Security does not call the IdP's UserInfo endpoint after token exchange. See [Disabling the UserInfo fetch](#disabling-the-userinfo-fetch) below and [ADR-0014](../adr/0014-oidc-user-info-enabled-toggle.md). |
 | `user-info-augmentation.enabled` | boolean | `false` | When `true`, enables request-time claim augmentation from the UserInfo endpoint. See [UserInfo claim augmentation](#userinfo-claim-augmentation) below. |
-| `user-info-augmentation.cache-ttl` | duration | `5m` | How long a successful UserInfo response is cached per token value. |
+| `user-info-augmentation.cache-ttl` | duration | `5m` | How long a successful UserInfo response is cached per token identity (`iss+jti`, or `iss+sub+iat+exp` when `jti` is absent). |
 | `user-info-augmentation.cache-max-size` | int | `10000` | Maximum number of entries in the UserInfo claims cache. |
 | `user-info-augmentation.negative-cache-ttl` | duration | `5s` | How long a failed UserInfo fetch is cached before retrying. Limits retry traffic when the IdP is degraded. |
 | `redirect-uri` | string | unset | OAuth2 redirect-uri template. |
