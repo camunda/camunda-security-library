@@ -141,11 +141,71 @@ For most conditional use cases the CSL ships purpose-built meta-annotations (see
 | `additional-jwk-set-uris` | list&lt;string&gt; | empty | Secondary JWK Set URIs consulted when the primary `jwk-set-uri` does not resolve a token's signing key. See [Multiple JWK Set URIs](#multiple-jwk-set-uris) below and [ADR-0015](../adr/0015-additional-jwk-set-uris-composite-decoder.md). |
 | `authorization-uri`, `token-uri`, `user-info-uri` | string | unset | Endpoint overrides for non-discovery flows. |
 | `user-info-enabled` | boolean | `true` | When `false`, the built `ClientRegistration` has its `userInfoUri` nulled so Spring Security does not call the IdP's UserInfo endpoint after token exchange. See [Disabling the UserInfo fetch](#disabling-the-userinfo-fetch) below and [ADR-0014](../adr/0014-oidc-user-info-enabled-toggle.md). |
+| `user-info-augmentation.enabled` | boolean | `false` | When `true`, enables request-time claim augmentation from the UserInfo endpoint. See [UserInfo claim augmentation](#userinfo-claim-augmentation) below. |
+| `user-info-augmentation.cache-ttl` | duration | `5m` | How long a successful UserInfo response is cached per token identity (`iss+jti`, or `iss+sub+iat+exp` when `jti` is absent). |
+| `user-info-augmentation.cache-max-size` | int | `10000` | Maximum number of entries in the UserInfo claims cache. |
+| `user-info-augmentation.negative-cache-ttl` | duration | `5s` | How long a failed UserInfo fetch is cached before retrying. Limits retry traffic when the IdP is degraded. |
 | `redirect-uri` | string | unset | OAuth2 redirect-uri template. |
 | `scope` | list&lt;string&gt; | `[openid, profile]` | OAuth2 scopes requested. |
 | `audiences` | list&lt;string&gt; | empty | Reserved; not consumed by the default beans. |
 | `registration-id` | string | `oidc` | Spring Security client registration id. |
 | `client-authentication-method` | string | `client_secret_basic` | Spring Security `ClientAuthenticationMethod` literal. |
+
+### UserInfo claim augmentation
+
+The `user-info-augmentation` block enables an opt-in, request-time mechanism
+that calls the IdP's `/userinfo` endpoint and merges the returned claims onto
+the JWT. This is distinct from the `user-info-enabled` toggle (which controls
+whether Spring Security calls UserInfo during the *login* flow): augmentation
+operates on every authenticated API request using the bearer token.
+
+**When to use augmentation vs. `user-info-enabled`:**
+
+- Use `user-info-enabled: false` when you want to skip the UserInfo call
+  entirely during the webapp OAuth2 login flow (e.g. the IdP does not expose
+  `/userinfo`, or you only need id-token claims for the session).
+- Use `user-info-augmentation.enabled: true` when your IdP omits
+  authorization-relevant claims (groups, roles, custom attributes) from the
+  access token. Augmentation fetches these at request time and merges them in.
+
+> **Note:** augmentation sources the UserInfo endpoint URI from the
+> `ClientRegistration`. Setting `user-info-enabled: false` nulls that URI, so
+> augmentation silently has nothing to call. Leave `user-info-enabled` at its
+> default (`true`) when enabling augmentation.
+
+**JWT-wins invariant.** UserInfo claims are merged additively: JWT claims always
+win on any conflict. The UserInfo response can never override `sub`, `iss`,
+`aud`, `exp`, or any other claim that is already present in the signed token.
+This preserves the cryptographic trust boundary of the JWT.
+
+**Fail-open.** If the `/userinfo` call fails (network error, non-2xx status,
+JSON parse error, or a `sub` mismatch per OIDC §5.3.2), the auth chain
+continues with the original JWT claims unchanged. Failed fetches are
+negatively cached for `negative-cache-ttl` to limit retry traffic while the
+IdP is degraded.
+
+**Example:**
+
+```yaml
+camunda:
+  security:
+    authentication:
+      method: oidc
+      oidc:
+        issuer-uri: https://keycloak.example.com/realms/camunda
+        client-id: camunda
+        client-secret: ${KEYCLOAK_SECRET}
+        user-info-augmentation:
+          enabled: true
+          cache-ttl: 5m
+          cache-max-size: 10000
+          negative-cache-ttl: 5s
+```
+
+Tuning `negative-cache-ttl`: a lower value recovers faster after the IdP
+returns to health; a higher value reduces load on a degraded endpoint. The
+5-second default is conservative — raise it (e.g. `30s`) if your IdP has
+frequent short outages that generate high retry traffic.
 
 ### Multi-IdP OIDC (`camunda.security.authentication.providers.oidc.<id>.*`)
 
