@@ -76,6 +76,10 @@ public class OidcClaimsProviderConfiguration {
   }
 
   @Bean
+  @ConditionalOnProperty(
+      name = "camunda.security.authentication.oidc.user-info-augmentation.enabled",
+      havingValue = "false",
+      matchIfMissing = true)
   @ConditionalOnMissingBean(OidcClaimsProvider.class)
   OidcClaimsProvider noopOidcClaimsProvider() {
     return new NoopOidcClaimsProvider();

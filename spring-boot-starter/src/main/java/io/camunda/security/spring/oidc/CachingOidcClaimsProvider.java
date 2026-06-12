@@ -28,8 +28,11 @@ import org.slf4j.LoggerFactory;
  */
 public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
 
-  /** Sentinel key stored in negative cache entries. Never present in real JWT claims. */
-  static final String NEGATIVE_SENTINEL = "__csl_negative";
+  /**
+   * Singleton negative-cache entry. Detected by reference equality ({@code entry ==
+   * NEGATIVE_ENTRY}), so there is no collision risk with real claim keys from a UserInfo response.
+   */
+  static final Map<String, Object> NEGATIVE_ENTRY = Collections.unmodifiableMap(new HashMap<>());
 
   private static final Logger LOG = LoggerFactory.getLogger(CachingOidcClaimsProvider.class);
 
@@ -137,7 +140,7 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
                     e.getMessage(),
                     e);
                 recordFetch(issuer, "failure", System.nanoTime() - startNanos);
-                return Map.of(NEGATIVE_SENTINEL, Boolean.TRUE);
+                return NEGATIVE_ENTRY;
               }
             });
     return isNegative(entry) ? jwtClaims : entry;
@@ -177,7 +180,7 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
   }
 
   private static boolean isNegative(final Map<String, Object> entry) {
-    return Boolean.TRUE.equals(entry.get(NEGATIVE_SENTINEL));
+    return entry == NEGATIVE_ENTRY;
   }
 
   private void recordCacheResult(final String issuer, final String result) {

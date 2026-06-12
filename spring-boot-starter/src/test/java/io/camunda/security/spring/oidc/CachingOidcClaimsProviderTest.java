@@ -223,7 +223,7 @@ class CachingOidcClaimsProviderTest {
     final Map<String, Object> second = p.claimsFor(jwt, "tok1"); // negative cache hit
 
     assertThat(second).isSameAs(jwt);
-    assertThat(second).doesNotContainKey(CachingOidcClaimsProvider.NEGATIVE_SENTINEL);
+    assertThat(second).isNotSameAs(CachingOidcClaimsProvider.NEGATIVE_ENTRY);
   }
 
   // --- Micrometer metrics ---
