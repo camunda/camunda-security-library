@@ -48,6 +48,10 @@ public class OidcClaimsProviderConfiguration {
    * Hosts can override by registering a bean named {@code oidcUserInfoHttpClient} — for example to
    * supply a custom SSL context via {@code spring.ssl.bundle.*}.
    */
+  // Must be declared before cachingOidcClaimsProvider:
+  // @ConditionalOnMissingBean(OidcClaimsProvider.class)
+  // is evaluated in declaration order within a @Configuration class, so placing this after the
+  // caching provider would suppress it — leaving cachingOidcClaimsProvider unable to inject it.
   @Bean(name = "oidcUserInfoHttpClient")
   @ConditionalOnProperty(
       name = "camunda.security.authentication.oidc.user-info-augmentation.enabled",

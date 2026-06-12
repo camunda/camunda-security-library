@@ -242,6 +242,10 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
     final Long iat = epochSecond(jwtClaims.get("iat"));
     final Long exp = epochSecond(jwtClaims.get("exp"));
     if (sub instanceof String && iat != null && exp != null) {
+      // Two distinct tokens for the same subject issued within the same second with no jti will
+      // share this key. The window is extremely narrow and the behaviour is identical to the
+      // monorepo reference; the worst outcome is serving a cached merged map from one token to
+      // the other for the same user, which is acceptable given the short TTL.
       return "sie\0" + issuer + "\0" + sub + "\0" + iat + "\0" + exp;
     }
     return null;
@@ -263,14 +267,22 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
    * Skipping augmentation for out-of-scope tokens avoids guaranteed-to-fail fetches and the ERROR
    * noise and negative-cache churn they produce.
    *
-   * <p>Checks {@code scope} (space-separated string, RFC 8693) and {@code scp} (list, used by some
-   * IdPs including Microsoft) so that both claim shapes are handled.
+   * <p>Checks {@code scope} as a space-separated string (RFC 8693) or as a {@link
+   * java.util.Collection} (non-standard but seen in the wild), and {@code scp} as an {@link
+   * Iterable} (used by some IdPs including Microsoft).
    */
   static boolean hasOpenidScope(final Map<String, Object> jwtClaims) {
     final Object scope = jwtClaims.get("scope");
     if (scope instanceof final String s) {
       for (final String part : s.split("\\s+")) {
         if ("openid".equals(part)) {
+          return true;
+        }
+      }
+    }
+    if (scope instanceof final Iterable<?> list) {
+      for (final Object item : list) {
+        if ("openid".equals(item)) {
           return true;
         }
       }

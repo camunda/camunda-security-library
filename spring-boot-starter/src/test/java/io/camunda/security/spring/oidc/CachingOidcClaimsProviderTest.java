@@ -252,6 +252,19 @@ class CachingOidcClaimsProviderTest {
     verify(fetcher, times(1)).fetch(any(), any());
   }
 
+  @Test
+  void openidInScopeCollectionTriggersAugmentation() {
+    // Non-standard but seen in the wild: some IdPs emit scope as a JSON array rather than a
+    // space-separated string. The Collection branch in hasOpenidScope() covers this shape.
+    when(fetcher.fetch(any(), any())).thenReturn(Map.of("sub", "alice", "groups", List.of("a")));
+    final Map<String, Object> jwt =
+        Map.of("sub", "alice", "iss", ISSUER, "scope", List.of("openid", "profile"));
+
+    provider(URI_BY_ISSUER).claimsFor(jwt, "tok");
+
+    verify(fetcher, times(1)).fetch(any(), any());
+  }
+
   // --- Fail-open and sub validation ---
 
   @Test
