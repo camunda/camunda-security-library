@@ -46,6 +46,15 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
+        <!--
+          Build-time annotation processor that generates META-INF/spring-configuration-metadata.json.
+          Optional so it is not pulled into consumers' classpaths.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.session</groupId>
@@ -188,6 +197,8 @@
                             <ignoredUnusedDeclaredDependencies combine.children="append">
                                 <!-- Runtime-only validator activation for @Validated. -->
                                 <ignoredUnusedDeclaredDependency>org.springframework.boot:spring-boot-starter-validation</ignoredUnusedDeclaredDependency>
+                                <!-- Build-time annotation processor invoked by javac, never imported in source. -->
+                                <ignoredUnusedDeclaredDependency>org.springframework.boot:spring-boot-configuration-processor</ignoredUnusedDeclaredDependency>
                             </ignoredUnusedDeclaredDependencies>
                         </configuration>
                     </execution>
