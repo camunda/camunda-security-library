@@ -79,6 +79,21 @@ class OidcClaimsProviderConfigurationTest {
   }
 
   @Test
+  void httpClientNotCreatedWhenHostOverridesOidcClaimsProvider() {
+    // When the host replaces the entire augmentation stack with their own OidcClaimsProvider bean,
+    // the CSL HttpClient (and its connection pool) must not be started unnecessarily.
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
+        .withUserConfiguration(HostOidcClaimsProvider.class)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasSingleBean(OidcClaimsProvider.class);
+              assertThat(ctx).doesNotHaveBean("oidcUserInfoHttpClient");
+            });
+  }
+
+  @Test
   void noBeansRegisteredWhenMethodIsNotOidc() {
     new ApplicationContextRunner()
         .withPropertyValues("camunda.security.authentication.method=basic")

@@ -52,7 +52,7 @@ public class OidcClaimsProviderConfiguration {
   @ConditionalOnProperty(
       name = "camunda.security.authentication.oidc.user-info-augmentation.enabled",
       havingValue = "true")
-  @ConditionalOnMissingBean(name = "oidcUserInfoHttpClient")
+  @ConditionalOnMissingBean(value = OidcClaimsProvider.class, name = "oidcUserInfoHttpClient")
   HttpClient oidcUserInfoHttpClient() {
     return HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(2))

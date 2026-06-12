@@ -15,6 +15,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Map;
 
 /** Calls the OIDC UserInfo endpoint using {@link HttpClient} and parses the JSON response. */
@@ -80,7 +81,7 @@ final class OidcUserInfoHttpClient implements OidcUserInfoFetcher {
     }
 
     final String contentType = response.headers().firstValue("Content-Type").orElse("");
-    if (contentType.startsWith("application/jwt")) {
+    if (contentType.toLowerCase(Locale.ROOT).startsWith("application/jwt")) {
       throw new OidcUserInfoFetchException(
           "UserInfo endpoint at "
               + userInfoUri
