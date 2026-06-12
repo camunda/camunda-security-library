@@ -16,6 +16,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +41,8 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
   private final Map<String, String> userInfoUriByIssuer;
   private final Cache<String, Map<String, Object>> cache;
   private final MeterRegistry meterRegistry; // nullable — metrics are optional
+  private final long cacheTtlNanos;
+  private final long negativeCacheTtlNanos;
 
   CachingOidcClaimsProvider(
       final OidcUserInfoFetcher fetcher,
@@ -49,6 +52,11 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
     this.fetcher = fetcher;
     this.userInfoUriByIssuer = Map.copyOf(userInfoUriByIssuer);
     this.meterRegistry = meterRegistry;
+    this.cacheTtlNanos =
+        Objects.requireNonNull(config.getCacheTtl(), "cache-ttl must not be null").toNanos();
+    this.negativeCacheTtlNanos =
+        Objects.requireNonNull(config.getNegativeCacheTtl(), "negative-cache-ttl must not be null")
+            .toNanos();
     this.cache =
         Caffeine.newBuilder()
             .maximumSize(config.getCacheMaxSize())
@@ -57,9 +65,7 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
                   @Override
                   public long expireAfterCreate(
                       final String key, final Map<String, Object> value, final long currentTime) {
-                    return isNegative(value)
-                        ? config.getNegativeCacheTtl().toNanos()
-                        : config.getCacheTtl().toNanos();
+                    return isNegative(value) ? negativeCacheTtlNanos : cacheTtlNanos;
                   }
 
                   @Override

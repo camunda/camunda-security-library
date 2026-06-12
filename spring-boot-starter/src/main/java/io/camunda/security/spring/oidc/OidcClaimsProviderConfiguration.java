@@ -33,9 +33,9 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
  * NoopOidcClaimsProvider} otherwise. A host-supplied {@link OidcClaimsProvider} bean suppresses
  * both via {@link ConditionalOnMissingBean}.
  *
- * <p>Declaration order matters: the caching bean is evaluated first. When the property condition
- * passes it registers, and the noop sees an existing bean and backs off. When the property
- * condition fails the noop registers.
+ * <p>The two beans carry mutually exclusive {@code @ConditionalOnProperty} conditions ({@code
+ * enabled=true} vs {@code enabled=false, matchIfMissing=true}), so registration is deterministic
+ * regardless of bean declaration order.
  */
 @Configuration
 @ConditionalOnProperty(name = "camunda.security.authentication.method", havingValue = "oidc")
