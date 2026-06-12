@@ -13,6 +13,7 @@ import com.github.benmanes.caffeine.cache.Expiry;
 import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfiguration;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -23,9 +24,10 @@ import org.slf4j.LoggerFactory;
 
 /**
  * {@link OidcClaimsProvider} that enriches JWT claims with additional claims from the OIDC UserInfo
- * endpoint. Claims are cached per token value using Caffeine; a negative cache entry is stored on
- * any fetch failure so a degraded IdP does not hammer retries. JWT claims always win on conflict
- * (JWT-wins invariant, see ADR-0026).
+ * endpoint. Claims are cached by token identity ({@code iss+jti}, falling back to {@code
+ * iss+sub+iat+exp}) so no bearer-token material is held in cache key space. A negative cache entry
+ * is stored on any fetch failure so a degraded IdP does not hammer retries. JWT claims always win
+ * on conflict (JWT-wins invariant, see ADR-0026).
  */
 public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
 
@@ -110,7 +112,17 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
       return jwtClaims;
     }
 
-    final Map<String, Object> cached = cache.getIfPresent(tokenValue);
+    final String key = cacheKey(jwtClaims);
+    if (key == null) {
+      // JWT has no jti and lacks sub+iat+exp — no stable key available; bypass cache and
+      // fetch once for this request. Rare in practice; every mainstream IdP includes at
+      // least sub+iat+exp on access tokens.
+      recordCacheResult(issuer, "miss");
+      final Map<String, Object> result = fetchEntry(jwtClaims, tokenValue, userInfoUri, issuer);
+      return isNegative(result) ? jwtClaims : result;
+    }
+
+    final Map<String, Object> cached = cache.getIfPresent(key);
     if (cached != null) {
       if (isNegative(cached)) {
         recordCacheResult(issuer, "negative_hit");
@@ -120,36 +132,39 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
       return cached;
     }
 
-    // Miss: cache.get() is atomic per key — at most one fetch in flight per token value,
+    // Miss: cache.get() is atomic per key — at most one fetch in flight per token identity,
     // preventing stampedes when many concurrent requests arrive with the same bearer token.
     recordCacheResult(issuer, "miss");
     final Map<String, Object> entry =
-        cache.get(
-            tokenValue,
-            k -> {
-              final long startNanos = System.nanoTime();
-              try {
-                final Map<String, Object> userInfoClaims = fetcher.fetch(userInfoUri, k);
-                validateSub(jwtClaims, userInfoClaims, issuer);
-                // unmodifiableMap instead of Map.copyOf: preserves null claim values from
-                // UserInfo responses that Map.copyOf would reject with NullPointerException.
-                final Map<String, Object> merged =
-                    Collections.unmodifiableMap(merge(jwtClaims, userInfoClaims));
-                recordFetch(issuer, "success", System.nanoTime() - startNanos);
-                return merged;
-              } catch (final Exception e) {
-                LOG.error(
-                    "UserInfo fetch failed for issuer '{}' at '{}': {}; returning JWT"
-                        + " claims unchanged",
-                    issuer,
-                    userInfoUri,
-                    e.getMessage(),
-                    e);
-                recordFetch(issuer, "failure", System.nanoTime() - startNanos);
-                return NEGATIVE_ENTRY;
-              }
-            });
+        cache.get(key, k -> fetchEntry(jwtClaims, tokenValue, userInfoUri, issuer));
     return isNegative(entry) ? jwtClaims : entry;
+  }
+
+  private Map<String, Object> fetchEntry(
+      final Map<String, Object> jwtClaims,
+      final String tokenValue,
+      final String userInfoUri,
+      final String issuer) {
+    final long startNanos = System.nanoTime();
+    try {
+      final Map<String, Object> userInfoClaims = fetcher.fetch(userInfoUri, tokenValue);
+      validateSub(jwtClaims, userInfoClaims, issuer);
+      // unmodifiableMap instead of Map.copyOf: preserves null claim values from
+      // UserInfo responses that Map.copyOf would reject with NullPointerException.
+      final Map<String, Object> merged =
+          Collections.unmodifiableMap(merge(jwtClaims, userInfoClaims));
+      recordFetch(issuer, "success", System.nanoTime() - startNanos);
+      return merged;
+    } catch (final Exception e) {
+      LOG.error(
+          "UserInfo fetch failed for issuer '{}' at '{}': {}; returning JWT claims unchanged",
+          issuer,
+          userInfoUri,
+          e.getMessage(),
+          e);
+      recordFetch(issuer, "failure", System.nanoTime() - startNanos);
+      return NEGATIVE_ENTRY;
+    }
   }
 
   private static void validateSub(
@@ -183,6 +198,41 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
     final Map<String, Object> merged = new HashMap<>(userInfoClaims);
     merged.putAll(jwtClaims); // JWT always wins on conflict
     return merged;
+  }
+
+  /**
+   * Derives a cache key from JWT claims without storing any bearer-token material. The {@code iss}
+   * prefix is required because {@code jti} is only unique per issuer (RFC 7519 §4.1.7); two
+   * providers can legitimately issue tokens with identical {@code jti} values. Returns {@code null}
+   * when neither {@code jti} nor the {@code sub+iat+exp} fallback tuple are usable; callers should
+   * bypass the cache for that request.
+   */
+  private static String cacheKey(final Map<String, Object> jwtClaims) {
+    final Object iss = jwtClaims.get("iss");
+    if (!(iss instanceof final String issuer) || issuer.isBlank()) {
+      return null;
+    }
+    final Object jti = jwtClaims.get("jti");
+    if (jti instanceof final String s && !s.isBlank()) {
+      return "jti:" + issuer + ":" + s;
+    }
+    final Object sub = jwtClaims.get("sub");
+    final Long iat = epochSecond(jwtClaims.get("iat"));
+    final Long exp = epochSecond(jwtClaims.get("exp"));
+    if (sub instanceof String && iat != null && exp != null) {
+      return "sie:" + issuer + ":" + sub + ":" + iat + ":" + exp;
+    }
+    return null;
+  }
+
+  private static Long epochSecond(final Object value) {
+    if (value instanceof final Instant i) {
+      return i.getEpochSecond();
+    }
+    if (value instanceof final Number n) {
+      return n.longValue();
+    }
+    return null;
   }
 
   private static boolean isNegative(final Map<String, Object> entry) {

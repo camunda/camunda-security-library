@@ -57,12 +57,15 @@ Add an opt-in `CachingOidcClaimsProvider` to the CSL OIDC chain:
   requests for the same token skip the fetch entirely. This bounds retry
   frequency during IdP outages without silently dropping augmentation forever.
 
-- **Cache key: raw token value.** The Caffeine cache is keyed by the bearer
-  token string. Tokens rotate on refresh; the 5-minute default `cacheTtl` is
-  short enough that stale claims are not a concern. Keying by `(iss, sub)` would
-  survive refreshes but would hold claims longer — trading resilience for the
-  risk of serving stale group memberships after a user's roles change in the IdP.
-  Token-value keying matches the monorepo reference and is the safer default.
+- **Cache key: `iss+jti`, falling back to `iss+sub+iat+exp`.** No bearer-token
+  material is held in cache key space. The `iss` prefix is required because
+  RFC 7519 only mandates per-issuer uniqueness for `jti`; two providers can
+  legitimately issue tokens with identical `jti` values. When `jti` is absent
+  the fallback uses `sub+iat+exp` — identifiers already present on every
+  standard access token that avoid exposing a token-correlatable fingerprint
+  (e.g. in a heap dump or metrics leak). When neither key is constructable the
+  cache is bypassed for that request (rare; every mainstream IdP emits at least
+  `sub+iat+exp` on access tokens).
 
 - **Per-issuer routing.** The provider builds an `issuer → userInfoUri` map from
   `ClientRegistration`s at startup. On each call the JWT's `iss` claim selects

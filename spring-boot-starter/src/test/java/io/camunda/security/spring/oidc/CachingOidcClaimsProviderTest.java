@@ -91,7 +91,8 @@ class CachingOidcClaimsProviderTest {
   @Test
   void cacheHitDoesNotCallFetcherAgain() {
     when(fetcher.fetch(any(), any())).thenReturn(Map.of("sub", "alice", "groups", List.of("eng")));
-    final Map<String, Object> jwt = Map.of("sub", "alice", "iss", ISSUER);
+    final Map<String, Object> jwt =
+        Map.of("sub", "alice", "iss", ISSUER, "iat", 1000L, "exp", 9999L);
     final var p = provider(URI_BY_ISSUER);
 
     p.claimsFor(jwt, "tok1");
@@ -101,13 +102,42 @@ class CachingOidcClaimsProviderTest {
   }
 
   @Test
-  void differentTokensAreFetchedSeparately() {
+  void differentTokenIdentitiesAreFetchedSeparately() {
+    // Different iat = different token issuance = different cache key.
     when(fetcher.fetch(any(), any())).thenReturn(Map.of("sub", "alice", "groups", List.of("eng")));
-    final Map<String, Object> jwt = Map.of("sub", "alice", "iss", ISSUER);
+    final Map<String, Object> jwt1 =
+        Map.of("sub", "alice", "iss", ISSUER, "iat", 1000L, "exp", 9999L);
+    final Map<String, Object> jwt2 =
+        Map.of("sub", "alice", "iss", ISSUER, "iat", 2000L, "exp", 9999L);
+    final var p = provider(URI_BY_ISSUER);
+
+    p.claimsFor(jwt1, "tok1");
+    p.claimsFor(jwt2, "tok2");
+
+    verify(fetcher, times(2)).fetch(any(), any());
+  }
+
+  @Test
+  void jtiKeyedCacheHitDoesNotFetchAgain() {
+    when(fetcher.fetch(any(), any())).thenReturn(Map.of("sub", "alice", "groups", List.of("eng")));
+    final Map<String, Object> jwt = Map.of("sub", "alice", "iss", ISSUER, "jti", "token-id-abc");
     final var p = provider(URI_BY_ISSUER);
 
     p.claimsFor(jwt, "tok1");
-    p.claimsFor(jwt, "tok2");
+    p.claimsFor(jwt, "tok1");
+
+    verify(fetcher, times(1)).fetch(any(), any());
+  }
+
+  @Test
+  void nullCacheKeyBypassesCacheOnEveryCall() {
+    // JWT without jti and without sub+iat+exp: no stable key, cache bypassed each call.
+    when(fetcher.fetch(any(), any())).thenReturn(Map.of("sub", "alice"));
+    final Map<String, Object> jwt = Map.of("iss", ISSUER); // no sub, iat, exp, or jti
+    final var p = provider(URI_BY_ISSUER);
+
+    p.claimsFor(jwt, "tok1");
+    p.claimsFor(jwt, "tok1");
 
     verify(fetcher, times(2)).fetch(any(), any());
   }
@@ -213,7 +243,8 @@ class CachingOidcClaimsProviderTest {
   @Test
   void negativeCachePreventsFetchRetryWithinTtl() {
     when(fetcher.fetch(any(), any())).thenThrow(new OidcUserInfoFetchException("IdP is down"));
-    final Map<String, Object> jwt = Map.of("sub", "alice", "iss", ISSUER);
+    final Map<String, Object> jwt =
+        Map.of("sub", "alice", "iss", ISSUER, "iat", 1000L, "exp", 9999L);
     final var p = provider(URI_BY_ISSUER);
 
     p.claimsFor(jwt, "tok1"); // first call → fails, stores negative entry
@@ -225,7 +256,8 @@ class CachingOidcClaimsProviderTest {
   @Test
   void negativeCacheReturnsJwtClaimsUnchanged() {
     when(fetcher.fetch(any(), any())).thenThrow(new OidcUserInfoFetchException("down"));
-    final Map<String, Object> jwt = Map.of("sub", "alice", "iss", ISSUER);
+    final Map<String, Object> jwt =
+        Map.of("sub", "alice", "iss", ISSUER, "iat", 1000L, "exp", 9999L);
     final var p = provider(URI_BY_ISSUER);
 
     p.claimsFor(jwt, "tok1"); // populates negative cache
@@ -258,7 +290,8 @@ class CachingOidcClaimsProviderTest {
     when(fetcher.fetch(any(), any())).thenReturn(Map.of("sub", "alice"));
     final var registry = new SimpleMeterRegistry();
     final var p = new CachingOidcClaimsProvider(fetcher, URI_BY_ISSUER, defaultConfig(), registry);
-    final Map<String, Object> jwt = Map.of("sub", "alice", "iss", ISSUER);
+    final Map<String, Object> jwt =
+        Map.of("sub", "alice", "iss", ISSUER, "iat", 1000L, "exp", 9999L);
 
     p.claimsFor(jwt, "tok1");
     p.claimsFor(jwt, "tok1");
@@ -275,7 +308,8 @@ class CachingOidcClaimsProviderTest {
     when(fetcher.fetch(any(), any())).thenThrow(new OidcUserInfoFetchException("down"));
     final var registry = new SimpleMeterRegistry();
     final var p = new CachingOidcClaimsProvider(fetcher, URI_BY_ISSUER, defaultConfig(), registry);
-    final Map<String, Object> jwt = Map.of("sub", "alice", "iss", ISSUER);
+    final Map<String, Object> jwt =
+        Map.of("sub", "alice", "iss", ISSUER, "iat", 1000L, "exp", 9999L);
 
     p.claimsFor(jwt, "tok1"); // miss + fail → negative
     p.claimsFor(jwt, "tok1"); // negative_hit
