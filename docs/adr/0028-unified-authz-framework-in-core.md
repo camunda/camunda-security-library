@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0026: Extend CSL authorization model to serve both search-layer and zeebe engine
+# ADR-0028: Extend CSL authorization model to serve both search-layer and zeebe engine
 
 **Deciders**: Patrick Wunderlich, Ben Sheppard, Meggle
 
@@ -124,7 +124,10 @@ evaluation paths within `AuthorizationService` must be documented explicitly in 
 
 In `spring-boot-starter`, `AuthorizationService` is wired as a Spring bean by
 `AuthorizationConfiguration` (following the same `@ConditionalOnMissingBean` pattern as
-`AuthorizationCheckerConfiguration`). The zeebe engine constructs it directly without Spring.
+`AuthorizationCheckerConfiguration`). The zeebe engine receives the `AuthorizationService`
+instance from the Spring context — the dist module's `BrokerModuleConfiguration` passes the
+bean reference into the engine during bootstrap, so the engine itself does not need to
+construct it or manage its dependencies.
 
 ### 7. Reuse `MembershipPort` + `AuthorizationScopeRepositoryPort` as unified outbound ports
 
