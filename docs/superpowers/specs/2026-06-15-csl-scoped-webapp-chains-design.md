@@ -38,9 +38,9 @@ The webapp-specific concerns CSL cannot own (serving the SPA under a prefix, par
 
 - `ScopedWebappSecurityChainBuilder`: from a descriptor, build the webapp chain on `pathPort.webappPaths()` prefixed with `basePath` —
   - OIDC: `oauth2Login` with the scope's `ClientRegistration`s (the PT's assigned providers only); the multi-IdP picker at `<basePath>/login` (the `DefaultLoginPageGeneratingFilter` fix from #269); the OAuth2 redirect URI at `<basePath>/sso-callback`; logout at `<basePath>/logout`; the delegating entry point (bearer→401, browser→IdP/login) per ADR-0023.
-  - BASIC: form-login / `httpBasic` at `<basePath>/login` backed by the existing `UserDetailsPort` (ADR-0021), whose adapter resolves the PT from request context.
+  - BASIC: form-login at `<basePath>/login` (204 + CSRF header on success, mirroring CSL's primary `BasicAuthWebappSecurityConfiguration` — not `httpBasic`, which is the API chain's mechanism) backed by the existing `UserDetailsPort` (ADR-0021), whose adapter resolves the PT from request context.
 - A **prefix-aware `OAuth2AuthorizationRequestResolver`** so `<basePath>/oauth2/authorization/<id>` and the `<basePath>/sso-callback` redirect resolve correctly (Spring's default matcher mishandles a multi-segment prefix — the PoC hit this; relates to the resolver lifted in [the 2026-05-20 design](2026-05-20-csl-oidc-authorization-request-resolver-design.md)).
-- **Per-scope session + cookie isolation**, derived from `basePath`: a per-scope `SessionRepositoryFilter` + `DefaultCookieSerializer` (cookie `Path = basePath`, scope-suffixed name) + CSRF cookie scoped to `basePath`. Built **once per descriptor**, injected into both the webapp and API chain of that scope.
+- **Per-scope session + cookie isolation**, derived from `basePath`: a per-scope `SessionRepositoryFilter` + `DefaultCookieSerializer` (cookie `Path = basePath`, name a sanitized derivation of `basePath` — see §4) + CSRF cookie scoped to `basePath`. Built **once per descriptor**, injected into both the webapp and API chain of that scope.
 - Extend the **scoped API chain** to honour the per-scope session (install the shared session components; keep `SessionCreationPolicy.NEVER` so it reads-but-never-creates). This extends ADR-0023's "session honoured on the API chain" property to per-scope sessions; bearer stays the API chain's other accepted credential.
 - Extend `ScopedApiChainRegistrar` to register both chains per descriptor.
 
@@ -72,9 +72,11 @@ Everything the webapp chain needs is derived:
 | OAuth2 redirect URI       | `basePath + /sso-callback`                      |
 | OAuth2 authorization      | `basePath + /oauth2/authorization/<id>`         |
 | Logout                    | `basePath + /logout`                            |
-| Session cookie            | name `camunda-session-<scope>`, `Path = basePath` |
+| Session cookie            | name `camunda-session-` + sanitize(`basePath`), `Path = basePath` |
 | CSRF cookie               | `X-CSRF-TOKEN`, `Path = basePath`               |
 | Providers offered/accepted| the descriptor's `authentication` (assigned only) |
+
+**Cookie-name derivation.** The session cookie name is `camunda-session-` + **sanitize(`basePath`)**: strip the leading `/` and replace each run of characters outside `[A-Za-z0-9-]` with a single `-` (e.g. `/physical-tenants/tenanta` → `camunda-session-physical-tenants-tenanta`). A distinct *name* — not just a distinct `Path` — is required because the primary unprefixed `camunda-session` at `Path = /` (kept for the `default`/cluster surface) would otherwise be sent alongside the scoped cookie on nested paths, leaving two same-named cookies with undefined resolution. The registrar's existing duplicate-`basePath` rejection is extended to also reject any two scopes whose sanitized cookie names collide, keeping the mapping injective without an opaque hash suffix.
 
 Because the descriptor is surface-agnostic, the **same object** drives the API chain (Slice 1) and the webapp chain (Slice 3). CSL builds both from it; OC is unchanged either way.
 
