@@ -9,12 +9,7 @@ package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -36,7 +31,7 @@ import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepo
  */
 final class OidcBeansConfigurationDiscoveryOverrideTest {
 
-  private DiscoveryTestServer server;
+  private OidcTestServer server;
 
   private final ApplicationContextRunner runner =
       new ApplicationContextRunner()
@@ -56,7 +51,7 @@ final class OidcBeansConfigurationDiscoveryOverrideTest {
   @Test
   void explicitAuthorizationUriOverridesDiscoveredValue() throws Exception {
     server =
-        DiscoveryTestServer.start(
+        OidcTestServer.startDiscovery(
             """
             {
               "issuer": "%s",
@@ -90,7 +85,7 @@ final class OidcBeansConfigurationDiscoveryOverrideTest {
     // incomplete metadata. Without the explicit override CSL would throw "authorizationUri cannot
     // be empty" at ClientRegistration.Builder.build().
     server =
-        DiscoveryTestServer.start(
+        OidcTestServer.startDiscovery(
             """
             {
               "issuer": "%s",
@@ -118,7 +113,7 @@ final class OidcBeansConfigurationDiscoveryOverrideTest {
   @Test
   void explicitJwkSetUriAndUserInfoUriOverrideDiscoveredValues() throws Exception {
     server =
-        DiscoveryTestServer.start(
+        OidcTestServer.startDiscovery(
             """
             {
               "issuer": "%s",
@@ -154,7 +149,7 @@ final class OidcBeansConfigurationDiscoveryOverrideTest {
     // not a typed field, so the override path is easy to break silently. This test asserts the
     // explicit URI is present on the built registration's metadata map.
     server =
-        DiscoveryTestServer.start(
+        OidcTestServer.startDiscovery(
             """
             {
               "issuer": "%s",
@@ -186,7 +181,7 @@ final class OidcBeansConfigurationDiscoveryOverrideTest {
     // the same. Spring defaults the client name to the registrationId when unset, so this only
     // matters for adopters who override it for display (e.g., on a login page).
     server =
-        DiscoveryTestServer.start(
+        OidcTestServer.startDiscovery(
             """
             {
               "issuer": "%s",
@@ -214,7 +209,7 @@ final class OidcBeansConfigurationDiscoveryOverrideTest {
   @Test
   void discoveredValuesAreKeptWhenExplicitUrisAreUnset() throws Exception {
     server =
-        DiscoveryTestServer.start(
+        OidcTestServer.startDiscovery(
             """
             {
               "issuer": "%s",
@@ -241,45 +236,6 @@ final class OidcBeansConfigurationDiscoveryOverrideTest {
               assertThat(registration.getProviderDetails().getJwkSetUri())
                   .isEqualTo("https://discovered.example.com/jwks");
             });
-  }
-
-  private static final class DiscoveryTestServer {
-
-    private final HttpServer server;
-    private final String issuer;
-
-    private DiscoveryTestServer(final HttpServer server, final String issuer) {
-      this.server = server;
-      this.issuer = issuer;
-    }
-
-    static DiscoveryTestServer start(final String responseTemplate) throws IOException {
-      final var httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-      final var issuer = "http://127.0.0.1:" + httpServer.getAddress().getPort();
-      final var body = responseTemplate.formatted(issuer);
-      httpServer.createContext(
-          "/.well-known/openid-configuration",
-          (final HttpExchange exchange) -> {
-            try (exchange) {
-              final byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-              exchange.getResponseHeaders().add("Content-Type", "application/json");
-              exchange.sendResponseHeaders(200, bytes.length);
-              exchange.getResponseBody().write(bytes);
-            } catch (final IOException ex) {
-              throw new IllegalStateException("Failed to serve discovery document", ex);
-            }
-          });
-      httpServer.start();
-      return new DiscoveryTestServer(httpServer, issuer);
-    }
-
-    String issuerUri() {
-      return issuer;
-    }
-
-    void stop() {
-      server.stop(0);
-    }
   }
 
   @Configuration

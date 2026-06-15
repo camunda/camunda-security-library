@@ -10,24 +10,7 @@ package io.camunda.security.spring.oidc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.JWSHeader;
-import com.nimbusds.jose.JWSSigner;
-import com.nimbusds.jose.crypto.RSASSASigner;
-import com.nimbusds.jose.jwk.JWKSet;
-import com.nimbusds.jose.jwk.KeyUse;
-import com.nimbusds.jose.jwk.RSAKey;
-import com.nimbusds.jwt.JWTClaimsSet;
-import com.nimbusds.jwt.SignedJWT;
-import com.sun.net.httpserver.HttpServer;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
-import java.security.KeyPairGenerator;
-import java.security.interfaces.RSAPrivateKey;
-import java.security.interfaces.RSAPublicKey;
-import java.time.Instant;
-import java.util.Date;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -60,8 +43,8 @@ final class OidcBeansConfigurationMultiIssuerDecodeTest {
   private static final String KEYCLOAK_ISSUER = "https://keycloak.example.com/realms/camunda";
   private static final String AZURE_ISSUER = "https://login.microsoftonline.com/tenant/v2.0";
 
-  private static JwksTestServer keycloak;
-  private static JwksTestServer azure;
+  private static OidcTestServer keycloak;
+  private static OidcTestServer azure;
 
   private final ApplicationContextRunner runner =
       new ApplicationContextRunner()
@@ -73,8 +56,8 @@ final class OidcBeansConfigurationMultiIssuerDecodeTest {
 
   @BeforeAll
   static void startServers() throws Exception {
-    keycloak = JwksTestServer.start("keycloak-rsa");
-    azure = JwksTestServer.start("azure-rsa");
+    keycloak = OidcTestServer.startRsa("keycloak-rsa");
+    azure = OidcTestServer.startRsa("azure-rsa");
   }
 
   @AfterAll
@@ -88,7 +71,7 @@ final class OidcBeansConfigurationMultiIssuerDecodeTest {
     runWithTwoProviders(
         ctx -> {
           final var decoder = ctx.getBean(JwtDecoder.class);
-          final var token = sign(keycloak, KEYCLOAK_ISSUER);
+          final var token = keycloak.sign(KEYCLOAK_ISSUER);
 
           final var jwt = decoder.decode(token);
 
@@ -102,7 +85,7 @@ final class OidcBeansConfigurationMultiIssuerDecodeTest {
     runWithTwoProviders(
         ctx -> {
           final var decoder = ctx.getBean(JwtDecoder.class);
-          final var token = sign(azure, AZURE_ISSUER);
+          final var token = azure.sign(AZURE_ISSUER);
 
           final var jwt = decoder.decode(token);
 
@@ -116,7 +99,7 @@ final class OidcBeansConfigurationMultiIssuerDecodeTest {
     runWithTwoProviders(
         ctx -> {
           final var decoder = ctx.getBean(JwtDecoder.class);
-          final var token = sign(keycloak, "https://unregistered-idp.example.com");
+          final var token = keycloak.sign("https://unregistered-idp.example.com");
 
           assertThatThrownBy(() -> decoder.decode(token))
               .isInstanceOf(BadJwtException.class)
@@ -131,7 +114,7 @@ final class OidcBeansConfigurationMultiIssuerDecodeTest {
           final var decoder = ctx.getBean(JwtDecoder.class);
           // Signed by azure's key but claiming to be from Keycloak: key lookup goes to Keycloak's
           // JWK set which does not contain azure's key → signature verification fails.
-          final var tokenSignedByAzureClaimingKeycloak = sign(azure, KEYCLOAK_ISSUER);
+          final var tokenSignedByAzureClaimingKeycloak = azure.sign(KEYCLOAK_ISSUER);
 
           assertThatThrownBy(() -> decoder.decode(tokenSignedByAzureClaimingKeycloak))
               .isInstanceOf(BadJwtException.class);
@@ -167,11 +150,11 @@ final class OidcBeansConfigurationMultiIssuerDecodeTest {
             ctx -> {
               final var decoder = ctx.getBean(JwtDecoder.class);
               final var kcTokenWrongAud =
-                  signWithAudience(keycloak, KEYCLOAK_ISSUER, "wrong-audience");
+                  keycloak.signWithAudience(KEYCLOAK_ISSUER, "wrong-audience");
               assertThatThrownBy(() -> decoder.decode(kcTokenWrongAud))
                   .isInstanceOf(BadJwtException.class);
               // Azure has no audiences configured → all tokens from Azure pass audience validation
-              final var azToken = sign(azure, AZURE_ISSUER);
+              final var azToken = azure.sign(AZURE_ISSUER);
               assertThat(decoder.decode(azToken).getIssuer().toString()).isEqualTo(AZURE_ISSUER);
             });
   }
@@ -215,86 +198,6 @@ final class OidcBeansConfigurationMultiIssuerDecodeTest {
         .issuerUri(issuerUri)
         .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
         .build();
-  }
-
-  private static String sign(final JwksTestServer server, final String issuer) throws Exception {
-    return signWithAudience(server, issuer, null);
-  }
-
-  private static String signWithAudience(
-      final JwksTestServer server, final String issuer, final String audience) throws Exception {
-    final var header = new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(server.kid()).build();
-    final var claims =
-        new JWTClaimsSet.Builder()
-            .subject("alice")
-            .issuer(issuer)
-            .issueTime(Date.from(Instant.now()))
-            .expirationTime(Date.from(Instant.now().plusSeconds(60)));
-    if (audience != null) {
-      claims.audience(audience);
-    }
-    final var jwt = new SignedJWT(header, claims.build());
-    jwt.sign(server.signer());
-    return jwt.serialize();
-  }
-
-  /**
-   * Minimal JWKS HTTP server backed by a freshly generated RSA key pair. Serves the public key as
-   * JSON at {@code /jwks} on a loopback ephemeral port.
-   */
-  private static final class JwksTestServer {
-    private final HttpServer server;
-    private final String kid;
-    private final JWSSigner signer;
-
-    private JwksTestServer(final HttpServer server, final String kid, final JWSSigner signer) {
-      this.server = server;
-      this.kid = kid;
-      this.signer = signer;
-    }
-
-    static JwksTestServer start(final String kid) throws Exception {
-      final var generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      final var pair = generator.generateKeyPair();
-      final var jwk =
-          new RSAKey.Builder((RSAPublicKey) pair.getPublic())
-              .privateKey((RSAPrivateKey) pair.getPrivate())
-              .keyUse(KeyUse.SIGNATURE)
-              .algorithm(JWSAlgorithm.RS256)
-              .keyID(kid)
-              .build();
-      final var jwkSet = new JWKSet(jwk).toPublicJWKSet().toString();
-      final var httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-      httpServer.createContext(
-          "/jwks",
-          exchange -> {
-            final var body = jwkSet.getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, body.length);
-            try (exchange) {
-              exchange.getResponseBody().write(body);
-            }
-          });
-      httpServer.start();
-      return new JwksTestServer(httpServer, kid, new RSASSASigner(jwk));
-    }
-
-    String kid() {
-      return kid;
-    }
-
-    JWSSigner signer() {
-      return signer;
-    }
-
-    String jwksUri() {
-      return "http://127.0.0.1:" + server.getAddress().getPort() + "/jwks";
-    }
-
-    void stop() {
-      server.stop(0);
-    }
   }
 
   /**
