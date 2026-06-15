@@ -95,9 +95,22 @@ For each descriptor CSL builds **once** a set of per-scope session components an
 - a `SessionRepositoryFilter` bound to the scope, over the existing Spring-Session
   `SessionRepository` (in-memory by default; the `SessionStorePort`-backed `WebSessionRepository`
   of ADR-0017 when persistent sessions are enabled);
-- a `DefaultCookieSerializer` with cookie name `camunda-session-<scope>` and `Path = basePath`;
+- a `DefaultCookieSerializer` with `Path = basePath` and a cookie name **derived deterministically
+  from `basePath`** (see below);
 - a session-reading `SecurityContextRepository`;
 - the CSRF cookie scoped to `Path = basePath`.
+
+**Cookie-name derivation.** `basePath` is a URL path and may contain characters (notably `/`) that
+are not valid in an RFC 6265 cookie name, so the name cannot be `basePath` verbatim. The name is
+`camunda-session-` + **sanitize(`basePath`)**, where `sanitize` strips the leading `/` and replaces
+each run of characters outside `[A-Za-z0-9-]` with a single `-` (e.g. `/physical-tenants/tenanta` →
+`camunda-session-physical-tenants-tenanta`). A scope-distinct *name* — not merely a distinct `Path`
+— is required: the primary unprefixed chain keeps `camunda-session` at `Path = /`, which the browser
+would send *alongside* a scoped cookie on a nested path, leaving two same-named cookies whose
+resolution order is undefined. To keep the `basePath → name` mapping injective without an opaque
+hash suffix, the registrar's existing duplicate-`basePath` rejection (ADR-0025) is extended to also
+reject any two scopes whose sanitized cookie names collide — a fail-fast startup check rather than a
+runtime ambiguity.
 
 Isolation is **structural**, the webapp analogue of ADR-0025's per-scope decoder: because the
 session cookie is `Path = basePath` with a scope-distinct name, the browser only ever sends a
@@ -123,7 +136,8 @@ carry the session and would be bearer-only — acceptable, and a host routing ch
 The collector/registrar of ADR-0025 (`ScopedApiChainRegistrar`, a static
 `BeanDefinitionRegistryPostProcessor`) is extended to register, per descriptor, **both** an API and
 a webapp chain (method-driven; the cluster is single-mode). Both reuse the order `ORDER_WEBAPP_API`
-behind the catch-all deny chain; base paths are structurally disjoint, so a request matches at most
+(`1`), which sorts **ahead of** the `ORDER_UNHANDLED` (`2`) catch-all deny chain so contributed
+requests can match; base paths are structurally disjoint, so a request matches at most
 one chain (ADR-0025's ordering rationale is unchanged). When no provider bean is present the
 post-processor is a no-op — primary-only hosts (Hub, single-scope OC) are unaffected.
 
