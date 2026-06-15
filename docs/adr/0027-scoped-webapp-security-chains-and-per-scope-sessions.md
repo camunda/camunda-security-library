@@ -112,6 +112,12 @@ hash suffix, the registrar's existing duplicate-`basePath` rejection (ADR-0025) 
 reject any two scopes whose sanitized cookie names collide — a fail-fast startup check rather than a
 runtime ambiguity.
 
+Cookie *names* have no length cap of their own in RFC 6265; the only hard budget is the ~4096-byte
+per-cookie (`name=value`) limit browsers enforce, which the short session-id value never threatens
+even for a long sanitized name, and `Path`-scoping keeps each request's `Cookie` header to the
+matching scope. The same startup validation that rejects colliding names also caps the derived name
+length, failing fast rather than silently emitting an over-budget cookie — no hash suffix needed.
+
 Isolation is **structural**, the webapp analogue of ADR-0025's per-scope decoder: because the
 session cookie is `Path = basePath` with a scope-distinct name, the browser only ever sends a
 scope's session cookie to that scope's prefix — never to a sibling scope, and never colliding with
