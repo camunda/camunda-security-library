@@ -15,7 +15,6 @@ import jakarta.annotation.PostConstruct;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.boot.context.properties.NestedConfigurationProperty;
 
 /**
  * Binds {@code camunda.security.*} configuration values for the CSL filter chains.
@@ -30,25 +29,14 @@ public class CamundaSecurityLibraryProperties {
 
   public static final Pattern DEFAULT_EXTERNAL_ID_PATTERN = Pattern.compile(".*", Pattern.DOTALL);
 
-  @NestedConfigurationProperty
   private AuthenticationConfiguration authentication = new AuthenticationConfiguration();
-
-  @NestedConfigurationProperty
   private AuthorizationsConfiguration authorizations = new AuthorizationsConfiguration();
-
-  @NestedConfigurationProperty
   private InitializationConfiguration initialization = new InitializationConfiguration();
-
-  @NestedConfigurationProperty
   private MultiTenancyConfiguration multiTenancy = new MultiTenancyConfiguration();
-
-  @NestedConfigurationProperty private CsrfConfiguration csrf = new CsrfConfiguration();
-
-  @NestedConfigurationProperty private HeaderConfiguration httpHeaders = new HeaderConfiguration();
-
-  @NestedConfigurationProperty private SaasConfiguration saas = new SaasConfiguration();
-
-  @NestedConfigurationProperty private SessionConfiguration session = new SessionConfiguration();
+  private CsrfConfiguration csrf = new CsrfConfiguration();
+  private HeaderConfiguration httpHeaders = new HeaderConfiguration();
+  private SaasConfiguration saas = new SaasConfiguration();
+  private SessionConfiguration session = new SessionConfiguration();
 
   /**
    * The ID validation pattern is configurable with the intention to:
