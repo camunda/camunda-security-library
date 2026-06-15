@@ -10,39 +10,23 @@ package io.camunda.security.spring.scope;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.JWSHeader;
-import com.nimbusds.jose.JWSSigner;
-import com.nimbusds.jose.crypto.RSASSASigner;
-import com.nimbusds.jose.jwk.JWKSet;
-import com.nimbusds.jose.jwk.KeyUse;
-import com.nimbusds.jose.jwk.RSAKey;
-import com.nimbusds.jwt.JWTClaimsSet;
-import com.nimbusds.jwt.SignedJWT;
-import com.sun.net.httpserver.HttpServer;
 import io.camunda.security.api.context.CamundaSecurityScopeProvider;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.AuthenticationMethod;
 import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
-import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.port.out.BasicAuthUserDetailsPort;
 import io.camunda.security.core.port.out.BasicAuthUserDetailsPort.CamundaUserDetails;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
+import io.camunda.security.spring.oidc.OidcTestServer;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.security.BaseSecurityConfiguration;
 import io.camunda.security.spring.security.BasicAuthApiSecurityConfiguration;
 import io.camunda.security.spring.security.CamundaSecurityFilterChainConstants;
 import io.camunda.security.spring.user.UserConfiguration;
-import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.security.KeyPairGenerator;
-import java.security.interfaces.RSAPrivateKey;
-import java.security.interfaces.RSAPublicKey;
-import java.time.Instant;
 import java.util.Base64;
-import java.util.Date;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -382,7 +366,7 @@ class ScopedApiSecurityConfigurationTest {
   @Test
   void oidcDescriptorUnderBasicGlobalModeBuildsSuccessfullyAndAuthenticatesCorrectly()
       throws Exception {
-    final var server = JwksTestServer.start("scope-key");
+    final var server = OidcTestServer.startRsa("scope-key");
     try {
       final var oidcConfig = server.oidcConfiguration("scope-client");
       final var auth = new AuthenticationConfiguration();
@@ -563,109 +547,6 @@ class ScopedApiSecurityConfigurationTest {
     @Bean
     ObjectMapper objectMapper() {
       return new ObjectMapper();
-    }
-  }
-
-  /**
-   * Minimal JWKS + OIDC discovery HTTP server backed by a freshly generated RSA key pair. Mirrors
-   * the harness in {@code ScopedJwtDecoderFactoryTest} so the capability test can sign real JWTs
-   * without depending on an external IdP.
-   */
-  static final class JwksTestServer {
-
-    private final HttpServer server;
-    private final String kid;
-    private final JWSSigner signer;
-
-    private JwksTestServer(final HttpServer server, final String kid, final JWSSigner signer) {
-      this.server = server;
-      this.kid = kid;
-      this.signer = signer;
-    }
-
-    static JwksTestServer start(final String kid) throws Exception {
-      final var generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      final var pair = generator.generateKeyPair();
-      final var jwk =
-          new RSAKey.Builder((RSAPublicKey) pair.getPublic())
-              .privateKey((RSAPrivateKey) pair.getPrivate())
-              .keyUse(KeyUse.SIGNATURE)
-              .algorithm(JWSAlgorithm.RS256)
-              .keyID(kid)
-              .build();
-      final var jwkSet = new JWKSet(jwk).toPublicJWKSet().toString();
-      final var httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-      final var base = "http://127.0.0.1:" + httpServer.getAddress().getPort();
-      final var discoveryDoc =
-          """
-          {
-            "issuer": "%s",
-            "authorization_endpoint": "%s/auth",
-            "token_endpoint": "%s/token",
-            "jwks_uri": "%s/jwks",
-            "response_types_supported": ["code"],
-            "subject_types_supported": ["public"],
-            "id_token_signing_alg_values_supported": ["RS256"]
-          }
-          """
-              .formatted(base, base, base, base);
-      httpServer.createContext(
-          "/jwks",
-          exchange -> {
-            final var body = jwkSet.getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, body.length);
-            try (exchange) {
-              exchange.getResponseBody().write(body);
-            }
-          });
-      httpServer.createContext(
-          "/.well-known/openid-configuration",
-          exchange -> {
-            final var body = discoveryDoc.getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, body.length);
-            try (exchange) {
-              exchange.getResponseBody().write(body);
-            }
-          });
-      httpServer.start();
-      return new JwksTestServer(httpServer, kid, new RSASSASigner(jwk));
-    }
-
-    String issuerUri() {
-      return "http://127.0.0.1:" + server.getAddress().getPort();
-    }
-
-    OidcConfiguration oidcConfiguration(final String clientId) {
-      final var base = issuerUri();
-      return OidcConfiguration.builder()
-          .clientId(clientId)
-          .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
-          .issuerUri(base)
-          .authorizationUri(base + "/auth")
-          .tokenUri(base + "/token")
-          .jwkSetUri(base + "/jwks")
-          .build();
-    }
-
-    String sign(final String issuer) throws Exception {
-      final var header = new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(kid).build();
-      final var claims =
-          new JWTClaimsSet.Builder()
-              .subject("alice")
-              .issuer(issuer)
-              .issueTime(Date.from(Instant.now()))
-              .expirationTime(Date.from(Instant.now().plusSeconds(60)))
-              .build();
-      final var jwt = new SignedJWT(header, claims);
-      jwt.sign(signer);
-      return jwt.serialize();
-    }
-
-    void stop() {
-      server.stop(0);
     }
   }
 }

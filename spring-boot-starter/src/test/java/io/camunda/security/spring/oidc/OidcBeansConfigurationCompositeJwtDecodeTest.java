@@ -10,34 +10,7 @@ package io.camunda.security.spring.oidc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.nimbusds.jose.JOSEException;
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.JWSHeader;
-import com.nimbusds.jose.JWSSigner;
-import com.nimbusds.jose.crypto.ECDSASigner;
-import com.nimbusds.jose.crypto.RSASSASigner;
-import com.nimbusds.jose.jwk.Curve;
-import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.jwk.JWK;
-import com.nimbusds.jose.jwk.JWKSet;
-import com.nimbusds.jose.jwk.KeyUse;
-import com.nimbusds.jose.jwk.RSAKey;
-import com.nimbusds.jwt.JWTClaimsSet;
-import com.nimbusds.jwt.SignedJWT;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
-import java.security.KeyPairGenerator;
-import java.security.interfaces.ECPrivateKey;
-import java.security.interfaces.ECPublicKey;
-import java.security.interfaces.RSAPrivateKey;
-import java.security.interfaces.RSAPublicKey;
-import java.security.spec.ECGenParameterSpec;
-import java.time.Instant;
-import java.util.Date;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -66,8 +39,8 @@ import org.springframework.security.oauth2.jwt.JwtException;
  */
 final class OidcBeansConfigurationCompositeJwtDecodeTest {
 
-  private JwksTestServer primary;
-  private JwksTestServer secondary;
+  private OidcTestServer primary;
+  private OidcTestServer secondary;
 
   private final ApplicationContextRunner runner =
       new ApplicationContextRunner()
@@ -95,15 +68,15 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
 
   @Test
   void shouldDecodeTokenSignedByPrimaryKey() throws Exception {
-    primary = JwksTestServer.startRsa("primary-rsa");
-    secondary = JwksTestServer.startRsa("secondary-rsa");
+    primary = OidcTestServer.startRsa("primary-rsa");
+    secondary = OidcTestServer.startRsa("secondary-rsa");
     runDecodeTest(primary);
   }
 
   @Test
   void shouldDecodeTokenSignedBySecondaryKey() throws Exception {
-    primary = JwksTestServer.startRsa("primary-rsa");
-    secondary = JwksTestServer.startRsa("secondary-rsa");
+    primary = OidcTestServer.startRsa("primary-rsa");
+    secondary = OidcTestServer.startRsa("secondary-rsa");
     runDecodeTest(secondary);
   }
 
@@ -112,8 +85,8 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
     // Mixed-algorithm scenario: RSA primary, EC secondary. Proves the uniform RS+EC algorithm set
     // is honoured on the composite path and that the composite resolves keys of different curves
     // across sources.
-    primary = JwksTestServer.startRsa("primary-rsa");
-    secondary = JwksTestServer.startEc("secondary-ec");
+    primary = OidcTestServer.startRsa("primary-rsa");
+    secondary = OidcTestServer.startEc("secondary-ec");
     runDecodeTest(secondary);
   }
 
@@ -122,7 +95,7 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
     // No additional-jwk-set-uris configured — exercises the single-URI builder path. Proves the
     // uniform RSA+EC algorithm set is applied to that path too (Spring's default would be
     // RS256-only).
-    primary = JwksTestServer.startEc("primary-ec");
+    primary = OidcTestServer.startEc("primary-ec");
     runner
         .withPropertyValues(
             "camunda.security.authentication.oidc.client-id=flat-client",
@@ -133,7 +106,7 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
         .run(
             ctx -> {
               final var decoder = ctx.getBean(JwtDecoder.class);
-              final var token = sign(primary, null);
+              final var token = primary.sign();
 
               final var jwt = decoder.decode(token);
 
@@ -147,8 +120,8 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
     // issuer-uri is set alongside jwk-set-uri + additional-jwk-set-uris. The composite decoder
     // must apply the issuer validator — a token signed by a valid key but carrying a different
     // 'iss' claim must be rejected.
-    primary = JwksTestServer.startRsa("primary-rsa");
-    secondary = JwksTestServer.startRsa("secondary-rsa");
+    primary = OidcTestServer.startRsa("primary-rsa");
+    secondary = OidcTestServer.startRsa("secondary-rsa");
     final var expectedIssuer = "https://expected-issuer.example.com";
     runner
         .withPropertyValues(
@@ -168,8 +141,8 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
         .run(
             ctx -> {
               final var decoder = ctx.getBean(JwtDecoder.class);
-              final var goodToken = sign(primary, expectedIssuer);
-              final var spoofedToken = sign(primary, "https://attacker.example.com");
+              final var goodToken = primary.sign(expectedIssuer);
+              final var spoofedToken = primary.sign("https://attacker.example.com");
 
               assertThat(decoder.decode(goodToken).getIssuer().toString())
                   .isEqualTo(expectedIssuer);
@@ -178,7 +151,7 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
             });
   }
 
-  private void runDecodeTest(final JwksTestServer signingKey) {
+  private void runDecodeTest(final OidcTestServer signingKey) {
     runner
         .withPropertyValues(
             "camunda.security.authentication.oidc.client-id=flat-client",
@@ -191,7 +164,7 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
         .run(
             ctx -> {
               final var decoder = ctx.getBean(JwtDecoder.class);
-              final var token = sign(signingKey, null);
+              final var token = signingKey.sign();
 
               final var jwt = decoder.decode(token);
 
@@ -215,111 +188,6 @@ final class OidcBeansConfigurationCompositeJwtDecodeTest {
       builder.issuerUri(issuerUri);
     }
     return builder.build();
-  }
-
-  private static String sign(final JwksTestServer key, final String issuer) throws JOSEException {
-    final var header = new JWSHeader.Builder(key.algorithm()).keyID(key.kid()).build();
-    final var claims = new JWTClaimsSet.Builder().subject("alice");
-    if (issuer != null) {
-      claims.issuer(issuer);
-    }
-    claims
-        .issueTime(Date.from(Instant.now()))
-        .expirationTime(Date.from(Instant.now().plusSeconds(60)));
-    final var jwt = new SignedJWT(header, claims.build());
-    jwt.sign(key.signer());
-    return jwt.serialize();
-  }
-
-  /**
-   * Standalone JWKS HTTP server backed by a freshly generated key pair. Serves the public key as
-   * JSON at {@code /jwks} on a loopback ephemeral port. The {@link #signer()} signs tokens in the
-   * test using the matching private key.
-   */
-  private static final class JwksTestServer {
-    private final HttpServer server;
-    private final String kid;
-    private final JWSAlgorithm algorithm;
-    private final JWSSigner signer;
-
-    private JwksTestServer(
-        final HttpServer server,
-        final String kid,
-        final JWSAlgorithm algorithm,
-        final JWSSigner signer) {
-      this.server = server;
-      this.kid = kid;
-      this.algorithm = algorithm;
-      this.signer = signer;
-    }
-
-    static JwksTestServer startRsa(final String kid) throws Exception {
-      final var generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      final var pair = generator.generateKeyPair();
-      final var jwk =
-          new RSAKey.Builder((RSAPublicKey) pair.getPublic())
-              .keyID(kid)
-              .keyUse(KeyUse.SIGNATURE)
-              .algorithm(JWSAlgorithm.RS256)
-              .build();
-      return start(
-          kid, jwk, JWSAlgorithm.RS256, new RSASSASigner((RSAPrivateKey) pair.getPrivate()));
-    }
-
-    static JwksTestServer startEc(final String kid) throws Exception {
-      final var generator = KeyPairGenerator.getInstance("EC");
-      generator.initialize(new ECGenParameterSpec("secp256r1"));
-      final var pair = generator.generateKeyPair();
-      final var jwk =
-          new ECKey.Builder(Curve.P_256, (ECPublicKey) pair.getPublic())
-              .keyID(kid)
-              .keyUse(KeyUse.SIGNATURE)
-              .algorithm(JWSAlgorithm.ES256)
-              .build();
-      return start(kid, jwk, JWSAlgorithm.ES256, new ECDSASigner((ECPrivateKey) pair.getPrivate()));
-    }
-
-    private static JwksTestServer start(
-        final String kid, final JWK jwk, final JWSAlgorithm algorithm, final JWSSigner signer)
-        throws IOException {
-      final var jwksJson = new JWKSet(jwk).toPublicJWKSet().toString();
-      final var httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-      httpServer.createContext(
-          "/jwks",
-          (final HttpExchange exchange) -> {
-            try (exchange) {
-              final byte[] body = jwksJson.getBytes(StandardCharsets.UTF_8);
-              exchange.getResponseHeaders().add("Content-Type", "application/json");
-              exchange.sendResponseHeaders(200, body.length);
-              exchange.getResponseBody().write(body);
-            } catch (final IOException ex) {
-              throw new IllegalStateException("Failed to serve JWKS", ex);
-            }
-          });
-      httpServer.start();
-      return new JwksTestServer(httpServer, kid, algorithm, signer);
-    }
-
-    String kid() {
-      return kid;
-    }
-
-    JWSAlgorithm algorithm() {
-      return algorithm;
-    }
-
-    JWSSigner signer() {
-      return signer;
-    }
-
-    String jwksUri() {
-      return "http://127.0.0.1:" + server.getAddress().getPort() + "/jwks";
-    }
-
-    void stop() {
-      server.stop(0);
-    }
   }
 
   /** Stubs OIDC infrastructure beans other than {@link JwtDecoder}. */

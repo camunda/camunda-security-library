@@ -10,25 +10,8 @@ package io.camunda.security.spring.oidc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.JWSHeader;
-import com.nimbusds.jose.JWSSigner;
-import com.nimbusds.jose.crypto.RSASSASigner;
-import com.nimbusds.jose.jwk.JWKSet;
-import com.nimbusds.jose.jwk.KeyUse;
-import com.nimbusds.jose.jwk.RSAKey;
-import com.nimbusds.jwt.JWTClaimsSet;
-import com.nimbusds.jwt.SignedJWT;
-import com.sun.net.httpserver.HttpServer;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
-import java.security.KeyPairGenerator;
-import java.security.interfaces.RSAPrivateKey;
-import java.security.interfaces.RSAPublicKey;
-import java.time.Instant;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -52,8 +35,8 @@ import org.springframework.security.oauth2.jwt.BadJwtException;
  */
 final class ScopedJwtDecoderFactoryTest {
 
-  private JwksTestServer serverA;
-  private JwksTestServer serverB;
+  private OidcTestServer serverA;
+  private OidcTestServer serverB;
 
   @BeforeEach
   void setUp() {
@@ -93,12 +76,12 @@ final class ScopedJwtDecoderFactoryTest {
 
   @Test
   void shouldDecodeSingleProviderTokenSignedByConfiguredKey() throws Exception {
-    serverA = JwksTestServer.start("key-a");
+    serverA = OidcTestServer.startRsa("key-a");
     final var authentication = singleProviderAuth("provider-a", serverA);
     final var factory = factoryFor(Map.of("provider-a", serverA.oidcConfiguration("test-client")));
 
     final var decoder = factory.buildIssuerAwareDecoder(authentication);
-    final var token = sign(serverA, serverA.issuerUri());
+    final var token = serverA.sign(serverA.issuerUri());
 
     final var jwt = decoder.decode(token);
 
@@ -108,13 +91,13 @@ final class ScopedJwtDecoderFactoryTest {
 
   @Test
   void shouldRejectSingleProviderTokenWithUnknownIssuer() throws Exception {
-    serverA = JwksTestServer.start("key-a");
+    serverA = OidcTestServer.startRsa("key-a");
     final var authentication = singleProviderAuth("provider-a", serverA);
     final var factory = factoryFor(Map.of("provider-a", serverA.oidcConfiguration("test-client")));
 
     final var decoder = factory.buildIssuerAwareDecoder(authentication);
     // Token signed by a known key but claiming an unregistered issuer → issuer validator rejects it
-    final var tokenWrongIssuer = sign(serverA, "https://unknown-idp.example.com");
+    final var tokenWrongIssuer = serverA.sign("https://unknown-idp.example.com");
 
     assertThatThrownBy(() -> decoder.decode(tokenWrongIssuer)).isInstanceOf(BadJwtException.class);
   }
@@ -125,8 +108,8 @@ final class ScopedJwtDecoderFactoryTest {
 
   @Test
   void shouldDecodeTwoProvidersTokenFromProviderA() throws Exception {
-    serverA = JwksTestServer.start("key-a");
-    serverB = JwksTestServer.start("key-b");
+    serverA = OidcTestServer.startRsa("key-a");
+    serverB = OidcTestServer.startRsa("key-b");
     final var authentication = twoProviderAuth(serverA, serverB);
     final var factory =
         factoryFor(
@@ -135,7 +118,7 @@ final class ScopedJwtDecoderFactoryTest {
                 "provider-b", serverB.oidcConfiguration("client-b")));
 
     final var decoder = factory.buildIssuerAwareDecoder(authentication);
-    final var token = sign(serverA, serverA.issuerUri());
+    final var token = serverA.sign(serverA.issuerUri());
 
     final var jwt = decoder.decode(token);
 
@@ -145,8 +128,8 @@ final class ScopedJwtDecoderFactoryTest {
 
   @Test
   void shouldDecodeTwoProvidersTokenFromProviderB() throws Exception {
-    serverA = JwksTestServer.start("key-a");
-    serverB = JwksTestServer.start("key-b");
+    serverA = OidcTestServer.startRsa("key-a");
+    serverB = OidcTestServer.startRsa("key-b");
     final var authentication = twoProviderAuth(serverA, serverB);
     final var factory =
         factoryFor(
@@ -155,7 +138,7 @@ final class ScopedJwtDecoderFactoryTest {
                 "provider-b", serverB.oidcConfiguration("client-b")));
 
     final var decoder = factory.buildIssuerAwareDecoder(authentication);
-    final var token = sign(serverB, serverB.issuerUri());
+    final var token = serverB.sign(serverB.issuerUri());
 
     final var jwt = decoder.decode(token);
 
@@ -179,7 +162,7 @@ final class ScopedJwtDecoderFactoryTest {
    */
   @Test
   void shouldEnforcePerScopeAudienceIsolationWhenScopesShareSameIssuer() throws Exception {
-    serverA = JwksTestServer.start("shared-key");
+    serverA = OidcTestServer.startRsa("shared-key");
     final var issuer = serverA.issuerUri();
 
     // Scope A: same issuer, audience = aud-a
@@ -202,7 +185,7 @@ final class ScopedJwtDecoderFactoryTest {
     final var decoderB = factoryB.buildIssuerAwareDecoder(authB);
 
     // Token issued for aud-a
-    final var tokenForAudA = signWithAudience(serverA, issuer, List.of("aud-a"));
+    final var tokenForAudA = serverA.signWithAudience(issuer, List.of("aud-a"));
 
     // Scope A accepts it
     final var jwt = decoderA.decode(tokenForAudA);
@@ -230,8 +213,8 @@ final class ScopedJwtDecoderFactoryTest {
 
   @Test
   void shouldRejectTwoProvidersTokenWithUnknownIssuer() throws Exception {
-    serverA = JwksTestServer.start("key-a");
-    serverB = JwksTestServer.start("key-b");
+    serverA = OidcTestServer.startRsa("key-a");
+    serverB = OidcTestServer.startRsa("key-b");
     final var authentication = twoProviderAuth(serverA, serverB);
     final var factory =
         factoryFor(
@@ -240,7 +223,7 @@ final class ScopedJwtDecoderFactoryTest {
                 "provider-b", serverB.oidcConfiguration("client-b")));
 
     final var decoder = factory.buildIssuerAwareDecoder(authentication);
-    final var tokenUnknownIssuer = sign(serverA, "https://unregistered-idp.example.com");
+    final var tokenUnknownIssuer = serverA.sign("https://unregistered-idp.example.com");
 
     assertThatThrownBy(() -> decoder.decode(tokenUnknownIssuer))
         .isInstanceOf(BadJwtException.class)
@@ -252,7 +235,7 @@ final class ScopedJwtDecoderFactoryTest {
   // ---------------------------------------------------------------------------
 
   private static AuthenticationConfiguration singleProviderAuth(
-      final String registrationId, final JwksTestServer server) {
+      final String registrationId, final OidcTestServer server) {
     final var auth = new AuthenticationConfiguration();
     final var oidc = server.oidcConfiguration("test-client");
     oidc.setRegistrationId(registrationId);
@@ -261,139 +244,10 @@ final class ScopedJwtDecoderFactoryTest {
   }
 
   private static AuthenticationConfiguration twoProviderAuth(
-      final JwksTestServer a, final JwksTestServer b) {
+      final OidcTestServer a, final OidcTestServer b) {
     final var auth = new AuthenticationConfiguration();
     auth.getProviders().getOidc().put("provider-a", a.oidcConfiguration("client-a"));
     auth.getProviders().getOidc().put("provider-b", b.oidcConfiguration("client-b"));
     return auth;
-  }
-
-  private static String sign(final JwksTestServer server, final String issuer) throws Exception {
-    return signWithAudience(server, issuer, List.of());
-  }
-
-  private static String signWithAudience(
-      final JwksTestServer server, final String issuer, final List<String> audiences)
-      throws Exception {
-    final var header = new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(server.kid()).build();
-    final var builder =
-        new JWTClaimsSet.Builder()
-            .subject("alice")
-            .issuer(issuer)
-            .issueTime(Date.from(Instant.now()))
-            .expirationTime(Date.from(Instant.now().plusSeconds(60)));
-    if (!audiences.isEmpty()) {
-      builder.audience(audiences);
-    }
-    final var jwt = new SignedJWT(header, builder.build());
-    jwt.sign(server.signer());
-    return jwt.serialize();
-  }
-
-  /**
-   * Minimal JWKS + OIDC discovery HTTP server backed by a freshly generated RSA key pair. Serves:
-   *
-   * <ul>
-   *   <li>{@code /jwks} — the public JWK set (for token verification)
-   *   <li>{@code /.well-known/openid-configuration} — a discovery document pointing back to this
-   *       server (so {@link
-   *       org.springframework.security.oauth2.client.registration.ClientRegistrations#fromIssuerLocation}
-   *       can resolve without real external HTTP)
-   * </ul>
-   */
-  private static final class JwksTestServer {
-    private final HttpServer server;
-    private final String kid;
-    private final JWSSigner signer;
-
-    private JwksTestServer(final HttpServer server, final String kid, final JWSSigner signer) {
-      this.server = server;
-      this.kid = kid;
-      this.signer = signer;
-    }
-
-    static JwksTestServer start(final String kid) throws Exception {
-      final var generator = KeyPairGenerator.getInstance("RSA");
-      generator.initialize(2048);
-      final var pair = generator.generateKeyPair();
-      final var jwk =
-          new RSAKey.Builder((RSAPublicKey) pair.getPublic())
-              .privateKey((RSAPrivateKey) pair.getPrivate())
-              .keyUse(KeyUse.SIGNATURE)
-              .algorithm(JWSAlgorithm.RS256)
-              .keyID(kid)
-              .build();
-      final var jwkSet = new JWKSet(jwk).toPublicJWKSet().toString();
-      final var httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-      final var base = "http://127.0.0.1:" + httpServer.getAddress().getPort();
-      final var discoveryDoc =
-          """
-          {
-            "issuer": "%s",
-            "authorization_endpoint": "%s/auth",
-            "token_endpoint": "%s/token",
-            "jwks_uri": "%s/jwks",
-            "response_types_supported": ["code"],
-            "subject_types_supported": ["public"],
-            "id_token_signing_alg_values_supported": ["RS256"]
-          }
-          """
-              .formatted(base, base, base, base);
-      httpServer.createContext(
-          "/jwks",
-          exchange -> {
-            final var body = jwkSet.getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, body.length);
-            try (exchange) {
-              exchange.getResponseBody().write(body);
-            }
-          });
-      httpServer.createContext(
-          "/.well-known/openid-configuration",
-          exchange -> {
-            final var body = discoveryDoc.getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, body.length);
-            try (exchange) {
-              exchange.getResponseBody().write(body);
-            }
-          });
-      httpServer.start();
-      return new JwksTestServer(httpServer, kid, new RSASSASigner(jwk));
-    }
-
-    String kid() {
-      return kid;
-    }
-
-    JWSSigner signer() {
-      return signer;
-    }
-
-    String issuerUri() {
-      return "http://127.0.0.1:" + server.getAddress().getPort();
-    }
-
-    /**
-     * Builds an {@link OidcConfiguration} backed by this server. Uses {@code issuerUri} so that
-     * {@link ScopedClientRegistrationFactory} can route by issuer; all explicit endpoints override
-     * the discovered values so the test does not depend on a real external IdP.
-     */
-    OidcConfiguration oidcConfiguration(final String clientId) {
-      final var base = issuerUri();
-      return OidcConfiguration.builder()
-          .clientId(clientId)
-          .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
-          .issuerUri(base)
-          .authorizationUri(base + "/auth")
-          .tokenUri(base + "/token")
-          .jwkSetUri(base + "/jwks")
-          .build();
-    }
-
-    void stop() {
-      server.stop(0);
-    }
   }
 }
