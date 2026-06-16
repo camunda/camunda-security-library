@@ -7,8 +7,6 @@
  */
 package io.camunda.security.spring.security;
 
-import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.LOGIN_URL;
-
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -20,9 +18,9 @@ final class LoginLinksBuilder {
   private LoginLinksBuilder() {}
 
   static DefaultLoginPageGeneratingFilter defaultOauth2LoginPickerFilter(
-      final ClientRegistrationRepository clientRegistrationRepository) {
+      final ClientRegistrationRepository clientRegistrationRepository, final String loginPageUrl) {
     final var picker = new DefaultLoginPageGeneratingFilter();
-    picker.setLoginPageUrl(LOGIN_URL);
+    picker.setLoginPageUrl(loginPageUrl);
     picker.setOauth2LoginEnabled(true);
     picker.setOauth2AuthenticationUrlToClientName(buildLoginLinks(clientRegistrationRepository));
     return picker;
