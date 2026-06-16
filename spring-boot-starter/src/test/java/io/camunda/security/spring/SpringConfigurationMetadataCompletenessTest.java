@@ -107,6 +107,8 @@ class SpringConfigurationMetadataCompletenessTest {
       throws IntrospectionException, ReflectiveOperationException {
     for (final PropertyDescriptor pd :
         Introspector.getBeanInfo(clazz, Object.class).getPropertyDescriptors()) {
+      // Only settable properties are covered. Spring Boot also binds getter-only nested beans
+      // (mutating in place); none exist today, but such a bean's subtree would be silently skipped.
       if (pd.getWriteMethod() == null) {
         continue;
       }
