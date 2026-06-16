@@ -25,11 +25,11 @@ import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.security.BaseSecurityConfiguration;
 import io.camunda.security.spring.security.OidcResourceServerCustomizer;
+import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import io.camunda.security.spring.user.UserConfiguration;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.ObjectProvider;
@@ -548,33 +548,11 @@ class ScopedApiSecurityChainBuilderTest {
 
     @Bean
     SecurityPathPort securityPathPort() {
-      return new SecurityPathPort() {
-        @Override
-        public Set<String> apiPaths() {
-          return Set.of("/api/**");
-        }
-
-        @Override
-        public Set<String> unprotectedApiPaths() {
-          // /api/public is permit-all; used by unprotected-path tests
-          return Set.of("/api/public");
-        }
-
-        @Override
-        public Set<String> unprotectedPaths() {
-          return Set.of("/error");
-        }
-
-        @Override
-        public Set<String> webappPaths() {
-          return Set.of();
-        }
-
-        @Override
-        public Set<String> webComponentNames() {
-          return Set.of();
-        }
-      };
+      return StubSecurityPaths.builder()
+          .unprotectedApiPaths("/api/public")
+          .webappPaths()
+          .webComponentNames()
+          .build();
     }
   }
 

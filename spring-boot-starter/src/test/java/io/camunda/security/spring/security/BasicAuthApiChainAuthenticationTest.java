@@ -15,11 +15,11 @@ import io.camunda.security.core.port.out.BasicAuthUserDetailsPort.CamundaUserDet
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
+import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import io.camunda.security.spring.user.UserConfiguration;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -153,32 +153,7 @@ class BasicAuthApiChainAuthenticationTest {
 
     @Bean
     SecurityPathPort securityPathPort() {
-      return new SecurityPathPort() {
-        @Override
-        public Set<String> apiPaths() {
-          return Set.of("/api/**");
-        }
-
-        @Override
-        public Set<String> unprotectedApiPaths() {
-          return Set.of();
-        }
-
-        @Override
-        public Set<String> unprotectedPaths() {
-          return Set.of("/error");
-        }
-
-        @Override
-        public Set<String> webappPaths() {
-          return Set.of();
-        }
-
-        @Override
-        public Set<String> webComponentNames() {
-          return Set.of();
-        }
-      };
+      return StubSecurityPaths.builder().webappPaths().webComponentNames().build();
     }
   }
 
