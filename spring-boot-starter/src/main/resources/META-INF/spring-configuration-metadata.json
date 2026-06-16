@@ -1,0 +1,596 @@
+{
+  "groups": [
+    {
+      "name": "camunda.security",
+      "type": "io.camunda.security.spring.CamundaSecurityLibraryProperties",
+      "sourceType": "io.camunda.security.spring.CamundaSecurityLibraryProperties"
+    },
+    {
+      "name": "camunda.security.authentication",
+      "type": "io.camunda.security.api.model.config.AuthenticationConfiguration",
+      "sourceType": "io.camunda.security.spring.CamundaSecurityLibraryProperties",
+      "sourceMethod": "getAuthentication()"
+    },
+    {
+      "name": "camunda.security.authentication.oidc",
+      "type": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "sourceType": "io.camunda.security.api.model.config.AuthenticationConfiguration",
+      "sourceMethod": "getOidc()"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.assertion",
+      "type": "io.camunda.security.api.model.config.AssertionConfiguration",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "sourceMethod": "getAssertion()"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.assertion.keystore",
+      "type": "io.camunda.security.api.model.config.KeystoreConfiguration",
+      "sourceType": "io.camunda.security.api.model.config.AssertionConfiguration",
+      "sourceMethod": "getKeystore()"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.authorize-request",
+      "type": "io.camunda.security.api.model.config.oidc.AuthorizeRequestConfiguration",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "sourceMethod": "getAuthorizeRequest()"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.user-info-augmentation",
+      "type": "io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfiguration",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "sourceMethod": "getUserInfoAugmentation()"
+    },
+    {
+      "name": "camunda.security.authentication.providers",
+      "type": "io.camunda.security.api.model.config.oidc.OidcProvidersConfiguration",
+      "sourceType": "io.camunda.security.api.model.config.AuthenticationConfiguration",
+      "sourceMethod": "getProviders()"
+    },
+    {
+      "name": "camunda.security.authorizations",
+      "type": "io.camunda.security.api.model.config.AuthorizationsConfiguration",
+      "sourceType": "io.camunda.security.spring.CamundaSecurityLibraryProperties",
+      "sourceMethod": "getAuthorizations()"
+    },
+    {
+      "name": "camunda.security.csrf",
+      "type": "io.camunda.security.api.model.config.CsrfConfiguration",
+      "sourceType": "io.camunda.security.spring.CamundaSecurityLibraryProperties",
+      "sourceMethod": "getCsrf()"
+    },
+    {
+      "name": "camunda.security.http-headers",
+      "type": "io.camunda.security.api.model.config.headers.HeaderConfiguration",
+      "sourceType": "io.camunda.security.spring.CamundaSecurityLibraryProperties",
+      "sourceMethod": "getHttpHeaders()"
+    },
+    {
+      "name": "camunda.security.http-headers.cache-control",
+      "type": "io.camunda.security.api.model.config.headers.CacheControlConfig",
+      "sourceType": "io.camunda.security.api.model.config.headers.HeaderConfiguration",
+      "sourceMethod": "getCacheControl()"
+    },
+    {
+      "name": "camunda.security.http-headers.content-security-policy",
+      "type": "io.camunda.security.api.model.config.headers.ContentSecurityPolicyConfig",
+      "sourceType": "io.camunda.security.api.model.config.headers.HeaderConfiguration",
+      "sourceMethod": "getContentSecurityPolicy()"
+    },
+    {
+      "name": "camunda.security.http-headers.content-type-options",
+      "type": "io.camunda.security.api.model.config.headers.ContentTypeOptionsConfig",
+      "sourceType": "io.camunda.security.api.model.config.headers.HeaderConfiguration",
+      "sourceMethod": "getContentTypeOptions()"
+    },
+    {
+      "name": "camunda.security.http-headers.cross-origin-embedder-policy",
+      "type": "io.camunda.security.api.model.config.headers.CrossOriginEmbedderPolicyConfig",
+      "sourceType": "io.camunda.security.api.model.config.headers.HeaderConfiguration",
+      "sourceMethod": "getCrossOriginEmbedderPolicy()"
+    },
+    {
+      "name": "camunda.security.http-headers.cross-origin-opener-policy",
+      "type": "io.camunda.security.api.model.config.headers.CrossOriginOpenerPolicyConfig",
+      "sourceType": "io.camunda.security.api.model.config.headers.HeaderConfiguration",
+      "sourceMethod": "getCrossOriginOpenerPolicy()"
+    },
+    {
+      "name": "camunda.security.http-headers.cross-origin-resource-policy",
+      "type": "io.camunda.security.api.model.config.headers.CrossOriginResourcePolicyConfig",
+      "sourceType": "io.camunda.security.api.model.config.headers.HeaderConfiguration",
+      "sourceMethod": "getCrossOriginResourcePolicy()"
+    },
+    {
+      "name": "camunda.security.http-headers.frame-options",
+      "type": "io.camunda.security.api.model.config.headers.FrameOptionsConfig",
+      "sourceType": "io.camunda.security.api.model.config.headers.HeaderConfiguration",
+      "sourceMethod": "getFrameOptions()"
+    },
+    {
+      "name": "camunda.security.http-headers.hsts",
+      "type": "io.camunda.security.api.model.config.headers.HstsConfig",
+      "sourceType": "io.camunda.security.api.model.config.headers.HeaderConfiguration",
+      "sourceMethod": "getHsts()"
+    },
+    {
+      "name": "camunda.security.http-headers.permissions-policy",
+      "type": "io.camunda.security.api.model.config.headers.PermissionsPolicyConfig",
+      "sourceType": "io.camunda.security.api.model.config.headers.HeaderConfiguration",
+      "sourceMethod": "getPermissionsPolicy()"
+    },
+    {
+      "name": "camunda.security.http-headers.referrer-policy",
+      "type": "io.camunda.security.api.model.config.headers.ReferrerPolicyConfig",
+      "sourceType": "io.camunda.security.api.model.config.headers.HeaderConfiguration",
+      "sourceMethod": "getReferrerPolicy()"
+    },
+    {
+      "name": "camunda.security.initialization",
+      "type": "io.camunda.security.api.model.config.initialization.InitializationConfiguration",
+      "sourceType": "io.camunda.security.spring.CamundaSecurityLibraryProperties",
+      "sourceMethod": "getInitialization()"
+    },
+    {
+      "name": "camunda.security.multi-tenancy",
+      "type": "io.camunda.security.api.model.config.MultiTenancyConfiguration",
+      "sourceType": "io.camunda.security.spring.CamundaSecurityLibraryProperties",
+      "sourceMethod": "getMultiTenancy()"
+    },
+    {
+      "name": "camunda.security.saas",
+      "type": "io.camunda.security.api.model.config.SaasConfiguration",
+      "sourceType": "io.camunda.security.spring.CamundaSecurityLibraryProperties",
+      "sourceMethod": "getSaas()"
+    },
+    {
+      "name": "camunda.security.session",
+      "type": "io.camunda.security.api.model.config.SessionConfiguration",
+      "sourceType": "io.camunda.security.spring.CamundaSecurityLibraryProperties",
+      "sourceMethod": "getSession()"
+    },
+    {
+      "name": "camunda.security.session.persistent",
+      "type": "io.camunda.security.api.model.config.SessionConfiguration$PersistentConfiguration",
+      "sourceType": "io.camunda.security.api.model.config.SessionConfiguration",
+      "sourceMethod": "getPersistent()"
+    }
+  ],
+  "properties": [
+    {
+      "name": "camunda.security.authentication.authentication-refresh-interval",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.AuthenticationConfiguration",
+      "defaultValue": "PT30S"
+    },
+    {
+      "name": "camunda.security.authentication.method",
+      "type": "io.camunda.security.api.model.config.AuthenticationMethod",
+      "sourceType": "io.camunda.security.api.model.config.AuthenticationConfiguration",
+      "defaultValue": "basic"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.additional-jwk-set-uris",
+      "type": "java.util.List<java.lang.String>",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.assertion.kid-case",
+      "type": "io.camunda.security.api.model.config.AssertionConfiguration$KidCase",
+      "sourceType": "io.camunda.security.api.model.config.AssertionConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.assertion.kid-digest-algorithm",
+      "type": "io.camunda.security.api.model.config.AssertionConfiguration$KidDigestAlgorithm",
+      "sourceType": "io.camunda.security.api.model.config.AssertionConfiguration",
+      "defaultValue": "sha256"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.assertion.kid-encoding",
+      "type": "io.camunda.security.api.model.config.AssertionConfiguration$KidEncoding",
+      "sourceType": "io.camunda.security.api.model.config.AssertionConfiguration",
+      "defaultValue": "base64url"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.assertion.kid-source",
+      "type": "io.camunda.security.api.model.config.AssertionConfiguration$KidSource",
+      "sourceType": "io.camunda.security.api.model.config.AssertionConfiguration",
+      "defaultValue": "public_key"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.assertion.keystore.key-alias",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.KeystoreConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.assertion.keystore.key-password",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.KeystoreConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.assertion.keystore.password",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.KeystoreConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.assertion.keystore.path",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.KeystoreConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.audiences",
+      "type": "java.util.Set<java.lang.String>",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.authorization-uri",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.authorize-request.additional-parameters",
+      "type": "java.util.Map<java.lang.String,java.lang.Object>",
+      "sourceType": "io.camunda.security.api.model.config.oidc.AuthorizeRequestConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.client-authentication-method",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "defaultValue": "client_secret_basic"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.client-id",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.client-id-claim",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.client-name",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.client-secret",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.clock-skew",
+      "type": "java.time.Duration",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "defaultValue": "PT60S"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.end-session-endpoint-uri",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.grant-type",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "defaultValue": "authorization_code"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.groups-claim",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.id-token-algorithm",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "defaultValue": "RS256"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.idp-logout-enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "defaultValue": true
+    },
+    {
+      "name": "camunda.security.authentication.oidc.issuer-uri",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.jwk-set-uri",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.organization-id",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.prefer-id-token-claims",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "defaultValue": false
+    },
+    {
+      "name": "camunda.security.authentication.oidc.prefer-username-claim",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "defaultValue": false
+    },
+    {
+      "name": "camunda.security.authentication.oidc.redirect-uri",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.registration-id",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "defaultValue": "oidc"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.resource",
+      "type": "java.util.List<java.lang.String>",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.scope",
+      "type": "java.util.List<java.lang.String>",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "defaultValue": ["openid", "profile"]
+    },
+    {
+      "name": "camunda.security.authentication.oidc.token-uri",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.user-info-augmentation.cache-max-size",
+      "type": "java.lang.Integer",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfiguration",
+      "defaultValue": 10000
+    },
+    {
+      "name": "camunda.security.authentication.oidc.user-info-augmentation.cache-ttl",
+      "type": "java.time.Duration",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfiguration",
+      "defaultValue": "PT5M"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.user-info-augmentation.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfiguration",
+      "defaultValue": false
+    },
+    {
+      "name": "camunda.security.authentication.oidc.user-info-augmentation.negative-cache-ttl",
+      "type": "java.time.Duration",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfiguration",
+      "defaultValue": "PT5S"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.user-info-enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "defaultValue": true
+    },
+    {
+      "name": "camunda.security.authentication.oidc.user-info-uri",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.username-claim",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "defaultValue": "sub"
+    },
+    {
+      "name": "camunda.security.authentication.providers.oidc",
+      "type": "java.util.Map<java.lang.String,io.camunda.security.api.model.config.oidc.OidcConfiguration>",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcProvidersConfiguration"
+    },
+    {
+      "name": "camunda.security.authentication.unprotected-api",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.AuthenticationConfiguration",
+      "defaultValue": false
+    },
+    {
+      "name": "camunda.security.authorizations.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.AuthorizationsConfiguration",
+      "defaultValue": true
+    },
+    {
+      "name": "camunda.security.csrf.cookie-http-only",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.CsrfConfiguration",
+      "defaultValue": false
+    },
+    {
+      "name": "camunda.security.csrf.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.CsrfConfiguration",
+      "defaultValue": true
+    },
+    {
+      "name": "camunda.security.csrf.ignored-path-patterns",
+      "type": "java.util.Set<java.lang.String>",
+      "sourceType": "io.camunda.security.api.model.config.CsrfConfiguration"
+    },
+    {
+      "name": "camunda.security.http-headers.cache-control.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.headers.CacheControlConfig",
+      "defaultValue": true
+    },
+    {
+      "name": "camunda.security.http-headers.content-security-policy.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.headers.ContentSecurityPolicyConfig",
+      "defaultValue": true
+    },
+    {
+      "name": "camunda.security.http-headers.content-security-policy.mode",
+      "type": "io.camunda.security.api.model.config.headers.ContentSecurityPolicyConfig$Mode",
+      "sourceType": "io.camunda.security.api.model.config.headers.ContentSecurityPolicyConfig",
+      "defaultValue": "self_managed"
+    },
+    {
+      "name": "camunda.security.http-headers.content-security-policy.policy-directives",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.headers.ContentSecurityPolicyConfig"
+    },
+    {
+      "name": "camunda.security.http-headers.content-security-policy.report-only",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.headers.ContentSecurityPolicyConfig",
+      "defaultValue": false
+    },
+    {
+      "name": "camunda.security.http-headers.content-type-options.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.headers.ContentTypeOptionsConfig",
+      "defaultValue": true
+    },
+    {
+      "name": "camunda.security.http-headers.cross-origin-embedder-policy.value",
+      "type": "io.camunda.security.api.model.config.headers.values.CrossOriginEmbedderPolicy",
+      "sourceType": "io.camunda.security.api.model.config.headers.CrossOriginEmbedderPolicyConfig",
+      "defaultValue": "unsafe_none"
+    },
+    {
+      "name": "camunda.security.http-headers.cross-origin-opener-policy.value",
+      "type": "io.camunda.security.api.model.config.headers.values.CrossOriginOpenerPolicy",
+      "sourceType": "io.camunda.security.api.model.config.headers.CrossOriginOpenerPolicyConfig",
+      "defaultValue": "same_origin_allow_popups"
+    },
+    {
+      "name": "camunda.security.http-headers.cross-origin-resource-policy.value",
+      "type": "io.camunda.security.api.model.config.headers.values.CrossOriginResourcePolicy",
+      "sourceType": "io.camunda.security.api.model.config.headers.CrossOriginResourcePolicyConfig",
+      "defaultValue": "same_site"
+    },
+    {
+      "name": "camunda.security.http-headers.frame-options.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.headers.FrameOptionsConfig",
+      "defaultValue": true
+    },
+    {
+      "name": "camunda.security.http-headers.frame-options.mode",
+      "type": "io.camunda.security.api.model.config.headers.values.FrameOptionMode",
+      "sourceType": "io.camunda.security.api.model.config.headers.FrameOptionsConfig",
+      "defaultValue": "sameorigin"
+    },
+    {
+      "name": "camunda.security.http-headers.hsts.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.headers.HstsConfig",
+      "defaultValue": true
+    },
+    {
+      "name": "camunda.security.http-headers.hsts.include-sub-domains",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.headers.HstsConfig",
+      "defaultValue": false
+    },
+    {
+      "name": "camunda.security.http-headers.hsts.max-age-in-seconds",
+      "type": "java.lang.Long",
+      "sourceType": "io.camunda.security.api.model.config.headers.HstsConfig",
+      "defaultValue": 31536000
+    },
+    {
+      "name": "camunda.security.http-headers.hsts.preload",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.headers.HstsConfig",
+      "defaultValue": false
+    },
+    {
+      "name": "camunda.security.http-headers.permissions-policy.value",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.headers.PermissionsPolicyConfig",
+      "defaultValue": "accelerometer=(), ambient-light-sensor=(), attribution-reporting=(), autoplay=(), bluetooth=(), browsing-topics=(), camera=(), compute-pressure=(), cross-origin-isolated=(), deferred-fetch=(), deferred-fetch-minimal=(), display-capture=(), encrypted-media=(), fullscreen=(self), gamepad=(), geolocation=(), gyroscope=(), hid=(), identity-credentials-get=(), idle-detection=(), language-detector=(), local-fonts=(), magnetometer=(), microphone=(), midi=(), otp-credentials=(), payment=(), picture-in-picture=(), publickey-credentials-create=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), speaker-selection=(), storage-access=(), summarizer=(), translator=(), usb=(), web-share=(), window-management=(), xr-spatial-tracking=()"
+    },
+    {
+      "name": "camunda.security.http-headers.referrer-policy.value",
+      "type": "io.camunda.security.api.model.config.headers.values.ReferrerPolicy",
+      "sourceType": "io.camunda.security.api.model.config.headers.ReferrerPolicyConfig",
+      "defaultValue": "strict_origin_when_cross_origin"
+    },
+    {
+      "name": "camunda.security.id-validation-pattern",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.spring.CamundaSecurityLibraryProperties",
+      "defaultValue": "^[a-zA-Z0-9_~@.+-]+$"
+    },
+    {
+      "name": "camunda.security.initialization.authorizations",
+      "type": "java.util.List<io.camunda.security.api.model.config.initialization.ConfiguredAuthorization>",
+      "sourceType": "io.camunda.security.api.model.config.initialization.InitializationConfiguration"
+    },
+    {
+      "name": "camunda.security.initialization.default-roles",
+      "type": "java.util.Map<java.lang.String,java.util.Map<java.lang.String,java.util.Collection<java.lang.String>>>",
+      "sourceType": "io.camunda.security.api.model.config.initialization.InitializationConfiguration"
+    },
+    {
+      "name": "camunda.security.initialization.groups",
+      "type": "java.util.List<io.camunda.security.api.model.config.initialization.ConfiguredGroup>",
+      "sourceType": "io.camunda.security.api.model.config.initialization.InitializationConfiguration"
+    },
+    {
+      "name": "camunda.security.initialization.mapping-rules",
+      "type": "java.util.List<io.camunda.security.api.model.config.initialization.ConfiguredMappingRule>",
+      "sourceType": "io.camunda.security.api.model.config.initialization.InitializationConfiguration"
+    },
+    {
+      "name": "camunda.security.initialization.roles",
+      "type": "java.util.List<io.camunda.security.api.model.config.initialization.ConfiguredRole>",
+      "sourceType": "io.camunda.security.api.model.config.initialization.InitializationConfiguration"
+    },
+    {
+      "name": "camunda.security.initialization.tenants",
+      "type": "java.util.List<io.camunda.security.api.model.config.initialization.ConfiguredTenant>",
+      "sourceType": "io.camunda.security.api.model.config.initialization.InitializationConfiguration"
+    },
+    {
+      "name": "camunda.security.initialization.users",
+      "type": "java.util.List<io.camunda.security.api.model.config.initialization.ConfiguredUser>",
+      "sourceType": "io.camunda.security.api.model.config.initialization.InitializationConfiguration"
+    },
+    {
+      "name": "camunda.security.multi-tenancy.api-enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.MultiTenancyConfiguration",
+      "defaultValue": true
+    },
+    {
+      "name": "camunda.security.multi-tenancy.checks-enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.MultiTenancyConfiguration",
+      "defaultValue": false
+    },
+    {
+      "name": "camunda.security.saas.cluster-id",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.SaasConfiguration"
+    },
+    {
+      "name": "camunda.security.saas.organization-id",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.SaasConfiguration"
+    },
+    {
+      "name": "camunda.security.session.persistent.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.SessionConfiguration$PersistentConfiguration",
+      "defaultValue": false
+    }
+  ],
+  "hints": []
+}
