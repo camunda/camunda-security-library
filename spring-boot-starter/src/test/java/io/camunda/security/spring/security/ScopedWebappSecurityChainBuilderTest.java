@@ -32,7 +32,7 @@ class ScopedWebappSecurityChainBuilderTest {
   void singleRegistrationRedirectsStraightToProvider() {
     final ClientRegistrationRepository repo =
         new InMemoryClientRegistrationRepository(registration("oidc"));
-    assertThat(ScopedWebappSecurityChainBuilder.resolveOauthRedirectTarget(repo))
+    assertThat(ScopedWebappSecurityChainBuilder.resolveOauthRedirectTarget(repo, LOGIN_URL))
         .isEqualTo("/oauth2/authorization/oidc");
   }
 
@@ -40,14 +40,16 @@ class ScopedWebappSecurityChainBuilderTest {
   void multipleRegistrationsRedirectToLoginPicker() {
     final ClientRegistrationRepository repo =
         new InMemoryClientRegistrationRepository(registration("a"), registration("b"));
-    assertThat(ScopedWebappSecurityChainBuilder.resolveOauthRedirectTarget(repo))
-        .isEqualTo(LOGIN_URL);
+    // Scoped login URL proves that loginUrl is threaded through rather than using the constant.
+    final var scopedLoginUrl = "/physical-tenants/t1/login";
+    assertThat(ScopedWebappSecurityChainBuilder.resolveOauthRedirectTarget(repo, scopedLoginUrl))
+        .isEqualTo(scopedLoginUrl);
   }
 
   @Test
   void nonIterableRepositoryFallsBackToDefaultRegistrationId() {
     final ClientRegistrationRepository repo = registrationId -> registration(registrationId);
-    assertThat(ScopedWebappSecurityChainBuilder.resolveOauthRedirectTarget(repo))
+    assertThat(ScopedWebappSecurityChainBuilder.resolveOauthRedirectTarget(repo, LOGIN_URL))
         .isEqualTo("/oauth2/authorization/oidc");
   }
 }

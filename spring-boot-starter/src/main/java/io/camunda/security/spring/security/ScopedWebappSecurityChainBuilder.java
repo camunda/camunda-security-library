@@ -7,7 +7,6 @@
  */
 package io.camunda.security.spring.security;
 
-import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.LOGIN_URL;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.OIDC_REGISTRATION_ID;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.SESSION_COOKIE;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
@@ -102,7 +101,8 @@ public final class ScopedWebappSecurityChainBuilder {
             .exceptionHandling(
                 eh ->
                     eh.authenticationEntryPoint(
-                            oidcWebappAuthenticationEntryPoint(clientRegistrationRepository))
+                            oidcWebappAuthenticationEntryPoint(
+                                clientRegistrationRepository, loginUrl))
                         .accessDeniedHandler(authFailureHandler))
             .cors(AbstractHttpConfigurer::disable)
             .formLogin(AbstractHttpConfigurer::disable)
@@ -242,11 +242,11 @@ public final class ScopedWebappSecurityChainBuilder {
 
   // Moved verbatim from OidcWebappSecurityConfiguration; package-private for unit testing.
   static AuthenticationEntryPoint oidcWebappAuthenticationEntryPoint(
-      final ClientRegistrationRepository clientRegistrationRepository) {
+      final ClientRegistrationRepository clientRegistrationRepository, final String loginUrl) {
     final var bearerEntryPoint = new BearerTokenAuthenticationEntryPoint();
     final var oauthRedirectEntryPoint =
         new LoginUrlAuthenticationEntryPoint(
-            resolveOauthRedirectTarget(clientRegistrationRepository));
+            resolveOauthRedirectTarget(clientRegistrationRepository, loginUrl));
     final var entryPoints = new LinkedHashMap<RequestMatcher, AuthenticationEntryPoint>();
     entryPoints.put(new RequestHeaderRequestMatcher("Authorization"), bearerEntryPoint);
     final var delegatingEntryPoint = new DelegatingAuthenticationEntryPoint(entryPoints);
@@ -256,7 +256,7 @@ public final class ScopedWebappSecurityChainBuilder {
 
   // Moved verbatim from OidcWebappSecurityConfiguration; package-private for unit testing.
   static String resolveOauthRedirectTarget(
-      final ClientRegistrationRepository clientRegistrationRepository) {
+      final ClientRegistrationRepository clientRegistrationRepository, final String loginUrl) {
     final var defaultTarget = "/oauth2/authorization/" + OIDC_REGISTRATION_ID;
     if (!(clientRegistrationRepository instanceof final Iterable<?> iterable)) {
       return defaultTarget;
@@ -267,7 +267,7 @@ public final class ScopedWebappSecurityChainBuilder {
     }
     final Object first = iterator.next();
     if (iterator.hasNext()) {
-      return LOGIN_URL;
+      return loginUrl;
     }
     if (first instanceof final ClientRegistration registration) {
       return "/oauth2/authorization/" + registration.getRegistrationId();
