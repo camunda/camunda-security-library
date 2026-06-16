@@ -302,6 +302,7 @@ final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcess
               descriptor.basePath(),
               descriptor.authentication(),
               sessionFilter,
+              sessionCookieName(descriptor.basePath()),
               authFailureHandler,
               authorizedClientManagerFactory,
               tokenEndpointCustomizerProvider,

@@ -17,6 +17,8 @@ import io.camunda.security.api.model.config.oidc.OidcProvidersConfiguration;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
+import io.camunda.security.spring.filter.AdminUserCheckFilter;
+import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
@@ -166,6 +168,64 @@ class ScopedWebappSecurityChainBuilderScopedTest {
             });
   }
 
+  @Test
+  void scopedBasicChainLogoutClearsScopedCookiesAtBasePath() throws Exception {
+    new WebApplicationContextRunner()
+        .withUserConfiguration(
+            ObjectMapperConfig.class,
+            StubPaths.class,
+            StubUserDetailsPortConfig.class,
+            ScopedBasicConfig.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                BaseSecurityConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                io.camunda.security.spring.user.UserConfiguration.class,
+                ScopedOidcInfrastructureConfiguration.class))
+        .run(
+            ctx -> {
+              final var chain = ctx.getBean("scopedBasicTestChain", SecurityFilterChain.class);
+              final var proxy = new FilterChainProxy(List.of(chain));
+              final var request = new MockHttpServletRequest("POST", BASE_PATH + "/logout");
+              // Spring Security CSRF protection is disabled in test (no CSRF token in POST).
+              // Provide a dummy CSRF token so the logout filter can execute.
+              request.addParameter("_csrf", "dummy");
+              final var response = new MockHttpServletResponse();
+              proxy.doFilter(request, response, new MockFilterChain());
+
+              // The logout endpoint is permitted — regardless of status, check the Set-Cookie
+              // headers
+              final var cookieHeaders = response.getHeaders("Set-Cookie");
+
+              final var sessionCookieName = "camunda-session-physical-tenants-t1";
+              assertThat(cookieHeaders)
+                  .as("logout must emit a Set-Cookie clearing the scoped session cookie")
+                  .anyMatch(
+                      h ->
+                          h.contains(sessionCookieName + "=")
+                              && h.contains("Max-Age=0")
+                              && h.contains("Path=" + BASE_PATH));
+
+              assertThat(cookieHeaders)
+                  .as("logout must emit a Set-Cookie clearing the CSRF cookie at basePath")
+                  .anyMatch(
+                      h ->
+                          h.contains("X-CSRF-TOKEN=")
+                              && h.contains("Max-Age=0")
+                              && h.contains("Path=" + BASE_PATH));
+            });
+  }
+
+  @Configuration
+  static class StubUserDetailsPortConfig {
+
+    @Bean
+    io.camunda.security.core.port.out.BasicAuthUserDetailsPort basicAuthUserDetailsPort() {
+      return username -> null;
+    }
+  }
+
   @Configuration
   static class ObjectMapperConfig {
 
@@ -249,6 +309,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
               BASE_PATH,
               authentication,
               sessionFilter,
+              "camunda-session-physical-tenants-t1",
               authFailureHandler,
               managerFactory,
               tokenEndpointCustomizerProvider,
@@ -328,6 +389,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
               BASE_PATH,
               authentication,
               sessionFilter,
+              "camunda-session-physical-tenants-t1",
               authFailureHandler,
               managerFactory,
               tokenEndpointCustomizerProvider,
@@ -359,6 +421,49 @@ class ScopedWebappSecurityChainBuilderScopedTest {
       providers.setOidc(oidcMap);
       auth.setProviders(providers);
       return auth;
+    }
+  }
+
+  @Configuration
+  static class ScopedBasicConfig {
+
+    @Bean("scopedBasicTestChain")
+    SecurityFilterChain scopedBasicTestChain(
+        final HttpSecurity http,
+        final CamundaSecurityLibraryProperties properties,
+        final AuthFailureHandler authFailureHandler,
+        final SecurityPathPort pathPort,
+        final ObjectProvider<io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer>
+            tokenEndpointCustomizerProvider,
+        final ObjectProvider<
+                org.springframework.security.web.authentication.logout.LogoutSuccessHandler>
+            logoutSuccessHandlerProvider,
+        final ObjectProvider<
+                org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService>
+            oidcUserServiceProvider,
+        final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
+        final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider)
+        throws Exception {
+      final var authentication = new AuthenticationConfiguration();
+      authentication.setMethod(AuthenticationMethod.BASIC);
+      final var sessionFilter =
+          new SessionRepositoryFilter<>(new MapSessionRepository(new ConcurrentHashMap<>()));
+      return new ScopedWebappSecurityChainBuilder()
+          .buildScopedWebappChain(
+              http,
+              BASE_PATH,
+              authentication,
+              sessionFilter,
+              "camunda-session-physical-tenants-t1",
+              authFailureHandler,
+              (repo, clientRepo) -> new DefaultOAuth2AuthorizedClientManager(repo, clientRepo),
+              tokenEndpointCustomizerProvider,
+              logoutSuccessHandlerProvider,
+              oidcUserServiceProvider,
+              webAppAuthorizationFilterProvider,
+              adminUserCheckFilterProvider,
+              properties,
+              pathPort);
     }
   }
 }

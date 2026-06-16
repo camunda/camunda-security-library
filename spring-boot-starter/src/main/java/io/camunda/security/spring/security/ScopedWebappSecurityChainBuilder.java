@@ -48,6 +48,7 @@ import org.springframework.security.web.authentication.DelegatingAuthenticationE
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.logout.CompositeLogoutHandler;
 import org.springframework.security.web.authentication.logout.CookieClearingLogoutHandler;
+import org.springframework.security.web.authentication.logout.LogoutHandler;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
 import org.springframework.security.web.authentication.ui.DefaultLoginPageGeneratingFilter;
@@ -125,6 +126,8 @@ public final class ScopedWebappSecurityChainBuilder {
         pathPort,
         null,
         null,
+        null,
+        null,
         "/oauth2/authorization");
   }
 
@@ -155,6 +158,8 @@ public final class ScopedWebappSecurityChainBuilder {
         properties,
         pathPort,
         null,
+        null,
+        null,
         null);
   }
 
@@ -179,6 +184,7 @@ public final class ScopedWebappSecurityChainBuilder {
       final String basePath,
       final AuthenticationConfiguration authentication,
       final SessionRepositoryFilter<?> sessionRepositoryFilter,
+      final String scopedSessionCookieName,
       final AuthFailureHandler authFailureHandler,
       final OAuth2AuthorizedClientManagerFactory authorizedClientManagerFactory,
       final ObjectProvider<OidcTokenEndpointCustomizer> tokenEndpointCustomizerProvider,
@@ -233,6 +239,8 @@ public final class ScopedWebappSecurityChainBuilder {
             pathPort,
             sessionRepositoryFilter,
             basePath,
+            scopedSessionCookieName,
+            basePath,
             authorizationBaseUri);
       }
       case BASIC ->
@@ -247,6 +255,8 @@ public final class ScopedWebappSecurityChainBuilder {
               properties,
               pathPort,
               sessionRepositoryFilter,
+              basePath,
+              scopedSessionCookieName,
               basePath);
       default ->
           throw new IllegalStateException(
@@ -315,6 +325,8 @@ public final class ScopedWebappSecurityChainBuilder {
       final SecurityPathPort pathPort,
       final SessionRepositoryFilter<?> sessionRepositoryFilter,
       final String csrfCookiePath,
+      final String scopedSessionCookieName,
+      final String scopedCookiePath,
       final String authorizationBaseUri)
       throws Exception {
 
@@ -371,19 +383,35 @@ public final class ScopedWebappSecurityChainBuilder {
             .oidcLogout(oidcLogout -> {})
             .logout(
                 logout -> {
-                  logout
-                      .logoutUrl(logoutUrl)
-                      .deleteCookies(SESSION_COOKIE, X_CSRF_TOKEN)
-                      .invalidateHttpSession(true);
+                  logout.logoutUrl(logoutUrl).invalidateHttpSession(true);
+                  if (scopedSessionCookieName != null) {
+                    logout
+                        .addLogoutHandler(
+                            pathScopedCookieClearingLogoutHandler(
+                                scopedSessionCookieName, scopedCookiePath))
+                        .addLogoutHandler(
+                            pathScopedCookieClearingLogoutHandler(X_CSRF_TOKEN, scopedCookiePath));
+                  } else {
+                    logout.deleteCookies(SESSION_COOKIE, X_CSRF_TOKEN);
+                  }
                   logoutSuccessHandlerProvider.ifAvailable(logout::logoutSuccessHandler);
                 });
 
     // Refresh expired access tokens transparently after AuthorizationFilter; the logout handler
     // force-logs-out users whose refresh token has also expired.
-    final var logoutHandler =
-        new CompositeLogoutHandler(
-            new CookieClearingLogoutHandler(SESSION_COOKIE, X_CSRF_TOKEN),
-            new SecurityContextLogoutHandler());
+    final CompositeLogoutHandler logoutHandler;
+    if (scopedSessionCookieName != null) {
+      logoutHandler =
+          new CompositeLogoutHandler(
+              pathScopedCookieClearingLogoutHandler(scopedSessionCookieName, scopedCookiePath),
+              pathScopedCookieClearingLogoutHandler(X_CSRF_TOKEN, scopedCookiePath),
+              new SecurityContextLogoutHandler());
+    } else {
+      logoutHandler =
+          new CompositeLogoutHandler(
+              new CookieClearingLogoutHandler(SESSION_COOKIE, X_CSRF_TOKEN),
+              new SecurityContextLogoutHandler());
+    }
     filterChainBuilder.addFilterAfter(
         new OAuth2RefreshTokenFilter(
             authorizedClientRepository, authorizedClientManager, logoutHandler),
@@ -427,7 +455,9 @@ public final class ScopedWebappSecurityChainBuilder {
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort,
       final SessionRepositoryFilter<?> sessionRepositoryFilter,
-      final String csrfCookiePath)
+      final String csrfCookiePath,
+      final String scopedSessionCookieName,
+      final String scopedCookiePath)
       throws Exception {
 
     // Install the per-scope session filter before the security context filter.
@@ -456,13 +486,23 @@ public final class ScopedWebappSecurityChainBuilder {
                               }
                             }))
             .logout(
-                logout ->
+                logout -> {
+                  logout
+                      .logoutUrl(logoutUrl)
+                      .logoutSuccessHandler(
+                          (request, response, authentication) ->
+                              response.setStatus(HttpStatus.NO_CONTENT.value()));
+                  if (scopedSessionCookieName != null) {
                     logout
-                        .logoutUrl(logoutUrl)
-                        .logoutSuccessHandler(
-                            (request, response, authentication) ->
-                                response.setStatus(HttpStatus.NO_CONTENT.value()))
-                        .deleteCookies(SESSION_COOKIE, X_CSRF_TOKEN))
+                        .addLogoutHandler(
+                            pathScopedCookieClearingLogoutHandler(
+                                scopedSessionCookieName, scopedCookiePath))
+                        .addLogoutHandler(
+                            pathScopedCookieClearingLogoutHandler(X_CSRF_TOKEN, scopedCookiePath));
+                  } else {
+                    logout.deleteCookies(SESSION_COOKIE, X_CSRF_TOKEN);
+                  }
+                })
             .exceptionHandling(
                 eh ->
                     eh.authenticationEntryPoint(authFailureHandler)
@@ -484,6 +524,16 @@ public final class ScopedWebappSecurityChainBuilder {
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
     return filterChainBuilder.build();
+  }
+
+  private static LogoutHandler pathScopedCookieClearingLogoutHandler(
+      final String cookieName, final String cookiePath) {
+    return (request, response, authentication) -> {
+      final var cookie = new jakarta.servlet.http.Cookie(cookieName, "");
+      cookie.setMaxAge(0);
+      cookie.setPath(cookiePath);
+      response.addCookie(cookie);
+    };
   }
 
   private static <T> ObjectProvider<T> singletonProvider(final T value) {
