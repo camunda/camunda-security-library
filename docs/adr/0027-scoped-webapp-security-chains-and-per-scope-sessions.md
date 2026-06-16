@@ -4,7 +4,7 @@ status: Proposed
 
 # ADR-0027: Scoped webapp security chains and per-scope web sessions
 
-**Deciders**: Ben Sheppard (Ben-Sheppard), Patrick Wunderlich (p-wunderlich), Sebastian Bathke (megglos)
+**Deciders**: Ben Sheppard (Ben-Sheppard), Patrick Wunderlich (p-wunderlich), Sebastian Bathke (megglos), Joaquin Felici (joaquinfelici)
 
 ## Status
 
