@@ -220,13 +220,13 @@ public final class ScopedApiSecurityChainBuilder {
    * sweep in {@link ScopedApiChainRegistrar} to ensure {@code "/scope"} and {@code "/scope/"} are
    * treated as the same path.
    *
-   * <p>Package-private so the registrar can call it without adding a coupling to the builder's
-   * Spring context.
+   * <p>Public so the webapp chain builder (in a different package) can reuse it without duplicating
+   * the normalization logic.
    *
    * @param basePath the raw basePath; may be {@code null} (returned as-is)
    * @return the normalized basePath
    */
-  static String normalizeBasePath(final String basePath) {
+  public static String normalizeBasePath(final String basePath) {
     if (basePath == null) {
       return null;
     }

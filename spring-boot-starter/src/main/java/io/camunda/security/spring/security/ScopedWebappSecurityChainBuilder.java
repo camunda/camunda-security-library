@@ -11,6 +11,7 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.SESSION_COOKIE;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
+import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.filter.AdminUserCheckFilter;
@@ -18,9 +19,14 @@ import io.camunda.security.spring.filter.OAuth2RefreshTokenFilter;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.handler.OAuth2AuthenticationExceptionHandler;
+import io.camunda.security.spring.oidc.CamundaOidcAuthorizationRequestResolver;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
+import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
+import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
+import io.camunda.security.spring.scope.ScopedApiSecurityChainBuilder;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.function.Consumer;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -29,6 +35,8 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
+import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
@@ -42,20 +50,32 @@ import org.springframework.security.web.authentication.logout.CookieClearingLogo
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
 import org.springframework.security.web.authentication.ui.DefaultLoginPageGeneratingFilter;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.util.matcher.RequestHeaderRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
+import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
  * Single source of truth for the CSL webapp filter-chain shape (OIDC oauth2Login and HTTP-Basic
  * form login). The primary {@link OidcWebappSecurityConfiguration} and {@link
- * BasicAuthWebappSecurityConfiguration} delegate here; a later increment reuses the same methods to
- * assemble per-scope webapp chains by passing {@code basePath}-prefixed matchers and endpoint URLs.
- *
- * <p>Stateless: every collaborator is a method parameter, so callers may supply per-scope values.
+ * BasicAuthWebappSecurityConfiguration} delegate here; the same methods are used to assemble
+ * per-scope webapp chains by passing {@code basePath}-prefixed matchers and endpoint URLs.
  */
 public final class ScopedWebappSecurityChainBuilder {
+
+  private final ScopedClientRegistrationFactory clientRegistrationFactory;
+
+  /** No-arg constructor for backward compatibility with primary webapp configuration classes. */
+  public ScopedWebappSecurityChainBuilder() {
+    this(new ScopedClientRegistrationFactory());
+  }
+
+  public ScopedWebappSecurityChainBuilder(
+      final ScopedClientRegistrationFactory clientRegistrationFactory) {
+    this.clientRegistrationFactory = clientRegistrationFactory;
+  }
 
   /**
    * Builds the OIDC oauth2Login webapp chain. Body moved verbatim from {@code
@@ -83,6 +103,212 @@ public final class ScopedWebappSecurityChainBuilder {
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort)
       throws Exception {
+    return buildOidcWebappChainInternal(
+        http,
+        matchers,
+        unauthenticatedMatchers,
+        loginUrl,
+        logoutUrl,
+        redirectUri,
+        authFailureHandler,
+        clientRegistrationRepository,
+        authorizedClientRepository,
+        authorizedClientManager,
+        tokenEndpointCustomizerProvider,
+        logoutSuccessHandlerProvider,
+        oidcUserServiceProvider,
+        authorizationRequestResolverProvider,
+        webAppAuthorizationFilterProvider,
+        oidcLoginPickerProvider,
+        properties,
+        pathPort,
+        null);
+  }
+
+  /**
+   * Builds the HTTP-Basic form-login webapp chain. Body moved verbatim from {@code
+   * BasicAuthWebappSecurityConfiguration#basicAuthWebappSecurityFilterChain}; {@code matchers},
+   * {@code loginUrl} and {@code logoutUrl} were inlined there and are parameters here.
+   */
+  public SecurityFilterChain buildBasicWebappChain(
+      final HttpSecurity http,
+      final Collection<String> matchers,
+      final String loginUrl,
+      final String logoutUrl,
+      final AuthFailureHandler authFailureHandler,
+      final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
+      final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider,
+      final CamundaSecurityLibraryProperties properties,
+      final SecurityPathPort pathPort)
+      throws Exception {
+    return buildBasicWebappChainInternal(
+        http,
+        matchers,
+        loginUrl,
+        logoutUrl,
+        authFailureHandler,
+        webAppAuthorizationFilterProvider,
+        adminUserCheckFilterProvider,
+        properties,
+        pathPort,
+        null);
+  }
+
+  /**
+   * Builds the per-scope webapp chain for the given {@code basePath} and {@code authentication}
+   * configuration. Derives prefixed matchers and endpoint URLs from the basePath and delegates to
+   * either the OIDC or BASIC chain builder depending on the authentication method.
+   *
+   * <p>For OIDC scopes, builds a per-scope OAuth2 client stack: an {@link
+   * InMemoryClientRegistrationRepository} from the descriptor's providers, an {@link
+   * AuthenticatedPrincipalOAuth2AuthorizedClientRepository}, an {@link
+   * OAuth2AuthorizedClientManager} via the supplied factory, and a prefix-aware {@link
+   * CamundaOidcAuthorizationRequestResolver}. The login picker is also prefix-aware so its
+   * authorization links point to {@code <basePath>/oauth2/authorization/<id>}.
+   *
+   * <p>The supplied {@code sessionRepositoryFilter} is installed before {@link
+   * SecurityContextHolderFilter} so the Spring-Session-backed, Path-scoped session is available
+   * throughout the filter chain.
+   */
+  public SecurityFilterChain buildScopedWebappChain(
+      final HttpSecurity http,
+      final String basePath,
+      final AuthenticationConfiguration authentication,
+      final SessionRepositoryFilter<?> sessionRepositoryFilter,
+      final AuthFailureHandler authFailureHandler,
+      final OAuth2AuthorizedClientManagerFactory authorizedClientManagerFactory,
+      final ObjectProvider<OidcTokenEndpointCustomizer> tokenEndpointCustomizerProvider,
+      final ObjectProvider<LogoutSuccessHandler> logoutSuccessHandlerProvider,
+      final ObjectProvider<OidcUserService> oidcUserServiceProvider,
+      final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
+      final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider,
+      final CamundaSecurityLibraryProperties properties,
+      final SecurityPathPort pathPort)
+      throws Exception {
+    final var prefix = ScopedApiSecurityChainBuilder.normalizeBasePath(basePath);
+    final var matchers = pathPort.webappPaths().stream().map(p -> prefix + p).toList();
+    final var unauthenticated =
+        pathPort.unauthenticatedWebappPaths().stream().map(p -> prefix + p).toList();
+    final var loginUrl = prefix + CamundaSecurityFilterChainConstants.LOGIN_URL;
+    final var logoutUrl = prefix + CamundaSecurityFilterChainConstants.LOGOUT_URL;
+    final var redirectUri = prefix + CamundaSecurityFilterChainConstants.REDIRECT_URI;
+
+    return switch (authentication.getMethod()) {
+      case OIDC -> {
+        final var registrations = clientRegistrationFactory.create(authentication);
+        final var scopeRepo = new InMemoryClientRegistrationRepository(registrations);
+        final var authorizedClientRepository = new HttpSessionOAuth2AuthorizedClientRepository();
+        final var authorizedClientManager =
+            authorizedClientManagerFactory.create(scopeRepo, authorizedClientRepository);
+        final var resolver =
+            new CamundaOidcAuthorizationRequestResolver(
+                scopeRepo,
+                clientRegistrationFactory.flatten(authentication),
+                prefix + "/oauth2/authorization");
+        // Per-scope picker with authorization links prefixed to the scope basePath.
+        final var picker =
+            LoginLinksBuilder.defaultOauth2LoginPickerFilter(scopeRepo, loginUrl, prefix);
+        yield buildOidcWebappChainInternal(
+            http,
+            matchers,
+            unauthenticated,
+            loginUrl,
+            logoutUrl,
+            redirectUri,
+            authFailureHandler,
+            scopeRepo,
+            authorizedClientRepository,
+            authorizedClientManager,
+            tokenEndpointCustomizerProvider,
+            logoutSuccessHandlerProvider,
+            oidcUserServiceProvider,
+            singletonProvider(resolver),
+            webAppAuthorizationFilterProvider,
+            singletonProvider(picker),
+            properties,
+            pathPort,
+            sessionRepositoryFilter);
+      }
+      case BASIC ->
+          buildBasicWebappChainInternal(
+              http,
+              matchers,
+              loginUrl,
+              logoutUrl,
+              authFailureHandler,
+              webAppAuthorizationFilterProvider,
+              adminUserCheckFilterProvider,
+              properties,
+              pathPort,
+              sessionRepositoryFilter);
+      default ->
+          throw new IllegalStateException(
+              "Unsupported authentication method: " + authentication.getMethod());
+    };
+  }
+
+  // Moved verbatim from OidcWebappSecurityConfiguration; package-private for unit testing.
+  static AuthenticationEntryPoint oidcWebappAuthenticationEntryPoint(
+      final ClientRegistrationRepository clientRegistrationRepository, final String loginUrl) {
+    final var bearerEntryPoint = new BearerTokenAuthenticationEntryPoint();
+    final var oauthRedirectEntryPoint =
+        new LoginUrlAuthenticationEntryPoint(
+            resolveOauthRedirectTarget(clientRegistrationRepository, loginUrl));
+    final var entryPoints = new LinkedHashMap<RequestMatcher, AuthenticationEntryPoint>();
+    entryPoints.put(new RequestHeaderRequestMatcher("Authorization"), bearerEntryPoint);
+    final var delegatingEntryPoint = new DelegatingAuthenticationEntryPoint(entryPoints);
+    delegatingEntryPoint.setDefaultEntryPoint(oauthRedirectEntryPoint);
+    return delegatingEntryPoint;
+  }
+
+  // Moved verbatim from OidcWebappSecurityConfiguration; package-private for unit testing.
+  static String resolveOauthRedirectTarget(
+      final ClientRegistrationRepository clientRegistrationRepository, final String loginUrl) {
+    final var defaultTarget = "/oauth2/authorization/" + OIDC_REGISTRATION_ID;
+    if (!(clientRegistrationRepository instanceof final Iterable<?> iterable)) {
+      return defaultTarget;
+    }
+    final var iterator = iterable.iterator();
+    if (!iterator.hasNext()) {
+      return defaultTarget;
+    }
+    final Object first = iterator.next();
+    if (iterator.hasNext()) {
+      return loginUrl;
+    }
+    if (first instanceof final ClientRegistration registration) {
+      return "/oauth2/authorization/" + registration.getRegistrationId();
+    }
+    return defaultTarget;
+  }
+
+  private SecurityFilterChain buildOidcWebappChainInternal(
+      final HttpSecurity http,
+      final Collection<String> matchers,
+      final Collection<String> unauthenticatedMatchers,
+      final String loginUrl,
+      final String logoutUrl,
+      final String redirectUri,
+      final AuthFailureHandler authFailureHandler,
+      final ClientRegistrationRepository clientRegistrationRepository,
+      final OAuth2AuthorizedClientRepository authorizedClientRepository,
+      final OAuth2AuthorizedClientManager authorizedClientManager,
+      final ObjectProvider<OidcTokenEndpointCustomizer> tokenEndpointCustomizerProvider,
+      final ObjectProvider<LogoutSuccessHandler> logoutSuccessHandlerProvider,
+      final ObjectProvider<OidcUserService> oidcUserServiceProvider,
+      final ObjectProvider<OAuth2AuthorizationRequestResolver> authorizationRequestResolverProvider,
+      final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
+      final ObjectProvider<DefaultLoginPageGeneratingFilter> oidcLoginPickerProvider,
+      final CamundaSecurityLibraryProperties properties,
+      final SecurityPathPort pathPort,
+      final SessionRepositoryFilter<?> sessionRepositoryFilter)
+      throws Exception {
+
+    // Install the per-scope session filter before the security context filter so the Spring-Session
+    // backed, Path-scoped session is available throughout the chain.
+    if (sessionRepositoryFilter != null) {
+      http.addFilterBefore(sessionRepositoryFilter, SecurityContextHolderFilter.class);
+    }
 
     final var filterChainBuilder =
         http.securityMatcher(matchers.toArray(String[]::new))
@@ -175,12 +401,7 @@ public final class ScopedWebappSecurityChainBuilder {
     return filterChainBuilder.build();
   }
 
-  /**
-   * Builds the HTTP-Basic form-login webapp chain. Body moved verbatim from {@code
-   * BasicAuthWebappSecurityConfiguration#basicAuthWebappSecurityFilterChain}; {@code matchers},
-   * {@code loginUrl} and {@code logoutUrl} were inlined there and are parameters here.
-   */
-  public SecurityFilterChain buildBasicWebappChain(
+  private SecurityFilterChain buildBasicWebappChainInternal(
       final HttpSecurity http,
       final Collection<String> matchers,
       final String loginUrl,
@@ -189,8 +410,14 @@ public final class ScopedWebappSecurityChainBuilder {
       final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
       final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider,
       final CamundaSecurityLibraryProperties properties,
-      final SecurityPathPort pathPort)
+      final SecurityPathPort pathPort,
+      final SessionRepositoryFilter<?> sessionRepositoryFilter)
       throws Exception {
+
+    // Install the per-scope session filter before the security context filter.
+    if (sessionRepositoryFilter != null) {
+      http.addFilterBefore(sessionRepositoryFilter, SecurityContextHolderFilter.class);
+    }
 
     final var filterChainBuilder =
         http.securityMatcher(matchers.toArray(String[]::new))
@@ -242,38 +469,32 @@ public final class ScopedWebappSecurityChainBuilder {
     return filterChainBuilder.build();
   }
 
-  // Moved verbatim from OidcWebappSecurityConfiguration; package-private for unit testing.
-  static AuthenticationEntryPoint oidcWebappAuthenticationEntryPoint(
-      final ClientRegistrationRepository clientRegistrationRepository, final String loginUrl) {
-    final var bearerEntryPoint = new BearerTokenAuthenticationEntryPoint();
-    final var oauthRedirectEntryPoint =
-        new LoginUrlAuthenticationEntryPoint(
-            resolveOauthRedirectTarget(clientRegistrationRepository, loginUrl));
-    final var entryPoints = new LinkedHashMap<RequestMatcher, AuthenticationEntryPoint>();
-    entryPoints.put(new RequestHeaderRequestMatcher("Authorization"), bearerEntryPoint);
-    final var delegatingEntryPoint = new DelegatingAuthenticationEntryPoint(entryPoints);
-    delegatingEntryPoint.setDefaultEntryPoint(oauthRedirectEntryPoint);
-    return delegatingEntryPoint;
-  }
+  private static <T> ObjectProvider<T> singletonProvider(final T value) {
+    return new ObjectProvider<>() {
+      @Override
+      public T getObject() {
+        return value;
+      }
 
-  // Moved verbatim from OidcWebappSecurityConfiguration; package-private for unit testing.
-  static String resolveOauthRedirectTarget(
-      final ClientRegistrationRepository clientRegistrationRepository, final String loginUrl) {
-    final var defaultTarget = "/oauth2/authorization/" + OIDC_REGISTRATION_ID;
-    if (!(clientRegistrationRepository instanceof final Iterable<?> iterable)) {
-      return defaultTarget;
-    }
-    final var iterator = iterable.iterator();
-    if (!iterator.hasNext()) {
-      return defaultTarget;
-    }
-    final Object first = iterator.next();
-    if (iterator.hasNext()) {
-      return loginUrl;
-    }
-    if (first instanceof final ClientRegistration registration) {
-      return "/oauth2/authorization/" + registration.getRegistrationId();
-    }
-    return defaultTarget;
+      @Override
+      public T getObject(final Object... args) {
+        return value;
+      }
+
+      @Override
+      public T getIfAvailable() {
+        return value;
+      }
+
+      @Override
+      public T getIfUnique() {
+        return value;
+      }
+
+      @Override
+      public void ifAvailable(final Consumer<T> dependencyConsumer) {
+        dependencyConsumer.accept(value);
+      }
+    };
   }
 }

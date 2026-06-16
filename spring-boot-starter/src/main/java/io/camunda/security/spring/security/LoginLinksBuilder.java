@@ -19,10 +19,23 @@ final class LoginLinksBuilder {
 
   static DefaultLoginPageGeneratingFilter defaultOauth2LoginPickerFilter(
       final ClientRegistrationRepository clientRegistrationRepository, final String loginPageUrl) {
+    return defaultOauth2LoginPickerFilter(clientRegistrationRepository, loginPageUrl, "");
+  }
+
+  /**
+   * Builds the login picker filter with authorization links prefixed by {@code
+   * authorizationBaseUriPrefix}. Use this overload for per-scope chains where the authorization
+   * endpoint lives under a basePath (e.g. {@code /physical-tenants/t1/oauth2/authorization/{id}}).
+   */
+  static DefaultLoginPageGeneratingFilter defaultOauth2LoginPickerFilter(
+      final ClientRegistrationRepository clientRegistrationRepository,
+      final String loginPageUrl,
+      final String authorizationBaseUriPrefix) {
     final var picker = new DefaultLoginPageGeneratingFilter();
     picker.setLoginPageUrl(loginPageUrl);
     picker.setOauth2LoginEnabled(true);
-    picker.setOauth2AuthenticationUrlToClientName(buildLoginLinks(clientRegistrationRepository));
+    picker.setOauth2AuthenticationUrlToClientName(
+        buildLoginLinks(clientRegistrationRepository, authorizationBaseUriPrefix));
     return picker;
   }
 
@@ -34,6 +47,16 @@ final class LoginLinksBuilder {
    */
   static Map<String, String> buildLoginLinks(
       final ClientRegistrationRepository clientRegistrationRepository) {
+    return buildLoginLinks(clientRegistrationRepository, "");
+  }
+
+  /**
+   * Builds the authorization URL -> client display name map with each URL prefixed by {@code
+   * prefix}. An empty prefix yields {@code /oauth2/authorization/{id}}; a non-empty prefix (e.g.
+   * {@code /physical-tenants/t1}) yields {@code /physical-tenants/t1/oauth2/authorization/{id}}.
+   */
+  static Map<String, String> buildLoginLinks(
+      final ClientRegistrationRepository clientRegistrationRepository, final String prefix) {
     final var links = new LinkedHashMap<String, String>();
     if (!(clientRegistrationRepository instanceof final Iterable<?> iterable)) {
       return links;
@@ -44,7 +67,8 @@ final class LoginLinksBuilder {
             registration.getClientName() != null
                 ? registration.getClientName()
                 : registration.getRegistrationId();
-        links.put("/oauth2/authorization/" + registration.getRegistrationId(), displayName);
+        links.put(
+            prefix + "/oauth2/authorization/" + registration.getRegistrationId(), displayName);
       }
     }
     return links;
