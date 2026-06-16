@@ -115,16 +115,18 @@ class ScopedApiSecurityConfigurationTest {
         .withUserConfiguration(SingleBasicDescriptorProvider.class)
         .run(
             ctx -> {
-              // The BDRPP creates exactly one OrderedSecurityFilterChainWrapper
+              // The BDRPP creates exactly two OrderedSecurityFilterChainWrappers per descriptor:
+              // one API chain and one webapp chain (no-op when webappPaths() is empty).
               final var wrappers =
                   ctx.getBeansOfType(SecurityFilterChain.class).values().stream()
                       .filter(c -> c instanceof OrderedSecurityFilterChainWrapper)
                       .toList();
               assertThat(wrappers)
-                  .as("one contributed descriptor must produce exactly one wrapper chain")
-                  .hasSize(1);
+                  .as(
+                      "one contributed descriptor must produce exactly two wrapper chains (API + webapp no-op)")
+                  .hasSize(2);
 
-              final var contributed = (OrderedSecurityFilterChainWrapper) wrappers.getFirst();
+              final var contributed = contributedChain(ctx);
 
               // The contributed chain must match the scoped V2 path
               final var scopedRequest = new MockHttpServletRequest("GET", SCOPED_V2);
@@ -290,16 +292,20 @@ class ScopedApiSecurityConfigurationTest {
   // ---------------------------------------------------------------------------
 
   /**
-   * Retrieves the single contributed {@link OrderedSecurityFilterChainWrapper} from the context.
+   * Retrieves the contributed API {@link OrderedSecurityFilterChainWrapper} — the one that matches
+   * {@link #SCOPED_V2}. Each descriptor registers two wrappers (API + webapp no-op); this returns
+   * the active API chain used to authenticate and authorise API requests.
    */
   private static OrderedSecurityFilterChainWrapper contributedChain(
       final org.springframework.context.ApplicationContext ctx) {
+    final var probe = new MockHttpServletRequest("GET", SCOPED_V2);
     final var wrappers =
         ctx.getBeansOfType(SecurityFilterChain.class).values().stream()
             .filter(c -> c instanceof OrderedSecurityFilterChainWrapper)
             .map(c -> (OrderedSecurityFilterChainWrapper) c)
+            .filter(c -> c.matches(probe))
             .toList();
-    assertThat(wrappers).as("exactly one contributed chain expected").hasSize(1);
+    assertThat(wrappers).as("exactly one contributed API chain must match " + SCOPED_V2).hasSize(1);
     return wrappers.getFirst();
   }
 

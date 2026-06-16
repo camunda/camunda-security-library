@@ -156,13 +156,6 @@ final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcess
       final BeanDefinitionRegistry registry,
       final ConfigurableListableBeanFactory beanFactory,
       final List<ScopedSecurityDescriptor> descriptors) {
-    // Determine once whether the host provides webapp paths — only register a webapp chain when
-    // paths exist; hosts that expose only an API (no browser UI) won't have webapp paths and
-    // Spring Security's HttpSecurity#securityMatcher rejects an empty array.
-    final var pathPort = beanFactory.getBeanProvider(SecurityPathPort.class).getIfAvailable();
-    final boolean hasWebappPaths =
-        pathPort != null && pathPort.webappPaths() != null && !pathPort.webappPaths().isEmpty();
-
     for (int i = 0; i < descriptors.size(); i++) {
       final var descriptor = descriptors.get(i);
       final var sanitized = sanitizeBasePath(descriptor.basePath());
@@ -178,24 +171,18 @@ final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcess
           apiChainName,
           descriptor.basePath());
 
-      // Webapp chain — only registered when the host provides webapp paths. Hosts that expose
-      // only an API (no browser UI) set webappPaths() to an empty set; skip silently in that case.
-      if (hasWebappPaths) {
-        final var webappChainName = "scopedWebappSecurityFilterChain-" + i + "-" + sanitized;
-        final var webappChainBd =
-            new RootBeanDefinition(
-                OrderedSecurityFilterChainWrapper.class,
-                () -> buildWebappChain(beanFactory, descriptor));
-        registry.registerBeanDefinition(webappChainName, webappChainBd);
-        LOG.debug(
-            "Registered scoped webapp chain bean '{}' for basePath={}",
-            webappChainName,
-            descriptor.basePath());
-      } else {
-        LOG.debug(
-            "Skipping scoped webapp chain for basePath={}: host provides no webapp paths",
-            descriptor.basePath());
-      }
+      // Webapp chain — always registered. When the host provides no webapp paths, buildWebappChain
+      // returns a no-op chain that matches nothing so it is effectively inert.
+      final var webappChainName = "scopedWebappSecurityFilterChain-" + i + "-" + sanitized;
+      final var webappChainBd =
+          new RootBeanDefinition(
+              OrderedSecurityFilterChainWrapper.class,
+              () -> buildWebappChain(beanFactory, descriptor));
+      registry.registerBeanDefinition(webappChainName, webappChainBd);
+      LOG.debug(
+          "Registered scoped webapp chain bean '{}' for basePath={}",
+          webappChainName,
+          descriptor.basePath());
     }
   }
 
@@ -278,12 +265,25 @@ final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcess
     try {
       // HttpSecurity is a prototype bean — each call produces a fresh, independent instance.
       final var http = beanFactory.getBean(HttpSecurity.class);
+
+      final var pathPort = beanFactory.getBean(SecurityPathPort.class);
+      if (pathPort.webappPaths() == null || pathPort.webappPaths().isEmpty()) {
+        LOG.debug(
+            "Skipping webapp chain build for basePath={}: host provides no webapp paths"
+                + " — returning no-op chain",
+            descriptor.basePath());
+        final SecurityFilterChain noOpChain =
+            http.securityMatcher(request -> false)
+                .authorizeHttpRequests(auth -> auth.anyRequest().denyAll())
+                .build();
+        return new OrderedSecurityFilterChainWrapper(noOpChain, ORDER_WEBAPP_API);
+      }
+
       final var builder = beanFactory.getBean(ScopedWebappSecurityChainBuilder.class);
       final var properties = beanFactory.getBean(CamundaSecurityLibraryProperties.class);
       final var authFailureHandler = beanFactory.getBean(AuthFailureHandler.class);
       final var authorizedClientManagerFactory =
           beanFactory.getBean(OAuth2AuthorizedClientManagerFactory.class);
-      final var pathPort = beanFactory.getBean(SecurityPathPort.class);
       final var sessionFilter = getOrBuildSessionFilter(beanFactory, descriptor.basePath());
 
       final var tokenEndpointCustomizerProvider =
