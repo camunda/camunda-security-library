@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.oidc;
 
+import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.JWSSigner;
@@ -175,6 +176,26 @@ public final class OidcTestServer implements AutoCloseable {
    */
   public String sign(final String issuer) throws Exception {
     return signWithAudience(issuer, List.of());
+  }
+
+  /**
+   * Signs a JWT with subject {@code alice}, the given {@code issuer}, and a 60-second expiry, with
+   * the given {@code typ} set in the JOSE header. Useful for testing JOSE type verification logic.
+   */
+  public String signWithTyp(final String issuer, final String typ) throws Exception {
+    requireKeyMaterial();
+    final var header =
+        new JWSHeader.Builder(algorithm).keyID(kid).type(new JOSEObjectType(typ)).build();
+    final var claims =
+        new JWTClaimsSet.Builder()
+            .subject("alice")
+            .issuer(issuer)
+            .issueTime(Date.from(Instant.now()))
+            .expirationTime(Date.from(Instant.now().plusSeconds(60)))
+            .build();
+    final var jwt = new SignedJWT(header, claims);
+    jwt.sign(signer);
+    return jwt.serialize();
   }
 
   /**
