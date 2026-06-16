@@ -122,7 +122,8 @@ public final class ScopedWebappSecurityChainBuilder {
         oidcLoginPickerProvider,
         properties,
         pathPort,
-        null);
+        null,
+        "/oauth2/authorization");
   }
 
   /**
@@ -200,11 +201,10 @@ public final class ScopedWebappSecurityChainBuilder {
         final var authorizedClientRepository = new HttpSessionOAuth2AuthorizedClientRepository();
         final var authorizedClientManager =
             authorizedClientManagerFactory.create(scopeRepo, authorizedClientRepository);
+        final var authorizationBaseUri = prefix + "/oauth2/authorization";
         final var resolver =
             new CamundaOidcAuthorizationRequestResolver(
-                scopeRepo,
-                clientRegistrationFactory.flatten(authentication),
-                prefix + "/oauth2/authorization");
+                scopeRepo, clientRegistrationFactory.flatten(authentication), authorizationBaseUri);
         // Per-scope picker with authorization links prefixed to the scope basePath.
         final var picker =
             LoginLinksBuilder.defaultOauth2LoginPickerFilter(scopeRepo, loginUrl, prefix);
@@ -227,7 +227,8 @@ public final class ScopedWebappSecurityChainBuilder {
             singletonProvider(picker),
             properties,
             pathPort,
-            sessionRepositoryFilter);
+            sessionRepositoryFilter,
+            authorizationBaseUri);
       }
       case BASIC ->
           buildBasicWebappChainInternal(
@@ -249,11 +250,14 @@ public final class ScopedWebappSecurityChainBuilder {
 
   // Moved verbatim from OidcWebappSecurityConfiguration; package-private for unit testing.
   static AuthenticationEntryPoint oidcWebappAuthenticationEntryPoint(
-      final ClientRegistrationRepository clientRegistrationRepository, final String loginUrl) {
+      final ClientRegistrationRepository clientRegistrationRepository,
+      final String loginUrl,
+      final String authorizationBaseUri) {
     final var bearerEntryPoint = new BearerTokenAuthenticationEntryPoint();
     final var oauthRedirectEntryPoint =
         new LoginUrlAuthenticationEntryPoint(
-            resolveOauthRedirectTarget(clientRegistrationRepository, loginUrl));
+            resolveOauthRedirectTarget(
+                clientRegistrationRepository, loginUrl, authorizationBaseUri));
     final var entryPoints = new LinkedHashMap<RequestMatcher, AuthenticationEntryPoint>();
     entryPoints.put(new RequestHeaderRequestMatcher("Authorization"), bearerEntryPoint);
     final var delegatingEntryPoint = new DelegatingAuthenticationEntryPoint(entryPoints);
@@ -263,8 +267,10 @@ public final class ScopedWebappSecurityChainBuilder {
 
   // Moved verbatim from OidcWebappSecurityConfiguration; package-private for unit testing.
   static String resolveOauthRedirectTarget(
-      final ClientRegistrationRepository clientRegistrationRepository, final String loginUrl) {
-    final var defaultTarget = "/oauth2/authorization/" + OIDC_REGISTRATION_ID;
+      final ClientRegistrationRepository clientRegistrationRepository,
+      final String loginUrl,
+      final String authorizationBaseUri) {
+    final var defaultTarget = authorizationBaseUri + "/" + OIDC_REGISTRATION_ID;
     if (!(clientRegistrationRepository instanceof final Iterable<?> iterable)) {
       return defaultTarget;
     }
@@ -277,7 +283,7 @@ public final class ScopedWebappSecurityChainBuilder {
       return loginUrl;
     }
     if (first instanceof final ClientRegistration registration) {
-      return "/oauth2/authorization/" + registration.getRegistrationId();
+      return authorizationBaseUri + "/" + registration.getRegistrationId();
     }
     return defaultTarget;
   }
@@ -301,7 +307,8 @@ public final class ScopedWebappSecurityChainBuilder {
       final ObjectProvider<DefaultLoginPageGeneratingFilter> oidcLoginPickerProvider,
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort,
-      final SessionRepositoryFilter<?> sessionRepositoryFilter)
+      final SessionRepositoryFilter<?> sessionRepositoryFilter,
+      final String authorizationBaseUri)
       throws Exception {
 
     // Install the per-scope session filter before the security context filter so the Spring-Session
@@ -328,7 +335,7 @@ public final class ScopedWebappSecurityChainBuilder {
                 eh ->
                     eh.authenticationEntryPoint(
                             oidcWebappAuthenticationEntryPoint(
-                                clientRegistrationRepository, loginUrl))
+                                clientRegistrationRepository, loginUrl, authorizationBaseUri))
                         .accessDeniedHandler(authFailureHandler))
             .cors(AbstractHttpConfigurer::disable)
             .formLogin(AbstractHttpConfigurer::disable)
