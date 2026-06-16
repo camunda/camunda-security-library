@@ -74,12 +74,12 @@ public final class SecurityFilterChainSupport {
     return allowedPaths;
   }
 
-  static CookieCsrfTokenRepository cookieCsrfTokenRepository(
+  public static CookieCsrfTokenRepository cookieCsrfTokenRepository(
       final CamundaSecurityLibraryProperties properties) {
     return cookieCsrfTokenRepository(properties, null);
   }
 
-  static CookieCsrfTokenRepository cookieCsrfTokenRepository(
+  public static CookieCsrfTokenRepository cookieCsrfTokenRepository(
       final CamundaSecurityLibraryProperties properties, final String cookiePath) {
     final CookieCsrfTokenRepository repository = new CookieCsrfTokenRepository();
     repository.setHeaderName(X_CSRF_TOKEN);
