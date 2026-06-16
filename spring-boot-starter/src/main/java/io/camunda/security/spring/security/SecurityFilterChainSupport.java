@@ -41,13 +41,24 @@ public final class SecurityFilterChainSupport {
 
   private SecurityFilterChainSupport() {}
 
-  public static CookieCsrfTokenRepository cookieCsrfTokenRepository(
+  static CookieCsrfTokenRepository cookieCsrfTokenRepository(
       final CamundaSecurityLibraryProperties properties) {
+    return cookieCsrfTokenRepository(properties, null);
+  }
+
+  static CookieCsrfTokenRepository cookieCsrfTokenRepository(
+      final CamundaSecurityLibraryProperties properties, final String cookiePath) {
     final CookieCsrfTokenRepository repository = new CookieCsrfTokenRepository();
     repository.setHeaderName(X_CSRF_TOKEN);
     repository.setCookieName(X_CSRF_TOKEN);
     final boolean httpOnly = properties.getCsrf().isCookieHttpOnly();
-    repository.setCookieCustomizer(builder -> builder.httpOnly(httpOnly));
+    repository.setCookieCustomizer(
+        builder -> {
+          builder.httpOnly(httpOnly);
+          if (cookiePath != null && !cookiePath.isBlank()) {
+            builder.path(cookiePath);
+          }
+        });
     return repository;
   }
 
@@ -62,6 +73,15 @@ public final class SecurityFilterChainSupport {
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort)
       throws Exception {
+    applyCsrfConfiguration(http, properties, pathPort, null);
+  }
+
+  public static void applyCsrfConfiguration(
+      final HttpSecurity http,
+      final CamundaSecurityLibraryProperties properties,
+      final SecurityPathPort pathPort,
+      final String cookiePath)
+      throws Exception {
     if (!properties.getCsrf().isEnabled()) {
       http.csrf(AbstractHttpConfigurer::disable);
       return;
@@ -74,7 +94,7 @@ public final class SecurityFilterChainSupport {
     allowedPaths.add(LOGOUT_URL);
     allowedPaths.addAll(properties.getCsrf().getIgnoredPathPatterns());
 
-    final var csrfTokenRepository = cookieCsrfTokenRepository(properties);
+    final var csrfTokenRepository = cookieCsrfTokenRepository(properties, cookiePath);
     http.csrf(
         csrf ->
             csrf.csrfTokenRepository(csrfTokenRepository)

@@ -124,6 +124,7 @@ public final class ScopedWebappSecurityChainBuilder {
         properties,
         pathPort,
         null,
+        null,
         "/oauth2/authorization");
   }
 
@@ -153,6 +154,7 @@ public final class ScopedWebappSecurityChainBuilder {
         adminUserCheckFilterProvider,
         properties,
         pathPort,
+        null,
         null);
   }
 
@@ -230,6 +232,7 @@ public final class ScopedWebappSecurityChainBuilder {
             properties,
             pathPort,
             sessionRepositoryFilter,
+            basePath,
             authorizationBaseUri);
       }
       case BASIC ->
@@ -243,7 +246,8 @@ public final class ScopedWebappSecurityChainBuilder {
               adminUserCheckFilterProvider,
               properties,
               pathPort,
-              sessionRepositoryFilter);
+              sessionRepositoryFilter,
+              basePath);
       default ->
           throw new IllegalStateException(
               "Unsupported authentication method: " + authentication.getMethod());
@@ -310,6 +314,7 @@ public final class ScopedWebappSecurityChainBuilder {
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort,
       final SessionRepositoryFilter<?> sessionRepositoryFilter,
+      final String csrfCookiePath,
       final String authorizationBaseUri)
       throws Exception {
 
@@ -392,7 +397,8 @@ public final class ScopedWebappSecurityChainBuilder {
       filterChainBuilder.addFilterAfter(webAppFilter, OAuth2RefreshTokenFilter.class);
     }
 
-    SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
+    SecurityFilterChainSupport.applyCsrfConfiguration(
+        filterChainBuilder, properties, pathPort, csrfCookiePath);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
     // Install the multi-IdP login picker (GH-269): the custom entry point trips
@@ -420,7 +426,8 @@ public final class ScopedWebappSecurityChainBuilder {
       final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider,
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort,
-      final SessionRepositoryFilter<?> sessionRepositoryFilter)
+      final SessionRepositoryFilter<?> sessionRepositoryFilter,
+      final String csrfCookiePath)
       throws Exception {
 
     // Install the per-scope session filter before the security context filter.
@@ -472,7 +479,8 @@ public final class ScopedWebappSecurityChainBuilder {
       filterChainBuilder.addFilterAfter(webAppFilter, anchor);
     }
 
-    SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
+    SecurityFilterChainSupport.applyCsrfConfiguration(
+        filterChainBuilder, properties, pathPort, csrfCookiePath);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
     return filterChainBuilder.build();
