@@ -29,8 +29,6 @@ import org.junit.jupiter.api.Test;
  */
 final class ScopedApiChainRegistrarTest {
 
-  private static final int MAX_COOKIE_NAME_LENGTH = 200; // see ScopedApiChainRegistrar
-
   @Test
   void returnsEmptyStringForNull() {
     assertThat(ScopedApiChainRegistrar.sanitizeBasePath(null)).isEmpty();
@@ -87,7 +85,7 @@ final class ScopedApiChainRegistrarTest {
 
   @Test
   void rejectsBasePathWhoseDerivedCookieNameExceedsTheLimit() {
-    final var longPath = "/" + "a".repeat(MAX_COOKIE_NAME_LENGTH + 1);
+    final var longPath = "/" + "a".repeat(ScopedApiChainRegistrar.MAX_COOKIE_NAME_LENGTH + 1);
     final var descriptors = List.of(new ScopedSecurityDescriptor(longPath, basicAuthentication()));
     assertThatThrownBy(() -> ScopedApiChainRegistrar.rejectCookieNameCollisions(descriptors))
         .isInstanceOf(IllegalStateException.class)

@@ -27,7 +27,6 @@ import java.util.Set;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -548,7 +547,7 @@ class ScopedWebappSessionIsolationTest {
 
     @Bean
     io.camunda.security.core.port.out.BasicAuthUserDetailsPort userDetailsPort() {
-      return Mockito.mock(io.camunda.security.core.port.out.BasicAuthUserDetailsPort.class);
+      return username -> null;
     }
   }
 

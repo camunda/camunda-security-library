@@ -11,6 +11,7 @@ import io.camunda.security.api.model.config.oidc.AuthorizeRequestConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
@@ -68,6 +69,13 @@ public final class CamundaOidcAuthorizationRequestResolver
       final ClientRegistrationRepository clientRegistrationRepository,
       final Map<String, OidcConfiguration> sourcesByRegistrationId,
       final String authorizationRequestBaseUri) {
+    Objects.requireNonNull(
+        clientRegistrationRepository, "clientRegistrationRepository must not be null");
+    Objects.requireNonNull(
+        authorizationRequestBaseUri, "authorizationRequestBaseUri must not be null");
+    if (authorizationRequestBaseUri.isBlank()) {
+      throw new IllegalArgumentException("authorizationRequestBaseUri must not be blank");
+    }
     this.clientRegistrationRepository = clientRegistrationRepository;
     this.sourcesByRegistrationId = Map.copyOf(sourcesByRegistrationId);
     this.authorizationRequestBaseUri = authorizationRequestBaseUri;

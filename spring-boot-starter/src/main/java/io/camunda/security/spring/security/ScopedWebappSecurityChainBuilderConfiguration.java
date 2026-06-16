@@ -36,7 +36,7 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
 
   @Bean
   @ConditionalOnMissingBean
-  public OAuth2AuthorizedClientManagerFactory oAuth2AuthorizedClientManagerFactory() {
+  public OAuth2AuthorizedClientManagerFactory oauth2AuthorizedClientManagerFactory() {
     return (clientRegistrationRepository, authorizedClientRepository) -> {
       final var manager =
           new DefaultOAuth2AuthorizedClientManager(

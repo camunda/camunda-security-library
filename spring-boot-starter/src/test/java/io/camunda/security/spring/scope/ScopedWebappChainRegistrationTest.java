@@ -25,7 +25,6 @@ import io.camunda.security.spring.user.UserConfiguration;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -284,7 +283,7 @@ class ScopedWebappChainRegistrationTest {
 
     @Bean
     BasicAuthUserDetailsPort userDetailsPort() {
-      return Mockito.mock(BasicAuthUserDetailsPort.class);
+      return username -> null;
     }
   }
 

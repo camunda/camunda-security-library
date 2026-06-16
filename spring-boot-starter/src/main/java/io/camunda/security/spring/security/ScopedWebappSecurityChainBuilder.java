@@ -26,6 +26,7 @@ import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import io.camunda.security.spring.scope.ScopedApiSecurityChainBuilder;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.Objects;
 import java.util.function.Consumer;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
@@ -194,6 +195,7 @@ public final class ScopedWebappSecurityChainBuilder {
     final var logoutUrl = prefix + CamundaSecurityFilterChainConstants.LOGOUT_URL;
     final var redirectUri = prefix + CamundaSecurityFilterChainConstants.REDIRECT_URI;
 
+    Objects.requireNonNull(authentication.getMethod(), "authentication.method must not be null");
     return switch (authentication.getMethod()) {
       case OIDC -> {
         final var registrations = clientRegistrationFactory.create(authentication);
