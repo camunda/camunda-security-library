@@ -195,6 +195,13 @@ public final class ScopedWebappSecurityChainBuilder {
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort)
       throws Exception {
+    Objects.requireNonNull(http, "http must not be null");
+    Objects.requireNonNull(basePath, "basePath must not be null");
+    Objects.requireNonNull(authentication, "authentication must not be null");
+    Objects.requireNonNull(pathPort, "pathPort must not be null");
+    Objects.requireNonNull(properties, "properties must not be null");
+    Objects.requireNonNull(authentication.getMethod(), "authentication.method must not be null");
+
     final var prefix = ScopedApiSecurityChainBuilder.normalizeBasePath(basePath);
     final var matchers = pathPort.webappPaths().stream().map(p -> prefix + p).toList();
     final var unauthenticated =
@@ -202,8 +209,6 @@ public final class ScopedWebappSecurityChainBuilder {
     final var loginUrl = prefix + CamundaSecurityFilterChainConstants.LOGIN_URL;
     final var logoutUrl = prefix + CamundaSecurityFilterChainConstants.LOGOUT_URL;
     final var redirectUri = prefix + CamundaSecurityFilterChainConstants.REDIRECT_URI;
-
-    Objects.requireNonNull(authentication.getMethod(), "authentication.method must not be null");
     return switch (authentication.getMethod()) {
       case OIDC -> {
         final var registrations = clientRegistrationFactory.create(authentication);
