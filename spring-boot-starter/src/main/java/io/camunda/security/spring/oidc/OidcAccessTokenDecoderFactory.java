@@ -332,7 +332,7 @@ public class OidcAccessTokenDecoderFactory {
     // 1. createJOSEObjectTypeVerifier() — Nimbus-level, runs before JWK lookup; primary gate.
     // 2. JwtTypeValidator below — Spring-level, runs after signature verification; ensures the
     //    same allowlist (JWT, at+jwt, absent) is enforced even if the Nimbus verifier is ever
-    //    swapped or subclassed. Both layers accept the same set, so they cannot diverge.
+    //    swapped or subclassed. Both layers must not diverge — keep their allowlists in sync.
     final JwtTypeValidator jwtTypeValidator =
         new JwtTypeValidator(List.of(JOSEObjectType.JWT.getType(), AT_JWT.getType()));
     jwtTypeValidator.setAllowEmpty(true);
