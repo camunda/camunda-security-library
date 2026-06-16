@@ -92,7 +92,7 @@ Because the descriptor is surface-agnostic, the **same object** drives the API c
 
 ## 6. Decisions
 
-1. **Session isolation lives in CSL, derived from `basePath`.** A per-scope `SessionRepositoryFilter` + cookie serializer is built once per descriptor and shared by the scope's webapp and API chains. *Alternative — rely on the servlet `HttpSession`*: rejected, the container's `JSESSIONID` can't be `Path`/name-scoped per chain. *Alternative — OC builds and contributes the session components*: rejected, it would change the contract and re-introduce host-side chain assembly (the drift risk ADR-0025 closed).
+1. **Session isolation lives in CSL, derived from `basePath`.** A per-scope `SessionRepositoryFilter` + cookie serializer is built once per descriptor and shared by the scope's webapp and API chains. *Alternative — rely on the servlet `HttpSession`*: rejected, the container's `JSESSIONID` can't be `Path`/name-scoped per chain. *Alternative — OC builds and contributes the session components*: rejected, it would change the contract and re-introduce host-side chain assembly (the drift risk ADR-0025 closed). **Open for alignment:** per-scope cookie isolation needs Spring Session regardless of durability — which `SessionRepository` backs the per-scope filter when `camunda.security.session.persistent.enabled=false`? Recommendation: an in-memory `MapSessionRepository` fallback (keeps durable storage orthogonal); alternative: require persistent sessions for any per-PT webapp chain.
 
 2. **The contract does not change.** All webapp specifics are derived from `basePath`. *Alternative — grow the descriptor with cookie/redirect/login fields*: rejected, it leaks surface concerns into the host contract for no gain.
 
