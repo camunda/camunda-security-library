@@ -57,7 +57,10 @@ class OidcBeansConfigurationJwtDecoderTest {
 
   @AfterAll
   static void stopServer() {
-    server.stop();
+    if (server != null) {
+      server.stop();
+      server = null;
+    }
   }
 
   @Test
@@ -342,7 +345,10 @@ class OidcBeansConfigurationJwtDecoderTest {
   void hostSuppliedJwtDecoderTakesPrecedenceViaConditionalOnMissingBean() {
     // @ConditionalOnMissingBean on OidcBeansConfiguration#jwtDecoder must back off
     // when the host registers its own JwtDecoder bean.
-    final JwtDecoder customDecoder = token -> null;
+    final JwtDecoder customDecoder =
+        token -> {
+          throw new JwtException("custom JwtDecoder should not be invoked in this test");
+        };
     runner
         .withPropertyValues(
             "camunda.security.authentication.oidc.client-id=flat-client",
