@@ -158,20 +158,27 @@ post-processor is a no-op — primary-only hosts (Hub, single-scope OC) are unaf
 `SessionStorePort` (ADR-0017) is **unchanged** — no tenant parameter. The host's adapter (OC's
 `SessionStoreAdapter`) becomes scope-aware:
 
-- it holds a `Map<physicalTenantId, PersistentWebSessionClient>` keyed by the PT id the host
-  resolves from request context (`PhysicalTenantContext.current()`, *not* the `basePath`), each
-  client bound to that PT's isolated secondary-storage schema, built from the host's existing per-PT
-  config resolution;
-- request-scoped `get` / `upsert` / `delete` resolve the PT from request context (the cookie's
-  `Path` already pinned the request to a scope) — mirroring the `BasicAuthUserDetailsPort` adapter pattern;
+- it resolves the per-PT `PersistentWebSessionClient` through the host's **existing**
+  `PhysicalTenantScoped<T>` provider (`search-client`'s tenant abstraction —
+  `withPhysicalTenant(physicalTenantId)` returns a view reading exclusively from that PT's
+  secondary storage, the same mechanism `SearchClientReadersFactory` and the `ServiceRegistry`
+  already use). The adapter does not own a client map or cache;
+- request-scoped `get` / `upsert` / `delete` resolve the per-PT client via
+  `withPhysicalTenant(PhysicalTenantContext.current())` (the cookie's `Path` already pinned the
+  request to a scope) — mirroring the `BasicAuthUserDetailsPort` adapter, which already resolves
+  per-PT services from request context;
 - the **background deletion sweep** (`getAll` → `delete`, run with no request context by ADR-0017's
-  `WebSessionDeletionTask`) **fans out** across all per-PT clients — `delete(id)` is a harmless no-op
-  in non-owning stores, so no PT-encoding of the session id is needed (expiry cleanup does not need
-  per-PT targeting).
+  `WebSessionDeletionTask`) enumerates the configured PTs (from `PhysicalTenantResolver`) and
+  **fans out** `withPhysicalTenant(id)` across them — `delete(id)` is a harmless no-op in non-owning
+  stores, so no PT-encoding of the session id is needed (expiry cleanup does not need per-PT
+  targeting).
 
-The per-scope `PersistentWebSessionClient` instances and the `search-client` / `db-rdbms` modules
-stay tenant-agnostic ("one client = one store"). The alternative — pushing scope-awareness *into*
-`PersistentWebSessionClient` — is rejected below.
+The one genuinely new piece is making `PersistentWebSessionClient` itself **`PhysicalTenantScoped`**,
+built over the per-PT secondary-storage clients `SearchClientReadersFactory` already produces — so
+the storage clients and the `search-client` / `db-rdbms` modules stay tenant-agnostic at the
+per-store level while the per-PT view is resolved by the existing provider, not a bespoke adapter
+map. The alternative — pushing scope-awareness *into* a single `PersistentWebSessionClient` — is
+rejected below.
 
 ### 7. Host-side: serving the SPA under the prefix
 
@@ -205,7 +212,8 @@ stays in the host (OC).
   (ADR-0023) but is a behavioural addition to the scoped API chain relative to ADR-0025.
 - Honouring the session on the API chain requires the API surface to be nested under `basePath`. A
   host that routes its scoped API outside the prefix gets bearer-only on that surface.
-- The host adapter gains a per-PT client map and request-context resolution. Request-scoped ops
+- The host adapter delegates per-PT client resolution to the existing `PhysicalTenantScoped`
+  provider (no adapter-owned map) and resolves the PT from request context. Request-scoped ops
   (`get`/`upsert`/`delete` via `findById`/`save`) run on the request thread, where
   `PhysicalTenantFilter` has already stamped `PhysicalTenantContext`, so they route directly. Only
   the periodic expiry sweep (`WebSessionDeletionTask`, ~10 min) runs context-free: its `getAll()`
@@ -226,13 +234,19 @@ stays in the host (OC).
   it would re-introduce host-side chain assembly (the drift risk ADR-0025 closed) and force a
   contract change. CSL owns chain assembly; the host owns policy.
 
-- **Make `PersistentWebSessionClient` scope-aware (route inside the storage client).** Rejected —
-  it pushes the scope/request-context concept down into the tenant-agnostic `search-client` and
-  `db-rdbms` modules (an inverted dependency on a request-scoped web concern), duplicates routing
-  across both backend implementations, and — decisively — the background deletion sweep runs with
-  no request context, so a context-aware client cannot route it. Routing in the adapter keeps the
-  storage clients "one client = one store" and is the only layer that serves both request-scoped
-  operations and the context-free sweep (via fan-out).
+- **Make `PersistentWebSessionClient` self-route by reading `PhysicalTenantContext` internally.**
+  Rejected — that pushes a request-scoped web concept down into the tenant-agnostic `search-client`
+  and `db-rdbms` modules (an inverted dependency), and a context-reading client could not serve the
+  background deletion sweep, which runs with no request context. The chosen approach instead reuses
+  the host's **explicit `PhysicalTenantScoped` provider** (`withPhysicalTenant(id)`): each returned
+  view is still "one store", the *adapter* supplies the id (from `PhysicalTenantContext` for
+  request-scoped ops, or by enumerating configured PTs for the sweep), and the client never reads
+  the web context itself.
+
+- **Have the adapter maintain its own `Map<physicalTenantId, PersistentWebSessionClient>`.** Rejected —
+  it re-implements caching/lifecycle the data layer already standardizes in `PhysicalTenantScoped`
+  (the same abstraction behind `SearchClientReadersFactory` and the `ServiceRegistry`). Reusing the
+  provider keeps the per-PT resolution consistent across the codebase and out of the adapter.
 
 - **A single scope-aware dispatching webapp chain instead of N chains.** Deferred, consistent with
   ADR-0025: the descriptor model permits it later as an optimisation without a contract change;
