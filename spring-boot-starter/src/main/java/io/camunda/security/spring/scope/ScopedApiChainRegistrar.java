@@ -11,12 +11,22 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 
 import io.camunda.security.api.context.CamundaSecurityScopeProvider;
 import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
+import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
+import io.camunda.security.spring.filter.AdminUserCheckFilter;
+import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
+import io.camunda.security.spring.handler.AuthFailureHandler;
+import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import io.camunda.security.spring.oidc.ScopedJwtDecoderFactory;
+import io.camunda.security.spring.security.ScopedWebappSecurityChainBuilder;
+import io.camunda.security.spring.session.WebSessionRepository;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
@@ -26,7 +36,12 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
+import org.springframework.session.MapSessionRepository;
+import org.springframework.session.SessionRepository;
+import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
  * {@link BeanDefinitionRegistryPostProcessor} that discovers all {@link
@@ -44,6 +59,13 @@ final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcess
       200; // well under the RFC 6265 4096-byte name=value budget
 
   private static final Logger LOG = LoggerFactory.getLogger(ScopedApiChainRegistrar.class);
+
+  /**
+   * Shared per-scope {@link SessionRepositoryFilter} instances, keyed by basePath. Built once per
+   * descriptor in {@link #registerChains} so Increment 4 (session-on-API) can reuse the same filter
+   * instance on the API chain.
+   */
+  private final Map<String, SessionRepositoryFilter<?>> sessionFiltersByBasePath = new HashMap<>();
 
   @Override
   public void postProcessBeanDefinitionRegistry(final BeanDefinitionRegistry registry)
@@ -130,20 +152,50 @@ final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcess
     }
   }
 
-  private static void registerChains(
+  private void registerChains(
       final BeanDefinitionRegistry registry,
       final ConfigurableListableBeanFactory beanFactory,
       final List<ScopedSecurityDescriptor> descriptors) {
+    // Determine once whether the host provides webapp paths — only register a webapp chain when
+    // paths exist; hosts that expose only an API (no browser UI) won't have webapp paths and
+    // Spring Security's HttpSecurity#securityMatcher rejects an empty array.
+    final var pathPort = beanFactory.getBeanProvider(SecurityPathPort.class).getIfAvailable();
+    final boolean hasWebappPaths =
+        pathPort != null && pathPort.webappPaths() != null && !pathPort.webappPaths().isEmpty();
+
     for (int i = 0; i < descriptors.size(); i++) {
       final var descriptor = descriptors.get(i);
-      final var beanName =
-          "scopedApiSecurityFilterChain-" + i + "-" + sanitizeBasePath(descriptor.basePath());
-      final var bd =
+      final var sanitized = sanitizeBasePath(descriptor.basePath());
+
+      // API chain
+      final var apiChainName = "scopedApiSecurityFilterChain-" + i + "-" + sanitized;
+      final var apiChainBd =
           new RootBeanDefinition(
               OrderedSecurityFilterChainWrapper.class, () -> buildChain(beanFactory, descriptor));
-      registry.registerBeanDefinition(beanName, bd);
+      registry.registerBeanDefinition(apiChainName, apiChainBd);
       LOG.debug(
-          "Registered scoped chain bean '{}' for basePath={}", beanName, descriptor.basePath());
+          "Registered scoped API chain bean '{}' for basePath={}",
+          apiChainName,
+          descriptor.basePath());
+
+      // Webapp chain — only registered when the host provides webapp paths. Hosts that expose
+      // only an API (no browser UI) set webappPaths() to an empty set; skip silently in that case.
+      if (hasWebappPaths) {
+        final var webappChainName = "scopedWebappSecurityFilterChain-" + i + "-" + sanitized;
+        final var webappChainBd =
+            new RootBeanDefinition(
+                OrderedSecurityFilterChainWrapper.class,
+                () -> buildWebappChain(beanFactory, descriptor));
+        registry.registerBeanDefinition(webappChainName, webappChainBd);
+        LOG.debug(
+            "Registered scoped webapp chain bean '{}' for basePath={}",
+            webappChainName,
+            descriptor.basePath());
+      } else {
+        LOG.debug(
+            "Skipping scoped webapp chain for basePath={}: host provides no webapp paths",
+            descriptor.basePath());
+      }
     }
   }
 
@@ -190,6 +242,81 @@ final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcess
     } catch (final Exception ex) {
       throw new IllegalStateException(
           "Failed to build scoped API security chain for basePath=" + descriptor.basePath(), ex);
+    }
+  }
+
+  /**
+   * Resolves or creates the shared {@link SessionRepositoryFilter} for the given basePath. The
+   * filter is built once per descriptor and cached so that Increment 4 (session-on-API) can reuse
+   * the same filter instance on the API chain without creating a second, independent session store.
+   *
+   * <p>D2: uses the {@link io.camunda.security.spring.session.WebSessionRepository} bean (durable
+   * store, ADR-0017) when present; otherwise falls back to a per-scope {@link MapSessionRepository}
+   * backed by a fresh {@link ConcurrentHashMap} (dev/test). Separate in-memory instances give
+   * store-level isolation on top of the cookie {@code Path} isolation.
+   */
+  private SessionRepositoryFilter<?> getOrBuildSessionFilter(
+      final ConfigurableListableBeanFactory beanFactory, final String basePath) {
+    return sessionFiltersByBasePath.computeIfAbsent(
+        basePath,
+        bp -> {
+          // D2: use the durable WebSessionRepository bean when present (production/ADR-0017),
+          // otherwise fall back to a per-scope in-memory store (dev/test).
+          final WebSessionRepository durableRepo =
+              beanFactory.getBeanProvider(WebSessionRepository.class).getIfAvailable();
+          final SessionRepository<?> repository =
+              durableRepo != null
+                  ? durableRepo
+                  : new MapSessionRepository(new ConcurrentHashMap<>());
+          return ScopedWebSessionComponents.sessionRepositoryFilter(bp, repository);
+        });
+  }
+
+  private OrderedSecurityFilterChainWrapper buildWebappChain(
+      final ConfigurableListableBeanFactory beanFactory,
+      final ScopedSecurityDescriptor descriptor) {
+    try {
+      // HttpSecurity is a prototype bean — each call produces a fresh, independent instance.
+      final var http = beanFactory.getBean(HttpSecurity.class);
+      final var builder = beanFactory.getBean(ScopedWebappSecurityChainBuilder.class);
+      final var properties = beanFactory.getBean(CamundaSecurityLibraryProperties.class);
+      final var authFailureHandler = beanFactory.getBean(AuthFailureHandler.class);
+      final var authorizedClientManagerFactory =
+          beanFactory.getBean(OAuth2AuthorizedClientManagerFactory.class);
+      final var pathPort = beanFactory.getBean(SecurityPathPort.class);
+      final var sessionFilter = getOrBuildSessionFilter(beanFactory, descriptor.basePath());
+
+      final var tokenEndpointCustomizerProvider =
+          beanFactory.getBeanProvider(OidcTokenEndpointCustomizer.class);
+      final var logoutSuccessHandlerProvider =
+          beanFactory.getBeanProvider(LogoutSuccessHandler.class);
+      final var oidcUserServiceProvider = beanFactory.getBeanProvider(OidcUserService.class);
+      final var webAppAuthorizationFilterProvider =
+          beanFactory.getBeanProvider(WebAppAuthorizationCheckFilter.class);
+      final var adminUserCheckFilterProvider =
+          beanFactory.getBeanProvider(AdminUserCheckFilter.class);
+
+      final SecurityFilterChain chain =
+          builder.buildScopedWebappChain(
+              http,
+              descriptor.basePath(),
+              descriptor.authentication(),
+              sessionFilter,
+              authFailureHandler,
+              authorizedClientManagerFactory,
+              tokenEndpointCustomizerProvider,
+              logoutSuccessHandlerProvider,
+              oidcUserServiceProvider,
+              webAppAuthorizationFilterProvider,
+              adminUserCheckFilterProvider,
+              properties,
+              pathPort);
+      return new OrderedSecurityFilterChainWrapper(chain, ORDER_WEBAPP_API);
+    } catch (final IllegalStateException ex) {
+      throw ex;
+    } catch (final Exception ex) {
+      throw new IllegalStateException(
+          "Failed to build scoped webapp security chain for basePath=" + descriptor.basePath(), ex);
     }
   }
 

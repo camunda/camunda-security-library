@@ -11,6 +11,7 @@ import io.camunda.security.api.context.CamundaSecurityScopeProvider;
 import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
 import io.camunda.security.spring.oidc.ScopedJwtDecoderFactory;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
+import io.camunda.security.spring.security.ScopedWebappSecurityChainBuilderConfiguration;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -48,7 +49,8 @@ import org.springframework.security.web.SecurityFilterChain;
 @Configuration
 @Import({
   ScopedApiSecurityChainBuilderConfiguration.class,
-  ScopedOidcInfrastructureConfiguration.class
+  ScopedOidcInfrastructureConfiguration.class,
+  ScopedWebappSecurityChainBuilderConfiguration.class
 })
 public class ScopedApiSecurityConfiguration {
 
