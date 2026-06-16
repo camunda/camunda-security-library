@@ -58,8 +58,8 @@ import org.springframework.security.web.SecurityFilterChain;
 public class ScopedSecurityChainConfiguration {
 
   /**
-   * BDRPP that discovers {@link CamundaSecurityScopeProvider} beans and registers one {@link
-   * SecurityFilterChain} bean definition per descriptor. Declared {@code static} so Spring does not
+   * BDRPP that discovers {@link CamundaSecurityScopeProvider} beans and registers an API and a
+   * webapp {@link SecurityFilterChain} per descriptor. Declared {@code static} so Spring does not
    * need to instantiate the enclosing {@code @Configuration} class before the post-processor runs.
    */
   @Bean

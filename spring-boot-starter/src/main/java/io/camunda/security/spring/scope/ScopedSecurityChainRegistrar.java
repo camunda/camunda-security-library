@@ -45,8 +45,8 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
  * {@link BeanDefinitionRegistryPostProcessor} that discovers all {@link
- * CamundaSecurityScopeProvider} beans and registers one {@link SecurityFilterChain} bean definition
- * per {@link ScopedSecurityDescriptor}.
+ * CamundaSecurityScopeProvider} beans and registers both an API {@link SecurityFilterChain} and a
+ * webapp {@link SecurityFilterChain} per {@link ScopedSecurityDescriptor}.
  *
  * <p>Declared {@code static} (via the enclosing {@link ScopedSecurityChainConfiguration}'s {@code
  * static @Bean} method) so Spring does not need to instantiate the enclosing {@code @Configuration}
@@ -97,7 +97,7 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
     rejectCookieNameCollisions(descriptors);
 
     LOG.info(
-        "Registering {} scoped API security chain(s) from CamundaSecurityScopeProvider(s)",
+        "Registering scoped API + webapp security chains for {} descriptor(s) from CamundaSecurityScopeProvider(s)",
         descriptors.size());
 
     registerChains(registry, beanFactory, descriptors);
