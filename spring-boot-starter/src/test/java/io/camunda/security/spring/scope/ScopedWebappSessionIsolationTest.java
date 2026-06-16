@@ -72,7 +72,7 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
  * <p>No production code was changed to make isolation hold. The isolation is structural: distinct
  * {@link MapSessionRepository} instances per scope (D2 fallback), distinct cookie names, and
  * distinct {@code Path} attributes — all wired by the already-implemented {@link
- * ScopedWebSessionComponentsFactory} and {@link ScopedApiChainRegistrar}.
+ * ScopedWebSessionComponentsFactory} and {@link ScopedSecurityChainRegistrar}.
  */
 class ScopedWebappSessionIsolationTest {
 
@@ -172,15 +172,15 @@ class ScopedWebappSessionIsolationTest {
 
   /**
    * Verifies the cookie name is derived from the basePath using {@link
-   * ScopedApiChainRegistrar#sessionCookieName(String)}: {@code camunda-session-} +
+   * ScopedSecurityChainRegistrar#sessionCookieName(String)}: {@code camunda-session-} +
    * sanitize(basePath).
    */
   @Test
   void cookieNameMatchesDerivedConvention() {
-    assertThat(ScopedApiChainRegistrar.sessionCookieName(BASE_A))
+    assertThat(ScopedSecurityChainRegistrar.sessionCookieName(BASE_A))
         .as("scope A cookie name must follow the camunda-session-<sanitize> convention")
         .isEqualTo(COOKIE_A);
-    assertThat(ScopedApiChainRegistrar.sessionCookieName(BASE_B))
+    assertThat(ScopedSecurityChainRegistrar.sessionCookieName(BASE_B))
         .as("scope B cookie name must follow the camunda-session-<sanitize> convention")
         .isEqualTo(COOKIE_B);
   }

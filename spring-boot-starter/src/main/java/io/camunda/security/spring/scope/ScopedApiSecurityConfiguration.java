@@ -61,6 +61,6 @@ public class ScopedApiSecurityConfiguration {
    */
   @Bean
   public static BeanDefinitionRegistryPostProcessor scopedApiChainRegistrar() {
-    return new ScopedApiChainRegistrar();
+    return new ScopedSecurityChainRegistrar();
   }
 }

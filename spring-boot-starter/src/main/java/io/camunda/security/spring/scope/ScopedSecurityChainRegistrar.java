@@ -52,13 +52,13 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
  * static @Bean} method) so Spring does not need to instantiate the enclosing {@code @Configuration}
  * class before the post-processor runs.
  */
-final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcessor {
+final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostProcessor {
 
   static final String SESSION_COOKIE_PREFIX = "camunda-session-";
   static final int MAX_COOKIE_NAME_LENGTH =
       200; // well under the RFC 6265 4096-byte name=value budget
 
-  private static final Logger LOG = LoggerFactory.getLogger(ScopedApiChainRegistrar.class);
+  private static final Logger LOG = LoggerFactory.getLogger(ScopedSecurityChainRegistrar.class);
 
   /**
    * Shared per-scope {@link SessionRepositoryFilter} instances, keyed by basePath. Built once per
@@ -74,7 +74,7 @@ final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcess
     // ConfigurableListableBeanFactory — we need that interface to call getBean().
     if (!(registry instanceof ConfigurableListableBeanFactory beanFactory)) {
       LOG.warn(
-          "ScopedApiChainRegistrar: registry is not a ConfigurableListableBeanFactory ({}); "
+          "ScopedSecurityChainRegistrar: registry is not a ConfigurableListableBeanFactory ({}); "
               + "skipping scoped chain registration",
           registry.getClass().getName());
       return;
@@ -376,7 +376,7 @@ final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcess
    * @param basePath the raw basePath; may be {@code null} (returned as empty string)
    * @return the sanitized basePath fragment
    */
-  // package-private (not private) so ScopedApiChainRegistrarTest can exercise it directly.
+  // package-private (not private) so ScopedSecurityChainRegistrarTest can exercise it directly.
   static String sanitizeBasePath(final String basePath) {
     if (basePath == null) {
       return "";

@@ -36,7 +36,7 @@ import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * Verifies that {@link ScopedApiChainRegistrar} registers both a scoped API chain and a scoped
+ * Verifies that {@link ScopedSecurityChainRegistrar} registers both a scoped API chain and a scoped
  * webapp chain per descriptor, and that the webapp chain correctly matches scoped paths and
  * challenges anonymous browser requests.
  *

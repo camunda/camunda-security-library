@@ -20,7 +20,7 @@ final class ScopedWebSessionComponentsFactory {
 
   static DefaultCookieSerializer cookieSerializer(final String basePath) {
     final var serializer = new DefaultCookieSerializer();
-    serializer.setCookieName(ScopedApiChainRegistrar.sessionCookieName(basePath));
+    serializer.setCookieName(ScopedSecurityChainRegistrar.sessionCookieName(basePath));
     serializer.setCookiePath(basePath);
     serializer.setUseHttpOnlyCookie(true);
     serializer.setSameSite("Lax");

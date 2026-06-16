@@ -217,8 +217,8 @@ public final class ScopedApiSecurityChainBuilder {
   /**
    * Normalizes a basePath by stripping a single trailing {@code /} when the path has more than one
    * character (so {@code "/"} is left as-is). Used by both the builder and the duplicate-detection
-   * sweep in {@link ScopedApiChainRegistrar} to ensure {@code "/scope"} and {@code "/scope/"} are
-   * treated as the same path.
+   * sweep in {@link ScopedSecurityChainRegistrar} to ensure {@code "/scope"} and {@code "/scope/"}
+   * are treated as the same path.
    *
    * <p>Public so the webapp chain builder (in a different package) can reuse it without duplicating
    * the normalization logic.
