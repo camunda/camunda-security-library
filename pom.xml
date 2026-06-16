@@ -42,7 +42,7 @@
         <nimbus-jose-jwt.version>10.9.1</nimbus-jose-jwt.version>
         <plugin.version.enforcer>3.6.3</plugin.version.enforcer>
         <plugin.version.spotless>3.6.0</plugin.version.spotless>
-        <plugin.version.google-java-format>1.24.0</plugin.version.google-java-format>
+        <plugin.version.google-java-format>1.35.0</plugin.version.google-java-format>
         <plugin.version.checkstyle>3.6.0</plugin.version.checkstyle>
         <version.checkstyle>13.6.0</version.checkstyle>
         <plugin.version.exec>3.6.3</plugin.version.exec>
