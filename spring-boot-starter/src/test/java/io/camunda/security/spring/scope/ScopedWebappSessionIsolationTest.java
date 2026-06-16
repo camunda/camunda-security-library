@@ -51,8 +51,8 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
  * properties:
  *
  * <ol>
- *   <li><b>Per-scope cookie identity (AC 1):</b> the {@link ScopedWebSessionComponents} wires each
- *       scope's {@link SessionRepositoryFilter} to a {@link
+ *   <li><b>Per-scope cookie identity (AC 1):</b> the {@link ScopedWebSessionComponentsFactory}
+ *       wires each scope's {@link SessionRepositoryFilter} to a {@link
  *       org.springframework.session.web.http.DefaultCookieSerializer} that emits cookies named
  *       {@code camunda-session-physical-tenants-a} / {@code ...-b} with {@code
  *       Path=/physical-tenants/a} / {@code Path=/physical-tenants/b}. This is verified by writing a
@@ -72,7 +72,7 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
  * <p>No production code was changed to make isolation hold. The isolation is structural: distinct
  * {@link MapSessionRepository} instances per scope (D2 fallback), distinct cookie names, and
  * distinct {@code Path} attributes — all wired by the already-implemented {@link
- * ScopedWebSessionComponents} and {@link ScopedApiChainRegistrar}.
+ * ScopedWebSessionComponentsFactory} and {@link ScopedApiChainRegistrar}.
  */
 class ScopedWebappSessionIsolationTest {
 
@@ -128,16 +128,16 @@ class ScopedWebappSessionIsolationTest {
   // ---------------------------------------------------------------------------
 
   /**
-   * Verifies via the {@link ScopedWebSessionComponents} cookie serializer (unit-level) that scope A
-   * and scope B cookies are given distinct names. The structural wiring (registrar → serializer →
-   * filter) is tested end-to-end by the fact that the full-context tests in this class run at all —
-   * the context startup fails if the wiring is broken.
+   * Verifies via the {@link ScopedWebSessionComponentsFactory} cookie serializer (unit-level) that
+   * scope A and scope B cookies are given distinct names. The structural wiring (registrar →
+   * serializer → filter) is tested end-to-end by the fact that the full-context tests in this class
+   * run at all — the context startup fails if the wiring is broken.
    */
   @Test
   void perScopeCookieNamesAreDistinct() {
     // given
-    final var serializerA = ScopedWebSessionComponents.cookieSerializer(BASE_A);
-    final var serializerB = ScopedWebSessionComponents.cookieSerializer(BASE_B);
+    final var serializerA = ScopedWebSessionComponentsFactory.cookieSerializer(BASE_A);
+    final var serializerB = ScopedWebSessionComponentsFactory.cookieSerializer(BASE_B);
 
     // when — write a cookie value through each serializer
     final var responseA = new MockHttpServletResponse();

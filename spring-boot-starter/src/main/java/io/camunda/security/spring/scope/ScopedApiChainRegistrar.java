@@ -255,7 +255,7 @@ final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcess
               durableRepo != null
                   ? durableRepo
                   : new MapSessionRepository(new ConcurrentHashMap<>());
-          return ScopedWebSessionComponents.sessionRepositoryFilter(bp, repository);
+          return ScopedWebSessionComponentsFactory.sessionRepositoryFilter(bp, repository);
         });
   }
 

@@ -14,19 +14,20 @@ import org.junit.jupiter.api.Test;
 import org.springframework.session.MapSessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 
-class ScopedWebSessionComponentsTest {
+class ScopedWebSessionComponentsFactoryTest {
 
   @Test
   void buildsSessionRepositoryFilterForScope() {
     final var repo = new MapSessionRepository(new ConcurrentHashMap<>());
     final SessionRepositoryFilter<?> filter =
-        ScopedWebSessionComponents.sessionRepositoryFilter("/physical-tenants/t1", repo);
+        ScopedWebSessionComponentsFactory.sessionRepositoryFilter("/physical-tenants/t1", repo);
     assertThat(filter).as("a per-scope SessionRepositoryFilter must be produced").isNotNull();
   }
 
   @Test
   void derivesCookieNameAndPathFromBasePath() {
-    final var serializer = ScopedWebSessionComponents.cookieSerializer("/physical-tenants/t1");
+    final var serializer =
+        ScopedWebSessionComponentsFactory.cookieSerializer("/physical-tenants/t1");
     assertThat(serializer).as("cookieSerializer must be non-null").isNotNull();
 
     final var response = new org.springframework.mock.web.MockHttpServletResponse();

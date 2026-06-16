@@ -14,9 +14,9 @@ import org.springframework.session.web.http.DefaultCookieSerializer;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /** Builds the per-scope Spring Session components: a cookie scoped by name + Path to a basePath. */
-final class ScopedWebSessionComponents {
+final class ScopedWebSessionComponentsFactory {
 
-  private ScopedWebSessionComponents() {}
+  private ScopedWebSessionComponentsFactory() {}
 
   static DefaultCookieSerializer cookieSerializer(final String basePath) {
     final var serializer = new DefaultCookieSerializer();
