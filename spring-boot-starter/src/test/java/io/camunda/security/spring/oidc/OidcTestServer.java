@@ -184,6 +184,9 @@ public final class OidcTestServer implements AutoCloseable {
    */
   public String signWithTyp(final String issuer, final String typ) throws Exception {
     requireKeyMaterial();
+    if (typ == null || typ.isBlank()) {
+      throw new IllegalArgumentException("typ must be non-blank");
+    }
     final var header =
         new JWSHeader.Builder(algorithm).keyID(kid).type(new JOSEObjectType(typ)).build();
     final var claims =
