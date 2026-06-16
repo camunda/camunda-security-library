@@ -48,7 +48,7 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
  * CamundaSecurityScopeProvider} beans and registers one {@link SecurityFilterChain} bean definition
  * per {@link ScopedSecurityDescriptor}.
  *
- * <p>Declared {@code static} (via the enclosing {@link ScopedApiSecurityConfiguration}'s {@code
+ * <p>Declared {@code static} (via the enclosing {@link ScopedSecurityChainConfiguration}'s {@code
  * static @Bean} method) so Spring does not need to instantiate the enclosing {@code @Configuration}
  * class before the post-processor runs.
  */

@@ -22,10 +22,10 @@ import org.junit.jupiter.api.Test;
  * ({@code scopedApiSecurityFilterChain-<index>-<sanitized-basePath>}).
  *
  * <p>The registrar's container behaviour — provider discovery, duplicate-basePath rejection, chain
- * registration and ordering — is exercised end-to-end by {@code ScopedApiSecurityConfigurationTest}
- * against a real {@code ApplicationContext}, which is the appropriate level for a {@code
- * BeanDefinitionRegistryPostProcessor}. These tests cover the one piece of pure, container-free
- * logic.
+ * registration and ordering — is exercised end-to-end by {@code
+ * ScopedSecurityChainConfigurationTest} against a real {@code ApplicationContext}, which is the
+ * appropriate level for a {@code BeanDefinitionRegistryPostProcessor}. These tests cover the one
+ * piece of pure, container-free logic.
  */
 final class ScopedSecurityChainRegistrarTest {
 

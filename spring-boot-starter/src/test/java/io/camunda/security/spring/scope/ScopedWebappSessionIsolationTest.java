@@ -119,7 +119,7 @@ class ScopedWebappSessionIsolationTest {
                 BasicAuthApiSecurityConfiguration.class,
                 AuthFailureHandlerConfiguration.class,
                 UserConfiguration.class,
-                ScopedApiSecurityConfiguration.class))
+                ScopedSecurityChainConfiguration.class))
         .withPropertyValues("camunda.security.authentication.method=basic");
   }
 

@@ -19,8 +19,9 @@ import org.springframework.context.annotation.Import;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * Registers one {@link SecurityFilterChain} bean per {@link ScopedSecurityDescriptor} returned by
- * any {@link CamundaSecurityScopeProvider} beans contributed by the host application.
+ * Registers the scoped {@link SecurityFilterChain} beans — one API chain and one webapp chain per
+ * {@link ScopedSecurityDescriptor} — for every {@link CamundaSecurityScopeProvider} bean
+ * contributed by the host application.
  *
  * <p>The registration is driven by a {@link BeanDefinitionRegistryPostProcessor} (BDRPP) declared
  * as a {@code static @Bean} so it executes before the enclosing {@code @Configuration} instance is
@@ -40,10 +41,12 @@ import org.springframework.security.web.SecurityFilterChain;
  * the only requirement is that they sort before the catch-all deny chain.
  *
  * <p>Imports the infrastructure it consumes — {@link ScopedApiSecurityChainBuilderConfiguration}
- * (the {@link ScopedApiSecurityChainBuilder}) and {@link ScopedOidcInfrastructureConfiguration}
- * (the {@link ScopedJwtDecoderFactory} for OIDC scopes) — so a host that opts in by importing only
- * this class still gets a working scoped-chain collector. Both imported configurations expose their
- * beans via {@code @ConditionalOnMissingBean}, so importing them here and via the {@code
+ * (the {@link ScopedApiSecurityChainBuilder}), {@link
+ * ScopedWebappSecurityChainBuilderConfiguration} (the scoped webapp chain builder and OAuth2
+ * client-manager factory), and {@link ScopedOidcInfrastructureConfiguration} (the {@link
+ * ScopedJwtDecoderFactory} for OIDC scopes) — so a host that opts in by importing only this class
+ * still gets a working scoped-chain collector. The imported configurations expose their beans via
+ * {@code @ConditionalOnMissingBean}, so importing them here and via the {@code
  * CamundaSecurityAutoConfiguration} umbrella is idempotent.
  */
 @Configuration
@@ -52,7 +55,7 @@ import org.springframework.security.web.SecurityFilterChain;
   ScopedOidcInfrastructureConfiguration.class,
   ScopedWebappSecurityChainBuilderConfiguration.class
 })
-public class ScopedApiSecurityConfiguration {
+public class ScopedSecurityChainConfiguration {
 
   /**
    * BDRPP that discovers {@link CamundaSecurityScopeProvider} beans and registers one {@link
@@ -60,7 +63,7 @@ public class ScopedApiSecurityConfiguration {
    * need to instantiate the enclosing {@code @Configuration} class before the post-processor runs.
    */
   @Bean
-  public static BeanDefinitionRegistryPostProcessor scopedApiChainRegistrar() {
+  public static BeanDefinitionRegistryPostProcessor scopedSecurityChainRegistrar() {
     return new ScopedSecurityChainRegistrar();
   }
 }

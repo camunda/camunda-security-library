@@ -60,7 +60,7 @@ class ScopedWebappChainRegistrationTest {
 
   /**
    * Creates a runner that loads the CSL chain stack (BASIC global mode) including {@link
-   * ScopedApiSecurityConfiguration} (which now imports {@link
+   * ScopedSecurityChainConfiguration} (which now imports {@link
    * io.camunda.security.spring.security.ScopedWebappSecurityChainBuilderConfiguration}). Includes
    * the webapp-path stub so the webapp chain has matchers to register.
    */
@@ -74,7 +74,7 @@ class ScopedWebappChainRegistrationTest {
                 BasicAuthApiSecurityConfiguration.class,
                 AuthFailureHandlerConfiguration.class,
                 UserConfiguration.class,
-                ScopedApiSecurityConfiguration.class))
+                ScopedSecurityChainConfiguration.class))
         .withPropertyValues("camunda.security.authentication.method=basic");
   }
 

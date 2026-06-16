@@ -43,7 +43,7 @@ import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * Verifies the BDRPP-based registration in {@link ScopedApiSecurityConfiguration}:
+ * Verifies the BDRPP-based registration in {@link ScopedSecurityChainConfiguration}:
  *
  * <ul>
  *   <li>No-op when no {@link CamundaSecurityScopeProvider} bean is present.
@@ -52,7 +52,7 @@ import org.springframework.security.web.SecurityFilterChain;
  *   <li>Correct dispatch: requests under the contributed base path go to the contributed chain.
  * </ul>
  */
-class ScopedApiSecurityConfigurationTest {
+class ScopedSecurityChainConfigurationTest {
 
   private static final String SCOPED_BASE = "/example-scope/s1";
   private static final String SCOPED_V2 = SCOPED_BASE + "/v2/resource";
@@ -65,7 +65,7 @@ class ScopedApiSecurityConfigurationTest {
 
   /**
    * Creates a runner that loads the full CSL chain stack (BASIC mode) including the new {@link
-   * ScopedApiSecurityConfiguration}. A {@link BasicAuthUserDetailsPort} mock and {@link
+   * ScopedSecurityChainConfiguration}. A {@link BasicAuthUserDetailsPort} mock and {@link
    * SecurityPathPort} stub are provided as user configuration so all CSL conditions are satisfied.
    */
   private WebApplicationContextRunner basicRunner() {
@@ -73,7 +73,7 @@ class ScopedApiSecurityConfigurationTest {
         .withUserConfiguration(ObjectMapperConfig.class, StubPaths.class, StubUserDetailsPort.class)
         .withConfiguration(
             // Deliberately NOT importing ScopedApiSecurityChainBuilderConfiguration or
-            // ScopedOidcInfrastructureConfiguration here: ScopedApiSecurityConfiguration @Imports
+            // ScopedOidcInfrastructureConfiguration here: ScopedSecurityChainConfiguration @Imports
             // both, so importing only the collector must yield a self-contained, working context.
             AutoConfigurations.of(
                 CamundaSecurityConfiguration.class,
@@ -81,7 +81,7 @@ class ScopedApiSecurityConfigurationTest {
                 BasicAuthApiSecurityConfiguration.class,
                 AuthFailureHandlerConfiguration.class,
                 UserConfiguration.class,
-                ScopedApiSecurityConfiguration.class))
+                ScopedSecurityChainConfiguration.class))
         .withPropertyValues("camunda.security.authentication.method=basic");
   }
 
