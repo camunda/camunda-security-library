@@ -15,7 +15,7 @@ import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
-import java.util.Set;
+import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
@@ -185,32 +185,7 @@ class OidcWebappMultiIdpRedirectLoopTest {
 
     @Bean
     SecurityPathPort securityPathPort() {
-      return new SecurityPathPort() {
-        @Override
-        public Set<String> apiPaths() {
-          return Set.of("/api/**");
-        }
-
-        @Override
-        public Set<String> unprotectedApiPaths() {
-          return Set.of();
-        }
-
-        @Override
-        public Set<String> unprotectedPaths() {
-          return Set.of("/error");
-        }
-
-        @Override
-        public Set<String> webappPaths() {
-          return Set.of("/operate/**", "/login", "/logout");
-        }
-
-        @Override
-        public Set<String> webComponentNames() {
-          return Set.of("operate");
-        }
-      };
+      return StubSecurityPaths.builder().build();
     }
   }
 

@@ -20,6 +20,7 @@ import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.spi.WebAppProviderPort;
+import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import jakarta.servlet.Filter;
 import java.util.List;
 import java.util.Optional;
@@ -152,32 +153,7 @@ class BasicAuthWebappPermitAllChainTest {
 
     @Bean
     SecurityPathPort securityPathPort() {
-      return new SecurityPathPort() {
-        @Override
-        public Set<String> apiPaths() {
-          return Set.of("/api/**");
-        }
-
-        @Override
-        public Set<String> unprotectedApiPaths() {
-          return Set.of();
-        }
-
-        @Override
-        public Set<String> unprotectedPaths() {
-          return Set.of("/error");
-        }
-
-        @Override
-        public Set<String> webappPaths() {
-          return Set.of("/operate/**", "/login", "/logout");
-        }
-
-        @Override
-        public Set<String> webComponentNames() {
-          return Set.of("operate");
-        }
-      };
+      return StubSecurityPaths.builder().build();
     }
   }
 
