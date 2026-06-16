@@ -14,6 +14,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import java.util.Base64;
 import java.util.List;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -38,6 +40,8 @@ import org.springframework.security.oauth2.jwt.JwtException;
  */
 class OidcBeansConfigurationJwtDecoderTest {
 
+  private static OidcTestServer server;
+
   private final ApplicationContextRunner runner =
       new ApplicationContextRunner()
           .withPropertyValues("camunda.security.authentication.method=oidc")
@@ -45,6 +49,16 @@ class OidcBeansConfigurationJwtDecoderTest {
           .withConfiguration(
               AutoConfigurations.of(
                   CamundaSecurityConfiguration.class, OidcBeansConfiguration.class));
+
+  @BeforeAll
+  static void startServer() throws Exception {
+    server = OidcTestServer.startRsa("typ-test");
+  }
+
+  @AfterAll
+  static void stopServer() {
+    server.stop();
+  }
 
   @Test
   void shouldBuildJwtDecoderFromFlatJwkSetUri() {
@@ -211,11 +225,34 @@ class OidcBeansConfigurationJwtDecoderTest {
             });
   }
 
+  /** Returns a runner configured against the live {@link OidcTestServer} for full-decode tests. */
+  private ApplicationContextRunner serverRunner() {
+    return runner.withPropertyValues(
+        "camunda.security.authentication.oidc.client-id=test-client",
+        "camunda.security.authentication.oidc.redirect-uri="
+            + "{baseUrl}/login/oauth2/code/{registrationId}",
+        "camunda.security.authentication.oidc.authorization-uri=" + server.issuerUri() + "/auth",
+        "camunda.security.authentication.oidc.token-uri=" + server.issuerUri() + "/token",
+        "camunda.security.authentication.oidc.jwk-set-uri=" + server.jwksUri());
+  }
+
   private static String tokenWithIssuer(final String issuer) {
     final var header =
         Base64.getUrlEncoder()
             .withoutPadding()
             .encodeToString("{\"alg\":\"RS256\"}".getBytes(UTF_8));
+    final var payload =
+        Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString(("{\"iss\":\"" + issuer + "\"}").getBytes(UTF_8));
+    return header + "." + payload + ".fakesig";
+  }
+
+  private static String tokenWithTypAndIssuer(final String typ, final String issuer) {
+    final var header =
+        Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString(("{\"alg\":\"RS256\",\"typ\":\"" + typ + "\"}").getBytes(UTF_8));
     final var payload =
         Base64.getUrlEncoder()
             .withoutPadding()
@@ -238,6 +275,88 @@ class OidcBeansConfigurationJwtDecoderTest {
       builder.issuerUri(issuerUri);
     }
     return builder.build();
+  }
+
+  @Test
+  void shouldDecodeTokenWithTypJwt() throws Exception {
+    serverRunner()
+        .run(
+            ctx -> {
+              final var decoder = ctx.getBean(JwtDecoder.class);
+              final var jwt = decoder.decode(server.signWithTyp(server.issuerUri(), "JWT"));
+              assertThat(jwt.getSubject()).isEqualTo("alice");
+            });
+  }
+
+  @Test
+  void shouldDecodeTokenWithTypAtJwt() throws Exception {
+    serverRunner()
+        .run(
+            ctx -> {
+              final var decoder = ctx.getBean(JwtDecoder.class);
+              final var jwt = decoder.decode(server.signWithTyp(server.issuerUri(), "at+jwt"));
+              assertThat(jwt.getSubject()).isEqualTo("alice");
+            });
+  }
+
+  @Test
+  void shouldDecodeTokenWithNoTyp() throws Exception {
+    // OidcTestServer.sign() builds a JWSHeader without a typ field — the lenient
+    // setAllowEmpty(true) flag must allow it through.
+    serverRunner()
+        .run(
+            ctx -> {
+              final var decoder = ctx.getBean(JwtDecoder.class);
+              final var jwt = decoder.decode(server.sign(server.issuerUri()));
+              assertThat(jwt.getSubject()).isEqualTo("alice");
+            });
+  }
+
+  @Test
+  void shouldRejectTokenWithUnexpectedTyp() {
+    // id+jwt is not in the allowed set; the JOSE type check fires before JWK lookup,
+    // so a fake signature is sufficient to trigger the rejection path.
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=flat-client",
+            "camunda.security.authentication.oidc.redirect-uri="
+                + "{baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
+            "camunda.security.authentication.oidc.token-uri=https://flat.example.com/token",
+            "camunda.security.authentication.oidc.jwk-set-uri=https://flat.example.com/jwks")
+        .run(
+            ctx -> {
+              final var decoder = ctx.getBean(JwtDecoder.class);
+              assertThatThrownBy(
+                      () ->
+                          decoder.decode(
+                              tokenWithTypAndIssuer("id+jwt", "https://flat.example.com")))
+                  .isInstanceOf(JwtException.class)
+                  // Nimbus message: "JOSE header 'typ' (type) 'id+jwt' not allowed"
+                  .hasMessageContaining("typ")
+                  .hasMessageContaining("id+jwt");
+            });
+  }
+
+  @Test
+  void hostSuppliedJwtDecoderTakesPrecedenceViaConditionalOnMissingBean() {
+    // @ConditionalOnMissingBean on OidcBeansConfiguration#jwtDecoder must back off
+    // when the host registers its own JwtDecoder bean.
+    final JwtDecoder customDecoder = token -> null;
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=flat-client",
+            "camunda.security.authentication.oidc.redirect-uri="
+                + "{baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
+            "camunda.security.authentication.oidc.token-uri=https://flat.example.com/token",
+            "camunda.security.authentication.oidc.jwk-set-uri=https://flat.example.com/jwks")
+        .withBean(JwtDecoder.class, () -> customDecoder)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasSingleBean(JwtDecoder.class);
+              assertThat(ctx.getBean(JwtDecoder.class)).isSameAs(customDecoder);
+            });
   }
 
   /** Stubs OIDC infrastructure beans other than {@link JwtDecoder}. */
