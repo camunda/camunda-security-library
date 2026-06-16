@@ -20,10 +20,10 @@ import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcTestServer;
 import io.camunda.security.spring.security.BaseSecurityConfiguration;
 import io.camunda.security.spring.security.BasicAuthApiSecurityConfiguration;
+import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import io.camunda.security.spring.user.UserConfiguration;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -513,32 +513,7 @@ class ScopedWebappSessionIsolationTest {
 
     @Bean
     SecurityPathPort securityPathPort() {
-      return new SecurityPathPort() {
-        @Override
-        public Set<String> apiPaths() {
-          return Set.of("/v2/**");
-        }
-
-        @Override
-        public Set<String> unprotectedApiPaths() {
-          return Set.of();
-        }
-
-        @Override
-        public Set<String> unprotectedPaths() {
-          return Set.of("/error");
-        }
-
-        @Override
-        public Set<String> webappPaths() {
-          return Set.of("/operate/**", "/login", "/logout");
-        }
-
-        @Override
-        public Set<String> webComponentNames() {
-          return Set.of("operate");
-        }
-      };
+      return StubSecurityPaths.builder().apiPaths("/v2/**").build();
     }
   }
 

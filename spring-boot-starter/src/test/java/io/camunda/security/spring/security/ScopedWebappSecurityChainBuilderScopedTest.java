@@ -24,9 +24,9 @@ import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
+import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -240,32 +240,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
 
     @Bean
     SecurityPathPort securityPathPort() {
-      return new SecurityPathPort() {
-        @Override
-        public Set<String> apiPaths() {
-          return Set.of("/api/**");
-        }
-
-        @Override
-        public Set<String> unprotectedApiPaths() {
-          return Set.of();
-        }
-
-        @Override
-        public Set<String> unprotectedPaths() {
-          return Set.of("/error");
-        }
-
-        @Override
-        public Set<String> webappPaths() {
-          return Set.of("/operate/**", "/login", "/logout");
-        }
-
-        @Override
-        public Set<String> webComponentNames() {
-          return Set.of("operate");
-        }
-      };
+      return StubSecurityPaths.builder().build();
     }
   }
 
