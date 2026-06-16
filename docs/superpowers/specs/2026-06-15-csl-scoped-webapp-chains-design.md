@@ -47,8 +47,10 @@ The webapp-specific concerns CSL cannot own (serving the SPA under a prefix, par
 **OC owns (host policy — descriptor already supplied by `PhysicalTenantScopeProvider`, unchanged):**
 
 - **SPA serving under the prefix** — productionise the PoC's set: base-href / context-path rewrite, asset + cluster-endpoint URL mapping, `client-config.js` rewrite, webapp-controller dual-routing. None of this touches CSL or the auth boundary; it makes the served SPA work under `/physical-tenants/<id>/<webapp>`.
-- A **PT-partitioning `SessionStorePort` adapter** (Decision 5): the `SessionStoreAdapter` holds a per-PT `PersistentWebSessionClient` map, resolves the PT from request context for request-scoped ops, and **fans out** across all PT stores for the context-free background deletion sweep. Each PT's sessions live in that PT's isolated schema.
-- BASIC-mode per-PT user resolution via the `UserDetailsPort` adapter (already the agreed pattern).
+- A **PT-partitioning `SessionStorePort` adapter** (Decision 5): the `SessionStoreAdapter` holds a per-PT `PersistentWebSessionClient` map, resolves the PT from `PhysicalTenantContext` for request-scoped ops, and **fans out** across all PT stores for the context-free background deletion sweep. Each PT's sessions live in that PT's isolated schema (reuse the existing per-PT search-client wiring, `PhysicalTenantSearchClientReadersConfiguration`).
+- Per-PT **admin-user presence** for the BASIC webapp setup redirect: `AdminUserPresenceAdapter` is currently wired to the default tenant only; resolve it per PT via `PhysicalTenantContext` (mirrors the basic-auth adapter).
+
+> **Already done on `main`** (carried in unchanged): BASIC-mode per-PT *user* resolution — `BasicAuthUserDetailsAdapter implements BasicAuthUserDetailsPort` resolves the PT from `PhysicalTenantContext.current()` (stamped by `PhysicalTenantFilter` for any `/physical-tenants/{id}/...` path, webapp included). And because `PhysicalTenantScopeProvider` already contributes one descriptor per PT, the per-PT **webapp chain lands on OC with no OC code change** once a CSL release ships it.
 
 CSL's vocabulary stays "the host contributed some scoped chains, each with a base path and an auth config." It never learns what they are for.
 
@@ -108,7 +110,7 @@ Because the descriptor is surface-agnostic, the **same object** drives the API c
 
 **Track A — CSL (lands first):** `ScopedWebappSecurityChainBuilder` + the prefix-aware authorization-request resolver; per-scope session/cookie components shared across a descriptor's webapp+API chains; extend the registrar to build both; re-base CSL's own webapp chains on the builder; extend the scoped API chain to honour the per-scope session. Contract-tested for the no-provider and disjoint-scope paths. Publish `-SNAPSHOT`, then an alpha before the OC PR is review-ready.
 
-**Track B — OC (consumes the alpha):** the PT-partitioning `SessionStoreAdapter`; productionise the SPA-serving rewrites; BASIC-mode per-PT form-login. Integration-tested: cross-tenant session rejection (a session minted for A is unusable on B's webapp and API surfaces), per-PT login/logout against two Keycloak realms, and the SPA loading under the prefix.
+**Track B — OC (consumes the alpha):** the per-PT webapp chain itself arrives **with no OC change** — `PhysicalTenantScopeProvider` already contributes the descriptors, so a CSL upgrade is enough. OC's only Slice-3 work is the host-side pieces CSL can't do: the PT-partitioning `SessionStoreAdapter`; productionise the SPA-serving rewrites; and per-PT admin-user presence for the BASIC setup redirect (per-PT basic *user* resolution is already done via `BasicAuthUserDetailsAdapter`). Integration-tested: cross-tenant session rejection (a session minted for A is unusable on B's webapp and API surfaces), per-PT login/logout against two Keycloak realms, and the SPA loading under the prefix.
 
 ## 8. Out of scope
 
