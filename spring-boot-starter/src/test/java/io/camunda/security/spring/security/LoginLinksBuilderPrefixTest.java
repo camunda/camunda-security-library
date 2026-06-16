@@ -42,7 +42,6 @@ class LoginLinksBuilderPrefixTest {
         LoginLinksBuilder.defaultOauth2LoginPickerFilter(
             repo, "/physical-tenants/t1/login", "/physical-tenants/t1");
     assertThat(filter.getLoginPageUrl()).isEqualTo("/physical-tenants/t1/login");
-    assertThat(filter).isNotNull();
   }
 
   private static ClientRegistration registration(final String id) {
