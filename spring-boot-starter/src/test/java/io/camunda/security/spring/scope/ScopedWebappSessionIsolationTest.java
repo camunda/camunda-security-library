@@ -75,7 +75,7 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
  * distinct {@code Path} attributes — all wired by the already-implemented {@link
  * ScopedWebSessionComponents} and {@link ScopedApiChainRegistrar}.
  */
-class ScopedWebappSessionIsolationIT {
+class ScopedWebappSessionIsolationTest {
 
   private static final String BASE_A = "/physical-tenants/a";
   private static final String BASE_B = "/physical-tenants/b";
