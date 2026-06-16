@@ -70,7 +70,7 @@ A new reusable builder in `spring-boot-starter`, symmetric to `ScopedApiSecurity
   (the `DefaultLoginPageGeneratingFilter` installed for [#269](https://github.com/camunda/camunda-security-library/issues/269));
   the OAuth2 redirect URI at `basePath + /sso-callback`; logout at `basePath + /logout`; and the
   delegating `AuthenticationEntryPoint` (bearer → 401, browser → IdP/login) retained per ADR-0023.
-- **BASIC** — form-login at `basePath + /login` backed by the host's `UserDetailsPort`
+- **BASIC** — form-login at `basePath + /login` backed by the host's `BasicAuthUserDetailsPort`
   ([ADR-0021](0021-user-details-port.md)), whose adapter resolves the scope from request context.
 
 CSL's own `OidcWebappSecurityConfiguration` and `BasicAuthWebappSecurityConfiguration` are re-based
@@ -155,7 +155,7 @@ post-processor is a no-op — primary-only hosts (Hub, single-scope OC) are unaf
 - it holds a `Map<scope, PersistentWebSessionClient>`, each client bound to that scope's isolated
   secondary-storage schema, built from the host's existing per-scope config resolution;
 - request-scoped `get` / `upsert` / `delete` resolve the scope from request context (the cookie's
-  `Path` already pinned the request to a scope) — mirroring the `UserDetailsPort` adapter pattern;
+  `Path` already pinned the request to a scope) — mirroring the `BasicAuthUserDetailsPort` adapter pattern;
 - the **background deletion sweep** (`getAll` → `delete`, run with no request context by ADR-0017's
   `WebSessionDeletionTask`) **fans out** across all per-scope clients.
 
