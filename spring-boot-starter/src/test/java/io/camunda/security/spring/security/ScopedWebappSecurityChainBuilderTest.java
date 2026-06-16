@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.security;
 
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.LOGIN_URL;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
@@ -40,7 +41,7 @@ class ScopedWebappSecurityChainBuilderTest {
     final ClientRegistrationRepository repo =
         new InMemoryClientRegistrationRepository(registration("a"), registration("b"));
     assertThat(ScopedWebappSecurityChainBuilder.resolveOauthRedirectTarget(repo))
-        .isEqualTo("/login");
+        .isEqualTo(LOGIN_URL);
   }
 
   @Test

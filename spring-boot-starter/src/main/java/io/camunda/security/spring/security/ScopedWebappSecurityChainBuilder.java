@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.security;
 
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.LOGIN_URL;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.OIDC_REGISTRATION_ID;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.SESSION_COOKIE;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
@@ -266,7 +267,7 @@ public final class ScopedWebappSecurityChainBuilder {
     }
     final Object first = iterator.next();
     if (iterator.hasNext()) {
-      return "/login";
+      return LOGIN_URL;
     }
     if (first instanceof final ClientRegistration registration) {
       return "/oauth2/authorization/" + registration.getRegistrationId();
