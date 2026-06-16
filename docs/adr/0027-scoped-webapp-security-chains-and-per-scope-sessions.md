@@ -85,7 +85,8 @@ Spring Security's default authorization-request resolver does not reliably match
 prefix such as `basePath + /oauth2/authorization/<id>`. The scoped webapp chain installs a
 prefix-aware resolver so the authorization request and the `basePath + /sso-callback` redirect
 resolve correctly. This composes with the resolver lifted into CSL in the
-2026-05-20 OIDC-authorization-request-resolver design (RFC 8707 `resource`, additional params).
+[2026-05-20 OIDC-authorization-request-resolver design](../superpowers/specs/2026-05-20-csl-oidc-authorization-request-resolver-design.md)
+(RFC 8707 `resource`, additional params).
 
 ### 3. Per-scope session + cookie components, shared across a scope's chains
 
