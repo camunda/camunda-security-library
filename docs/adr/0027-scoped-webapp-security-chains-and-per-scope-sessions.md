@@ -111,16 +111,18 @@ non-alphanumeric characters (`[^A-Za-z0-9]+`) to a single `-`, and trim leading/
 `/physical-tenants/tenanta` → `camunda-session-physical-tenants-tenanta`; `/api/` →
 `camunda-session-api`). Reusing that helper guarantees the cookie name matches what CSL derives. A scope-distinct *name* — not merely a distinct `Path`
 — is required: the primary unprefixed chain keeps `camunda-session` at `Path = /`, which the browser
-would send *alongside* a scoped cookie on a nested path, leaving two same-named cookies whose
-resolution order is undefined. To keep the `basePath → name` mapping injective without an opaque
+would send *alongside* a scoped cookie on a nested path, leaving two same-named cookies. The browser
+does order them (RFC 6265 sends longer-`Path` cookies first), but server-side cookie parsers resolve
+duplicate names inconsistently, so a distinct per-scope name avoids that ambiguity. To keep the `basePath → name` mapping injective without an opaque
 hash suffix, the registrar's existing duplicate-`basePath` rejection (ADR-0025) is extended to also
 reject any two scopes whose sanitized cookie names collide, and to reject a scope whose sanitized
 suffix is empty (a `basePath` with no alphanumerics maps to `""`, which would yield the non-distinct
 `camunda-session-`) — fail-fast startup checks rather than a runtime ambiguity.
 
-Cookie *names* have no length cap of their own in RFC 6265; the only hard budget is the ~4096-byte
-per-cookie (`name=value`) limit browsers enforce, which the short session-id value never threatens
-even for a long sanitized name. `Path`-scoping prevents a scope's cookie from being sent to
+Cookie *names* have no length cap of their own in RFC 6265; the relevant budget is the ~4096-byte
+per-cookie (`name=value`) size that RFC 6265 asks user agents to support at minimum (real per-cookie
+and per-domain limits vary by browser), which the short session-id value never threatens even for a
+long sanitized name. `Path`-scoping prevents a scope's cookie from being sent to
 *sibling* scopes — a broader `Path = /` cookie such as the primary `camunda-session` is still sent
 on a scoped path, but the distinct per-scope name keeps the two from colliding. The same startup validation that rejects colliding names also caps the derived name
 length, failing fast rather than silently emitting an over-budget cookie — no hash suffix needed.
