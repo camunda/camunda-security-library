@@ -205,9 +205,12 @@ stays in the host (OC).
   (ADR-0023) but is a behavioural addition to the scoped API chain relative to ADR-0025.
 - Honouring the session on the API chain requires the API surface to be nested under `basePath`. A
   host that routes its scoped API outside the prefix gets bearer-only on that surface.
-- The host adapter gains a per-PT client map and request-context resolution. The id-only
-  `get`/`delete` on the context-free deletion sweep is handled by fan-out (a no-op in non-owning
-  stores); request-scoped ops route by request context.
+- The host adapter gains a per-PT client map and request-context resolution. Request-scoped ops
+  (`get`/`upsert`/`delete` via `findById`/`save`) run on the request thread, where
+  `PhysicalTenantFilter` has already stamped `PhysicalTenantContext`, so they route directly. Only
+  the periodic expiry sweep (`WebSessionDeletionTask`, ~10 min) runs context-free: its `getAll()`
+  aggregates across all per-PT stores and its `delete(id)` fans out (a no-op in non-owning stores).
+  Cleanup is inherently all-tenants, so it needs neither PT context nor a PT-encoded session id.
 
 ## Alternatives Considered
 
