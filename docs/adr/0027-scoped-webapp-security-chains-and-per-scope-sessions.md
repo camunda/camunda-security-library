@@ -92,9 +92,11 @@ resolve correctly. This composes with the resolver lifted into CSL in the
 For each descriptor CSL builds **once** a set of per-scope session components and injects them into
 *both* that scope's webapp and API chains:
 
-- a `SessionRepositoryFilter` bound to the scope, over the existing Spring-Session
-  `SessionRepository` (in-memory by default; the `SessionStorePort`-backed `WebSessionRepository`
-  of ADR-0017 when persistent sessions are enabled);
+- a `SessionRepositoryFilter` bound to the scope, over a `SessionRepository` chosen by mode: a
+  **per-scope in-memory `MapSessionRepository`** when persistent sessions are disabled (store-level
+  per-PT isolation via separate instances, on top of the cookie isolation), or the
+  `SessionStorePort`-backed `WebSessionRepository` of ADR-0017 when enabled. No in-memory
+  `SessionStorePort` impl is added — ADR-0017's "no default `SessionStorePort` in CSL" stands;
 - a `DefaultCookieSerializer` with `Path = basePath` and a cookie name **derived deterministically
   from `basePath`** (see below);
 - a session-reading `SecurityContextRepository`;
@@ -111,8 +113,9 @@ non-alphanumeric characters (`[^A-Za-z0-9]+`) to a single `-`, and trim leading/
 would send *alongside* a scoped cookie on a nested path, leaving two same-named cookies whose
 resolution order is undefined. To keep the `basePath → name` mapping injective without an opaque
 hash suffix, the registrar's existing duplicate-`basePath` rejection (ADR-0025) is extended to also
-reject any two scopes whose sanitized cookie names collide — a fail-fast startup check rather than a
-runtime ambiguity.
+reject any two scopes whose sanitized cookie names collide, and to reject a scope whose sanitized
+suffix is empty (a `basePath` with no alphanumerics maps to `""`, which would yield the non-distinct
+`camunda-session-`) — fail-fast startup checks rather than a runtime ambiguity.
 
 Cookie *names* have no length cap of their own in RFC 6265; the only hard budget is the ~4096-byte
 per-cookie (`name=value`) limit browsers enforce, which the short session-id value never threatens
@@ -155,12 +158,16 @@ post-processor is a no-op — primary-only hosts (Hub, single-scope OC) are unaf
 `SessionStorePort` (ADR-0017) is **unchanged** — no tenant parameter. The host's adapter (OC's
 `SessionStoreAdapter`) becomes scope-aware:
 
-- it holds a `Map<scope, PersistentWebSessionClient>`, each client bound to that scope's isolated
-  secondary-storage schema, built from the host's existing per-scope config resolution;
-- request-scoped `get` / `upsert` / `delete` resolve the scope from request context (the cookie's
+- it holds a `Map<physicalTenantId, PersistentWebSessionClient>` keyed by the PT id the host
+  resolves from request context (`PhysicalTenantContext.current()`, *not* the `basePath`), each
+  client bound to that PT's isolated secondary-storage schema, built from the host's existing per-PT
+  config resolution;
+- request-scoped `get` / `upsert` / `delete` resolve the PT from request context (the cookie's
   `Path` already pinned the request to a scope) — mirroring the `BasicAuthUserDetailsPort` adapter pattern;
 - the **background deletion sweep** (`getAll` → `delete`, run with no request context by ADR-0017's
-  `WebSessionDeletionTask`) **fans out** across all per-scope clients.
+  `WebSessionDeletionTask`) **fans out** across all per-PT clients — `delete(id)` is a harmless no-op
+  in non-owning stores, so no PT-encoding of the session id is needed (expiry cleanup does not need
+  per-PT targeting).
 
 The per-scope `PersistentWebSessionClient` instances and the `search-client` / `db-rdbms` modules
 stay tenant-agnostic ("one client = one store"). The alternative — pushing scope-awareness *into*
@@ -198,9 +205,9 @@ stays in the host (OC).
   (ADR-0023) but is a behavioural addition to the scoped API chain relative to ADR-0025.
 - Honouring the session on the API chain requires the API surface to be nested under `basePath`. A
   host that routes its scoped API outside the prefix gets bearer-only on that surface.
-- The host adapter gains a scope→client map and request-context resolution. Routing the id-only
-  `get`/`delete` on background threads needs either PT-encoded session ids or fan-out (resolved in
-  the implementation plan).
+- The host adapter gains a per-PT client map and request-context resolution. The id-only
+  `get`/`delete` on the context-free deletion sweep is handled by fan-out (a no-op in non-owning
+  stores); request-scoped ops route by request context.
 
 ## Alternatives Considered
 
