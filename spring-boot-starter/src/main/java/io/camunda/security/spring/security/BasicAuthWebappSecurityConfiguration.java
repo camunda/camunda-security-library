@@ -10,8 +10,6 @@ package io.camunda.security.spring.security;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.LOGIN_URL;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.LOGOUT_URL;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP_API;
-import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.SESSION_COOKIE;
-import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
@@ -25,12 +23,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.access.intercept.AuthorizationFilter;
-import org.springframework.security.web.csrf.CsrfToken;
 
 /**
  * Filter chain serving webapp UI paths under HTTP Basic authentication. The chain itself permits
@@ -65,57 +59,16 @@ public class BasicAuthWebappSecurityConfiguration {
       throws Exception {
     LOG.info("Web Applications Login/Logout is set up with Basic Authentication.");
 
-    final var filterChainBuilder =
-        http.securityMatcher(pathPort.webappPaths().toArray(String[]::new))
-            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
-            .cors(AbstractHttpConfigurer::disable)
-            .anonymous(AbstractHttpConfigurer::disable)
-            .formLogin(
-                formLogin ->
-                    formLogin
-                        .loginPage(LOGIN_URL)
-                        .loginProcessingUrl(LOGIN_URL)
-                        .failureHandler(authFailureHandler)
-                        .successHandler(
-                            (request, response, authentication) -> {
-                              response.setStatus(HttpStatus.NO_CONTENT.value());
-                              final CsrfToken token =
-                                  (CsrfToken) request.getAttribute(CsrfToken.class.getName());
-                              if (token != null) {
-                                response.setHeader(X_CSRF_TOKEN, token.getToken());
-                              }
-                            }))
-            .logout(
-                logout ->
-                    logout
-                        .logoutUrl(LOGOUT_URL)
-                        .logoutSuccessHandler(
-                            (request, response, authentication) ->
-                                response.setStatus(HttpStatus.NO_CONTENT.value()))
-                        .deleteCookies(SESSION_COOKIE, X_CSRF_TOKEN))
-            .exceptionHandling(
-                eh ->
-                    eh.authenticationEntryPoint(authFailureHandler)
-                        .accessDeniedHandler(authFailureHandler));
-
-    // Each optional filter is anchored explicitly on the previous filter in the chain so the
-    // relative order is deterministic regardless of which combination is present.
-    // WebAppAuthorizationCheck sits after AdminUserCheck (when present) so an unprovisioned
-    // system redirects to setup before any per-web-app permission check fires.
-    final var adminFilter = adminUserCheckFilterProvider.getIfAvailable();
-    if (adminFilter != null) {
-      filterChainBuilder.addFilterAfter(adminFilter, AuthorizationFilter.class);
-    }
-    final var webAppFilter = webAppAuthorizationFilterProvider.getIfAvailable();
-    if (webAppFilter != null) {
-      final var anchor =
-          adminFilter != null ? AdminUserCheckFilter.class : AuthorizationFilter.class;
-      filterChainBuilder.addFilterAfter(webAppFilter, anchor);
-    }
-
-    SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
-    SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
-
-    return filterChainBuilder.build();
+    return new ScopedWebappSecurityChainBuilder()
+        .buildBasicWebappChain(
+            http,
+            pathPort.webappPaths(),
+            LOGIN_URL,
+            LOGOUT_URL,
+            authFailureHandler,
+            webAppAuthorizationFilterProvider,
+            adminUserCheckFilterProvider,
+            properties,
+            pathPort);
   }
 }
