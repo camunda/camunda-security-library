@@ -101,10 +101,6 @@ class ScopedWebappSessionIsolationTest {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Runner that loads the full CSL stack with two OIDC scopes
-  // ---------------------------------------------------------------------------
-
   private WebApplicationContextRunner runner() {
     return new WebApplicationContextRunner()
         .withUserConfiguration(
@@ -123,9 +119,7 @@ class ScopedWebappSessionIsolationTest {
         .withPropertyValues("camunda.security.authentication.method=basic");
   }
 
-  // ---------------------------------------------------------------------------
   // AC 1: Per-scope cookie identity — name and Path are distinct per scope
-  // ---------------------------------------------------------------------------
 
   /**
    * Verifies via the {@link ScopedWebSessionComponentsFactory} cookie serializer (unit-level) that
@@ -185,9 +179,7 @@ class ScopedWebappSessionIsolationTest {
         .isEqualTo(COOKIE_B);
   }
 
-  // ---------------------------------------------------------------------------
   // AC 2 / AC 4 core: Cross-scope session rejection
-  // ---------------------------------------------------------------------------
 
   /**
    * Seeds a session directly into scope A's {@link MapSessionRepository}, then presents scope A's
@@ -351,9 +343,7 @@ class ScopedWebappSessionIsolationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
   // AC 3: Per-scope picker — only scope A's links appear on scope A's login page
-  // ---------------------------------------------------------------------------
 
   @Test
   void scopeALoginPickerListsOnlyScopeAProviderLinks() throws Exception {
@@ -416,10 +406,6 @@ class ScopedWebappSessionIsolationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
-
   /** Resolves the {@link OrderedSecurityFilterChainWrapper} for the given scope suffix (a or b). */
   private static OrderedSecurityFilterChainWrapper webappChain(
       final org.springframework.context.ApplicationContext ctx, final String scopeSuffix) {
@@ -476,10 +462,6 @@ class ScopedWebappSessionIsolationTest {
       throw new AssertionError("Could not access sessionRepository field on filter", ex);
     }
   }
-
-  // ---------------------------------------------------------------------------
-  // Inner configuration stubs
-  // ---------------------------------------------------------------------------
 
   /** Provides two OIDC scopes, one per OidcTestServer. */
   @Configuration

@@ -59,10 +59,6 @@ class ScopedSecurityChainConfigurationTest {
   private static final String SCOPED_OTHER = SCOPED_BASE + "/other";
   private static final String GLOBAL_V2 = "/v2/resource";
 
-  // ---------------------------------------------------------------------------
-  // Shared runner factory
-  // ---------------------------------------------------------------------------
-
   /**
    * Creates a runner that loads the full CSL chain stack (BASIC mode) including the new {@link
    * ScopedSecurityChainConfiguration}. A {@link BasicAuthUserDetailsPort} mock and {@link
@@ -85,9 +81,7 @@ class ScopedSecurityChainConfigurationTest {
         .withPropertyValues("camunda.security.authentication.method=basic");
   }
 
-  // ---------------------------------------------------------------------------
   // 1. No-op test
-  // ---------------------------------------------------------------------------
 
   @Test
   void noProviderBeanRegistersNoExtraChains() {
@@ -105,9 +99,7 @@ class ScopedSecurityChainConfigurationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
   // 2. One descriptor → one extra chain
-  // ---------------------------------------------------------------------------
 
   @Test
   void oneDescriptorRegistersOneScopedChain() {
@@ -167,9 +159,7 @@ class ScopedSecurityChainConfigurationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
   // 3. Disjoint scope dispatch
-  // ---------------------------------------------------------------------------
 
   @Test
   void disjointScopeDispatched() {
@@ -202,9 +192,7 @@ class ScopedSecurityChainConfigurationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
   // 4. Contributed chain accepts valid credentials
-  // ---------------------------------------------------------------------------
 
   @Test
   void oneDescriptorContributedChainAcceptsValidCredentials() {
@@ -233,9 +221,7 @@ class ScopedSecurityChainConfigurationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
   // 5. Ordering: contributed chain sorts before the catch-all deny chain
-  // ---------------------------------------------------------------------------
 
   @Test
   void contributedChainOrderedBeforeCatchAll() {
@@ -256,9 +242,7 @@ class ScopedSecurityChainConfigurationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
   // 6. End-to-end ordering: contributed chain before catch-all in real FilterChainProxy
-  // ---------------------------------------------------------------------------
 
   @Test
   void contributedChainHandledBeforeCatchAllInRealProxy() throws Exception {
@@ -287,10 +271,6 @@ class ScopedSecurityChainConfigurationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
-
   /**
    * Retrieves the contributed API {@link OrderedSecurityFilterChainWrapper} — the one that matches
    * {@link #SCOPED_V2}. Each descriptor registers two wrappers (API + webapp no-op); this returns
@@ -314,13 +294,7 @@ class ScopedSecurityChainConfigurationTest {
     return "Basic " + Base64.getEncoder().encodeToString(token);
   }
 
-  // ---------------------------------------------------------------------------
-  // Inner configuration / SPI stubs
-  // ---------------------------------------------------------------------------
-
-  // ---------------------------------------------------------------------------
   // 7. Duplicate basePath guard
-  // ---------------------------------------------------------------------------
 
   @Test
   void duplicateBasePathFailsContextStartup() {
@@ -336,9 +310,7 @@ class ScopedSecurityChainConfigurationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
   // 8. Trailing-slash variant is treated as duplicate after normalization
-  // ---------------------------------------------------------------------------
 
   @Test
   void trailingSlashVariantIsDetectedAsDuplicate() {
@@ -354,9 +326,7 @@ class ScopedSecurityChainConfigurationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
   // 9. OIDC scoped chain works in BASIC global mode (per-scope-method agnosticism)
-  // ---------------------------------------------------------------------------
 
   /**
    * Proves that a host can contribute an OIDC-scoped descriptor even when the cluster's global
@@ -427,9 +397,7 @@ class ScopedSecurityChainConfigurationTest {
     }
   }
 
-  // ---------------------------------------------------------------------------
   // 10. unprotected-api=true: scoped chain is permit-all (mirrors primary unprotected chain)
-  // ---------------------------------------------------------------------------
 
   @Test
   void unprotectedApiTrueMakesContributedScopedChainPermitAll() throws Exception {

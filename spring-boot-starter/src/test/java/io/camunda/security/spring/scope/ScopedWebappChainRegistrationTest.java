@@ -54,10 +54,6 @@ class ScopedWebappChainRegistrationTest {
   private static final String SCOPED_BASE = "/physical-tenants/t1";
   private static final String SCOPED_OPERATE = SCOPED_BASE + "/operate/dashboard";
 
-  // ---------------------------------------------------------------------------
-  // Runner factory
-  // ---------------------------------------------------------------------------
-
   /**
    * Creates a runner that loads the CSL chain stack (BASIC global mode) including {@link
    * ScopedSecurityChainConfiguration} (which now imports {@link
@@ -78,9 +74,7 @@ class ScopedWebappChainRegistrationTest {
         .withPropertyValues("camunda.security.authentication.method=basic");
   }
 
-  // ---------------------------------------------------------------------------
   // 1. No-op: no provider → no scoped chains of either type
-  // ---------------------------------------------------------------------------
 
   @Test
   void noProviderRegistersNoScopedChains() {
@@ -97,9 +91,7 @@ class ScopedWebappChainRegistrationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
   // 2. One OIDC descriptor → both API and webapp chain beans registered
-  // ---------------------------------------------------------------------------
 
   @Test
   void oneOidcDescriptorRegistersBothApiAndWebappChain() throws Exception {
@@ -146,9 +138,7 @@ class ScopedWebappChainRegistrationTest {
     }
   }
 
-  // ---------------------------------------------------------------------------
   // 3. Webapp chain matches the scoped operate path and NOT an unscoped path
-  // ---------------------------------------------------------------------------
 
   @Test
   void webappChainMatchesScopedPath() throws Exception {
@@ -182,9 +172,7 @@ class ScopedWebappChainRegistrationTest {
     }
   }
 
-  // ---------------------------------------------------------------------------
   // 4. Webapp chain → anonymous browser GET to protected scoped path returns 302
-  // ---------------------------------------------------------------------------
 
   @Test
   void anonymousGetToScopedWebappPathRedirectsToLogin() throws Exception {
@@ -215,10 +203,6 @@ class ScopedWebappChainRegistrationTest {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
-
   private static OrderedSecurityFilterChainWrapper webappChain(
       final org.springframework.context.ApplicationContext ctx) {
     final var names = ctx.getBeanNamesForType(SecurityFilterChain.class);
@@ -239,10 +223,6 @@ class ScopedWebappChainRegistrationTest {
     auth.setOidc(server.oidcConfiguration("scope-client"));
     return new ScopedSecurityDescriptor(SCOPED_BASE, auth);
   }
-
-  // ---------------------------------------------------------------------------
-  // Inner configuration stubs
-  // ---------------------------------------------------------------------------
 
   @Configuration
   static class StubPaths {

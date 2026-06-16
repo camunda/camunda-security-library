@@ -30,9 +30,7 @@ class ScopedWebappSecurityChainBuilderTest {
         .build();
   }
 
-  // ---------------------------------------------------------------------------
   // Primary chain (authorizationBaseUri = "/oauth2/authorization")
-  // ---------------------------------------------------------------------------
 
   @Test
   void singleRegistrationRedirectsStraightToProvider() {
@@ -65,9 +63,7 @@ class ScopedWebappSecurityChainBuilderTest {
         .isEqualTo("/oauth2/authorization/oidc");
   }
 
-  // ---------------------------------------------------------------------------
   // Scoped chain: single-IdP redirect target must be prefixed with basePath
-  // ---------------------------------------------------------------------------
 
   /**
    * For a scoped chain with a single IdP, the redirect target must be {@code
