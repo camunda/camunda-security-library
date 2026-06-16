@@ -49,17 +49,32 @@ public final class CamundaOidcAuthorizationRequestResolver
   private final ClientRegistrationRepository clientRegistrationRepository;
   private final Map<String, OidcConfiguration> sourcesByRegistrationId;
   private final Map<String, OAuth2AuthorizationRequestResolver> resolvers;
+  private final String authorizationRequestBaseUri;
   private final RequestMatcher authorizationRequestMatcher;
 
+  /** Uses the default unprefixed authorization base URI {@code /oauth2/authorization}. */
   public CamundaOidcAuthorizationRequestResolver(
       final ClientRegistrationRepository clientRegistrationRepository,
       final Map<String, OidcConfiguration> sourcesByRegistrationId) {
+    this(clientRegistrationRepository, sourcesByRegistrationId, AUTHORIZATION_REQUEST_BASE_URI);
+  }
+
+  /**
+   * @param authorizationRequestBaseUri the authorization endpoint base URI, e.g. {@code
+   *     /oauth2/authorization} for the primary chain or {@code <basePath>/oauth2/authorization} for
+   *     a per-scope chain. The {registrationId} segment is appended to it.
+   */
+  public CamundaOidcAuthorizationRequestResolver(
+      final ClientRegistrationRepository clientRegistrationRepository,
+      final Map<String, OidcConfiguration> sourcesByRegistrationId,
+      final String authorizationRequestBaseUri) {
     this.clientRegistrationRepository = clientRegistrationRepository;
     this.sourcesByRegistrationId = Map.copyOf(sourcesByRegistrationId);
+    this.authorizationRequestBaseUri = authorizationRequestBaseUri;
     resolvers = new ConcurrentHashMap<>();
     authorizationRequestMatcher =
         PathPatternRequestMatcher.withDefaults()
-            .matcher("%s/{%s}".formatted(AUTHORIZATION_REQUEST_BASE_URI, REGISTRATION_ID));
+            .matcher("%s/{%s}".formatted(authorizationRequestBaseUri, REGISTRATION_ID));
   }
 
   @Override
@@ -96,7 +111,7 @@ public final class CamundaOidcAuthorizationRequestResolver
     }
     final var resolver =
         new DefaultOAuth2AuthorizationRequestResolver(
-            clientRegistrationRepository, AUTHORIZATION_REQUEST_BASE_URI);
+            clientRegistrationRepository, authorizationRequestBaseUri);
     final var source = sourcesByRegistrationId.get(registrationId);
     if (source != null) {
       resolver.setAuthorizationRequestCustomizer(createCustomizer(source));
