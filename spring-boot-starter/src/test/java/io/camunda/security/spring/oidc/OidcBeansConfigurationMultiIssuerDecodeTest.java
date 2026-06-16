@@ -95,6 +95,20 @@ final class OidcBeansConfigurationMultiIssuerDecodeTest {
   }
 
   @Test
+  void shouldDecodeAtJwtTokenOnMultiIssuerPath() throws Exception {
+    runWithTwoProviders(
+        ctx -> {
+          final var decoder = ctx.getBean(JwtDecoder.class);
+          final var token = keycloak.signWithTyp(KEYCLOAK_ISSUER, "at+jwt");
+
+          final var jwt = decoder.decode(token);
+
+          assertThat(jwt.getIssuer().toString()).isEqualTo(KEYCLOAK_ISSUER);
+          assertThat(jwt.getSubject()).isEqualTo("alice");
+        });
+  }
+
+  @Test
   void shouldRejectTokenWithUnknownIssuer() throws Exception {
     runWithTwoProviders(
         ctx -> {
