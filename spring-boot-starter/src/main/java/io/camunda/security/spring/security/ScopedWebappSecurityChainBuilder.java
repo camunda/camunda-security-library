@@ -167,7 +167,9 @@ public final class ScopedWebappSecurityChainBuilder {
     // writes before the picker commits the response.
     final var loginPickerFilter =
         oidcLoginPickerProvider.getIfAvailable(
-            () -> LoginLinksBuilder.defaultOauth2LoginPickerFilter(clientRegistrationRepository));
+            () ->
+                LoginLinksBuilder.defaultOauth2LoginPickerFilter(
+                    clientRegistrationRepository, loginUrl));
     filterChainBuilder.addFilterAfter(loginPickerFilter, CsrfFilter.class);
 
     return filterChainBuilder.build();
