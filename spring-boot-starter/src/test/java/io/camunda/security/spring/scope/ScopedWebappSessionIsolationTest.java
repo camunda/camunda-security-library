@@ -44,7 +44,7 @@ import org.springframework.session.MapSessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
- * Cross-scope session isolation integration test (plan Task 6, AC 1–4).
+ * Cross-scope session isolation integration test (AC 1–4).
  *
  * <p>Boots the full CSL auto-config with two OIDC scopes ({@code /physical-tenants/a} and {@code
  * /physical-tenants/b}) via a {@link CamundaSecurityScopeProvider}. Exercises three isolation

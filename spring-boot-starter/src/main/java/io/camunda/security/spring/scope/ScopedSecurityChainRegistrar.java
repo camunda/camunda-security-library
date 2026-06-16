@@ -62,8 +62,8 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
 
   /**
    * Shared per-scope {@link SessionRepositoryFilter} instances, keyed by basePath. Built once per
-   * descriptor in {@link #registerChains} so Increment 4 (session-on-API) can reuse the same filter
-   * instance on the API chain.
+   * descriptor so the same per-scope filter instance can be shared across the scope's chains (e.g.
+   * a future session-authenticated API chain) without creating a second session store.
    */
   private final Map<String, SessionRepositoryFilter<?>> sessionFiltersByBasePath = new HashMap<>();
 
@@ -234,8 +234,9 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
 
   /**
    * Resolves or creates the shared {@link SessionRepositoryFilter} for the given basePath. The
-   * filter is built once per descriptor and cached so that Increment 4 (session-on-API) can reuse
-   * the same filter instance on the API chain without creating a second, independent session store.
+   * filter is built once per descriptor and cached so the same instance can be reused across the
+   * scope's chains (e.g. a session-authenticated API chain) without creating a second, independent
+   * session store.
    *
    * <p>D2: uses the {@link io.camunda.security.spring.session.WebSessionRepository} bean (durable
    * store, ADR-0017) when present; otherwise falls back to a per-scope {@link MapSessionRepository}
