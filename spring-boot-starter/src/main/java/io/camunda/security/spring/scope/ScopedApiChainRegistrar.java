@@ -39,6 +39,10 @@ import org.springframework.security.web.SecurityFilterChain;
  */
 final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcessor {
 
+  static final String SESSION_COOKIE_PREFIX = "camunda-session-";
+  static final int MAX_COOKIE_NAME_LENGTH =
+      200; // well under the RFC 6265 4096-byte name=value budget
+
   private static final Logger LOG = LoggerFactory.getLogger(ScopedApiChainRegistrar.class);
 
   @Override
@@ -68,6 +72,7 @@ final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcess
     }
 
     rejectDuplicateBasePaths(descriptors);
+    rejectCookieNameCollisions(descriptors);
 
     LOG.info(
         "Registering {} scoped API security chain(s) from CamundaSecurityScopeProvider(s)",
@@ -185,6 +190,48 @@ final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcess
     } catch (final Exception ex) {
       throw new IllegalStateException(
           "Failed to build scoped API security chain for basePath=" + descriptor.basePath(), ex);
+    }
+  }
+
+  /** The per-scope session cookie name: {@code camunda-session-<sanitize(basePath)>}. */
+  static String sessionCookieName(final String basePath) {
+    return SESSION_COOKIE_PREFIX + sanitizeBasePath(basePath);
+  }
+
+  static void rejectCookieNameCollisions(final List<ScopedSecurityDescriptor> descriptors) {
+    final var seen = new HashSet<String>();
+    final var collisions = new LinkedHashSet<String>();
+    for (final var d : descriptors) {
+      final var suffix = sanitizeBasePath(d.basePath());
+      if (suffix.isEmpty()) {
+        throw new IllegalStateException(
+            "basePath="
+                + d.basePath()
+                + " sanitizes to an empty suffix, which would yield the non-distinct session"
+                + " cookie name '"
+                + SESSION_COOKIE_PREFIX
+                + "'. Use a basePath containing alphanumerics.");
+      }
+      final var name = SESSION_COOKIE_PREFIX + suffix;
+      if (name.length() > MAX_COOKIE_NAME_LENGTH) {
+        throw new IllegalStateException(
+            "Derived session cookie name for basePath="
+                + d.basePath()
+                + " exceeds the maximum length of "
+                + MAX_COOKIE_NAME_LENGTH
+                + " characters ("
+                + name.length()
+                + "). Use a shorter basePath.");
+      }
+      if (!seen.add(name)) {
+        collisions.add(name);
+      }
+    }
+    if (!collisions.isEmpty()) {
+      throw new IllegalStateException(
+          "Distinct scope basePath(s) sanitize to the same session cookie name(s): "
+              + collisions
+              + ". Each scope must yield a unique cookie name.");
     }
   }
 

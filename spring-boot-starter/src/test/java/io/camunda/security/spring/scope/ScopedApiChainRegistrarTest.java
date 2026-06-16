@@ -8,7 +8,12 @@
 package io.camunda.security.spring.scope;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.camunda.security.api.model.config.AuthenticationConfiguration;
+import io.camunda.security.api.model.config.AuthenticationMethod;
+import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -23,6 +28,8 @@ import org.junit.jupiter.api.Test;
  * logic.
  */
 final class ScopedApiChainRegistrarTest {
+
+  private static final int MAX_COOKIE_NAME_LENGTH = 200; // see ScopedApiChainRegistrar
 
   @Test
   void returnsEmptyStringForNull() {
@@ -64,5 +71,41 @@ final class ScopedApiChainRegistrarTest {
     assertThat(ScopedApiChainRegistrar.sanitizeBasePath("/a/b"))
         .isEqualTo(ScopedApiChainRegistrar.sanitizeBasePath("/a-b"))
         .isEqualTo("a-b");
+  }
+
+  @Test
+  void rejectsBasePathsThatSanitizeToCollidingCookieNames() {
+    final var descriptors =
+        List.of(
+            new ScopedSecurityDescriptor("/tenant-a", basicAuthentication()),
+            new ScopedSecurityDescriptor(
+                "/tenant/a", basicAuthentication())); // both sanitize to "tenant-a"
+    assertThatThrownBy(() -> ScopedApiChainRegistrar.rejectCookieNameCollisions(descriptors))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("tenant-a");
+  }
+
+  @Test
+  void rejectsBasePathWhoseDerivedCookieNameExceedsTheLimit() {
+    final var longPath = "/" + "a".repeat(MAX_COOKIE_NAME_LENGTH + 1);
+    final var descriptors = List.of(new ScopedSecurityDescriptor(longPath, basicAuthentication()));
+    assertThatThrownBy(() -> ScopedApiChainRegistrar.rejectCookieNameCollisions(descriptors))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("exceeds");
+  }
+
+  @Test
+  void rejectsBasePathThatSanitizesToEmptySuffix() {
+    final var descriptors =
+        List.of(new ScopedSecurityDescriptor("/---", basicAuthentication())); // sanitizes to ""
+    assertThatThrownBy(() -> ScopedApiChainRegistrar.rejectCookieNameCollisions(descriptors))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("empty suffix");
+  }
+
+  private static AuthenticationConfiguration basicAuthentication() {
+    final var a = new AuthenticationConfiguration();
+    a.setMethod(AuthenticationMethod.BASIC);
+    return a;
   }
 }
