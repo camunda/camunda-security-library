@@ -102,9 +102,11 @@ For each descriptor CSL builds **once** a set of per-scope session components an
 
 **Cookie-name derivation.** `basePath` is a URL path and may contain characters (notably `/`) that
 are not valid in an RFC 6265 cookie name, so the name cannot be `basePath` verbatim. The name is
-`camunda-session-` + **sanitize(`basePath`)**, where `sanitize` strips the leading `/` and replaces
-each run of characters outside `[A-Za-z0-9-]` with a single `-` (e.g. `/physical-tenants/tenanta` →
-`camunda-session-physical-tenants-tenanta`). A scope-distinct *name* — not merely a distinct `Path`
+`camunda-session-` + **sanitize(`basePath`)**, where `sanitize` is CSL's existing,
+unit-tested `ScopedApiChainRegistrar.sanitizeBasePath`: strip the leading `/`, collapse each run of
+non-alphanumeric characters (`[^A-Za-z0-9]+`) to a single `-`, and trim leading/trailing `-` (e.g.
+`/physical-tenants/tenanta` → `camunda-session-physical-tenants-tenanta`; `/api/` →
+`camunda-session-api`). Reusing that helper guarantees the cookie name matches what CSL derives. A scope-distinct *name* — not merely a distinct `Path`
 — is required: the primary unprefixed chain keeps `camunda-session` at `Path = /`, which the browser
 would send *alongside* a scoped cookie on a nested path, leaving two same-named cookies whose
 resolution order is undefined. To keep the `basePath → name` mapping injective without an opaque
@@ -114,8 +116,9 @@ runtime ambiguity.
 
 Cookie *names* have no length cap of their own in RFC 6265; the only hard budget is the ~4096-byte
 per-cookie (`name=value`) limit browsers enforce, which the short session-id value never threatens
-even for a long sanitized name, and `Path`-scoping keeps each request's `Cookie` header to the
-matching scope. The same startup validation that rejects colliding names also caps the derived name
+even for a long sanitized name. `Path`-scoping prevents a scope's cookie from being sent to
+*sibling* scopes — a broader `Path = /` cookie such as the primary `camunda-session` is still sent
+on a scoped path, but the distinct per-scope name keeps the two from colliding. The same startup validation that rejects colliding names also caps the derived name
 length, failing fast rather than silently emitting an over-budget cookie — no hash suffix needed.
 
 Isolation is **structural**, the webapp analogue of ADR-0025's per-scope decoder: because the
