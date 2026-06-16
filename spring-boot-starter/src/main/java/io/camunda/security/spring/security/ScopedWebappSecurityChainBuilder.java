@@ -90,6 +90,10 @@ public final class ScopedWebappSecurityChainBuilder {
                 auth ->
                     auth.requestMatchers(unauthenticatedMatchers.toArray(String[]::new))
                         .permitAll()
+                        // loginUrl/logoutUrl are normally intercepted by the oauth2Login/logout
+                        // filters before the authorization rule runs; permit them defensively so a
+                        // host supplying its own loginPage controller (or the multi-IdP fallback to
+                        // loginUrl) cannot hit a redirect loop.
                         .requestMatchers(loginUrl, logoutUrl)
                         .permitAll()
                         .anyRequest()
@@ -102,6 +106,10 @@ public final class ScopedWebappSecurityChainBuilder {
             .cors(AbstractHttpConfigurer::disable)
             .formLogin(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable)
+            // No oauth2ResourceServer on the webapp chain: it authenticates users interactively via
+            // oauth2Login and serves them from the session. Bearer/JWT (client-credentials, direct
+            // API access) is the API chain's responsibility (ADR-0023); a bearer token presented to
+            // a webapp path falls through to the delegating entry point below, which returns 401.
             .oauth2Login(
                 oauthLogin -> {
                   oauthLogin
@@ -129,6 +137,8 @@ public final class ScopedWebappSecurityChainBuilder {
                   logoutSuccessHandlerProvider.ifAvailable(logout::logoutSuccessHandler);
                 });
 
+    // Refresh expired access tokens transparently after AuthorizationFilter; the logout handler
+    // force-logs-out users whose refresh token has also expired.
     final var logoutHandler =
         new CompositeLogoutHandler(
             new CookieClearingLogoutHandler(SESSION_COOKIE, X_CSRF_TOKEN),
@@ -138,6 +148,9 @@ public final class ScopedWebappSecurityChainBuilder {
             authorizedClientRepository, authorizedClientManager, logoutHandler),
         AuthorizationFilter.class);
 
+    // AdminUserCheckFilter is intentionally NOT wired on the OIDC chain (ADR-0011, GH-189): under
+    // OIDC, admin provisioning is driven by IdP claims, and the filter cannot tell "no admin yet"
+    // from "membership not yet projected". Only WebAppAuthorizationCheck runs here.
     final var webAppFilter = webAppAuthorizationFilterProvider.getIfAvailable();
     if (webAppFilter != null) {
       filterChainBuilder.addFilterAfter(webAppFilter, OAuth2RefreshTokenFilter.class);
@@ -146,6 +159,11 @@ public final class ScopedWebappSecurityChainBuilder {
     SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
+    // Install the multi-IdP login picker (GH-269): the custom entry point trips
+    // DefaultLoginPageConfigurer's gate, so the picker would otherwise be dropped and multi-IdP
+    // deployments 302 to /login -> 404. Must be added after applyCsrfConfiguration — both anchor on
+    // CsrfFilter and the stable sort makes insertion order the tie-break, so the CSRF header filter
+    // writes before the picker commits the response.
     final var loginPickerFilter =
         oidcLoginPickerProvider.getIfAvailable(
             () -> LoginLinksBuilder.defaultOauth2LoginPickerFilter(clientRegistrationRepository));
