@@ -328,6 +328,11 @@ public class OidcAccessTokenDecoderFactory {
       final JWTProcessor<SecurityContext> jwtProcessor,
       final OAuth2TokenValidator<Jwt> tokenValidator) {
     final var decoder = new NimbusJwtDecoder(jwtProcessor);
+    // Two-layer typ enforcement (defense-in-depth):
+    // 1. createJOSEObjectTypeVerifier() — Nimbus-level, runs before JWK lookup; primary gate.
+    // 2. JwtTypeValidator below — Spring-level, runs after signature verification; ensures the
+    //    same allowlist (JWT, at+jwt, absent) is enforced even if the Nimbus verifier is ever
+    //    swapped or subclassed. Both layers accept the same set, so they cannot diverge.
     final JwtTypeValidator jwtTypeValidator =
         new JwtTypeValidator(List.of(JOSEObjectType.JWT.getType(), AT_JWT.getType()));
     jwtTypeValidator.setAllowEmpty(true);
