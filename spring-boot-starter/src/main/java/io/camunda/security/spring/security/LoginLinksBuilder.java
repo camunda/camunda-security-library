@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.security;
 
+import io.camunda.security.spring.scope.BasePaths;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -19,10 +20,23 @@ final class LoginLinksBuilder {
 
   static DefaultLoginPageGeneratingFilter defaultOauth2LoginPickerFilter(
       final ClientRegistrationRepository clientRegistrationRepository, final String loginPageUrl) {
+    return defaultOauth2LoginPickerFilter(clientRegistrationRepository, loginPageUrl, "");
+  }
+
+  /**
+   * Builds the login picker filter with authorization links prefixed by {@code
+   * authorizationBaseUriPrefix}. Use this overload for per-scope chains where the authorization
+   * endpoint lives under a basePath (e.g. {@code /physical-tenants/t1/oauth2/authorization/{id}}).
+   */
+  static DefaultLoginPageGeneratingFilter defaultOauth2LoginPickerFilter(
+      final ClientRegistrationRepository clientRegistrationRepository,
+      final String loginPageUrl,
+      final String authorizationBaseUriPrefix) {
     final var picker = new DefaultLoginPageGeneratingFilter();
     picker.setLoginPageUrl(loginPageUrl);
     picker.setOauth2LoginEnabled(true);
-    picker.setOauth2AuthenticationUrlToClientName(buildLoginLinks(clientRegistrationRepository));
+    picker.setOauth2AuthenticationUrlToClientName(
+        buildLoginLinks(clientRegistrationRepository, authorizationBaseUriPrefix));
     return picker;
   }
 
@@ -34,6 +48,24 @@ final class LoginLinksBuilder {
    */
   static Map<String, String> buildLoginLinks(
       final ClientRegistrationRepository clientRegistrationRepository) {
+    return buildLoginLinks(clientRegistrationRepository, "");
+  }
+
+  /**
+   * Builds the authorization URL -> client display name map with each URL prefixed by {@code
+   * prefix}. An empty or null prefix yields unprefixed {@code /oauth2/authorization/{id}} links. A
+   * root {@code /} prefix is valid and normalizes to the empty prefix, producing the same
+   * unprefixed links. A non-empty, non-root prefix (e.g. {@code /physical-tenants/t1}) yields
+   * {@code /physical-tenants/t1/oauth2/authorization/{id}}.
+   */
+  static Map<String, String> buildLoginLinks(
+      final ClientRegistrationRepository clientRegistrationRepository, final String prefix) {
+    final String normalizedPrefix;
+    if (prefix == null || prefix.isBlank()) {
+      normalizedPrefix = "";
+    } else {
+      normalizedPrefix = BasePaths.normalize(prefix, "prefix");
+    }
     final var links = new LinkedHashMap<String, String>();
     if (!(clientRegistrationRepository instanceof final Iterable<?> iterable)) {
       return links;
@@ -44,7 +76,9 @@ final class LoginLinksBuilder {
             registration.getClientName() != null
                 ? registration.getClientName()
                 : registration.getRegistrationId();
-        links.put("/oauth2/authorization/" + registration.getRegistrationId(), displayName);
+        links.put(
+            normalizedPrefix + "/oauth2/authorization/" + registration.getRegistrationId(),
+            displayName);
       }
     }
     return links;

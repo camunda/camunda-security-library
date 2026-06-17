@@ -9,8 +9,10 @@ package io.camunda.security.spring.oidc;
 
 import io.camunda.security.api.model.config.oidc.AuthorizeRequestConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.camunda.security.spring.scope.BasePaths;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
@@ -31,9 +33,12 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
  * {@code additional_parameters} and the {@code resource} (RFC 8707) parameter from {@link
  * OidcConfiguration} into the outgoing {@link OAuth2AuthorizationRequest}.
  *
- * <p>Expected request path: {@code /oauth2/authorization/{registrationId}}. Per-registrationId
- * delegating resolvers are cached in a {@link ConcurrentHashMap} so the customizer is built once
- * per id.
+ * <p>The resolver is constructed with an {@code authorizationRequestBaseUri} that determines where
+ * authorization requests are matched. For the primary chain this is the unprefixed {@code
+ * /oauth2/authorization}; for per-scope chains it is {@code <basePath>/oauth2/authorization}.
+ * Authorization requests are then matched at {@code
+ * <authorizationRequestBaseUri>/{registrationId}}. Per-registrationId delegating resolvers are
+ * cached in a {@link ConcurrentHashMap} so the customizer is built once per id.
  *
  * <p>The {@code sourcesByRegistrationId} map MUST be built from the same flat-plus-providers merge
  * that produced the {@link ClientRegistrationRepository} so registrationIds stay aligned.
@@ -49,17 +54,43 @@ public final class CamundaOidcAuthorizationRequestResolver
   private final ClientRegistrationRepository clientRegistrationRepository;
   private final Map<String, OidcConfiguration> sourcesByRegistrationId;
   private final Map<String, OAuth2AuthorizationRequestResolver> resolvers;
+  private final String authorizationRequestBaseUri;
   private final RequestMatcher authorizationRequestMatcher;
 
+  /** Uses the default unprefixed authorization base URI {@code /oauth2/authorization}. */
   public CamundaOidcAuthorizationRequestResolver(
       final ClientRegistrationRepository clientRegistrationRepository,
       final Map<String, OidcConfiguration> sourcesByRegistrationId) {
+    this(clientRegistrationRepository, sourcesByRegistrationId, AUTHORIZATION_REQUEST_BASE_URI);
+  }
+
+  /**
+   * @param authorizationRequestBaseUri the authorization endpoint base URI, e.g. {@code
+   *     /oauth2/authorization} for the primary chain or {@code <basePath>/oauth2/authorization} for
+   *     a per-scope chain. The {registrationId} segment is appended to it.
+   */
+  public CamundaOidcAuthorizationRequestResolver(
+      final ClientRegistrationRepository clientRegistrationRepository,
+      final Map<String, OidcConfiguration> sourcesByRegistrationId,
+      final String authorizationRequestBaseUri) {
+    Objects.requireNonNull(
+        clientRegistrationRepository, "clientRegistrationRepository must not be null");
+    Objects.requireNonNull(sourcesByRegistrationId, "sourcesByRegistrationId must not be null");
+    final var normalizedBaseUri =
+        BasePaths.normalize(authorizationRequestBaseUri, "authorizationRequestBaseUri");
+    if (normalizedBaseUri.isEmpty()) {
+      throw new IllegalArgumentException(
+          "authorizationRequestBaseUri must not be the root path '/' — it would configure an empty"
+              + " OAuth2 authorization base and match arbitrary single-segment paths; was: "
+              + authorizationRequestBaseUri);
+    }
     this.clientRegistrationRepository = clientRegistrationRepository;
     this.sourcesByRegistrationId = Map.copyOf(sourcesByRegistrationId);
+    this.authorizationRequestBaseUri = normalizedBaseUri;
     resolvers = new ConcurrentHashMap<>();
     authorizationRequestMatcher =
         PathPatternRequestMatcher.withDefaults()
-            .matcher("%s/{%s}".formatted(AUTHORIZATION_REQUEST_BASE_URI, REGISTRATION_ID));
+            .matcher("%s/{%s}".formatted(normalizedBaseUri, REGISTRATION_ID));
   }
 
   @Override
@@ -96,7 +127,7 @@ public final class CamundaOidcAuthorizationRequestResolver
     }
     final var resolver =
         new DefaultOAuth2AuthorizationRequestResolver(
-            clientRegistrationRepository, AUTHORIZATION_REQUEST_BASE_URI);
+            clientRegistrationRepository, authorizationRequestBaseUri);
     final var source = sourcesByRegistrationId.get(registrationId);
     if (source != null) {
       resolver.setAuthorizationRequestCustomizer(createCustomizer(source));

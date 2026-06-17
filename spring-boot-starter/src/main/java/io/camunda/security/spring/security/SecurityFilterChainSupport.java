@@ -15,6 +15,7 @@ import io.camunda.security.api.model.config.headers.HeaderConfiguration;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.csrf.CsrfProtectionRequestMatcher;
+import io.camunda.security.spring.scope.BasePaths;
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -22,6 +23,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.HashSet;
+import java.util.Set;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -41,13 +43,62 @@ public final class SecurityFilterChainSupport {
 
   private SecurityFilterChainSupport() {}
 
+  /**
+   * Computes the set of paths exempt from CSRF protection. The unprefixed {@code /login} and {@code
+   * /logout} constants are always included (primary/global chain behaviour). When {@code
+   * cookiePath} is non-null and non-blank it identifies a per-scope basePath (e.g. {@code
+   * /physical-tenants/t1}); in that case the prefixed variants {@code basePath/login} and {@code
+   * basePath/logout} are also added so that CSRF exemption on scoped chains is consistent with the
+   * primary chain. Trailing slashes on {@code cookiePath} are stripped before concatenation to
+   * avoid double-slash paths.
+   *
+   * <p>Package-private for unit testing.
+   */
+  static Set<String> csrfAllowedPaths(
+      final CamundaSecurityLibraryProperties properties,
+      final SecurityPathPort pathPort,
+      final String cookiePath) {
+    final var allowedPaths = new HashSet<String>();
+    allowedPaths.addAll(pathPort.unprotectedPaths());
+    allowedPaths.addAll(pathPort.unprotectedApiPaths());
+    allowedPaths.add(LOGIN_URL);
+    allowedPaths.add(LOGOUT_URL);
+    allowedPaths.addAll(properties.getCsrf().getIgnoredPathPatterns());
+
+    if (cookiePath != null && !cookiePath.isBlank()) {
+      final var base = BasePaths.normalize(cookiePath, "cookiePath");
+      allowedPaths.add(base + LOGIN_URL);
+      allowedPaths.add(base + LOGOUT_URL);
+    }
+
+    return allowedPaths;
+  }
+
   public static CookieCsrfTokenRepository cookieCsrfTokenRepository(
       final CamundaSecurityLibraryProperties properties) {
+    return cookieCsrfTokenRepository(properties, null);
+  }
+
+  public static CookieCsrfTokenRepository cookieCsrfTokenRepository(
+      final CamundaSecurityLibraryProperties properties, final String cookiePath) {
+    final String normalized =
+        (cookiePath == null || cookiePath.isBlank())
+            ? null
+            : BasePaths.normalize(cookiePath, "cookiePath");
+    // A cookie Path cannot be the empty string; map the root basePath ("" after normalize) to "/".
+    final String resolvedCookiePath =
+        normalized == null ? null : (normalized.isEmpty() ? "/" : normalized);
     final CookieCsrfTokenRepository repository = new CookieCsrfTokenRepository();
     repository.setHeaderName(X_CSRF_TOKEN);
     repository.setCookieName(X_CSRF_TOKEN);
     final boolean httpOnly = properties.getCsrf().isCookieHttpOnly();
-    repository.setCookieCustomizer(builder -> builder.httpOnly(httpOnly));
+    repository.setCookieCustomizer(
+        builder -> {
+          builder.httpOnly(httpOnly);
+          if (resolvedCookiePath != null) {
+            builder.path(resolvedCookiePath);
+          }
+        });
     return repository;
   }
 
@@ -62,19 +113,23 @@ public final class SecurityFilterChainSupport {
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort)
       throws Exception {
+    applyCsrfConfiguration(http, properties, pathPort, null);
+  }
+
+  public static void applyCsrfConfiguration(
+      final HttpSecurity http,
+      final CamundaSecurityLibraryProperties properties,
+      final SecurityPathPort pathPort,
+      final String cookiePath)
+      throws Exception {
     if (!properties.getCsrf().isEnabled()) {
       http.csrf(AbstractHttpConfigurer::disable);
       return;
     }
 
-    final var allowedPaths = new HashSet<String>();
-    allowedPaths.addAll(pathPort.unprotectedPaths());
-    allowedPaths.addAll(pathPort.unprotectedApiPaths());
-    allowedPaths.add(LOGIN_URL);
-    allowedPaths.add(LOGOUT_URL);
-    allowedPaths.addAll(properties.getCsrf().getIgnoredPathPatterns());
+    final var allowedPaths = csrfAllowedPaths(properties, pathPort, cookiePath);
 
-    final var csrfTokenRepository = cookieCsrfTokenRepository(properties);
+    final var csrfTokenRepository = cookieCsrfTokenRepository(properties, cookiePath);
     http.csrf(
         csrf ->
             csrf.csrfTokenRepository(csrfTokenRepository)
