@@ -13,19 +13,29 @@ import io.camunda.security.spring.filter.AdminUserCheckFilter;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
+import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
+import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProviderBuilder;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
+import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.authentication.ui.DefaultLoginPageGeneratingFilter;
 
 /**
- * Provides the shared {@link ScopedWebappSecurityChainBuilder} bean. Resolves shared collaborators
- * as constructor arguments (mirroring {@code ScopedApiSecurityChainBuilderConfiguration}) so the
- * bean is fully wired at creation time regardless of configuration evaluation order.
+ * Provides the {@link ScopedWebappSecurityChainBuilder} and {@link
+ * OAuth2AuthorizedClientManagerFactory} beans. Resolves shared collaborators as constructor
+ * arguments so the builder bean is fully wired at creation time regardless of configuration
+ * evaluation order. Both beans are guarded by {@code @ConditionalOnMissingBean} so hosts can
+ * override either.
+ *
+ * <p>The builder is required infrastructure for per-scope webapp chain construction and must not be
+ * gated on the global authentication method — a BASIC-mode cluster can still register OIDC-scoped
+ * webapp chains via {@link io.camunda.security.api.context.CamundaSecurityScopeProvider}.
  */
 @Configuration
 public class ScopedWebappSecurityChainBuilderConfiguration {
@@ -42,7 +52,9 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
       final ObjectProvider<OAuth2AuthorizationRequestResolver> authorizationRequestResolverProvider,
       final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
       final ObjectProvider<DefaultLoginPageGeneratingFilter> oidcLoginPickerProvider,
-      final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider) {
+      final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider,
+      final OAuth2AuthorizedClientManagerFactory authorizedClientManagerFactory,
+      final ScopedClientRegistrationFactory scopedClientRegistrationFactory) {
     return new ScopedWebappSecurityChainBuilder(
         authFailureHandler,
         properties,
@@ -53,6 +65,33 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
         authorizationRequestResolverProvider,
         webAppAuthorizationFilterProvider,
         oidcLoginPickerProvider,
-        adminUserCheckFilterProvider);
+        adminUserCheckFilterProvider,
+        authorizedClientManagerFactory,
+        scopedClientRegistrationFactory);
+  }
+
+  // Also declared in ScopedOidcInfrastructureConfiguration; provided here too so this configuration
+  // is self-contained for hosts/tests that import it without the OIDC infrastructure config.
+  // Co-presence is safe — both are @ConditionalOnMissingBean.
+  @Bean
+  @ConditionalOnMissingBean
+  public ScopedClientRegistrationFactory scopedClientRegistrationFactory() {
+    return new ScopedClientRegistrationFactory();
+  }
+
+  @Bean
+  @ConditionalOnMissingBean
+  public OAuth2AuthorizedClientManagerFactory oauth2AuthorizedClientManagerFactory() {
+    return (clientRegistrationRepository, authorizedClientRepository) -> {
+      final var manager =
+          new DefaultOAuth2AuthorizedClientManager(
+              clientRegistrationRepository, authorizedClientRepository);
+      manager.setAuthorizedClientProvider(
+          OAuth2AuthorizedClientProviderBuilder.builder()
+              .authorizationCode()
+              .refreshToken()
+              .build());
+      return manager;
+    };
   }
 }
