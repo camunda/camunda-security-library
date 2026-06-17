@@ -112,7 +112,7 @@ final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcess
     final var seen = new HashSet<String>();
     final var duplicates = new LinkedHashSet<String>();
     for (final var d : descriptors) {
-      final var normalized = ScopedApiSecurityChainBuilder.normalizeBasePath(d.basePath());
+      final var normalized = BasePaths.normalize(d.basePath(), "basePath");
       if (!seen.add(normalized)) {
         duplicates.add(normalized);
       }

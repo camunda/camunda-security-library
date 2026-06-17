@@ -37,7 +37,7 @@ class ScopedSecurityDescriptorTest {
     final var auth = new AuthenticationConfiguration();
     assertThatThrownBy(() -> new ScopedSecurityDescriptor("/", auth))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContainingAll("non-root", "absolute");
+        .hasMessageContaining("basePath");
   }
 
   @Test
@@ -45,7 +45,7 @@ class ScopedSecurityDescriptorTest {
     final var auth = new AuthenticationConfiguration();
     assertThatThrownBy(() -> new ScopedSecurityDescriptor("my-scope", auth))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContainingAll("non-root", "absolute");
+        .hasMessageContaining("basePath");
   }
 
   @Test
@@ -60,7 +60,7 @@ class ScopedSecurityDescriptorTest {
     final var auth = new AuthenticationConfiguration();
     assertThatThrownBy(() -> new ScopedSecurityDescriptor("/scope/**", auth))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContainingAll("literal", "pattern");
+        .hasMessageContaining("basePath");
   }
 
   @Test

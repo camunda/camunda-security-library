@@ -14,21 +14,7 @@ public record ScopedSecurityDescriptor(
     String basePath, AuthenticationConfiguration authentication) {
 
   public ScopedSecurityDescriptor {
-    if (basePath == null || basePath.isBlank()) {
-      throw new IllegalArgumentException("ScopedSecurityDescriptor basePath must be non-blank");
-    }
-    if (!basePath.startsWith("/") || "/".equals(basePath)) {
-      throw new IllegalArgumentException(
-          "ScopedSecurityDescriptor basePath must be a non-root absolute path starting with '/'"
-              + " (e.g. /my-scope); got: "
-              + basePath);
-    }
-    if (basePath.indexOf('*') >= 0 || basePath.indexOf('?') >= 0) {
-      throw new IllegalArgumentException(
-          "ScopedSecurityDescriptor basePath must be a literal path prefix, not an ant-style"
-              + " pattern (no '*' or '?'); got: "
-              + basePath);
-    }
+    BasePathSyntax.requireValid(basePath, "ScopedSecurityDescriptor basePath");
     Objects.requireNonNull(
         authentication, "ScopedSecurityDescriptor authentication must not be null");
   }
