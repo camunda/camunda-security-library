@@ -50,7 +50,7 @@ import org.springframework.security.web.SecurityFilterChain;
   ScopedApiSecurityChainBuilderConfiguration.class,
   ScopedOidcInfrastructureConfiguration.class
 })
-public class ScopedApiSecurityConfiguration {
+public class ScopedSecurityChainConfiguration {
 
   /**
    * BDRPP that discovers {@link CamundaSecurityScopeProvider} beans and registers one {@link
@@ -58,7 +58,7 @@ public class ScopedApiSecurityConfiguration {
    * need to instantiate the enclosing {@code @Configuration} class before the post-processor runs.
    */
   @Bean
-  public static BeanDefinitionRegistryPostProcessor scopedApiChainRegistrar() {
-    return new ScopedApiChainRegistrar();
+  public static BeanDefinitionRegistryPostProcessor scopedSecurityChainRegistrar() {
+    return new ScopedSecurityChainRegistrar();
   }
 }
