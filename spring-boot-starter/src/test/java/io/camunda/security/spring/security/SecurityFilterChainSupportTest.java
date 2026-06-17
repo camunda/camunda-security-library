@@ -204,6 +204,30 @@ final class SecurityFilterChainSupportTest {
   }
 
   @Test
+  void shouldPrependContextPathToCsrfCookiePath() {
+    // given
+    final var properties = csrfEnabledProperties();
+    final var basePath = "/physical-tenants/t1";
+
+    // when — wrapping happens in applyCsrfConfiguration; construct it directly here
+    final var repository =
+        new ContextPathScopedCsrfTokenRepository(
+            SecurityFilterChainSupport.cookieCsrfTokenRepository(properties, basePath), basePath);
+    final var request = new MockHttpServletRequest();
+    request.setContextPath("/ctx");
+    final var response = new MockHttpServletResponse();
+    final var token = repository.generateToken(request);
+    repository.saveToken(token, request, response);
+
+    // then
+    final var cookie = response.getCookie("X-CSRF-TOKEN");
+    assertThat(cookie).as("CSRF cookie must be set").isNotNull();
+    assertThat(cookie.getPath())
+        .as("CSRF cookie Path must be contextPath + basePath")
+        .isEqualTo("/ctx/physical-tenants/t1");
+  }
+
+  @Test
   void shouldStripTrailingSlashFromCookiePathBeforeComputingPrefixedPaths() {
     // given
     final var properties = csrfEnabledProperties();

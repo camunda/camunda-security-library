@@ -32,6 +32,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.security.web.header.writers.CrossOriginEmbedderPolicyHeaderWriter;
 import org.springframework.security.web.header.writers.CrossOriginOpenerPolicyHeaderWriter;
 import org.springframework.security.web.header.writers.CrossOriginResourcePolicyHeaderWriter;
@@ -81,25 +82,33 @@ public final class SecurityFilterChainSupport {
 
   public static CookieCsrfTokenRepository cookieCsrfTokenRepository(
       final CamundaSecurityLibraryProperties properties, final String cookiePath) {
-    final String normalized =
-        (cookiePath == null || cookiePath.isBlank())
-            ? null
-            : BasePaths.normalize(cookiePath, "cookiePath");
-    // A cookie Path cannot be the empty string; map the root basePath ("" after normalize) to "/".
-    final String resolvedCookiePath =
-        normalized == null ? null : (normalized.isEmpty() ? "/" : normalized);
+    return buildCookieCsrfTokenRepository(properties, resolveCookiePath(cookiePath));
+  }
+
+  private static CookieCsrfTokenRepository buildCookieCsrfTokenRepository(
+      final CamundaSecurityLibraryProperties properties, final String resolvedCookiePath) {
     final CookieCsrfTokenRepository repository = new CookieCsrfTokenRepository();
     repository.setHeaderName(X_CSRF_TOKEN);
     repository.setCookieName(X_CSRF_TOKEN);
     final boolean httpOnly = properties.getCsrf().isCookieHttpOnly();
-    repository.setCookieCustomizer(
-        builder -> {
-          builder.httpOnly(httpOnly);
-          if (resolvedCookiePath != null) {
-            builder.path(resolvedCookiePath);
-          }
-        });
+    repository.setCookieCustomizer(builder -> builder.httpOnly(httpOnly));
+    if (resolvedCookiePath != null) {
+      repository.setCookiePath(resolvedCookiePath);
+    }
     return repository;
+  }
+
+  /**
+   * Normalizes a raw cookie/base path value to a resolved path string, or {@code null} when the
+   * input is null or blank. A root base path that normalizes to {@code ""} is mapped to {@code "/"}
+   * because a cookie {@code Path} attribute cannot be the empty string.
+   */
+  private static String resolveCookiePath(final String cookiePath) {
+    if (cookiePath == null || cookiePath.isBlank()) {
+      return null;
+    }
+    final String normalized = BasePaths.normalize(cookiePath, "cookiePath");
+    return normalized.isEmpty() ? "/" : normalized;
   }
 
   /**
@@ -129,7 +138,13 @@ public final class SecurityFilterChainSupport {
 
     final var allowedPaths = csrfAllowedPaths(properties, pathPort, cookiePath);
 
-    final var csrfTokenRepository = cookieCsrfTokenRepository(properties, cookiePath);
+    final String resolvedCookiePath = resolveCookiePath(cookiePath);
+    final CookieCsrfTokenRepository repo =
+        buildCookieCsrfTokenRepository(properties, resolvedCookiePath);
+    final CsrfTokenRepository csrfTokenRepository =
+        (resolvedCookiePath != null)
+            ? new ContextPathScopedCsrfTokenRepository(repo, resolvedCookiePath)
+            : repo;
     http.csrf(
         csrf ->
             csrf.csrfTokenRepository(csrfTokenRepository)
