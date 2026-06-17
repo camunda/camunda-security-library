@@ -1,8 +1,6 @@
 # Unified Identity Architecture
 
-**IMPORTANT**: This document is a work in progress and reflects the current thinking on the unified identity architecture for Camunda Hub and Orchestration Clusters. It is intended to provide a high-level overview of the proposed design, including key components, interactions, and deployment models.
-SCIM provisioning is part of the planned end-state target architecture, but it is intentionally out of scope in this document to get early feedback on the core model first; from the library perspective, SCIM is handled as an additional inbound port/adapter.
-The architecture is subject to change as we iterate on the design and gather feedback from stakeholders.
+SCIM provisioning is part of the planned end-state target architecture, but it is intentionally out of scope in this document; from the library perspective, SCIM is handled as an additional inbound port/adapter.
 
 ---
 
@@ -16,9 +14,6 @@ This document describes the planned Unified Identity Architecture for Camunda Hu
 - Emphasizes that standalone Orchestration Cluster (without Hub) remains a first-class deployment option.
 - Outlines how a single shared frontend and pluggable backends (persistence, OC command creation, etc.) fit into the design.
 - Keeps SCIM out of this draft intentionally to focus early feedback; SCIM is planned as another inbound port/adapter on top of the same library.
-
-IMPORTANT: This document shows the final architecture, we won't be able to implement it by October.
-We need to break the project down into several iterations with interim goals until we actually reach the endgame.
 
 ### 1.1 Terminology
 
@@ -904,11 +899,11 @@ Example snapshots (semantic contract):
 
 The Camunda Security Library is built on top of Spring Security but does not replace it. Spring Security provides the filter chain, `SecurityContext` management, and the `HttpSecurity` DSL. The CSL configures and extends the Spring Security infrastructure by:
 
-- Registering OIDC/SAML authentication providers and token validators via `IdpPort`.
-- Installing a scope-aware authorization interceptor (`AuthorizationService`) that replaces ad-hoc role checks in individual controllers.
-- Providing a pre-configured `SecurityFilterChain` bean that consuming applications can override via `@ConditionalOnMissingBean`.
+- Registering OIDC authentication providers and token validators via `IdpClientPort`.
+- Installing a scope-aware authorization filter (`WebAppAuthorizationCheckFilter`) backed by `ResourcePermissionPort`.
+- Providing a set of `SecurityFilterChain` configuration classes that consuming applications activate by explicit `@Import`.
 
-Consuming applications should not need to write Spring Security configuration from scratch. The CSL's Spring Boot auto-configuration wires the filter chain and authorization infrastructure automatically. Consuming applications opt in by adding the CSL dependency and providing only the port adapter implementations specific to their infrastructure (database, IdP client config, etc.).
+Consuming applications should not need to write Spring Security configuration from scratch. CSL ships a set of `@Configuration` classes in the `spring-boot-starter` module, each covering a specific concern (authentication method, session management, OIDC provider wiring, etc.). Hosts opt in by explicitly `@Import`-ing individual configuration classes, or by activating the opt-in umbrella `CamundaSecurityAutoConfiguration` via `@ImportAutoConfiguration`. Nothing activates automatically from adding the Maven dependency alone — see [ADR-0008](adr/0008-no-spring-boot-auto-configuration.md). Every library-supplied bean has `@ConditionalOnMissingBean` so hosts can override individual beans without touching the configuration class.
 
 > Design constraint — lesson from the Identity SDK: The Identity SDK precedent shows that when consuming applications must write significant boilerplate around a shared security library, inconsistencies emerge: auth features present in one application (e.g. Operate) but missing in another (e.g. Tasklist), or bugs fixed in one integration but not others. The CSL must minimize the glue code required in each consumer. All auth logic that is not host-infrastructure-specific belongs in the CSL core, not in consuming-application code.
 
@@ -918,95 +913,110 @@ The Camunda Security Library is a [hexagonal (ports and adapters)](https://herbe
 
 Key rule: all port interfaces — both inbound and outbound — are defined inside the library core. The host application depends on the library, never the other way around.
 
-In addition to core ports, the library exposes a dedicated public API module for adopters:
+In addition to core ports, the library is structured across four Maven modules:
 
-- `api/model` for public shared models (for example authentication context records)
-- `api/context` for public context/helper contracts (for example holders, providers, converters)
+- `core/` — framework-free domain logic and all port interface definitions (`port/in/`, `port/out/`). Zero Spring or persistence dependencies.
+- `api/` — public, host-facing surface: model records (`api/model/`), context/helper contracts (`api/context/`), and configuration records bound by Spring in the starter (`api/model/config/`). No dependency on `core/`.
+- `validation/` — centralized validators for identity initialization data (users, groups, tenants, roles, mapping rules, authorizations). Used by the starter to validate initialization configuration.
+- `spring-boot-starter/` — Spring configuration classes, filter chain assembly, and default port implementations. Hosts activate these via explicit `@Import` (see [ADR-0008](adr/0008-no-spring-boot-auto-configuration.md)).
 
-These `api` contracts are consumer-facing and do not need to be outbound host-implemented adapters.
+The `api` contracts are consumer-facing and do not need to be outbound host-implemented adapters.
 
-- **Inbound (driving) side:** A Spring MVC controller or security filter lives in the host application. It imports and calls an inbound port interface (e.g. `PolicyService`) from the library. The domain service inside the library implements that interface.
-- **Outbound (driven) side:** The domain service calls an outbound port interface (e.g. `PolicyRepository`) defined in the library. The host application (or a default adapter module) provides the concrete implementation.
-
-***WIP***: The following diagram is a work-in-progress and more an example than the actual library architecture.
+- **Inbound (driving) side:** A Spring MVC controller or security filter lives in the host application. It imports and calls an inbound port interface (e.g. `ResourcePermissionPort`) from the library. The implementation lives in `spring-boot-starter` and may delegate to outbound ports for data.
+- **Outbound (driven) side:** The implementation calls an outbound port interface (e.g. `AuthorizationRepositoryPort`) defined in the library. The host application provides the concrete adapter implementation.
 
 ```mermaid
 graph LR
   subgraph EXT_IN["Inbound adapters (host application)"]
-    AC["Admin REST Controller</br>@RestController, Spring MVC"]
-    PEP["PEP / Security Filter</br>Spring Security Filter Chain"]
-    PAC["Policy Apply Controller</br>POST /identity/policies/apply"]
-    CREG_IN["Cluster Registration Adapter</br>triggered by provisioning events,</br>config, or any host-side mechanism"]
+    SC["Security filter chain</br>WebAppAuthorizationCheckFilter"]
+    UE["User endpoint</br>GET /v2/authentication/me"]
+    PAC["Policy apply endpoint</br>POST /identity/policies/apply"]
+    AC["Admin REST controller</br>policy authoring"]
   end
 
-  subgraph CORE["Camunda Security Library (library)"]
-    subgraph IN_PORTS["Inbound port interfaces</br>(defined in Core)"]
-      PS["PolicyService"]
-      AZ["AuthorizationService"]
-      TS["TenantService"]
-      PA["PolicyApplyService"]
-      CRS["ClusterRegistrationService</br>(HUB only)"]
+  subgraph CORE["Camunda Security Library"]
+    subgraph IN_PORTS["Inbound ports (core/port/in/)"]
+      RPP["ResourcePermissionPort"]
+      CUP["CamundaUserPort"]
+      OCP["OidcProviderConfigurationPort"]
+      PP["PolicyPort"]
+      PAP["PolicyApplyPort"]
     end
-    DL["Domain Logic</br>(implements inbound ports,</br>calls outbound ports)"]
-    subgraph OUT_PORTS["Outbound port interfaces</br>(defined in Core)"]
-      PR["PolicyRepository"]
+    DL["Implementations</br>(spring-boot-starter)"]
+    subgraph OUT_PORTS["Outbound ports (core/port/out/)"]
+      ARP["AuthorizationRepositoryPort"]
+      MP["MembershipPort"]
+      SSP["SessionStorePort"]
+      SECP["SecurityPathPort"]
+      PRP["PolicyRepositoryPort"]
+      IDP_P["IdpClientPort"]
       OX["OutboxPort"]
-      IDP_P["IdpPort"]
-      CMD_P["EngineCommandPort</br>(OC runtime only)"]
-      FT_P["FeatureTogglePort"]
-      CRX["ClusterRegistryPort</br>(HUB only)"]
+    end
+    subgraph SPRING_SPI["Spring-layer SPIs</br>(spring-boot-starter/spi/ + api/context/)"]
+      CSSP["CamundaSecurityScopeProvider"]
+      WAPP["WebAppProviderPort"]
     end
   end
 
-  subgraph EXT_OUT["Outbound adapter implementations (host application or default modules)"]
-    PR_I["PolicyRepository</br>Hub: Spring Data JPA</br>OC: RDBMS / ES adapter"]
-    OX_I["OutboxPort</br>SQL propagation store</br>(same TX as business change)"]
-    IDP_I["IdpPort</br>OIDC/SAML client</br>(Keycloak, Entra, Auth0)"]
-    CMD_I["EngineCommandPort</br>Engine projection command adapter</br>(OC backend service layer)"]
-    FT_I["FeatureTogglePort</br>Spring @ConfigurationProperties</br>or Unleash / LaunchDarkly"]
-    CRX_I["ClusterRegistryPort</br>Hub adapter: in-memory registry</br>populated via ClusterRegistrationService"]
+  subgraph EXT_OUT["Outbound adapter implementations (host application)"]
+    ARP_I["Authorization data</br>RDBMS / search adapter"]
+    MP_I["Membership data</br>RDBMS / search adapter"]
+    SSP_I["Session store</br>SQL / Redis adapter"]
+    PRP_I["Policy store</br>Hub: JPA · OC: RDBMS/search"]
+    OX_I["Outbox</br>SQL adapter (same TX as policy write)"]
   end
 
-  AC -->|"calls"| PS
-  PEP -->|"calls"| AZ
-  PAC -->|"calls"| PA
-  CREG_IN -->|"calls"| CRS
+  SC -->|"calls"| RPP
+  UE -->|"calls"| CUP
+  PAC -->|"calls"| PAP
+  AC -->|"calls"| PP
 
-  PS & AZ & TS & PA & CRS -->|"implemented by"| DL
+  RPP & CUP & OCP & PP & PAP -->|"implemented by"| DL
 
-  DL -->|"calls"| PR & OX & IDP_P & CMD_P & FT_P & CRX
+  DL -->|"calls"| ARP & MP & SSP & SECP & PRP & IDP_P & OX
 
-  PR -->|"implemented by"| PR_I
+  ARP -->|"implemented by"| ARP_I
+  MP -->|"implemented by"| MP_I
+  SSP -->|"implemented by"| SSP_I
+  PRP -->|"implemented by"| PRP_I
   OX -->|"implemented by"| OX_I
-  IDP_P -->|"implemented by"| IDP_I
-  CMD_P -->|"implemented by"| CMD_I
-  FT_P -->|"implemented by"| FT_I
-  CRX -->|"implemented by"| CRX_I
 ```
 
-**Inbound port responsibilities and example usage by deployment strategy:**
+> Ports marked **Active** below have complete implementations in `spring-boot-starter`. Ports marked **Stub** have their contract interface defined in `core/port/in/` or `core/port/out/` but no CSL implementation yet — they are reserved for policy work (Hub/OC strategy enablement).
 
-| Inbound port | Responsibility | Used in deployment strategies | Typical host-side adapters |
-|---|---|---|---|
-| `AuthorizationService` | Evaluate whether the current principal is allowed to access a Hub or OC resource. Resolves the effective permission set from token/session context, roles, groups, mapping rules, and scoped authorizations. | `HUB`, `OC_MANAGED`, `OC_STANDALONE` | Spring Security filter chain, method-security interceptor, API authorization middleware |
-| `TenantService` | Resolve and validate the active tenant context for the current request. Provides tenant-aware policy lookup and ensures tenant scoping is applied consistently before authorization decisions are made. | `HUB`, `OC_MANAGED`, `OC_STANDALONE` | Request filter, tenant resolver, REST controller support |
-| `PolicyService` | Handle policy authoring and policy read operations in the local source-of-truth runtime. Validates and persists changes to tenants, roles, groups, mapping rules, principals, and authorizations. | `HUB`, `OC_STANDALONE` | Admin REST controller, Hub UI / OC UI backend |
-| `PolicyApplyService` | Accept and apply externally produced policy payloads (`POLICY_SNAPSHOT`) to the local projection. Owns semantic apply behavior (version checks, idempotency handling, apply orchestration) independent of transport. | `OC_MANAGED` | `POST /identity/policies/apply` controller |
-| `ClusterRegistrationService` | Accept cluster registration and update notifications from the host application. The host calls this port when a new cluster is discovered or an existing cluster's metadata changes (name, organization scope, etc.). | `HUB` | Hub adapter triggered by provisioning events, configuration, or any other host-side discovery mechanism |
+**Inbound port responsibilities:**
 
-**Outbound port responsibilities and example usage by deployment strategy:**
+| Inbound port | Responsibility | Status | Deployment strategies | Typical host-side callers |
+|---|---|---|---|---|
+| `ResourcePermissionPort` | Answers whether the current principal has a given `PermissionType` on a given resource. The library ships a default implementation backed by `AuthorizationRepositoryPort`. | Active | all | `WebAppAuthorizationCheckFilter` |
+| `CamundaUserPort` | Returns the currently-authenticated user view and bearer token. The library ships OIDC and basic auth defaults. | Active | all | User-info REST endpoints |
+| `OidcProviderConfigurationPort` | Returns OIDC provider configurations keyed by registration ID, supporting multi-IdP and per-tenant OIDC setup. | Active | all | OIDC decoder factory, login picker, client registration |
+| `PolicyPort` | Queries and authors the unified policy model (roles, authorizations, mapping rules) in the local source-of-truth runtime. | Stub | `hub`, `oc-standalone` | Admin REST controller, Hub UI / OC UI backend |
+| `PolicyApplyPort` | Applies a policy snapshot received from Hub to the local projection. Owns version checks and idempotent apply semantics. | Stub | `oc-managed` | `POST /identity/policies/apply` endpoint |
+| `TenantPort` | Tenant lifecycle and lookup operations. | Stub | all | Admin REST controller, request filter |
+| `ClusterRegistrationPort` | Registers and deregisters Orchestration Clusters against Hub. | Stub | `hub` | Hub adapter triggered by provisioning events |
 
-| Outbound port | Responsibility | Used in deployment strategies | Typical host-side implementations                                                |
-|---|---|---|----------------------------------------------------------------------------------|
-| `PolicyRepository` | Persist and query tenants, roles, mapping rules, principals, and authorizations. | `HUB`, `OC_MANAGED`, `OC_STANDALONE` | Hub: Spring Data JPA adapter; OC: RDBMS/Commands and Camunda Services            |
-| `OutboxPort` | Persist propagation records transactionally with policy changes and expose dispatch hooks for Hub-to-OC/Optimize propagation. Concrete transport mechanics are platform adapter concerns. | `HUB` | SQL propagation adapter (same DB transaction as policy write)           |
-| `IdpPort` | Resolve IdP metadata, validate tokens, and provide claims needed for principal mapping. | `HUB`, `OC_MANAGED`, `OC_STANDALONE` | OIDC client adapter (Keycloak, Entra, Auth0), SAML adapter                       |
-| `EngineCommandPort` | Emit engine-scoped projection commands from OC to engines after local apply or local authoring changes. | `OC_MANAGED`, `OC_STANDALONE` | OC engine command adapter backed by engine command handling                      |
-| `FeatureTogglePort` | Expose runtime feature switches for mode-gated behavior (for example propagation dispatch, shadow evaluation). | `HUB`, `OC_MANAGED`, `OC_STANDALONE` | Spring `@ConfigurationProperties` adapter, Unleash adapter, LaunchDarkly adapter |
-| `SessionStore` | Persist and retrieve authenticated sessions (create, read, update, delete, cleanup). | `HUB`, `OC_MANAGED`, `OC_STANDALONE` | Redis adapter, SQL session adapter, in-memory adapter                            |
-| `ClusterRegistryPort` | Retrieve the current list of known clusters for a given organization scope. Called by the library when enumerating targets for policy propagation, policy targeting, or UI listing. The host application provides the implementation; the library has no opinion on how the host populates this list. | `HUB` | Hub adapter backed by an in-memory registry populated via `ClusterRegistrationService`, a local DB, or any other host-side cluster store |
+**Outbound port responsibilities:**
 
-This design guarantees that **swapping a database, replacing the IdP client, or providing a custom command backend requires only a new adapter class** — no changes to the domain core.
+| Outbound port | Responsibility | Status | Deployment strategies | Typical host-side implementations |
+|---|---|---|---|---|
+| `AuthorizationRepositoryPort` | Returns `Authorization` records for a principal on a given resource type, resolving identity transitively through groups, roles, and mapping rules. | Active | all | RDBMS / search adapter |
+| `AuthorizationScopeRepositoryPort` | Resolves authorization scopes (`ALL`, `TENANT`, `PHYSICAL_TENANT`) for pre-query filtering, point scope checks, and permission discovery on resource detail views. | Active | all | RDBMS / search adapter |
+| `AuthorizedComponentsPort` | Returns the list of webapp components the authenticated principal is allowed to access. | Active | all | RDBMS / search adapter |
+| `MembershipPort` | Resolves a principal's memberships through a chain: mapping rule IDs → group IDs → role IDs → tenant IDs. | Active | all | RDBMS / search adapter |
+| `BasicAuthUserDetailsPort` | Loads a user by username (with stored password hash) for HTTP Basic authentication. | Active | all | RDBMS adapter |
+| `AdminUserPresencePort` | Reports whether an admin user has been provisioned; consulted by the admin-user bootstrap filter. | Active | all | RDBMS / user store adapter |
+| `SecurityPathPort` | Provides HTTP path patterns the filter chain protects or permits: API paths, webapp paths, unprotected paths, static resource suffixes, admin bypass paths. | Active | all | Host-provided path configuration |
+| `SessionStorePort` | Persists and retrieves authenticated web sessions (`get`/`upsert`/`delete`/`getAll` for expiry sweep). | Active | all | SQL session adapter, Redis adapter |
+| `PolicyRepositoryPort` | Persists and reads the unified policy projection (tenants, roles, groups, mapping rules, principals, authorizations). | Stub | all | Hub: JPA adapter; OC: RDBMS / search adapter |
+| `IdpClientPort` | Communicates with external Identity Providers for OIDC operations. | Stub | all | OIDC client adapter (Keycloak, Entra, Auth0) |
+| `OutboxPort` | Records outbox events that carry policy changes from Hub to OCs in the same transaction as the triggering policy write. | Stub | `hub` | SQL propagation adapter |
+| `ClusterRegistryPort` | Reads and maintains the registry of known Orchestration Clusters for policy propagation targeting. | Stub | `hub` | Hub adapter backed by cluster registry |
+| `FeatureTogglePort` | Evaluates runtime feature toggle values for mode-gated behavior. | Stub | all | Spring `@ConfigurationProperties` adapter, Unleash adapter |
+
+> `EngineCommandPort` — planned outbound port for emitting engine-scoped projection commands from OC to engines. Not yet defined in `core/port/out/`; pending the policy propagation work.
+
+This design guarantees that **swapping a database, replacing the IdP client, or adding engine projection requires only a new adapter class** — no changes to the domain core.
 
 Inbound and outbound ports are CSL boundaries; concrete transport adapters on both sides are owned by host platform integration.
 
@@ -1016,7 +1026,9 @@ The same library core is reused in all deployments. **In every runtime mode, Aut
 
 Mode activation is property-driven via Spring Boot conditions (`@ConditionalOnProperty`, or a small custom `@Conditional` when multiple properties contribute to the decision), not via Spring profiles.
 
-Hub enforces AuthN/AuthZ for the Hub UI. This is exactly the same `AuthorizationService` and `IdpPort` used by OC, just configured with Hub-scoped resources instead of cluster/engine resources.
+**Current implementation state:** authentication method selection (`camunda.security.authentication.method=basic|oidc`) is active today and governs which filter chains are assembled. The `hub` / `oc-managed` / `oc-standalone` deployment strategy property is defined in the configuration model but is not yet consumed by the filter chain layer — it is planned for the policy work that wires `PolicyPort`, `PolicyApplyPort`, and the Hub/OC-specific outbound ports.
+
+Hub enforces AuthN/AuthZ for the Hub UI. This is exactly the same `ResourcePermissionPort` and `IdpClientPort` used by OC, just configured with Hub-scoped resources instead of cluster/engine resources.
 
 **Camunda Security Library responsibilities by deployment strategy:**
 
@@ -1036,20 +1048,20 @@ flowchart TB
 
   Core["Always-on core<br>Spring Security filter chain<br>Scope resolver + Session handling<br>IdpPort (all modes)"]
 
-  Hub --> HubIn["Inbound ports enabled:<br>AuthorizationService, TenantService, PolicyService,<br>ClusterRegistrationService"]
-  OCM --> OCMIn["Inbound ports enabled:<br>AuthorizationService, TenantService, PolicyApplyService"]
-  OCS --> OCSPin["Inbound ports enabled:<br>AuthorizationService, TenantService, PolicyService"]
+  Hub --> HubIn["Inbound ports enabled:<br>ResourcePermissionPort, TenantPort, PolicyPort,<br>ClusterRegistrationPort"]
+  OCM --> OCMIn["Inbound ports enabled:<br>ResourcePermissionPort, TenantPort, PolicyApplyPort"]
+  OCS --> OCSPin["Inbound ports enabled:<br>ResourcePermissionPort, TenantPort, PolicyPort"]
 
-  Hub --> HubPorts["Outbound ports required:<br>PolicyRepository, IdpPort, OutboxPort,<br>SessionStore, ClusterRegistryPort"]
-  OCM --> OCMPorts["Outbound ports required:<br>PolicyRepository, IdpPort, EngineCommandPort, SessionStore"]
-  OCS --> OCSPorts["Outbound ports required:<br>PolicyRepository, IdpPort, EngineCommandPort, SessionStore"]
+  Hub --> HubPorts["Outbound ports required:<br>PolicyRepositoryPort, IdpClientPort, OutboxPort,<br>SessionStorePort, ClusterRegistryPort"]
+  OCM --> OCMPorts["Outbound ports required:<br>PolicyRepositoryPort, IdpClientPort,<br>EngineCommandPort (planned), SessionStorePort"]
+  OCS --> OCSPorts["Outbound ports required:<br>PolicyRepositoryPort, IdpClientPort,<br>EngineCommandPort (planned), SessionStorePort"]
 ```
 
 ```mermaid
 flowchart LR
   subgraph SharedCore["Shared library core (all modes)"]
     SpringSec["Spring Security<br>filter chain configuration"]
-    AuthN["AuthN pipeline<br>(IdpPort → token validation<br>+ session management)"]
+    AuthN["AuthN pipeline<br>(IdpClientPort → token validation<br>+ session management)"]
     AuthZ["AuthZ evaluator<br>(scope-aware RBAC/ABAC<br>for Hub or cluster resources)"]
     Domain["Unified policy domain<br>(Tenant/Role/Group/MappingRule/Principal/Authz)"]
     Apply["Policy apply engine<br>(full snapshot in iteration one;<br>idempotent, version-checked)"]
@@ -1060,13 +1072,13 @@ flowchart LR
   subgraph HubRuntime["HUB runtime only"]
     HubAuthoring["Policy authoring<br>(Hub-scoped: org/workspace/cluster)"]
     HubOutbox["Outbox dispatcher<br>(PolicyVersion + OutboxPort)"]
-    HubCluster["Cluster registry<br>(ClusterRegistrationService ← host<br>ClusterRegistryPort → host adapter)"]
+    HubCluster["Cluster registry<br>(ClusterRegistrationPort ← host<br>ClusterRegistryPort → host adapter)"]
     HubAuthoring --> HubOutbox
   end
 
   subgraph OcRuntime["OC runtime (managed + standalone)"]
     OcWrite["Policy apply or local write"]
-    OcProject["Engine projection<br>(EngineCommandPort)"]
+    OcProject["Engine projection<br>(EngineCommandPort — planned)"]
     OcWrite --> OcProject
   end
 
@@ -1074,7 +1086,7 @@ flowchart LR
   Apply --> OcWrite
 ```
 
-- There is no dedicated or separate IdP "for the gateway"; the framework acts as the OIDC/SAML client against the configured IdPs.
+- There is no dedicated or separate IdP "for the gateway"; the framework acts as the OIDC client against the configured IdPs.
 
 #### 5.4.2 Why a shared Camunda Security Library layer?
 
@@ -1698,7 +1710,7 @@ This unified architecture builds on existing identity arc42 docs and ADRs for OC
 
 ### 9.1 Open High Level points (to be refined in separate ADRs):
 
-- Exact SPI boundaries for OC/engine command creation.
+- **SPI boundaries for OC/engine command creation** (`EngineCommandPort`): still open. Webapp, session, user, and scope provider SPI boundaries have been defined (ADRs 0009, 0010, 0017, 0021, 0025, 0027); the engine-command interface is the remaining open design question.
 - Migration path from current Auth0-based SaaS setup to “Enterprise IdP as SoT” while keeping Auth0 as a private implementation detail.
 - If the endpoints to apply policy changes are public, Hub will not be aware of what a customer applies to OC and will run out of sync.
 - How can we apply a snapshot multiple times? How could we reset the projections in primary and secondary storage?
@@ -1712,9 +1724,31 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0003: Push vs Pull Policy Propagation (Hub ↔ Orchestration Clusters)](adr/0003-push-vs-pull-policy-propagation.md)
 - [ADR-0004: Identity data persistence in the Orchestration Cluster (Open)](adr/0004-oc-identity-data-persistence-and-engine-command-scope.md)
 - [ADR-0005: Frontend integration approach for Hub and Orchestration Cluster Admin UI](adr/0005-frontend-integration-for-hub-and-oc.md)
-- [ADR-0006: Central Spring Security filter chains as Spring Boot auto-configuration](adr/0006-central-security-filter-chains.md)
+- [ADR-0006: Central Spring Security filter chains](adr/0006-central-security-filter-chains.md)
 - [ADR-0007: Two-port authorization surface (`ResourcePermissionPort` and `AuthorizationRepositoryPort`)](adr/0007-resource-permission-port-and-authorization-repository.md)
 - [ADR-0008: No Spring Boot auto-configuration — hosts explicitly import configurations](adr/0008-no-spring-boot-auto-configuration.md)
+- [ADR-0009: Web-app authorization SPIs](adr/0009-web-app-authorization-spis.md)
+- [ADR-0010: Admin-user setup SPIs](adr/0010-admin-user-setup-spis.md)
+- [ADR-0011: Admin user check filter — Basic auth only](adr/0011-admin-user-check-filter-basic-auth-only.md)
+- [ADR-0011: Lazy-load authentication memberships](adr/0011-lazy-load-authentication-memberships.md)
+- [ADR-0012: OIDC logout success handler](adr/0012-oidc-logout-success-handler.md)
+- [ADR-0013: Multi-IdP OIDC configuration](adr/0013-multi-idp-oidc-configuration.md)
+- [ADR-0014: OIDC UserInfo enabled toggle](adr/0014-oidc-user-info-enabled-toggle.md)
+- [ADR-0015: Additional JWK Set URIs — composite decoder](adr/0015-additional-jwk-set-uris-composite-decoder.md)
+- [ADR-0016: Authorization enum ownership and layered usage](adr/0016-authz-enum-ownership-and-layered-usage.md)
+- [ADR-0017: Session store port and web-session ownership](adr/0017-session-store-port-and-web-session-ownership.md)
+- [ADR-0018: CamundaUserPort — user resolution port](adr/0018-camunda-user-port.md)
+- [ADR-0019: Authorization runtime check migration and no Jackson in domain](adr/0019-authorization-runtime-check-migration-and-no-jackson-in-domain.md)
+- [ADR-0020: Issuer-aware JWT decoder](adr/0020-issuer-aware-jwt-decoder.md)
+- [ADR-0020: SecurityContext and condition types migration](adr/0020-security-context-and-condition-types-migration.md)
+- [ADR-0021: User details port](adr/0021-user-details-port.md)
+- [ADR-0022: Resource access control framework ownership](adr/0022-resource-access-control-framework-ownership.md)
+- [ADR-0023: Hand-authored Spring configuration metadata](adr/0023-hand-authored-spring-configuration-metadata.md)
+- [ADR-0023: OIDC bearer tokens on API chain only](adr/0023-oidc-bearer-tokens-on-api-chain-only.md)
+- [ADR-0024: Validation module](adr/0024-validation-module.md)
+- [ADR-0025: `CamundaSecurityScopeProvider` SPI](adr/0025-camunda-security-scope-provider-spi.md)
+- [ADR-0026: UserInfo claim augmentation](adr/0026-userinfo-claim-augmentation.md)
+- [ADR-0027: Scoped webapp security chains and per-scope sessions](adr/0027-scoped-webapp-security-chains-and-per-scope-sessions.md)
 
 ---
 
