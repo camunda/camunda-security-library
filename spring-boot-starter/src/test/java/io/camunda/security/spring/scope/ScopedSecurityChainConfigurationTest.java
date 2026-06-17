@@ -47,7 +47,8 @@ import org.springframework.security.web.SecurityFilterChain;
  *
  * <ul>
  *   <li>No-op when no {@link CamundaSecurityScopeProvider} bean is present.
- *   <li>One extra {@link SecurityFilterChain} bean per descriptor when a provider is present.
+ *   <li>Two {@link SecurityFilterChain} beans per descriptor (API + webapp) when a provider is
+ *       present.
  *   <li>Contributed chains match only their base-path scope and challenge unauthenticated requests.
  *   <li>Correct dispatch: requests under the contributed base path go to the contributed chain.
  * </ul>
@@ -82,13 +83,13 @@ class ScopedSecurityChainConfigurationTest {
   }
 
   // 1. No-op test
-
   @Test
   void noProviderBeanRegistersNoExtraChains() {
     // No CamundaSecurityScopeProvider bean — CSL chains only, no wrappers.
     basicRunner()
         .run(
             ctx -> {
+              assertThat(ctx).hasNotFailed();
               final var wrappers =
                   ctx.getBeansOfType(SecurityFilterChain.class).values().stream()
                       .filter(c -> c instanceof OrderedSecurityFilterChainWrapper)
@@ -99,24 +100,27 @@ class ScopedSecurityChainConfigurationTest {
             });
   }
 
-  // 2. One descriptor → one extra chain
-
+  // 2. One descriptor → two extra chains (API + webapp)
   @Test
-  void oneDescriptorRegistersOneScopedChain() {
+  void oneDescriptorRegistersApiAndWebappChains() {
     basicRunner()
         .withUserConfiguration(SingleBasicDescriptorProvider.class)
         .run(
             ctx -> {
-              // The BDRPP creates exactly one OrderedSecurityFilterChainWrapper
+              assertThat(ctx).hasNotFailed();
+              // The BDRPP creates two OrderedSecurityFilterChainWrappers per descriptor:
+              // one API chain and one webapp chain (no-op when webappPaths() is empty).
               final var wrappers =
                   ctx.getBeansOfType(SecurityFilterChain.class).values().stream()
                       .filter(c -> c instanceof OrderedSecurityFilterChainWrapper)
                       .toList();
               assertThat(wrappers)
-                  .as("one contributed descriptor must produce exactly one wrapper chain")
-                  .hasSize(1);
+                  .as(
+                      "one contributed descriptor must produce exactly two wrapper chains"
+                          + " (API + webapp no-op)")
+                  .hasSize(2);
 
-              final var contributed = (OrderedSecurityFilterChainWrapper) wrappers.getFirst();
+              final var contributed = contributedChain(ctx);
 
               // The contributed chain must match the scoped V2 path
               final var scopedRequest = new MockHttpServletRequest("GET", SCOPED_V2);
@@ -158,7 +162,6 @@ class ScopedSecurityChainConfigurationTest {
   }
 
   // 3. Disjoint scope dispatch
-
   @Test
   void disjointScopeDispatched() {
     // CSL's own basicAuthApiSecurityFilterChain covers /v2/** (from StubPaths.apiPaths).
@@ -191,7 +194,6 @@ class ScopedSecurityChainConfigurationTest {
   }
 
   // 4. Contributed chain accepts valid credentials
-
   @Test
   void oneDescriptorContributedChainAcceptsValidCredentials() {
     basicRunner()
@@ -220,7 +222,6 @@ class ScopedSecurityChainConfigurationTest {
   }
 
   // 5. Ordering: contributed chain sorts before the catch-all deny chain
-
   @Test
   void contributedChainOrderedBeforeCatchAll() {
     // Contributed chains reuse ORDER_WEBAPP_API and must sort before the ORDER_UNHANDLED catch-all.
@@ -241,7 +242,6 @@ class ScopedSecurityChainConfigurationTest {
   }
 
   // 6. End-to-end ordering: contributed chain before catch-all in real FilterChainProxy
-
   @Test
   void contributedChainHandledBeforeCatchAllInRealProxy() throws Exception {
     // Uses the real FilterChainProxy assembled by Spring Security from ALL SecurityFilterChain
@@ -270,16 +270,20 @@ class ScopedSecurityChainConfigurationTest {
   }
 
   /**
-   * Retrieves the single contributed {@link OrderedSecurityFilterChainWrapper} from the context.
+   * Retrieves the contributed API {@link OrderedSecurityFilterChainWrapper} — the one that matches
+   * {@link #SCOPED_V2}. Each descriptor registers two wrappers (API + webapp no-op); this returns
+   * the active API chain used to authenticate and authorise API requests.
    */
   private static OrderedSecurityFilterChainWrapper contributedChain(
       final org.springframework.context.ApplicationContext ctx) {
+    final var probe = new MockHttpServletRequest("GET", SCOPED_V2);
     final var wrappers =
         ctx.getBeansOfType(SecurityFilterChain.class).values().stream()
             .filter(c -> c instanceof OrderedSecurityFilterChainWrapper)
             .map(c -> (OrderedSecurityFilterChainWrapper) c)
+            .filter(c -> c.matches(probe))
             .toList();
-    assertThat(wrappers).as("exactly one contributed chain expected").hasSize(1);
+    assertThat(wrappers).as("exactly one contributed API chain must match " + SCOPED_V2).hasSize(1);
     return wrappers.getFirst();
   }
 
@@ -289,7 +293,6 @@ class ScopedSecurityChainConfigurationTest {
   }
 
   // 7. Duplicate basePath guard
-
   @Test
   void duplicateBasePathFailsContextStartup() {
     basicRunner()
@@ -305,7 +308,6 @@ class ScopedSecurityChainConfigurationTest {
   }
 
   // 8. Trailing-slash variant is treated as duplicate after normalization
-
   @Test
   void trailingSlashVariantIsDetectedAsDuplicate() {
     basicRunner()
@@ -320,8 +322,21 @@ class ScopedSecurityChainConfigurationTest {
             });
   }
 
-  // 9. OIDC scoped chain works in BASIC global mode (per-scope-method agnosticism)
+  // 9. Cookie-name collision guard
+  @Test
+  void collidingCookieNamesFailContextStartup() {
+    basicRunner()
+        .withUserConfiguration(CollidingCookieNamesProvider.class)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasFailed();
+              assertThat(ctx.getStartupFailure())
+                  .isInstanceOf(IllegalStateException.class)
+                  .hasMessageContaining("same session cookie name");
+            });
+  }
 
+  // 10. OIDC scoped chain works in BASIC global mode (per-scope-method agnosticism)
   /**
    * Proves that a host can contribute an OIDC-scoped descriptor even when the cluster's global
    * authentication method is {@code basic}. {@link ScopedOidcInfrastructureConfiguration} provides
@@ -388,7 +403,6 @@ class ScopedSecurityChainConfigurationTest {
   }
 
   // 10. unprotected-api=true: scoped chain is permit-all (mirrors primary unprotected chain)
-
   @Test
   void unprotectedApiTrueMakesContributedScopedChainPermitAll() throws Exception {
     basicRunner()
@@ -445,6 +459,25 @@ class ScopedSecurityChainConfigurationTest {
           List.of(
               new ScopedSecurityDescriptor(SCOPED_BASE, auth),
               new ScopedSecurityDescriptor(SCOPED_BASE, auth));
+    }
+  }
+
+  /**
+   * Provides two descriptors whose basePaths sanitize to the same cookie name — must be rejected at
+   * startup.
+   */
+  @Configuration
+  static class CollidingCookieNamesProvider {
+
+    @Bean
+    static CamundaSecurityScopeProvider collidingCookieNamesScopeProvider() {
+      final var auth = new AuthenticationConfiguration();
+      auth.setMethod(AuthenticationMethod.BASIC);
+      // "/tenant-a" and "/tenant/a" both sanitize to "tenant-a"
+      return () ->
+          List.of(
+              new ScopedSecurityDescriptor("/tenant-a", auth),
+              new ScopedSecurityDescriptor("/tenant/a", auth));
     }
   }
 

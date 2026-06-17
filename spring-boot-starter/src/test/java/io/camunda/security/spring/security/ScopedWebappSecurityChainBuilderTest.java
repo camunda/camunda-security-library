@@ -18,6 +18,8 @@ import org.springframework.security.oauth2.core.AuthorizationGrantType;
 
 class ScopedWebappSecurityChainBuilderTest {
 
+  private static final String PRIMARY_AUTH_BASE_URI = "/oauth2/authorization";
+
   private static ClientRegistration registration(final String id) {
     return ClientRegistration.withRegistrationId(id)
         .clientId(id + "-client")
@@ -50,6 +52,55 @@ class ScopedWebappSecurityChainBuilderTest {
   void nonIterableRepositoryFallsBackToDefaultRegistrationId() {
     final ClientRegistrationRepository repo = registrationId -> registration(registrationId);
     assertThat(ScopedWebappSecurityChainBuilder.resolveOauthRedirectTarget(repo, LOGIN_URL))
+        .isEqualTo("/oauth2/authorization/oidc");
+  }
+
+  // Scoped chain: single-IdP redirect target must be prefixed with basePath
+
+  /**
+   * For a scoped chain with a single IdP, the redirect target must be {@code
+   * <basePath>/oauth2/authorization/<id>} — not the unprefixed {@code /oauth2/authorization/<id>}.
+   * Without threading {@code authorizationBaseUri}, the 302 would send the browser outside the
+   * scope prefix, breaking scoped single-IdP login.
+   */
+  @Test
+  void scopedSingleIdpRedirectTargetIsPrefixedWithBasePath() {
+    final var basePath = "/physical-tenants/t1";
+    final var authorizationBaseUri = basePath + "/oauth2/authorization";
+    final ClientRegistrationRepository repo =
+        new InMemoryClientRegistrationRepository(registration("oidc"));
+    assertThat(
+            ScopedWebappSecurityChainBuilder.resolveOauthRedirectTarget(
+                repo, basePath + LOGIN_URL, authorizationBaseUri))
+        .isEqualTo(basePath + "/oauth2/authorization/oidc");
+  }
+
+  /**
+   * For a scoped chain with a non-iterable repository (fallback case), the redirect target must
+   * also be prefixed — {@code <basePath>/oauth2/authorization/oidc}.
+   */
+  @Test
+  void scopedNonIterableRepositoryFallsBackToPrefixedDefaultRegistrationId() {
+    final var basePath = "/physical-tenants/t1";
+    final var authorizationBaseUri = basePath + "/oauth2/authorization";
+    final ClientRegistrationRepository repo = registrationId -> registration(registrationId);
+    assertThat(
+            ScopedWebappSecurityChainBuilder.resolveOauthRedirectTarget(
+                repo, basePath + LOGIN_URL, authorizationBaseUri))
+        .isEqualTo(basePath + "/oauth2/authorization/oidc");
+  }
+
+  /**
+   * Confirms that the primary (non-scoped) single-IdP redirect target is unchanged — {@code
+   * /oauth2/authorization/<id>} — so the fix is behaviour-neutral for primary chains.
+   */
+  @Test
+  void primaryChainSingleIdpRedirectTargetIsUnchanged() {
+    final ClientRegistrationRepository repo =
+        new InMemoryClientRegistrationRepository(registration("oidc"));
+    assertThat(
+            ScopedWebappSecurityChainBuilder.resolveOauthRedirectTarget(
+                repo, LOGIN_URL, PRIMARY_AUTH_BASE_URI))
         .isEqualTo("/oauth2/authorization/oidc");
   }
 }

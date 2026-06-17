@@ -326,6 +326,12 @@ public final class ScopedWebappSecurityChainBuilder {
       throw new IllegalArgumentException(
           "basePath must not be the root path '/' for a scoped chain, but was: " + basePath);
     }
+    if (pathPort.webappPaths() == null || pathPort.webappPaths().isEmpty()) {
+      // Host provides no webapp paths — return a no-op chain that matches nothing.
+      return http.securityMatcher(request -> false)
+          .authorizeHttpRequests(auth -> auth.anyRequest().denyAll())
+          .build();
+    }
     return switch (authentication.getMethod()) {
       case OIDC ->
           buildOidcWebappChainInternal(
@@ -595,7 +601,9 @@ public final class ScopedWebappSecurityChainBuilder {
     return (request, response, authentication) -> {
       final var cookie = new jakarta.servlet.http.Cookie(cookieName, "");
       cookie.setMaxAge(0);
-      cookie.setPath(cookiePath);
+      // Prepend the context path so the clear path matches the set path under any deployment.
+      // request.getContextPath() is a deployment constant — same value for every request.
+      cookie.setPath(request.getContextPath() + cookiePath);
       response.addCookie(cookie);
     };
   }
