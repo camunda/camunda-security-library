@@ -72,6 +72,7 @@ class AdminUserCheckFilterChainIntegrationTest {
                   CamundaSecurityConfiguration.class,
                   BaseSecurityConfiguration.class,
                   BasicAuthWebappSecurityConfiguration.class,
+                  ScopedWebappSecurityChainBuilderConfiguration.class,
                   AuthFailureHandlerConfiguration.class,
                   AdminUserCheckFilterConfiguration.class,
                   WebAppAuthorizationFilterConfiguration.class))
@@ -85,6 +86,7 @@ class AdminUserCheckFilterChainIntegrationTest {
                   CamundaSecurityConfiguration.class,
                   BaseSecurityConfiguration.class,
                   OidcWebappSecurityConfiguration.class,
+                  ScopedWebappSecurityChainBuilderConfiguration.class,
                   AuthFailureHandlerConfiguration.class,
                   OidcBeansConfiguration.class,
                   ScopedOidcInfrastructureConfiguration.class,

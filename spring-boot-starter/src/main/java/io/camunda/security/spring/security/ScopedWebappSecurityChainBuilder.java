@@ -7,7 +7,10 @@
  */
 package io.camunda.security.spring.security;
 
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.LOGIN_URL;
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.LOGOUT_URL;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.OIDC_REGISTRATION_ID;
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.REDIRECT_URI;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.SESSION_COOKIE;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
@@ -19,7 +22,6 @@ import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.handler.OAuth2AuthenticationExceptionHandler;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
-import java.util.Collection;
 import java.util.LinkedHashMap;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
@@ -50,39 +52,69 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
 /**
  * Single source of truth for the CSL webapp filter-chain shape (OIDC oauth2Login and HTTP-Basic
  * form login). The primary {@link OidcWebappSecurityConfiguration} and {@link
- * BasicAuthWebappSecurityConfiguration} delegate here; a later increment reuses the same methods to
- * assemble per-scope webapp chains by passing {@code basePath}-prefixed matchers and endpoint URLs.
+ * BasicAuthWebappSecurityConfiguration} delegate here.
  *
- * <p>Stateless: every collaborator is a method parameter, so callers may supply per-scope values.
+ * <p>Shared collaborators (handlers, providers, properties, pathPort) are constructor-injected and
+ * held as fields, mirroring {@code ScopedApiSecurityChainBuilder}. Per-invocation inputs (the
+ * cluster OAuth2 stack and the {@link
+ * org.springframework.security.config.annotation.web.builders.HttpSecurity} instance) remain method
+ * parameters.
  */
 public final class ScopedWebappSecurityChainBuilder {
 
-  /**
-   * Builds the OIDC oauth2Login webapp chain. Body moved verbatim from {@code
-   * OidcWebappSecurityConfiguration#oidcWebappSecurityFilterChain}; the {@code matchers}, {@code
-   * unauthenticatedMatchers}, {@code loginUrl}, {@code logoutUrl} and {@code redirectUri} were
-   * inlined constants there and are parameters here.
-   */
-  public SecurityFilterChain buildOidcWebappChain(
-      final HttpSecurity http,
-      final Collection<String> matchers,
-      final Collection<String> unauthenticatedMatchers,
-      final String loginUrl,
-      final String logoutUrl,
-      final String redirectUri,
+  private final AuthFailureHandler authFailureHandler;
+  private final CamundaSecurityLibraryProperties properties;
+  private final SecurityPathPort pathPort;
+  private final ObjectProvider<OidcTokenEndpointCustomizer> tokenEndpointCustomizerProvider;
+  private final ObjectProvider<LogoutSuccessHandler> logoutSuccessHandlerProvider;
+  private final ObjectProvider<OidcUserService> oidcUserServiceProvider;
+  private final ObjectProvider<OAuth2AuthorizationRequestResolver>
+      authorizationRequestResolverProvider;
+  private final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider;
+  private final ObjectProvider<DefaultLoginPageGeneratingFilter> oidcLoginPickerProvider;
+  private final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider;
+
+  public ScopedWebappSecurityChainBuilder(
       final AuthFailureHandler authFailureHandler,
-      final ClientRegistrationRepository clientRegistrationRepository,
-      final OAuth2AuthorizedClientRepository authorizedClientRepository,
-      final OAuth2AuthorizedClientManager authorizedClientManager,
+      final CamundaSecurityLibraryProperties properties,
+      final SecurityPathPort pathPort,
       final ObjectProvider<OidcTokenEndpointCustomizer> tokenEndpointCustomizerProvider,
       final ObjectProvider<LogoutSuccessHandler> logoutSuccessHandlerProvider,
       final ObjectProvider<OidcUserService> oidcUserServiceProvider,
       final ObjectProvider<OAuth2AuthorizationRequestResolver> authorizationRequestResolverProvider,
       final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
       final ObjectProvider<DefaultLoginPageGeneratingFilter> oidcLoginPickerProvider,
-      final CamundaSecurityLibraryProperties properties,
-      final SecurityPathPort pathPort)
+      final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider) {
+    this.authFailureHandler = authFailureHandler;
+    this.properties = properties;
+    this.pathPort = pathPort;
+    this.tokenEndpointCustomizerProvider = tokenEndpointCustomizerProvider;
+    this.logoutSuccessHandlerProvider = logoutSuccessHandlerProvider;
+    this.oidcUserServiceProvider = oidcUserServiceProvider;
+    this.authorizationRequestResolverProvider = authorizationRequestResolverProvider;
+    this.webAppAuthorizationFilterProvider = webAppAuthorizationFilterProvider;
+    this.oidcLoginPickerProvider = oidcLoginPickerProvider;
+    this.adminUserCheckFilterProvider = adminUserCheckFilterProvider;
+  }
+
+  /**
+   * Builds the OIDC oauth2Login webapp chain for the primary (non-scoped) webapp paths. Matchers
+   * are derived from {@link SecurityPathPort#webappPaths()} and {@link
+   * SecurityPathPort#unauthenticatedWebappPaths()}; login/logout/redirect URLs use the CSL
+   * constants.
+   */
+  public SecurityFilterChain buildOidcWebappChain(
+      final HttpSecurity http,
+      final ClientRegistrationRepository clientRegistrationRepository,
+      final OAuth2AuthorizedClientRepository authorizedClientRepository,
+      final OAuth2AuthorizedClientManager authorizedClientManager)
       throws Exception {
+
+    final var matchers = pathPort.webappPaths();
+    final var unauthenticatedMatchers = pathPort.unauthenticatedWebappPaths();
+    final var loginUrl = LOGIN_URL;
+    final var logoutUrl = LOGOUT_URL;
+    final var redirectUri = REDIRECT_URI;
 
     final var filterChainBuilder =
         http.securityMatcher(matchers.toArray(String[]::new))
@@ -176,21 +208,15 @@ public final class ScopedWebappSecurityChainBuilder {
   }
 
   /**
-   * Builds the HTTP-Basic form-login webapp chain. Body moved verbatim from {@code
-   * BasicAuthWebappSecurityConfiguration#basicAuthWebappSecurityFilterChain}; {@code matchers},
-   * {@code loginUrl} and {@code logoutUrl} were inlined there and are parameters here.
+   * Builds the HTTP-Basic form-login webapp chain for the primary (non-scoped) webapp paths.
+   * Matchers, login URL, and logout URL are derived from the injected {@link SecurityPathPort} and
+   * CSL constants.
    */
-  public SecurityFilterChain buildBasicWebappChain(
-      final HttpSecurity http,
-      final Collection<String> matchers,
-      final String loginUrl,
-      final String logoutUrl,
-      final AuthFailureHandler authFailureHandler,
-      final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
-      final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider,
-      final CamundaSecurityLibraryProperties properties,
-      final SecurityPathPort pathPort)
-      throws Exception {
+  public SecurityFilterChain buildBasicWebappChain(final HttpSecurity http) throws Exception {
+
+    final var matchers = pathPort.webappPaths();
+    final var loginUrl = LOGIN_URL;
+    final var logoutUrl = LOGOUT_URL;
 
     final var filterChainBuilder =
         http.securityMatcher(matchers.toArray(String[]::new))

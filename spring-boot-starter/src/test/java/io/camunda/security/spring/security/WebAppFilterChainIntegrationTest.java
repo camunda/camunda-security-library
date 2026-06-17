@@ -67,6 +67,7 @@ class WebAppFilterChainIntegrationTest {
                   CamundaSecurityConfiguration.class,
                   BaseSecurityConfiguration.class,
                   BasicAuthWebappSecurityConfiguration.class,
+                  ScopedWebappSecurityChainBuilderConfiguration.class,
                   AuthFailureHandlerConfiguration.class,
                   WebAppAuthorizationFilterConfiguration.class))
           .withPropertyValues("camunda.security.authentication.method=basic");
@@ -79,6 +80,7 @@ class WebAppFilterChainIntegrationTest {
                   CamundaSecurityConfiguration.class,
                   BaseSecurityConfiguration.class,
                   OidcWebappSecurityConfiguration.class,
+                  ScopedWebappSecurityChainBuilderConfiguration.class,
                   AuthFailureHandlerConfiguration.class,
                   OidcBeansConfiguration.class,
                   ScopedOidcInfrastructureConfiguration.class,

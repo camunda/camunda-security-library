@@ -72,6 +72,7 @@ class OidcWebappBearerTokenRejectedTest {
                   CamundaSecurityConfiguration.class,
                   BaseSecurityConfiguration.class,
                   OidcWebappSecurityConfiguration.class,
+                  ScopedWebappSecurityChainBuilderConfiguration.class,
                   AuthFailureHandlerConfiguration.class,
                   OidcBeansConfiguration.class,
                   ScopedOidcInfrastructureConfiguration.class))
