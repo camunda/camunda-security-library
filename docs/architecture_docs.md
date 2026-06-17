@@ -899,7 +899,7 @@ Example snapshots (semantic contract):
 
 The Camunda Security Library is built on top of Spring Security but does not replace it. Spring Security provides the filter chain, `SecurityContext` management, and the `HttpSecurity` DSL. The CSL configures and extends the Spring Security infrastructure by:
 
-- Registering OIDC authentication providers and token validators via `IdpClientPort`.
+- Assembling Spring Security OIDC infrastructure (`ClientRegistrationRepository`, `JwtDecoder`, token validators) from configuration sourced via `OidcProviderConfigurationPort`.
 - Installing a scope-aware authorization filter (`WebAppAuthorizationCheckFilter`) backed by `ResourcePermissionPort`.
 - Providing a set of `SecurityFilterChain` configuration classes that consuming applications activate by explicit `@Import`.
 
@@ -949,7 +949,7 @@ graph LR
       SSP["SessionStorePort"]
       SECP["SecurityPathPort"]
       PRP["PolicyRepositoryPort"]
-      IDP_P["IdpClientPort"]
+      IDP_P["IdpClientPort (stub)"]
       OX["OutboxPort"]
     end
     subgraph SPRING_SPI["Spring-layer SPIs</br>(spring-boot-starter/spi/ + api/context/)"]
@@ -973,7 +973,7 @@ graph LR
 
   RPP & CUP & OCP & PP & PAP -->|"implemented by"| DL
 
-  DL -->|"calls"| ARP & MP & SSP & SECP & PRP & IDP_P & OX
+  DL -->|"calls"| ARP & MP & SSP & SECP & PRP & OX
 
   ARP -->|"implemented by"| ARP_I
   MP -->|"implemented by"| MP_I
@@ -982,7 +982,7 @@ graph LR
   OX -->|"implemented by"| OX_I
 ```
 
-> Ports marked **Active** below have complete implementations in `spring-boot-starter`. Ports marked **Stub** have their contract interface defined in `core/port/in/` or `core/port/out/` but no CSL implementation yet — they are reserved for policy work (Hub/OC strategy enablement).
+> Ports marked **Active** have their wiring complete today: inbound Active ports have a default implementation in `spring-boot-starter`; outbound Active ports are consumed by the current starter and require a host-side adapter. Ports marked **Stub** have their contract interface defined in `core/port/in/` or `core/port/out/` but no current CSL wiring — they are reserved for the policy work (Hub/OC strategy enablement).
 
 **Inbound port responsibilities:**
 
@@ -1046,22 +1046,22 @@ flowchart TB
   Mode -->|"OC_MANAGED"| OCM["Enable OC managed services<br>AuthN/AuthZ (cluster-scoped)<br>RemotePolicyApply + ProjectionToEngine"]
   Mode -->|"OC_STANDALONE"| OCS["Enable OC standalone services<br>AuthN/AuthZ (cluster-scoped)<br>LocalPolicyAuthoring + ProjectionToEngine"]
 
-  Core["Always-on core<br>Spring Security filter chain<br>Scope resolver + Session handling<br>IdpPort (all modes)"]
+  Core["Always-on core<br>Spring Security filter chain<br>Scope resolver + Session handling"]
 
   Hub --> HubIn["Inbound ports enabled:<br>ResourcePermissionPort, TenantPort, PolicyPort,<br>ClusterRegistrationPort"]
   OCM --> OCMIn["Inbound ports enabled:<br>ResourcePermissionPort, TenantPort, PolicyApplyPort"]
   OCS --> OCSPin["Inbound ports enabled:<br>ResourcePermissionPort, TenantPort, PolicyPort"]
 
-  Hub --> HubPorts["Outbound ports required:<br>PolicyRepositoryPort, IdpClientPort, OutboxPort,<br>SessionStorePort, ClusterRegistryPort"]
-  OCM --> OCMPorts["Outbound ports required:<br>PolicyRepositoryPort, IdpClientPort,<br>EngineCommandPort (planned), SessionStorePort"]
-  OCS --> OCSPorts["Outbound ports required:<br>PolicyRepositoryPort, IdpClientPort,<br>EngineCommandPort (planned), SessionStorePort"]
+  Hub --> HubPorts["Outbound ports required:<br>PolicyRepositoryPort, OutboxPort,<br>SessionStorePort, ClusterRegistryPort"]
+  OCM --> OCMPorts["Outbound ports required:<br>PolicyRepositoryPort, SessionStorePort,<br>EngineCommandPort (planned)"]
+  OCS --> OCSPorts["Outbound ports required:<br>PolicyRepositoryPort, SessionStorePort,<br>EngineCommandPort (planned)"]
 ```
 
 ```mermaid
 flowchart LR
   subgraph SharedCore["Shared library core (all modes)"]
     SpringSec["Spring Security<br>filter chain configuration"]
-    AuthN["AuthN pipeline<br>(IdpClientPort → token validation<br>+ session management)"]
+    AuthN["AuthN pipeline<br>(Spring Security: OIDC / basic<br>+ session management)"]
     AuthZ["AuthZ evaluator<br>(scope-aware RBAC/ABAC<br>for Hub or cluster resources)"]
     Domain["Unified policy domain<br>(Tenant/Role/Group/MappingRule/Principal/Authz)"]
     Apply["Policy apply engine<br>(full snapshot in iteration one;<br>idempotent, version-checked)"]
@@ -1729,8 +1729,8 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0008: No Spring Boot auto-configuration — hosts explicitly import configurations](adr/0008-no-spring-boot-auto-configuration.md)
 - [ADR-0009: Web-app authorization SPIs](adr/0009-web-app-authorization-spis.md)
 - [ADR-0010: Admin-user setup SPIs](adr/0010-admin-user-setup-spis.md)
-- [ADR-0011: Admin user check filter — Basic auth only](adr/0011-admin-user-check-filter-basic-auth-only.md)
-- [ADR-0011: Lazy-load authentication memberships](adr/0011-lazy-load-authentication-memberships.md)
+- [ADR-0011a: Admin user check filter — Basic auth only](adr/0011-admin-user-check-filter-basic-auth-only.md)
+- [ADR-0011b: Lazy-load authentication memberships](adr/0011-lazy-load-authentication-memberships.md)
 - [ADR-0012: OIDC logout success handler](adr/0012-oidc-logout-success-handler.md)
 - [ADR-0013: Multi-IdP OIDC configuration](adr/0013-multi-idp-oidc-configuration.md)
 - [ADR-0014: OIDC UserInfo enabled toggle](adr/0014-oidc-user-info-enabled-toggle.md)
@@ -1739,12 +1739,12 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0017: Session store port and web-session ownership](adr/0017-session-store-port-and-web-session-ownership.md)
 - [ADR-0018: CamundaUserPort — user resolution port](adr/0018-camunda-user-port.md)
 - [ADR-0019: Authorization runtime check migration and no Jackson in domain](adr/0019-authorization-runtime-check-migration-and-no-jackson-in-domain.md)
-- [ADR-0020: Issuer-aware JWT decoder](adr/0020-issuer-aware-jwt-decoder.md)
-- [ADR-0020: SecurityContext and condition types migration](adr/0020-security-context-and-condition-types-migration.md)
+- [ADR-0020a: Issuer-aware JWT decoder](adr/0020-issuer-aware-jwt-decoder.md)
+- [ADR-0020b: SecurityContext and condition types migration](adr/0020-security-context-and-condition-types-migration.md)
 - [ADR-0021: User details port](adr/0021-user-details-port.md)
 - [ADR-0022: Resource access control framework ownership](adr/0022-resource-access-control-framework-ownership.md)
-- [ADR-0023: Hand-authored Spring configuration metadata](adr/0023-hand-authored-spring-configuration-metadata.md)
-- [ADR-0023: OIDC bearer tokens on API chain only](adr/0023-oidc-bearer-tokens-on-api-chain-only.md)
+- [ADR-0023a: Hand-authored Spring configuration metadata](adr/0023-hand-authored-spring-configuration-metadata.md)
+- [ADR-0023b: OIDC bearer tokens on API chain only](adr/0023-oidc-bearer-tokens-on-api-chain-only.md)
 - [ADR-0024: Validation module](adr/0024-validation-module.md)
 - [ADR-0025: `CamundaSecurityScopeProvider` SPI](adr/0025-camunda-security-scope-provider-spi.md)
 - [ADR-0026: UserInfo claim augmentation](adr/0026-userinfo-claim-augmentation.md)
