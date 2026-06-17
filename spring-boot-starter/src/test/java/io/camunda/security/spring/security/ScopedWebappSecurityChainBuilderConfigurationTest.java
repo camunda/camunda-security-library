@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
+import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -41,6 +42,7 @@ class ScopedWebappSecurityChainBuilderConfigurationTest {
             ctx -> {
               assertThat(ctx).hasNotFailed();
               assertThat(ctx.getBean(ScopedWebappSecurityChainBuilder.class)).isNotNull();
+              assertThat(ctx.getBean(OAuth2AuthorizedClientManagerFactory.class)).isNotNull();
             });
   }
 
