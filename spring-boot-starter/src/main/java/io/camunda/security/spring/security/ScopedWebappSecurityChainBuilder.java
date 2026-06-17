@@ -326,6 +326,12 @@ public final class ScopedWebappSecurityChainBuilder {
       throw new IllegalArgumentException(
           "basePath must not be the root path '/' for a scoped chain, but was: " + basePath);
     }
+    if (pathPort.webappPaths() == null || pathPort.webappPaths().isEmpty()) {
+      // Host provides no webapp paths — return a no-op chain that matches nothing.
+      return http.securityMatcher(request -> false)
+          .authorizeHttpRequests(auth -> auth.anyRequest().denyAll())
+          .build();
+    }
     return switch (authentication.getMethod()) {
       case OIDC ->
           buildOidcWebappChainInternal(
