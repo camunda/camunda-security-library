@@ -1106,71 +1106,66 @@ The extra layer between UIs/clients and engines is intentional:
 - Pluggable backends
   - Concrete persistence (SQL, search), propagation transport, and IdP clients can be swapped or customized by providing alternative adapters, without changing the domain model.
 
-#### 5.5 Security Engine Framework
+#### 5.5 Engine authorization integration
 
-The **Security Engine Framework** is the identity sub-framework embedded directly inside each engine (Zeebe). It is the engine-side counterpart to the Camunda Security Library and follows the same hexagonal principle: all external dependencies are hidden behind port interfaces.
+Rather than a separate authorization sub-framework embedded in the engine, the zeebe engine uses CSL's `core` authorization model directly — see [ADR-0028](adr/0028-unified-authz-framework-in-core.md). Implementation is tracked in [#388](https://github.com/camunda/camunda-security-library/issues/388).
 
-The OC Camunda Security Library communicates with each engine exclusively through the `EngineCommandPort` outbound port, which translates into engine-level identity commands. The Security Engine Framework receives those commands via its own inbound port and decides how to persist and apply the identity state changes inside the engine. The initial integration of the Zeebe engine with CSL's authorization framework is tracked in [#388](https://github.com/camunda/camunda-security-library/issues/388).
+**Authorization checks (command-time):** CSL's `core` module defines `AuthorizationCheckPort` as the unified inbound port covering scope-based, tenant, and property-based authorization checks. Its default implementation, `AuthorizationService`, lives in `core` and is wired as a Spring bean in `spring-boot-starter`. The zeebe engine receives an `AuthorizationService` instance from the Spring context via `BrokerModuleConfiguration` — it does not construct the service or manage its dependencies. The engine provides RocksDB-backed adapter implementations of `MembershipPort` and `AuthorizationScopeRepositoryPort`, the same two outbound ports used by the search layer.
 
-**Key rule:** engines never talk to IdPs directly, never hold policy versions, and never interpret scope metadata beyond what is needed for their own authorization decisions. The Camunda Security Library on the OC side is responsible for deciding what to forward and how to scope it; see [ ADR-0004](adr/0004-oc-identity-data-persistence-and-engine-command-scope.md) for the open decision on how scope metadata flows into the engine.
+**Policy state propagation (planned):** OC CSL will propagate identity state changes (tenants, roles, authorizations) to each engine through `EngineCommandPort` (planned outbound port). See section 5.5.2.
+
+**Key rule:** engines never talk to IdPs directly, never hold policy versions, and never interpret scope metadata beyond what is needed for their own authorization decisions. The Camunda Security Library on the OC side is responsible for deciding what to forward and how to scope it; see [ADR-0004](adr/0004-oc-identity-data-persistence-and-engine-command-scope.md) for the open decision on how scope metadata flows into the engine.
 
 ```mermaid
 graph LR
-  subgraph EXT_IN_SEF["Inbound adapters (engine)"]
-    CMD_IN["Identity Command Handler</br>receives commands from OC via EngineCommandPort"]
-    AUTHZ_IN["Authorization Request Handler</br>called by engine command processing"]
-  end
-
-  subgraph SEF["Security Engine Framework (embedded in engine)"]
-    subgraph IN_PORTS_SEF["Inbound port interfaces"]
-      ICP["IdentityCommandPort</br>(apply policy updates to engine state)"]
-      EAP["EngineAuthorizationPort</br>(evaluate authz for engine operations)"]
-    end
-    SEF_LOGIC["Domain Logic</br>(applies identity state,</br>evaluates RBAC/ABAC per command)"]
-    subgraph OUT_PORTS_SEF["Outbound port interfaces"]
-      ISP["IdentityStatePort</br>(read / write identity state)"]
+  subgraph ENGINE["Zeebe Engine"]
+    CMD_PROC["Command processor</br>(authorization request)"]
+    BC["BrokerModuleConfiguration</br>(receives AuthorizationService at bootstrap)"]
+    subgraph ADAPTERS["RocksDB port adapters"]
+      MP_I["MembershipPort adapter</br>(MembershipState, RocksDB)"]
+      ASRP_I["AuthorizationScopeRepositoryPort adapter</br>(AuthorizationState, RocksDB)"]
     end
   end
 
-  subgraph EXT_OUT_SEF["Outbound adapter implementations"]
-    ROCKS["IdentityStatePort</br>RocksDB (primary storage)</br>AuthorizationState, MembershipState,</br>MappingRuleState, TenantState"]
+  subgraph CSL_CORE["CSL core"]
+    ACP["AuthorizationCheckPort</br>(core/port/in/)"]
+    AS["AuthorizationService</br>(core implementation)"]
+    MP["MembershipPort</br>(core/port/out/)"]
+    ASRP["AuthorizationScopeRepositoryPort</br>(core/port/out/)"]
   end
 
-  CMD_IN -->|"calls"| ICP
-  AUTHZ_IN -->|"calls"| EAP
-  ICP & EAP -->|"implemented by"| SEF_LOGIC
-  SEF_LOGIC -->|"calls"| ISP
-  ISP -->|"implemented by"| ROCKS
+  BC -->|"injects at bootstrap"| AS
+  CMD_PROC -->|"calls"| ACP
+  ACP -->|"implemented by"| AS
+  AS -->|"calls"| MP & ASRP
+  MP -->|"implemented by"| MP_I
+  ASRP -->|"implemented by"| ASRP_I
 ```
 
-**Inbound port responsibilities:**
+**`AuthorizationCheckPort` responsibilities:**
 
-| Inbound port | Responsibility |
+| Port | Responsibility |
 |---|---|
-| `IdentityCommandPort` | Receive and apply identity state updates forwarded by the OC Camunda Security Library (tenants, roles, mapping rules, authorizations). Persists the effective state to primary storage via `IdentityStatePort`. |
-| `EngineAuthorizationPort` | Evaluate whether a given engine command (e.g. create process instance, complete user task) is authorized for the requesting principal, using the identity state held in primary storage. |
+| `AuthorizationCheckPort` | Unified authorization check port used by both the search layer and the zeebe engine. Covers scope-based, tenant, and property-based checks; returns `Either<AuthorizationRejection, Void>` with the failure reason (tenant vs. permission), or a `boolean` skip-checks query for hot-path short-circuiting. Implemented by `AuthorizationService` in `core`. |
 
-**Outbound port responsibilities:**
+**Engine-provided outbound port adapters:**
 
-| Outbound port | Responsibility |
-|---|---|
-| `IdentityStatePort` | Read and write identity state (authorizations, tenants, memberships) to the engine's primary storage (RocksDB). Abstracts the concrete state class layer from the domain logic. |
+| Port | Responsibility | Engine adapter |
+|---|---|---|
+| `MembershipPort` | Resolves principal memberships (mapping rules → groups → roles → tenants). | RocksDB `MembershipState` adapter |
+| `AuthorizationScopeRepositoryPort` | Resolves authorization scopes for resource access checks. | RocksDB `AuthorizationState` adapter |
 
-**Open question:** how identity data is persisted in the OC (direct write from the OC CSL to secondary storage vs. routing through engine commands and the exporter) is an unresolved design question that also determines what scope metadata the engine must receive. See [ADR-0004: Identity data persistence in the Orchestration Cluster](adr/0004-oc-identity-data-persistence-and-engine-command-scope.md).
+> `EngineCommandPort` — planned outbound port on the OC CSL side for propagating identity state (tenants, roles, authorizations) to engines. See section 5.5.2.
 
-#### 5.5.1 Why a shared Security Engine Framework layer?
+#### 5.5.1 Why a shared CSL authorization framework for engine and search layer?
 
-The dedicated enforcement layer inside each engine is intentional:
+Using CSL's `core` authz framework for both layers is intentional:
 
-- Command-time authorization isolated from business logic
-  - All engine commands requiring authorization pass through `EngineAuthorizationPort`. Command processors focus on process execution and never embed role or tenant logic directly.
-- Primary-storage-optimized identity state
-  - Identity state (authorizations, tenants, memberships) is held in RocksDB (primary storage), co-located with engine state, avoiding round-trips to secondary storage on every command.
-  - Query-time authorization for UIs and APIs is handled by the OC Camunda Security Library against secondary storage; the Security Engine Framework covers command-time decisions only.
-- Engine state is a projection, never a source of truth
-  - Engines only apply what the OC Camunda Security Library forwards; they cannot author or override policy.
-- Pluggable state adapter
-  - `IdentityStatePort` decouples authorization logic from the concrete persistence backend (RocksDB today), so the backend can be swapped without changing domain logic.
+- **Single evaluation kernel, no drift:** both the search layer and the engine evaluate authorization via the same `AuthorizationChecker` / `AuthorizationService`. A semantic fix or new check type lands once in `core` and benefits both.
+- **No new port contracts:** the engine integrates against existing `MembershipPort` and `AuthorizationScopeRepositoryPort` — no new outbound ports to stabilize before the engine migration begins.
+- **Richer failure detail:** `Either<AuthorizationRejection, Void>` carries the failure reason (tenant vs. permission) needed for cross-partition rejection broadcast in the engine. The `boolean` surface of `ResourcePermissionPort` is kept for backwards compatibility with existing search-layer callers.
+- **Spring-free auth context:** `ClaimsAuthenticationConverter` (`core`) converts raw `Map<String,Object>` claims to `CamundaAuthentication` without Spring dependencies, making it usable in the engine.
+- **Primary-storage-optimized adapters:** the engine's RocksDB adapters cache membership and scope lookups internally; `AuthorizationService` in `core` stays dependency-free and cache-agnostic.
 
 #### 5.5.2 Config propagation to the engine via batch operations
 
@@ -1751,6 +1746,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0025: `CamundaSecurityScopeProvider` SPI](adr/0025-camunda-security-scope-provider-spi.md)
 - [ADR-0026: UserInfo claim augmentation](adr/0026-userinfo-claim-augmentation.md)
 - [ADR-0027: Scoped webapp security chains and per-scope sessions](adr/0027-scoped-webapp-security-chains-and-per-scope-sessions.md)
+- [ADR-0028: Extend CSL authorization model to serve both search-layer and zeebe engine](adr/0028-unified-authz-framework-in-core.md)
 
 ---
 
