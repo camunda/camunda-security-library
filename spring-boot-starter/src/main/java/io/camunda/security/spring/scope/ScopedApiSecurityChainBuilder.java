@@ -165,7 +165,11 @@ public final class ScopedApiSecurityChainBuilder {
             authentication.getMethod(), "authentication.method must not be null");
     Objects.requireNonNull(oidcDecoderSupplier, "oidcDecoderSupplier must not be null");
     Objects.requireNonNull(http, "http must not be null");
-    final var prefix = normalizeBasePath(basePath);
+    final var prefix = BasePaths.normalize(basePath, "basePath");
+    if (prefix.isEmpty()) {
+      throw new IllegalArgumentException(
+          "basePath must not be the root path '/' for a scoped chain, but was: " + basePath);
+    }
     final var matchers = pathPort.apiPaths().stream().map(p -> prefix + p).toList();
     final var unprotected = pathPort.unprotectedApiPaths().stream().map(p -> prefix + p).toList();
     return switch (method) {
@@ -196,7 +200,11 @@ public final class ScopedApiSecurityChainBuilder {
       final HttpSecurity http, final String basePath) throws Exception {
     Objects.requireNonNull(http, "http must not be null");
     Objects.requireNonNull(basePath, "basePath must not be null");
-    final var prefix = normalizeBasePath(basePath);
+    final var prefix = BasePaths.normalize(basePath, "basePath");
+    if (prefix.isEmpty()) {
+      throw new IllegalArgumentException(
+          "basePath must not be the root path '/' for a scoped chain, but was: " + basePath);
+    }
     final var matchers = pathPort.apiPaths().stream().map(p -> prefix + p).toList();
     LOG.debug(
         "Building unprotected scoped API chain for basePath={}, matchers={}", basePath, matchers);
@@ -212,27 +220,6 @@ public final class ScopedApiSecurityChainBuilder {
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
     return filterChainBuilder.build();
-  }
-
-  /**
-   * Normalizes a basePath by stripping a single trailing {@code /} when the path has more than one
-   * character (so {@code "/"} is left as-is). Used by both the builder and the duplicate-detection
-   * sweep in {@link ScopedApiChainRegistrar} to ensure {@code "/scope"} and {@code "/scope/"} are
-   * treated as the same path.
-   *
-   * <p>Package-private so the registrar can call it without adding a coupling to the builder's
-   * Spring context.
-   *
-   * @param basePath the raw basePath; may be {@code null} (returned as-is)
-   * @return the normalized basePath
-   */
-  static String normalizeBasePath(final String basePath) {
-    if (basePath == null) {
-      return null;
-    }
-    return basePath.length() > 1 && basePath.endsWith("/")
-        ? basePath.substring(0, basePath.length() - 1)
-        : basePath;
   }
 
   private static ObjectPostProcessor<BearerTokenAuthenticationFilter>

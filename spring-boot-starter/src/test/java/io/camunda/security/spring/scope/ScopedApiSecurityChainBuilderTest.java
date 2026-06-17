@@ -8,6 +8,7 @@
 package io.camunda.security.spring.scope;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -395,6 +396,52 @@ class ScopedApiSecurityChainBuilderTest {
   }
 
   @Test
+  void buildScopedApiChainRejectsRootBasePath() {
+    // A root "/" basePath normalizes to the empty prefix, which would build an unscoped chain
+    // (matchers collapse to the host's raw apiPaths) — a scope must be non-root. All requireNonNull
+    // guards are satisfied so the post-normalize root-reject is the one that fires.
+    basicRunner.run(
+        ctx -> {
+          final var http = Mockito.mock(HttpSecurity.class);
+          final var properties = ctx.getBean(CamundaSecurityLibraryProperties.class);
+          final var authFailureHandler = ctx.getBean(AuthFailureHandler.class);
+          final var pathPort = ctx.getBean(SecurityPathPort.class);
+          final var builder =
+              new ScopedApiSecurityChainBuilder(
+                  properties,
+                  authFailureHandler,
+                  pathPort,
+                  ctx.getBeanProvider(OidcResourceServerCustomizer.class));
+          final var auth = new AuthenticationConfiguration();
+          auth.setMethod(AuthenticationMethod.BASIC);
+          assertThatIllegalArgumentException()
+              .isThrownBy(() -> builder.buildScopedApiChain(http, "/", auth, () -> null))
+              .withMessageContaining("must not be the root path");
+        });
+  }
+
+  @Test
+  void buildUnprotectedScopedApiChainRejectsRootBasePath() {
+    // Same non-root requirement for the unprotected (permit-all) scoped chain overload.
+    basicRunner.run(
+        ctx -> {
+          final var http = Mockito.mock(HttpSecurity.class);
+          final var properties = ctx.getBean(CamundaSecurityLibraryProperties.class);
+          final var authFailureHandler = ctx.getBean(AuthFailureHandler.class);
+          final var pathPort = ctx.getBean(SecurityPathPort.class);
+          final var builder =
+              new ScopedApiSecurityChainBuilder(
+                  properties,
+                  authFailureHandler,
+                  pathPort,
+                  ctx.getBeanProvider(OidcResourceServerCustomizer.class));
+          assertThatIllegalArgumentException()
+              .isThrownBy(() -> builder.buildUnprotectedScopedApiChain(http, "/"))
+              .withMessageContaining("must not be the root path");
+        });
+  }
+
+  @Test
   void buildScopedApiChainRejectsSupplierReturningNullDecoder() {
     // The requireNonNull on the supplier result fires when the OIDC arm is reached.
     oidcRunner.run(
@@ -415,20 +462,6 @@ class ScopedApiSecurityChainBuilderTest {
               .isThrownBy(() -> builder.buildScopedApiChain(http, BASE_PATH, auth, () -> null))
               .withMessageContaining("null JwtDecoder");
         });
-  }
-
-  // -------------------------------------------------------------------------
-  // normalizeBasePath unit tests
-  // -------------------------------------------------------------------------
-
-  @Test
-  void normalizeBasePathStripsTrailingSlash() {
-    assertThat(ScopedApiSecurityChainBuilder.normalizeBasePath("/x/")).isEqualTo("/x");
-  }
-
-  @Test
-  void normalizeBasePathLeavesRootSlashUnchanged() {
-    assertThat(ScopedApiSecurityChainBuilder.normalizeBasePath("/")).isEqualTo("/");
   }
 
   @Test
