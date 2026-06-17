@@ -69,6 +69,7 @@ class OidcWebappLoginPickerTest {
                   CamundaSecurityConfiguration.class,
                   BaseSecurityConfiguration.class,
                   OidcWebappSecurityConfiguration.class,
+                  ScopedWebappSecurityChainBuilderConfiguration.class,
                   AuthFailureHandlerConfiguration.class,
                   OidcBeansConfiguration.class,
                   ScopedOidcInfrastructureConfiguration.class))
@@ -108,6 +109,7 @@ class OidcWebappLoginPickerTest {
                 CamundaSecurityConfiguration.class,
                 BaseSecurityConfiguration.class,
                 OidcWebappSecurityConfiguration.class,
+                ScopedWebappSecurityChainBuilderConfiguration.class,
                 AuthFailureHandlerConfiguration.class,
                 OidcBeansConfiguration.class,
                 ScopedOidcInfrastructureConfiguration.class))

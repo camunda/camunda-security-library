@@ -69,6 +69,7 @@ class OidcWebappAuthorizationRequestResolverHookTest {
                   CamundaSecurityConfiguration.class,
                   BaseSecurityConfiguration.class,
                   OidcWebappSecurityConfiguration.class,
+                  ScopedWebappSecurityChainBuilderConfiguration.class,
                   AuthFailureHandlerConfiguration.class,
                   OidcBeansConfiguration.class,
                   ScopedOidcInfrastructureConfiguration.class))

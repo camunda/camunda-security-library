@@ -23,6 +23,7 @@ import io.camunda.security.spring.security.BasicAuthApiSecurityConfiguration;
 import io.camunda.security.spring.security.BasicAuthWebappSecurityConfiguration;
 import io.camunda.security.spring.security.OidcApiSecurityConfiguration;
 import io.camunda.security.spring.security.OidcWebappSecurityConfiguration;
+import io.camunda.security.spring.security.ScopedWebappSecurityChainBuilderConfiguration;
 import io.camunda.security.spring.security.UnprotectedApiSecurityConfiguration;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import org.junit.jupiter.api.Test;
@@ -47,6 +48,7 @@ class CamundaSecurityConfigurationTest {
                   CamundaSecurityConfiguration.class,
                   BaseSecurityConfiguration.class,
                   ScopedApiSecurityChainBuilderConfiguration.class,
+                  ScopedWebappSecurityChainBuilderConfiguration.class,
                   OidcApiSecurityConfiguration.class,
                   OidcWebappSecurityConfiguration.class,
                   BasicAuthApiSecurityConfiguration.class,

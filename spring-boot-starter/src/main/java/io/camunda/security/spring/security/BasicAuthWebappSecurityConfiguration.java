@@ -7,21 +7,14 @@
  */
 package io.camunda.security.spring.security;
 
-import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.LOGIN_URL;
-import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.LOGOUT_URL;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP_API;
 
-import io.camunda.security.core.port.out.SecurityPathPort;
-import io.camunda.security.spring.CamundaSecurityLibraryProperties;
-import io.camunda.security.spring.filter.AdminUserCheckFilter;
-import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
-import io.camunda.security.spring.handler.AuthFailureHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
@@ -33,15 +26,18 @@ import org.springframework.security.web.SecurityFilterChain;
  * LOGIN_URL} (handled by the form-login configurer below). Login and logout return 204 No Content
  * with the CSRF token surfaced as a response header.
  *
- * <p>After authentication, downstream filters such as {@link WebAppAuthorizationCheckFilter} and
- * {@link AdminUserCheckFilter} still run so per-web-app permission and admin-presence checks apply
- * on every authenticated request — only the request-matcher level is permissive.
+ * <p>After authentication, downstream filters such as {@link
+ * io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter} and {@link
+ * io.camunda.security.spring.filter.AdminUserCheckFilter} still run so per-web-app permission and
+ * admin-presence checks apply on every authenticated request — only the request-matcher level is
+ * permissive.
  */
 @Configuration
 @ConditionalOnProperty(
     name = "camunda.security.authentication.method",
     havingValue = "basic",
     matchIfMissing = true)
+@Import(ScopedWebappSecurityChainBuilderConfiguration.class)
 public class BasicAuthWebappSecurityConfiguration {
 
   private static final Logger LOG =
@@ -50,25 +46,9 @@ public class BasicAuthWebappSecurityConfiguration {
   @Bean
   @Order(ORDER_WEBAPP_API)
   public SecurityFilterChain basicAuthWebappSecurityFilterChain(
-      final HttpSecurity http,
-      final AuthFailureHandler authFailureHandler,
-      final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
-      final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider,
-      final CamundaSecurityLibraryProperties properties,
-      final SecurityPathPort pathPort)
+      final HttpSecurity http, final ScopedWebappSecurityChainBuilder chainBuilder)
       throws Exception {
     LOG.info("Web Applications Login/Logout is set up with Basic Authentication.");
-
-    return new ScopedWebappSecurityChainBuilder()
-        .buildBasicWebappChain(
-            http,
-            pathPort.webappPaths(),
-            LOGIN_URL,
-            LOGOUT_URL,
-            authFailureHandler,
-            webAppAuthorizationFilterProvider,
-            adminUserCheckFilterProvider,
-            properties,
-            pathPort);
+    return chainBuilder.buildBasicWebappChain(http);
   }
 }
