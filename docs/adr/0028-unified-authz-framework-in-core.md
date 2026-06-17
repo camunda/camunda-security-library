@@ -32,7 +32,7 @@ records the decisions on how to fill those gaps in a way that benefits both laye
 - `RequiredAuthorization<T>` (`core/auth/`) — specifies what check is required (`resourceType`,
   `permissionType`, `resourceIds`, `condition`, `transitive`)
 - `CamundaAuthentication` (`api/model/`) — principal context with lazy membership chains
-  (ADR-0011: lazy membership resolution via `*Supplier` builder methods)
+  ([ADR-0011](0011-lazy-load-authentication-memberships.md): lazy membership resolution via `*Supplier` builder methods)
 
 **What is missing to also serve the zeebe engine:**
 
@@ -58,13 +58,13 @@ it complete enough for the zeebe engine, while keeping all new types general-pur
 ### 1. No new Maven module
 
 All additions land in `core`, which is already Spring-free (`DomainArchTest` enforces this). A
-dedicated module may be split out from `core` later if needed (see Alternative B).
+dedicated module may be split out from `core` later if needed (see “Split `core` into `authz-core` + `authn-core`” in Alternatives Considered).
 
 ### 2. Introduce `AuthorizationCheckPort` (`core/port/in/`) as the unified inbound port
 
-A new inbound port covers all check variants needed by both layers: scope-based, tenant,
-property-based, and skip-checks. It returns `Either<AuthorizationRejection, Void>` rather than
-`boolean`, carrying the reason for denial when authorization fails. Both the search layer and the
+A new inbound port covers all check variants needed by both layers: scope-based, tenant, property-based, and skip-checks. Scope/tenant/property checks return `Either<AuthorizationRejection, Void>` rather than
+`boolean`, carrying the reason for denial when authorization fails. The port also exposes a separate
+skip-checks query returning `boolean` for hot-path short-circuiting. Both the search layer and the
 zeebe engine use this port.
 
 Port signatures use the existing CSL types (`CamundaAuthentication`, `RequiredAuthorization<T>`)
@@ -120,7 +120,7 @@ check type failed.
 for the resource type. There is no equivalent path in `AuthorizationChecker`; the two
 evaluation paths within `AuthorizationService` must be documented explicitly in the class.
 
-**(c) Skip-checks**: returns `true` when both authz and multi-tenancy are disabled globally.
+**(c) Skip-checks**: exposes a `boolean` query that returns `true` when both authz and multi-tenancy are disabled globally.
 
 In `spring-boot-starter`, `AuthorizationService` is wired as a Spring bean by
 `AuthorizationConfiguration` (following the same `@ConditionalOnMissingBean` pattern as
@@ -140,7 +140,7 @@ of both existing ports.
 (`ClaimsExtractor.getGroups()`). These map to `MembershipPort.roleIds()` + `groupIds()` chains.
 The full resolved owner-ID set `{USER/CLIENT, GROUP, ROLE, MAPPING_RULE}` is then passed to
 `AuthorizationScopeRepositoryPort`, which matches the port's existing `Map<EntityType, Set<String>>`
-contract (ADR-0022).
+contract ([ADR-0022](0022-resource-access-control-framework-ownership.md)).
 
 `MappingRuleMatcher` (`core/auth/`) already handles mapping-rule matching in both zeebe and CSL
 today. No migration needed.
@@ -150,24 +150,23 @@ The search layer retains its existing outbound port implementations unchanged.
 **Caching**: the engine's RocksDB adapters cache their results internally (Guava `LoadingCache`).
 Caching is an adapter-layer concern; `core` stays dep-free. This moves caching from per-request
 (current `AuthorizationCheckBehavior` cache keyed on the full request) to per-adapter
-(membership + scope caches keyed on owner IDs and resource type). Inc 6 of the migration epic
+(membership + scope caches keyed on owner IDs and resource type). Inc 4 of the migration epic
 must verify that performance is equivalent to the current per-request cache via the existing
-authorization benchmark.
+authorization benchmark (baseline captured in Inc 0b).
 
 ### 8. `ResourcePermissionPort` transition
 
 `ResourcePermissionPort` (existing `hasPermission()` → `boolean`) is kept for backwards
-compatibility. Migrating search-layer callers to `AuthorizationCheckPort` is out of scope for
-this ADR and its associated migration epic — that is a future increment once the engine path
-stabilizes. `ResourcePermissionService` may be updated to delegate to `AuthorizationService`
-internally.
+compatibility. Migrating search-layer callers to `AuthorizationCheckPort` is deferred to a later
+increment (Inc 5) once the engine path stabilizes. `ResourcePermissionService` may be updated to
+delegate to `AuthorizationService` internally.
 
 ### Why these particular boundaries
 
 - `AuthorizationScopeRepositoryPort` receives pre-resolved `Map<EntityType, Set<String>> ownerIds`
-  (ADR-0022) — storage-agnostic by construction. The engine's RocksDB adapter satisfies the same
+  ([ADR-0022](0022-resource-access-control-framework-ownership.md)) — storage-agnostic by construction. The engine's RocksDB adapter satisfies the same
   contract as the search-layer adapter without changes to the port.
-- `LazyList` in `CamundaAuthentication` (ADR-0011) makes lazy membership resolution Spring-free.
+- `LazyList` in `CamundaAuthentication` ([ADR-0011](0011-lazy-load-authentication-memberships.md)) makes lazy membership resolution Spring-free.
   `ClaimsAuthenticationConverter` reuses the same `Supplier`-based pattern as
   `LazyTokenClaimsConverter` without any `spring-boot-starter` dependency.
 - `MappingRuleMatcher` already bridges both zeebe and CSL — no migration work, just continued use.
@@ -204,10 +203,10 @@ internally.
   when `MembershipPort`'s shape changes. Extract a shared base utility later if the duplication
   becomes a maintenance burden.
 - No caching in `AuthorizationService` in `core`. The zeebe engine's per-command performance
-  relies on caching inside the RocksDB adapter implementations — Inc 6 must treat this as a
+  relies on caching inside the RocksDB adapter implementations — Inc 4 must treat this as a
   required concern, not a nice-to-have optimisation.
 - `MembershipPort.groupIds()` adapter must implement a dual path: `USER_GROUPS_CLAIMS` claim
-  first, then `MembershipState`. This must be documented in Inc 6 acceptance criteria.
+  first, then `MembershipState`. This must be documented in Inc 4 acceptance criteria.
 
 ## Alternatives Considered
 
