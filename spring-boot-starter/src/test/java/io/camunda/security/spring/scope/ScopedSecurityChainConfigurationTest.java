@@ -43,7 +43,7 @@ import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * Verifies the BDRPP-based registration in {@link ScopedApiSecurityConfiguration}:
+ * Verifies the BDRPP-based registration in {@link ScopedSecurityChainConfiguration}:
  *
  * <ul>
  *   <li>No-op when no {@link CamundaSecurityScopeProvider} bean is present.
@@ -52,20 +52,16 @@ import org.springframework.security.web.SecurityFilterChain;
  *   <li>Correct dispatch: requests under the contributed base path go to the contributed chain.
  * </ul>
  */
-class ScopedApiSecurityConfigurationTest {
+class ScopedSecurityChainConfigurationTest {
 
   private static final String SCOPED_BASE = "/example-scope/s1";
   private static final String SCOPED_V2 = SCOPED_BASE + "/v2/resource";
   private static final String SCOPED_OTHER = SCOPED_BASE + "/other";
   private static final String GLOBAL_V2 = "/v2/resource";
 
-  // ---------------------------------------------------------------------------
-  // Shared runner factory
-  // ---------------------------------------------------------------------------
-
   /**
    * Creates a runner that loads the full CSL chain stack (BASIC mode) including the new {@link
-   * ScopedApiSecurityConfiguration}. A {@link BasicAuthUserDetailsPort} mock and {@link
+   * ScopedSecurityChainConfiguration}. A {@link BasicAuthUserDetailsPort} mock and {@link
    * SecurityPathPort} stub are provided as user configuration so all CSL conditions are satisfied.
    */
   private WebApplicationContextRunner basicRunner() {
@@ -73,7 +69,7 @@ class ScopedApiSecurityConfigurationTest {
         .withUserConfiguration(ObjectMapperConfig.class, StubPaths.class, StubUserDetailsPort.class)
         .withConfiguration(
             // Deliberately NOT importing ScopedApiSecurityChainBuilderConfiguration or
-            // ScopedOidcInfrastructureConfiguration here: ScopedApiSecurityConfiguration @Imports
+            // ScopedOidcInfrastructureConfiguration here: ScopedSecurityChainConfiguration @Imports
             // both, so importing only the collector must yield a self-contained, working context.
             AutoConfigurations.of(
                 CamundaSecurityConfiguration.class,
@@ -81,13 +77,11 @@ class ScopedApiSecurityConfigurationTest {
                 BasicAuthApiSecurityConfiguration.class,
                 AuthFailureHandlerConfiguration.class,
                 UserConfiguration.class,
-                ScopedApiSecurityConfiguration.class))
+                ScopedSecurityChainConfiguration.class))
         .withPropertyValues("camunda.security.authentication.method=basic");
   }
 
-  // ---------------------------------------------------------------------------
   // 1. No-op test
-  // ---------------------------------------------------------------------------
 
   @Test
   void noProviderBeanRegistersNoExtraChains() {
@@ -105,9 +99,7 @@ class ScopedApiSecurityConfigurationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
   // 2. One descriptor → one extra chain
-  // ---------------------------------------------------------------------------
 
   @Test
   void oneDescriptorRegistersOneScopedChain() {
@@ -165,9 +157,7 @@ class ScopedApiSecurityConfigurationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
   // 3. Disjoint scope dispatch
-  // ---------------------------------------------------------------------------
 
   @Test
   void disjointScopeDispatched() {
@@ -200,9 +190,7 @@ class ScopedApiSecurityConfigurationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
   // 4. Contributed chain accepts valid credentials
-  // ---------------------------------------------------------------------------
 
   @Test
   void oneDescriptorContributedChainAcceptsValidCredentials() {
@@ -231,9 +219,7 @@ class ScopedApiSecurityConfigurationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
   // 5. Ordering: contributed chain sorts before the catch-all deny chain
-  // ---------------------------------------------------------------------------
 
   @Test
   void contributedChainOrderedBeforeCatchAll() {
@@ -254,9 +240,7 @@ class ScopedApiSecurityConfigurationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
   // 6. End-to-end ordering: contributed chain before catch-all in real FilterChainProxy
-  // ---------------------------------------------------------------------------
 
   @Test
   void contributedChainHandledBeforeCatchAllInRealProxy() throws Exception {
@@ -285,10 +269,6 @@ class ScopedApiSecurityConfigurationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
-
   /**
    * Retrieves the single contributed {@link OrderedSecurityFilterChainWrapper} from the context.
    */
@@ -308,13 +288,7 @@ class ScopedApiSecurityConfigurationTest {
     return "Basic " + Base64.getEncoder().encodeToString(token);
   }
 
-  // ---------------------------------------------------------------------------
-  // Inner configuration / SPI stubs
-  // ---------------------------------------------------------------------------
-
-  // ---------------------------------------------------------------------------
   // 7. Duplicate basePath guard
-  // ---------------------------------------------------------------------------
 
   @Test
   void duplicateBasePathFailsContextStartup() {
@@ -330,9 +304,7 @@ class ScopedApiSecurityConfigurationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
   // 8. Trailing-slash variant is treated as duplicate after normalization
-  // ---------------------------------------------------------------------------
 
   @Test
   void trailingSlashVariantIsDetectedAsDuplicate() {
@@ -348,9 +320,7 @@ class ScopedApiSecurityConfigurationTest {
             });
   }
 
-  // ---------------------------------------------------------------------------
   // 9. OIDC scoped chain works in BASIC global mode (per-scope-method agnosticism)
-  // ---------------------------------------------------------------------------
 
   /**
    * Proves that a host can contribute an OIDC-scoped descriptor even when the cluster's global
@@ -358,10 +328,6 @@ class ScopedApiSecurityConfigurationTest {
    * the per-scope OIDC factories unconditionally, so {@link
    * io.camunda.security.spring.oidc.ScopedJwtDecoderFactory} is present regardless of the global
    * method.
-   *
-   * <p>The test runs with {@code camunda.security.authentication.method=basic} (no OIDC global
-   * mode) but contributes a descriptor whose auth method is OIDC with a local JWKS server. A valid
-   * token signed by the scope's issuer passes; a token with an unregistered issuer yields 401.
    */
   @Test
   void oidcDescriptorUnderBasicGlobalModeBuildsSuccessfullyAndAuthenticatesCorrectly()
@@ -421,14 +387,10 @@ class ScopedApiSecurityConfigurationTest {
     }
   }
 
-  // ---------------------------------------------------------------------------
   // 10. unprotected-api=true: scoped chain is permit-all (mirrors primary unprotected chain)
-  // ---------------------------------------------------------------------------
 
   @Test
   void unprotectedApiTrueMakesContributedScopedChainPermitAll() throws Exception {
-    // With unprotected-api=true an unauthenticated request to the scoped API path must pass
-    // through (200), not be challenged (401) — the scoped chain mirrors UnprotectedApiSecurity.
     basicRunner()
         .withUserConfiguration(SingleBasicDescriptorProvider.class)
         .withPropertyValues("camunda.security.authentication.unprotected-api=true")

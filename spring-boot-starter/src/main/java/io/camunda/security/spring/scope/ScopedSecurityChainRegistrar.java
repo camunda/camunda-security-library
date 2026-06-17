@@ -33,13 +33,13 @@ import org.springframework.security.web.SecurityFilterChain;
  * CamundaSecurityScopeProvider} beans and registers one {@link SecurityFilterChain} bean definition
  * per {@link ScopedSecurityDescriptor}.
  *
- * <p>Declared {@code static} (via the enclosing {@link ScopedApiSecurityConfiguration}'s {@code
+ * <p>Declared {@code static} (via the enclosing {@link ScopedSecurityChainConfiguration}'s {@code
  * static @Bean} method) so Spring does not need to instantiate the enclosing {@code @Configuration}
  * class before the post-processor runs.
  */
-final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcessor {
+final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostProcessor {
 
-  private static final Logger LOG = LoggerFactory.getLogger(ScopedApiChainRegistrar.class);
+  private static final Logger LOG = LoggerFactory.getLogger(ScopedSecurityChainRegistrar.class);
 
   @Override
   public void postProcessBeanDefinitionRegistry(final BeanDefinitionRegistry registry)
@@ -48,7 +48,7 @@ final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcess
     // ConfigurableListableBeanFactory — we need that interface to call getBean().
     if (!(registry instanceof ConfigurableListableBeanFactory beanFactory)) {
       LOG.warn(
-          "ScopedApiChainRegistrar: registry is not a ConfigurableListableBeanFactory ({}); "
+          "ScopedSecurityChainRegistrar: registry is not a ConfigurableListableBeanFactory ({}); "
               + "skipping scoped chain registration",
           registry.getClass().getName());
       return;
@@ -201,7 +201,7 @@ final class ScopedApiChainRegistrar implements BeanDefinitionRegistryPostProcess
    * @param basePath the raw basePath; may be {@code null} (returned as empty string)
    * @return the sanitized basePath fragment
    */
-  // package-private (not private) so ScopedApiChainRegistrarTest can exercise it directly.
+  // package-private (not private) so ScopedSecurityChainRegistrarTest can exercise it directly.
   static String sanitizeBasePath(final String basePath) {
     if (basePath == null) {
       return "";
