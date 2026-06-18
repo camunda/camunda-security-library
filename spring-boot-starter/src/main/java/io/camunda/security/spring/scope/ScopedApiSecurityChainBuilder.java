@@ -29,7 +29,9 @@ import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthen
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AuthenticationEntryPointFailureHandler;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.savedrequest.NullRequestCache;
+import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
  * Reusable builder that is the single source of truth for the CSL API filter-chain shape. Both
@@ -64,16 +66,26 @@ public final class ScopedApiSecurityChainBuilder {
 
   /**
    * Builds an OIDC resource-server API chain over the given matchers, using the supplied decoder.
+   * When a {@code sessionRepositoryFilter} is provided it is installed before {@link
+   * SecurityContextHolderFilter} so that an existing session's {@code SecurityContext} is restored;
+   * bearer validation remains unchanged and {@link SessionCreationPolicy#NEVER} is retained so no
+   * session is created by this chain.
    */
   public SecurityFilterChain buildOidcApiChain(
       final HttpSecurity http,
       final Collection<String> matchers,
       final Collection<String> unprotectedMatchers,
-      final JwtDecoder jwtDecoder)
+      final JwtDecoder jwtDecoder,
+      final SessionRepositoryFilter<?> sessionRepositoryFilter)
       throws Exception {
     Objects.requireNonNull(jwtDecoder, "jwtDecoder must not be null");
     LOG.debug(
         "Building OIDC API chain for matchers={}, unprotected={}", matchers, unprotectedMatchers);
+    if (sessionRepositoryFilter != null) {
+      // Install the per-scope session filter before SecurityContextHolderFilter so the
+      // Spring-Session-backed HttpSession is available when the security context is read.
+      http.addFilterBefore(sessionRepositoryFilter, SecurityContextHolderFilter.class);
+    }
     final var filterChainBuilder =
         http.securityMatcher(matchers.toArray(String[]::new))
             .authorizeHttpRequests(
@@ -100,21 +112,31 @@ public final class ScopedApiSecurityChainBuilder {
             .oauth2Login(AbstractHttpConfigurer::disable)
             .oidcLogout(AbstractHttpConfigurer::disable)
             .logout(AbstractHttpConfigurer::disable);
-
     SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
     return filterChainBuilder.build();
   }
 
-  /** Builds an HTTP Basic API chain over the given matchers. */
+  /**
+   * Builds an HTTP Basic API chain over the given matchers. When a {@code sessionRepositoryFilter}
+   * is provided it is installed before {@link SecurityContextHolderFilter} so that an existing
+   * session's {@code SecurityContext} is restored; {@link SessionCreationPolicy#NEVER} is retained
+   * so no session is created by this chain.
+   */
   public SecurityFilterChain buildBasicApiChain(
       final HttpSecurity http,
       final Collection<String> matchers,
-      final Collection<String> unprotectedMatchers)
+      final Collection<String> unprotectedMatchers,
+      final SessionRepositoryFilter<?> sessionRepositoryFilter)
       throws Exception {
     LOG.debug(
         "Building Basic API chain for matchers={}, unprotected={}", matchers, unprotectedMatchers);
+    if (sessionRepositoryFilter != null) {
+      // Install the per-scope session filter before SecurityContextHolderFilter so the
+      // Spring-Session-backed HttpSession is available when the security context is read.
+      http.addFilterBefore(sessionRepositoryFilter, SecurityContextHolderFilter.class);
+    }
     final var filterChainBuilder =
         http.securityMatcher(matchers.toArray(String[]::new))
             .authorizeHttpRequests(
@@ -151,12 +173,18 @@ public final class ScopedApiSecurityChainBuilder {
    *
    * <p>For OIDC the per-scope decoder is obtained from the supplier (so the builder stays decoupled
    * from decoder construction); for BASIC no decoder is needed.
+   *
+   * <p>When a {@code sessionRepositoryFilter} is provided it is installed before {@link
+   * SecurityContextHolderFilter} so the per-scope Spring Session is consulted on each request.
+   * Bearer validation is unchanged; {@link SessionCreationPolicy#NEVER} is retained so this chain
+   * never creates a session of its own.
    */
   public SecurityFilterChain buildScopedApiChain(
       final HttpSecurity http,
       final String basePath,
       final AuthenticationConfiguration authentication,
-      final Supplier<JwtDecoder> oidcDecoderSupplier)
+      final Supplier<JwtDecoder> oidcDecoderSupplier,
+      final SessionRepositoryFilter<?> sessionRepositoryFilter)
       throws Exception {
     Objects.requireNonNull(basePath, "basePath must not be null");
     Objects.requireNonNull(authentication, "authentication must not be null");
@@ -177,11 +205,50 @@ public final class ScopedApiSecurityChainBuilder {
         final var decoder =
             Objects.requireNonNull(
                 oidcDecoderSupplier.get(), "oidcDecoderSupplier must not return a null JwtDecoder");
-        yield buildOidcApiChain(http, matchers, unprotected, decoder);
+        yield buildOidcApiChain(http, matchers, unprotected, decoder, sessionRepositoryFilter);
       }
-      case BASIC -> buildBasicApiChain(http, matchers, unprotected);
+      case BASIC -> buildBasicApiChain(http, matchers, unprotected, sessionRepositoryFilter);
       default -> throw new IllegalStateException("Unsupported authentication method: " + method);
     };
+  }
+
+  /**
+   * Convenience overload of {@link #buildOidcApiChain(HttpSecurity, Collection, Collection,
+   * JwtDecoder, SessionRepositoryFilter)} that installs no SessionRepositoryFilter.
+   */
+  public SecurityFilterChain buildOidcApiChain(
+      final HttpSecurity http,
+      final Collection<String> matchers,
+      final Collection<String> unprotectedMatchers,
+      final JwtDecoder jwtDecoder)
+      throws Exception {
+    return buildOidcApiChain(http, matchers, unprotectedMatchers, jwtDecoder, null);
+  }
+
+  /**
+   * Convenience overload of {@link #buildBasicApiChain(HttpSecurity, Collection, Collection,
+   * SessionRepositoryFilter)} that installs no SessionRepositoryFilter.
+   */
+  public SecurityFilterChain buildBasicApiChain(
+      final HttpSecurity http,
+      final Collection<String> matchers,
+      final Collection<String> unprotectedMatchers)
+      throws Exception {
+    return buildBasicApiChain(http, matchers, unprotectedMatchers, null);
+  }
+
+  /**
+   * Convenience overload of {@link #buildScopedApiChain(HttpSecurity, String,
+   * AuthenticationConfiguration, Supplier, SessionRepositoryFilter)} that installs no
+   * SessionRepositoryFilter.
+   */
+  public SecurityFilterChain buildScopedApiChain(
+      final HttpSecurity http,
+      final String basePath,
+      final AuthenticationConfiguration authentication,
+      final Supplier<JwtDecoder> oidcDecoderSupplier)
+      throws Exception {
+    return buildScopedApiChain(http, basePath, authentication, oidcDecoderSupplier, null);
   }
 
   /**
