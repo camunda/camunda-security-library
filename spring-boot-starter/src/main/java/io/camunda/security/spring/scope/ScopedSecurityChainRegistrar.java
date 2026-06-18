@@ -186,7 +186,7 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
     }
   }
 
-  private static OrderedSecurityFilterChainWrapper buildChain(
+  private OrderedSecurityFilterChainWrapper buildChain(
       final ConfigurableListableBeanFactory beanFactory,
       final ScopedSecurityDescriptor descriptor) {
     try {
@@ -198,6 +198,7 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
       if (properties.getAuthentication().isUnprotectedApi()) {
         chain = builder.buildUnprotectedScopedApiChain(http, descriptor.basePath());
       } else {
+        final var sessionFilter = getOrBuildSessionFilter(beanFactory, descriptor.basePath());
         chain =
             builder.buildScopedApiChain(
                 http,
@@ -221,7 +222,8 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
                             + " bean.",
                         missing);
                   }
-                });
+                },
+                sessionFilter);
       }
       return new OrderedSecurityFilterChainWrapper(chain, ORDER_WEBAPP_API);
     } catch (final IllegalStateException ex) {
