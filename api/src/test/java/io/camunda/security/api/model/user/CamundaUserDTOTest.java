@@ -10,7 +10,6 @@ package io.camunda.security.api.model.user;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class CamundaUserDTOTest {
@@ -19,13 +18,12 @@ class CamundaUserDTOTest {
   void normalisesNullCollectionsToEmpty() {
     final var dto =
         new CamundaUserDTO(
-            "Alice", "alice", "alice@example.com", null, null, null, null, "free", null, true);
+            "Alice", "Alice", "alice@example.com", null, null, null, null, "free",  true);
 
     assertThat(dto.authorizedComponents()).isEmpty();
     assertThat(dto.tenants()).isEmpty();
     assertThat(dto.groups()).isEmpty();
     assertThat(dto.roles()).isEmpty();
-    assertThat(dto.c8Links()).isEmpty();
   }
 
   @Test
@@ -34,31 +32,27 @@ class CamundaUserDTOTest {
     final var groups = List.of("group-1");
     final var roles = List.of("admin");
     final var components = List.of("operate", "tasklist");
-    final var links =
-        Map.of("operate", "https://operate.example", "tasklist", "https://tasklist.example");
 
     final var dto =
         new CamundaUserDTO(
             "Alice",
-            "alice",
+            "Alice",
             "alice@example.com",
             components,
             tenants,
             groups,
             roles,
             "enterprise",
-            links,
             false);
 
     assertThat(dto.displayName()).isEqualTo("Alice");
-    assertThat(dto.username()).isEqualTo("alice");
+    assertThat(dto.username()).isEqualTo("Alice");
     assertThat(dto.email()).isEqualTo("alice@example.com");
     assertThat(dto.authorizedComponents()).isEqualTo(components);
     assertThat(dto.tenants()).isEqualTo(tenants);
     assertThat(dto.groups()).isEqualTo(groups);
     assertThat(dto.roles()).isEqualTo(roles);
     assertThat(dto.salesPlanType()).isEqualTo("enterprise");
-    assertThat(dto.c8Links()).isEqualTo(links);
     assertThat(dto.canLogout()).isFalse();
   }
 }

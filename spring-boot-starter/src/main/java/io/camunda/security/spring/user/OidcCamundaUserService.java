@@ -16,6 +16,7 @@ import io.camunda.security.core.port.out.AuthorizedComponentsPort;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import java.util.Optional;
+import org.jspecify.annotations.NullMarked;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
@@ -26,6 +27,7 @@ import org.springframework.security.oauth2.core.oidc.OidcIdToken;
 import org.springframework.security.oauth2.core.oidc.StandardClaimAccessor;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.oauth2.server.resource.authentication.AbstractOAuth2TokenAuthenticationToken;
+
 
 /**
  * Default {@link CamundaUserPort} for OIDC deployments. Builds a {@link CamundaUserDTO} from the
@@ -41,7 +43,6 @@ import org.springframework.security.oauth2.server.resource.authentication.Abstra
 public class OidcCamundaUserService implements CamundaUserPort {
 
   private static final String SALES_PLAN_TYPE = "";
-  private static final Map<String, String> C8_LINKS = Map.of();
   private static final JsonStringEncoder JSON_STRING_ENCODER = JsonStringEncoder.getInstance();
 
   private final CamundaAuthenticationProvider authenticationProvider;
@@ -82,7 +83,7 @@ public class OidcCamundaUserService implements CamundaUserPort {
   }
 
   /**
-   * Wraps the raw token in a JSON string literal (escaped + surrounded by quotes) so the {@code
+   * Wraps the raw token in a JSON string literal (escaped and surrounded by quotes) so the {@code
    * /v2/authentication/me/token} response body stays byte-identical to OC's pre-migration {@code
    * Json.createValue(token).toString()} behaviour. The endpoint declares {@code application/json},
    * so the body must be a valid JSON value, not raw text.
@@ -105,7 +106,6 @@ public class OidcCamundaUserService implements CamundaUserPort {
         authentication.authenticatedGroupIds(),
         authentication.authenticatedRoleIds(),
         SALES_PLAN_TYPE,
-        C8_LINKS,
         true);
   }
 
@@ -165,6 +165,7 @@ public class OidcCamundaUserService implements CamundaUserPort {
   record OidcTokenUser(Map<String, Object> claims) implements StandardClaimAccessor {
 
     @Override
+    @NullMarked
     public Map<String, Object> getClaims() {
       return claims;
     }

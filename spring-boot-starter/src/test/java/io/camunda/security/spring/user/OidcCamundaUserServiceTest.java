@@ -69,7 +69,7 @@ class OidcCamundaUserServiceTest {
     final var authentication =
         CamundaAuthentication.of(
             b ->
-                b.user("alice")
+                b.user("Alice")
                     .tenants(List.of("tenant-1", "tenant-2"))
                     .group("group-1")
                     .role("role-1"));
@@ -79,12 +79,11 @@ class OidcCamundaUserServiceTest {
     final var dto = service.getCurrentUser();
 
     assertThat(dto).isNotNull();
-    assertThat(dto.username()).isEqualTo("alice");
+    assertThat(dto.username()).isEqualTo("Alice");
     assertThat(dto.tenants()).containsExactly("tenant-1", "tenant-2");
     assertThat(dto.groups()).containsExactly("group-1");
     assertThat(dto.roles()).containsExactly("role-1");
     assertThat(dto.authorizedComponents()).containsExactly("operate", "admin");
-    assertThat(dto.c8Links()).isEmpty();
     assertThat(dto.canLogout()).isTrue();
   }
 
@@ -97,7 +96,7 @@ class OidcCamundaUserServiceTest {
                 "id-token-value",
                 Instant.now(),
                 Instant.now().plusSeconds(300),
-                Map.of("sub", "alice")));
+                Map.of("sub", "Alice")));
     final var authToken = new OAuth2AuthenticationToken(oidcUser, List.of(), "test");
     SecurityContextHolder.setContext(new SecurityContextImpl(authToken));
 
@@ -116,7 +115,7 @@ class OidcCamundaUserServiceTest {
             Instant.now(),
             Instant.now().plusSeconds(300));
     final var authorizedClient =
-        new OAuth2AuthorizedClient(clientRegistration, "alice", accessToken);
+        new OAuth2AuthorizedClient(clientRegistration, "Alice", accessToken);
     when(authorizedClientRepository.loadAuthorizedClient(eq("test"), any(), eq(request)))
         .thenReturn(authorizedClient);
 
@@ -132,7 +131,7 @@ class OidcCamundaUserServiceTest {
                 "tok-with-\"quote\"-and-\\backslash",
                 Instant.now(),
                 Instant.now().plusSeconds(300),
-                Map.of("sub", "alice")));
+                Map.of("sub", "Alice")));
     SecurityContextHolder.setContext(
         new SecurityContextImpl(new OAuth2AuthenticationToken(oidcUser, List.of(), "test")));
 
