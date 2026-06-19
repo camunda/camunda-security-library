@@ -8,6 +8,7 @@
 package io.camunda.security.spring.spi;
 
 import java.util.Map;
+import org.springframework.security.core.AuthenticationException;
 
 /**
  * Issues and validates the short-lived JWT stored in the authentication cookie. Hosts implement
@@ -17,7 +18,7 @@ import java.util.Map;
  * those claims is the responsibility of the filter via {@code LazyTokenClaimsConverter} and {@code
  * MembershipPort} — this service must not attempt membership resolution.
  */
-public interface JwtCookieTokenService {
+public interface JwtCookieTokenPort {
 
   /**
    * Issues a signed JWT to be stored in the authentication cookie for the given user.
@@ -37,7 +38,7 @@ public interface JwtCookieTokenService {
    *
    * @param cookieToken the raw JWT string extracted from the auth cookie
    * @return the decoded claims from the validated token
-   * @throws Exception if the token is invalid, expired, or fails signature verification
+   * @throws AuthenticationException when the JWT is invalid or expired
    */
-  Map<String, Object> validate(String cookieToken) throws Exception;
+  Map<String, Object> validate(String cookieToken) throws AuthenticationException;
 }
