@@ -39,9 +39,33 @@ public final class ScopedClientRegistrationFactory {
    */
   public List<ClientRegistration> createFromProviderMap(
       final Map<String, OidcConfiguration> providers) {
+    return createFromProviderMap(providers, null);
+  }
+
+  /**
+   * Creates one {@link ClientRegistration} per entry in the given provider map, overriding the
+   * {@code redirect_uri} for each registration when {@code scopedRedirectUriPath} is non-null and
+   * non-blank.
+   *
+   * <p>The scoped webapp chain's redirection endpoint listens at a prefixed path (e.g. {@code
+   * /physical-tenants/<id>/sso-callback}). The registrations built here must carry a matching
+   * {@code redirect_uri} so that {@code DefaultOAuth2AuthorizationRequestResolver} sends the
+   * correct callback URL to the IdP. Without this override the IdP calls back to the unprefixed
+   * cluster path, which the scoped chain never intercepts.
+   *
+   * @param providers map of registrationId to {@link OidcConfiguration}; must not be {@code null}
+   * @param scopedRedirectUriPath path component to use as the redirect-uri (e.g. {@code
+   *     /physical-tenants/t1/sso-callback}); when {@code null} or blank the redirect-uri from the
+   *     {@link OidcConfiguration} is used unchanged
+   * @return an ordered list of {@link ClientRegistration} instances, one per map entry
+   * @throws IllegalStateException if any registrationId is blank or a configuration lacks required
+   *     endpoint information
+   */
+  public List<ClientRegistration> createFromProviderMap(
+      final Map<String, OidcConfiguration> providers, final String scopedRedirectUriPath) {
     Objects.requireNonNull(providers, "providers must not be null");
     return providers.entrySet().stream()
-        .map(e -> buildClientRegistration(e.getKey(), e.getValue()))
+        .map(e -> buildClientRegistration(e.getKey(), e.getValue(), scopedRedirectUriPath))
         .toList();
   }
 
@@ -88,9 +112,16 @@ public final class ScopedClientRegistrationFactory {
    * token-uri, and jwk-set-uri must be configured explicitly. The {@code registrationId} argument
    * is the map key in the multi-provider shape and {@link OidcConfiguration#getRegistrationId()} in
    * the legacy flat shape.
+   *
+   * <p>When {@code scopedRedirectUriPath} is non-null and non-blank, the redirect-uri is set to
+   * {@code {baseUrl}<scopedRedirectUriPath>} so it matches the prefixed redirection endpoint of the
+   * scoped webapp chain. Spring expands the {@code {baseUrl}} placeholder to {@code
+   * scheme://host:port} at request time.
    */
   private static ClientRegistration buildClientRegistration(
-      final String registrationId, final OidcConfiguration oidc) {
+      final String registrationId,
+      final OidcConfiguration oidc,
+      final String scopedRedirectUriPath) {
     if (!StringUtils.hasText(registrationId)) {
       throw new IllegalStateException(
           "OIDC registrationId must be non-blank: set"
@@ -98,6 +129,10 @@ public final class ScopedClientRegistrationFactory {
               + " or use a non-blank key under"
               + " camunda.security.authentication.providers.oidc.<id>.*");
     }
+    final var redirectUri =
+        StringUtils.hasText(scopedRedirectUriPath)
+            ? "{baseUrl}" + scopedRedirectUriPath
+            : oidc.getRedirectUri();
     final ClientRegistration.Builder builder =
         clientRegistrationBuilder(registrationId, oidc)
             .registrationId(registrationId)
@@ -106,7 +141,7 @@ public final class ScopedClientRegistrationFactory {
             .clientAuthenticationMethod(
                 new ClientAuthenticationMethod(oidc.getClientAuthenticationMethod()))
             .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-            .redirectUri(oidc.getRedirectUri())
+            .redirectUri(redirectUri)
             .scope(oidc.getScope());
     if (StringUtils.hasText(oidc.getClientName())) {
       builder.clientName(oidc.getClientName());

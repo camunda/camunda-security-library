@@ -90,6 +90,35 @@ class ScopedClientRegistrationFactoryTest {
         .hasMessageContaining("providers");
   }
 
+  @Test
+  void shouldPrefixRedirectUriWhenScopedPathGiven() {
+    // given
+    final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
+
+    // when
+    final var registrations =
+        factory.createFromProviderMap(Map.of("myid", oidc), "/physical-tenants/t1/sso-callback");
+
+    // then
+    assertThat(registrations).hasSize(1);
+    assertThat(registrations.get(0).getRedirectUri())
+        .isEqualTo("{baseUrl}/physical-tenants/t1/sso-callback");
+  }
+
+  @Test
+  void shouldUseConfiguredRedirectUriWhenNoScopedPath() {
+    // given
+    final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
+
+    // when
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    // then
+    assertThat(registrations).hasSize(1);
+    assertThat(registrations.get(0).getRedirectUri())
+        .isEqualTo("{baseUrl}/login/oauth2/code/{registrationId}");
+  }
+
   // ---------------------------------------------------------------------------
   // create(AuthenticationConfiguration)
   // ---------------------------------------------------------------------------

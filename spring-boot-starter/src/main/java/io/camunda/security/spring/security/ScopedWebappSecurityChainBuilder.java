@@ -424,7 +424,7 @@ public final class ScopedWebappSecurityChainBuilder {
     }
     final var clientRegistrationRepository =
         new InMemoryClientRegistrationRepository(
-            scopedClientRegistrationFactory.createFromProviderMap(providerMap));
+            scopedClientRegistrationFactory.createFromProviderMap(providerMap, redirectUri));
     final var authorizedClientRepository = new HttpSessionOAuth2AuthorizedClientRepository();
     final var authorizedClientManager =
         authorizedClientManagerFactory.create(
