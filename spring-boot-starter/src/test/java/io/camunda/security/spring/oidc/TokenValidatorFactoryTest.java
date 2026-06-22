@@ -265,6 +265,30 @@ class TokenValidatorFactoryTest {
         .hasMessageContaining(String.class.getName());
   }
 
+  @Test
+  void shouldFailFastWhenMetadataAudiencesContainNonStringElement() {
+    // given a registration whose metadata audiences collection contains a non-String element
+    final var factory = new TokenValidatorFactory(Map.of(), Duration.ofSeconds(60), List.of());
+    final var reg =
+        ClientRegistration.withRegistrationId("tenanta")
+            .jwkSetUri("https://example.com/jwks")
+            .authorizationUri("https://example.com/auth")
+            .tokenUri("https://example.com/token")
+            .clientId("client")
+            .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .providerConfigurationMetadata(
+                Map.of(TokenValidatorFactory.AUDIENCES_METADATA_KEY, List.of(123)))
+            .build();
+
+    // when / then the coercion is refused rather than silently turning 123 into an audience
+    assertThatThrownBy(() -> factory.createTokenValidator(reg))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(TokenValidatorFactory.AUDIENCES_METADATA_KEY)
+        .hasMessageContaining(Integer.class.getName());
+  }
+
   private static ClientRegistration registrationWithMetadataAudiences(
       final String registrationId, final List<String> audiences) {
     return ClientRegistration.withRegistrationId(registrationId)
