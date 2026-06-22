@@ -36,11 +36,15 @@ import org.springframework.security.oauth2.jwt.Jwt;
 class TokenValidatorFactoryTest {
 
   @Mock private ClientRegistration registration;
+  @Mock private ClientRegistration.ProviderDetails providerDetails;
 
   @BeforeEach
   void setUp() {
     // lenient — not every test consults the provider map by registration ID.
     lenient().when(registration.getRegistrationId()).thenReturn("rid");
+    // A real registration always exposes provider details with at least an empty metadata map.
+    lenient().when(registration.getProviderDetails()).thenReturn(providerDetails);
+    lenient().when(providerDetails.getConfigurationMetadata()).thenReturn(Map.of());
   }
 
   @Test
