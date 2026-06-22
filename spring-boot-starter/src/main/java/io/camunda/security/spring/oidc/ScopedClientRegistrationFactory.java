@@ -64,6 +64,13 @@ public final class ScopedClientRegistrationFactory {
   public List<ClientRegistration> createFromProviderMap(
       final Map<String, OidcConfiguration> providers, final String scopedRedirectUriPath) {
     Objects.requireNonNull(providers, "providers must not be null");
+    // A non-blank path without a leading '/' would produce "{baseUrl}physical-tenants/..." which is
+    // not a valid URI — reject it early so the caller gets a clear error instead of a subtle
+    // misuse.
+    if (StringUtils.hasText(scopedRedirectUriPath) && !scopedRedirectUriPath.startsWith("/")) {
+      throw new IllegalArgumentException(
+          "scopedRedirectUriPath must start with '/', but was: " + scopedRedirectUriPath);
+    }
     return providers.entrySet().stream()
         .map(e -> buildClientRegistration(e.getKey(), e.getValue(), scopedRedirectUriPath))
         .toList();
