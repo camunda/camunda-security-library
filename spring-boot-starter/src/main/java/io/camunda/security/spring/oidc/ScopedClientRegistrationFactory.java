@@ -158,22 +158,12 @@ public final class ScopedClientRegistrationFactory {
     if (!oidc.isUserInfoEnabled()) {
       builder.userInfoUri(null);
     }
-    // Merge metadata via build-then-rebuild. Discovery (via issuer-uri) populates the built
-    // registration's providerDetails.configurationMetadata, including a discovered
-    // end_session_endpoint that OidcClientInitiatedLogoutSuccessHandler relies on. We cannot call
-    // builder.providerConfigurationMetadata(map) mid-builder because it REPLACES that discovered
-    // metadata wholesale (the builder exposes only the replace overload), dropping the discovered
-    // end_session_endpoint. So we build first, copy the discovered metadata, then merge our
-    // additions on top: the scope's audiences (always — see below) and the explicitly-configured
-    // end-session endpoint (explicit config wins over discovered). The audiences travel on the
-    // registration so that per-scope chains validate against their own audiences rather than the
-    // cluster-level ones inferred from a shared registration ID.
+    // Merge into the discovered metadata via build-then-rebuild: providerConfigurationMetadata
+    // replaces, which would drop a discovered end_session_endpoint. Always stash the audiences key
+    // (even empty) so it is authoritative by presence; an explicit end-session endpoint wins.
     final var built = builder.build();
     final Map<String, Object> merged =
         new LinkedHashMap<>(built.getProviderDetails().getConfigurationMetadata());
-    // Always stash the audiences key for scoped registrations, even when empty: an intentionally
-    // empty collection means "no audience validation for this scope" and must be authoritative by
-    // its mere presence, so TokenValidatorFactory does not fall back to the provider-map audiences.
     merged.put(
         TokenValidatorFactory.AUDIENCES_METADATA_KEY,
         oidc.getAudiences() != null ? List.copyOf(oidc.getAudiences()) : List.of());
