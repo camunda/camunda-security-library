@@ -110,19 +110,8 @@ public class TokenValidatorFactory {
     if (metadata != null && metadata.containsKey(AUDIENCES_METADATA_KEY)) {
       final var metadataAudiences = metadata.get(AUDIENCES_METADATA_KEY);
       if (metadataAudiences instanceof final Collection<?> collection) {
-        return collection.stream()
-            .map(
-                audience -> {
-                  if (audience instanceof final String s) {
-                    return s;
-                  }
-                  throw new IllegalStateException(
-                      "Metadata key '"
-                          + AUDIENCES_METADATA_KEY
-                          + "' must hold String audiences but contained: "
-                          + (audience == null ? "null" : audience.getClass().getName()));
-                })
-            .collect(Collectors.toSet());
+        // String.class::cast fails fast (ClassCastException) on any non-String element.
+        return collection.stream().map(String.class::cast).collect(Collectors.toSet());
       }
       throw new IllegalStateException(
           "Metadata key '"

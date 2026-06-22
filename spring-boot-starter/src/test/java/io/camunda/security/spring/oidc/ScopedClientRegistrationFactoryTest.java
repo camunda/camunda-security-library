@@ -21,8 +21,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for {@link ScopedClientRegistrationFactory}. All providers use explicit endpoint URIs
- * (no {@code issuer-uri}) to avoid any network calls during testing.
+ * Unit tests for {@link ScopedClientRegistrationFactory}. Most providers use explicit endpoint URIs
+ * (no {@code issuer-uri}) to avoid network calls; tests that exercise {@code issuer-uri} discovery
+ * resolve it against a local {@link OidcTestServer} rather than a real endpoint.
  */
 class ScopedClientRegistrationFactoryTest {
 
