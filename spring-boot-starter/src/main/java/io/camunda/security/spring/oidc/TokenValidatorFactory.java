@@ -104,20 +104,18 @@ public class TokenValidatorFactory {
    */
   private Set<String> resolveAudiences(
       final ClientRegistration clientRegistration, final OidcConfiguration providerConfig) {
-    final var providerDetails = clientRegistration.getProviderDetails();
-    final var metadata =
-        providerDetails == null ? null : providerDetails.getConfigurationMetadata();
-    if (metadata != null && metadata.containsKey(AUDIENCES_METADATA_KEY)) {
+    final var metadata = clientRegistration.getProviderDetails().getConfigurationMetadata();
+    if (metadata.containsKey(AUDIENCES_METADATA_KEY)) {
       final var metadataAudiences = metadata.get(AUDIENCES_METADATA_KEY);
-      if (metadataAudiences instanceof final Collection<?> collection) {
-        // String.class::cast fails fast (ClassCastException) on any non-String element.
-        return collection.stream().map(String.class::cast).collect(Collectors.toSet());
+      if (!(metadataAudiences instanceof final Collection<?> collection)) {
+        throw new IllegalStateException(
+            "Metadata key '"
+                + AUDIENCES_METADATA_KEY
+                + "' must hold a Collection of audiences but was: "
+                + (metadataAudiences == null ? "null" : metadataAudiences.getClass().getName()));
       }
-      throw new IllegalStateException(
-          "Metadata key '"
-              + AUDIENCES_METADATA_KEY
-              + "' must hold a Collection of audiences but was: "
-              + (metadataAudiences == null ? "null" : metadataAudiences.getClass().getName()));
+      // String.class::cast fails fast (ClassCastException) on any non-String element.
+      return collection.stream().map(String.class::cast).collect(Collectors.toSet());
     }
     if (providerConfig != null && providerConfig.getAudiences() != null) {
       return providerConfig.getAudiences();
