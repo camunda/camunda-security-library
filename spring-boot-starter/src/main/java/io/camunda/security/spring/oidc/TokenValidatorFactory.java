@@ -9,10 +9,13 @@ package io.camunda.security.spring.oidc;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
@@ -38,6 +41,15 @@ import org.springframework.util.StringUtils;
  * OAuth2TokenValidator}. These are applied to every client registration.
  */
 public class TokenValidatorFactory {
+
+  /**
+   * Key under which a {@link ClientRegistration} may carry its scope-specific audiences in {@code
+   * providerDetails.configurationMetadata}. When present, these audiences take precedence over the
+   * {@link OidcConfiguration} resolved from the {@code providers} map by registration ID. This lets
+   * per-physical-tenant scoped registrations override the cluster-level audiences they would
+   * otherwise inherit by sharing a registration ID.
+   */
+  public static final String AUDIENCES_METADATA_KEY = "camunda.security.oidc.audiences";
 
   private final Map<String, OidcConfiguration> providers;
   private final Duration clockSkew;
@@ -76,14 +88,33 @@ public class TokenValidatorFactory {
       validators.add(new JwtIssuerValidator(providerConfig.getIssuerUri()));
     }
 
-    if (providerConfig != null
-        && providerConfig.getAudiences() != null
-        && !providerConfig.getAudiences().isEmpty()) {
-      validators.add(new AudienceValidator(providerConfig.getAudiences()));
+    final var audiences = resolveAudiences(clientRegistration, providerConfig);
+    if (!audiences.isEmpty()) {
+      validators.add(new AudienceValidator(audiences));
     }
 
     validators.addAll(extraValidators);
 
     return new DelegatingOAuth2TokenValidator<>(validators);
+  }
+
+  /**
+   * Resolves the valid audiences for a registration. Audiences carried on the registration's {@code
+   * providerDetails.configurationMetadata} under {@link #AUDIENCES_METADATA_KEY} win; otherwise the
+   * audiences from the {@code providers}-map configuration (if any) are used.
+   */
+  private Set<String> resolveAudiences(
+      final ClientRegistration clientRegistration, final OidcConfiguration providerConfig) {
+    final var providerDetails = clientRegistration.getProviderDetails();
+    final var metadata =
+        providerDetails == null ? null : providerDetails.getConfigurationMetadata();
+    final var metadataAudiences = metadata == null ? null : metadata.get(AUDIENCES_METADATA_KEY);
+    if (metadataAudiences instanceof final Collection<?> collection && !collection.isEmpty()) {
+      return collection.stream().map(String::valueOf).collect(Collectors.toSet());
+    }
+    if (providerConfig != null && providerConfig.getAudiences() != null) {
+      return providerConfig.getAudiences();
+    }
+    return Set.of();
   }
 }
