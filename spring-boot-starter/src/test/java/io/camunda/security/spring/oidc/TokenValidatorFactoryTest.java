@@ -8,6 +8,7 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.lenient;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
@@ -238,6 +239,30 @@ class TokenValidatorFactoryTest {
     // so a JWT carrying the provider-map (root) audience is NOT rejected on audience grounds
     assertThat(validator.validate(jwtWithAudience(List.of("ROOT-AUD"))).hasErrors()).isFalse();
     assertThat(validator.validate(jwtWithAudience(List.of("anything"))).hasErrors()).isFalse();
+  }
+
+  @Test
+  void shouldFailFastWhenMetadataAudiencesValueIsNotACollection() {
+    // given a registration whose metadata maps the audiences key to a non-Collection value
+    final var factory = new TokenValidatorFactory(Map.of(), Duration.ofSeconds(60), List.of());
+    final var reg =
+        ClientRegistration.withRegistrationId("tenanta")
+            .jwkSetUri("https://example.com/jwks")
+            .authorizationUri("https://example.com/auth")
+            .tokenUri("https://example.com/token")
+            .clientId("client")
+            .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .providerConfigurationMetadata(
+                Map.of(TokenValidatorFactory.AUDIENCES_METADATA_KEY, "not-a-collection"))
+            .build();
+
+    // when / then the misconfiguration is surfaced rather than silently disabling validation
+    assertThatThrownBy(() -> factory.createTokenValidator(reg))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(TokenValidatorFactory.AUDIENCES_METADATA_KEY)
+        .hasMessageContaining(String.class.getName());
   }
 
   private static ClientRegistration registrationWithMetadataAudiences(

@@ -116,7 +116,11 @@ public class TokenValidatorFactory {
       if (metadataAudiences instanceof final Collection<?> collection) {
         return collection.stream().map(String::valueOf).collect(Collectors.toSet());
       }
-      return Set.of();
+      throw new IllegalStateException(
+          "Metadata key '"
+              + AUDIENCES_METADATA_KEY
+              + "' must hold a Collection of audiences but was: "
+              + (metadataAudiences == null ? "null" : metadataAudiences.getClass().getName()));
     }
     if (providerConfig != null && providerConfig.getAudiences() != null) {
       return providerConfig.getAudiences();
