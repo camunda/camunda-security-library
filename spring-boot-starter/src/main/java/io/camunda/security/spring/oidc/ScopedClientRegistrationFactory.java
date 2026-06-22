@@ -160,7 +160,8 @@ public final class ScopedClientRegistrationFactory {
     }
     // Merge into the discovered metadata via build-then-rebuild: providerConfigurationMetadata
     // replaces, which would drop a discovered end_session_endpoint. Always stash the audiences key
-    // (even empty) so it is authoritative by presence; an explicit end-session endpoint wins.
+    // (even empty) so the registration carries its own audiences, authoritative by presence; an
+    // explicit end-session endpoint wins.
     final var built = builder.build();
     final Map<String, Object> merged =
         new LinkedHashMap<>(built.getProviderDetails().getConfigurationMetadata());
