@@ -218,6 +218,28 @@ class TokenValidatorFactoryTest {
     assertThat(validator.validate(jwtWithAudience(List.of("other"))).hasErrors()).isTrue();
   }
 
+  @Test
+  void shouldTreatEmptyMetadataAudiencesAsAuthoritativeAndSkipAudienceValidation() {
+    // given a provider map carrying the cluster-level (root) audience for "tenanta"
+    final var rootConfig = new OidcConfiguration();
+    rootConfig.setAudiences(Set.of("ROOT-AUD"));
+    final var factory =
+        new TokenValidatorFactory(Map.of("tenanta", rootConfig), Duration.ofSeconds(60), List.of());
+
+    // and a registration whose metadata carries an intentionally EMPTY audiences collection,
+    // meaning "no audience validation for this scope"
+    final var reg = registrationWithMetadataAudiences("tenanta", List.of());
+
+    // when
+    final var validator = factory.createTokenValidator(reg);
+
+    // then the empty metadata entry is authoritative by its presence: no AudienceValidator is
+    // added,
+    // so a JWT carrying the provider-map (root) audience is NOT rejected on audience grounds
+    assertThat(validator.validate(jwtWithAudience(List.of("ROOT-AUD"))).hasErrors()).isFalse();
+    assertThat(validator.validate(jwtWithAudience(List.of("anything"))).hasErrors()).isFalse();
+  }
+
   private static ClientRegistration registrationWithMetadataAudiences(
       final String registrationId, final List<String> audiences) {
     return ClientRegistration.withRegistrationId(registrationId)

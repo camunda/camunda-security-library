@@ -16,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import org.assertj.core.api.InstanceOfAssertFactories;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -26,10 +27,19 @@ import org.junit.jupiter.api.Test;
 class ScopedClientRegistrationFactoryTest {
 
   private ScopedClientRegistrationFactory factory;
+  private OidcTestServer oidcServer;
 
   @BeforeEach
   void setUp() {
     factory = new ScopedClientRegistrationFactory();
+  }
+
+  @AfterEach
+  void tearDown() {
+    if (oidcServer != null) {
+      oidcServer.close();
+      oidcServer = null;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -180,6 +190,94 @@ class ScopedClientRegistrationFactoryTest {
     assertThat(metadata).containsKey("end_session_endpoint");
     assertThat(metadata).containsKey(TokenValidatorFactory.AUDIENCES_METADATA_KEY);
     assertThat(metadata.get("end_session_endpoint")).isEqualTo("https://idp.example.com/logout");
+  }
+
+  @Test
+  void shouldPreserveDiscoveredEndSessionEndpointWhenStashingAudiences() throws Exception {
+    // given a discovery document that advertises an end_session_endpoint (as real IdPs do) but no
+    // explicitly-configured end-session URI on the OidcConfiguration
+    oidcServer =
+        OidcTestServer.startDiscovery(
+            """
+            {
+              "issuer": "%1$s",
+              "authorization_endpoint": "%1$s/auth",
+              "token_endpoint": "%1$s/token",
+              "jwks_uri": "%1$s/jwks",
+              "end_session_endpoint": "%1$s/logout",
+              "response_types_supported": ["code"],
+              "subject_types_supported": ["public"],
+              "id_token_signing_alg_values_supported": ["RS256"]
+            }
+            """);
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("my-client")
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .issuerUri(oidcServer.issuerUri())
+            .audiences(Set.of("scoped-aud"))
+            .build();
+
+    // when discovery populates the registration's metadata, then we merge our additions on top
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    // then the discovered end_session_endpoint survives alongside the stashed audiences
+    final var metadata = registrations.get(0).getProviderDetails().getConfigurationMetadata();
+    assertThat(metadata.get("end_session_endpoint")).isEqualTo(oidcServer.issuerUri() + "/logout");
+    assertThat(metadata.get(TokenValidatorFactory.AUDIENCES_METADATA_KEY))
+        .asInstanceOf(InstanceOfAssertFactories.collection(String.class))
+        .containsExactly("scoped-aud");
+  }
+
+  @Test
+  void shouldOverrideDiscoveredEndSessionEndpointWithExplicitConfig() throws Exception {
+    // given a discovery document advertising one end_session_endpoint
+    oidcServer =
+        OidcTestServer.startDiscovery(
+            """
+            {
+              "issuer": "%1$s",
+              "authorization_endpoint": "%1$s/auth",
+              "token_endpoint": "%1$s/token",
+              "jwks_uri": "%1$s/jwks",
+              "end_session_endpoint": "%1$s/discovered-logout",
+              "response_types_supported": ["code"],
+              "subject_types_supported": ["public"],
+              "id_token_signing_alg_values_supported": ["RS256"]
+            }
+            """);
+    // and an explicitly-configured end-session URI
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("my-client")
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .issuerUri(oidcServer.issuerUri())
+            .endSessionEndpointUri("https://explicit.example.com/logout")
+            .build();
+
+    // when
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    // then explicit config wins over the discovered value
+    final var metadata = registrations.get(0).getProviderDetails().getConfigurationMetadata();
+    assertThat(metadata.get("end_session_endpoint"))
+        .isEqualTo("https://explicit.example.com/logout");
+  }
+
+  @Test
+  void shouldStashEmptyAudiencesEntryWhenAudiencesUnset() {
+    // given a scoped provider with no audiences configured
+    final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
+
+    // when
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    // then the audiences key is still present (authoritative by presence) but empty
+    final var metadata = registrations.get(0).getProviderDetails().getConfigurationMetadata();
+    assertThat(metadata).containsKey(TokenValidatorFactory.AUDIENCES_METADATA_KEY);
+    assertThat(metadata.get(TokenValidatorFactory.AUDIENCES_METADATA_KEY))
+        .asInstanceOf(InstanceOfAssertFactories.collection(String.class))
+        .isEmpty();
   }
 
   // ---------------------------------------------------------------------------

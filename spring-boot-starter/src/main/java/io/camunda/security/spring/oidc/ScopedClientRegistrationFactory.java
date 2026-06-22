@@ -158,7 +158,31 @@ public final class ScopedClientRegistrationFactory {
     if (!oidc.isUserInfoEnabled()) {
       builder.userInfoUri(null);
     }
-    return builder.build();
+    // Merge metadata via build-then-rebuild. Discovery (via issuer-uri) populates the built
+    // registration's providerDetails.configurationMetadata, including a discovered
+    // end_session_endpoint that OidcClientInitiatedLogoutSuccessHandler relies on. We cannot call
+    // builder.providerConfigurationMetadata(map) mid-builder because it REPLACES that discovered
+    // metadata wholesale (the builder exposes only the replace overload), dropping the discovered
+    // end_session_endpoint. So we build first, copy the discovered metadata, then merge our
+    // additions on top: the scope's audiences (always — see below) and the explicitly-configured
+    // end-session endpoint (explicit config wins over discovered). The audiences travel on the
+    // registration so that per-scope chains validate against their own audiences rather than the
+    // cluster-level ones inferred from a shared registration ID.
+    final var built = builder.build();
+    final Map<String, Object> merged =
+        new LinkedHashMap<>(built.getProviderDetails().getConfigurationMetadata());
+    // Always stash the audiences key for scoped registrations, even when empty: an intentionally
+    // empty collection means "no audience validation for this scope" and must be authoritative by
+    // its mere presence, so TokenValidatorFactory does not fall back to the provider-map audiences.
+    merged.put(
+        TokenValidatorFactory.AUDIENCES_METADATA_KEY,
+        oidc.getAudiences() != null ? List.copyOf(oidc.getAudiences()) : List.of());
+    if (StringUtils.hasText(oidc.getEndSessionEndpointUri())) {
+      merged.put("end_session_endpoint", oidc.getEndSessionEndpointUri());
+    }
+    return ClientRegistration.withClientRegistration(built)
+        .providerConfigurationMetadata(merged)
+        .build();
   }
 
   /**
@@ -206,23 +230,6 @@ public final class ScopedClientRegistrationFactory {
     }
     if (StringUtils.hasText(oidc.getUserInfoUri())) {
       builder.userInfoUri(oidc.getUserInfoUri());
-    }
-    // Spring's ClientRegistration carries end_session_endpoint, and we additionally stash the
-    // scope's audiences, via providerConfigurationMetadata. Setting the map replaces the discovered
-    // metadata wholesale, so seed it with only what we need; discovery already populated the
-    // builder's other endpoints (auth/token/jwk-set/userinfo) individually, so nothing is lost and
-    // we deliberately don't depend on the raw discovery metadata document. The audiences travel on
-    // the registration so that per-scope chains validate against their own audiences rather than
-    // the cluster-level ones inferred from a shared registration ID.
-    final Map<String, Object> metadata = new LinkedHashMap<>();
-    if (StringUtils.hasText(oidc.getEndSessionEndpointUri())) {
-      metadata.put("end_session_endpoint", oidc.getEndSessionEndpointUri());
-    }
-    if (oidc.getAudiences() != null && !oidc.getAudiences().isEmpty()) {
-      metadata.put(TokenValidatorFactory.AUDIENCES_METADATA_KEY, List.copyOf(oidc.getAudiences()));
-    }
-    if (!metadata.isEmpty()) {
-      builder.providerConfigurationMetadata(metadata);
     }
     return builder;
   }

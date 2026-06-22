@@ -99,18 +99,24 @@ public class TokenValidatorFactory {
   }
 
   /**
-   * Resolves the valid audiences for a registration. Audiences carried on the registration's {@code
-   * providerDetails.configurationMetadata} under {@link #AUDIENCES_METADATA_KEY} win; otherwise the
-   * audiences from the {@code providers}-map configuration (if any) are used.
+   * Resolves the valid audiences for a registration. When the registration's {@code
+   * providerDetails.configurationMetadata} CONTAINS the {@link #AUDIENCES_METADATA_KEY} entry, that
+   * collection is authoritative by its mere presence — even when empty, which means "no audience
+   * validation for this scope" and yields an empty set (no {@link AudienceValidator}). Only when
+   * the key is ABSENT (e.g. cluster registrations built by Spring Boot, which never carry it) do we
+   * fall back to the audiences from the {@code providers}-map configuration (if any).
    */
   private Set<String> resolveAudiences(
       final ClientRegistration clientRegistration, final OidcConfiguration providerConfig) {
     final var providerDetails = clientRegistration.getProviderDetails();
     final var metadata =
         providerDetails == null ? null : providerDetails.getConfigurationMetadata();
-    final var metadataAudiences = metadata == null ? null : metadata.get(AUDIENCES_METADATA_KEY);
-    if (metadataAudiences instanceof final Collection<?> collection && !collection.isEmpty()) {
-      return collection.stream().map(String::valueOf).collect(Collectors.toSet());
+    if (metadata != null && metadata.containsKey(AUDIENCES_METADATA_KEY)) {
+      final var metadataAudiences = metadata.get(AUDIENCES_METADATA_KEY);
+      if (metadataAudiences instanceof final Collection<?> collection) {
+        return collection.stream().map(String::valueOf).collect(Collectors.toSet());
+      }
+      return Set.of();
     }
     if (providerConfig != null && providerConfig.getAudiences() != null) {
       return providerConfig.getAudiences();
