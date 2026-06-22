@@ -15,6 +15,7 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.filter.AdminUserCheckFilter;
@@ -25,15 +26,20 @@ import io.camunda.security.spring.handler.OAuth2AuthenticationExceptionHandler;
 import io.camunda.security.spring.oidc.CamundaOidcAuthorizationRequestResolver;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
+import io.camunda.security.spring.oidc.ScopedOidcIdTokenDecoderFactory;
+import io.camunda.security.spring.oidc.TokenValidatorFactory;
 import io.camunda.security.spring.scope.BasePaths;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Objects;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
+import org.springframework.security.oauth2.client.oidc.authentication.OidcAuthorizationCodeAuthenticationProvider;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
@@ -432,6 +438,17 @@ public final class ScopedWebappSecurityChainBuilder {
     final var scopedResolver =
         new CamundaOidcAuthorizationRequestResolver(
             clientRegistrationRepository, providerMap, authorizationBaseUri);
+    // Bind id_token signature verification to this scope's own registrations. Without an explicit
+    // factory, OAuth2LoginConfigurer resolves the single JwtDecoderFactory<ClientRegistration> bean
+    // from the context; when the host keys its jwsAlgorithmResolver by the cluster's registration
+    // instances, it returns a null algorithm for the scoped (distinct) registrations and id_token
+    // verification fails with missing_signature_verifier. The scoped factory resolves the algorithm
+    // from this scope's provider map (default RS256) and verifies against the JWK set discovered
+    // from issuer-uri.
+    final var scopedTokenValidatorFactory =
+        new TokenValidatorFactory(providerMap, OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of());
+    final var scopedIdTokenDecoderFactory =
+        new ScopedOidcIdTokenDecoderFactory(providerMap, scopedTokenValidatorFactory);
     final var scopedPicker =
         LoginLinksBuilder.defaultOauth2LoginPickerFilter(
             clientRegistrationRepository, loginUrl, prefix);
@@ -439,6 +456,21 @@ public final class ScopedWebappSecurityChainBuilder {
     // Install the per-scope session filter before the security context filter so the Spring-Session
     // backed, Path-scoped session is available throughout the chain.
     http.addFilterBefore(sessionRepositoryFilter, SecurityContextHolderFilter.class);
+
+    // OAuth2LoginConfigurer resolves the id_token JwtDecoderFactory<ClientRegistration> only as a
+    // single context bean (no per-oauth2Login override hook). It post-processes the
+    // OidcAuthorizationCodeAuthenticationProvider it builds, so we intercept that provider and set
+    // this scope's decoder factory on it — overriding the cluster-keyed singleton for this chain.
+    http.objectPostProcessor(
+        new ObjectPostProcessor<Object>() {
+          @Override
+          public <O> O postProcess(final O object) {
+            if (object instanceof final OidcAuthorizationCodeAuthenticationProvider provider) {
+              provider.setJwtDecoderFactory(scopedIdTokenDecoderFactory);
+            }
+            return object;
+          }
+        });
 
     final var filterChainBuilder =
         http.securityMatcher(matchers.toArray(String[]::new))
