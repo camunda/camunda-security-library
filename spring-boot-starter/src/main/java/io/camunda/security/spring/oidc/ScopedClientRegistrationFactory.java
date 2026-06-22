@@ -122,8 +122,8 @@ public final class ScopedClientRegistrationFactory {
    *
    * <p>When {@code scopedRedirectUriPath} is non-null and non-blank, the redirect-uri is set to
    * {@code {baseUrl}<scopedRedirectUriPath>} so it matches the prefixed redirection endpoint of the
-   * scoped webapp chain. Spring expands the {@code {baseUrl}} placeholder to {@code
-   * scheme://host:port} at request time.
+   * scoped webapp chain. Spring expands the {@code {baseUrl}} placeholder to the application's base
+   * URL — {@code scheme://host:port} plus the servlet context path, if any — at request time.
    */
   private static ClientRegistration buildClientRegistration(
       final String registrationId,
