@@ -43,11 +43,10 @@ import org.springframework.util.StringUtils;
 public class TokenValidatorFactory {
 
   /**
-   * Key under which a {@link ClientRegistration} may carry its scope-specific audiences in {@code
-   * providerDetails.configurationMetadata}. When present, these audiences take precedence over the
-   * {@link OidcConfiguration} resolved from the {@code providers} map by registration ID. This lets
-   * per-physical-tenant scoped registrations override the cluster-level audiences they would
-   * otherwise inherit by sharing a registration ID.
+   * Key under which a {@link ClientRegistration} carries its scope-specific audiences in {@code
+   * providerDetails.configurationMetadata}. When present, these take precedence over the audiences
+   * resolved from the {@code providers} map by registration ID, so scoped registrations that share
+   * a registration ID still validate their own audiences.
    */
   public static final String AUDIENCES_METADATA_KEY = "camunda.security.oidc.audiences";
 
