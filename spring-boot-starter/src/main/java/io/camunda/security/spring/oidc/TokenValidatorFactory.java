@@ -99,12 +99,9 @@ public class TokenValidatorFactory {
   }
 
   /**
-   * Resolves the valid audiences for a registration. When the registration's {@code
-   * providerDetails.configurationMetadata} CONTAINS the {@link #AUDIENCES_METADATA_KEY} entry, that
-   * collection is authoritative by its mere presence — even when empty, which means "no audience
-   * validation for this scope" and yields an empty set (no {@link AudienceValidator}). Only when
-   * the key is ABSENT (e.g. cluster registrations built by Spring Boot, which never carry it) do we
-   * fall back to the audiences from the {@code providers}-map configuration (if any).
+   * Resolves a registration's expected audiences: the {@link #AUDIENCES_METADATA_KEY} metadata
+   * entry when present (authoritative, even when empty — an empty set disables audience
+   * validation), otherwise the {@code providers}-map audiences.
    */
   private Set<String> resolveAudiences(
       final ClientRegistration clientRegistration, final OidcConfiguration providerConfig) {
