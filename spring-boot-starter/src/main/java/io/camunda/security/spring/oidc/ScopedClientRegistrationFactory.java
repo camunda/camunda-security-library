@@ -58,6 +58,8 @@ public final class ScopedClientRegistrationFactory {
    *     /physical-tenants/t1/sso-callback}); when {@code null} or blank the redirect-uri from the
    *     {@link OidcConfiguration} is used unchanged
    * @return an ordered list of {@link ClientRegistration} instances, one per map entry
+   * @throws IllegalArgumentException if scopedRedirectUriPath is non-blank but does not start with
+   *     '/'
    * @throws IllegalStateException if any registrationId is blank or a configuration lacks required
    *     endpoint information
    */
