@@ -106,6 +106,19 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
+  void shouldRejectScopedRedirectUriPathWithoutLeadingSlash() {
+    // given
+    final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
+
+    // when / then
+    assertThatThrownBy(
+            () ->
+                factory.createFromProviderMap(
+                    Map.of("myid", oidc), "physical-tenants/t1/sso-callback"))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
   void shouldUseConfiguredRedirectUriWhenNoScopedPath() {
     // given
     final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
