@@ -14,6 +14,8 @@ import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -130,6 +132,54 @@ class ScopedClientRegistrationFactoryTest {
     assertThat(registrations).hasSize(1);
     assertThat(registrations.get(0).getRedirectUri())
         .isEqualTo("{baseUrl}/login/oauth2/code/{registrationId}");
+  }
+
+  @Test
+  void shouldCarryAudiencesInProviderConfigurationMetadata() {
+    // given
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("my-client")
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .authorizationUri("https://idp.example.com/auth")
+            .tokenUri("https://idp.example.com/token")
+            .jwkSetUri("https://idp.example.com/jwks")
+            .audiences(Set.of("scoped-aud"))
+            .build();
+
+    // when
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    // then
+    assertThat(registrations).hasSize(1);
+    final var metadata = registrations.get(0).getProviderDetails().getConfigurationMetadata();
+    assertThat(metadata.get(TokenValidatorFactory.AUDIENCES_METADATA_KEY))
+        .asInstanceOf(InstanceOfAssertFactories.collection(String.class))
+        .containsExactly("scoped-aud");
+  }
+
+  @Test
+  void shouldCarryBothEndSessionAndAudiencesInMetadata() {
+    // given
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("my-client")
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .authorizationUri("https://idp.example.com/auth")
+            .tokenUri("https://idp.example.com/token")
+            .jwkSetUri("https://idp.example.com/jwks")
+            .endSessionEndpointUri("https://idp.example.com/logout")
+            .audiences(Set.of("scoped-aud"))
+            .build();
+
+    // when
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    // then
+    final var metadata = registrations.get(0).getProviderDetails().getConfigurationMetadata();
+    assertThat(metadata).containsKey("end_session_endpoint");
+    assertThat(metadata).containsKey(TokenValidatorFactory.AUDIENCES_METADATA_KEY);
+    assertThat(metadata.get("end_session_endpoint")).isEqualTo("https://idp.example.com/logout");
   }
 
   // ---------------------------------------------------------------------------

@@ -172,6 +172,67 @@ class TokenValidatorFactoryTest {
     assertThat(result.hasErrors()).isFalse();
   }
 
+  @Test
+  void shouldPreferMetadataAudiencesOverProviderMapAudiences() {
+    // given a provider map carrying the cluster-level (root) audience for "tenanta"
+    final var rootConfig = new OidcConfiguration();
+    rootConfig.setAudiences(Set.of("ROOT-AUD"));
+    final var factory =
+        new TokenValidatorFactory(Map.of("tenanta", rootConfig), Duration.ofSeconds(60), List.of());
+
+    // and a registration whose metadata carries the scoped audience
+    final var reg = registrationWithMetadataAudiences("tenanta", List.of("SCOPED-AUD"));
+
+    // when
+    final var validator = factory.createTokenValidator(reg);
+
+    // then the metadata audience wins over the provider-map audience
+    assertThat(validator.validate(jwtWithAudience(List.of("SCOPED-AUD"))).hasErrors()).isFalse();
+    assertThat(validator.validate(jwtWithAudience(List.of("ROOT-AUD"))).hasErrors()).isTrue();
+  }
+
+  @Test
+  void shouldFallBackToProviderMapAudiencesWhenNoMetadataAudiences() {
+    // given a provider map carrying the audience and a registration without metadata audiences
+    final var config = new OidcConfiguration();
+    config.setAudiences(Set.of("ROOT-AUD"));
+    final var factory =
+        new TokenValidatorFactory(Map.of("tenanta", config), Duration.ofSeconds(60), List.of());
+
+    final var reg =
+        ClientRegistration.withRegistrationId("tenanta")
+            .jwkSetUri("https://example.com/jwks")
+            .authorizationUri("https://example.com/auth")
+            .tokenUri("https://example.com/token")
+            .clientId("client")
+            .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .build();
+
+    // when
+    final var validator = factory.createTokenValidator(reg);
+
+    // then the provider-map audience is used
+    assertThat(validator.validate(jwtWithAudience(List.of("ROOT-AUD"))).hasErrors()).isFalse();
+    assertThat(validator.validate(jwtWithAudience(List.of("other"))).hasErrors()).isTrue();
+  }
+
+  private static ClientRegistration registrationWithMetadataAudiences(
+      final String registrationId, final List<String> audiences) {
+    return ClientRegistration.withRegistrationId(registrationId)
+        .jwkSetUri("https://example.com/jwks")
+        .authorizationUri("https://example.com/auth")
+        .tokenUri("https://example.com/token")
+        .clientId("client")
+        .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+        .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+        .providerConfigurationMetadata(
+            Map.of(TokenValidatorFactory.AUDIENCES_METADATA_KEY, audiences))
+        .build();
+  }
+
   private static Jwt validJwt() {
     return new Jwt(
         "tv",
