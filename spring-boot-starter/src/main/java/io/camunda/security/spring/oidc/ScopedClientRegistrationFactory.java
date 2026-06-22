@@ -48,7 +48,7 @@ public final class ScopedClientRegistrationFactory {
    * non-blank.
    *
    * <p>The scoped webapp chain's redirection endpoint listens at a prefixed path (e.g. {@code
-   * /physical-tenants/<id>/sso-callback}). The registrations built here must carry a matching
+   * /physical-tenants/{id}/sso-callback}). The registrations built here must carry a matching
    * {@code redirect_uri} so that {@code DefaultOAuth2AuthorizationRequestResolver} sends the
    * correct callback URL to the IdP. Without this override the IdP calls back to the unprefixed
    * cluster path, which the scoped chain never intercepts.
