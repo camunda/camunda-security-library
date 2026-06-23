@@ -12,6 +12,8 @@ import io.camunda.security.core.oidc.OidcPrincipalLoader;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.core.port.out.MembershipPort.PrincipalType;
 import io.camunda.security.core.port.out.MembershipQuery;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -47,14 +49,19 @@ public final class ClaimsAuthenticationConverter {
   }
 
   public CamundaAuthentication convert(final Map<String, Object> claims) {
-    final var principals = oidcPrincipalLoader.load(claims);
+    final Map<String, Object> snapshotClaims =
+        Collections.unmodifiableMap(
+            new HashMap<>(claims)); // snapshot; lazy resolution sees a stable map
+    final var principals = oidcPrincipalLoader.load(snapshotClaims);
     final var username = principals.username();
     final var clientId = principals.clientId();
 
     if (username == null && clientId == null) {
       throw new IllegalArgumentException(
           "Neither username claim (%s) nor clientId claim (%s) could be found in the claims."
-              .formatted(usernameClaim, clientIdClaim));
+              .formatted(
+                  usernameClaim != null ? usernameClaim : "<not configured>",
+                  clientIdClaim != null ? clientIdClaim : "<not configured>"));
     }
 
     final String principalName;
@@ -67,7 +74,7 @@ public final class ClaimsAuthenticationConverter {
       principalType = PrincipalType.CLIENT;
     }
 
-    final var base = new MembershipQuery(claims, principalName, principalType);
+    final var base = new MembershipQuery(snapshotClaims, principalName, principalType);
     final var lazyMappingRuleIds =
         CamundaAuthentication.lazyList(() -> membershipPort.mappingRuleIds(base));
     final var lazyGroupIds =
@@ -97,7 +104,7 @@ public final class ClaimsAuthenticationConverter {
               .groupIdsSupplier(() -> lazyGroupIds)
               .roleIdsSupplier(() -> lazyRoleIds)
               .tenantsSupplier(() -> lazyTenantIds)
-              .claims(claims);
+              .claims(snapshotClaims);
         });
   }
 }

@@ -11,6 +11,7 @@ import io.camunda.security.api.model.Either;
 import io.camunda.security.api.model.authz.AuthorizationRejection;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Accumulates authorization check results and produces a single aggregated outcome.
@@ -29,8 +30,10 @@ public final class RejectionAggregator {
   private final List<AuthorizationRejection> rejections = new ArrayList<>();
 
   public RejectionAggregator add(final Either<AuthorizationRejection, Void> result) {
+    Objects.requireNonNull(result, "result");
     if (result.isLeft()) {
-      rejections.add(result.leftValue());
+      final var rejection = Objects.requireNonNull(result.leftValue(), "rejection");
+      rejections.add(rejection);
     }
     return this;
   }
