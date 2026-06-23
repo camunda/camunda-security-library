@@ -17,6 +17,8 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Collections;
+import org.jspecify.annotations.NonNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -81,9 +83,9 @@ public final class JwtCookieAuthenticationFilter extends OncePerRequestFilter {
 
   @Override
   protected void doFilterInternal(
-      final HttpServletRequest request,
-      final HttpServletResponse response,
-      final FilterChain filterChain)
+      final @NonNull HttpServletRequest request,
+      final @NonNull HttpServletResponse response,
+      final @NonNull FilterChain filterChain)
       throws ServletException, IOException {
 
     if (isAlreadyAuthenticated()) {
@@ -106,13 +108,13 @@ public final class JwtCookieAuthenticationFilter extends OncePerRequestFilter {
       final var claims = tokenPort.validate(cookieValue);
       final var camundaAuthentication = tokenClaimsConverter.convert(claims);
       final var authentication =
-          new PreAuthenticatedAuthenticationToken(camundaAuthentication, cookieValue);
-      authentication.setAuthenticated(true);
+          new PreAuthenticatedAuthenticationToken(
+              camundaAuthentication, null, Collections.emptyList());
       SecurityContextHolder.getContext().setAuthentication(authentication);
       LOG.debug(
           "Authenticated request via cookie '{}' (principal: {})",
           cookieName,
-          principalId(camundaAuthentication));
+          camundaAuthentication.formattedPrincipal());
       filterChain.doFilter(request, response);
     } catch (final AuthenticationException ex) {
       LOG.debug("Cookie token validation failed for '{}': {}", cookieName, ex.getMessage());
@@ -139,15 +141,5 @@ public final class JwtCookieAuthenticationFilter extends OncePerRequestFilter {
       }
     }
     return null;
-  }
-
-  private static String principalId(final CamundaAuthentication auth) {
-    if (auth.authenticatedUsername() != null) {
-      return "user=" + auth.authenticatedUsername();
-    }
-    if (auth.authenticatedClientId() != null) {
-      return "client=" + auth.authenticatedClientId();
-    }
-    return "unknown";
   }
 }
