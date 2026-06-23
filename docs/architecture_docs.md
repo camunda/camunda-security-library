@@ -6,6 +6,8 @@ SCIM provisioning is part of the planned end-state target architecture, but it i
 
 ## 1. Introduction and goals
 
+> **Document structure:** Sections 1 and 2 provide as-is context — the current identity architecture and its limitations. The arc42 target architecture begins at section 3.
+
 This document describes the planned Unified Identity Architecture for Camunda Hub and Orchestration Clusters in an arc42-style structure. It:
 
 - Summarizes the current identity architecture across Camunda platform components (OC Identity, Management Identity, SaaS Auth0).
@@ -17,45 +19,12 @@ This document describes the planned Unified Identity Architecture for Camunda Hu
 
 ### 1.1 Terminology
 
-This section defines the terms used throughout the document so diagrams and runtime descriptions can be read consistently.
+Full term definitions are in the [Glossary (§12)](#12-glossary). Quick reference for reading the diagrams:
 
-#### 1.1.1 Orchestration Cluster (OC): logical vs physical view
-
-The term **Orchestration Cluster (OC)** is used at two abstraction levels:
-
-- **Logical view (architecture level):**
-  - The OC is the logical execution unit owned by one organization and associated with one policy boundary.
-  - High-level diagrams show this as one OC box contrasted with Hub.
-- **Physical/deployment view (runtime level):**
-  - An OC deployment consists of one or more **Gateways** (the Gateway/Search layer) and one or more **Brokers**.
-  - Each Broker contains one or more **Engines**.
-  - The Camunda Security Library (CSL) is embedded in the Gateway/Search layer and enforces authentication and authorization before broker/search access.
-
-In high-level diagrams, OC is intentionally simplified as one logical component. In detailed building-block and deployment diagrams (section 5.1 and below), Gateway/Search and Broker/Engine layers are shown explicitly.
-
-#### 1.1.2 Tenant naming and scope rules
-
-- What older drafts called **multi-engine support** is now **Physical Tenant support**.
-- In identity-model terms, an **Engine** is a **Physical Tenant**.
-- In this document, **Tenant** means **logical Tenant** unless explicitly written as **Physical Tenant**.
-- One Physical Tenant can host multiple logical Tenants.
-- Multiple Brokers, or multiple Engines within a Broker, create multiple Physical Tenants in one OC.
-- In the policy model, `scope_type = PHYSICAL_TENANT` refers to Physical Tenant scope.
-
-#### 1.1.3 Hub UI and OC UI
-
-The terms **Hub UI** and **OC UI** refer to aggregated frontend applications, not separate per-component UIs.
-
-- **Hub UI** (management plane)
-  - A single management-plane frontend that consolidates Console, Web Modeler, Admin, and related management capabilities.
-  - Hub-side components authenticate and authorize through one CSL instance.
-- **OC UI** (execution plane)
-  - A single execution-plane frontend that consolidates Operate, Tasklist, and cluster administration capabilities.
-  - OC-side components authenticate and authorize through one CSL instance.
-  - In full mode (Hub + OC), the admin section is read-only and reflects policy projected from Hub.
-  - In OC-only mode, the admin section is read-write and supports local policy authoring.
-
-Both UIs follow the same identity and multi-tenancy model provided by the CSL.
+- **Physical Tenant** = an Engine (one execution context inside a Broker). Each Engine is a Physical Tenant. A Broker hosting multiple Engines hosts multiple Physical Tenants.
+- **Tenant** = a logical Tenant (data/access partition, e.g. `default`, `retail`) unless written as **Physical Tenant**.
+- **OC** at high level = the logical Orchestration Cluster; at runtime = Gateway/Search layer + Broker/Engine layer.
+- **Hub UI** / **OC UI** = aggregated management-plane / execution-plane frontends, not per-component UIs.
 
 ---
 
@@ -74,7 +43,7 @@ Today identity responsibilities are split across several components:
   - Uses Keycloak or an external OIDC provider plus its own SQL database in self-managed deployments (see existing Management Identity arc42 docs).
 
 - **SaaS Auth0 tenant (Console / Hub)**
-  - In SaaS today, Console and other management-side UIs use a Camunda-operated Auth0 tenant as their IdP/broker.
+  - In SaaS today, Console and other management-side UIs use a Camunda-operated Auth0 tenant as their IdP/broker (an identity federation layer: Auth0 federates customer Enterprise IdPs and issues tokens to Camunda services).
   - From the target-architecture perspective, this is an internal broker/IdP implementation detail, not part of the long-term reference model.
 
 - **Customer Enterprise IdPs**
@@ -205,9 +174,9 @@ The target architecture is based on the following assumptions:
     - The library itself has no knowledge of how a host application discovers or tracks Orchestration Clusters. Cluster registration and enumeration are exposed as generic port interfaces: the host application calls `ClusterRegistrationService` (inbound port) to inform the library about new or updated clusters; the library calls `ClusterRegistryPort` (outbound port) when it needs to enumerate clusters for policy targeting.
   - How a specific host application learns about newly created OCs — whether by querying an external service, consuming provisioning events, or reading configuration — is entirely an integration concern for the host and not part of the library.
 - In OC-only mode, the Orchestration Cluster is the local source of truth for policy; there is no Hub and therefore no cross-cluster policy coordination.
-- All engines within a given Orchestration Cluster share the same OC-level; engines never talk to IdPs directly and are not configured as OIDC/SAML clients.
-  - There will be one client per IDP (could be multiple per engine); we rely on roles and claims to decide which Engines each user can access and what they can do there.
-  - Since engines are in the first iteration just configurable via configuration files, IDPs are also just configurable like this. In a later iteration, both should be configurable via Hub.
+- All physical tenants (engines) within a given Orchestration Cluster share the same OC-level identity configuration; physical tenants never talk to IdPs directly and are not configured as OIDC clients.
+  - IdP client configuration is defined at the OC level and applied cluster-wide. Mapping rules and authorizations determine which physical tenants and resources a given principal can access.
+  - In the first iteration, IdP configuration is static (configuration files). In a later iteration, both IdP and physical tenant configuration should be manageable via Hub.
 - Policy propagation across layers is eventually consistent:
   - Hub tracks the last acknowledged policy versions per OC.
   - Each OC tracks its own last applied policy version.
@@ -216,11 +185,17 @@ The target architecture is based on the following assumptions:
 
 ### 2.5 Unresolved issues
 
-- Multiple Hub instances: The architecture diagrams show a single shared Hub instance in SaaS and a single Hub in Self-Managed full mode. Some customers require multiple Hub instances — for example to fully separate delivery stages or organizational boundaries. The library architecture supports this because each Hub instance is an independent CSL deployment with its own cluster registry and policy state. Hub-to-Hub coordination is out of scope. An OC is associated with exactly one Hub at a time; reassignment is addressed as an open question in §9.1.
-- Satellite components (open scope): Two satellite runtimes that sit adjacent to Hub and OC are not yet explicitly covered:
-  - App Integrations backend — operates at the management plane level. It is not yet decided whether it should receive IdP configuration managed by Hub via the CSL port model, or whether it manages its own auth independently.
-  - Connectors runtime — operates at the OC level. The same open question applies: should it consume IdP config propagated by the OC CSL, or remain separately configured?
-  - The hexagonal port model accommodates both being integrated as CSL consumers in the future (by providing adapter implementations) without changing the core. Whether and when to do this is a scope decision outside this document.
+Open issues and technical debts are tracked in [§11 Technical Debts and Risks](#11-technical-debts-and-risks).
+
+### 2.6 Constraints
+
+The following constraints bound the CSL design and limit what can change without an architectural decision:
+
+- **Embedded library, not a standalone service.** CSL runs inside host applications (Hub, OC); it has no own process, database, or network endpoint.
+- **Host-provided infrastructure.** Hosts supply all persistence, IdP clients, engine command channels, and outbox delivery via port adapter implementations. CSL `core` has zero framework or persistence dependencies (enforced by ArchUnit).
+- **No Spring Boot auto-configuration by default.** Hosts explicitly activate CSL configuration classes via `@ImportAutoConfiguration`; nothing activates from adding the Maven dependency alone (see [ADR-0008](adr/0008-no-spring-boot-auto-configuration.md)).
+- **No dedicated global identity database.** Existing host infrastructure (Hub DB, OC DB) is reused; no new shared identity cluster is introduced.
+- **Standalone OC without Hub is a first-class deployment mode.** OC-only must continue to work fully without any Hub dependency.
 
 ---
 
@@ -245,8 +220,8 @@ The target architecture introduces one consistent identity and policy model shar
 Technically, this is implemented as a pluggable identity/security library:
 
 - Embedded into Hub and Orchestration Cluster.
-- Exposes Authentication (OIDC/SAML) and Authorization (RBAC/ABAC) capabilities via well-defined SPIs.
-- Reuses the host application’s existing storage and infrastructure via SPI interfaces (no new standalone database or service).
+- Exposes Authentication (OIDC) and Authorization (RBAC/ABAC) capabilities via well-defined extension interfaces.
+- Reuses the host application’s existing storage and infrastructure via port interfaces (no new standalone database or service).
 
 Key design principles (selected):
 
@@ -450,6 +425,8 @@ flowchart TB
 - OC owns the IdP client configurations for its tenants and engines; engines still only consume OC-level identity decisions and never call IdPs directly.
 
 ### 4.3 OC + Optimize without Hub
+
+> **Note:** This topology is described for completeness. It is not an actively planned CSL integration scenario — Optimize's standalone deployment manages its own auth independently of CSL.
 
 In this deployment mode, Optimize is deployed alongside an Orchestration Cluster without Hub. Policy is managed independently in both OC and Optimize — there is no policy distribution between them. Optimize only depends on OC for process execution data (events, process instances, task data) required for analytics and reporting.
 
@@ -993,8 +970,8 @@ graph LR
 | `ResourcePermissionPort` | Answers whether the current principal has a given `PermissionType` on a given resource. The library ships a default implementation backed by `AuthorizationRepositoryPort`. | Active | all | `WebAppAuthorizationCheckFilter` |
 | `CamundaUserPort` | Returns the currently-authenticated user view and bearer token. The library ships OIDC and basic auth defaults. | Active | all | User-info REST endpoints |
 | `OidcProviderConfigurationPort` | Returns OIDC provider configurations keyed by registration ID, supporting multi-IdP and per-tenant OIDC setup. | Active | all | OIDC decoder factory, login picker, client registration |
-| `PolicyPort` | Queries and authors the unified policy model (roles, authorizations, mapping rules) in the local source-of-truth runtime. | Stub | `hub`, `oc-standalone` | Admin REST controller, Hub UI / OC UI backend |
-| `PolicyApplyPort` | Applies a policy snapshot received from Hub to the local projection. Owns version checks and idempotent apply semantics. | Stub | `oc-managed` | `POST /identity/policies/apply` endpoint |
+| `PolicyPort` | Queries and authors the unified policy model (roles, authorizations, mapping rules) in the local source-of-truth runtime. | Stub | `hub`, `standalone` | Admin REST controller, Hub UI / OC UI backend |
+| `PolicyApplyPort` | Applies a policy snapshot received from Hub to the local projection. Owns version checks and idempotent apply semantics. | Stub | `managed` | `POST /identity/policies/apply` endpoint |
 | `TenantPort` | Tenant lifecycle and lookup operations. | Stub | all | Admin REST controller, request filter |
 | `ClusterRegistrationPort` | Registers and deregisters Orchestration Clusters against Hub. | Stub | `hub` | Hub adapter triggered by provisioning events |
 
@@ -1028,7 +1005,7 @@ The same library core is reused in all deployments. **In every runtime mode, Aut
 
 Mode activation is property-driven via Spring Boot conditions (`@ConditionalOnProperty`, or a small custom `@Conditional` when multiple properties contribute to the decision), not via Spring profiles.
 
-**Current implementation state:** authentication method selection (`camunda.security.authentication.method=basic|oidc`) is active today and governs which filter chains are assembled. The `hub` / `oc-managed` / `oc-standalone` deployment strategy property is defined in the configuration model but is not yet consumed by the filter chain layer — it is planned for the policy work that wires `PolicyPort`, `PolicyApplyPort`, and the Hub/OC-specific outbound ports.
+**Current implementation state:** authentication method selection (`camunda.security.authentication.method=basic|oidc`) is active today and governs which filter chains are assembled. The deployment strategy property (`hub` / `managed` / `standalone` — current property values use an `oc-` prefix: `oc-managed`, `oc-standalone`) is defined in the configuration model but is not yet consumed by the filter chain layer — it is planned for the policy work that wires `PolicyPort`, `PolicyApplyPort`, and the Hub/OC-specific outbound ports.
 
 Hub enforces AuthN/AuthZ for the Hub UI. This is exactly the same `ResourcePermissionPort` and `IdpClientPort` used by OC, just configured with Hub-scoped resources instead of cluster/engine resources.
 
@@ -1036,17 +1013,17 @@ Hub enforces AuthN/AuthZ for the Hub UI. This is exactly the same `ResourcePermi
 
 | Deployment strategy | AuthN/AuthZ enforcement | Policy source | Policy authoring | Outbox dispatch to OCs | Engine projection | Cluster registry | Runtime context |
 |---|---|---|---|---|---|---|---|
-| `HUB` | ✅ Hub-scoped (org, workspace, cluster resources) | Hub is SoT | ✅ via Hub UI/API | ✅ via `OutboxPort` | ❌ no engines in Hub | ✅ `ClusterRegistrationService` + `ClusterRegistryPort` | Hub authentication and policy management for the Hub UI |
-| `OC_MANAGED` | ✅ Cluster-scoped (engine, tenant, task resources) | Receives from Hub | ❌ (read-only in the admin section of the OC UI) | ❌ | ✅ via `EngineCommandPort` | ❌ | OC receives policy via `/identity/policies/apply` endpoint from Hub; enforces for all cluster requests and exposes the applied policy through the admin section of the OC UI |
-| `OC_STANDALONE` | ✅ Cluster-scoped (engine, tenant, task resources) | OC is local SoT | ✅ via the admin section of the OC UI and OC APIs | ❌ | ✅ via `EngineCommandPort` | ❌ | OC is fully autonomous; local policy authoring and engine projection through the admin section of the OC UI |
+| `hub` | ✅ Hub-scoped (org, workspace, cluster resources) | Hub is SoT | ✅ via Hub UI/API | ✅ via `OutboxPort` | ❌ no engines in Hub | ✅ `ClusterRegistrationService` + `ClusterRegistryPort` | Hub authentication and policy management for the Hub UI |
+| `managed` | ✅ Cluster-scoped (engine, tenant, task resources) | Receives from Hub | ❌ (read-only in the admin section of the OC UI) | ❌ | ✅ via `EngineCommandPort` | ❌ | OC receives policy via `/identity/policies/apply` endpoint from Hub; enforces for all cluster requests and exposes the applied policy through the admin section of the OC UI |
+| `standalone` | ✅ Cluster-scoped (engine, tenant, task resources) | OC is local SoT | ✅ via the admin section of the OC UI and OC APIs | ❌ | ✅ via `EngineCommandPort` | ❌ | OC is fully autonomous; local policy authoring and engine projection through the admin section of the OC UI |
 
 ```mermaid
 flowchart TB
   Start["Library bootstrap"] --> Mode{"deployment strategy property"}
 
   Mode -->|"HUB"| Hub["Enable Hub services<br>AuthN/AuthZ (Hub-scoped)<br>PolicyAuthoring + Versioning + OutboxDispatch"]
-  Mode -->|"OC_MANAGED"| OCM["Enable OC managed services<br>AuthN/AuthZ (cluster-scoped)<br>RemotePolicyApply + ProjectionToEngine"]
-  Mode -->|"OC_STANDALONE"| OCS["Enable OC standalone services<br>AuthN/AuthZ (cluster-scoped)<br>LocalPolicyAuthoring + ProjectionToEngine"]
+  Mode -->|"managed"| OCM["Enable OC managed services<br>AuthN/AuthZ (cluster-scoped)<br>RemotePolicyApply + ProjectionToEngine"]
+  Mode -->|"standalone"| OCS["Enable OC standalone services<br>AuthN/AuthZ (cluster-scoped)<br>LocalPolicyAuthoring + ProjectionToEngine"]
 
   Core["Always-on core<br>Spring Security filter chain<br>Scope resolver + Session handling"]
 
@@ -1755,6 +1732,69 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 The migration path from the current split identity systems (Auth0 in SaaS, Management Identity, and OC Identity in Self-Managed) to the unified Camunda Security Library is documented in a dedicated file:
 
 - **[Migration Path](migration_path.md)**
+
+---
+
+---
+
+## 11. Technical Debts and Risks
+
+### Open issues
+
+- **Multiple Hub instances:** The architecture shows a single shared Hub instance in SaaS and a single Hub in Self-Managed full mode. Some customers require multiple Hub instances (e.g. to separate delivery stages). Each Hub instance is an independent CSL deployment; Hub-to-Hub coordination is out of scope. An OC is associated with exactly one Hub at a time; reassignment is an open question in §9.1.
+- **Satellite components (open scope):** Two satellite runtimes are not yet explicitly covered by CSL:
+  - *App Integrations backend* — not yet decided whether it receives IdP configuration via Hub's CSL port model or manages its own auth independently.
+  - *Connectors runtime* — same open question at the OC level.
+  - The hexagonal port model accommodates both as future CSL consumers (adapter implementations only, no core change). Whether and when to do this is a scope decision outside this document.
+
+### Known debts
+
+- `EngineCommandPort` SPI boundary for OC → engine policy propagation is still undefined (see §9.1).
+- The deployment strategy property values currently use an `oc-` prefix (`oc-standalone`, `oc-managed`); a rename to `standalone` / `managed` is planned (docs already use the shorter names).
+- ADR numbering has duplicate entries for 0011, 0020, and 0023; a file rename to resolve the ambiguity is deferred.
+
+---
+
+## 12. Glossary
+
+Full term definitions for diagrams and runtime descriptions throughout this document.
+
+### Orchestration Cluster (OC): logical vs physical view
+
+The term **Orchestration Cluster (OC)** is used at two abstraction levels:
+
+- **Logical view (architecture level):**
+  - The OC is the logical execution unit owned by one organization and associated with one policy boundary.
+  - High-level diagrams show this as one OC box contrasted with Hub.
+- **Physical/deployment view (runtime level):**
+  - An OC deployment consists of one or more **Gateways** (the Gateway/Search layer) and one or more **Brokers**.
+  - Each Broker contains one or more **Engines**.
+  - The Camunda Security Library (CSL) is embedded in the Gateway/Search layer and enforces authentication and authorization before broker/search access.
+
+In high-level diagrams, OC is intentionally simplified as one logical component. In detailed building-block and deployment diagrams (section 5.1 and below), Gateway/Search and Broker/Engine layers are shown explicitly.
+
+### Tenant naming and scope rules
+
+- What older drafts called **multi-engine support** is now **Physical Tenant support**.
+- In identity-model terms, an **Engine** is a **Physical Tenant**. Each Engine is a Physical Tenant. A Broker hosting multiple Engines hosts multiple Physical Tenants; multiple Brokers in one OC multiply the Physical Tenant count.
+- In this document, **Tenant** means **logical Tenant** unless explicitly written as **Physical Tenant**.
+- One Physical Tenant can host multiple logical Tenants.
+- In the policy model, `scope_type = PHYSICAL_TENANT` refers to Physical Tenant scope.
+
+### Hub UI and OC UI
+
+The terms **Hub UI** and **OC UI** refer to aggregated frontend applications, not separate per-component UIs.
+
+- **Hub UI** (management plane): A single management-plane frontend that consolidates Console, Web Modeler, Admin, and related management capabilities. Hub-side components authenticate and authorize through one CSL instance.
+- **OC UI** (execution plane): A single execution-plane frontend that consolidates Operate, Tasklist, and cluster administration capabilities. OC-side components authenticate and authorize through one CSL instance. In full mode (Hub + OC), the admin section is read-only and reflects policy projected from Hub. In standalone mode, the admin section is read-write and supports local policy authoring.
+
+### SPI (in CSL context)
+
+An extension interface in `spring-boot-starter/spi/` (or `api/context/`) that host applications implement to customize CSL behaviour — for example providing a custom access-denied handler or contributing scoped security chains. Registered via Spring's `@ConditionalOnMissingBean` bean mechanism. **Not** a Java `java.util.ServiceLoader`-based SPI.
+
+### IdP/broker
+
+In the SaaS legacy context, Auth0 acts as an identity federation layer (broker): it is Camunda-operated, federates customer Enterprise IdPs, and issues tokens to Camunda services. In the target architecture, customers connect their Enterprise IdP directly; no Camunda-operated broker sits between the customer's IdP and CSL.
 
 ---
 

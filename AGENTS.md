@@ -26,11 +26,13 @@ Active capabilities are selected via a deployment strategy configuration propert
 
 | Strategy | Policy Authority | Authoring | Outbox Dispatch | Engine Projection |
 |---|---|---|---|---|
-| `oc-standalone` | OC (local SoT) | Yes | No | Yes |
-| `oc-managed` | Receives from Hub | No (read-only) | No | Yes |
+| `standalone` | OC (local SoT) | Yes | No | Yes |
+| `managed` | Receives from Hub | No (read-only) | No | Yes |
 | `hub` | Hub (central SoT) | Yes | Yes | No |
 
 Authentication and authorization enforcement is always active in every strategy.
+
+> **Note:** Current property values in code use an `oc-` prefix (`oc-standalone`, `oc-managed`). A rename to the shorter names (`standalone`, `managed`) is planned.
 
 ### Unified Policy Model
 
