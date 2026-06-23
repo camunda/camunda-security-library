@@ -25,6 +25,8 @@ Full term definitions are in the [Glossary (§12)](#12-glossary). Quick referenc
 - **Tenant** = a logical Tenant (data/access partition, e.g. `default`, `retail`) unless written as **Physical Tenant**.
 - **OC** at high level = the logical Orchestration Cluster; at runtime = Gateway/Search layer + Broker/Engine layer.
 - **Hub UI** / **OC UI** = aggregated management-plane / execution-plane frontends, not per-component UIs.
+- **scope** (disambiguation): In the policy model, _scope_ refers to the authorization scope type (`ALL`, `TENANT`, `PHYSICAL_TENANT`). In the filter-chain SPI, _scope_ refers to a path-isolated API surface with its own provider set (see `CamundaSecurityScopeProvider`, ADR-0025). These are distinct concepts; context disambiguates throughout the document.
+- **Policy receiver** — a CSL-embedded host application that receives and enforces policy published by Hub, rather than authoring policy locally. OC instances using the `managed` deployment strategy and Optimize in full-mode deployments are policy receivers. See [Glossary (§12)](#12-glossary) for the full definition.
 
 ---
 
@@ -174,18 +176,18 @@ The target architecture is based on the following assumptions:
     - The library itself has no knowledge of how a host application discovers or tracks Orchestration Clusters. Cluster registration and enumeration are exposed as generic port interfaces: the host application calls `ClusterRegistrationService` (inbound port) to inform the library about new or updated clusters; the library calls `ClusterRegistryPort` (outbound port) when it needs to enumerate clusters for policy targeting.
   - How a specific host application learns about newly created OCs — whether by querying an external service, consuming provisioning events, or reading configuration — is entirely an integration concern for the host and not part of the library.
 - In OC-only mode, the Orchestration Cluster is the local source of truth for policy; there is no Hub and therefore no cross-cluster policy coordination.
-- All physical tenants (engines) within a given Orchestration Cluster share the same OC-level identity configuration; physical tenants never talk to IdPs directly and are not configured as OIDC clients.
+- All physical tenants (engines) within a given Orchestration Cluster share the same cluster-level identity configuration; physical tenants never talk to IdPs directly and are not configured as OIDC clients.
   - IdP client configuration is defined at the OC level and applied cluster-wide. Mapping rules and authorizations determine which physical tenants and resources a given principal can access.
   - In the first iteration, IdP configuration is static (configuration files). In a later iteration, both IdP and physical tenant configuration should be manageable via Hub.
 - Policy propagation across layers is eventually consistent:
   - Hub tracks the last acknowledged policy versions per OC.
   - Each OC tracks its own last applied policy version.
-  - Engines receive policy via the OC’s internal command path and are assumed to converge towards the OC-level policy state; engines do not track separate policy versions.
+  - Engines receive policy via the OC’s internal command path and are assumed to converge towards the cluster-scoped policy projection; engines do not track separate policy versions.
 - Existing infrastructure (databases, message brokers, cluster gateways, IdP configurations) is reused; no new global identity databases or dedicated identity clusters are introduced.
 
 ### 2.5 Unresolved issues
 
-Open issues and technical debts are tracked in [§11 Technical Debts and Risks](#11-technical-debts-and-risks).
+Open issues and technical debts are tracked in [§11 Technical Debts, Risks, and Open Design Questions](#11-technical-debts-risks-and-open-design-questions).
 
 ### 2.6 Constraints
 
@@ -236,110 +238,35 @@ Key design principles (selected):
 
 ### 3.1 Functional user journeys
 
-The following user journeys describe, from a functional perspective, which actors perform which actions in which subsystem. They are not sequence diagrams, but concrete scenarios tying together Hub, Orchestration Clusters, and IdPs.
+The supported deployment modes produce three primary actor contexts: policy admins working in Hub (full mode), cluster admins working in OC-only mode, and end users or developers working across both planes.
 
-#### 3.1.1 Configure cluster policies in full mode (Hub + OC)
-
-Short- to midterm target: Admins configure cluster policies (including Physical Tenant-scoped (`PHYSICAL_TENANT`) and Tenant-scoped permissions) primarily in Hub. The admin section of the OC UI exposes a read-only view of the applied policy for that cluster.
-
-- Actor: Organization / platform administrator (Hub)
-- Goal: Adjust who can do what on a given Orchestration Cluster and its engines/tenants.
-- Main steps:
-  1. Admin signs into the Hub UI.
-  2. Admin selects a specific Orchestration Cluster and opens its policy configuration.
-  3. Admin edits tenants, roles, groups, mapping rules, and authorizations for that cluster, including:
-  - Cluster-wide permissions (for example cluster admins).
-  - Tenant-scoped permissions (for example `retail` vs `wholesale`).
-  - Physical Tenant-scoped (`PHYSICAL_TENANT`).
-  4. Hub Camunda Security Library validates and persists the changes in the selected organization scope, producing a new `PolicyVersion` for the target cluster.
-  5. Hub propagates the updated policy to the target OC through a platform-owned transport channel; OC Camunda Security Library applies it and updates the Physical Tenant-scoped (`PHYSICAL_TENANT`) projections.
-  6. The admin section of the OC UI, in read-only mode, allows cluster operators to view the effective policies per engine and tenant, including the applied policy version.
-
-Outcome: Cluster policies, including Physical Tenant- and Tenant-specific permissions, are authored once in Hub and enforced consistently in the target OC. Cluster operators can inspect, but not change, these policies via the admin section of the OC UI.
-
-#### 3.1.2 Application developer configures a worker client
-
-- Actor: Application developer / project owner
-- Goal: Set up a job worker or integration that can safely access cluster APIs.
-- Main steps:
-  1. Developer creates a machine principal (client) in the UI (Hub UI in full mode, OC UI in OC-only mode), getting client ID and secret or another credential form.
-  2. Admin associates the client with one or more tenants and assigns roles or groups appropriate for the worker.
-  3. Admin configures mapping rules (if needed) so that the client’s token claims map to the desired roles and tenants.
-  4. Developer configures the worker application to request tokens from the Enterprise IdP using the client credentials.
-  5. At runtime, the worker calls the OC APIs with those tokens; OC’s Camunda Security Library validates the token against the IdP, derives permissions from the policy model, and enforces them for each request.
-
-Outcome: The worker runs with the minimum required permissions derived from the unified policy model; there is no ad-hoc, engine-specific authorization logic.
-
-#### 3.1.3 End user works across Hub and OC applications
-
-- Actor: End user (for example, modeler, operator, support agent)
-- Goal: Use the Hub UI and OC UI with consistent permissions.
-- Main steps:
-  1. User signs into the Hub UI via the Enterprise IdP.
-  2. Hub Camunda Security Library validates the token and derives roles, groups, and tenants from mapping rules.
-  3. User creates or edits models, deploys them to a target Orchestration Cluster or environment.
-  4. When the user opens the OC UI for that cluster, they authenticate via the same Enterprise IdP; OC’s Camunda Security Library derives the same or related roles/tenants from the token.
-  5. In the OC UI, the user can only see and act on data allowed by their tenant- and role-based authorizations (for example, only instances in `retail` tenant, only tasks assigned to their team).
-
-Outcome: The user experiences a consistent identity across Hub and OC: one Enterprise IdP login, one conceptual set of roles and tenants, and predictable access in both management and execution plane UIs.
-
-#### 3.1.4 Configure policies in an OC-only deployment (long-term target)
-
-Long-term target: Bring the same policy model, including Physical Tenant- and Tenant-scoped authorizations, to OC-only deployments. Today OC-only already supports identity and authorizations, but this journey describes the target behavior.
-
-- Actor: Cluster administrator (OC-only)
-- Goal: Configure identity and policies for a standalone OC without Hub, including Physical Tenant- and Tenant-scoped rules.
-- Main steps:
-  1. Cluster admin opens the admin section of the OC UI.
-  2. Cluster admin configures the Enterprise IdP connection directly on the OC (OIDC/SAML client settings for the deployment).
-  3. Cluster admin creates tenants, roles, groups, and mapping rules in the admin section of the OC UI.
-  4. Cluster admin defines authorizations for cluster resources (definitions, instances, tasks, cluster APIs) and, if needed, Physical Tenant- and Tenant-specific scopes.
-  5. OC Camunda Security Library persists the policy locally and propagates Physical Tenant-scoped (`PHYSICAL_TENANT`) projections to the engines.
-
-Outcome: The OC acts as local SoT for identity and policy. Users and workers can authenticate via the Enterprise IdP, and permissions are enforced consistently across the OC UI and APIs within that cluster, including Physical Tenant- and Tenant-specific rules.
-
-#### 3.1.5 Configure identity for a new organization (full mode: Hub + OC, long-term target)
-
-Long-term target: Org-level IdP setup and cluster provisioning are performed centrally via Hub.
-
-- Actor: Organization administrator (Hub)
-- Goal: Connect the organization’s IdP, provision an Orchestration Cluster, and define baseline access.
-- Main steps:
-  1. Org admin signs into the Hub UI.
-  2. Org admin configures the Enterprise IdP connection for the organization (for example Entra, Okta, Keycloak) via Hub (org-level IdP setup in the target state).
-  3. Org admin creates or imports tenants (for example `default`, `retail`, `wholesale`) in the Hub UI.
-  4. Org admin defines mapping rules (claims → roles/tenants) and assigns baseline roles and groups for key personas (for example Cluster Admins, Developers, Support).
-  5. Org admin provisions (or selects) an Orchestration Cluster and associates it with the organization/tenants.
-    - Cluster selection is resolved via the `ClusterRegistryPort`; the host application (Hub) provides the adapter implementation that enumerates available clusters.
-  6. Hub Camunda Security Library persists this configuration in the organization-scoped Hub partition, produces a new `PolicyVersion`, and starts propagation to the relevant OC(s).
-
-Outcome: The organization’s IdP is connected, tenants and roles exist, and cluster-local policy is projected to the associated OCs. Cluster admins and developers can authenticate via the Enterprise IdP and start using cluster UIs and APIs, with Hub acting as the central identity and policy entry point.
+Detailed illustrative scenarios for each context — including step-by-step walkthroughs of policy authoring, worker client setup, cross-plane user access, and org provisioning — are documented in **[docs/user-journeys.md](user-journeys.md)**.
 
 ### 3.2 Quality goals
 
-The Camunda Security Library and unified identity plane must meet the following quality goals:
+The Camunda Security Library and unified identity plane must meet the following quality goals. The order is intentional and reflects priority: a later goal may be traded off against an earlier one if required, but not the reverse.
 
-- Security and correctness
-  - Authorization decisions are deterministic: given the same token, policy, and resource, all instances (Hub, OC) reach the same result.
-  - Default behavior is deny-by-default if policy, tenant context, or token validation is unclear.
-  - All external integrations (IdPs, engines) are accessed via well-defined ports with strict input validation.
+1. **Security and correctness**
+   - Authorization decisions are deterministic: given the same token, policy, and resource, all instances (Hub, OC) reach the same result.
+   - Default behavior is deny-by-default if policy, tenant context, or token validation is unclear.
+   - All external integrations (IdPs, engines) are accessed via well-defined ports with strict input validation.
 
-- Robustness and resilience
-  - Temporary failures (network, IdP, OC downtime) do not corrupt policy state; propagation is retried and gaps can be detected and repaired.
-  - Idempotent apply semantics ensure that replays of the same policy version do not change effective behavior.
+2. **Robustness and resilience**
+   - Temporary failures (network, IdP, OC downtime) do not corrupt policy state; propagation is retried and gaps can be detected and repaired.
+   - Idempotent apply semantics ensure that replays of the same policy version do not change effective behavior.
 
-- Performance and scalability
-  - Policy evaluation adds minimal per-request overhead for common paths (UI/API calls, worker calls).
-  - Policy propagation is efficient for large numbers of clusters and tenants; in the proposed first iteration, Hub would send full policy payloads and rely on batching/backpressure to keep throughput stable.
+3. **Performance and scalability**
+   - Policy evaluation adds minimal per-request overhead for common paths (UI/API calls, worker calls).
+   - Policy propagation is efficient for large numbers of clusters and tenants; in the proposed first iteration, Hub would send full policy payloads and rely on batching/backpressure to keep throughput stable.
 
-- Observability and logging
-  - All authentication and authorization decisions are logged with enough context (principal, resource, action, tenant, result, correlation IDs) to trace end-to-end flows.
-  - Policy propagation (Hub → OC → Engine) is observable per cluster with clear status (last version applied, last error, latency) and logs for both success and failure paths.
-  - Logs follow consistent structure and severity levels so they can be indexed and correlated across Hub and OCs.
+4. **Observability and logging**
+   - All authentication and authorization decisions are logged with enough context (principal, resource, action, tenant, result, correlation IDs) to trace end-to-end flows.
+   - Policy propagation (Hub → OC → Engine) is observable per cluster with clear status (last version applied, last error, latency) and logs for both success and failure paths.
+   - Logs follow consistent structure and severity levels so they can be indexed and correlated across Hub and OCs.
 
-- Operational simplicity
-  - Identity deployments (Hub, OC-only) are manageable by platform teams without deep knowledge of internal policy data structures.
-  - Rollout state of policy per cluster/OC is visible in tooling without digging into raw logs or databases.
+5. **Operational simplicity**
+   - Identity deployments (Hub, OC-only) are manageable by platform teams without deep knowledge of internal policy data structures.
+   - Rollout state of policy per cluster/OC is visible in tooling without digging into raw logs or databases.
 
 ---
 
@@ -422,11 +349,9 @@ flowchart TB
 - OC is the single source of truth for all policy and configuration.
 - The same Camunda Security Library is used but configured for standalone operation.
 - Existing infrastructure is reused, no new databases or services are introduced.
-- OC owns the IdP client configurations for its tenants and engines; engines still only consume OC-level identity decisions and never call IdPs directly.
+- OC owns the IdP client configurations for its tenants and engines; engines receive identity decisions from the CSL-managed policy projection and never call IdPs directly.
 
 ### 4.3 OC + Optimize without Hub
-
-> **Note:** This topology is described for completeness. It is not an actively planned CSL integration scenario — Optimize's standalone deployment manages its own auth independently of CSL.
 
 In this deployment mode, Optimize is deployed alongside an Orchestration Cluster without Hub. Policy is managed independently in both OC and Optimize — there is no policy distribution between them. Optimize only depends on OC for process execution data (events, process instances, task data) required for analytics and reporting.
 
@@ -618,7 +543,7 @@ Key building blocks in OC-only mode simple:
 
 > **Important:** A **Physical Tenant** is an Engine (a physical execution unit). A **Tenant** (like `default`, `retail`, `wholesale`) is a logical partition for data and access. Multiple logical Tenants can execute within a single Physical Tenant (Engine).
 
-For more complex OC-only deployments with multiple brokers and multiple engines per broker, see section [7.1.3 OC-only mode Standalone (2 Gateways + 3 Brokers)](#713-oc-only-mode-standalone-2-gateways--3-brokers).
+For more complex OC-only deployments with multiple brokers and multiple engines per broker, see section [7.1.3 OC-only mode – multi-instance example](#713-oc-only-mode--multi-instance-example-n-gateways--m-brokers).
 
 #### 5.1.3 Full mode Complex (Hub + OC with multiple Brokers and multiple Engines)
 
@@ -631,7 +556,7 @@ This section defines the conceptual behavior only; the complete deployment examp
 For concrete diagrams:
 
 - Single-node full mode: [7.1.2 Full mode (Hub + Orchestration Cluster, self-managed)](#712-full-mode-hub--orchestration-cluster-self-managed)
-- Standalone multi-node OC-only mode: [7.1.3 OC-only mode Standalone (2 Gateways + 3 Brokers)](#713-oc-only-mode-standalone-2-gateways--3-brokers)
+- Standalone multi-node OC-only mode: [7.1.3 OC-only mode – multi-instance example](#713-oc-only-mode--multi-instance-example-n-gateways--m-brokers)
 
 ---
 
@@ -737,7 +662,7 @@ The following table summarizes which information must be known to which componen
 | Mapping rules (claims → roles/tenants)      | Yes (SoT)                                                      | Yes (projection per cluster)                                        | Yes                              | No                                     |
 | Roles and groups                            | Yes (SoT)                                                      | Yes (projection per cluster)                                        | Yes                              | No (only resulting permissions)        |
 | Authorizations (role/group → resource perms)| Yes (SoT)                                                      | Yes (projection per cluster; Physical-Tenant-scoped and logical-Tenant-scoped views) | Yes                              | Indirectly (via engine-local projections) |
-| Policy versions and propagation state       | Yes (`PolicyVersion`, `EntityRevision`, optional `PolicyVersionChange`, and per-target acknowledgement state), scoped by organization + cluster in shared Hub deployments | Yes (`last_applied_version` per cluster)                            | Yes (local policy versions only) | No explicit versioning; consumes OC-level updates |
+| Policy versions and propagation state       | Yes (`PolicyVersion`, `EntityRevision`, optional `PolicyVersionChange`, and per-target acknowledgement state), scoped by organization + cluster in shared Hub deployments | Yes (`last_applied_version` per cluster)                            | Yes (local policy versions only) | No explicit versioning; consumes cluster-level policy updates |
 | Session data                                | Yes (Hub sessions only)                                        | Yes (cluster sessions only)                                         | Yes                              | No                                     |
 
 Engines only need to know the effective permissions resulting from the policy model; they neither talk to IdPs nor store policy versions.
@@ -1434,6 +1359,8 @@ sequenceDiagram
 
 ## 7. Deployment view
 
+> The diagrams in this section use a **whitebox view** that shows internal component layers (Gateway/Search, Broker/Engine). This contrasts with the context views in §4, which treat Hub, OC, and Optimize as black boxes. The whitebox style is used here to show where Camunda Security Library and Security Engine Framework are embedded within each deployment.
+
 ### 7.1 Self-Managed deployment
 
 In Self-Managed, the customer owns and operates all infrastructure. Three deployment views are shown below, mirroring the general modes and scaling variants from section 4.
@@ -1444,7 +1371,7 @@ In Self-Managed, the customer owns and operates all infrastructure. Three deploy
 - OC acts as local SoT for identity and policy.
 - The Enterprise IdP is integrated directly via OIDC/SAML; no Camunda-operated broker is involved.
 - OC includes an embedded gateway/search layer and a broker/engine layer; policy is enforced by Camunda Security Library (gateway) and Security Engine Framework (broker/engine).
-- Multiple engines per cluster are supported with OC-level policy propagation.
+- Multiple engines per cluster are supported with cluster-level policy propagation.
 - Suitable for production use cases that do not require cross-cluster policy management.
 
 ```mermaid
@@ -1479,12 +1406,12 @@ flowchart TB
   OC --> EnterpriseIdP
 ```
 
-#### 7.1.2 Full mode (Hub + Orchestration Cluster, self-managed)
+#### 7.1.2 Full mode (Hub + Orchestration Cluster + Optimize, self-managed)
 
-An advanced Self-Managed topology where the customer also operates Hub. Hub becomes the central policy SoT, and policy is propagated to each OC via the platform-owned channel. The Admin UI on OC runs in read-only mode; all policy authoring happens in Hub.
+An advanced Self-Managed topology where the customer also operates Hub. Hub becomes the central policy SoT, and policy is propagated to each OC and Optimize via the platform-owned channel. The Admin UI on OC runs in read-only mode; all policy authoring happens in Hub. Optimize uses the same Camunda Security Library and receives policy from Hub.
 
-- Hub and all OC instances are deployed and operated by the customer on their own infrastructure.
-- The Enterprise IdP is integrated at both Hub (management plane auth) and OC (execution plane auth) levels.
+- Hub and all OC and Optimize instances are deployed and operated by the customer on their own infrastructure.
+- The Enterprise IdP is integrated at both Hub (management plane auth) and OC/Optimize (execution/analytics plane auth) levels.
 - Cluster discovery and registration are handled via the `ClusterRegistryPort` and `ClusterRegistrationService` ports; the host application's adapter determines how new OCs are discovered and registered.
 - OC is configured with an embedded gateway/search layer and broker/engine layer; Camunda Security Library runs in gateway, Security Engine Framework runs in broker/engine.
 - Policy flows top-down: Hub -> Gateway -> Broker(Engine), same as in SaaS, but without a Camunda-operated broker.
@@ -1492,7 +1419,7 @@ An advanced Self-Managed topology where the customer also operates Hub. Hub beco
 
 ```mermaid
 ---
-title: Self-Managed Deployment – Full mode (Hub + OC)
+title: Self-Managed Deployment – Full mode (Hub + OC + Optimize)
 ---
 flowchart TB
   subgraph Customer["Customer-managed Infrastructure"]
@@ -1526,30 +1453,44 @@ flowchart TB
       Operate & Tasklist & AdminOC --> OC
     end
 
+    subgraph Analytics["Analytics Plane"]
+      OptimizeUI["Optimize UI"]
+
+      subgraph OptimizeApp["Optimize"]
+        SecGatOpt["Camunda Security Library"]
+      end
+
+      OptimizeUI --> OptimizeApp
+    end
+
     HubDB[("Hub DB")]
     OCDB[("OC DB (Primary / Secondary)")]
+    OptDB[("Optimize DB")]
 
     Hub --> OC
+    Hub -->|"policy propagation"| OptimizeApp
     Hub --> HubDB
     OC --> OCDB
+    OptimizeApp --> OptDB
+    OC -->|"Process data"| OptimizeApp
   end
 
   EnterpriseIdP[["Enterprise IdP</br>(Keycloak, Entra, Okta, ...)"]]
-  Hub & OC --> EnterpriseIdP
+  Hub & OC & OptimizeApp --> EnterpriseIdP
 ```
 
-#### 7.1.3 OC-only mode Standalone (2 Gateways + 3 Brokers)
+#### 7.1.3 OC-only mode – multi-instance example (N gateways + M brokers)
 
-Standalone OC topology for higher throughput and availability. Hub is not present; OC remains the local policy source of truth. Two gateways provide ingress and search-layer responsibilities, and three brokers execute workloads.
+Standalone OC topology for higher throughput and availability. Hub is not present; OC remains the local policy source of truth. This diagram shows 2 gateways and 3 brokers as an illustrative example. The same topology scales to any N gateways and M brokers; each gateway runs CSL and each broker runs Security Engine Framework.
 
-- Two gateways each run the Camunda Security Library and connect clients (Operate, Tasklist, Admin UI, workers) to the cluster.
-- Three brokers run the Security Engine Framework and receive policy snapshots from the gateway layer.
+- Each gateway runs the Camunda Security Library and connects clients (Operate, Tasklist, Admin UI, workers) to the cluster.
+- Each broker runs the Security Engine Framework and receives policy snapshots from the gateway layer.
 - Each broker hosts multiple engines (Physical Tenants); logical tenants are scoped onto those engines using `ALL`, `TENANT` and `PHYSICAL_TENANT`.
 - Suitable for larger standalone Self-Managed deployments that need horizontal scale without Hub.
 
 ```mermaid
 ---
-title: Self-Managed Deployment - OC-only standalone (2 Gateways + 3 Brokers)
+title: Self-Managed Deployment - OC-only standalone (N Gateways + M Brokers, illustrated as 2+3)
 ---
 flowchart TB
   subgraph Customer["Customer-managed Infrastructure"]
@@ -1593,6 +1534,8 @@ flowchart TB
   GW1 & GW2 --> EnterpriseIdP
 ```
 
+> **Note on storage in multi-instance topologies:** The `DBs` node in the diagram is a summary. In practice, each engine (Physical Tenant) has its own dedicated storage scope: embedded primary storage (RocksDB — one instance per engine, internal to the broker) and its own secondary storage (Elasticsearch, OpenSearch, or RDBMS — either a dedicated database per engine or a dedicated schema within a shared database instance).
+
 ---
 
 ### 7.2 SaaS deployment
@@ -1625,18 +1568,24 @@ flowchart TB
 
     subgraph OrgA["Organization A"]
       OCA["Orchestration Cluster A"]
+      OptA["Optimize A"]
     end
 
     subgraph OrgB["Organization B"]
       OCB["Orchestration Cluster B"]
+      OptB["Optimize B"]
     end
 
     Hub --> OCA
     Hub --> OCB
+    Hub -->|"policy propagation"| OptA
+    Hub -->|"policy propagation"| OptB
+    OCA -->|"Process data"| OptA
+    OCB -->|"Process data"| OptB
   end
 
   EnterpriseIdP[["Enterprise IdPs / brokers</br>(customer-managed or SaaS-managed during migration)"]]
-  Hub & OCA & OCB --> EnterpriseIdP
+  Hub & OCA & OCB & OptA & OptB --> EnterpriseIdP
 ```
 
 ---
@@ -1669,11 +1618,11 @@ The unified identity architecture must support SaaS deployments at significant s
 4. **Idempotency**: At this scale, retries are frequent and necessary. All policy applies must be idempotent per `policyVersionId` to ensure correctness despite network failures and replay scenarios.
 5. **Observability requirements**: Logs, metrics, and traces must emit at a reasonable volume even with 43k+ clusters. Per-cluster granular logging is necessary for debugging but must be carefully sampled or aggregated for operational dashboards.
 
-These constraints directly inform the choice and implementation details of ADR-0003 (Push vs Pull Policy Propagation); see section 9.2 for detailed analysis.
+These constraints directly inform the choice and implementation details of ADR-0003 (Push vs Pull Policy Propagation); see section 9.1 for detailed analysis.
 
 ---
 
-## 9. Architecture decisions and open points
+## 9. Architecture Decision Records
 
 This unified architecture builds on existing identity arc42 docs and ADRs for OC Identity and Management Identity; those ADRs remain the canonical source for detailed trade-offs. The main new decisions here are:
 
@@ -1682,14 +1631,7 @@ This unified architecture builds on existing identity arc42 docs and ADRs for OC
 - Ship a single shared Admin UI package, feature-gated by configuration for Hub vs OC, standalone vs Hub-managed.
 - Make logical-tenant and Physical-Tenant support explicit in the core model and diagrams, not side effects.
 
-### 9.1 Open High Level points (to be refined in separate ADRs):
-
-- **SPI boundaries for OC/engine command creation** (`EngineCommandPort`): still open. Webapp, session, user, and scope provider SPI boundaries have been defined (ADRs 0009, 0010, 0017, 0021, 0025, 0027); the engine-command interface is the remaining open design question.
-- Migration path from current Auth0-based SaaS setup to “Enterprise IdP as SoT” while keeping Auth0 as a private implementation detail.
-- If the endpoints to apply policy changes are public, Hub will not be aware of what a customer applies to OC and will run out of sync.
-- How can we apply a snapshot multiple times? How could we reset the projections in primary and secondary storage?
-
-### 9.2 Detailed ADRs
+### 9.1 Detailed ADRs
 
 This section contains detailed Architectural Decision Records (ADRs) for the Camunda Security Library. Each ADR documents a specific decision, the context, alternatives considered, and consequences.
 
@@ -1737,11 +1679,20 @@ The migration path from the current split identity systems (Auth0 in SaaS, Manag
 
 ---
 
-## 11. Technical Debts and Risks
+## 11. Technical Debts, Risks, and Open Design Questions
+
+### Open design questions
+
+These are unresolved design questions that require a dedicated ADR before implementation can proceed:
+
+- **SPI boundaries for OC/engine command creation** (`EngineCommandPort`): still open. Webapp, session, user, and scope provider SPI boundaries have been defined (ADRs 0009, 0010, 0017, 0021, 0025, 0027); the engine-command interface is the remaining open design question.
+- **Migration path** from current Auth0-based SaaS setup to "Enterprise IdP as SoT" while keeping Auth0 as a private implementation detail — not yet addressed in an ADR.
+- **Policy endpoint ownership:** If the endpoints to apply policy changes are public, Hub will not be aware of what a customer applies to OC and will run out of sync. The right ownership boundary is unresolved.
+- **Snapshot idempotency:** How can we apply a snapshot multiple times? How could we reset the projections in primary and secondary storage?
 
 ### Open issues
 
-- **Multiple Hub instances:** The architecture shows a single shared Hub instance in SaaS and a single Hub in Self-Managed full mode. Some customers require multiple Hub instances (e.g. to separate delivery stages). Each Hub instance is an independent CSL deployment; Hub-to-Hub coordination is out of scope. An OC is associated with exactly one Hub at a time; reassignment is an open question in §9.1.
+- **Multiple Hub instances:** The architecture shows a single shared Hub instance in SaaS and a single Hub in Self-Managed full mode. Some customers require multiple Hub instances (e.g. to separate delivery stages). Each Hub instance is an independent CSL deployment; Hub-to-Hub coordination is out of scope. An OC is associated with exactly one Hub at a time; reassignment is an open design question (see above).
 - **Satellite components (open scope):** Two satellite runtimes are not yet explicitly covered by CSL:
   - *App Integrations backend* — not yet decided whether it receives IdP configuration via Hub's CSL port model or manages its own auth independently.
   - *Connectors runtime* — same open question at the OC level.
@@ -1749,7 +1700,7 @@ The migration path from the current split identity systems (Auth0 in SaaS, Manag
 
 ### Known debts
 
-- `EngineCommandPort` SPI boundary for OC → engine policy propagation is still undefined (see §9.1).
+- `EngineCommandPort` SPI boundary for OC → engine policy propagation is still undefined (see Open design questions above).
 - The deployment strategy property values currently use an `oc-` prefix (`oc-standalone`, `oc-managed`); a rename to `standalone` / `managed` is planned (docs already use the shorter names).
 - ADR numbering has duplicate entries for 0011, 0020, and 0023; a file rename to resolve the ambiguity is deferred.
 
@@ -1795,6 +1746,15 @@ An extension interface in `spring-boot-starter/spi/` (or `api/context/`) that ho
 ### IdP/broker
 
 In the SaaS legacy context, Auth0 acts as an identity federation layer (broker): it is Camunda-operated, federates customer Enterprise IdPs, and issues tokens to Camunda services. In the target architecture, customers connect their Enterprise IdP directly; no Camunda-operated broker sits between the customer's IdP and CSL.
+
+### Policy receiver
+
+A CSL-embedded host application that receives and enforces policy published by Hub, rather than authoring policy locally. OC instances using the `managed` deployment strategy and Optimize in full-mode deployments are policy receivers.
+
+Policy receivers maintain a local projection of the Hub-authored policy, updated via `POLICY_SNAPSHOT` messages whenever Hub commits a new `PolicyVersion`. They do not own policy authoring, tenant creation, or outbox dispatch — those capabilities are active only in the `hub` deployment strategy. Contrast with:
+
+- **Hub** (`hub` strategy) — the policy source of truth; authors policy and propagates it to policy receivers.
+- **OC in `standalone` mode** — its own local policy source of truth; not a policy receiver.
 
 ---
 
