@@ -28,7 +28,7 @@ public final class PropertyAuthorizationEvaluatorRegistry {
   private final Map<String, PropertyAuthorizationEvaluator<?>> evaluators;
 
   public PropertyAuthorizationEvaluatorRegistry(
-      final List<PropertyAuthorizationEvaluator<?>> evaluators) {
+      final List<? extends PropertyAuthorizationEvaluator<?>> evaluators) {
     this.evaluators =
         evaluators.stream()
             .collect(
