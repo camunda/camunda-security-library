@@ -8,6 +8,7 @@
 package io.camunda.security.spring.converter;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -15,6 +16,7 @@ import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.api.model.CamundaAuthentication;
+import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -23,6 +25,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
@@ -66,5 +70,21 @@ class OidcTokenAuthenticationConverterTest {
     when(tokenClaimsConverter.convert(augmented)).thenReturn(expected);
 
     assertThat(converter.convert(authentication)).isSameAs(expected);
+  }
+
+  @Test
+  void throwsOAuth2AuthenticationExceptionWhenNeitherClaimPresent() {
+    final var jwt = Jwt.withTokenValue("token").header("alg", "RS256").claim("x", "y").build();
+    final var authentication = new JwtAuthenticationToken(jwt);
+    when(claimsProvider.claimsFor(jwt.getClaims(), "token")).thenReturn(jwt.getClaims());
+    when(tokenClaimsConverter.convert(jwt.getClaims()))
+        .thenThrow(
+            new IllegalArgumentException("Neither username claim nor client-id claim found"));
+
+    assertThatThrownBy(() -> converter.convert(authentication))
+        .isInstanceOfSatisfying(
+            OAuth2AuthenticationException.class,
+            ex ->
+                assertThat(ex.getError().getErrorCode()).isEqualTo(OAuth2ErrorCodes.INVALID_TOKEN));
   }
 }

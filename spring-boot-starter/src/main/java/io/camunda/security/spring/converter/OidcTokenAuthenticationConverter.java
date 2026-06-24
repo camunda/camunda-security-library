@@ -10,8 +10,12 @@ package io.camunda.security.spring.converter;
 import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.api.model.CamundaAuthentication;
+import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import java.util.Optional;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
@@ -67,17 +71,22 @@ public final class OidcTokenAuthenticationConverter
 
   @Override
   public CamundaAuthentication convert(final Authentication authentication) {
-    return Optional.of(authentication)
-        .map(JwtAuthenticationToken.class::cast)
-        .map(
-            token -> {
-              final Jwt jwt = token.getToken();
-              return claimsProvider.claimsFor(jwt.getClaims(), jwt.getTokenValue());
-            })
-        .map(tokenClaimsConverter::convert)
-        .orElseThrow(
-            () ->
-                new IllegalStateException(
-                    "Failed to convert 'JwtAuthenticationToken' to 'CamundaAuthentication'"));
+    try {
+      return Optional.of(authentication)
+          .map(JwtAuthenticationToken.class::cast)
+          .map(
+              token -> {
+                final Jwt jwt = token.getToken();
+                return claimsProvider.claimsFor(jwt.getClaims(), jwt.getTokenValue());
+              })
+          .map(tokenClaimsConverter::convert)
+          .orElseThrow(
+              () ->
+                  new IllegalStateException(
+                      "Failed to convert 'JwtAuthenticationToken' to 'CamundaAuthentication'"));
+    } catch (final IllegalArgumentException e) {
+      throw new OAuth2AuthenticationException(
+          new OAuth2Error(OAuth2ErrorCodes.INVALID_TOKEN), e.getMessage());
+    }
   }
 }

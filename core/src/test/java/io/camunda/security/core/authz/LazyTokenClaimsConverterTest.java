@@ -5,7 +5,7 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.spring.converter;
+package io.camunda.security.core.authz;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -14,7 +14,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.core.port.out.MembershipQuery;
 import java.util.HashMap;
@@ -25,20 +24,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
-import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 
 @ExtendWith(MockitoExtension.class)
 class LazyTokenClaimsConverterTest {
 
   @Mock private MembershipPort membershipPort;
-  private OidcConfiguration oidcConfig;
+  private LazyTokenClaimsConverter converter;
 
   @BeforeEach
   void setUp() {
-    oidcConfig = new OidcConfiguration();
-    oidcConfig.setUsernameClaim("sub");
-    oidcConfig.setClientIdClaim("azp");
+    converter = new LazyTokenClaimsConverter("sub", "azp", true, membershipPort);
   }
 
   @Test
@@ -47,9 +42,8 @@ class LazyTokenClaimsConverterTest {
     when(membershipPort.groupIds(any())).thenReturn(List.of("g1"));
     when(membershipPort.roleIds(any())).thenReturn(List.of("r1"));
     when(membershipPort.tenantIds(any())).thenReturn(List.of("t1"));
-    oidcConfig.setPreferUsernameClaim(true);
 
-    final var auth = new LazyTokenClaimsConverter(oidcConfig, membershipPort).convert(claims);
+    final var auth = converter.convert(claims);
 
     assertThat(auth.authenticatedUsername()).isEqualTo("alice");
     assertThat(auth.authenticatedGroupIds()).containsExactly("g1");
@@ -60,11 +54,8 @@ class LazyTokenClaimsConverterTest {
 
   @Test
   void portIsNotInvokedUntilFieldIsRead() {
-    final var claims = Map.<String, Object>of("sub", "alice");
+    converter.convert(Map.of("sub", "alice"));
 
-    new LazyTokenClaimsConverter(oidcConfig, membershipPort).convert(claims);
-
-    // constructing the authentication must not trigger any port calls
     verify(membershipPort, never()).mappingRuleIds(any());
     verify(membershipPort, never()).groupIds(any());
     verify(membershipPort, never()).roleIds(any());
@@ -72,45 +63,51 @@ class LazyTokenClaimsConverterTest {
   }
 
   @Test
+  void convertsClientPrincipalWhenNoUsername() {
+    final var noUsernameConverter = new LazyTokenClaimsConverter(null, "azp", true, membershipPort);
+    final var claims = Map.<String, Object>of("azp", "service-client");
+    when(membershipPort.groupIds(any())).thenReturn(List.of());
+
+    final var auth = noUsernameConverter.convert(claims);
+
+    assertThat(auth.authenticatedGroupIds()).isEmpty(); // triggers lazy resolution
+    assertThat(auth.authenticatedClientId()).isEqualTo("service-client");
+  }
+
+  @Test
+  void preferClientIdWhenFlagFalse() {
+    final var preferClientConverter =
+        new LazyTokenClaimsConverter("sub", "azp", false, membershipPort);
+    final var claims = Map.<String, Object>of("sub", "alice", "azp", "service-client");
+
+    final var auth = preferClientConverter.convert(claims);
+
+    assertThat(auth.authenticatedClientId()).isEqualTo("service-client");
+    assertThat(auth.authenticatedUsername()).isNull();
+  }
+
+  @Test
+  void throwsIllegalArgumentExceptionWhenNeitherClaimPresent() {
+    assertThatThrownBy(() -> converter.convert(Map.of("x", "y")))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("sub")
+        .hasMessageContaining("azp");
+  }
+
+  @Test
   void convertsClaimsContainingNullValues() {
-    // IdPs may emit JSON null claim values (e.g. an unset profile field); see GH-385.
     final var claims = new HashMap<String, Object>();
     claims.put("sub", "alice");
     claims.put("family_name", null);
 
-    final var auth = new LazyTokenClaimsConverter(oidcConfig, membershipPort).convert(claims);
+    final var auth = converter.convert(claims);
 
     assertThat(auth.authenticatedUsername()).isEqualTo("alice");
     assertThat(auth.claims()).hasSize(1).containsEntry("sub", "alice");
   }
 
   @Test
-  void convertsClientPrincipalWhenNoUsername() {
-    oidcConfig.setUsernameClaim(null);
-    final var claims = Map.<String, Object>of("azp", "service-client");
-    when(membershipPort.groupIds(any())).thenReturn(List.of());
-
-    final var auth = new LazyTokenClaimsConverter(oidcConfig, membershipPort).convert(claims);
-
-    assertThat(auth.authenticatedGroupIds()).isEmpty(); // iterating triggers lazy resolution
-    assertThat(auth.authenticatedClientId()).isEqualTo("service-client");
-  }
-
-  @Test
-  void throwsWhenNeitherClaimPresent() {
-    assertThatThrownBy(
-            () ->
-                new LazyTokenClaimsConverter(oidcConfig, membershipPort).convert(Map.of("x", "y")))
-        .isInstanceOfSatisfying(
-            OAuth2AuthenticationException.class,
-            ex ->
-                assertThat(ex.getError().getErrorCode()).isEqualTo(OAuth2ErrorCodes.INVALID_TOKEN));
-  }
-
-  @Test
   void groupsQueryReceivesResolvedMappingRuleIdsFromChain() {
-    // groupIds() is called with a query whose resolvedMappingRuleIds is already populated
-    // by the upstream LazyList reference resolving first.
     final var claims = Map.<String, Object>of("sub", "alice");
     when(membershipPort.mappingRuleIds(any())).thenReturn(List.of("mr1"));
     when(membershipPort.groupIds(any()))
@@ -120,7 +117,8 @@ class LazyTokenClaimsConverterTest {
               assertThat(q.resolvedMappingRuleIds()).containsExactly("mr1");
               return List.of("g1");
             });
-    final var auth = new LazyTokenClaimsConverter(oidcConfig, membershipPort).convert(claims);
+
+    final var auth = converter.convert(claims);
 
     assertThat(auth.authenticatedGroupIds()).containsExactly("g1");
   }
