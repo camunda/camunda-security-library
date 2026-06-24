@@ -7,9 +7,11 @@
  */
 package io.camunda.security.spring.oidc;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.net.http.HttpClient;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,12 +41,19 @@ public final class ScopedOidcClaimsProviderFactory {
   private final OidcUserInfoHttpClient userInfoHttpClient;
   private final MeterRegistry meterRegistry;
 
+  /**
+   * @param clientRegistrationFactory resolves a scope's OIDC {@link ClientRegistration}s
+   * @param httpClient the HTTP client used to call IdP UserInfo endpoints
+   * @param objectMapper used to parse UserInfo responses
+   * @param meterRegistry metrics sink, may be {@code null}
+   */
   public ScopedOidcClaimsProviderFactory(
       final ScopedClientRegistrationFactory clientRegistrationFactory,
-      final OidcUserInfoHttpClient userInfoHttpClient,
+      final HttpClient httpClient,
+      final ObjectMapper objectMapper,
       final MeterRegistry meterRegistry) {
     this.clientRegistrationFactory = clientRegistrationFactory;
-    this.userInfoHttpClient = userInfoHttpClient;
+    userInfoHttpClient = new OidcUserInfoHttpClient(httpClient, objectMapper);
     this.meterRegistry = meterRegistry;
   }
 

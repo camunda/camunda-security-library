@@ -11,10 +11,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfiguration;
+import java.net.http.HttpClient;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -36,7 +38,8 @@ import org.springframework.security.oauth2.core.AuthorizationGrantType;
 final class ScopedOidcClaimsProviderFactoryTest {
 
   @Mock private ScopedClientRegistrationFactory clientRegistrationFactory;
-  @Mock private OidcUserInfoHttpClient userInfoHttpClient;
+  @Mock private HttpClient httpClient;
+  @Mock private ObjectMapper objectMapper;
 
   @InjectMocks private ScopedOidcClaimsProviderFactory factory;
 
@@ -67,7 +70,7 @@ final class ScopedOidcClaimsProviderFactoryTest {
 
     assertThat(provider).isInstanceOf(NoopOidcClaimsProvider.class);
     // Disabled augmentation must short-circuit without consulting any collaborator.
-    verifyNoInteractions(clientRegistrationFactory, userInfoHttpClient);
+    verifyNoInteractions(clientRegistrationFactory, httpClient);
   }
 
   // Null augmentation config → NoopOidcClaimsProvider (no network calls made)
@@ -92,7 +95,7 @@ final class ScopedOidcClaimsProviderFactoryTest {
 
     // then
     assertThat(provider).isInstanceOf(NoopOidcClaimsProvider.class);
-    verifyNoInteractions(clientRegistrationFactory, userInfoHttpClient);
+    verifyNoInteractions(clientRegistrationFactory, httpClient);
   }
 
   // Augmentation enabled, no userInfoUri → CachingOidcClaimsProvider (empty map)

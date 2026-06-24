@@ -91,9 +91,11 @@ class ScopedOidcInfrastructureConfigurationTest {
 
   /**
    * Imports the two configurations in the SAME order as the umbrella {@code
-   * CamundaSecurityAutoConfiguration} (claims-provider config first, scoped infrastructure second).
-   * This reproduces the production {@code @ConditionalOnBean} evaluation ordering: the named {@code
-   * oidcUserInfoHttpClient} bean is registered before the scoped factory's condition is checked.
+   * CamundaSecurityAutoConfiguration} (claims-provider config first, scoped infrastructure second),
+   * so the tests run against the real production composition. The scoped factory is registered
+   * unconditionally, so it must compose cleanly whether or not the claims-provider config
+   * contributes the named {@code oidcUserInfoHttpClient} bean (present only when augmentation is
+   * enabled); these tests assert it registers in both cases without context failure.
    */
   @Configuration
   @Import({OidcClaimsProviderConfiguration.class, ScopedOidcInfrastructureConfiguration.class})
@@ -118,7 +120,7 @@ class ScopedOidcInfrastructureConfigurationTest {
   @Configuration
   static class CustomScopedFactory {
     final ScopedOidcClaimsProviderFactory customFactory =
-        new ScopedOidcClaimsProviderFactory(null, null, null);
+        new ScopedOidcClaimsProviderFactory(null, null, null, null);
 
     @Bean
     ScopedOidcClaimsProviderFactory scopedOidcClaimsProviderFactory() {
