@@ -12,7 +12,6 @@ import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpClient;
-import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -57,10 +56,7 @@ public class OidcClaimsProviderConfiguration {
       havingValue = "true")
   @ConditionalOnMissingBean(value = OidcClaimsProvider.class, name = "oidcUserInfoHttpClient")
   HttpClient oidcUserInfoHttpClient() {
-    return HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(2))
-        .followRedirects(HttpClient.Redirect.NEVER)
-        .build();
+    return OidcUserInfoHttpClient.defaultHttpClient();
   }
 
   @Bean

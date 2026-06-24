@@ -36,6 +36,19 @@ final class OidcUserInfoHttpClient implements OidcUserInfoFetcher {
     this.objectMapper = objectMapper;
   }
 
+  /**
+   * The default UserInfo {@link HttpClient}: short connect timeout and no redirect following (a
+   * UserInfo endpoint should answer directly). Shared by the cluster-level {@code
+   * oidcUserInfoHttpClient} bean and the per-scope factory's fallback so the settings live in one
+   * place.
+   */
+  static HttpClient defaultHttpClient() {
+    return HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(2))
+        .followRedirects(HttpClient.Redirect.NEVER)
+        .build();
+  }
+
   @Override
   public Map<String, Object> fetch(final String userInfoUri, final String bearerToken) {
     final URI uri;
