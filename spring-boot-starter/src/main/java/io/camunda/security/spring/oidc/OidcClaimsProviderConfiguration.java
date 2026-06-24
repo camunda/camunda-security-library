@@ -79,9 +79,11 @@ public class OidcClaimsProviderConfiguration {
     if (uriByIssuer.isEmpty()) {
       LOG.warn(
           "UserInfo augmentation is enabled but no ClientRegistration has a userInfoUri;"
-              + " augmentation will silently skip every request. Ensure"
-              + " camunda.security.authentication.oidc.user-info-enabled=true (the default)"
-              + " and that the IdP's discovery document includes a userinfo_endpoint.");
+              + " augmentation will silently skip every request. Ensure UserInfo is enabled —"
+              + " camunda.security.authentication.oidc.user-info-enabled=true (the default), or the"
+              + " per-provider camunda.security.authentication.providers.oidc.<id>.user-info-enabled"
+              + " flag in multi-provider setups — and that the IdP's discovery document includes a"
+              + " userinfo_endpoint.");
     }
     return new CachingOidcClaimsProvider(
         new OidcUserInfoHttpClient(httpClient, objectMapper),
