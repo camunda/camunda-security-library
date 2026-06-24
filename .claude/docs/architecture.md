@@ -39,7 +39,7 @@ Shared across Hub and all OCs:
 - `Principal` — user or machine identity
 - `Authorization` — granted permission scoped to a resource
 
-Authorization scope types: `ALL`, `TENANT`, `PHYSICAL_TENANT`.
+Authorization levels: `ALL`, `TENANT`, `PHYSICAL_TENANT`.
 
 ## Data Flow
 

@@ -1,5 +1,7 @@
 ## 7. Deployment view
 
+> The diagrams in this section use a **whitebox view** that shows internal component layers (Gateway/Search, Broker/Engine). This contrasts with the context views in §4, which treat Hub, OC, and Optimize as black boxes. The whitebox style is used here to show where Camunda Security Library and Security Engine Framework are embedded within each deployment.
+
 ### 7.1 Self-Managed deployment
 
 In Self-Managed, the customer owns and operates all infrastructure. Three deployment views are shown below, mirroring the general modes and scaling variants from section 4.
@@ -10,7 +12,7 @@ In Self-Managed, the customer owns and operates all infrastructure. Three deploy
 - OC acts as local SoT for identity and policy.
 - The Enterprise IdP is integrated directly via OIDC/SAML; no Camunda-operated broker is involved.
 - OC includes an embedded gateway/search layer and a broker/engine layer; policy is enforced by Camunda Security Library (gateway) and Security Engine Framework (broker/engine).
-- Multiple engines per cluster are supported with OC-level policy propagation.
+- Multiple engines per cluster are supported with cluster-level policy propagation.
 - Suitable for production use cases that do not require cross-cluster policy management.
 
 ```mermaid
@@ -45,12 +47,12 @@ flowchart TB
   OC --> EnterpriseIdP
 ```
 
-#### 7.1.2 Full mode (Hub + Orchestration Cluster, self-managed)
+#### 7.1.2 Full mode (Hub + Orchestration Cluster + Optimize, self-managed)
 
-An advanced Self-Managed topology where the customer also operates Hub. Hub becomes the central policy SoT, and policy is propagated to each OC via the platform-owned channel. The Admin UI on OC runs in read-only mode; all policy authoring happens in Hub.
+An advanced Self-Managed topology where the customer also operates Hub. Hub becomes the central policy SoT, and policy is propagated to each OC and Optimize via the platform-owned channel. The Admin UI on OC runs in read-only mode; all policy authoring happens in Hub. Optimize uses the same Camunda Security Library and receives policy from Hub.
 
-- Hub and all OC instances are deployed and operated by the customer on their own infrastructure.
-- The Enterprise IdP is integrated at both Hub (management plane auth) and OC (execution plane auth) levels.
+- Hub and all OC and Optimize instances are deployed and operated by the customer on their own infrastructure.
+- The Enterprise IdP is integrated at both Hub (management plane auth) and OC/Optimize (execution/analytics plane auth) levels.
 - Cluster discovery and registration are handled via the `ClusterRegistryPort` and `ClusterRegistrationService` ports; the host application's adapter determines how new OCs are discovered and registered.
 - OC is configured with an embedded gateway/search layer and broker/engine layer; Camunda Security Library runs in gateway, Security Engine Framework runs in broker/engine.
 - Policy flows top-down: Hub -> Gateway -> Broker(Engine), same as in SaaS, but without a Camunda-operated broker.
@@ -58,7 +60,7 @@ An advanced Self-Managed topology where the customer also operates Hub. Hub beco
 
 ```mermaid
 ---
-title: Self-Managed Deployment – Full mode (Hub + OC)
+title: Self-Managed Deployment – Full mode (Hub + OC + Optimize)
 ---
 flowchart TB
   subgraph Customer["Customer-managed Infrastructure"]
@@ -92,30 +94,44 @@ flowchart TB
       Operate & Tasklist & AdminOC --> OC
     end
 
+    subgraph Analytics["Analytics Plane"]
+      OptimizeUI["Optimize UI"]
+
+      subgraph OptimizeApp["Optimize"]
+        SecGatOpt["Camunda Security Library"]
+      end
+
+      OptimizeUI --> OptimizeApp
+    end
+
     HubDB[("Hub DB")]
     OCDB[("OC DB (Primary / Secondary)")]
+    OptDB[("Optimize DB")]
 
     Hub --> OC
+    Hub -->|"policy propagation"| OptimizeApp
     Hub --> HubDB
     OC --> OCDB
+    OptimizeApp --> OptDB
+    OC -->|"Process data"| OptimizeApp
   end
 
   EnterpriseIdP[["Enterprise IdP</br>(Keycloak, Entra, Okta, ...)"]]
-  Hub & OC --> EnterpriseIdP
+  Hub & OC & OptimizeApp --> EnterpriseIdP
 ```
 
-#### 7.1.3 OC-only mode Standalone (2 Gateways + 3 Brokers)
+#### 7.1.3 OC-only mode – multi-instance example (N gateways + M brokers)
 
-Standalone OC topology for higher throughput and availability. Hub is not present; OC remains the local policy source of truth. Two gateways provide ingress and search-layer responsibilities, and three brokers execute workloads.
+Standalone OC topology for higher throughput and availability. Hub is not present; OC remains the local policy source of truth. This diagram shows 2 gateways and 3 brokers as an illustrative example. The same topology scales to any N gateways and M brokers; each gateway runs CSL and each broker runs Security Engine Framework.
 
-- Two gateways each run the Camunda Security Library and connect clients (Operate, Tasklist, Admin UI, workers) to the cluster.
-- Three brokers run the Security Engine Framework and receive policy snapshots from the gateway layer.
-- Each broker hosts multiple engines (Physical Tenants); logical tenants are scoped onto those engines using `ALL`, `TENANT` and `PHYSICAL_TENANT`.
+- Each gateway runs the Camunda Security Library and connects clients (Operate, Tasklist, Admin UI, workers) to the cluster.
+- Each broker runs the Security Engine Framework and receives policy snapshots from the gateway layer.
+- Each broker hosts multiple engines (Physical Tenants); logical tenants are assigned to engines using authorization levels `ALL`, `TENANT` and `PHYSICAL_TENANT`.
 - Suitable for larger standalone Self-Managed deployments that need horizontal scale without Hub.
 
 ```mermaid
 ---
-title: Self-Managed Deployment - OC-only standalone (2 Gateways + 3 Brokers)
+title: Self-Managed Deployment - OC-only standalone (N Gateways + M Brokers, illustrated as 2+3)
 ---
 flowchart TB
   subgraph Customer["Customer-managed Infrastructure"]
@@ -159,6 +175,8 @@ flowchart TB
   GW1 & GW2 --> EnterpriseIdP
 ```
 
+> **Note on storage in multi-instance topologies:** The `DBs` node in the diagram is a summary. In practice, each engine (Physical Tenant) has its own dedicated storage scope: embedded primary storage (RocksDB — one instance per engine, internal to the broker) and its own secondary storage (Elasticsearch, OpenSearch, or RDBMS — either a dedicated database per engine or a dedicated schema within a shared database instance).
+
 ---
 
 ### 7.2 SaaS deployment
@@ -191,18 +209,24 @@ flowchart TB
 
     subgraph OrgA["Organization A"]
       OCA["Orchestration Cluster A"]
+      OptA["Optimize A"]
     end
 
     subgraph OrgB["Organization B"]
       OCB["Orchestration Cluster B"]
+      OptB["Optimize B"]
     end
 
     Hub --> OCA
     Hub --> OCB
+    Hub -->|"policy propagation"| OptA
+    Hub -->|"policy propagation"| OptB
+    OCA -->|"Process data"| OptA
+    OCB -->|"Process data"| OptB
   end
 
   EnterpriseIdP[["Enterprise IdPs / brokers</br>(customer-managed or SaaS-managed during migration)"]]
-  Hub & OCA & OCB --> EnterpriseIdP
+  Hub & OCA & OCB & OptA & OptB --> EnterpriseIdP
 ```
 
 ---
