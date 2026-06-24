@@ -107,8 +107,10 @@ public final class AuthorizationService implements AuthorizationCheckPort {
       final AuthorizationScope scope = AuthorizationScope.of(resourceId);
       if (!authorizationChecker.isAuthorized(scope, authentication, authorization)) {
         LOG.debug(
-            "Authorization denied for principal on resource [{}:{}]",
+            "Authorization denied for [{}] on resource [{}:{}:{}]",
+            principalType(authentication),
             authorization.resourceType(),
+            authorization.permissionType(),
             resourceId);
         if (isTenantCheck) {
           return Either.left(new AuthorizationRejection.Tenant(resourceId));
@@ -152,7 +154,9 @@ public final class AuthorizationService implements AuthorizationCheckPort {
       if (maybeEvaluator.isPresent()
           && !maybeEvaluator.get().isAuthorized(authentication, resource)) {
         LOG.debug(
-            "Property-based authorization denied for principal on property [{}] of resource type [{}]",
+            "Property-based authorization denied for [{}] on [{}] property [{}] of resource type [{}]",
+            principalType(authentication),
+            authorization.permissionType(),
             propertyName,
             authorization.resourceType());
         return Either.left(
@@ -162,5 +166,18 @@ public final class AuthorizationService implements AuthorizationCheckPort {
     }
 
     return Either.right(null);
+  }
+
+  private static String principalType(final CamundaAuthentication authentication) {
+    if (authentication.isAnonymous()) {
+      return "anonymous";
+    }
+    if (authentication.authenticatedUsername() != null) {
+      return "user";
+    }
+    if (authentication.authenticatedClientId() != null) {
+      return "client";
+    }
+    return "unknown";
   }
 }
