@@ -37,6 +37,17 @@ class OidcClaimsProviderConfigurationTest {
               AutoConfigurations.of(
                   CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class));
 
+  // Same as runner but with a registration that exposes a userInfoUri, so the caching provider
+  // builds without tripping the fail-fast on an empty issuer→userInfoUri map.
+  private final ApplicationContextRunner populatedRunner =
+      new ApplicationContextRunner()
+          .withPropertyValues("camunda.security.authentication.method=oidc")
+          .withUserConfiguration(PopulatedClientRegistrationRepository.class)
+          .withUserConfiguration(StubObjectMapper.class)
+          .withConfiguration(
+              AutoConfigurations.of(
+                  CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class));
+
   @Test
   void noopIsRegisteredByDefaultWhenAugmentationIsDisabled() {
     runner.run(
@@ -49,7 +60,7 @@ class OidcClaimsProviderConfigurationTest {
 
   @Test
   void cachingProviderIsRegisteredWhenAugmentationEnabled() {
-    runner
+    populatedRunner
         .withPropertyValues(
             "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
         .run(
@@ -57,6 +68,20 @@ class OidcClaimsProviderConfigurationTest {
               assertThat(ctx).hasSingleBean(OidcClaimsProvider.class);
               assertThat(ctx.getBean(OidcClaimsProvider.class))
                   .isInstanceOf(CachingOidcClaimsProvider.class);
+            });
+  }
+
+  @Test
+  void cachingProviderFailsFastWhenNoUserInfoUriResolved() {
+    // Augmentation enabled but no ClientRegistration exposes a userInfoUri — a config mismatch that
+    // must fail loudly so the operator notices, rather than silently running without augmentation.
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
+        .run(
+            ctx -> {
+              assertThat(ctx).hasFailed();
+              assertThat(ctx).getFailure().hasRootCauseInstanceOf(IllegalStateException.class);
             });
   }
 
@@ -106,8 +131,9 @@ class OidcClaimsProviderConfigurationTest {
   @Test
   void hostCanOverrideOidcUserInfoHttpClientBean() {
     // Context must start cleanly — if @ConditionalOnMissingBean(name) didn't back off,
-    // Spring would throw BeanDefinitionOverrideException on the duplicate name.
-    runner
+    // Spring would throw BeanDefinitionOverrideException on the duplicate name. Uses the populated
+    // repo so the caching provider builds rather than tripping the no-userInfoUri fail-fast.
+    populatedRunner
         .withPropertyValues(
             "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
         .withUserConfiguration(HostHttpClientConfig.class)

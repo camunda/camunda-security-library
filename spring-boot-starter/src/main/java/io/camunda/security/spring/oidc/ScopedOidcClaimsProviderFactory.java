@@ -16,8 +16,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 
 /**
@@ -25,8 +23,8 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
  * AuthenticationConfiguration}. Parallels {@link ScopedJwtDecoderFactory}: derives
  * issuer→userInfoUri from the config's {@link ClientRegistration}s via {@link
  * ScopedClientRegistrationFactory}. When augmentation is enabled on the config it builds a {@link
- * CachingOidcClaimsProvider} (failing fast if the config declares no OIDC provider); when
- * augmentation is disabled it returns a {@link NoopOidcClaimsProvider}.
+ * CachingOidcClaimsProvider}, failing fast if the config declares no OIDC provider or none exposes
+ * a userInfoUri; when augmentation is disabled it returns a {@link NoopOidcClaimsProvider}.
  *
  * <p>Augmentation enabled-flag and cache settings are read from the per-scope {@link
  * AuthenticationConfiguration} (via {@code oidc.userInfoAugmentation}), not from the global {@link
@@ -35,8 +33,6 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
  * control.
  */
 public final class ScopedOidcClaimsProviderFactory {
-
-  private static final Logger LOG = LoggerFactory.getLogger(ScopedOidcClaimsProviderFactory.class);
 
   private final ScopedClientRegistrationFactory clientRegistrationFactory;
   private final OidcUserInfoHttpClient userInfoHttpClient;
@@ -70,8 +66,9 @@ public final class ScopedOidcClaimsProviderFactory {
    * @param authentication the per-scope authentication configuration; must not be {@code null}
    * @return an {@link OidcClaimsProvider} appropriate for the given config
    * @throws IllegalStateException if augmentation is enabled but the config declares no OIDC
-   *     provider (mirrors {@link ScopedJwtDecoderFactory}, which rejects a provider-less OIDC
-   *     scope)
+   *     provider, or declares providers none of which exposes a userInfoUri — both are config
+   *     mismatches that would leave the scope silently un-augmented (the provider-less case mirrors
+   *     {@link ScopedJwtDecoderFactory}, which also rejects a provider-less OIDC scope)
    */
   public OidcClaimsProvider buildClaimsProvider(final AuthenticationConfiguration authentication) {
     Objects.requireNonNull(authentication, "authentication must not be null");
@@ -92,13 +89,14 @@ public final class ScopedOidcClaimsProviderFactory {
     }
     final Map<String, String> uriByIssuer = buildUserInfoUriByIssuer(registrations);
     if (uriByIssuer.isEmpty()) {
-      LOG.warn(
-          "UserInfo augmentation is enabled but no ClientRegistration has a userInfoUri;"
-              + " augmentation will silently skip every request. Ensure UserInfo is enabled —"
-              + " camunda.security.authentication.oidc.user-info-enabled=true (the default), or the"
-              + " per-provider camunda.security.authentication.providers.oidc.<id>.user-info-enabled"
-              + " flag in multi-provider setups — and that the IdP's discovery document includes a"
-              + " userinfo_endpoint.");
+      throw new IllegalStateException(
+          "UserInfo augmentation is enabled for the scope but no OIDC provider exposes a"
+              + " userInfoUri, so no claims can be augmented — the scope would silently run without"
+              + " augmentation. Ensure UserInfo is enabled"
+              + " (camunda.security.authentication.oidc.user-info-enabled=true, the default, or the"
+              + " per-provider providers.oidc.<id>.user-info-enabled flag in multi-provider setups)"
+              + " and that the IdP's discovery document includes a userinfo_endpoint, or disable"
+              + " userinfo augmentation for this scope.");
     }
     return new CachingOidcClaimsProvider(
         userInfoHttpClient, uriByIssuer, augmentation, meterRegistry);
