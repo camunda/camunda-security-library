@@ -62,7 +62,7 @@ public final class ScopedOidcClaimsProviderFactory {
   public OidcClaimsProvider buildClaimsProvider(final AuthenticationConfiguration authentication) {
     Objects.requireNonNull(authentication, "authentication must not be null");
     final var augmentation = authentication.getOidc().getUserInfoAugmentation();
-    if (!augmentation.isEnabled()) {
+    if (augmentation == null || !augmentation.isEnabled()) {
       return new NoopOidcClaimsProvider();
     }
 
