@@ -121,7 +121,11 @@ class ScopedOidcInfrastructureConfigurationTest {
   @Configuration
   static class CustomScopedFactory {
     final ScopedOidcClaimsProviderFactory customFactory =
-        new ScopedOidcClaimsProviderFactory(null, null, null, null);
+        new ScopedOidcClaimsProviderFactory(
+            new ScopedClientRegistrationFactory(),
+            OidcUserInfoHttpClient.defaultHttpClient(),
+            new ObjectMapper(),
+            null);
 
     @Bean
     ScopedOidcClaimsProviderFactory scopedOidcClaimsProviderFactory() {
