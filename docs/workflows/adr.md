@@ -109,6 +109,7 @@ Accepted
 When the ADR accompanies a code change:
 
 - Reference the ADR from the PR description.
+- Add a link to the new ADR in `docs/architecture/09-architecture-decisions.md` (§9.1 list).
 - If the code introduces a new contract, link the ADR from the contract's class-level Javadoc or module README.
 - If the ADR supersedes another, edit the predecessor's `Status` to `Superseded by ADR-NNNN`. This is the **only** allowed substantive edit to a decided ADR — see [`.claude/docs/guardrails.md`](../../.claude/docs/guardrails.md).
 
@@ -121,6 +122,7 @@ Show the user the file path of the new ADR and a one-line summary. If the decide
 Before committing, verify:
 
 - [ ] `Deciders` line is present and lists everyone whose agreement the decision relies on.
+- [ ] The four-digit number is unique — no other file in `docs/adr/` starts with `NNNN-`.
 - [ ] `Status` matches the actual state of the decision (`Accepted` is the default).
 - [ ] Context ends with the question this ADR answers.
 - [ ] At least one alternative is documented and rejected.

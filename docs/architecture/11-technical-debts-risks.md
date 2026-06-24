@@ -21,7 +21,7 @@ These are unresolved design questions that require a dedicated ADR before implem
 
 - `EngineCommandPort` SPI boundary for OC → engine policy propagation is still undefined (see Open design questions above).
 - The deployment strategy property values currently use an `oc-` prefix (`oc-standalone`, `oc-managed`); a rename to `standalone` / `managed` is planned (docs already use the shorter names).
-- ADR numbering has duplicate entries for 0011, 0020, and 0023; a file rename to resolve the ambiguity is deferred.
+- ADR numbering has duplicate entries for 0011, 0020, and 0023; a file rename to resolve the ambiguity is deferred. A CI lint step that fails when two files in `docs/adr/` share the same four-digit numeric prefix is planned to prevent recurrence.
 
 ---
 
