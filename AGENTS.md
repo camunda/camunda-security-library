@@ -26,8 +26,8 @@ Active capabilities are selected via a deployment strategy configuration propert
 
 | Strategy | Policy Authority | Authoring | Outbox Dispatch | Engine Projection |
 |---|---|---|---|---|
-| `standalone` | OC (local SoT) | Yes | No | Yes |
-| `managed` | Receives from Hub | No (read-only) | No | Yes |
+| `oc-standalone` | OC (local SoT) | Yes | No | Yes |
+| `oc-managed` | Receives from Hub | No (read-only) | No | Yes |
 | `hub` | Hub (central SoT) | Yes | Yes | No |
 
 Authentication and authorization enforcement is always active in every strategy.

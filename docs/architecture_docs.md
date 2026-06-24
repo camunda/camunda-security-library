@@ -819,9 +819,7 @@ Key rule: all port interfaces — both inbound and outbound — are defined insi
 
 In addition to core ports, the library is structured across four Maven modules:
 
-- `core/` — framework-free domain logic and all port interface definitions (`port/in/`, `port/out/`). Zero Spring or persistence dependencies.
-- `api/` — public, host-facing surface: model records (`api/model/`), context/helper contracts (`api/context/`), and configuration records bound by Spring in the starter (`api/model/config/`). No dependency on `core/`.
-- `validation/` — centralized validators for identity initialization data (users, groups, tenants, roles, mapping rules, authorizations). Used by the starter to validate initialization configuration.
+- `api/` — public, host-facing surface: model records (`api/model/`), context/helper contracts (`api/context/`), and configuration classes bound by Spring in the starter (`api/model/config/`). No dependency on `core/`.
 - `spring-boot-starter/` — Spring configuration classes, filter chain assembly, and default port implementations. Hosts activate these via explicit `@Import` (see [ADR-0008](adr/0008-no-spring-boot-auto-configuration.md)).
 
 The `api` contracts are consumer-facing and do not need to be outbound host-implemented adapters.
@@ -845,6 +843,8 @@ graph LR
       OCP["OidcProviderConfigurationPort"]
       PP["PolicyPort"]
       PAP["PolicyApplyPort"]
+      TP["TenantPort"]
+      CRP["ClusterRegistrationPort"]
     end
     DL["Implementations</br>(spring-boot-starter)"]
     subgraph OUT_PORTS["Outbound ports (core/port/out/)"]
@@ -877,7 +877,7 @@ graph LR
 
   RPP & CUP & OCP & PP & PAP -->|"implemented by"| DL
 
-  DL -->|"calls"| ARP & MP & SSP & SECP & PRP & OX
+  DL -->|"calls"| ARP & ASRP & ACP & MP & BAUDP & AUPP & SSP & SECP
 
   ARP -->|"implemented by"| ARP_I
   MP -->|"implemented by"| MP_I
@@ -930,15 +930,15 @@ The same library core is reused in all deployments. **In every runtime mode, Aut
 
 Mode activation is property-driven via Spring Boot conditions (`@ConditionalOnProperty`, or a small custom `@Conditional` when multiple properties contribute to the decision), not via Spring profiles.
 
-**Current implementation state:** authentication method selection (`camunda.security.authentication.method=basic|oidc`) is active today and governs which filter chains are assembled. The deployment strategy property (`hub` / `managed` / `standalone` — current property values use an `oc-` prefix: `oc-managed`, `oc-standalone`) is defined in the configuration model but is not yet consumed by the filter chain layer — it is planned for the policy work that wires `PolicyPort`, `PolicyApplyPort`, and the Hub/OC-specific outbound ports.
+**Current implementation state:** authentication method selection (`camunda.security.authentication.method=basic|oidc`) is active today and governs which filter chains are assembled. Deployment strategy wiring (Hub vs. OC managed vs. OC standalone) is planned for the policy work; it is not currently represented as a bound `camunda.security.*` configuration property.
 
-Hub enforces AuthN/AuthZ for the Hub UI. This is exactly the same `ResourcePermissionPort` and `IdpClientPort` used by OC, just configured with Hub-scoped resources instead of cluster/engine resources.
+Hub enforces AuthN/AuthZ for the Hub UI. This is exactly the same `ResourcePermissionPort` and Spring Security OIDC/basic authentication setup used by OC, just configured with Hub-scoped resources instead of cluster/engine resources.
 
 **Camunda Security Library responsibilities by deployment strategy:**
 
 | Deployment strategy | AuthN/AuthZ enforcement | Policy source | Policy authoring | Outbox dispatch to OCs | Engine projection | Cluster registry | Runtime context |
 |---|---|---|---|---|---|---|---|
-| `hub` | ✅ Hub-scoped (org, workspace, cluster resources) | Hub is SoT | ✅ via Hub UI/API | ✅ via `OutboxPort` | ❌ no engines in Hub | ✅ `ClusterRegistrationService` + `ClusterRegistryPort` | Hub authentication and policy management for the Hub UI |
+| `hub` | ✅ Hub-scoped (org, workspace, cluster resources) | Hub is SoT | ✅ via Hub UI/API | ✅ via `OutboxPort` | ❌ no engines in Hub | ✅ `ClusterRegistrationPort` + `ClusterRegistryPort` | Hub authentication and policy management for the Hub UI |
 | `managed` | ✅ Cluster-scoped (engine, tenant, task resources) | Receives from Hub | ❌ (read-only in the admin section of the OC UI) | ❌ | ✅ via `EngineCommandPort` | ❌ | OC receives policy via `/identity/policies/apply` endpoint from Hub; enforces for all cluster requests and exposes the applied policy through the admin section of the OC UI |
 | `standalone` | ✅ Cluster-scoped (engine, tenant, task resources) | OC is local SoT | ✅ via the admin section of the OC UI and OC APIs | ❌ | ✅ via `EngineCommandPort` | ❌ | OC is fully autonomous; local policy authoring and engine projection through the admin section of the OC UI |
 
@@ -1030,8 +1030,8 @@ graph LR
   end
 
   subgraph CSL_CORE["CSL core"]
-    ACP["AuthorizationCheckPort</br>(core/port/in/)"]
-    AS["AuthorizationService</br>(core implementation)"]
+    ACP["AuthorizationCheckPort</br>(planned; core/port/in/)"]
+    AS["AuthorizationService</br>(planned core implementation)"]
     MP["MembershipPort</br>(core/port/out/)"]
     ASRP["AuthorizationScopeRepositoryPort</br>(core/port/out/)"]
   end
