@@ -11,6 +11,8 @@ This unified architecture builds on existing identity arc42 docs and ADRs for OC
 
 This section contains detailed Architectural Decision Records (ADRs) for the Camunda Security Library. Each ADR documents a specific decision, the context, alternatives considered, and consequences.
 
+> When adding a new ADR file to `docs/adr/`, add a corresponding entry to this list.
+
 - [ADR-0001: PolicyVersion commits and full-policy propagation](../adr/0001-policy-version-change-sets.md)
 - [ADR-0002: Placement of the Camunda Security Library (embedded vs standalone service)](../adr/0002-placement-of-the-security-gateway-framework.md)
 - [ADR-0003: Push vs Pull Policy Propagation (Hub ↔ Orchestration Clusters)](../adr/0003-push-vs-pull-policy-propagation.md)
