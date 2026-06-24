@@ -99,19 +99,18 @@ final class ScopedOidcClaimsProviderFactoryTest {
     verifyNoInteractions(clientRegistrationFactory, httpClient);
   }
 
-  // Augmentation enabled, no userInfoUri → CachingOidcClaimsProvider (empty map)
+  // Augmentation enabled but no provider exposes a userInfoUri → fail fast (config mismatch)
   @Test
-  void shouldBuildCachingProviderWithEmptyMapWhenNoUserInfoUriConfigured() {
+  void shouldThrowWhenAugmentationEnabledButNoUserInfoEndpoint() {
     final var authentication = authEnabled("https://idp.example.com", null);
 
-    // Registration has no userInfoUri
+    // Provider resolves but has no userInfoUri — augmentation could never run.
     when(clientRegistrationFactory.create(authentication))
         .thenReturn(List.of(registrationWithoutUserInfo("oidc", "https://idp.example.com")));
 
-    final OidcClaimsProvider provider = factory.buildClaimsProvider(authentication);
-
-    // Provider is still built — it just won't augment any token (empty issuer→uri map)
-    assertThat(provider).isInstanceOf(CachingOidcClaimsProvider.class);
+    assertThatThrownBy(() -> factory.buildClaimsProvider(authentication))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("userInfoUri");
   }
 
   // Augmentation enabled but no OIDC provider resolves → fail fast (broken config)
