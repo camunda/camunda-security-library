@@ -14,9 +14,9 @@ Short- to midterm target: Admins configure cluster policies (including Physical 
   1. Admin signs into the Hub UI.
   2. Admin selects a specific Orchestration Cluster and opens its policy configuration.
   3. Admin edits tenants, roles, groups, mapping rules, and authorizations for that cluster, including:
-  - Cluster-wide permissions (for example cluster admins).
-  - Tenant-scoped permissions (for example `retail` vs `wholesale`).
-  - Physical Tenant-scoped (`PHYSICAL_TENANT`).
+     - Cluster-wide permissions (for example cluster admins).
+     - Tenant-scoped permissions (for example `retail` vs `wholesale`).
+     - Physical Tenant-scoped (`PHYSICAL_TENANT`).
   4. Hub Camunda Security Library validates and persists the changes in the selected organization scope, producing a new `PolicyVersion` for the target cluster.
   5. Hub propagates the updated policy to the target OC through a platform-owned transport channel; OC Camunda Security Library applies it and updates the Physical Tenant-scoped (`PHYSICAL_TENANT`) projections.
   6. The admin section of the OC UI, in read-only mode, allows cluster operators to view the effective policies per engine and tenant, including the applied policy version.

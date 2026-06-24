@@ -17,7 +17,7 @@ OC (the `camunda` monorepo) runs persistent server-side web sessions: a Spring S
 `WebSessionDeletionTask`) backed by either a search index (Elasticsearch/OpenSearch) or RDBMS. CSL
 already declared an empty outbound port `SessionStorePort`, signalling that session *storage* was
 always intended to be a CSL contract satisfied by a host-provided backend (see
-`docs/architecture_docs.md`, "Expose session persistence behind a `SessionStore` port").
+`docs/architecture/05-building-block-view.md`, "Expose session persistence behind a `SessionStore` port").
 
 Before this decision the session classes lived entirely in OC's `authentication` module and bound
 directly to OC search types — `PersistentWebSessionClient`, `PersistentWebSessionEntity`,

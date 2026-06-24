@@ -1,9 +1,5 @@
 # Unified Identity Architecture
 
-SCIM provisioning is part of the planned end-state target architecture, but it is intentionally out of scope in this document; from the library perspective, SCIM is handled as an additional inbound port/adapter.
-
----
-
 ## 1. Introduction and goals
 
 > **Document structure:** Sections 1 and 2 provide as-is context — the current identity architecture and its limitations. The arc42 target architecture begins at section 3.
@@ -21,12 +17,12 @@ This document describes the planned Unified Identity Architecture for Camunda Hu
 
 Full term definitions are in the [Glossary (§12)](#12-glossary). Quick reference for reading the diagrams:
 
-- **Physical Tenant** = an Engine (one execution context inside a Broker). Each Engine is a Physical Tenant. A Broker hosting multiple Engines hosts multiple Physical Tenants.
+- **Physical Tenant** = an Engine (one execution context inside a Broker). Each Engine is a Physical Tenant. A Broker hosting multiple Engines hosts multiple Physical Tenants. *This is an OC-level concept; in CSL's API the same boundary surfaces as the `PHYSICAL_TENANT` scope type in the authorization model, and as a separate `ScopedSecurityDescriptor` contributed via the `CamundaSecurityScopeProvider` SPI.*
 - **Tenant** = a logical Tenant (data/access partition, e.g. `default`, `retail`) unless written as **Physical Tenant**.
 - **OC** at high level = the logical Orchestration Cluster; at runtime = Gateway/Search layer + Broker/Engine layer.
 - **Hub UI** / **OC UI** = aggregated management-plane / execution-plane frontends, not per-component UIs.
-- **scope** (disambiguation): In the policy model, _scope_ refers to the authorization scope type (`ALL`, `TENANT`, `PHYSICAL_TENANT`). In the filter-chain SPI, _scope_ refers to a path-isolated API surface with its own provider set (see `CamundaSecurityScopeProvider`, ADR-0025). These are distinct concepts; context disambiguates throughout the document.
-- **Policy receiver** — a CSL-embedded host application that receives and enforces policy published by Hub, rather than authoring policy locally. OC instances using the `managed` deployment strategy and Optimize in full-mode deployments are policy receivers. See [Glossary (§12)](#12-glossary) for the full definition.
+- **scope** (disambiguation): In the policy model, _scope_ refers to the authorization scope type (`ALL`, `TENANT`, `PHYSICAL_TENANT`). In the filter-chain SPI, _scope_ refers to a path-isolated API surface with its own provider set (see `CamundaSecurityScopeProvider`, ADR-0025). These are distinct concepts; context disambiguates throughout the document. In OC, each filter-chain scope corresponds to one Physical Tenant (one engine).
+- **Policy receiver** — a host application that embeds CSL and receives and enforces policy published by Hub, rather than authoring policy locally. OC instances using the `managed` deployment strategy and Optimize in full-mode deployments are policy receivers. See [Glossary (§12)](#12-glossary) for the full definition.
 
 ---
 
@@ -176,7 +172,7 @@ The target architecture is based on the following assumptions:
     - The library itself has no knowledge of how a host application discovers or tracks Orchestration Clusters. Cluster registration and enumeration are exposed as generic port interfaces: the host application calls `ClusterRegistrationService` (inbound port) to inform the library about new or updated clusters; the library calls `ClusterRegistryPort` (outbound port) when it needs to enumerate clusters for policy targeting.
   - How a specific host application learns about newly created OCs — whether by querying an external service, consuming provisioning events, or reading configuration — is entirely an integration concern for the host and not part of the library.
 - In OC-only mode, the Orchestration Cluster is the local source of truth for policy; there is no Hub and therefore no cross-cluster policy coordination.
-- All physical tenants (engines) within a given Orchestration Cluster share the same cluster-level identity configuration; physical tenants never talk to IdPs directly and are not configured as OIDC clients.
+- Each physical tenant (engine) within an Orchestration Cluster has its own configuration; physical tenants never talk to IdPs directly and are not configured as OIDC clients themselves.
   - IdP client configuration is defined at the OC level and applied cluster-wide. Mapping rules and authorizations determine which physical tenants and resources a given principal can access.
   - In the first iteration, IdP configuration is static (configuration files). In a later iteration, both IdP and physical tenant configuration should be manageable via Hub.
 - Policy propagation across layers is eventually consistent:
@@ -820,6 +816,8 @@ Key rule: all port interfaces — both inbound and outbound — are defined insi
 In addition to core ports, the library is structured across four Maven modules:
 
 - `api/` — public, host-facing surface: model records (`api/model/`), context/helper contracts (`api/context/`), and configuration classes bound by Spring in the starter (`api/model/config/`). No dependency on `core/`.
+- `core/` — framework-free domain logic, port interfaces (`port/in/`, `port/out/`), and the authorization model. Zero Spring/JPA dependencies, enforced by ArchUnit. Depends on `api/`.
+- `validation/` — input validation for domain entities (roles, groups, users, authorizations, mapping rules). No Spring or persistence dependencies.
 - `spring-boot-starter/` — Spring configuration classes, filter chain assembly, and default port implementations. Hosts activate these via explicit `@Import` (see [ADR-0008](adr/0008-no-spring-boot-auto-configuration.md)).
 
 The `api` contracts are consumer-facing and do not need to be outbound host-implemented adapters.
@@ -894,7 +892,7 @@ graph LR
 |---|---|---|---|---|
 | `ResourcePermissionPort` | Answers whether the current principal has a given `PermissionType` on a given resource. The library ships a default implementation backed by `AuthorizationRepositoryPort`. | Active | all | `WebAppAuthorizationCheckFilter` |
 | `CamundaUserPort` | Returns the currently-authenticated user view and bearer token. The library ships OIDC and basic auth defaults. | Active | all | User-info REST endpoints |
-| `OidcProviderConfigurationPort` | Returns OIDC provider configurations keyed by registration ID, supporting multi-IdP and per-tenant OIDC setup. | Active | all | OIDC decoder factory, login picker, client registration |
+| `OidcProviderConfigurationPort` | Returns OIDC provider configurations keyed by registration ID, supporting multi-IdP, per-registration OIDC configuration. | Active | all | OIDC decoder factory, login picker, client registration |
 | `PolicyPort` | Queries and authors the unified policy model (roles, authorizations, mapping rules) in the local source-of-truth runtime. | Stub | `hub`, `standalone` | Admin REST controller, Hub UI / OC UI backend |
 | `PolicyApplyPort` | Applies a policy snapshot received from Hub to the local projection. Owns version checks and idempotent apply semantics. | Stub | `managed` | `POST /identity/policies/apply` endpoint |
 | `TenantPort` | Tenant lifecycle and lookup operations. | Stub | all | Admin REST controller, request filter |
@@ -1749,7 +1747,7 @@ In the SaaS legacy context, Auth0 acts as an identity federation layer (broker):
 
 ### Policy receiver
 
-A CSL-embedded host application that receives and enforces policy published by Hub, rather than authoring policy locally. OC instances using the `managed` deployment strategy and Optimize in full-mode deployments are policy receivers.
+A host application that embeds CSL and receives and enforces policy published by Hub, rather than authoring policy locally. OC instances using the `managed` deployment strategy and Optimize in full-mode deployments are policy receivers.
 
 Policy receivers maintain a local projection of the Hub-authored policy, updated via `POLICY_SNAPSHOT` messages whenever Hub commits a new `PolicyVersion`. They do not own policy authoring, tenant creation, or outbox dispatch — those capabilities are active only in the `hub` deployment strategy. Contrast with:
 
