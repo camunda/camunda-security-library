@@ -1,5 +1,10 @@
 ## 2. Current identity architecture (Camunda platform today)
 
+> **As-is context:** This section documents the current (pre-CSL) identity
+> architecture and its limitations. It is background material, not a target
+> architecture section. The Arc42 target architecture begins at
+> [§3 – Solution Strategy](./03-solution-strategy.md).
+
 ### 2.1 Identity components
 
 Today identity responsibilities are split across several components:
@@ -13,7 +18,7 @@ Today identity responsibilities are split across several components:
   - Uses Keycloak or an external OIDC provider plus its own SQL database in self-managed deployments (see existing Management Identity arc42 docs).
 
 - **SaaS Auth0 tenant (Console / Hub)**
-  - In SaaS today, Console and other management-side UIs use a Camunda-operated Auth0 tenant as their IdP/broker.
+  - In SaaS today, Console and other management-side UIs use a Camunda-operated Auth0 tenant as their IdP/broker (an identity federation layer: Auth0 federates customer Enterprise IdPs and issues tokens to Camunda services).
   - From the target-architecture perspective, this is an internal broker/IdP implementation detail, not part of the long-term reference model.
 
 - **Customer Enterprise IdPs**
@@ -144,22 +149,28 @@ The target architecture is based on the following assumptions:
     - The library itself has no knowledge of how a host application discovers or tracks Orchestration Clusters. Cluster registration and enumeration are exposed as generic port interfaces: the host application calls `ClusterRegistrationService` (inbound port) to inform the library about new or updated clusters; the library calls `ClusterRegistryPort` (outbound port) when it needs to enumerate clusters for policy targeting.
   - How a specific host application learns about newly created OCs — whether by querying an external service, consuming provisioning events, or reading configuration — is entirely an integration concern for the host and not part of the library.
 - In OC-only mode, the Orchestration Cluster is the local source of truth for policy; there is no Hub and therefore no cross-cluster policy coordination.
-- All engines within a given Orchestration Cluster share the same OC-level; engines never talk to IdPs directly and are not configured as OIDC/SAML clients.
-  - There will be one client per IDP (could be multiple per engine); we rely on roles and claims to decide which Engines each user can access and what they can do there.
-  - Since engines are in the first iteration just configurable via configuration files, IDPs are also just configurable like this. In a later iteration, both should be configurable via Hub.
+- All physical tenants (engines) within a given Orchestration Cluster share the same cluster-level identity configuration; physical tenants never talk to IdPs directly and are not configured as OIDC clients.
+  - IdP client configuration is defined at the OC level and applied cluster-wide. Mapping rules and authorizations determine which physical tenants and resources a given principal can access.
+  - In the first iteration, IdP configuration is static (configuration files). In a later iteration, both IdP and physical tenant configuration should be manageable via Hub.
 - Policy propagation across layers is eventually consistent:
   - Hub tracks the last acknowledged policy versions per OC.
   - Each OC tracks its own last applied policy version.
-  - Engines receive policy via the OC’s internal command path and are assumed to converge towards the OC-level policy state; engines do not track separate policy versions.
+  - Engines receive policy via the OC’s internal command path and are assumed to converge towards the cluster-scoped policy projection; engines do not track separate policy versions.
 - Existing infrastructure (databases, message brokers, cluster gateways, IdP configurations) is reused; no new global identity databases or dedicated identity clusters are introduced.
 
 ### 2.5 Unresolved issues
 
-- Multiple Hub instances: The architecture diagrams show a single shared Hub instance in SaaS and a single Hub in Self-Managed full mode. Some customers require multiple Hub instances — for example to fully separate delivery stages or organizational boundaries. The library architecture supports this because each Hub instance is an independent CSL deployment with its own cluster registry and policy state. Hub-to-Hub coordination is out of scope. An OC is associated with exactly one Hub at a time; reassignment is addressed as an open question in §9.1.
-- Satellite components (open scope): Two satellite runtimes that sit adjacent to Hub and OC are not yet explicitly covered:
-  - App Integrations backend — operates at the management plane level. It is not yet decided whether it should receive IdP configuration managed by Hub via the CSL port model, or whether it manages its own auth independently.
-  - Connectors runtime — operates at the OC level. The same open question applies: should it consume IdP config propagated by the OC CSL, or remain separately configured?
-  - The hexagonal port model accommodates both being integrated as CSL consumers in the future (by providing adapter implementations) without changing the core. Whether and when to do this is a scope decision outside this document.
+Open issues and technical debts are tracked in [§11 Technical Debts, Risks, and Open Design Questions](./11-technical-debts-risks.md).
+
+### 2.6 Constraints
+
+The following constraints bound the CSL design and limit what can change without an architectural decision:
+
+- **Embedded library, not a standalone service.** CSL runs inside host applications (Hub, OC); it has no own process, database, or network endpoint.
+- **Host-provided infrastructure.** Hosts supply all persistence, IdP clients, engine command channels, and outbox delivery via port adapter implementations. CSL `core` has zero framework or persistence dependencies (enforced by ArchUnit).
+- **No Spring Boot auto-configuration by default.** Hosts explicitly activate CSL configuration classes via `@ImportAutoConfiguration`; nothing activates from adding the Maven dependency alone (see [ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md)).
+- **No dedicated global identity database.** Existing host infrastructure (Hub DB, OC DB) is reused; no new shared identity cluster is introduced.
+- **Standalone OC without Hub is a first-class deployment mode.** OC-only must continue to work fully without any Hub dependency.
 
 ---
 

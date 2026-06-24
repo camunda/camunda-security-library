@@ -77,7 +77,7 @@ flowchart TB
 - OC is the single source of truth for all policy and configuration.
 - The same Camunda Security Library is used but configured for standalone operation.
 - Existing infrastructure is reused, no new databases or services are introduced.
-- OC owns the IdP client configurations for its tenants and engines; engines still only consume OC-level identity decisions and never call IdPs directly.
+- OC owns the IdP client configurations for its tenants and engines; engines receive identity decisions from the CSL-managed policy projection and never call IdPs directly.
 
 ### 4.3 OC + Optimize without Hub
 
@@ -121,7 +121,7 @@ flowchart TB
 
 Hub -> OC/Optimize data distribution (transport, retries, sequencing, dispatch, and delivery operations) is **outside this library**. It is a broader Hub/OC platform concern because the same channel must propagate multiple data categories (for example identity policy, secrets, and connection/configuration data), not only identity.
 
-Propagation architecture and operational details are documented in **[docs/hub-oc-data-propagation.md](hub-oc-data-propagation.md)**.
+Propagation architecture and operational details are documented in **[docs/hub-oc-data-propagation.md](../hub-oc-data-propagation.md)**.
 
 **Datastore and policy persistence for Optimize (CSL-relevant):**
 

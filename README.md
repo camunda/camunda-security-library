@@ -61,7 +61,7 @@ In CSL, a **Policy** is the effective access configuration for a scope, built fr
 
 Iteration one starts with explicit modeling of roles, groups, mapping rules, principals, and authorizations. If future requirements demand a higher-level aggregate, we can evolve this into a first-class `Policy` entity without changing the core concepts above.
 
-Authorizations can be scoped at three levels: `ALL`, `TENANT`, or `PHYSICAL_TENANT`.
+Authorizations have three authorization levels: `ALL`, `TENANT`, or `PHYSICAL_TENANT`.
 
 ## Getting Started
 
