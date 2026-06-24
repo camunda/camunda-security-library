@@ -11,12 +11,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -31,8 +31,11 @@ import org.springframework.context.annotation.Configuration;
  * io.camunda.security.api.model.config.AuthenticationConfiguration} rather than reading the global
  * configuration at construction time. Gating them on the global method was therefore an artificial
  * coupling. Moving them here decouples per-scope OIDC chain construction from the cluster's global
- * authentication mode. The additional {@link ScopedOidcClaimsProviderFactory} is gated on the
- * {@code oidcUserInfoHttpClient} bean, so it is present only when UserInfo augmentation is enabled.
+ * authentication mode. The additional {@link ScopedOidcClaimsProviderFactory} is always registered
+ * (mirroring the sibling {@link ScopedJwtDecoderFactory}); the per-scope {@link
+ * io.camunda.security.api.model.config.AuthenticationConfiguration} decides whether augmentation
+ * runs. The global {@code oidcUserInfoHttpClient} bean is used when present; otherwise a default
+ * client is built, so a scope can enable augmentation independently of the cluster default.
  *
  * <p>Each bean is {@link ConditionalOnMissingBean} so a host (or the method-gated {@link
  * OidcBeansConfiguration}) can still override individual factories. The global {@link
@@ -101,21 +104,37 @@ public class ScopedOidcInfrastructureConfiguration {
   /**
    * Builds a {@link ScopedOidcClaimsProviderFactory} so consumers can construct an {@link
    * io.camunda.security.api.context.OidcClaimsProvider} for an arbitrary per-scope {@link
-   * io.camunda.security.api.model.config.AuthenticationConfiguration}. Gated on the {@code
-   * oidcUserInfoHttpClient} bean (declared by {@link OidcClaimsProviderConfiguration} only when
-   * UserInfo augmentation is enabled), so the factory is present exactly when augmentation is on.
+   * io.camunda.security.api.model.config.AuthenticationConfiguration}. Always registered (mirroring
+   * the sibling {@link #scopedJwtDecoderFactory}); the per-scope {@code
+   * AuthenticationConfiguration} — not the cluster default — decides whether augmentation runs. The
+   * global {@code oidcUserInfoHttpClient} bean is used when present (cluster-level augmentation
+   * enabled); otherwise a default client is built, so a scope can enable augmentation independently
+   * of the cluster default.
    */
   @Bean
-  @ConditionalOnBean(name = "oidcUserInfoHttpClient")
   @ConditionalOnMissingBean
   public ScopedOidcClaimsProviderFactory scopedOidcClaimsProviderFactory(
       final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
-      final ObjectMapper objectMapper,
-      @Qualifier("oidcUserInfoHttpClient") final HttpClient httpClient,
+      final ObjectProvider<ObjectMapper> objectMapper,
+      @Qualifier("oidcUserInfoHttpClient") final ObjectProvider<HttpClient> userInfoHttpClient,
       @Autowired(required = false) final MeterRegistry meterRegistry) {
+    // The global oidcUserInfoHttpClient bean exists only when cluster-level UserInfo
+    // augmentation is enabled; fall back to a default client (same settings as
+    // OidcClaimsProviderConfiguration#oidcUserInfoHttpClient) so a scope can enable
+    // augmentation independently of the cluster default.
+    final HttpClient httpClient =
+        userInfoHttpClient.getIfAvailable(
+            () ->
+                HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(2))
+                    .followRedirects(HttpClient.Redirect.NEVER)
+                    .build());
+    // A default ObjectMapper is used when no application ObjectMapper bean is present, so the
+    // factory registers unconditionally even in contexts without one.
+    final ObjectMapper mapper = objectMapper.getIfAvailable(ObjectMapper::new);
     return new ScopedOidcClaimsProviderFactory(
         scopedClientRegistrationFactory,
-        new OidcUserInfoHttpClient(httpClient, objectMapper),
+        new OidcUserInfoHttpClient(httpClient, mapper),
         meterRegistry);
   }
 }
