@@ -946,7 +946,7 @@ Hub enforces AuthN/AuthZ for the Hub UI. This is exactly the same `ResourcePermi
 flowchart TB
   Start["Library bootstrap"] --> Mode{"deployment strategy property"}
 
-  Mode -->|"HUB"| Hub["Enable Hub services<br>AuthN/AuthZ (Hub-scoped)<br>PolicyAuthoring + Versioning + OutboxDispatch"]
+  Mode -->|"hub"| Hub["Enable Hub services<br>AuthN/AuthZ (Hub-scoped)<br>PolicyAuthoring + Versioning + OutboxDispatch"]
   Mode -->|"managed"| OCM["Enable OC managed services<br>AuthN/AuthZ (cluster-scoped)<br>RemotePolicyApply + ProjectionToEngine"]
   Mode -->|"standalone"| OCS["Enable OC standalone services<br>AuthN/AuthZ (cluster-scoped)<br>LocalPolicyAuthoring + ProjectionToEngine"]
 
@@ -1063,11 +1063,11 @@ graph LR
 
 Using CSL's `core` authz framework for both layers is intentional:
 
-- **Single evaluation kernel, no drift:** both the search layer and the engine evaluate authorization via the same `AuthorizationChecker` / `AuthorizationService`. A semantic fix or new check type lands once in `core` and benefits both.
+- **Single evaluation kernel, no drift (planned):** ADR-0028 proposes a shared `AuthorizationCheckPort` implemented by a core `AuthorizationService`. Today, CSL already provides `AuthorizationChecker` (`core/authz`) as the shared scope-evaluation component.
 - **No new port contracts:** the engine integrates against existing `MembershipPort` and `AuthorizationScopeRepositoryPort` — no new outbound ports to stabilize before the engine migration begins.
-- **Richer failure detail:** `Either<AuthorizationRejection, Void>` carries the failure reason (tenant vs. permission) needed for cross-partition rejection broadcast in the engine. The `boolean` surface of `ResourcePermissionPort` is kept for backwards compatibility with existing search-layer callers.
-- **Spring-free auth context:** `ClaimsAuthenticationConverter` (`core`) converts raw `Map<String,Object>` claims to `CamundaAuthentication` without Spring dependencies, making it usable in the engine.
-- **Primary-storage-optimized adapters:** the engine's RocksDB adapters cache membership and scope lookups internally; `AuthorizationService` in `core` stays dependency-free and cache-agnostic.
+- **Richer failure detail (planned):** ADR-0028 proposes exposing failure reasons (tenant vs. permission) via an `Either`-style result; `ResourcePermissionPort` remains the boolean surface for current search-layer callers.
+- **Spring-free auth context (planned):** ADR-0028 proposes `ClaimsAuthenticationConverter` in `core` to convert raw claims to `CamundaAuthentication` without Spring dependencies.
+- **Primary-storage-optimized adapters:** engine-side caching remains an adapter concern; CSL core stays dependency-free and cache-agnostic.
 
 #### 5.5.2 Config propagation to the engine via batch operations
 
@@ -1701,7 +1701,7 @@ These are unresolved design questions that require a dedicated ADR before implem
 ### Known debts
 
 - `EngineCommandPort` SPI boundary for OC → engine policy propagation is still undefined (see Open design questions above).
-- The deployment strategy property values currently use an `oc-` prefix (`oc-standalone`, `oc-managed`); a rename to `standalone` / `managed` is planned (docs already use the shorter names).
+- Existing docs/ADRs refer to deployment strategies as `oc-standalone` / `oc-managed` / `hub`; a rename to the shorter names (`standalone`, `managed`) is planned (this document already uses the shorter names).
 - ADR numbering has duplicate entries for 0011, 0020, and 0023; a file rename to resolve the ambiguity is deferred.
 
 ---

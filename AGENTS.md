@@ -32,7 +32,7 @@ Active capabilities are selected via a deployment strategy configuration propert
 
 Authentication and authorization enforcement is always active in every strategy.
 
-> **Note:** Current property values in code use an `oc-` prefix (`oc-standalone`, `oc-managed`). A rename to the shorter names (`standalone`, `managed`) is planned.
+> **Note:** Some docs/ADRs use an `oc-` prefix (`oc-standalone`, `oc-managed`). A rename to the shorter names (`standalone`, `managed`) is planned.
 
 ### Unified Policy Model
 
