@@ -51,10 +51,11 @@ public final class ScopedOidcClaimsProviderFactory {
   /**
    * Builds an {@link OidcClaimsProvider} for the given {@link AuthenticationConfiguration}.
    *
-   * <p>Returns a {@link CachingOidcClaimsProvider} when {@code
-   * authentication.getOidc().getUserInfoAugmentation().isEnabled()} is {@code true}, with an
-   * issuer→userInfoUri map derived from the config's OIDC providers. Returns a {@link
-   * NoopOidcClaimsProvider} otherwise.
+   * <p>Returns a {@link CachingOidcClaimsProvider} when augmentation is enabled on the config —
+   * that is, {@code authentication.getOidc().getUserInfoAugmentation()} is non-null and its {@code
+   * isEnabled()} is {@code true} — with an issuer→userInfoUri map derived from the config's OIDC
+   * providers. A null augmentation config is treated as disabled; in that case (or when not
+   * enabled) returns a {@link NoopOidcClaimsProvider}.
    *
    * @param authentication the per-scope authentication configuration; must not be {@code null}
    * @return an {@link OidcClaimsProvider} appropriate for the given config
@@ -71,9 +72,11 @@ public final class ScopedOidcClaimsProviderFactory {
     if (uriByIssuer.isEmpty()) {
       LOG.warn(
           "UserInfo augmentation is enabled but no ClientRegistration has a userInfoUri;"
-              + " augmentation will silently skip every request. Ensure"
-              + " camunda.security.authentication.oidc.user-info-enabled=true (the default)"
-              + " and that the IdP's discovery document includes a userinfo_endpoint.");
+              + " augmentation will silently skip every request. Ensure UserInfo is enabled —"
+              + " camunda.security.authentication.oidc.user-info-enabled=true (the default), or the"
+              + " per-provider camunda.security.authentication.providers.oidc.<id>.user-info-enabled"
+              + " flag in multi-provider setups — and that the IdP's discovery document includes a"
+              + " userinfo_endpoint.");
     }
     return new CachingOidcClaimsProvider(
         userInfoHttpClient, uriByIssuer, augmentation, meterRegistry);
