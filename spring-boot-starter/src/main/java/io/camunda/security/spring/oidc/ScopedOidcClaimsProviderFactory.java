@@ -88,17 +88,7 @@ public final class ScopedOidcClaimsProviderFactory {
               + " scope.");
     }
     final Map<String, String> uriByIssuer = buildUserInfoUriByIssuer(registrations);
-    if (uriByIssuer.isEmpty()) {
-      throw new IllegalStateException(
-          "UserInfo augmentation is enabled for the scope but no OIDC provider exposes a"
-              + " userInfoUri, so no claims can be augmented — the scope would silently run without"
-              + " augmentation. Ensure UserInfo is enabled"
-              + " (camunda.security.authentication.oidc.user-info-enabled=true, the default, or the"
-              + " per-provider providers.oidc.<id>.user-info-enabled flag in multi-provider setups)"
-              + " and that the IdP's discovery document includes a userinfo_endpoint, or disable"
-              + " userinfo augmentation for this scope.");
-    }
-    return new CachingOidcClaimsProvider(
+    return CachingOidcClaimsProvider.forConfiguredMappings(
         userInfoHttpClient, uriByIssuer, augmentation, meterRegistry);
   }
 
