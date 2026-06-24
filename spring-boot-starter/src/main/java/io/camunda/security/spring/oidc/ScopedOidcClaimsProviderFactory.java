@@ -24,8 +24,9 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
  * Entry point for building an {@link OidcClaimsProvider} from a single {@link
  * AuthenticationConfiguration}. Parallels {@link ScopedJwtDecoderFactory}: derives
  * issuer→userInfoUri from the config's {@link ClientRegistration}s via {@link
- * ScopedClientRegistrationFactory} and constructs either a {@link CachingOidcClaimsProvider} (when
- * augmentation is enabled on the config) or a {@link NoopOidcClaimsProvider} (otherwise).
+ * ScopedClientRegistrationFactory}. When augmentation is enabled on the config it builds a {@link
+ * CachingOidcClaimsProvider} (failing fast if the config declares no OIDC provider); when
+ * augmentation is disabled it returns a {@link NoopOidcClaimsProvider}.
  *
  * <p>Augmentation enabled-flag and cache settings are read from the per-scope {@link
  * AuthenticationConfiguration} (via {@code oidc.userInfoAugmentation}), not from the global {@link
@@ -68,6 +69,9 @@ public final class ScopedOidcClaimsProviderFactory {
    *
    * @param authentication the per-scope authentication configuration; must not be {@code null}
    * @return an {@link OidcClaimsProvider} appropriate for the given config
+   * @throws IllegalStateException if augmentation is enabled but the config declares no OIDC
+   *     provider (mirrors {@link ScopedJwtDecoderFactory}, which rejects a provider-less OIDC
+   *     scope)
    */
   public OidcClaimsProvider buildClaimsProvider(final AuthenticationConfiguration authentication) {
     Objects.requireNonNull(authentication, "authentication must not be null");
@@ -78,11 +82,13 @@ public final class ScopedOidcClaimsProviderFactory {
 
     final List<ClientRegistration> registrations = clientRegistrationFactory.create(authentication);
     if (registrations.isEmpty()) {
-      LOG.warn(
-          "UserInfo augmentation is enabled but the scope declares no OIDC provider"
-              + " (no oidc.client-id and no providers.oidc.<id> entries); claims cannot be"
-              + " augmented. Returning a no-op claims provider for this scope.");
-      return new NoopOidcClaimsProvider();
+      throw new IllegalStateException(
+          "UserInfo augmentation is enabled for the scope but its AuthenticationConfiguration"
+              + " declares no OIDC provider, so a claims provider cannot be built. Either configure"
+              + " an OIDC provider (oidc.client-id + issuer-uri / explicit endpoints, or one or more"
+              + " providers.oidc.<id> entries) or disable userinfo augmentation for this scope."
+              + " This mirrors ScopedJwtDecoderFactory, which also rejects a provider-less OIDC"
+              + " scope.");
     }
     final Map<String, String> uriByIssuer = buildUserInfoUriByIssuer(registrations);
     if (uriByIssuer.isEmpty()) {
