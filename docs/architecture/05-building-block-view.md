@@ -128,7 +128,7 @@ This section defines the conceptual behavior only; the complete deployment examp
 
 For concrete diagrams:
 
-- Single-node full mode: [7.1.2 Full mode (Hub + Orchestration Cluster, self-managed)](./07-deployment-view.md#712-full-mode-hub--orchestration-cluster-self-managed)
+- Single-node full mode: [7.1.2 Full mode (Hub + Orchestration Cluster + Optimize, self-managed)](./07-deployment-view.md#712-full-mode-hub--orchestration-cluster--optimize-self-managed)
 - Standalone multi-node OC-only mode: [7.1.3 OC-only mode – multi-instance example](./07-deployment-view.md#713-oc-only-mode--multi-instance-example-n-gateways--m-brokers)
 
 ---
@@ -519,13 +519,13 @@ Mode activation is property-driven via Spring Boot conditions (`@ConditionalOnPr
 
 **Current implementation state:** authentication method selection (`camunda.security.authentication.method=basic|oidc`) is active today and governs which filter chains are assembled. The deployment strategy property (`hub` / `managed` / `standalone` — current property values use an `oc-` prefix: `oc-managed`, `oc-standalone`) is defined in the configuration model but is not yet consumed by the filter chain layer — it is planned for the policy work that wires `PolicyPort`, `PolicyApplyPort`, and the Hub/OC-specific outbound ports.
 
-Hub enforces AuthN/AuthZ for the Hub UI. This is exactly the same `ResourcePermissionPort` and `IdpClientPort` used by OC, just configured with Hub-scoped resources instead of cluster/engine resources.
+Hub enforces AuthN/AuthZ for the Hub UI using the same `ResourcePermissionPort` used by OC, configured with Hub-scoped resources. `IdpClientPort` is a planned outbound port for external IdP interactions; the current OIDC integration wires `OidcProviderConfigurationPort` instead.
 
 **Camunda Security Library responsibilities by deployment strategy:**
 
 | Deployment strategy | AuthN/AuthZ enforcement | Policy source | Policy authoring | Outbox dispatch to OCs | Engine projection | Cluster registry | Runtime context |
 |---|---|---|---|---|---|---|---|
-| `hub` | ✅ Hub-scoped (org, workspace, cluster resources) | Hub is SoT | ✅ via Hub UI/API | ✅ via `OutboxPort` | ❌ no engines in Hub | ✅ `ClusterRegistrationService` + `ClusterRegistryPort` | Hub authentication and policy management for the Hub UI |
+| `hub` | ✅ Hub-scoped (org, workspace, cluster resources) | Hub is SoT | ✅ via Hub UI/API | ✅ via `OutboxPort` | ❌ no engines in Hub | ✅ `ClusterRegistrationPort` + `ClusterRegistryPort` | Hub authentication and policy management for the Hub UI |
 | `managed` | ✅ Cluster-scoped (engine, tenant, task resources) | Receives from Hub | ❌ (read-only in the admin section of the OC UI) | ❌ | ✅ via `EngineCommandPort` | ❌ | OC receives policy via `/identity/policies/apply` endpoint from Hub; enforces for all cluster requests and exposes the applied policy through the admin section of the OC UI |
 | `standalone` | ✅ Cluster-scoped (engine, tenant, task resources) | OC is local SoT | ✅ via the admin section of the OC UI and OC APIs | ❌ | ✅ via `EngineCommandPort` | ❌ | OC is fully autonomous; local policy authoring and engine projection through the admin section of the OC UI |
 
@@ -533,7 +533,7 @@ Hub enforces AuthN/AuthZ for the Hub UI. This is exactly the same `ResourcePermi
 flowchart TB
   Start["Library bootstrap"] --> Mode{"deployment strategy property"}
 
-  Mode -->|"HUB"| Hub["Enable Hub services<br>AuthN/AuthZ (Hub-scoped)<br>PolicyAuthoring + Versioning + OutboxDispatch"]
+  Mode -->|"hub"| Hub["Enable Hub services<br>AuthN/AuthZ (Hub-scoped)<br>PolicyAuthoring + Versioning + OutboxDispatch"]
   Mode -->|"managed"| OCM["Enable OC managed services<br>AuthN/AuthZ (cluster-scoped)<br>RemotePolicyApply + ProjectionToEngine"]
   Mode -->|"standalone"| OCS["Enable OC standalone services<br>AuthN/AuthZ (cluster-scoped)<br>LocalPolicyAuthoring + ProjectionToEngine"]
 

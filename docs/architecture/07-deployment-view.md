@@ -53,7 +53,7 @@ An advanced Self-Managed topology where the customer also operates Hub. Hub beco
 
 - Hub and all OC and Optimize instances are deployed and operated by the customer on their own infrastructure.
 - The Enterprise IdP is integrated at both Hub (management plane auth) and OC/Optimize (execution/analytics plane auth) levels.
-- Cluster discovery and registration are handled via the `ClusterRegistryPort` and `ClusterRegistrationService` ports; the host application's adapter determines how new OCs are discovered and registered.
+- Cluster discovery and registration are handled via the `ClusterRegistryPort` (outbound) and `ClusterRegistrationPort` (inbound) ports; the host application's adapter determines how new OCs are discovered and registered.
 - OC is configured with an embedded gateway/search layer and broker/engine layer; Camunda Security Library runs in gateway, Security Engine Framework runs in broker/engine.
 - Policy flows top-down: Hub -> Gateway -> Broker(Engine), same as in SaaS, but without a Camunda-operated broker.
 - Suitable for large-scale or multi-cluster Self-Managed environments requiring centralized policy governance.
@@ -186,7 +186,7 @@ In SaaS, Camunda operates one shared Hub instance for many customer organization
 - One shared Hub instance serves **many organizations** (one per customer); policy and identity data in Hub must therefore be partitioned by organization. Each organization owns one or more OC clusters. This is in direct contrast to Self-Managed, where there is always exactly one organization.
 - In the first iterations, this partitioning is logical only: shared Hub infrastructure and databases are reused, while policy tables and queries are keyed by `organization_id`.
 - Each OC remains associated with exactly one organization boundary for policy propagation.
-- Cluster discovery and registration in Hub are handled via `ClusterRegistryPort` (outbound) and `ClusterRegistrationService` (inbound) ports. How Hub's adapter implementation populates the cluster registry is a host-application integration concern, not a library concern.
+- Cluster discovery and registration in Hub are handled via `ClusterRegistryPort` (outbound) and `ClusterRegistrationPort` (inbound) ports. How Hub's adapter implementation populates the cluster registry is a host-application integration concern, not a library concern.
 - During migration, SaaS may still keep Auth0 or another broker as an internal implementation detail; this does not change the target policy model.
 
 ```mermaid
