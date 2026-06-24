@@ -129,8 +129,9 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
               + " a userInfoUri (userinfo endpoint); a provider missing either is skipped. Ensure"
               + " each provider has an issuer-uri and that UserInfo is enabled"
               + " (camunda.security.authentication.oidc.user-info-enabled=true, the default, or the"
-              + " per-provider providers.oidc.<id>.user-info-enabled flag in multi-provider setups)"
-              + " and that the IdP's discovery document includes a userinfo_endpoint, or disable"
+              + " per-provider camunda.security.authentication.providers.oidc.<id>.user-info-enabled"
+              + " flag in multi-provider setups) and that the IdP's discovery document includes a"
+              + " userinfo_endpoint, or disable"
               + " userinfo augmentation.");
     }
     return new CachingOidcClaimsProvider(fetcher, userInfoUriByIssuer, config, meterRegistry);

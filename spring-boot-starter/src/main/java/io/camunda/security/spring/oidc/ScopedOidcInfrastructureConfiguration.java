@@ -117,10 +117,10 @@ public class ScopedOidcInfrastructureConfiguration {
       final ObjectProvider<ObjectMapper> objectMapper,
       @Qualifier("oidcUserInfoHttpClient") final ObjectProvider<HttpClient> userInfoHttpClient,
       @Autowired(required = false) final MeterRegistry meterRegistry) {
-    // The global oidcUserInfoHttpClient bean exists only when cluster-level UserInfo augmentation is
-    // enabled (and only when OidcClaimsProviderConfiguration is on the context — e.g. not in the
-    // OidcBeansConfiguration quickstart). Fall back to the shared default client so a scope can
-    // enable augmentation independently of the cluster default.
+    // Reuse the global oidcUserInfoHttpClient bean when present, else build the shared default
+    // client. The global bean is contributed only with cluster augmentation enabled and
+    // OidcClaimsProviderConfiguration imported (not the OidcBeansConfiguration quickstart), letting
+    // a scope enable augmentation independently of the cluster default.
     final HttpClient httpClient =
         userInfoHttpClient.getIfAvailable(OidcUserInfoHttpClient::defaultHttpClient);
     // A default ObjectMapper is used when no application ObjectMapper bean is present, so the
