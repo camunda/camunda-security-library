@@ -9,7 +9,6 @@ package io.camunda.security.spring.oidc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.context.OidcClaimsProvider;
-import io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfiguration;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpClient;
@@ -20,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -36,6 +36,14 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
  * <p>The two beans carry mutually exclusive {@code @ConditionalOnProperty} conditions ({@code
  * enabled=true} vs {@code enabled=false, matchIfMissing=true}), so registration is deterministic
  * regardless of bean declaration order.
+ *
+ * <p>Also registers a {@link ScopedOidcClaimsProviderFactory} so consumers can construct an {@link
+ * OidcClaimsProvider} for an arbitrary per-scope {@link
+ * io.camunda.security.api.model.config.AuthenticationConfiguration} without duplicating the
+ * assembly logic. The cluster-level {@code cachingOidcClaimsProvider} bean keeps its own {@link
+ * ClientRegistrationRepository}-based assembly — which reflects the Spring-resolved registrations
+ * (including endpoints discovered from the issuer) rather than only the raw config — so it is not
+ * rebuilt on top of the factory. Both paths perform the same issuer→userInfoUri extraction.
  */
 @Configuration
 @ConditionalOnProperty(name = "camunda.security.authentication.method", havingValue = "oidc")
@@ -64,6 +72,27 @@ public class OidcClaimsProviderConfiguration {
         .build();
   }
 
+  /**
+   * Registers a {@link ScopedOidcClaimsProviderFactory} so per-scope consumers can build an {@link
+   * OidcClaimsProvider} directly from an {@link
+   * io.camunda.security.api.model.config.AuthenticationConfiguration}. Only present when
+   * augmentation is enabled, since the factory wraps the same shared {@link OidcUserInfoHttpClient}
+   * that the cluster-level caching provider uses.
+   */
+  @Bean
+  @ConditionalOnBean(name = "oidcUserInfoHttpClient")
+  @ConditionalOnMissingBean
+  ScopedOidcClaimsProviderFactory scopedOidcClaimsProviderFactory(
+      final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
+      final ObjectMapper objectMapper,
+      @Qualifier("oidcUserInfoHttpClient") final HttpClient httpClient,
+      @Autowired(required = false) final MeterRegistry meterRegistry) {
+    return new ScopedOidcClaimsProviderFactory(
+        scopedClientRegistrationFactory,
+        new OidcUserInfoHttpClient(httpClient, objectMapper),
+        meterRegistry);
+  }
+
   @Bean
   @ConditionalOnProperty(
       name = "camunda.security.authentication.oidc.user-info-augmentation.enabled",
@@ -75,8 +104,7 @@ public class OidcClaimsProviderConfiguration {
       final ObjectMapper objectMapper,
       @Qualifier("oidcUserInfoHttpClient") final HttpClient httpClient,
       @Autowired(required = false) final MeterRegistry meterRegistry) {
-    final OidcUserInfoAugmentationConfiguration config =
-        properties.getAuthentication().getOidc().getUserInfoAugmentation();
+    final var augmentation = properties.getAuthentication().getOidc().getUserInfoAugmentation();
     final Map<String, String> uriByIssuer = buildUserInfoUriByIssuer(clientRegistrationRepository);
     if (uriByIssuer.isEmpty()) {
       LOG.warn(
@@ -86,7 +114,10 @@ public class OidcClaimsProviderConfiguration {
               + " and that the IdP's discovery document includes a userinfo_endpoint.");
     }
     return new CachingOidcClaimsProvider(
-        new OidcUserInfoHttpClient(httpClient, objectMapper), uriByIssuer, config, meterRegistry);
+        new OidcUserInfoHttpClient(httpClient, objectMapper),
+        uriByIssuer,
+        augmentation,
+        meterRegistry);
   }
 
   @Bean

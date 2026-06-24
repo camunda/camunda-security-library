@@ -33,6 +33,7 @@ class OidcClaimsProviderConfigurationTest {
           .withPropertyValues("camunda.security.authentication.method=oidc")
           .withUserConfiguration(StubClientRegistrationRepository.class)
           .withUserConfiguration(StubObjectMapper.class)
+          .withUserConfiguration(StubScopedClientRegistrationFactory.class)
           .withConfiguration(
               AutoConfigurations.of(
                   CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class));
@@ -124,6 +125,7 @@ class OidcClaimsProviderConfigurationTest {
             "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
         .withUserConfiguration(PopulatedClientRegistrationRepository.class)
         .withUserConfiguration(StubObjectMapper.class)
+        .withUserConfiguration(StubScopedClientRegistrationFactory.class)
         .withConfiguration(
             AutoConfigurations.of(
                 CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class))
@@ -214,6 +216,14 @@ class OidcClaimsProviderConfigurationTest {
               .issuerUri("https://idp-b.example")
               .build();
       return new InMemoryClientRegistrationRepository(withUserInfo, withoutUserInfo);
+    }
+  }
+
+  @Configuration
+  static class StubScopedClientRegistrationFactory {
+    @Bean
+    ScopedClientRegistrationFactory scopedClientRegistrationFactory() {
+      return new ScopedClientRegistrationFactory();
     }
   }
 }
