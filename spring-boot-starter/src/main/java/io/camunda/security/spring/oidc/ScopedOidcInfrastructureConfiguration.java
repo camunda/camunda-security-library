@@ -7,10 +7,16 @@
  */
 package io.camunda.security.spring.oidc;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.micrometer.core.instrument.MeterRegistry;
+import java.net.http.HttpClient;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -21,16 +27,17 @@ import org.springframework.context.annotation.Configuration;
  * io.camunda.security.api.model.config.ScopedSecurityDescriptor} regardless of whether {@code
  * camunda.security.authentication.method} is {@code oidc} or {@code basic}.
  *
- * <p>The four factories declared here are stateless: they build from a passed {@link
+ * <p>The four core factories declared here are stateless: they build from a passed {@link
  * io.camunda.security.api.model.config.AuthenticationConfiguration} rather than reading the global
  * configuration at construction time. Gating them on the global method was therefore an artificial
  * coupling. Moving them here decouples per-scope OIDC chain construction from the cluster's global
- * authentication mode.
+ * authentication mode. The additional {@link ScopedOidcClaimsProviderFactory} is gated on the
+ * {@code oidcUserInfoHttpClient} bean, so it is present only when UserInfo augmentation is enabled.
  *
  * <p>Each bean is {@link ConditionalOnMissingBean} so a host (or the method-gated {@link
  * OidcBeansConfiguration}) can still override individual factories. The global {@link
- * OidcBeansConfiguration} declares no duplicate {@code @Bean} definitions for these four types
- * after this refactor, so there is no bean-definition collision.
+ * OidcBeansConfiguration} declares no duplicate {@code @Bean} definitions for these types after
+ * this refactor, so there is no bean-definition collision.
  *
  * <p>The injected {@link TokenValidatorFactory} parameter on {@link
  * #oidcAccessTokenDecoderFactory(JWSKeySelectorFactory, ObjectProvider)} uses an {@link
@@ -89,5 +96,26 @@ public class ScopedOidcInfrastructureConfiguration {
       final OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory) {
     return new ScopedJwtDecoderFactory(
         scopedClientRegistrationFactory, oidcAccessTokenDecoderFactory);
+  }
+
+  /**
+   * Builds a {@link ScopedOidcClaimsProviderFactory} so consumers can construct an {@link
+   * io.camunda.security.api.context.OidcClaimsProvider} for an arbitrary per-scope {@link
+   * io.camunda.security.api.model.config.AuthenticationConfiguration}. Gated on the {@code
+   * oidcUserInfoHttpClient} bean (declared by {@link OidcClaimsProviderConfiguration} only when
+   * UserInfo augmentation is enabled), so the factory is present exactly when augmentation is on.
+   */
+  @Bean
+  @ConditionalOnBean(name = "oidcUserInfoHttpClient")
+  @ConditionalOnMissingBean
+  public ScopedOidcClaimsProviderFactory scopedOidcClaimsProviderFactory(
+      final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
+      final ObjectMapper objectMapper,
+      @Qualifier("oidcUserInfoHttpClient") final HttpClient httpClient,
+      @Autowired(required = false) final MeterRegistry meterRegistry) {
+    return new ScopedOidcClaimsProviderFactory(
+        scopedClientRegistrationFactory,
+        new OidcUserInfoHttpClient(httpClient, objectMapper),
+        meterRegistry);
   }
 }

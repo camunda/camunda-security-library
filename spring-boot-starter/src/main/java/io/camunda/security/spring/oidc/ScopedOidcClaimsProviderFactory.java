@@ -13,6 +13,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -59,6 +60,7 @@ public final class ScopedOidcClaimsProviderFactory {
    * @return an {@link OidcClaimsProvider} appropriate for the given config
    */
   public OidcClaimsProvider buildClaimsProvider(final AuthenticationConfiguration authentication) {
+    Objects.requireNonNull(authentication, "authentication must not be null");
     final var augmentation = authentication.getOidc().getUserInfoAugmentation();
     if (!augmentation.isEnabled()) {
       return new NoopOidcClaimsProvider();
