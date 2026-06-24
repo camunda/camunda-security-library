@@ -9,6 +9,7 @@ package io.camunda.security.spring.converter;
 
 import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.model.CamundaAuthentication;
+import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Collections;

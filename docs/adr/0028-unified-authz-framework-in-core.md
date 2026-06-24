@@ -96,13 +96,14 @@ Concrete evaluators that inspect engine-internal resource structures (e.g.,
 `UserTaskPropertyAuthorizationEvaluator`) stay in `zeebe/engine` — they evaluate
 engine-specific resource properties and are not CSL concerns.
 
-### 5. Add `ClaimsAuthenticationConverter` to `core`
+### 5. Add `LazyTokenClaimsConverter` to `core`
 
 A Spring-free converter: `Map<String,Object> claims` + `MembershipPort` →
-`CamundaAuthentication` with lazily-resolved membership chains. Mirrors the
-`LazyTokenClaimsConverter` pattern (same `Supplier`-based wiring via
-`CamundaAuthentication.lazyList`) but without Spring dependencies, making it usable in the
-zeebe engine and any non-Spring CSL consumer.
+`CamundaAuthentication` with lazily-resolved membership chains (same `Supplier`-based wiring
+via `CamundaAuthentication.lazyList`), making it usable in the zeebe engine and any non-Spring
+CSL consumer. The `spring-boot-starter` no longer carries a parallel implementation;
+`OidcTokenAuthenticationConverter` wraps the core class directly and translates
+`IllegalArgumentException` to `OAuth2AuthenticationException` at the Spring boundary.
 
 **Dual-path for group resolution**: the engine's `MembershipPort.groupIds()` adapter must
 implement `ClaimsExtractor`'s existing dual-path: check `Authorization.USER_GROUPS_CLAIMS` in
@@ -167,8 +168,7 @@ delegate to `AuthorizationService` internally.
   ([ADR-0022](0022-resource-access-control-framework-ownership.md)) — storage-agnostic by construction. The engine's RocksDB adapter satisfies the same
   contract as the search-layer adapter without changes to the port.
 - `LazyList` in `CamundaAuthentication` ([ADR-0011](0011-lazy-load-authentication-memberships.md)) makes lazy membership resolution Spring-free.
-  `ClaimsAuthenticationConverter` reuses the same `Supplier`-based pattern as
-  `LazyTokenClaimsConverter` without any `spring-boot-starter` dependency.
+  `LazyTokenClaimsConverter` uses the same `Supplier`-based pattern without any `spring-boot-starter` dependency.
 - `MappingRuleMatcher` already bridges both zeebe and CSL — no migration work, just continued use.
 - `core` is already Spring-free; `DomainArchTest` enforces this. Verify existing pattern matchers
   cover the new packages; extend if needed.
@@ -187,21 +187,21 @@ delegate to `AuthorizationService` internally.
   once it migrates to `AuthorizationCheckPort` (a future increment, not this epic).
 - `zeebe/engine` implements two focused RocksDB adapters for existing outbound ports; no new port
   contracts need stabilizing before the engine integration begins.
-- `ClaimsAuthenticationConverter` makes raw-claims-to-auth conversion available to any non-Spring
+- `LazyTokenClaimsConverter` makes raw-claims-to-auth conversion available to any non-Spring
   consumer of CSL, not just the zeebe engine.
 
 **Negative / accepted trade-offs**
 
 - `core` grows with new types (`Either`, `AuthorizationRejection`, `RejectionAggregator`,
-  `PropertyAuthorizationEvaluator`, `ClaimsAuthenticationConverter`, `AuthorizationService`).
+  `PropertyAuthorizationEvaluator`, `LazyTokenClaimsConverter`, `AuthorizationService`).
   These are all general-purpose. If `core` feels large over time, extract a dedicated module
   (see Alternative B).
 - `PropertyAuthorizationEvaluator` is a separate evaluation path in `AuthorizationService`
   alongside the scope-based path. Callers must not bypass it; this must be documented explicitly
   in the class.
-- `ClaimsAuthenticationConverter` mirrors `LazyTokenClaimsConverter`. Both must stay aligned
-  when `MembershipPort`'s shape changes. Extract a shared base utility later if the duplication
-  becomes a maintenance burden.
+- `LazyTokenClaimsConverter` lives in `core`; the Spring resource-server path wraps it in
+  `OidcTokenAuthenticationConverter` for `OAuth2AuthenticationException` translation. Any change
+  to the converter's constructor or `convert()` signature must also update that wrapper.
 - No caching in `AuthorizationService` in `core`. The zeebe engine's per-command performance
   relies on caching inside the RocksDB adapter implementations — Inc 4 must treat this as a
   required concern, not a nice-to-have optimisation.

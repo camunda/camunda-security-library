@@ -16,6 +16,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.model.CamundaAuthentication;
+import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;

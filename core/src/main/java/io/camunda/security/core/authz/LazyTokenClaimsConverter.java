@@ -18,17 +18,15 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Spring-free counterpart of {@code LazyTokenClaimsConverter} (spring-boot-starter).
- *
- * <p>Converts a raw {@code Map<String, Object>} claims map into a {@link CamundaAuthentication}
- * with lazily-resolved membership fields via the four-step chain defined in {@link MembershipPort}.
+ * Converts a raw {@code Map<String, Object>} claims map into a {@link CamundaAuthentication} with
+ * lazily-resolved membership fields via the four-step chain defined in {@link MembershipPort}.
  * Throws {@link IllegalArgumentException} (not a Spring type) when neither the username claim nor
  * the client-id claim resolves to a non-null string.
  *
  * <p>See ADR-0028 for why the constructor accepts primitive claim strings rather than {@code
  * OidcConfiguration}: it keeps {@code core} free of config-object coupling.
  */
-public final class ClaimsAuthenticationConverter {
+public final class LazyTokenClaimsConverter {
 
   private final OidcPrincipalLoader oidcPrincipalLoader;
   private final boolean preferUsernameClaim;
@@ -36,7 +34,7 @@ public final class ClaimsAuthenticationConverter {
   private final String clientIdClaim;
   private final MembershipPort membershipPort;
 
-  public ClaimsAuthenticationConverter(
+  public LazyTokenClaimsConverter(
       final String usernameClaim,
       final String clientIdClaim,
       final boolean preferUsernameClaim,

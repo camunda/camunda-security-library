@@ -18,7 +18,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfiguration;
-import io.camunda.security.spring.converter.LazyTokenClaimsConverter;
+import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.spring.converter.OidcTokenAuthenticationConverter;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
