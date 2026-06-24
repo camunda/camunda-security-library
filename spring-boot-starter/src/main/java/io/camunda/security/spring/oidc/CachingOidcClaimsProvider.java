@@ -123,9 +123,11 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
       final MeterRegistry meterRegistry) {
     if (userInfoUriByIssuer.isEmpty()) {
       throw new IllegalStateException(
-          "UserInfo augmentation is enabled but no OIDC provider exposes a userInfoUri, so no"
-              + " claims can be augmented — the setup would silently run without augmentation."
-              + " Ensure UserInfo is enabled"
+          "UserInfo augmentation is enabled but no OIDC provider yields an issuer→userInfoUri"
+              + " mapping, so no claims can be augmented — the setup would silently run without"
+              + " augmentation. A mapping is derived only when a provider has BOTH an issuer-uri AND"
+              + " a userInfoUri (userinfo endpoint); a provider missing either is skipped. Ensure"
+              + " each provider has an issuer-uri and that UserInfo is enabled"
               + " (camunda.security.authentication.oidc.user-info-enabled=true, the default, or the"
               + " per-provider providers.oidc.<id>.user-info-enabled flag in multi-provider setups)"
               + " and that the IdP's discovery document includes a userinfo_endpoint, or disable"

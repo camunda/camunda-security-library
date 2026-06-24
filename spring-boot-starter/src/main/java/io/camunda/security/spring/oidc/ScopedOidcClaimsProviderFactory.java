@@ -49,7 +49,11 @@ public final class ScopedOidcClaimsProviderFactory {
       final HttpClient httpClient,
       final ObjectMapper objectMapper,
       final MeterRegistry meterRegistry) {
-    this.clientRegistrationFactory = clientRegistrationFactory;
+    this.clientRegistrationFactory =
+        Objects.requireNonNull(
+            clientRegistrationFactory, "clientRegistrationFactory must not be null");
+    Objects.requireNonNull(httpClient, "httpClient must not be null");
+    Objects.requireNonNull(objectMapper, "objectMapper must not be null");
     userInfoHttpClient = new OidcUserInfoHttpClient(httpClient, objectMapper);
     this.meterRegistry = meterRegistry;
   }
