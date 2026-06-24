@@ -68,6 +68,13 @@ public final class ScopedOidcClaimsProviderFactory {
     }
 
     final List<ClientRegistration> registrations = clientRegistrationFactory.create(authentication);
+    if (registrations.isEmpty()) {
+      LOG.warn(
+          "UserInfo augmentation is enabled but the scope declares no OIDC provider"
+              + " (no oidc.client-id and no providers.oidc.<id> entries); claims cannot be"
+              + " augmented. Returning a no-op claims provider for this scope.");
+      return new NoopOidcClaimsProvider();
+    }
     final Map<String, String> uriByIssuer = buildUserInfoUriByIssuer(registrations);
     if (uriByIssuer.isEmpty()) {
       LOG.warn(
