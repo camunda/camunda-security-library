@@ -8,20 +8,38 @@
 package io.camunda.security.spring.authz;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
+import io.camunda.security.api.model.authz.AuthorizationResourceType;
+import io.camunda.security.api.model.authz.AuthorizationScope;
+import io.camunda.security.api.model.authz.EntityType;
+import io.camunda.security.api.model.authz.PermissionType;
 import io.camunda.security.core.authz.AuthorizationChecker;
 import io.camunda.security.core.authz.AuthorizationService;
+import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+@ExtendWith(MockitoExtension.class)
 class AuthorizationConfigurationTest {
+
+  @Mock AuthorizationChecker mockChecker;
+  @Mock AuthorizationService mockAuthorizationService;
+
+  @SuppressWarnings("unchecked")
+  @Mock
+  PropertyAuthorizationEvaluator<Object> mockEvaluator;
 
   private final ApplicationContextRunner runner =
       new ApplicationContextRunner()
@@ -32,7 +50,7 @@ class AuthorizationConfigurationTest {
   @Test
   void beanIsRegisteredWhenAuthorizationCheckerIsPresent() {
     runner
-        .withBean(AuthorizationChecker.class, () -> mock(AuthorizationChecker.class))
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
         .run(ctx -> assertThat(ctx).hasSingleBean(AuthorizationService.class));
   }
 
@@ -54,27 +72,23 @@ class AuthorizationConfigurationTest {
 
   @Test
   void hostCanOverrideAuthorizationService() {
-    final var custom = mock(AuthorizationService.class);
     runner
-        .withBean(AuthorizationChecker.class, () -> mock(AuthorizationChecker.class))
-        .withBean(AuthorizationService.class, () -> custom)
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
+        .withBean(AuthorizationService.class, () -> mockAuthorizationService)
         .run(
             ctx ->
                 assertThat(ctx)
                     .hasSingleBean(AuthorizationService.class)
                     .getBean(AuthorizationService.class)
-                    .isSameAs(custom));
+                    .isSameAs(mockAuthorizationService));
   }
 
   @Test
   void propertyEvaluatorsAreInjected() {
-    @SuppressWarnings("unchecked")
-    final PropertyAuthorizationEvaluator<Object> evaluator =
-        (PropertyAuthorizationEvaluator<Object>) mock(PropertyAuthorizationEvaluator.class);
-    when(evaluator.propertyName()).thenReturn("assignee");
+    when(mockEvaluator.propertyName()).thenReturn("assignee");
     runner
-        .withBean(AuthorizationChecker.class, () -> mock(AuthorizationChecker.class))
-        .withBean(PropertyAuthorizationEvaluator.class, () -> evaluator)
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
+        .withBean(PropertyAuthorizationEvaluator.class, () -> mockEvaluator)
         .run(ctx -> assertThat(ctx).hasSingleBean(AuthorizationService.class));
   }
 
@@ -84,7 +98,7 @@ class AuthorizationConfigurationTest {
         .withPropertyValues(
             "camunda.security.authorizations.enabled=false",
             "camunda.security.multiTenancy.checksEnabled=false")
-        .withBean(AuthorizationChecker.class, () -> mock(AuthorizationChecker.class))
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
         .run(
             ctx -> {
               assertThat(ctx).hasSingleBean(AuthorizationService.class);
@@ -98,7 +112,34 @@ class AuthorizationConfigurationTest {
   static class SeparateCheckerConfiguration {
     @Bean
     AuthorizationChecker separateChecker() {
-      return mock(AuthorizationChecker.class);
+      return new AuthorizationChecker(new NoopPort());
+    }
+  }
+
+  private static final class NoopPort implements AuthorizationScopeRepositoryPort {
+    @Override
+    public List<AuthorizationScope> findAuthorizedScopes(
+        final Map<EntityType, Set<String>> ownerIds,
+        final AuthorizationResourceType resourceType,
+        final PermissionType permissionType) {
+      return List.of();
+    }
+
+    @Override
+    public boolean hasAuthorizedScope(
+        final Map<EntityType, Set<String>> ownerIds,
+        final AuthorizationResourceType resourceType,
+        final PermissionType permissionType,
+        final List<String> resourceIds) {
+      return false;
+    }
+
+    @Override
+    public Set<PermissionType> findPermissionTypes(
+        final Map<EntityType, Set<String>> ownerIds,
+        final AuthorizationResourceType resourceType,
+        final List<String> resourceIds) {
+      return Set.of();
     }
   }
 }
