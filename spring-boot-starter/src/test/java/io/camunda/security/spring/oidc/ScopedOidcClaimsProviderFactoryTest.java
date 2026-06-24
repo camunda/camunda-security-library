@@ -8,6 +8,7 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -113,18 +114,19 @@ final class ScopedOidcClaimsProviderFactoryTest {
     assertThat(provider).isInstanceOf(CachingOidcClaimsProvider.class);
   }
 
-  // Augmentation enabled, no OIDC provider resolves → NoopOidcClaimsProvider
+  // Augmentation enabled but no OIDC provider resolves → fail fast (broken config)
   @Test
-  void shouldBuildNoopProviderWhenNoOidcProvidersConfigured() {
+  void shouldThrowWhenAugmentationEnabledButNoOidcProvider() {
     final var authentication =
         authEnabled("https://idp.example.com", "https://idp.example.com/userinfo");
 
-    // No OIDC provider resolves for this scope — distinct from "providers but no userInfoUri".
+    // No OIDC provider resolves for this scope — a broken config, mirroring
+    // ScopedJwtDecoderFactory.
     when(clientRegistrationFactory.create(authentication)).thenReturn(List.of());
 
-    final OidcClaimsProvider provider = factory.buildClaimsProvider(authentication);
-
-    assertThat(provider).isInstanceOf(NoopOidcClaimsProvider.class);
+    assertThatThrownBy(() -> factory.buildClaimsProvider(authentication))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("declares no OIDC provider");
   }
 
   // buildUserInfoUriByIssuer helper
