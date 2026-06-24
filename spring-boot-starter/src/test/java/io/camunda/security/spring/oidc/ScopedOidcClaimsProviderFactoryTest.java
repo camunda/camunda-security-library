@@ -70,6 +70,31 @@ final class ScopedOidcClaimsProviderFactoryTest {
     verifyNoInteractions(clientRegistrationFactory, userInfoHttpClient);
   }
 
+  // Null augmentation config → NoopOidcClaimsProvider (no network calls made)
+  @Test
+  void shouldBuildNoopProviderWhenAugmentationConfigIsNull() {
+    // given
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("client-id")
+            .redirectUri("{baseUrl}/login/oauth2/code/oidc")
+            .issuerUri("https://idp.example.com")
+            .authorizationUri("https://idp.example.com/auth")
+            .tokenUri("https://idp.example.com/token")
+            .jwkSetUri("https://idp.example.com/jwks")
+            .build();
+    oidc.setUserInfoAugmentation(null);
+    final var authentication = new AuthenticationConfiguration();
+    authentication.setOidc(oidc);
+
+    // when
+    final OidcClaimsProvider provider = factory.buildClaimsProvider(authentication);
+
+    // then
+    assertThat(provider).isInstanceOf(NoopOidcClaimsProvider.class);
+    verifyNoInteractions(clientRegistrationFactory, userInfoHttpClient);
+  }
+
   // Augmentation enabled, no userInfoUri → CachingOidcClaimsProvider (empty map)
   @Test
   void shouldBuildCachingProviderWithEmptyMapWhenNoUserInfoUriConfigured() {
