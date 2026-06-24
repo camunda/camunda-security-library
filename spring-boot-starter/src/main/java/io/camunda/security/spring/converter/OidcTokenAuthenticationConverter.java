@@ -86,7 +86,7 @@ public final class OidcTokenAuthenticationConverter
                       "Failed to convert 'JwtAuthenticationToken' to 'CamundaAuthentication'"));
     } catch (final IllegalArgumentException e) {
       throw new OAuth2AuthenticationException(
-          new OAuth2Error(OAuth2ErrorCodes.INVALID_TOKEN), e.getMessage());
+          new OAuth2Error(OAuth2ErrorCodes.INVALID_TOKEN, e.getMessage(), null), e);
     }
   }
 }
