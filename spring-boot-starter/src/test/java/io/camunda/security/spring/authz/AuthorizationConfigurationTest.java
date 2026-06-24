@@ -17,6 +17,7 @@ import io.camunda.security.api.model.authz.EntityType;
 import io.camunda.security.api.model.authz.PermissionType;
 import io.camunda.security.core.authz.AuthorizationChecker;
 import io.camunda.security.core.authz.AuthorizationService;
+import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import java.util.List;
@@ -35,7 +36,7 @@ import org.springframework.context.annotation.Configuration;
 class AuthorizationConfigurationTest {
 
   @Mock AuthorizationChecker mockChecker;
-  @Mock AuthorizationService mockAuthorizationService;
+  @Mock AuthorizationCheckPort mockAuthorizationCheckPort;
 
   @SuppressWarnings("unchecked")
   @Mock
@@ -71,16 +72,13 @@ class AuthorizationConfigurationTest {
   }
 
   @Test
-  void hostCanOverrideAuthorizationService() {
+  void hostCanOverrideWithCustomAuthorizationCheckPort() {
+    // The more relevant override scenario: host supplies a different AuthorizationCheckPort
+    // implementation. The library must not register its AuthorizationService in this case.
     runner
         .withBean(AuthorizationChecker.class, () -> mockChecker)
-        .withBean(AuthorizationService.class, () -> mockAuthorizationService)
-        .run(
-            ctx ->
-                assertThat(ctx)
-                    .hasSingleBean(AuthorizationService.class)
-                    .getBean(AuthorizationService.class)
-                    .isSameAs(mockAuthorizationService));
+        .withBean(AuthorizationCheckPort.class, () -> mockAuthorizationCheckPort)
+        .run(ctx -> assertThat(ctx).doesNotHaveBean(AuthorizationService.class));
   }
 
   @Test
