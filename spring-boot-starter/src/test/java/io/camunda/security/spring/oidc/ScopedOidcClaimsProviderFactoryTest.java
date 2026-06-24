@@ -110,6 +110,20 @@ final class ScopedOidcClaimsProviderFactoryTest {
     assertThat(provider).isInstanceOf(CachingOidcClaimsProvider.class);
   }
 
+  // Augmentation enabled, no OIDC provider resolves → NoopOidcClaimsProvider
+  @Test
+  void shouldBuildNoopProviderWhenNoOidcProvidersConfigured() {
+    final var authentication =
+        authEnabled("https://idp.example.com", "https://idp.example.com/userinfo");
+
+    // No OIDC provider resolves for this scope — distinct from "providers but no userInfoUri".
+    when(clientRegistrationFactory.create(authentication)).thenReturn(List.of());
+
+    final OidcClaimsProvider provider = factory.buildClaimsProvider(authentication);
+
+    assertThat(provider).isInstanceOf(NoopOidcClaimsProvider.class);
+  }
+
   // buildUserInfoUriByIssuer helper
   @Test
   void shouldExtractIssuerToUserInfoUriFromRegistrations() {
