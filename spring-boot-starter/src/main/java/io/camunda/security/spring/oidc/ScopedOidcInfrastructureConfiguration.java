@@ -133,8 +133,6 @@ public class ScopedOidcInfrastructureConfiguration {
     // factory registers unconditionally even in contexts without one.
     final ObjectMapper mapper = objectMapper.getIfAvailable(ObjectMapper::new);
     return new ScopedOidcClaimsProviderFactory(
-        scopedClientRegistrationFactory,
-        new OidcUserInfoHttpClient(httpClient, mapper),
-        meterRegistry);
+        scopedClientRegistrationFactory, httpClient, mapper, meterRegistry);
   }
 }
