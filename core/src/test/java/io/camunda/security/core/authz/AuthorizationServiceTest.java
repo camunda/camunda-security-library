@@ -14,7 +14,6 @@ import static io.camunda.security.api.model.authz.PermissionType.READ_USER_TASK;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -35,6 +34,10 @@ class AuthorizationServiceTest {
 
   @Mock private AuthorizationChecker authorizationChecker;
   @Mock private PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry;
+
+  @SuppressWarnings("unchecked")
+  @Mock
+  private PropertyAuthorizationEvaluator<String> evaluator;
 
   private final CamundaAuthentication alice = CamundaAuthentication.of(b -> b.user("alice"));
 
@@ -174,9 +177,6 @@ class AuthorizationServiceTest {
 
   @Test
   void propertyCheckDelegatesToRegistryAndReturnsRightWhenEvaluatorApproves() {
-    @SuppressWarnings("unchecked")
-    final PropertyAuthorizationEvaluator<String> evaluator =
-        (PropertyAuthorizationEvaluator<String>) mock(PropertyAuthorizationEvaluator.class);
     when(evaluator.isAuthorized(alice, "task-1")).thenReturn(true);
     when(propertyEvaluatorRegistry.<String>findEvaluator(RequiredAuthorization.PROP_ASSIGNEE))
         .thenReturn(Optional.of(evaluator));
@@ -187,9 +187,6 @@ class AuthorizationServiceTest {
 
   @Test
   void propertyCheckReturnsPermissionRejectionWhenEvaluatorDenies() {
-    @SuppressWarnings("unchecked")
-    final PropertyAuthorizationEvaluator<String> evaluator =
-        (PropertyAuthorizationEvaluator<String>) mock(PropertyAuthorizationEvaluator.class);
     when(evaluator.isAuthorized(alice, "task-1")).thenReturn(false);
     when(propertyEvaluatorRegistry.<String>findEvaluator(RequiredAuthorization.PROP_ASSIGNEE))
         .thenReturn(Optional.of(evaluator));

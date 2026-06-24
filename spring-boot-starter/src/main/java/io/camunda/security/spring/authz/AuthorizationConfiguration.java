@@ -11,6 +11,7 @@ import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
 import io.camunda.security.core.authz.AuthorizationChecker;
 import io.camunda.security.core.authz.AuthorizationService;
 import io.camunda.security.core.authz.PropertyAuthorizationEvaluatorRegistry;
+import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import java.util.List;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -24,9 +25,10 @@ import org.springframework.context.annotation.Configuration;
  *
  * <p>This class is activated when the host explicitly imports it (directly or via the {@link
  * io.camunda.security.spring.CamundaSecurityAutoConfiguration} umbrella) and an {@link
- * AuthorizationChecker} bean is present. Hosts that need a custom {@link AuthorizationService} can
- * register their own bean; the {@link ConditionalOnMissingBean} on the factory method ensures the
- * library-supplied default backs off.
+ * AuthorizationChecker} bean is present. Hosts that need a custom {@link AuthorizationCheckPort}
+ * implementation can register their own bean; the {@link ConditionalOnMissingBean} on the factory
+ * method gates on the port interface so the library-supplied default backs off for any {@link
+ * AuthorizationCheckPort} implementation, not only an {@link AuthorizationService} override.
  *
  * <p>All {@link PropertyAuthorizationEvaluator} beans present in the context are collected into a
  * {@link PropertyAuthorizationEvaluatorRegistry} and passed to the service constructor. Hosts
@@ -45,14 +47,14 @@ public class AuthorizationConfiguration {
    * Provides the default {@link AuthorizationService} backed by the host-supplied {@link
    * AuthorizationChecker} and any registered {@link PropertyAuthorizationEvaluator} beans. Backs
    * off via {@link ConditionalOnMissingBean} if the host registers its own {@link
-   * AuthorizationService} bean.
+   * AuthorizationCheckPort} bean.
    *
    * @param authorizationChecker the scope evaluation kernel
    * @param evaluators all registered property-based evaluators; empty list is valid
    * @param properties CSL configuration properties for authorization and multi-tenancy flags
    */
   @Bean
-  @ConditionalOnMissingBean
+  @ConditionalOnMissingBean(AuthorizationCheckPort.class)
   public AuthorizationService authorizationService(
       final AuthorizationChecker authorizationChecker,
       final List<PropertyAuthorizationEvaluator<?>> evaluators,
