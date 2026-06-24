@@ -8,6 +8,7 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.context.OidcClaimsProvider;
@@ -65,6 +66,8 @@ final class ScopedOidcClaimsProviderFactoryTest {
     final OidcClaimsProvider provider = factory.buildClaimsProvider(authentication);
 
     assertThat(provider).isInstanceOf(NoopOidcClaimsProvider.class);
+    // Disabled augmentation must short-circuit without consulting any collaborator.
+    verifyNoInteractions(clientRegistrationFactory, userInfoHttpClient);
   }
 
   // Augmentation enabled, no userInfoUri → CachingOidcClaimsProvider (empty map)
