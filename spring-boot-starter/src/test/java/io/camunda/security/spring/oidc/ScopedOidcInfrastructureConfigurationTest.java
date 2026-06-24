@@ -24,11 +24,15 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 
 /**
  * Verifies that {@link ScopedOidcInfrastructureConfiguration#scopedOidcClaimsProviderFactory} is
- * registered (and backs off) correctly when the configuration is loaded the way the {@code
- * CamundaSecurityAutoConfiguration} umbrella loads it: {@link OidcClaimsProviderConfiguration}
- * imported BEFORE {@link ScopedOidcInfrastructureConfiguration}, so the {@code
- * oidcUserInfoHttpClient} gate bean is registered before this bean's {@code @ConditionalOnBean} is
- * evaluated.
+ * always registered — independently of whether the cluster default has UserInfo augmentation
+ * enabled — and backs off when a host supplies its own factory. The per-scope {@link
+ * io.camunda.security.api.model.config.AuthenticationConfiguration} decides whether augmentation
+ * runs; the global {@code oidcUserInfoHttpClient} bean is used when present and a default client is
+ * built otherwise, so a scope can enable augmentation independently of the cluster default.
+ *
+ * <p>The {@link UmbrellaOrderedImports} helper reproduces the production import ordering ({@link
+ * OidcClaimsProviderConfiguration} before {@link ScopedOidcInfrastructureConfiguration}), which is
+ * still exercised to ensure the two configurations compose without conflicts.
  */
 class ScopedOidcInfrastructureConfigurationTest {
 
@@ -50,9 +54,9 @@ class ScopedOidcInfrastructureConfigurationTest {
   }
 
   @Test
-  void scopedClaimsProviderFactoryBacksOffWhenAugmentationDisabled() {
-    // Augmentation disabled => no oidcUserInfoHttpClient bean => the factory must back off
-    // cleanly without failing context startup.
+  void scopedClaimsProviderFactoryIsRegisteredWhenAugmentationDisabled() {
+    // Augmentation disabled => no global oidcUserInfoHttpClient bean => factory still registers
+    // using its built-in default client, so a scope can enable augmentation independently.
     new ApplicationContextRunner()
         .withPropertyValues("camunda.security.authentication.method=oidc")
         .withUserConfiguration(StubClientRegistrationRepository.class)
@@ -62,7 +66,26 @@ class ScopedOidcInfrastructureConfigurationTest {
         .run(
             ctx -> {
               assertThat(ctx).hasNotFailed();
-              assertThat(ctx).doesNotHaveBean(ScopedOidcClaimsProviderFactory.class);
+              assertThat(ctx).hasSingleBean(ScopedOidcClaimsProviderFactory.class);
+            });
+  }
+
+  @Test
+  void scopedClaimsProviderFactoryBacksOffWhenHostProvidesOwn() {
+    new ApplicationContextRunner()
+        .withPropertyValues("camunda.security.authentication.method=oidc")
+        .withUserConfiguration(StubClientRegistrationRepository.class)
+        .withUserConfiguration(StubObjectMapper.class)
+        .withUserConfiguration(CustomScopedFactory.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class, ScopedOidcInfrastructureConfiguration.class))
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              assertThat(ctx).hasSingleBean(ScopedOidcClaimsProviderFactory.class);
+              assertThat(ctx.getBean(ScopedOidcClaimsProviderFactory.class))
+                  .isSameAs(ctx.getBean(CustomScopedFactory.class).customFactory);
             });
   }
 
@@ -89,6 +112,17 @@ class ScopedOidcInfrastructureConfigurationTest {
     @Bean
     ClientRegistrationRepository clientRegistrationRepository() {
       return new IterableClientRegistrationRepository();
+    }
+  }
+
+  @Configuration
+  static class CustomScopedFactory {
+    final ScopedOidcClaimsProviderFactory customFactory =
+        new ScopedOidcClaimsProviderFactory(null, null, null);
+
+    @Bean
+    ScopedOidcClaimsProviderFactory scopedOidcClaimsProviderFactory() {
+      return customFactory;
     }
   }
 
