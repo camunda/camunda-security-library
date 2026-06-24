@@ -14,8 +14,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpClient;
 import java.util.HashMap;
 import java.util.Map;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -38,8 +36,6 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 @Configuration
 @ConditionalOnProperty(name = "camunda.security.authentication.method", havingValue = "oidc")
 public class OidcClaimsProviderConfiguration {
-
-  private static final Logger LOG = LoggerFactory.getLogger(OidcClaimsProviderConfiguration.class);
 
   /**
    * JDK HTTP client used by {@link CachingOidcClaimsProvider} to call the IdP's UserInfo endpoint.
@@ -93,16 +89,21 @@ public class OidcClaimsProviderConfiguration {
    * Builds the per-issuer UserInfo URI map from the resolved {@link ClientRegistration}s. Requires
    * the repository to be iterable (the default {@link
    * org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository}
-   * is). Returns an empty map if the repository is not iterable.
+   * is).
+   *
+   * @throws IllegalStateException if the repository is not iterable — augmentation is enabled, so a
+   *     mapping must be derivable; failing here makes the non-iterable repository the explicit
+   *     cause rather than surfacing later as a generic "no mapping" error
    */
   private static Map<String, String> buildUserInfoUriByIssuer(
       final ClientRegistrationRepository repo) {
     if (!(repo instanceof Iterable)) {
-      LOG.warn(
-          "ClientRegistrationRepository is not Iterable; per-issuer UserInfo routing"
-              + " will be unavailable. Register a custom OidcClaimsProvider bean to"
-              + " supply the issuer→userInfoUri mapping explicitly.");
-      return Map.of();
+      throw new IllegalStateException(
+          "UserInfo augmentation is enabled but the ClientRegistrationRepository is not iterable, so"
+              + " the per-issuer UserInfo mapping cannot be derived. Register a custom"
+              + " OidcClaimsProvider bean to supply the mapping explicitly, or disable userinfo"
+              + " augmentation"
+              + " (camunda.security.authentication.oidc.user-info-augmentation.enabled=false).");
     }
     final Map<String, String> map = new HashMap<>();
     for (final Object item : (Iterable<?>) repo) {

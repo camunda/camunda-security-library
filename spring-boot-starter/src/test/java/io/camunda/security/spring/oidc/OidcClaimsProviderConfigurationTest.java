@@ -86,6 +86,27 @@ class OidcClaimsProviderConfigurationTest {
   }
 
   @Test
+  void cachingProviderFailsFastWhenRepositoryNotIterable() {
+    // A non-iterable ClientRegistrationRepository cannot yield a per-issuer mapping; with
+    // augmentation enabled this must fail fast at the source rather than emit a WARN and then a
+    // generic "no mapping" error.
+    new ApplicationContextRunner()
+        .withPropertyValues(
+            "camunda.security.authentication.method=oidc",
+            "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
+        .withUserConfiguration(NonIterableClientRegistrationRepository.class)
+        .withUserConfiguration(StubObjectMapper.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class))
+        .run(
+            ctx -> {
+              assertThat(ctx).hasFailed();
+              assertThat(ctx).getFailure().hasRootCauseInstanceOf(IllegalStateException.class);
+            });
+  }
+
+  @Test
   void hostBeanBacksOffBothCslProviders() {
     runner
         .withUserConfiguration(HostOidcClaimsProvider.class)
@@ -160,6 +181,15 @@ class OidcClaimsProviderConfigurationTest {
               assertThat(ctx.getBean(OidcClaimsProvider.class))
                   .isInstanceOf(CachingOidcClaimsProvider.class);
             });
+  }
+
+  @Configuration
+  static class NonIterableClientRegistrationRepository {
+    @Bean
+    ClientRegistrationRepository clientRegistrationRepository() {
+      // Functional-interface lambda — does NOT implement Iterable.
+      return registrationId -> null;
+    }
   }
 
   @Configuration
