@@ -39,10 +39,7 @@ final class ScopedOidcClaimsProviderFactoryTest {
 
   @InjectMocks private ScopedOidcClaimsProviderFactory factory;
 
-  // ---------------------------------------------------------------------------
   // Augmentation enabled → CachingOidcClaimsProvider
-  // ---------------------------------------------------------------------------
-
   @Test
   void shouldBuildCachingProviderWhenAugmentationEnabled() {
     final var authentication =
@@ -59,10 +56,7 @@ final class ScopedOidcClaimsProviderFactoryTest {
     assertThat(provider).isInstanceOf(CachingOidcClaimsProvider.class);
   }
 
-  // ---------------------------------------------------------------------------
   // Augmentation disabled → NoopOidcClaimsProvider (no network calls made)
-  // ---------------------------------------------------------------------------
-
   @Test
   void shouldBuildNoopProviderWhenAugmentationDisabled() {
     final var authentication =
@@ -73,10 +67,7 @@ final class ScopedOidcClaimsProviderFactoryTest {
     assertThat(provider).isInstanceOf(NoopOidcClaimsProvider.class);
   }
 
-  // ---------------------------------------------------------------------------
   // Augmentation enabled, no userInfoUri → CachingOidcClaimsProvider (empty map)
-  // ---------------------------------------------------------------------------
-
   @Test
   void shouldBuildCachingProviderWithEmptyMapWhenNoUserInfoUriConfigured() {
     final var authentication = authEnabled("https://idp.example.com", null);
@@ -91,10 +82,7 @@ final class ScopedOidcClaimsProviderFactoryTest {
     assertThat(provider).isInstanceOf(CachingOidcClaimsProvider.class);
   }
 
-  // ---------------------------------------------------------------------------
   // buildUserInfoUriByIssuer helper
-  // ---------------------------------------------------------------------------
-
   @Test
   void shouldExtractIssuerToUserInfoUriFromRegistrations() {
     final ClientRegistration regWithBoth =
@@ -111,10 +99,6 @@ final class ScopedOidcClaimsProviderFactoryTest {
         .containsEntry("https://idp-a.example", "https://idp-a.example/userinfo")
         .doesNotContainKey("https://idp-b.example");
   }
-
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
 
   private static AuthenticationConfiguration authEnabled(
       final String issuerUri, final String userInfoUri) {
