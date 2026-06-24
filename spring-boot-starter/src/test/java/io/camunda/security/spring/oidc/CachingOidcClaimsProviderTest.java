@@ -9,6 +9,7 @@ package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -45,6 +46,26 @@ class CachingOidcClaimsProviderTest {
 
   private static OidcUserInfoAugmentationConfiguration defaultConfig() {
     return new OidcUserInfoAugmentationConfiguration();
+  }
+
+  // --- forConfiguredMappings factory ---
+
+  @Test
+  void forConfiguredMappingsThrowsWhenNoMappings() {
+    assertThatThrownBy(
+            () ->
+                CachingOidcClaimsProvider.forConfiguredMappings(
+                    fetcher, Map.of(), defaultConfig(), null))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("userInfoUri");
+  }
+
+  @Test
+  void forConfiguredMappingsBuildsWhenMappingsPresent() {
+    assertThat(
+            CachingOidcClaimsProvider.forConfiguredMappings(
+                fetcher, URI_BY_ISSUER, defaultConfig(), null))
+        .isInstanceOf(CachingOidcClaimsProvider.class);
   }
 
   // --- Merge logic ---

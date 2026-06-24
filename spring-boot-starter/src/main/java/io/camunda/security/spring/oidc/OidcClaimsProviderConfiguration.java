@@ -76,17 +76,7 @@ public class OidcClaimsProviderConfiguration {
       @Autowired(required = false) final MeterRegistry meterRegistry) {
     final var augmentation = properties.getAuthentication().getOidc().getUserInfoAugmentation();
     final Map<String, String> uriByIssuer = buildUserInfoUriByIssuer(clientRegistrationRepository);
-    if (uriByIssuer.isEmpty()) {
-      throw new IllegalStateException(
-          "UserInfo augmentation is enabled but no ClientRegistration exposes a userInfoUri, so no"
-              + " claims can be augmented — the deployment would silently run without augmentation."
-              + " Ensure UserInfo is enabled"
-              + " (camunda.security.authentication.oidc.user-info-enabled=true, the default, or the"
-              + " per-provider providers.oidc.<id>.user-info-enabled flag in multi-provider setups)"
-              + " and that the IdP's discovery document includes a userinfo_endpoint, or disable"
-              + " userinfo augmentation.");
-    }
-    return new CachingOidcClaimsProvider(
+    return CachingOidcClaimsProvider.forConfiguredMappings(
         new OidcUserInfoHttpClient(httpClient, objectMapper),
         uriByIssuer,
         augmentation,

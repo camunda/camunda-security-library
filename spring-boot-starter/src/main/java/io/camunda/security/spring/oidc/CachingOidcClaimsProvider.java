@@ -106,6 +106,34 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
             .build();
   }
 
+  /**
+   * Builds a provider for wiring that has decided augmentation should run, requiring at least one
+   * issuer→userInfoUri mapping. Throws {@link IllegalStateException} on an empty map — augmentation
+   * is enabled yet nothing could ever be augmented, a config mismatch the operator must notice
+   * rather than have the setup silently run un-augmented.
+   *
+   * <p>The constructors deliberately stay tolerant of an empty map (a token whose issuer is
+   * unmapped is passed through unaugmented); this factory layers the "must be usefully configured"
+   * policy on top, so both the cluster and per-scope wiring share one check.
+   */
+  static CachingOidcClaimsProvider forConfiguredMappings(
+      final OidcUserInfoFetcher fetcher,
+      final Map<String, String> userInfoUriByIssuer,
+      final OidcUserInfoAugmentationConfiguration config,
+      final MeterRegistry meterRegistry) {
+    if (userInfoUriByIssuer.isEmpty()) {
+      throw new IllegalStateException(
+          "UserInfo augmentation is enabled but no OIDC provider exposes a userInfoUri, so no"
+              + " claims can be augmented — the setup would silently run without augmentation."
+              + " Ensure UserInfo is enabled"
+              + " (camunda.security.authentication.oidc.user-info-enabled=true, the default, or the"
+              + " per-provider providers.oidc.<id>.user-info-enabled flag in multi-provider setups)"
+              + " and that the IdP's discovery document includes a userinfo_endpoint, or disable"
+              + " userinfo augmentation.");
+    }
+    return new CachingOidcClaimsProvider(fetcher, userInfoUriByIssuer, config, meterRegistry);
+  }
+
   @Override
   public Map<String, Object> claimsFor(
       final Map<String, Object> jwtClaims, final String tokenValue) {
