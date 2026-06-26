@@ -8,6 +8,8 @@
 package io.camunda.security.spring.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
@@ -225,6 +227,68 @@ final class SecurityFilterChainSupportTest {
     assertThat(cookie.getPath())
         .as("CSRF cookie Path must be contextPath + basePath")
         .isEqualTo("/ctx/physical-tenants/t1");
+  }
+
+  @Test
+  void shouldUseScopedCookieNameWhenCookieNameIsProvided() {
+    // given
+    final var properties = csrfEnabledProperties();
+    final var cookiePath = "/physical-tenants/t1";
+    final var cookieName = "camunda-csrf-physical-tenants-t1";
+
+    // when
+    final var repository =
+        SecurityFilterChainSupport.cookieCsrfTokenRepository(properties, cookiePath, cookieName);
+    final var request = new MockHttpServletRequest();
+    final var response = new MockHttpServletResponse();
+    final var token = repository.generateToken(request);
+    repository.saveToken(token, request, response);
+
+    // then
+    assertThat(response.getCookie("X-CSRF-TOKEN"))
+        .as("no cookie named X-CSRF-TOKEN must be present for a scoped chain")
+        .isNull();
+    final var cookie = response.getCookie(cookieName);
+    assertThat(cookie).as("scoped CSRF cookie must be set with the per-scope name").isNotNull();
+    assertThat(cookie.getPath())
+        .as("scoped CSRF cookie must still have the scoped path")
+        .isEqualTo(cookiePath);
+  }
+
+  @Test
+  void primaryChainCookieNameRemainsXCsrfToken() {
+    // given
+    final var properties = csrfEnabledProperties();
+
+    // when
+    final var repository = SecurityFilterChainSupport.cookieCsrfTokenRepository(properties);
+    final var request = new MockHttpServletRequest();
+    final var response = new MockHttpServletResponse();
+    final var token = repository.generateToken(request);
+    repository.saveToken(token, request, response);
+
+    // then
+    assertThat(response.getCookie("X-CSRF-TOKEN"))
+        .as("primary chain must still use the X-CSRF-TOKEN cookie name")
+        .isNotNull();
+  }
+
+  @Test
+  void cookieCsrfTokenRepositoryRejectsNullCookieName() {
+    final var properties = csrfEnabledProperties();
+    assertThatNullPointerException()
+        .isThrownBy(
+            () -> SecurityFilterChainSupport.cookieCsrfTokenRepository(properties, null, null))
+        .withMessageContaining("cookieName");
+  }
+
+  @Test
+  void cookieCsrfTokenRepositoryRejectsBlankCookieName() {
+    final var properties = csrfEnabledProperties();
+    assertThatIllegalArgumentException()
+        .isThrownBy(
+            () -> SecurityFilterChainSupport.cookieCsrfTokenRepository(properties, null, "   "))
+        .withMessageContaining("cookieName");
   }
 
   @Test

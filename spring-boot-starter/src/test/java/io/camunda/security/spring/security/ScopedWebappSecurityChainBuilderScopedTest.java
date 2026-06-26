@@ -251,13 +251,72 @@ class ScopedWebappSecurityChainBuilderScopedTest {
                               && h.contains("Max-Age=0")
                               && h.contains("Path=" + BASE_PATH));
 
+              final var csrfCookieName = "camunda-csrf-physical-tenants-t1";
               assertThat(cookieHeaders)
-                  .as("logout must emit a Set-Cookie clearing the CSRF cookie at basePath")
+                  .as("logout must emit a Set-Cookie clearing the per-scope CSRF cookie")
                   .anyMatch(
                       h ->
-                          h.contains("X-CSRF-TOKEN=")
+                          h.contains(csrfCookieName + "=")
                               && h.contains("Max-Age=0")
                               && h.contains("Path=" + BASE_PATH));
+            });
+  }
+
+  @Test
+  void twoScopedChainsHaveIndependentCsrfCookiesThatDoNotCrossContaminate() throws Exception {
+    new WebApplicationContextRunner()
+        .withUserConfiguration(
+            ObjectMapperConfig.class,
+            StubPaths.class,
+            StubUserDetailsPortConfig.class,
+            TwoScopedBasicChainsConfig.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                BaseSecurityConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                io.camunda.security.spring.user.UserConfiguration.class,
+                ScopedOidcInfrastructureConfiguration.class,
+                ScopedWebappSecurityChainBuilderConfiguration.class))
+        .run(
+            ctx -> {
+              final var chainT1 = ctx.getBean("scopedBasicChainForT1", SecurityFilterChain.class);
+              final var chainT2 = ctx.getBean("scopedBasicChainForT2", SecurityFilterChain.class);
+
+              final var requestT1 =
+                  new MockHttpServletRequest("POST", "/physical-tenants/t1/logout");
+              final var responseT1 = new MockHttpServletResponse();
+              new FilterChainProxy(List.of(chainT1))
+                  .doFilter(requestT1, responseT1, new MockFilterChain());
+
+              final var requestT2 =
+                  new MockHttpServletRequest("POST", "/physical-tenants/t2/logout");
+              final var responseT2 = new MockHttpServletResponse();
+              new FilterChainProxy(List.of(chainT2))
+                  .doFilter(requestT2, responseT2, new MockFilterChain());
+
+              final var cookiesT1 = responseT1.getHeaders("Set-Cookie");
+              final var cookiesT2 = responseT2.getHeaders("Set-Cookie");
+
+              assertThat(cookiesT1)
+                  .as("t1 logout must clear its own per-scope CSRF cookie")
+                  .anyMatch(
+                      h ->
+                          h.contains("camunda-csrf-physical-tenants-t1=")
+                              && h.contains("Max-Age=0"));
+              assertThat(cookiesT1)
+                  .as("t1 logout must not touch t2's CSRF cookie")
+                  .noneMatch(h -> h.contains("camunda-csrf-physical-tenants-t2="));
+
+              assertThat(cookiesT2)
+                  .as("t2 logout must clear its own per-scope CSRF cookie")
+                  .anyMatch(
+                      h ->
+                          h.contains("camunda-csrf-physical-tenants-t2=")
+                              && h.contains("Max-Age=0"));
+              assertThat(cookiesT2)
+                  .as("t2 logout must not touch t1's CSRF cookie")
+                  .noneMatch(h -> h.contains("camunda-csrf-physical-tenants-t1="));
             });
   }
 
@@ -275,7 +334,12 @@ class ScopedWebappSecurityChainBuilderScopedTest {
               .isThrownBy(
                   () ->
                       builder.buildScopedWebappChain(
-                          http, "/", authentication, sessionFilter, "session-cookie"))
+                          http,
+                          "/",
+                          authentication,
+                          sessionFilter,
+                          "session-cookie",
+                          "csrf-cookie"))
               .withMessageContaining("must not be the root path");
         });
   }
@@ -329,7 +393,12 @@ class ScopedWebappSecurityChainBuilderScopedTest {
       final var authentication = buildOidcAuthentication("oidc");
       final var sessionFilter = buildSessionFilter();
       return builder.buildScopedWebappChain(
-          http, BASE_PATH, authentication, sessionFilter, "camunda-session-physical-tenants-t1");
+          http,
+          BASE_PATH,
+          authentication,
+          sessionFilter,
+          "camunda-session-physical-tenants-t1",
+          "camunda-csrf-physical-tenants-t1");
     }
 
     private static SessionRepositoryFilter<?> buildSessionFilter() {
@@ -376,7 +445,12 @@ class ScopedWebappSecurityChainBuilderScopedTest {
       final var sessionFilter =
           new SessionRepositoryFilter<>(new MapSessionRepository(new ConcurrentHashMap<>()));
       return builder.buildScopedWebappChain(
-          http, BASE_PATH, authentication, sessionFilter, "camunda-session-physical-tenants-t1");
+          http,
+          BASE_PATH,
+          authentication,
+          sessionFilter,
+          "camunda-session-physical-tenants-t1",
+          "camunda-csrf-physical-tenants-t1");
     }
 
     private static AuthenticationConfiguration buildOidcAuthentication(
@@ -425,7 +499,48 @@ class ScopedWebappSecurityChainBuilderScopedTest {
       final var sessionFilter =
           new SessionRepositoryFilter<>(new MapSessionRepository(new ConcurrentHashMap<>()));
       return builder.buildScopedWebappChain(
-          http, BASE_PATH, authentication, sessionFilter, "camunda-session-physical-tenants-t1");
+          http,
+          BASE_PATH,
+          authentication,
+          sessionFilter,
+          "camunda-session-physical-tenants-t1",
+          "camunda-csrf-physical-tenants-t1");
+    }
+  }
+
+  @Configuration
+  static class TwoScopedBasicChainsConfig {
+
+    @Bean("scopedBasicChainForT1")
+    SecurityFilterChain scopedBasicChainForT1(
+        final HttpSecurity http, final ScopedWebappSecurityChainBuilder builder) throws Exception {
+      final var authentication = new AuthenticationConfiguration();
+      authentication.setMethod(AuthenticationMethod.BASIC);
+      final var sessionFilter =
+          new SessionRepositoryFilter<>(new MapSessionRepository(new ConcurrentHashMap<>()));
+      return builder.buildScopedWebappChain(
+          http,
+          "/physical-tenants/t1",
+          authentication,
+          sessionFilter,
+          "camunda-session-physical-tenants-t1",
+          "camunda-csrf-physical-tenants-t1");
+    }
+
+    @Bean("scopedBasicChainForT2")
+    SecurityFilterChain scopedBasicChainForT2(
+        final HttpSecurity http, final ScopedWebappSecurityChainBuilder builder) throws Exception {
+      final var authentication = new AuthenticationConfiguration();
+      authentication.setMethod(AuthenticationMethod.BASIC);
+      final var sessionFilter =
+          new SessionRepositoryFilter<>(new MapSessionRepository(new ConcurrentHashMap<>()));
+      return builder.buildScopedWebappChain(
+          http,
+          "/physical-tenants/t2",
+          authentication,
+          sessionFilter,
+          "camunda-session-physical-tenants-t2",
+          "camunda-csrf-physical-tenants-t2");
     }
   }
 }

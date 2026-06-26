@@ -72,6 +72,19 @@ final class ScopedSecurityChainRegistrarTest {
   }
 
   @Test
+  void csrfCookieNameIsPrefixedWithCamundaCsrf() {
+    assertThat(ScopedSecurityChainRegistrar.csrfCookieName("/physical-tenants/t1"))
+        .isEqualTo("camunda-csrf-physical-tenants-t1");
+  }
+
+  @Test
+  void csrfAndSessionCookieNamesAreDifferentForTheSameBasePath() {
+    final var basePath = "/physical-tenants/t1";
+    assertThat(ScopedSecurityChainRegistrar.csrfCookieName(basePath))
+        .isNotEqualTo(ScopedSecurityChainRegistrar.sessionCookieName(basePath));
+  }
+
+  @Test
   void rejectsBasePathsThatSanitizeToCollidingCookieNames() {
     final var descriptors =
         List.of(

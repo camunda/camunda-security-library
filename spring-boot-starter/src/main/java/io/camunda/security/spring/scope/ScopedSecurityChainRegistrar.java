@@ -47,6 +47,7 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
 final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostProcessor {
 
   static final String SESSION_COOKIE_PREFIX = "camunda-session-";
+  static final String CSRF_COOKIE_PREFIX = "camunda-csrf-";
   static final int MAX_COOKIE_NAME_LENGTH =
       200; // well under the RFC 6265 4096-byte name=value budget
 
@@ -273,7 +274,8 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
               descriptor.basePath(),
               descriptor.authentication(),
               sessionFilter,
-              sessionCookieName(descriptor.basePath()));
+              sessionCookieName(descriptor.basePath()),
+              csrfCookieName(descriptor.basePath()));
       return new OrderedSecurityFilterChainWrapper(chain, ORDER_WEBAPP_API);
     } catch (final IllegalStateException ex) {
       throw ex;
@@ -286,6 +288,11 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
   /** The per-scope session cookie name: {@code camunda-session-<sanitize(basePath)>}. */
   static String sessionCookieName(final String basePath) {
     return SESSION_COOKIE_PREFIX + sanitizeBasePath(basePath);
+  }
+
+  /** The per-scope CSRF cookie name: {@code camunda-csrf-<sanitize(basePath)>}. */
+  static String csrfCookieName(final String basePath) {
+    return CSRF_COOKIE_PREFIX + sanitizeBasePath(basePath);
   }
 
   static void rejectCookieNameCollisions(final List<ScopedSecurityDescriptor> descriptors) {

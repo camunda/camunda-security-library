@@ -48,6 +48,9 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
 
 /**
  * Verifies that {@link ScopedApiSecurityChainBuilder} produces correctly-scoped filter chains for
@@ -275,6 +278,78 @@ class ScopedApiSecurityChainBuilderTest {
                   .as("authenticated OIDC request must pass through the chain")
                   .isNotNull();
             });
+  }
+
+  // -------------------------------------------------------------------------
+  // Per-scope CSRF cookie name
+  // -------------------------------------------------------------------------
+
+  @Test
+  void buildScopedBasicApiChainUsesPerScopeCsrfCookieName() {
+    basicRunner.run(
+        ctx -> {
+          final var chain = ctx.getBean("scopedBasicChain", SecurityFilterChain.class);
+          assertCsrfCookieName(chain, ScopedSecurityChainRegistrar.csrfCookieName(BASE_PATH));
+        });
+  }
+
+  @Test
+  void buildScopedOidcApiChainUsesPerScopeCsrfCookieName() {
+    oidcRunner.run(
+        ctx -> {
+          final var chain = ctx.getBean("scopedOidcChain", SecurityFilterChain.class);
+          assertCsrfCookieName(chain, ScopedSecurityChainRegistrar.csrfCookieName(BASE_PATH));
+        });
+  }
+
+  @Test
+  void buildUnprotectedScopedApiChainUsesPerScopeCsrfCookieName() {
+    basicRunner.run(
+        ctx -> {
+          final var http = ctx.getBean(HttpSecurity.class);
+          final var properties = ctx.getBean(CamundaSecurityLibraryProperties.class);
+          final var authFailureHandler = ctx.getBean(AuthFailureHandler.class);
+          final var pathPort = ctx.getBean(SecurityPathPort.class);
+          final var builder =
+              new ScopedApiSecurityChainBuilder(
+                  properties,
+                  authFailureHandler,
+                  pathPort,
+                  ctx.getBeanProvider(OidcResourceServerCustomizer.class));
+
+          final SecurityFilterChain chain;
+          try {
+            chain = builder.buildUnprotectedScopedApiChain(http, BASE_PATH);
+          } catch (final Exception e) {
+            throw new AssertionError("buildUnprotectedScopedApiChain threw unexpectedly", e);
+          }
+          assertCsrfCookieName(chain, ScopedSecurityChainRegistrar.csrfCookieName(BASE_PATH));
+        });
+  }
+
+  private static void assertCsrfCookieName(
+      final SecurityFilterChain chain, final String expectedName) {
+    final var csrfFilter =
+        chain.getFilters().stream()
+            .filter(f -> f instanceof CsrfFilter)
+            .map(f -> (CsrfFilter) f)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("CsrfFilter not found in filter chain"));
+    try {
+      final var repoField = CsrfFilter.class.getDeclaredField("tokenRepository");
+      repoField.setAccessible(true);
+      final var repo = (CsrfTokenRepository) repoField.get(csrfFilter);
+      assertThat(repo)
+          .as("API chain CSRF token repository must be a CookieCsrfTokenRepository")
+          .isInstanceOf(CookieCsrfTokenRepository.class);
+      final var nameField = CookieCsrfTokenRepository.class.getDeclaredField("cookieName");
+      nameField.setAccessible(true);
+      assertThat(nameField.get(repo))
+          .as("scoped API chain must use per-scope CSRF cookie name")
+          .isEqualTo(expectedName);
+    } catch (final ReflectiveOperationException e) {
+      throw new AssertionError("Failed to inspect CSRF token repository", e);
+    }
   }
 
   // -------------------------------------------------------------------------

@@ -23,6 +23,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -77,19 +78,32 @@ public final class SecurityFilterChainSupport {
 
   public static CookieCsrfTokenRepository cookieCsrfTokenRepository(
       final CamundaSecurityLibraryProperties properties) {
-    return cookieCsrfTokenRepository(properties, null);
+    return buildCookieCsrfTokenRepository(properties, null, X_CSRF_TOKEN);
   }
 
   public static CookieCsrfTokenRepository cookieCsrfTokenRepository(
       final CamundaSecurityLibraryProperties properties, final String cookiePath) {
-    return buildCookieCsrfTokenRepository(properties, resolveCookiePath(cookiePath));
+    return buildCookieCsrfTokenRepository(properties, resolveCookiePath(cookiePath), X_CSRF_TOKEN);
+  }
+
+  public static CookieCsrfTokenRepository cookieCsrfTokenRepository(
+      final CamundaSecurityLibraryProperties properties,
+      final String cookiePath,
+      final String cookieName) {
+    return buildCookieCsrfTokenRepository(properties, resolveCookiePath(cookiePath), cookieName);
   }
 
   private static CookieCsrfTokenRepository buildCookieCsrfTokenRepository(
-      final CamundaSecurityLibraryProperties properties, final String resolvedCookiePath) {
+      final CamundaSecurityLibraryProperties properties,
+      final String resolvedCookiePath,
+      final String cookieName) {
+    Objects.requireNonNull(cookieName, "cookieName must not be null");
+    if (cookieName.isBlank()) {
+      throw new IllegalArgumentException("cookieName must not be blank");
+    }
     final CookieCsrfTokenRepository repository = new CookieCsrfTokenRepository();
     repository.setHeaderName(X_CSRF_TOKEN);
-    repository.setCookieName(X_CSRF_TOKEN);
+    repository.setCookieName(cookieName);
     final boolean httpOnly = properties.getCsrf().isCookieHttpOnly();
     repository.setCookieCustomizer(builder -> builder.httpOnly(httpOnly));
     if (resolvedCookiePath != null) {
@@ -122,7 +136,7 @@ public final class SecurityFilterChainSupport {
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort)
       throws Exception {
-    applyCsrfConfiguration(http, properties, pathPort, null);
+    applyCsrfConfiguration(http, properties, pathPort, null, X_CSRF_TOKEN);
   }
 
   public static void applyCsrfConfiguration(
@@ -130,6 +144,16 @@ public final class SecurityFilterChainSupport {
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort,
       final String cookiePath)
+      throws Exception {
+    applyCsrfConfiguration(http, properties, pathPort, cookiePath, X_CSRF_TOKEN);
+  }
+
+  public static void applyCsrfConfiguration(
+      final HttpSecurity http,
+      final CamundaSecurityLibraryProperties properties,
+      final SecurityPathPort pathPort,
+      final String cookiePath,
+      final String csrfCookieName)
       throws Exception {
     if (!properties.getCsrf().isEnabled()) {
       http.csrf(AbstractHttpConfigurer::disable);
@@ -140,7 +164,7 @@ public final class SecurityFilterChainSupport {
 
     final String resolvedCookiePath = resolveCookiePath(cookiePath);
     final CookieCsrfTokenRepository repo =
-        buildCookieCsrfTokenRepository(properties, resolvedCookiePath);
+        buildCookieCsrfTokenRepository(properties, resolvedCookiePath, csrfCookieName);
     final CsrfTokenRepository csrfTokenRepository =
         (resolvedCookiePath != null)
             ? new ContextPathScopedCsrfTokenRepository(repo, resolvedCookiePath)
