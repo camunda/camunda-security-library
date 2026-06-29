@@ -72,7 +72,7 @@ final class ScopedSecurityChainRegistrarTest {
   }
 
   @Test
-  void csrfCookieNameIsPrefixedWithCamundaCsrf() {
+  void csrfCookieNameIsPrefixedWithXCsrfToken() {
     assertThat(ScopedSecurityChainRegistrar.csrfCookieName("/physical-tenants/t1"))
         .isEqualTo("X-CSRF-TOKEN-physical-tenants-t1");
   }

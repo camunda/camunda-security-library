@@ -310,19 +310,21 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
                 + SESSION_COOKIE_PREFIX
                 + "'. Use a basePath containing alphanumerics.");
       }
-      final var name = SESSION_COOKIE_PREFIX + suffix;
-      if (name.length() > MAX_COOKIE_NAME_LENGTH) {
+      final var sessionName = SESSION_COOKIE_PREFIX + suffix;
+      final var csrfName = CSRF_COOKIE_PREFIX + suffix;
+      if (sessionName.length() > MAX_COOKIE_NAME_LENGTH
+          || csrfName.length() > MAX_COOKIE_NAME_LENGTH) {
         throw new IllegalStateException(
             "Derived session cookie name for basePath="
                 + d.basePath()
                 + " exceeds the maximum length of "
                 + MAX_COOKIE_NAME_LENGTH
                 + " characters ("
-                + name.length()
+                + sessionName.length()
                 + "). Use a shorter basePath.");
       }
-      if (!seen.add(name)) {
-        collisions.add(name);
+      if (!seen.add(sessionName)) {
+        collisions.add(sessionName);
       }
     }
     if (!collisions.isEmpty()) {
