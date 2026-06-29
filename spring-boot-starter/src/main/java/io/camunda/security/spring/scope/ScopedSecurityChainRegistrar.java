@@ -8,6 +8,7 @@
 package io.camunda.security.spring.scope;
 
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP_API;
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
 import io.camunda.security.api.context.CamundaSecurityScopeProvider;
 import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
@@ -47,7 +48,7 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
 final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostProcessor {
 
   static final String SESSION_COOKIE_PREFIX = "camunda-session-";
-  static final String CSRF_COOKIE_PREFIX = "camunda-csrf-";
+  static final String CSRF_COOKIE_PREFIX = X_CSRF_TOKEN + "-";
   static final int MAX_COOKIE_NAME_LENGTH =
       200; // well under the RFC 6265 4096-byte name=value budget
 
@@ -290,7 +291,7 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
     return SESSION_COOKIE_PREFIX + sanitizeBasePath(basePath);
   }
 
-  /** The per-scope CSRF cookie name: {@code camunda-csrf-<sanitize(basePath)>}. */
+  /** The per-scope CSRF cookie name: {@code X-CSRF-TOKEN-<sanitize(basePath)>}. */
   static String csrfCookieName(final String basePath) {
     return CSRF_COOKIE_PREFIX + sanitizeBasePath(basePath);
   }

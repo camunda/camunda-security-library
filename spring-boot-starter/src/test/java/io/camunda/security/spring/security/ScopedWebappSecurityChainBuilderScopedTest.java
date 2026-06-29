@@ -251,7 +251,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
                               && h.contains("Max-Age=0")
                               && h.contains("Path=" + BASE_PATH));
 
-              final var csrfCookieName = "camunda-csrf-physical-tenants-t1";
+              final var csrfCookieName = "X-CSRF-TOKEN-physical-tenants-t1";
               assertThat(cookieHeaders)
                   .as("logout must emit a Set-Cookie clearing the per-scope CSRF cookie")
                   .anyMatch(
@@ -302,21 +302,21 @@ class ScopedWebappSecurityChainBuilderScopedTest {
                   .as("t1 logout must clear its own per-scope CSRF cookie")
                   .anyMatch(
                       h ->
-                          h.contains("camunda-csrf-physical-tenants-t1=")
+                          h.contains("X-CSRF-TOKEN-physical-tenants-t1=")
                               && h.contains("Max-Age=0"));
               assertThat(cookiesT1)
                   .as("t1 logout must not touch t2's CSRF cookie")
-                  .noneMatch(h -> h.contains("camunda-csrf-physical-tenants-t2="));
+                  .noneMatch(h -> h.contains("X-CSRF-TOKEN-physical-tenants-t2="));
 
               assertThat(cookiesT2)
                   .as("t2 logout must clear its own per-scope CSRF cookie")
                   .anyMatch(
                       h ->
-                          h.contains("camunda-csrf-physical-tenants-t2=")
+                          h.contains("X-CSRF-TOKEN-physical-tenants-t2=")
                               && h.contains("Max-Age=0"));
               assertThat(cookiesT2)
                   .as("t2 logout must not touch t1's CSRF cookie")
-                  .noneMatch(h -> h.contains("camunda-csrf-physical-tenants-t1="));
+                  .noneMatch(h -> h.contains("X-CSRF-TOKEN-physical-tenants-t1="));
             });
   }
 
@@ -398,7 +398,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
           authentication,
           sessionFilter,
           "camunda-session-physical-tenants-t1",
-          "camunda-csrf-physical-tenants-t1");
+          "X-CSRF-TOKEN-physical-tenants-t1");
     }
 
     private static SessionRepositoryFilter<?> buildSessionFilter() {
@@ -450,7 +450,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
           authentication,
           sessionFilter,
           "camunda-session-physical-tenants-t1",
-          "camunda-csrf-physical-tenants-t1");
+          "X-CSRF-TOKEN-physical-tenants-t1");
     }
 
     private static AuthenticationConfiguration buildOidcAuthentication(
@@ -504,7 +504,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
           authentication,
           sessionFilter,
           "camunda-session-physical-tenants-t1",
-          "camunda-csrf-physical-tenants-t1");
+          "X-CSRF-TOKEN-physical-tenants-t1");
     }
   }
 
@@ -524,7 +524,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
           authentication,
           sessionFilter,
           "camunda-session-physical-tenants-t1",
-          "camunda-csrf-physical-tenants-t1");
+          "X-CSRF-TOKEN-physical-tenants-t1");
     }
 
     @Bean("scopedBasicChainForT2")
@@ -540,7 +540,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
           authentication,
           sessionFilter,
           "camunda-session-physical-tenants-t2",
-          "camunda-csrf-physical-tenants-t2");
+          "X-CSRF-TOKEN-physical-tenants-t2");
     }
   }
 }

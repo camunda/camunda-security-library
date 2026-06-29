@@ -234,7 +234,7 @@ final class SecurityFilterChainSupportTest {
     // given
     final var properties = csrfEnabledProperties();
     final var cookiePath = "/physical-tenants/t1";
-    final var cookieName = "camunda-csrf-physical-tenants-t1";
+    final var cookieName = "X-CSRF-TOKEN-physical-tenants-t1";
 
     // when
     final var repository =
