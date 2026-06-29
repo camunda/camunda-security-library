@@ -7,6 +7,8 @@
  */
 package io.camunda.security.spring.scope;
 
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
+
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
@@ -78,6 +80,25 @@ public final class ScopedApiSecurityChainBuilder {
       final JwtDecoder jwtDecoder,
       final SessionRepositoryFilter<?> sessionRepositoryFilter)
       throws Exception {
+    return buildOidcApiChainWith(
+        http,
+        matchers,
+        unprotectedMatchers,
+        jwtDecoder,
+        sessionRepositoryFilter,
+        null,
+        X_CSRF_TOKEN);
+  }
+
+  private SecurityFilterChain buildOidcApiChainWith(
+      final HttpSecurity http,
+      final Collection<String> matchers,
+      final Collection<String> unprotectedMatchers,
+      final JwtDecoder jwtDecoder,
+      final SessionRepositoryFilter<?> sessionRepositoryFilter,
+      final String csrfCookiePath,
+      final String csrfCookieName)
+      throws Exception {
     Objects.requireNonNull(jwtDecoder, "jwtDecoder must not be null");
     LOG.debug(
         "Building OIDC API chain for matchers={}, unprotected={}", matchers, unprotectedMatchers);
@@ -112,7 +133,8 @@ public final class ScopedApiSecurityChainBuilder {
             .oauth2Login(AbstractHttpConfigurer::disable)
             .oidcLogout(AbstractHttpConfigurer::disable)
             .logout(AbstractHttpConfigurer::disable);
-    SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
+    SecurityFilterChainSupport.applyCsrfConfiguration(
+        filterChainBuilder, properties, pathPort, csrfCookiePath, csrfCookieName);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
     return filterChainBuilder.build();
@@ -129,6 +151,18 @@ public final class ScopedApiSecurityChainBuilder {
       final Collection<String> matchers,
       final Collection<String> unprotectedMatchers,
       final SessionRepositoryFilter<?> sessionRepositoryFilter)
+      throws Exception {
+    return buildBasicApiChainWith(
+        http, matchers, unprotectedMatchers, sessionRepositoryFilter, null, X_CSRF_TOKEN);
+  }
+
+  private SecurityFilterChain buildBasicApiChainWith(
+      final HttpSecurity http,
+      final Collection<String> matchers,
+      final Collection<String> unprotectedMatchers,
+      final SessionRepositoryFilter<?> sessionRepositoryFilter,
+      final String csrfCookiePath,
+      final String csrfCookieName)
       throws Exception {
     LOG.debug(
         "Building Basic API chain for matchers={}, unprotected={}", matchers, unprotectedMatchers);
@@ -156,7 +190,8 @@ public final class ScopedApiSecurityChainBuilder {
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.NEVER))
             .requestCache(cache -> cache.requestCache(new NullRequestCache()));
 
-    SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
+    SecurityFilterChainSupport.applyCsrfConfiguration(
+        filterChainBuilder, properties, pathPort, csrfCookiePath, csrfCookieName);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
     return filterChainBuilder.build();
@@ -200,14 +235,24 @@ public final class ScopedApiSecurityChainBuilder {
     }
     final var matchers = pathPort.apiPaths().stream().map(p -> prefix + p).toList();
     final var unprotected = pathPort.unprotectedApiPaths().stream().map(p -> prefix + p).toList();
+    final var csrfCookieName = ScopedSecurityChainRegistrar.csrfCookieName(basePath);
     return switch (method) {
       case OIDC -> {
         final var decoder =
             Objects.requireNonNull(
                 oidcDecoderSupplier.get(), "oidcDecoderSupplier must not return a null JwtDecoder");
-        yield buildOidcApiChain(http, matchers, unprotected, decoder, sessionRepositoryFilter);
+        yield buildOidcApiChainWith(
+            http,
+            matchers,
+            unprotected,
+            decoder,
+            sessionRepositoryFilter,
+            basePath,
+            csrfCookieName);
       }
-      case BASIC -> buildBasicApiChain(http, matchers, unprotected, sessionRepositoryFilter);
+      case BASIC ->
+          buildBasicApiChainWith(
+              http, matchers, unprotected, sessionRepositoryFilter, basePath, csrfCookieName);
       default -> throw new IllegalStateException("Unsupported authentication method: " + method);
     };
   }
@@ -283,7 +328,12 @@ public final class ScopedApiSecurityChainBuilder {
             .formLogin(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable);
 
-    SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
+    SecurityFilterChainSupport.applyCsrfConfiguration(
+        filterChainBuilder,
+        properties,
+        pathPort,
+        basePath,
+        ScopedSecurityChainRegistrar.csrfCookieName(basePath));
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
     return filterChainBuilder.build();

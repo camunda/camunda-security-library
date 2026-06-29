@@ -8,6 +8,7 @@
 package io.camunda.security.spring.scope;
 
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP_API;
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
 import io.camunda.security.api.context.CamundaSecurityScopeProvider;
 import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
@@ -47,6 +48,7 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
 final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostProcessor {
 
   static final String SESSION_COOKIE_PREFIX = "camunda-session-";
+  static final String CSRF_COOKIE_PREFIX = X_CSRF_TOKEN + "-";
   static final int MAX_COOKIE_NAME_LENGTH =
       200; // well under the RFC 6265 4096-byte name=value budget
 
@@ -273,7 +275,8 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
               descriptor.basePath(),
               descriptor.authentication(),
               sessionFilter,
-              sessionCookieName(descriptor.basePath()));
+              sessionCookieName(descriptor.basePath()),
+              csrfCookieName(descriptor.basePath()));
       return new OrderedSecurityFilterChainWrapper(chain, ORDER_WEBAPP_API);
     } catch (final IllegalStateException ex) {
       throw ex;
@@ -286,6 +289,11 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
   /** The per-scope session cookie name: {@code camunda-session-<sanitize(basePath)>}. */
   static String sessionCookieName(final String basePath) {
     return SESSION_COOKIE_PREFIX + sanitizeBasePath(basePath);
+  }
+
+  /** The per-scope CSRF cookie name: {@code X-CSRF-TOKEN-<sanitize(basePath)>}. */
+  static String csrfCookieName(final String basePath) {
+    return CSRF_COOKIE_PREFIX + sanitizeBasePath(basePath);
   }
 
   static void rejectCookieNameCollisions(final List<ScopedSecurityDescriptor> descriptors) {
@@ -302,19 +310,21 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
                 + SESSION_COOKIE_PREFIX
                 + "'. Use a basePath containing alphanumerics.");
       }
-      final var name = SESSION_COOKIE_PREFIX + suffix;
-      if (name.length() > MAX_COOKIE_NAME_LENGTH) {
+      final var sessionName = SESSION_COOKIE_PREFIX + suffix;
+      final var csrfName = CSRF_COOKIE_PREFIX + suffix;
+      if (sessionName.length() > MAX_COOKIE_NAME_LENGTH
+          || csrfName.length() > MAX_COOKIE_NAME_LENGTH) {
         throw new IllegalStateException(
             "Derived session cookie name for basePath="
                 + d.basePath()
                 + " exceeds the maximum length of "
                 + MAX_COOKIE_NAME_LENGTH
                 + " characters ("
-                + name.length()
+                + sessionName.length()
                 + "). Use a shorter basePath.");
       }
-      if (!seen.add(name)) {
-        collisions.add(name);
+      if (!seen.add(sessionName)) {
+        collisions.add(sessionName);
       }
     }
     if (!collisions.isEmpty()) {

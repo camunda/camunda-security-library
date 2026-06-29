@@ -306,7 +306,8 @@ public final class ScopedWebappSecurityChainBuilder {
       final String basePath,
       final AuthenticationConfiguration authentication,
       final SessionRepositoryFilter<?> sessionRepositoryFilter,
-      final String scopedSessionCookieName)
+      final String scopedSessionCookieName,
+      final String scopedCsrfCookieName)
       throws Exception {
     Objects.requireNonNull(http, "http must not be null");
     Objects.requireNonNull(basePath, "basePath must not be null");
@@ -316,6 +317,7 @@ public final class ScopedWebappSecurityChainBuilder {
     Objects.requireNonNull(authentication.getMethod(), "authentication.method must not be null");
     Objects.requireNonNull(sessionRepositoryFilter, "sessionRepositoryFilter must not be null");
     Objects.requireNonNull(scopedSessionCookieName, "scopedSessionCookieName must not be null");
+    Objects.requireNonNull(scopedCsrfCookieName, "scopedCsrfCookieName must not be null");
     Objects.requireNonNull(
         authorizedClientManagerFactory, "authorizedClientManagerFactory must not be null");
     Objects.requireNonNull(
@@ -335,10 +337,15 @@ public final class ScopedWebappSecurityChainBuilder {
     return switch (authentication.getMethod()) {
       case OIDC ->
           buildOidcWebappChainInternal(
-              http, prefix, authentication, sessionRepositoryFilter, scopedSessionCookieName);
+              http,
+              prefix,
+              authentication,
+              sessionRepositoryFilter,
+              scopedSessionCookieName,
+              scopedCsrfCookieName);
       case BASIC ->
           buildBasicWebappChainInternal(
-              http, prefix, sessionRepositoryFilter, scopedSessionCookieName);
+              http, prefix, sessionRepositoryFilter, scopedSessionCookieName, scopedCsrfCookieName);
       default ->
           throw new IllegalStateException(
               "Unsupported authentication method: " + authentication.getMethod());
@@ -404,7 +411,8 @@ public final class ScopedWebappSecurityChainBuilder {
       final String prefix,
       final AuthenticationConfiguration authentication,
       final SessionRepositoryFilter<?> sessionRepositoryFilter,
-      final String scopedSessionCookieName)
+      final String scopedSessionCookieName,
+      final String scopedCsrfCookieName)
       throws Exception {
 
     final var matchers = pathPort.webappPaths().stream().map(p -> prefix + p).toList();
@@ -490,7 +498,7 @@ public final class ScopedWebappSecurityChainBuilder {
                       .addLogoutHandler(
                           pathScopedCookieClearingLogoutHandler(scopedSessionCookieName, prefix))
                       .addLogoutHandler(
-                          pathScopedCookieClearingLogoutHandler(X_CSRF_TOKEN, prefix));
+                          pathScopedCookieClearingLogoutHandler(scopedCsrfCookieName, prefix));
                   logoutSuccessHandlerProvider.ifAvailable(logout::logoutSuccessHandler);
                 });
 
@@ -499,7 +507,7 @@ public final class ScopedWebappSecurityChainBuilder {
     final var logoutHandler =
         new CompositeLogoutHandler(
             pathScopedCookieClearingLogoutHandler(scopedSessionCookieName, prefix),
-            pathScopedCookieClearingLogoutHandler(X_CSRF_TOKEN, prefix),
+            pathScopedCookieClearingLogoutHandler(scopedCsrfCookieName, prefix),
             new SecurityContextLogoutHandler());
     filterChainBuilder.addFilterAfter(
         new OAuth2RefreshTokenFilter(
@@ -515,7 +523,7 @@ public final class ScopedWebappSecurityChainBuilder {
     }
 
     SecurityFilterChainSupport.applyCsrfConfiguration(
-        filterChainBuilder, properties, pathPort, prefix);
+        filterChainBuilder, properties, pathPort, prefix, scopedCsrfCookieName);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
     // Install the multi-IdP login picker (GH-269): the custom entry point trips
@@ -532,7 +540,8 @@ public final class ScopedWebappSecurityChainBuilder {
       final HttpSecurity http,
       final String prefix,
       final SessionRepositoryFilter<?> sessionRepositoryFilter,
-      final String scopedSessionCookieName)
+      final String scopedSessionCookieName,
+      final String scopedCsrfCookieName)
       throws Exception {
 
     final var matchers = pathPort.webappPaths().stream().map(p -> prefix + p).toList();
@@ -572,7 +581,7 @@ public final class ScopedWebappSecurityChainBuilder {
                         .addLogoutHandler(
                             pathScopedCookieClearingLogoutHandler(scopedSessionCookieName, prefix))
                         .addLogoutHandler(
-                            pathScopedCookieClearingLogoutHandler(X_CSRF_TOKEN, prefix)))
+                            pathScopedCookieClearingLogoutHandler(scopedCsrfCookieName, prefix)))
             .exceptionHandling(
                 eh ->
                     eh.authenticationEntryPoint(authFailureHandler)
@@ -590,7 +599,7 @@ public final class ScopedWebappSecurityChainBuilder {
     }
 
     SecurityFilterChainSupport.applyCsrfConfiguration(
-        filterChainBuilder, properties, pathPort, prefix);
+        filterChainBuilder, properties, pathPort, prefix, scopedCsrfCookieName);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
     return filterChainBuilder.build();
