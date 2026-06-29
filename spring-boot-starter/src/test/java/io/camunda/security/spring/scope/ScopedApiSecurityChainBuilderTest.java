@@ -327,6 +327,32 @@ class ScopedApiSecurityChainBuilderTest {
         });
   }
 
+  @Test
+  void buildScopedApiChainUsesScopedCookiePath() {
+    basicRunner.run(
+        ctx -> {
+          final var chain = ctx.getBean("scopedBasicChain", SecurityFilterChain.class);
+          final var csrfFilter =
+              chain.getFilters().stream()
+                  .filter(f -> f instanceof CsrfFilter)
+                  .map(f -> (CsrfFilter) f)
+                  .findFirst()
+                  .orElseThrow(() -> new AssertionError("CsrfFilter not found in filter chain"));
+          try {
+            final var repoField = CsrfFilter.class.getDeclaredField("tokenRepository");
+            repoField.setAccessible(true);
+            final var repo = (CsrfTokenRepository) repoField.get(csrfFilter);
+            assertThat(repo).isNotInstanceOf(CookieCsrfTokenRepository.class);
+            final var delegateField = repo.getClass().getDeclaredField("delegate");
+            delegateField.setAccessible(true);
+            final var delegate = (CookieCsrfTokenRepository) delegateField.get(repo);
+            assertThat(delegate.getCookiePath()).isEqualTo(BASE_PATH);
+          } catch (final ReflectiveOperationException e) {
+            throw new AssertionError("Failed to inspect CSRF token repository path", e);
+          }
+        });
+  }
+
   private static void assertCsrfCookieName(
       final SecurityFilterChain chain, final String expectedName) {
     final var csrfFilter =
@@ -339,12 +365,19 @@ class ScopedApiSecurityChainBuilderTest {
       final var repoField = CsrfFilter.class.getDeclaredField("tokenRepository");
       repoField.setAccessible(true);
       final var repo = (CsrfTokenRepository) repoField.get(csrfFilter);
-      assertThat(repo)
-          .as("API chain CSRF token repository must be a CookieCsrfTokenRepository")
-          .isInstanceOf(CookieCsrfTokenRepository.class);
+      // CookieCsrfTokenRepository has no getCookieName(); reflection is the only option.
+      // Scoped chains wrap the repo in ContextPathScopedCsrfTokenRepository, so unwrap if needed.
+      final CookieCsrfTokenRepository cookieRepo;
+      if (repo instanceof CookieCsrfTokenRepository direct) {
+        cookieRepo = direct;
+      } else {
+        final var delegateField = repo.getClass().getDeclaredField("delegate");
+        delegateField.setAccessible(true);
+        cookieRepo = (CookieCsrfTokenRepository) delegateField.get(repo);
+      }
       final var nameField = CookieCsrfTokenRepository.class.getDeclaredField("cookieName");
       nameField.setAccessible(true);
-      assertThat(nameField.get(repo))
+      assertThat(nameField.get(cookieRepo))
           .as("scoped API chain must use per-scope CSRF cookie name")
           .isEqualTo(expectedName);
     } catch (final ReflectiveOperationException e) {

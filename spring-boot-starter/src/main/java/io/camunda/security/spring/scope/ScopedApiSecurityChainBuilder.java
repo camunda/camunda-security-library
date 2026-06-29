@@ -81,7 +81,13 @@ public final class ScopedApiSecurityChainBuilder {
       final SessionRepositoryFilter<?> sessionRepositoryFilter)
       throws Exception {
     return buildOidcApiChainWith(
-        http, matchers, unprotectedMatchers, jwtDecoder, sessionRepositoryFilter, X_CSRF_TOKEN);
+        http,
+        matchers,
+        unprotectedMatchers,
+        jwtDecoder,
+        sessionRepositoryFilter,
+        null,
+        X_CSRF_TOKEN);
   }
 
   private SecurityFilterChain buildOidcApiChainWith(
@@ -90,6 +96,7 @@ public final class ScopedApiSecurityChainBuilder {
       final Collection<String> unprotectedMatchers,
       final JwtDecoder jwtDecoder,
       final SessionRepositoryFilter<?> sessionRepositoryFilter,
+      final String csrfCookiePath,
       final String csrfCookieName)
       throws Exception {
     Objects.requireNonNull(jwtDecoder, "jwtDecoder must not be null");
@@ -127,7 +134,7 @@ public final class ScopedApiSecurityChainBuilder {
             .oidcLogout(AbstractHttpConfigurer::disable)
             .logout(AbstractHttpConfigurer::disable);
     SecurityFilterChainSupport.applyCsrfConfiguration(
-        filterChainBuilder, properties, pathPort, null, csrfCookieName);
+        filterChainBuilder, properties, pathPort, csrfCookiePath, csrfCookieName);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
     return filterChainBuilder.build();
@@ -146,7 +153,7 @@ public final class ScopedApiSecurityChainBuilder {
       final SessionRepositoryFilter<?> sessionRepositoryFilter)
       throws Exception {
     return buildBasicApiChainWith(
-        http, matchers, unprotectedMatchers, sessionRepositoryFilter, X_CSRF_TOKEN);
+        http, matchers, unprotectedMatchers, sessionRepositoryFilter, null, X_CSRF_TOKEN);
   }
 
   private SecurityFilterChain buildBasicApiChainWith(
@@ -154,6 +161,7 @@ public final class ScopedApiSecurityChainBuilder {
       final Collection<String> matchers,
       final Collection<String> unprotectedMatchers,
       final SessionRepositoryFilter<?> sessionRepositoryFilter,
+      final String csrfCookiePath,
       final String csrfCookieName)
       throws Exception {
     LOG.debug(
@@ -183,7 +191,7 @@ public final class ScopedApiSecurityChainBuilder {
             .requestCache(cache -> cache.requestCache(new NullRequestCache()));
 
     SecurityFilterChainSupport.applyCsrfConfiguration(
-        filterChainBuilder, properties, pathPort, null, csrfCookieName);
+        filterChainBuilder, properties, pathPort, csrfCookiePath, csrfCookieName);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
     return filterChainBuilder.build();
@@ -234,11 +242,17 @@ public final class ScopedApiSecurityChainBuilder {
             Objects.requireNonNull(
                 oidcDecoderSupplier.get(), "oidcDecoderSupplier must not return a null JwtDecoder");
         yield buildOidcApiChainWith(
-            http, matchers, unprotected, decoder, sessionRepositoryFilter, csrfCookieName);
+            http,
+            matchers,
+            unprotected,
+            decoder,
+            sessionRepositoryFilter,
+            basePath,
+            csrfCookieName);
       }
       case BASIC ->
           buildBasicApiChainWith(
-              http, matchers, unprotected, sessionRepositoryFilter, csrfCookieName);
+              http, matchers, unprotected, sessionRepositoryFilter, basePath, csrfCookieName);
       default -> throw new IllegalStateException("Unsupported authentication method: " + method);
     };
   }
@@ -318,7 +332,7 @@ public final class ScopedApiSecurityChainBuilder {
         filterChainBuilder,
         properties,
         pathPort,
-        null,
+        basePath,
         ScopedSecurityChainRegistrar.csrfCookieName(basePath));
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
