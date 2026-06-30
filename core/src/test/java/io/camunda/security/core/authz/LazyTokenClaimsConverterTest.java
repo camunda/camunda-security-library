@@ -14,11 +14,14 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.camunda.security.api.context.MembershipResolutionContextPropagator;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.core.port.out.MembershipQuery;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -104,6 +107,59 @@ class LazyTokenClaimsConverterTest {
 
     assertThat(auth.authenticatedUsername()).isEqualTo("alice");
     assertThat(auth.claims()).hasSize(1).containsEntry("sub", "alice");
+  }
+
+  @Test
+  void capturesContextAtConstructionForEachMembershipSupplier() {
+    // given a propagator that records how many suppliers it decorates
+    final AtomicInteger decorateCalls = new AtomicInteger();
+    final MembershipResolutionContextPropagator propagator =
+        supplier -> {
+          decorateCalls.incrementAndGet();
+          return supplier;
+        };
+    final var capturingConverter =
+        new LazyTokenClaimsConverter("sub", "azp", true, membershipPort, propagator);
+
+    // when the authentication is built (before any membership field is read)
+    capturingConverter.convert(Map.of("sub", "alice"));
+
+    // then the propagator was applied once per membership supplier (mapping rules, groups, roles,
+    // tenants)
+    assertThat(decorateCalls.get()).isEqualTo(4);
+  }
+
+  @Test
+  void bindsPropagatedContextAroundDeferredMembershipLookup() {
+    // given a propagator that binds a marker for the duration of the deferred lookup
+    final AtomicReference<String> boundContext = new AtomicReference<>();
+    final MembershipResolutionContextPropagator propagator =
+        supplier ->
+            () -> {
+              boundContext.set("bound");
+              try {
+                return supplier.get();
+              } finally {
+                boundContext.set(null);
+              }
+            };
+    final AtomicReference<String> observedDuringLookup = new AtomicReference<>();
+    when(membershipPort.groupIds(any()))
+        .thenAnswer(
+            invocation -> {
+              observedDuringLookup.set(boundContext.get());
+              return List.of("g1");
+            });
+    final var capturingConverter =
+        new LazyTokenClaimsConverter("sub", "azp", true, membershipPort, propagator);
+    final var auth = capturingConverter.convert(Map.of("sub", "alice"));
+
+    // when the lazy group list is materialised
+    assertThat(auth.authenticatedGroupIds()).containsExactly("g1");
+
+    // then the host context was bound while the membership lookup ran, and cleared afterwards
+    assertThat(observedDuringLookup.get()).isEqualTo("bound");
+    assertThat(boundContext.get()).isNull();
   }
 
   @Test
