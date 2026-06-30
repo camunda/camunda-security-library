@@ -7,6 +7,7 @@
  */
 package io.camunda.security.core.authz;
 
+import io.camunda.security.api.context.MembershipResolutionContextPropagator;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.oidc.OidcPrincipalLoader;
 import io.camunda.security.core.port.out.MembershipPort;
@@ -33,16 +34,32 @@ public final class LazyTokenClaimsConverter {
   private final String usernameClaim;
   private final String clientIdClaim;
   private final MembershipPort membershipPort;
+  private final MembershipResolutionContextPropagator contextPropagator;
 
   public LazyTokenClaimsConverter(
       final String usernameClaim,
       final String clientIdClaim,
       final boolean preferUsernameClaim,
       final MembershipPort membershipPort) {
+    this(
+        usernameClaim,
+        clientIdClaim,
+        preferUsernameClaim,
+        membershipPort,
+        MembershipResolutionContextPropagator.identity());
+  }
+
+  public LazyTokenClaimsConverter(
+      final String usernameClaim,
+      final String clientIdClaim,
+      final boolean preferUsernameClaim,
+      final MembershipPort membershipPort,
+      final MembershipResolutionContextPropagator contextPropagator) {
     this.usernameClaim = usernameClaim;
     this.clientIdClaim = clientIdClaim;
     this.preferUsernameClaim = preferUsernameClaim;
     this.membershipPort = Objects.requireNonNull(membershipPort, "membershipPort");
+    this.contextPropagator = Objects.requireNonNull(contextPropagator, "contextPropagator");
     oidcPrincipalLoader = new OidcPrincipalLoader(usernameClaim, clientIdClaim);
   }
 
@@ -73,23 +90,30 @@ public final class LazyTokenClaimsConverter {
     }
 
     final var base = new MembershipQuery(snapshotClaims, principalName, principalType);
+    // Each membership lookup is resolved lazily and may run after the request scope is gone (async
+    // reads, session serialisation). The context propagator captures any host resolution context
+    // now — while this converter runs in scope — and rebinds it around the deferred lookup.
     final var lazyMappingRuleIds =
-        CamundaAuthentication.lazyList(() -> membershipPort.mappingRuleIds(base));
+        CamundaAuthentication.lazyList(
+            contextPropagator.decorate(() -> membershipPort.mappingRuleIds(base)));
     final var lazyGroupIds =
         CamundaAuthentication.lazyList(
-            () -> membershipPort.groupIds(base.withMappingRuleIds(lazyMappingRuleIds)));
+            contextPropagator.decorate(
+                () -> membershipPort.groupIds(base.withMappingRuleIds(lazyMappingRuleIds))));
     final var lazyRoleIds =
         CamundaAuthentication.lazyList(
-            () ->
-                membershipPort.roleIds(
-                    base.withMappingRuleIds(lazyMappingRuleIds).withGroupIds(lazyGroupIds)));
+            contextPropagator.decorate(
+                () ->
+                    membershipPort.roleIds(
+                        base.withMappingRuleIds(lazyMappingRuleIds).withGroupIds(lazyGroupIds))));
     final var lazyTenantIds =
         CamundaAuthentication.lazyList(
-            () ->
-                membershipPort.tenantIds(
-                    base.withMappingRuleIds(lazyMappingRuleIds)
-                        .withGroupIds(lazyGroupIds)
-                        .withRoleIds(lazyRoleIds)));
+            contextPropagator.decorate(
+                () ->
+                    membershipPort.tenantIds(
+                        base.withMappingRuleIds(lazyMappingRuleIds)
+                            .withGroupIds(lazyGroupIds)
+                            .withRoleIds(lazyRoleIds))));
 
     return CamundaAuthentication.of(
         a -> {
