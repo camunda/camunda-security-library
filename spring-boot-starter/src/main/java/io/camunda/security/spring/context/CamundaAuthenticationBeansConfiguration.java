@@ -10,6 +10,7 @@ package io.camunda.security.spring.context;
 import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.context.CamundaAuthenticationHolder;
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
+import io.camunda.security.api.context.MembershipResolutionContextPropagator;
 import io.camunda.security.core.context.holder.CamundaAuthenticationDelegatingHolder;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.annotation.ConditionalOnUnprotectedApi;
@@ -55,6 +56,21 @@ public class CamundaAuthenticationBeansConfiguration {
   public CamundaAuthenticationHolder httpSessionBasedAuthenticationHolder(
       final HttpServletRequest request, final CamundaSecurityLibraryProperties properties) {
     return new HttpSessionBasedAuthenticationHolder(request, properties.getAuthentication());
+  }
+
+  /**
+   * Default {@link MembershipResolutionContextPropagator} for the lazy membership-resolution path
+   * (used by {@code LazyTokenClaimsConverter}). The library default performs no decoration ({@link
+   * MembershipResolutionContextPropagator#identity()}), preserving the plain lazy behaviour. A host
+   * whose {@code MembershipPort} depends on request-scoped state (e.g. a multi-tenant routing key)
+   * registers its own {@link MembershipResolutionContextPropagator} bean to capture and rebind that
+   * state around the deferred lookups; {@link ConditionalOnMissingBean} backs this default off when
+   * the host does so.
+   */
+  @Bean
+  @ConditionalOnMissingBean
+  public MembershipResolutionContextPropagator membershipResolutionContextPropagator() {
+    return MembershipResolutionContextPropagator.identity();
   }
 
   @Bean

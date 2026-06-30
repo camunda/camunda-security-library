@@ -12,10 +12,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.context.CamundaAuthenticationHolder;
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
+import io.camunda.security.api.context.MembershipResolutionContextPropagator;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.context.holder.HttpSessionBasedAuthenticationHolder;
 import io.camunda.security.spring.context.holder.RequestContextBasedAuthenticationHolder;
 import io.camunda.security.spring.converter.UnprotectedCamundaAuthenticationConverter;
+import java.util.List;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
@@ -82,6 +85,19 @@ class CamundaAuthenticationBeansConfigurationTest {
                 assertThat(ctx).doesNotHaveBean(UnprotectedCamundaAuthenticationConverter.class));
   }
 
+  @Test
+  void membershipResolutionContextPropagatorIsRegisteredByDefault() {
+    final Supplier<List<String>> supplier = () -> List.of("x");
+    runner.run(
+        ctx ->
+            assertThat(ctx)
+                .hasSingleBean(MembershipResolutionContextPropagator.class)
+                .getBean(MembershipResolutionContextPropagator.class)
+                // the identity() default returns each supplier unchanged
+                .satisfies(
+                    propagator -> assertThat(propagator.decorate(supplier)).isSameAs(supplier)));
+  }
+
   // ---- @ConditionalOnMissingBean back-off ----------------------------------
 
   @Test
@@ -121,6 +137,18 @@ class CamundaAuthenticationBeansConfigurationTest {
                   .getBean(CamundaAuthenticationProvider.class)
                   .isInstanceOf(HostAuthenticationProvider.StubProvider.class);
             });
+  }
+
+  @Test
+  void membershipResolutionContextPropagatorBacksOffWhenHostProvidesOne() {
+    runner
+        .withUserConfiguration(HostMembershipResolutionContextPropagator.class)
+        .run(
+            ctx ->
+                assertThat(ctx)
+                    .hasSingleBean(MembershipResolutionContextPropagator.class)
+                    .getBean(MembershipResolutionContextPropagator.class)
+                    .isInstanceOf(HostMembershipResolutionContextPropagator.StubPropagator.class));
   }
 
   // ---- stub host configurations --------------------------------------------
@@ -191,6 +219,22 @@ class CamundaAuthenticationBeansConfigurationTest {
       @Override
       public io.camunda.security.api.model.CamundaAuthentication getCamundaAuthentication() {
         return null;
+      }
+    }
+  }
+
+  @Configuration
+  static class HostMembershipResolutionContextPropagator {
+
+    @Bean
+    MembershipResolutionContextPropagator membershipResolutionContextPropagator() {
+      return new StubPropagator();
+    }
+
+    static final class StubPropagator implements MembershipResolutionContextPropagator {
+      @Override
+      public Supplier<List<String>> decorate(final Supplier<List<String>> supplier) {
+        return supplier;
       }
     }
   }
