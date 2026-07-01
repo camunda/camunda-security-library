@@ -30,7 +30,7 @@ class ResourcePermissionServiceTest {
                 new Authorization(ResourceType.COMPONENT, "operate", Set.of(PermissionType.ACCESS)),
                 new Authorization(
                     ResourceType.COMPONENT, "tasklist", Set.of(PermissionType.ACCESS))));
-    final var service = new ResourcePermissionService(repository);
+    final var service = new ResourcePermissionService(repository, true);
 
     assertThat(
             service.hasPermission(
@@ -44,7 +44,7 @@ class ResourcePermissionServiceTest {
     final var repository =
         new StubRepository(
             Set.of(new Authorization(ResourceType.COMPONENT, "*", Set.of(PermissionType.ACCESS))));
-    final var service = new ResourcePermissionService(repository);
+    final var service = new ResourcePermissionService(repository, true);
 
     assertThat(
             service.hasPermission(
@@ -57,7 +57,7 @@ class ResourcePermissionServiceTest {
     final var repository =
         new StubRepository(
             Set.of(new Authorization(ResourceType.USER, "*", Set.of(PermissionType.READ))));
-    final var service = new ResourcePermissionService(repository);
+    final var service = new ResourcePermissionService(repository, true);
 
     assertThat(
             service.hasPermission(
@@ -73,7 +73,7 @@ class ResourcePermissionServiceTest {
             Set.of(
                 new Authorization(
                     ResourceType.COMPONENT, "tasklist", Set.of(PermissionType.ACCESS))));
-    final var service = new ResourcePermissionService(repository);
+    final var service = new ResourcePermissionService(repository, true);
 
     assertThat(
             service.hasPermission(
@@ -86,7 +86,7 @@ class ResourcePermissionServiceTest {
     final var repository =
         new StubRepository(
             Set.of(new Authorization(ResourceType.USER, "alice", Set.of(PermissionType.READ))));
-    final var service = new ResourcePermissionService(repository);
+    final var service = new ResourcePermissionService(repository, true);
 
     assertThat(
             service.hasPermission(
@@ -96,12 +96,27 @@ class ResourcePermissionServiceTest {
 
   @Test
   void returnsFalseWhenRepositoryReturnsNoAuthorizations() {
-    final var service = new ResourcePermissionService(new StubRepository(Set.of()));
+    final var service = new ResourcePermissionService(new StubRepository(Set.of()), true);
 
     assertThat(
             service.hasPermission(
                 authentication, ResourceType.COMPONENT, "operate", PermissionType.ACCESS))
         .isFalse();
+  }
+
+  @Test
+  void grantsAccessWithoutConsultingRepositoryWhenAuthorizationDisabled() {
+    // Authorization disabled: every check is granted regardless of the (absent) grants, and the
+    // repository is never consulted.
+    final var repository = new StubRepository(Set.of());
+    final var service = new ResourcePermissionService(repository, false);
+
+    assertThat(
+            service.hasPermission(
+                authentication, ResourceType.COMPONENT, "operate", PermissionType.ACCESS))
+        .isTrue();
+    assertThat(repository.lastResourceType).isNull();
+    assertThat(repository.lastAuthentication).isNull();
   }
 
   @Test
@@ -111,7 +126,7 @@ class ResourcePermissionServiceTest {
             Set.of(
                 new Authorization(
                     ResourceType.COMPONENT, "operate", Set.of(PermissionType.ACCESS))));
-    final var service = new ResourcePermissionService(repository);
+    final var service = new ResourcePermissionService(repository, true);
 
     service.hasPermission(authentication, ResourceType.COMPONENT, "operate", PermissionType.ACCESS);
 

@@ -22,15 +22,24 @@ import io.camunda.security.core.port.out.AuthorizationRepositoryPort;
  * <p>A grant whose {@code resourceId} equals {@value #WILDCARD_RESOURCE_ID} represents "all
  * resources of this type" and matches any concrete id. This aligns with the wildcard convention
  * used elsewhere on the platform (e.g. {@code io.camunda.security.impl.AuthorizationChecker}).
+ *
+ * <p>When authorization is globally disabled ({@code
+ * camunda.security.authorizations.enabled=false}) every check short-circuits to {@code true} — no
+ * records are consulted and every principal is granted access. This mirrors the data-plane {@code
+ * AuthorizationService}, which also skips its checks when the flag is off, so the webapp
+ * authorization plane stays consistent with the APIs.
  */
 public final class ResourcePermissionService implements ResourcePermissionPort {
 
   private static final String WILDCARD_RESOURCE_ID = "*";
 
   private final AuthorizationRepositoryPort repository;
+  private final boolean authorizationEnabled;
 
-  public ResourcePermissionService(final AuthorizationRepositoryPort repository) {
+  public ResourcePermissionService(
+      final AuthorizationRepositoryPort repository, final boolean authorizationEnabled) {
     this.repository = repository;
+    this.authorizationEnabled = authorizationEnabled;
   }
 
   @Override
@@ -39,6 +48,9 @@ public final class ResourcePermissionService implements ResourcePermissionPort {
       final ResourceType resourceType,
       final String resourceId,
       final PermissionType permissionType) {
+    if (!authorizationEnabled) {
+      return true;
+    }
     return repository.findAuthorizations(authentication, resourceType).stream()
         .anyMatch(
             authorization ->

@@ -70,6 +70,27 @@ class WebAppAuthorizationFilterConfigurationTest {
   }
 
   @Test
+  void authorizationDisabledMakesDefaultServiceGrantAll() {
+    // With authorization disabled, the default ResourcePermissionService must grant every check
+    // even though the repository holds no matching grants. The flag is read from the bound
+    // properties bean enabled via @EnableConfigurationProperties on the configuration.
+    runner
+        .withUserConfiguration(StubAuthorizationRepository.class)
+        .withPropertyValues("camunda.security.authorizations.enabled=false")
+        .run(
+            ctx -> {
+              final ResourcePermissionPort port = ctx.getBean(ResourcePermissionPort.class);
+              assertThat(
+                      port.hasPermission(
+                          CamundaAuthentication.anonymous(),
+                          ResourceType.COMPONENT,
+                          "operate",
+                          PermissionType.ACCESS))
+                  .isTrue();
+            });
+  }
+
+  @Test
   void allThreeSpisRegisteredCreatesFilterAndDefaults() {
     runner
         .withUserConfiguration(StubAuthorizationRepository.class)
