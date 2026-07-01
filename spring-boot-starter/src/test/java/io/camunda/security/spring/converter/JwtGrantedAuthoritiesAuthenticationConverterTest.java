@@ -9,13 +9,12 @@ package io.camunda.security.spring.converter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.mock;
 
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -28,12 +27,15 @@ class JwtGrantedAuthoritiesAuthenticationConverterTest {
 
   @Test
   void supportsJwtAuthenticationToken() {
-    assertThat(converter.supports(mock(JwtAuthenticationToken.class))).isTrue();
+    final var jwt =
+        Jwt.withTokenValue("token").header("alg", "RS256").claim("sub", "alice").build();
+    assertThat(converter.supports(new JwtAuthenticationToken(jwt, List.of()))).isTrue();
   }
 
   @Test
-  void doesNotSupportOAuth2AuthenticationToken() {
-    assertThat(converter.supports(mock(OAuth2AuthenticationToken.class))).isFalse();
+  void doesNotSupportNonJwtAuthentication() {
+    assertThat(converter.supports(new UsernamePasswordAuthenticationToken("user", "password")))
+        .isFalse();
   }
 
   @Test
