@@ -73,7 +73,8 @@ class WebAppAuthorizationFilterConfigurationTest {
   void authorizationDisabledMakesDefaultServiceGrantAll() {
     // With authorization disabled, the default ResourcePermissionService must grant every check
     // even though the repository holds no matching grants. The flag is read from the bound
-    // properties bean enabled via @EnableConfigurationProperties on the configuration.
+    // properties bean enabled via @EnableConfigurationProperties on the configuration
+    // Note: the filter behavior based on the flag is tested in WebAppAuthorizationCheckFilterTest
     runner
         .withUserConfiguration(StubAuthorizationRepository.class)
         .withPropertyValues("camunda.security.authorizations.enabled=false")
