@@ -303,6 +303,12 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
             .map(d -> BasePaths.normalize(d.basePath(), "basePath"))
             .filter(bp -> !bp.isEmpty())
             .toList();
+    if (basePaths.isEmpty()) {
+      LOG.debug(
+          "No non-root scope base paths; skipping the scope-aware session cookie resolver "
+              + "(the global session filter keeps the default cluster cookie)");
+      return;
+    }
     final var beanDefinition =
         new RootBeanDefinition(
             CookieHttpSessionIdResolver.class,

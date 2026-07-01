@@ -24,30 +24,36 @@ import io.camunda.security.spring.security.BasicAuthApiSecurityConfiguration;
 import io.camunda.security.spring.session.WebSessionConfiguration;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import io.camunda.security.spring.user.UserConfiguration;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.mock.web.MockFilterChain;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.session.web.http.CookieHttpSessionIdResolver;
 import org.springframework.session.web.http.HttpSessionIdResolver;
 import org.springframework.session.web.http.SessionRepositoryFilter;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
- * Regression test for issue #476.
- *
- * <p>When persistent web sessions are enabled, {@code @EnableSpringHttpSession} registers a global
- * {@link SessionRepositoryFilter} that runs ahead of Spring Security and previously wrote the
- * unscoped default {@code camunda-session} cookie for every request — shadowing the per-scope
- * cookies and breaking cross-scope session isolation. These tests verify that, when scoped chains
- * are present, the global filter is wired with the scope-aware {@link
- * ScopeAwareSessionCookieSerializer}; and that cluster-only deployments register no such bean.
+ * Verifies that, with persistent web sessions enabled, the global {@link SessionRepositoryFilter}
+ * registered by {@code @EnableSpringHttpSession} writes per-scope session cookies rather than the
+ * unscoped default — so cross-scope session isolation holds — and that cluster-only deployments
+ * register no scope-aware resolver.
  */
 class ScopedGlobalSessionCookieResolverTest {
 
-  private static final String BASE_A = "/physical-tenants/tenanta";
-  private static final String BASE_B = "/physical-tenants/tenantb";
+  private static final String BASE_A = "/apps/alpha";
+  private static final String BASE_B = "/apps/beta";
+  private static final String COOKIE_B = "camunda-session-apps-beta";
+  private static final String DEFAULT_COOKIE = "camunda-session";
 
   private WebApplicationContextRunner runner() {
     return new WebApplicationContextRunner()
@@ -68,32 +74,44 @@ class ScopedGlobalSessionCookieResolverTest {
   }
 
   @Test
-  void globalSessionFilterIsWiredWithScopeAwareSerializerWhenScopesPresent() {
+  void globalSessionFilterWritesPerScopeCookieWhenScopesPresent() {
     runner()
         .withUserConfiguration(TwoScopeProvider.class)
         .run(
             ctx -> {
               assertThat(ctx).hasNotFailed();
 
-              // the scope-aware resolver bean is registered
-              assertThat(ctx)
-                  .hasBean(ScopedSecurityChainRegistrar.SCOPED_SESSION_ID_RESOLVER_BEAN_NAME);
-              final var resolver =
-                  ctx.getBean(
-                      ScopedSecurityChainRegistrar.SCOPED_SESSION_ID_RESOLVER_BEAN_NAME,
-                      HttpSessionIdResolver.class);
-              assertThat(resolver).isInstanceOf(CookieHttpSessionIdResolver.class);
-
-              // the global Spring Session filter uses exactly that resolver
+              // given — the global Spring Session filter and a request under scope B
               final var globalFilter = ctx.getBean(SessionRepositoryFilter.class);
-              final var wiredResolver = field(globalFilter, "httpSessionIdResolver");
-              assertThat(wiredResolver)
-                  .as("global session filter must use the scope-aware resolver")
-                  .isSameAs(resolver);
+              final var request = new MockHttpServletRequest("GET", BASE_B + "/operate/dashboard");
+              request.setContextPath("");
+              final var response = new MockHttpServletResponse();
+              final var downstream =
+                  new HttpServlet() {
+                    @Override
+                    protected void doGet(
+                        final HttpServletRequest req, final HttpServletResponse res) {
+                      req.getSession(true); // trigger session creation → cookie write
+                    }
+                  };
 
-              // and that resolver's serializer is the scope-aware one
-              final var serializer = field(wiredResolver, "cookieSerializer");
-              assertThat(serializer).isInstanceOf(ScopeAwareSessionCookieSerializer.class);
+              // when — the request passes through the global session filter
+              RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+              try {
+                globalFilter.doFilter(request, response, new MockFilterChain(downstream));
+              } finally {
+                RequestContextHolder.resetRequestAttributes();
+              }
+
+              // then — the session cookie is scope B's, not the unscoped default
+              final var scopedCookie = response.getCookie(COOKIE_B);
+              assertThat(scopedCookie)
+                  .as("global filter must write the per-scope cookie for a scoped request")
+                  .isNotNull();
+              assertThat(scopedCookie.getPath()).isEqualTo(BASE_B);
+              assertThat(response.getCookie(DEFAULT_COOKIE))
+                  .as("global filter must NOT write the unscoped default cookie for a scoped path")
+                  .isNull();
             });
   }
 
@@ -108,11 +126,8 @@ class ScopedGlobalSessionCookieResolverTest {
               assertThat(ctx)
                   .doesNotHaveBean(
                       ScopedSecurityChainRegistrar.SCOPED_SESSION_ID_RESOLVER_BEAN_NAME);
+              // the host's resolver remains the single one wired into Spring Session
               assertThat(ctx).hasSingleBean(HttpSessionIdResolver.class);
-              // the host's resolver is the one wired into the global filter
-              final var globalFilter = ctx.getBean(SessionRepositoryFilter.class);
-              assertThat(field(globalFilter, "httpSessionIdResolver"))
-                  .isSameAs(ctx.getBean("hostHttpSessionIdResolver"));
             });
   }
 
@@ -127,24 +142,6 @@ class ScopedGlobalSessionCookieResolverTest {
                   .doesNotHaveBean(
                       ScopedSecurityChainRegistrar.SCOPED_SESSION_ID_RESOLVER_BEAN_NAME);
             });
-  }
-
-  private static Object field(final Object target, final String name) {
-    try {
-      var type = target.getClass();
-      while (type != null) {
-        try {
-          final var f = type.getDeclaredField(name);
-          f.setAccessible(true);
-          return f.get(target);
-        } catch (final NoSuchFieldException ignored) {
-          type = type.getSuperclass();
-        }
-      }
-      throw new AssertionError("Field '" + name + "' not found on " + target.getClass());
-    } catch (final IllegalAccessException ex) {
-      throw new AssertionError("Could not read field '" + name + "'", ex);
-    }
   }
 
   @Configuration
