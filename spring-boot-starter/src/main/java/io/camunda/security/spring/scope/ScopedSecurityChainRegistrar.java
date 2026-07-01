@@ -18,6 +18,7 @@ import io.camunda.security.spring.oidc.ScopedJwtDecoderFactory;
 import io.camunda.security.spring.security.ScopedWebappSecurityChainBuilder;
 import io.camunda.security.spring.session.WebSessionRepository;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -284,11 +285,26 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
    * <p>Registered only when scoped descriptors exist, so cluster-only deployments are byte-for-byte
    * unchanged. When persistent web sessions are disabled the global filter is absent and this bean
    * is simply never consumed.
+   *
+   * <p>Skipped when the host already defines an {@link HttpSessionIdResolver} bean: registering a
+   * second one would make the type ambiguous for Spring Session's {@code @Autowired(required =
+   * false)} resolver injection and fail startup with {@code NoUniqueBeanDefinitionException}. The
+   * host then owns session-cookie resolution — which means per-scope cookies apply only if that
+   * resolver is itself scope-aware.
    */
   private static void registerGlobalScopedSessionCookieResolver(
       final BeanDefinitionRegistry registry,
       final ConfigurableListableBeanFactory beanFactory,
       final List<ScopedSecurityDescriptor> descriptors) {
+    final var existing = beanFactory.getBeanNamesForType(HttpSessionIdResolver.class, true, false);
+    if (existing.length > 0) {
+      LOG.warn(
+          "An HttpSessionIdResolver bean is already defined ({}); skipping the scope-aware session "
+              + "cookie resolver. Per-scope session cookies will not be applied by the global "
+              + "Spring Session filter unless that resolver is scope-aware.",
+          Arrays.toString(existing));
+      return;
+    }
     final var basePaths =
         descriptors.stream()
             .map(d -> BasePaths.normalize(d.basePath(), "basePath"))
@@ -309,10 +325,12 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
       final ConfigurableListableBeanFactory beanFactory, final List<String> basePaths) {
     // Reuse the deployment's configured serializer for cluster (non-scoped) requests so their
     // cookie keeps its name, Secure, SameSite, etc.; fall back to a CSL default only if absent.
+    // getIfUnique (not getIfAvailable) so multiple host CookieSerializer beans fall back to the
+    // CSL default rather than throwing NoUniqueBeanDefinitionException.
     final CookieSerializer clusterDelegate =
         beanFactory
             .getBeanProvider(CookieSerializer.class)
-            .getIfAvailable(() -> defaultClusterCookieSerializer(beanFactory));
+            .getIfUnique(() -> defaultClusterCookieSerializer(beanFactory));
     final var resolver = new CookieHttpSessionIdResolver();
     resolver.setCookieSerializer(new ScopeAwareSessionCookieSerializer(basePaths, clusterDelegate));
     return resolver;

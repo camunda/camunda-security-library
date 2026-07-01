@@ -23,8 +23,8 @@ import org.springframework.session.web.http.DefaultCookieSerializer;
  * <p>The global filter runs at servlet-container scope, ahead of Spring Security's {@code
  * FilterChainProxy}, so without a scope-aware serializer it would resolve and write the session
  * cookie for every request — including per-scope webapp paths — using the default serializer,
- * shadowing the per-scope {@link SessionRepositoryFilter}s installed inside the scoped chains and
- * collapsing cross-scope session isolation.
+ * shadowing the per-scope {@link org.springframework.session.web.http.SessionRepositoryFilter}s
+ * installed inside the scoped chains and collapsing cross-scope session isolation.
  *
  * <p>Resolution: the request path (with the deployment context path stripped) is matched against
  * the registered scope base paths, longest first. A match yields the per-scope cookie name {@code

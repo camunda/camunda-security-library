@@ -98,6 +98,25 @@ class ScopedGlobalSessionCookieResolverTest {
   }
 
   @Test
+  void skipsRegistrationWhenHostProvidesOwnResolver() {
+    // a host that owns the resolver must not trigger a NoUniqueBeanDefinitionException
+    runner()
+        .withUserConfiguration(TwoScopeProvider.class, HostResolverConfig.class)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              assertThat(ctx)
+                  .doesNotHaveBean(
+                      ScopedSecurityChainRegistrar.SCOPED_SESSION_ID_RESOLVER_BEAN_NAME);
+              assertThat(ctx).hasSingleBean(HttpSessionIdResolver.class);
+              // the host's resolver is the one wired into the global filter
+              final var globalFilter = ctx.getBean(SessionRepositoryFilter.class);
+              assertThat(field(globalFilter, "httpSessionIdResolver"))
+                  .isSameAs(ctx.getBean("hostHttpSessionIdResolver"));
+            });
+  }
+
+  @Test
   void noScopeAwareResolverRegisteredWithoutScopes() {
     // no CamundaSecurityScopeProvider → cluster-only deployment is unchanged
     runner()
@@ -140,6 +159,15 @@ class ScopedGlobalSessionCookieResolverTest {
       final var auth = new AuthenticationConfiguration();
       auth.setMethod(AuthenticationMethod.BASIC);
       return new ScopedSecurityDescriptor(basePath, auth);
+    }
+  }
+
+  @Configuration
+  static class HostResolverConfig {
+
+    @Bean
+    HttpSessionIdResolver hostHttpSessionIdResolver() {
+      return new CookieHttpSessionIdResolver();
     }
   }
 
