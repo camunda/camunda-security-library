@@ -274,23 +274,16 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
   }
 
   /**
-   * Registers a single global {@link HttpSessionIdResolver} bean so the container-scoped Spring
-   * Session filter contributed by {@code @EnableSpringHttpSession} — present only when persistent
-   * web sessions are enabled — writes per-scope session cookies instead of the unscoped default
-   * {@code camunda-session} at {@code Path=/}. That global filter runs ahead of Spring Security's
-   * {@code FilterChainProxy}, so without a scope-aware resolver it shadows the per-scope {@link
-   * SessionRepositoryFilter}s installed inside the scoped webapp chains and collapses cross-scope
-   * session isolation.
+   * Registers the global scope-aware {@link HttpSessionIdResolver} bean, which makes the
+   * {@code @EnableSpringHttpSession} session filter (present only with persistent web sessions)
+   * write per-scope cookies rather than the unscoped default — see {@link
+   * ScopeAwareSessionCookieSerializer}.
    *
-   * <p>Registered only when scoped descriptors exist, so cluster-only deployments are byte-for-byte
-   * unchanged. When persistent web sessions are disabled the global filter is absent and this bean
-   * is simply never consumed.
-   *
-   * <p>Skipped when the host already defines an {@link HttpSessionIdResolver} bean: registering a
-   * second one would make the type ambiguous for Spring Session's {@code @Autowired(required =
-   * false)} resolver injection and fail startup with {@code NoUniqueBeanDefinitionException}. The
-   * host then owns session-cookie resolution — which means per-scope cookies apply only if that
-   * resolver is itself scope-aware.
+   * <p>Registered only when scoped descriptors exist (cluster-only deployments are unchanged), and
+   * skipped when the host already defines an {@link HttpSessionIdResolver} — a second bean of that
+   * type would fail Spring Session's {@code @Autowired(required = false)} injection with {@code
+   * NoUniqueBeanDefinitionException}. The host then owns resolution, so per-scope cookies apply
+   * only if its resolver is scope-aware.
    */
   private static void registerGlobalScopedSessionCookieResolver(
       final BeanDefinitionRegistry registry,
