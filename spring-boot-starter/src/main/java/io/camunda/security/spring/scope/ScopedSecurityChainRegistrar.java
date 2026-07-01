@@ -8,6 +8,7 @@
 package io.camunda.security.spring.scope;
 
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP_API;
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.SESSION_COOKIE;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
 import io.camunda.security.api.context.CamundaSecurityScopeProvider;
@@ -30,10 +31,15 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.beans.factory.support.RootBeanDefinition;
+import org.springframework.core.env.Environment;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.session.MapSessionRepository;
 import org.springframework.session.SessionRepository;
+import org.springframework.session.web.http.CookieHttpSessionIdResolver;
+import org.springframework.session.web.http.CookieSerializer;
+import org.springframework.session.web.http.DefaultCookieSerializer;
+import org.springframework.session.web.http.HttpSessionIdResolver;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
@@ -49,6 +55,10 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
 
   static final String SESSION_COOKIE_PREFIX = "camunda-session-";
   static final String CSRF_COOKIE_PREFIX = X_CSRF_TOKEN + "-";
+
+  /** Bean name of the global scope-aware {@link HttpSessionIdResolver} (see registration below). */
+  static final String SCOPED_SESSION_ID_RESOLVER_BEAN_NAME = "camundaScopedHttpSessionIdResolver";
+
   static final int MAX_COOKIE_NAME_LENGTH =
       200; // well under the RFC 6265 4096-byte name=value budget
 
@@ -103,6 +113,7 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
         descriptors.size());
 
     registerChains(registry, beanFactory, descriptors);
+    registerGlobalScopedSessionCookieResolver(registry, beanFactory, descriptors);
   }
 
   @Override
@@ -259,6 +270,65 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
                   : new MapSessionRepository(new ConcurrentHashMap<>());
           return ScopedWebSessionComponentsFactory.sessionRepositoryFilter(bp, repository);
         });
+  }
+
+  /**
+   * Registers a single global {@link HttpSessionIdResolver} bean so the container-scoped Spring
+   * Session filter contributed by {@code @EnableSpringHttpSession} — present only when persistent
+   * web sessions are enabled — writes per-scope session cookies instead of the unscoped default
+   * {@code camunda-session} at {@code Path=/}. That global filter runs ahead of Spring Security's
+   * {@code FilterChainProxy}, so without a scope-aware resolver it shadows the per-scope {@link
+   * SessionRepositoryFilter}s installed inside the scoped webapp chains and collapses cross-scope
+   * session isolation.
+   *
+   * <p>Registered only when scoped descriptors exist, so cluster-only deployments are byte-for-byte
+   * unchanged. When persistent web sessions are disabled the global filter is absent and this bean
+   * is simply never consumed.
+   */
+  private static void registerGlobalScopedSessionCookieResolver(
+      final BeanDefinitionRegistry registry,
+      final ConfigurableListableBeanFactory beanFactory,
+      final List<ScopedSecurityDescriptor> descriptors) {
+    final var basePaths =
+        descriptors.stream()
+            .map(d -> BasePaths.normalize(d.basePath(), "basePath"))
+            .filter(bp -> !bp.isEmpty())
+            .toList();
+    final var beanDefinition =
+        new RootBeanDefinition(
+            CookieHttpSessionIdResolver.class,
+            () -> buildGlobalScopedSessionCookieResolver(beanFactory, basePaths));
+    registry.registerBeanDefinition(SCOPED_SESSION_ID_RESOLVER_BEAN_NAME, beanDefinition);
+    LOG.debug(
+        "Registered global scope-aware HttpSessionIdResolver bean '{}' for {} scope(s)",
+        SCOPED_SESSION_ID_RESOLVER_BEAN_NAME,
+        basePaths.size());
+  }
+
+  private static CookieHttpSessionIdResolver buildGlobalScopedSessionCookieResolver(
+      final ConfigurableListableBeanFactory beanFactory, final List<String> basePaths) {
+    // Reuse the deployment's configured serializer for cluster (non-scoped) requests so their
+    // cookie keeps its name, Secure, SameSite, etc.; fall back to a CSL default only if absent.
+    final CookieSerializer clusterDelegate =
+        beanFactory
+            .getBeanProvider(CookieSerializer.class)
+            .getIfAvailable(() -> defaultClusterCookieSerializer(beanFactory));
+    final var resolver = new CookieHttpSessionIdResolver();
+    resolver.setCookieSerializer(new ScopeAwareSessionCookieSerializer(basePaths, clusterDelegate));
+    return resolver;
+  }
+
+  private static CookieSerializer defaultClusterCookieSerializer(
+      final ConfigurableListableBeanFactory beanFactory) {
+    final var cookieName =
+        beanFactory
+            .getBean(Environment.class)
+            .getProperty("server.servlet.session.cookie.name", SESSION_COOKIE);
+    final var serializer = new DefaultCookieSerializer();
+    serializer.setCookieName(cookieName);
+    serializer.setUseHttpOnlyCookie(true);
+    serializer.setSameSite("Lax");
+    return serializer;
   }
 
   private OrderedSecurityFilterChainWrapper buildWebappChain(
