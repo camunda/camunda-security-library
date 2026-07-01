@@ -14,29 +14,23 @@ import org.springframework.session.web.http.CookieSerializer;
 import org.springframework.session.web.http.DefaultCookieSerializer;
 
 /**
- * A {@link CookieSerializer} that selects the session cookie name and {@code Path} per request
- * based on which scope base path the request matches. It exists so the <em>global</em> Spring
- * Session filter registered by {@code @EnableSpringHttpSession} (active only when persistent web
- * sessions are enabled) writes the same per-scope cookie that the per-scope webapp chains expect,
- * instead of the unscoped default {@code camunda-session} at {@code Path=/}.
+ * A {@link CookieSerializer} that picks the session cookie name and {@code Path} per request from
+ * the scope base path the request matches. It lets the <em>global</em> Spring Session filter
+ * ({@code @EnableSpringHttpSession}, active only with persistent web sessions) write the same
+ * per-scope cookie the scoped webapp chains expect, instead of the unscoped default {@code
+ * camunda-session} at {@code Path=/}. That filter runs ahead of Spring Security's {@code
+ * FilterChainProxy}, so a non-scope-aware serializer there shadows the per-scope {@link
+ * org.springframework.session.web.http.SessionRepositoryFilter}s and collapses cross-scope session
+ * isolation.
  *
- * <p>The global filter runs at servlet-container scope, ahead of Spring Security's {@code
- * FilterChainProxy}, so without a scope-aware serializer it would resolve and write the session
- * cookie for every request — including per-scope webapp paths — using the default serializer,
- * shadowing the per-scope {@link org.springframework.session.web.http.SessionRepositoryFilter}s
- * installed inside the scoped chains and collapsing cross-scope session isolation.
+ * <p>The request path (context path stripped) is matched against the registered base paths, longest
+ * first. A match yields cookie {@code camunda-session-<sanitize(basePath)>} at {@code
+ * Path=contextPath + basePath}; no match delegates verbatim to {@code clusterDelegate}, preserving
+ * the deployment's configured cluster cookie (name, {@code Secure}, {@code SameSite}, …).
  *
- * <p>Resolution: the request path (with the deployment context path stripped) is matched against
- * the registered scope base paths, longest first. A match yields the per-scope cookie name {@code
- * camunda-session-<sanitize(basePath)>} and {@code Path=contextPath + basePath}. No match is the
- * cluster / non-scoped default: it delegates verbatim to {@code clusterDelegate} so the cluster
- * cookie keeps whatever the deployment configured (name, {@code Secure}, {@code SameSite}, etc.).
- *
- * <p>Thread-safety: each per-scope delegate has a fixed cookie name (never mutated). Only the
- * cookie {@code Path} is set per request, and for a given scope that value is {@code contextPath +
- * basePath} — a deployment constant, identical for every request — so the per-request write to the
- * shared delegate is benign (all threads write the same value), mirroring {@link
- * ContextPathScopedCookieSerializer}.
+ * <p>Thread-safe: each per-scope delegate has a fixed name; only its {@code Path} is set per
+ * request, always to the same {@code contextPath + basePath} constant (cf. {@link
+ * ContextPathScopedCookieSerializer}).
  */
 final class ScopeAwareSessionCookieSerializer implements CookieSerializer {
 
