@@ -11,11 +11,13 @@ import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.core.port.in.ResourcePermissionPort;
 import io.camunda.security.core.port.out.AuthorizationRepositoryPort;
 import io.camunda.security.core.port.out.SecurityPathPort;
+import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.spi.WebAppAccessDeniedHandlerPort;
 import io.camunda.security.spring.spi.WebAppProviderPort;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -27,21 +29,31 @@ import org.springframework.context.annotation.Configuration;
  *
  * <p>Each bean is gated on the presence of the host SPIs it depends on, and library defaults back
  * off via {@code @ConditionalOnMissingBean} so hosts can supply their own implementations.
+ *
+ * <p>The webapp component-access check honours {@code camunda.security.authorizations.enabled}:
+ * when it is off, the default {@link ResourcePermissionService} grants all and the filter passes
+ * every request through. The flag is read from {@link CamundaSecurityLibraryProperties} (not a
+ * {@code @ConditionalOnProperty}) so it works regardless of whether the host sets it via a property
+ * or by mutating the bound properties bean.
  */
 @Configuration
+@EnableConfigurationProperties(CamundaSecurityLibraryProperties.class)
 public class WebAppAuthorizationFilterConfiguration {
 
   /**
    * Default {@link ResourcePermissionPort} that consults the host's authorization records via
-   * {@link AuthorizationRepositoryPort}. Skipped when the host provides its own {@code
-   * ResourcePermissionPort} bean or has not registered an {@code AuthorizationRepositoryPort} yet.
+   * {@link AuthorizationRepositoryPort}, or grants all when authorization is disabled. Skipped when
+   * the host provides its own {@code ResourcePermissionPort} bean or has not registered an {@code
+   * AuthorizationRepositoryPort} yet.
    */
   @Bean
   @ConditionalOnBean(AuthorizationRepositoryPort.class)
   @ConditionalOnMissingBean(ResourcePermissionPort.class)
   public ResourcePermissionService resourcePermissionService(
-      final AuthorizationRepositoryPort authorizationRepository) {
-    return new ResourcePermissionService(authorizationRepository);
+      final AuthorizationRepositoryPort authorizationRepository,
+      final CamundaSecurityLibraryProperties properties) {
+    return new ResourcePermissionService(
+        authorizationRepository, properties.getAuthorizations().isEnabled());
   }
 
   /**
@@ -75,8 +87,10 @@ public class WebAppAuthorizationFilterConfiguration {
       final ResourcePermissionPort resourcePermissionPort,
       final WebAppAccessDeniedHandlerPort webAppAccessDeniedHandler,
       final CamundaAuthenticationProvider authenticationProvider,
-      final SecurityPathPort securityPathPort) {
+      final SecurityPathPort securityPathPort,
+      final CamundaSecurityLibraryProperties properties) {
     return new WebAppAuthorizationCheckFilter(
+        properties.getAuthorizations().isEnabled(),
         webAppProvider,
         resourcePermissionPort,
         webAppAccessDeniedHandler,

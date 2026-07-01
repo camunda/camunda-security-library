@@ -41,9 +41,16 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * </ul>
  *
  * <p>The filter passes through without invoking the access decision when any of the following hold:
- * the request is for {@code /forbidden} (the redirect target), the request URI ends in one of the
+ * authorization is globally disabled ({@code camunda.security.authorizations.enabled=false}), the
+ * request is for {@code /forbidden} (the redirect target), the request URI ends in one of the
  * configured static-resource suffixes, the principal is unauthenticated (null or anonymous), or
  * {@link WebAppProviderPort#webAppFor(HttpServletRequest)} returns empty.
+ *
+ * <p>The global-disable gate is applied here — at the enforcement choke point — rather than only in
+ * the {@link ResourcePermissionPort}, because hosts may supply their own {@code
+ * ResourcePermissionPort} that is unaware of the flag. Gating the filter keeps the webapp plane off
+ * for every host when authorization is disabled, matching the data-plane {@code
+ * AuthorizationService}.
  */
 public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
 
@@ -51,6 +58,7 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
 
   private static final String FORBIDDEN_PATH_SUFFIX = "/forbidden";
 
+  private final boolean authorizationEnabled;
   private final WebAppProviderPort webAppProvider;
   private final ResourcePermissionPort permissionPort;
   private final WebAppAccessDeniedHandlerPort accessDeniedHandler;
@@ -58,11 +66,13 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
   private final Set<String> staticResourceSuffixes;
 
   public WebAppAuthorizationCheckFilter(
+      final boolean authorizationEnabled,
       final WebAppProviderPort webAppProvider,
       final ResourcePermissionPort permissionPort,
       final WebAppAccessDeniedHandlerPort accessDeniedHandler,
       final CamundaAuthenticationProvider authenticationProvider,
       final Set<String> staticResourceSuffixes) {
+    this.authorizationEnabled = authorizationEnabled;
     this.webAppProvider = webAppProvider;
     this.permissionPort = permissionPort;
     this.accessDeniedHandler = accessDeniedHandler;
@@ -76,6 +86,11 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
       final HttpServletResponse response,
       final FilterChain filterChain)
       throws ServletException, IOException {
+
+    if (!authorizationEnabled) {
+      filterChain.doFilter(request, response);
+      return;
+    }
 
     if (isForbiddenPage(request) || isStaticResource(request)) {
       filterChain.doFilter(request, response);

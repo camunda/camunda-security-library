@@ -111,6 +111,32 @@ class WebAppAuthorizationCheckFilterTest {
   }
 
   @Test
+  void authorizationDisabledPassesThroughWithoutCheck() throws Exception {
+    // With authorization globally disabled, an authenticated principal on a resolved web app whose
+    // permission port would deny access must still pass through — no web-app resolution, no port
+    // call, no denial.
+    final var webAppProvider = new RecordingWebAppProvider("operate");
+    final var permissionPort = new RecordingPermissionPort(false);
+    final var deniedHandler = new RecordingDeniedHandler();
+    final var filter =
+        new WebAppAuthorizationCheckFilter(
+            false,
+            webAppProvider,
+            permissionPort,
+            deniedHandler,
+            () -> alice(),
+            DEFAULT_STATIC_RESOURCE_SUFFIXES);
+
+    final var chain = new MockFilterChain();
+    filter.doFilter(request("/operate/processes"), new MockHttpServletResponse(), chain);
+
+    assertThat(chain.getRequest()).isNotNull();
+    assertThat(webAppProvider.callCount).isZero();
+    assertThat(permissionPort.callCount).isZero();
+    assertThat(deniedHandler.callCount).isZero();
+  }
+
+  @Test
   void allowedAccessPassesThrough() throws Exception {
     final var webAppProvider = new RecordingWebAppProvider("operate");
     final var permissionPort = new RecordingPermissionPort(true);
@@ -153,7 +179,7 @@ class WebAppAuthorizationCheckFilterTest {
     final var deniedHandler = new RecordingDeniedHandler();
     final var filter =
         new WebAppAuthorizationCheckFilter(
-            webAppProvider, permissionPort, deniedHandler, () -> alice(), Set.of(".json"));
+            true, webAppProvider, permissionPort, deniedHandler, () -> alice(), Set.of(".json"));
 
     final var chain = new MockFilterChain();
     filter.doFilter(request("/operate/data.json"), new MockHttpServletResponse(), chain);
@@ -184,6 +210,7 @@ class WebAppAuthorizationCheckFilterTest {
       final WebAppAccessDeniedHandlerPort deniedHandler,
       final CamundaAuthentication authentication) {
     return new WebAppAuthorizationCheckFilter(
+        true,
         webAppProvider,
         permissionPort,
         deniedHandler,
