@@ -11,11 +11,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.Comparator;
 import java.util.List;
 import org.springframework.session.web.http.CookieSerializer;
-import org.springframework.session.web.http.DefaultCookieSerializer;
 
 /**
- * A {@link CookieSerializer} that picks the session cookie name and {@code Path} per request from
- * the scope base path the request matches. It lets the <em>global</em> Spring Session filter
+ * A {@link CookieSerializer} that routes each request to a per-scope delegate chosen from the scope
+ * base path the request matches. It lets the <em>global</em> Spring Session filter
  * ({@code @EnableSpringHttpSession}, active only with persistent web sessions) write the same
  * per-scope cookie the scoped webapp chains expect, instead of the unscoped default {@code
  * camunda-session} at {@code Path=/}. That filter runs ahead of Spring Security's {@code
@@ -24,17 +23,15 @@ import org.springframework.session.web.http.DefaultCookieSerializer;
  * isolation.
  *
  * <p>The request path (context path stripped) is matched against the registered base paths, longest
- * first. A match yields cookie {@code camunda-session-<sanitize(basePath)>} at {@code
- * Path=contextPath + basePath}; no match delegates verbatim to {@code clusterDelegate}, preserving
- * the deployment's configured cluster cookie (name, {@code Secure}, {@code SameSite}, …).
- *
- * <p>Thread-safe: each per-scope delegate has a fixed name; only its {@code Path} is set per
- * request, always to the same {@code contextPath + basePath} constant (cf. {@link
- * ContextPathScopedCookieSerializer}).
+ * first. A match delegates to the per-scope serializer built by {@link
+ * ScopedWebSessionComponentsFactory#cookieSerializer(String)} (scoped cookie name + {@code Path});
+ * a non-match delegates verbatim to {@code clusterDelegate}, preserving the deployment's configured
+ * cluster cookie (name, {@code Secure}, {@code SameSite}, …). Delegating to the factory keeps the
+ * cookie attributes identical to the in-chain per-scope filters.
  */
 final class ScopeAwareSessionCookieSerializer implements CookieSerializer {
 
-  private final List<ScopeCookie> scopes;
+  private final List<Scope> scopes;
   private final CookieSerializer clusterDelegate;
 
   /**
@@ -46,36 +43,26 @@ final class ScopeAwareSessionCookieSerializer implements CookieSerializer {
   ScopeAwareSessionCookieSerializer(
       final List<String> normalizedBasePaths, final CookieSerializer clusterDelegate) {
     this.clusterDelegate = clusterDelegate;
-    this.scopes =
+    scopes =
         normalizedBasePaths.stream()
             .filter(bp -> bp != null && !bp.isEmpty())
             .distinct()
             .sorted(Comparator.comparingInt(String::length).reversed())
-            .map(ScopeCookie::new)
+            .map(bp -> new Scope(bp, ScopedWebSessionComponentsFactory.cookieSerializer(bp)))
             .toList();
   }
 
   @Override
   public void writeCookieValue(final CookieValue cookieValue) {
-    final var request = cookieValue.getRequest();
-    final var scope = resolve(request);
-    if (scope == null) {
-      clusterDelegate.writeCookieValue(cookieValue);
-      return;
-    }
-    scope.delegate.setCookiePath(request.getContextPath() + scope.basePath);
-    scope.delegate.writeCookieValue(cookieValue);
+    delegateFor(cookieValue.getRequest()).writeCookieValue(cookieValue);
   }
 
   @Override
   public List<String> readCookieValues(final HttpServletRequest request) {
-    final var scope = resolve(request);
-    return scope == null
-        ? clusterDelegate.readCookieValues(request)
-        : scope.delegate.readCookieValues(request);
+    return delegateFor(request).readCookieValues(request);
   }
 
-  private ScopeCookie resolve(final HttpServletRequest request) {
+  private CookieSerializer delegateFor(final HttpServletRequest request) {
     final var contextPath = request.getContextPath();
     final var uri = request.getRequestURI();
     final String path =
@@ -83,26 +70,12 @@ final class ScopeAwareSessionCookieSerializer implements CookieSerializer {
             ? uri.substring(contextPath.length())
             : uri;
     for (final var scope : scopes) {
-      if (path.equals(scope.basePath) || path.startsWith(scope.basePath + "/")) {
-        return scope;
+      if (path.equals(scope.basePath()) || path.startsWith(scope.basePath() + "/")) {
+        return scope.serializer();
       }
     }
-    return null;
+    return clusterDelegate;
   }
 
-  /** A single scope's fixed-name cookie delegate. */
-  private static final class ScopeCookie {
-
-    private final String basePath;
-    private final DefaultCookieSerializer delegate;
-
-    private ScopeCookie(final String basePath) {
-      this.basePath = basePath;
-      delegate = new DefaultCookieSerializer();
-      delegate.setCookieName(ScopedSecurityChainRegistrar.sessionCookieName(basePath));
-      delegate.setUseHttpOnlyCookie(true);
-      delegate.setSameSite("Lax");
-      // Path is set per request as contextPath + basePath (a deployment constant).
-    }
-  }
+  private record Scope(String basePath, CookieSerializer serializer) {}
 }

@@ -20,16 +20,15 @@ import org.springframework.session.web.http.DefaultCookieSerializer;
 
 /**
  * Unit tests for the scope-aware session cookie serializer used by the global Spring Session
- * filter. These pin the regression from issue #476: with persistent web sessions enabled, the
- * session cookie must remain per-scope and must not collapse to the unscoped {@code
- * camunda-session} at {@code Path=/}.
+ * filter: with scopes present the session cookie stays per-scope and must not collapse to the
+ * unscoped default {@code camunda-session} at {@code Path=/}.
  */
 class ScopeAwareSessionCookieSerializerTest {
 
-  private static final String BASE_A = "/physical-tenants/tenanta";
-  private static final String BASE_B = "/physical-tenants/tenantb";
-  private static final String COOKIE_A = "camunda-session-physical-tenants-tenanta";
-  private static final String COOKIE_B = "camunda-session-physical-tenants-tenantb";
+  private static final String BASE_A = "/apps/alpha";
+  private static final String BASE_B = "/apps/beta";
+  private static final String COOKIE_A = "camunda-session-apps-alpha";
+  private static final String COOKIE_B = "camunda-session-apps-beta";
   private static final String DEFAULT_COOKIE = "camunda-session";
 
   private static CookieSerializer clusterDelegate() {
@@ -110,7 +109,7 @@ class ScopeAwareSessionCookieSerializerTest {
     serializer.writeCookieValue(new CookieValue(request, response, "sid"));
 
     // then — the more specific scope's cookie is used
-    assertThat(response.getCookie("camunda-session-physical-tenants-tenantb-inner")).isNotNull();
+    assertThat(response.getCookie("camunda-session-apps-beta-inner")).isNotNull();
     assertThat(response.getCookie(COOKIE_B)).isNull();
   }
 
