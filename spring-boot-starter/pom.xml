@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.camunda</groupId>
         <artifactId>camunda-security-library</artifactId>
-        <version>0.1.0-alpha38</version>
+        <version>0.1.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>camunda-security-library-spring-boot-starter</artifactId>
