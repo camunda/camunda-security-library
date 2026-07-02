@@ -45,10 +45,10 @@ public final class JwtGrantedAuthoritiesAuthenticationConverter
     final var token = (JwtAuthenticationToken) authentication;
     final var jwt = token.getToken();
     final var subject = jwt.getSubject();
-    if (subject == null) {
+    if (subject == null || subject.isBlank()) {
       throw new OAuth2AuthenticationException(
           new OAuth2Error(
-              OAuth2ErrorCodes.INVALID_TOKEN, "JWT does not contain a 'sub' claim", null));
+              OAuth2ErrorCodes.INVALID_TOKEN, "JWT 'sub' claim is missing or blank", null));
     }
     final List<String> roleIds =
         token.getAuthorities().stream().map(GrantedAuthority::getAuthority).toList();

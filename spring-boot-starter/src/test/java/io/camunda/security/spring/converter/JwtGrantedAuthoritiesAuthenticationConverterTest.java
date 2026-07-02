@@ -103,4 +103,16 @@ class JwtGrantedAuthoritiesAuthenticationConverterTest {
             ex ->
                 assertThat(ex.getError().getErrorCode()).isEqualTo(OAuth2ErrorCodes.INVALID_TOKEN));
   }
+
+  @Test
+  void throwsOAuth2AuthenticationExceptionWhenSubjectBlank() {
+    final var jwt = Jwt.withTokenValue("token").header("alg", "RS256").claim("sub", "  ").build();
+    final var authentication = new JwtAuthenticationToken(jwt, List.of());
+
+    assertThatThrownBy(() -> converter.convert(authentication))
+        .isInstanceOfSatisfying(
+            OAuth2AuthenticationException.class,
+            ex ->
+                assertThat(ex.getError().getErrorCode()).isEqualTo(OAuth2ErrorCodes.INVALID_TOKEN));
+  }
 }
