@@ -477,6 +477,26 @@ Many library-supplied infrastructure beans intended to be overridden (including 
 |---|---|
 | `ObjectMapper` | `JacksonAutoConfiguration` — consumed by the default `AuthFailureHandler` |
 
+### Authentication converters
+
+CSL ships two `CamundaAuthenticationConverter<Authentication>` implementations for OIDC resource-server chains. Neither is auto-wired — the host registers whichever one it needs as a bean.
+
+| Converter | When to use |
+|---|---|
+| `OidcTokenAuthenticationConverter` | Standard OIDC deployments where memberships (roles, groups, tenants) are resolved from a database via `MembershipPort`. Reads `sub` or a client-id claim and delegates resolution to `LazyTokenClaimsConverter`. |
+| `JwtGrantedAuthoritiesAuthenticationConverter` | Deployments where the JWT itself is the authoritative source of roles — for example, SaaS tokens where an upstream `JwtAuthenticationConverter` has already extracted role authorities from a fixed claim before CSL runs. No `MembershipPort` call is made. Only suitable for user tokens where `sub` identifies the principal; M2M/client-credentials tokens must be handled separately. |
+
+**Registering the converter.**
+
+```java
+@Bean
+public CamundaAuthenticationConverter<Authentication> authenticationConverter() {
+  return new JwtGrantedAuthoritiesAuthenticationConverter();
+}
+```
+
+**Ordering when both are registered.** Both converters return `true` from `supports()` for `JwtAuthenticationToken`. `CamundaSpringAuthenticationDelegatingConverter` picks the first match in list order. Registering both in the same application context is a misconfiguration for almost all deployments — a deployment strategy should need only one. If you genuinely need both, use `@Primary` or `@Order` to make the selection explicit; wrong ordering silently applies the wrong authorization logic with no error or log entry.
+
 ## Extension hooks
 
 Three extension points let hosts contribute additional path-scoped API chains or customise specific OAuth2/OIDC concerns without replacing entire chains. Host-specific filter wiring (authorization filters, header rewrites, matcher tweaks) will be addressed in a follow-up PR with a more focused approach than a generic `HttpSecurity` mutator.
