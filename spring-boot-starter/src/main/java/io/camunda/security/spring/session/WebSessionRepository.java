@@ -34,6 +34,14 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
     this.request = request;
   }
 
+  /**
+   * The {@link SessionStorePort} this repository writes to. Used by the expiry sweep to deduplicate
+   * repositories that share a backing store, so each store is swept once (ADR-0029).
+   */
+  SessionStorePort sessionStorePort() {
+    return sessionStorePort;
+  }
+
   @Override
   public WebSession createSession() {
     final var sessionId = UUID.randomUUID().toString().replace("-", "");

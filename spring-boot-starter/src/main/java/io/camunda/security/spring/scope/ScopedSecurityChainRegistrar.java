@@ -16,6 +16,7 @@ import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.oidc.ScopedJwtDecoderFactory;
 import io.camunda.security.spring.security.ScopedWebappSecurityChainBuilder;
+import io.camunda.security.spring.session.ScopedWebSessionRepositoryFactory;
 import io.camunda.security.spring.session.WebSessionRepository;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -252,25 +253,44 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
    * Resolves or creates the shared {@link SessionRepositoryFilter} for the given basePath. The
    * filter is built once per descriptor and cached so the same instance can be reused across the
    * scope's chains without creating a second, independent session store.
-   *
-   * <p>Uses the {@link WebSessionRepository} bean (durable store, ADR-0017) when present; otherwise
-   * falls back to a per-scope {@link MapSessionRepository} backed by a fresh {@link
-   * ConcurrentHashMap} (dev/test). Separate in-memory instances give store-level isolation on top
-   * of the cookie {@code Path} isolation.
    */
   private SessionRepositoryFilter<?> getOrBuildSessionFilter(
       final ConfigurableListableBeanFactory beanFactory, final String basePath) {
     return sessionFiltersByBasePath.computeIfAbsent(
         basePath,
-        bp -> {
-          final WebSessionRepository durableRepo =
-              beanFactory.getBeanProvider(WebSessionRepository.class).getIfAvailable();
-          final SessionRepository<?> repository =
-              durableRepo != null
-                  ? durableRepo
-                  : new MapSessionRepository(new ConcurrentHashMap<>());
-          return ScopedWebSessionComponentsFactory.sessionRepositoryFilter(bp, repository);
-        });
+        bp ->
+            ScopedWebSessionComponentsFactory.sessionRepositoryFilter(
+                bp, resolveSessionRepository(beanFactory, bp)));
+  }
+
+  /**
+   * Resolves the {@link SessionRepository} that backs a scope's {@link SessionRepositoryFilter}, in
+   * order of preference:
+   *
+   * <ol>
+   *   <li>a <b>per-scope</b> durable {@link WebSessionRepository} bound to the scope's own store,
+   *       via {@link ScopedWebSessionRepositoryFactory} (ADR-0029) — so persistent writes route
+   *       structurally at Spring Session's commit time, not via request/thread context;
+   *   <li>the shared durable {@link WebSessionRepository} bean (legacy, ADR-0017) when no per-scope
+   *       provider is contributed;
+   *   <li>a per-scope in-memory {@link MapSessionRepository} backed by a fresh {@link
+   *       ConcurrentHashMap} (dev/test) — separate instances give store-level isolation on top of
+   *       the cookie {@code Path} isolation.
+   * </ol>
+   */
+  private SessionRepository<?> resolveSessionRepository(
+      final ConfigurableListableBeanFactory beanFactory, final String basePath) {
+    final var perScopeFactory =
+        beanFactory.getBeanProvider(ScopedWebSessionRepositoryFactory.class).getIfAvailable();
+    if (perScopeFactory != null && perScopeFactory.isAvailable()) {
+      // normalize to match how the rest of the scope subsystem keys base paths
+      return perScopeFactory.forBasePath(BasePaths.normalize(basePath, "basePath"));
+    }
+    final WebSessionRepository sharedDurableRepo =
+        beanFactory.getBeanProvider(WebSessionRepository.class).getIfAvailable();
+    return sharedDurableRepo != null
+        ? sharedDurableRepo
+        : new MapSessionRepository(new ConcurrentHashMap<>());
   }
 
   /**
