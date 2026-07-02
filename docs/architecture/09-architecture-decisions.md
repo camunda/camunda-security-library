@@ -44,6 +44,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0026: UserInfo claim augmentation](../adr/0026-userinfo-claim-augmentation.md)
 - [ADR-0027: Scoped webapp security chains and per-scope sessions](../adr/0027-scoped-webapp-security-chains-and-per-scope-sessions.md)
 - [ADR-0028: Extend CSL authorization model to serve both search-layer and zeebe engine](../adr/0028-unified-authz-framework-in-core.md)
+- [ADR-0029: Per-scope session store ownership for durable web sessions](../adr/0029-per-scope-session-store-ownership.md)
 
 ---
 

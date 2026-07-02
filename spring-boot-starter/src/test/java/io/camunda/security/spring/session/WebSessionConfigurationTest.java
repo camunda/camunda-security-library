@@ -10,7 +10,9 @@ package io.camunda.security.spring.session;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.camunda.security.api.model.session.PersistentSession;
+import io.camunda.security.core.port.out.ScopedSessionStorePortProvider;
 import io.camunda.security.core.port.out.SessionStorePort;
+import io.camunda.security.spring.session.WebSessionMapper.SpringBasedWebSessionAttributeConverter;
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -18,6 +20,8 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.convert.support.GenericConversionService;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 class WebSessionConfigurationTest {
 
@@ -38,6 +42,64 @@ class WebSessionConfigurationTest {
                     .hasSingleBean(WebSessionAttributeConverter.class)
                     .hasBean("persistentWebSessionDeletionTaskExecutor")
                     .hasBean("webSessionDeletionUncaughtExceptionHandler"));
+  }
+
+  @Test
+  void scopedWebSessionRepositoryFactoryReportsUnavailableWithoutProvider() {
+    runner
+        .withPropertyValues("camunda.security.session.persistent.enabled=true")
+        .run(
+            ctx -> {
+              assertThat(ctx).hasSingleBean(ScopedWebSessionRepositoryFactory.class);
+              assertThat(ctx.getBean(ScopedWebSessionRepositoryFactory.class).isAvailable())
+                  .as("no ScopedSessionStorePortProvider contributed → factory unavailable")
+                  .isFalse();
+            });
+  }
+
+  @Test
+  void scopedWebSessionRepositoryFactoryBuildsFromProviderWhenPresent() {
+    final SessionStorePort scopedPort = new NoopSessionStore();
+    runner
+        .withPropertyValues("camunda.security.session.persistent.enabled=true")
+        .withBean(
+            ScopedSessionStorePortProvider.class,
+            () -> (ScopedSessionStorePortProvider) basePath -> scopedPort)
+        .run(
+            ctx -> {
+              final var factory = ctx.getBean(ScopedWebSessionRepositoryFactory.class);
+              assertThat(factory.isAvailable())
+                  .as("a ScopedSessionStorePortProvider is present → factory available")
+                  .isTrue();
+              assertThat(factory.forBasePath("/physical-tenants/a"))
+                  .as("factory builds a per-scope WebSessionRepository via the provider")
+                  .isInstanceOf(WebSessionRepository.class);
+            });
+  }
+
+  @Test
+  void distinctByStoreSweepsEachStoreOnceKeepingTheDefault() {
+    final SessionStorePort sharedStore = new NoopSessionStore();
+    final SessionStorePort distinctStore = new NoopSessionStore();
+    final var defaultRepository = repositoryBackedBy(sharedStore);
+    final var scopeRepositorySharingStore = repositoryBackedBy(sharedStore);
+    final var scopeRepositoryDistinctStore = repositoryBackedBy(distinctStore);
+
+    final var swept =
+        WebSessionConfiguration.distinctByStore(
+            defaultRepository, List.of(scopeRepositorySharingStore, scopeRepositoryDistinctStore));
+
+    // one repository per distinct store; the default-surface repository is kept on overlap
+    assertThat(swept).containsExactlyInAnyOrder(defaultRepository, scopeRepositoryDistinctStore);
+    assertThat(swept).doesNotContain(scopeRepositorySharingStore);
+  }
+
+  private static WebSessionRepository repositoryBackedBy(final SessionStorePort store) {
+    return new WebSessionRepository(
+        store,
+        new WebSessionMapper(
+            new SpringBasedWebSessionAttributeConverter(new GenericConversionService())),
+        new MockHttpServletRequest());
   }
 
   @Test

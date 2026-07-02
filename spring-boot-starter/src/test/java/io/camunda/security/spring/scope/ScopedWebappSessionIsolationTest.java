@@ -14,14 +14,22 @@ import io.camunda.security.api.context.CamundaSecurityScopeProvider;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.AuthenticationMethod;
 import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
+import io.camunda.security.api.model.session.PersistentSession;
+import io.camunda.security.core.port.out.ScopedSessionStorePortProvider;
 import io.camunda.security.core.port.out.SecurityPathPort;
+import io.camunda.security.core.port.out.SessionStorePort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcTestServer;
 import io.camunda.security.spring.security.BaseSecurityConfiguration;
 import io.camunda.security.spring.security.BasicAuthApiSecurityConfiguration;
+import io.camunda.security.spring.session.WebSessionConfiguration;
+import io.camunda.security.spring.session.WebSessionRepository;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import io.camunda.security.spring.user.UserConfiguration;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.http.HttpServletRequest;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.AfterAll;
@@ -339,6 +347,153 @@ class ScopedWebappSessionIsolationTest {
             });
   }
 
+  // With a provider present, each scope gets its own durable repository bound to its own store.
+  @Test
+  void perScopeChainsUseDistinctDurableRepositoriesBoundToTheirStore() {
+    final SessionStorePort storeA = new NoopSessionStore();
+    final SessionStorePort storeB = new NoopSessionStore();
+    final ScopedSessionStorePortProvider provider =
+        basePath -> {
+          if (BASE_A.equals(basePath)) {
+            return storeA;
+          }
+          if (BASE_B.equals(basePath)) {
+            return storeB;
+          }
+          throw new AssertionError("unexpected basePath: " + basePath);
+        };
+
+    runner()
+        .withConfiguration(AutoConfigurations.of(WebSessionConfiguration.class))
+        .withPropertyValues("camunda.security.session.persistent.enabled=true")
+        // the singleton WebSessionRepository (global filter + expiry sweep) still needs a store
+        .withBean("clusterSessionStore", SessionStorePort.class, NoopSessionStore::new)
+        .withBean(ScopedSessionStorePortProvider.class, () -> provider)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+
+              final var repoA = durableRepository(webappChain(ctx, "a"));
+              final var repoB = durableRepository(webappChain(ctx, "b"));
+
+              assertThat(repoA)
+                  .as("each scope must get its own durable WebSessionRepository instance")
+                  .isNotSameAs(repoB);
+              assertThat(storePortOf(repoA))
+                  .as("scope A's repository must be bound to scope A's store")
+                  .isSameAs(storeA);
+              assertThat(storePortOf(repoB))
+                  .as("scope B's repository must be bound to scope B's store")
+                  .isSameAs(storeB);
+            });
+  }
+
+  // Without a provider, scopes fall back to the shared singleton repository.
+  @Test
+  void perScopeChainsShareTheSingletonRepositoryWhenNoProvider() {
+    runner()
+        .withConfiguration(AutoConfigurations.of(WebSessionConfiguration.class))
+        .withPropertyValues("camunda.security.session.persistent.enabled=true")
+        .withBean("clusterSessionStore", SessionStorePort.class, NoopSessionStore::new)
+        // no ScopedSessionStorePortProvider contributed
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+
+              final var singleton = ctx.getBean(WebSessionRepository.class);
+              final var repoA = durableRepository(webappChain(ctx, "a"));
+              final var repoB = durableRepository(webappChain(ctx, "b"));
+
+              assertThat(repoA)
+                  .as("without a provider, scopes fall back to the shared singleton repository")
+                  .isSameAs(singleton)
+                  .isSameAs(repoB);
+            });
+  }
+
+  // Commit-phase routing: a session created + committed through scope A's real
+  // SessionRepositoryFilter
+  // is written to scope A's store, not the default/other store. This exercises the actual
+  // SessionRepositoryFilter -> WebSessionRepository.save -> SessionStorePort.upsert commit path.
+  @Test
+  void committingThroughAScopeFilterWritesToThatScopesStoreOnly() throws Exception {
+    final var storeA = new RecordingSessionStore();
+    final var storeB = new RecordingSessionStore();
+    final ScopedSessionStorePortProvider provider =
+        basePath -> {
+          if (BASE_A.equals(basePath)) {
+            return storeA;
+          }
+          if (BASE_B.equals(basePath)) {
+            return storeB;
+          }
+          throw new AssertionError("unexpected basePath: " + basePath);
+        };
+
+    runner()
+        .withConfiguration(AutoConfigurations.of(WebSessionConfiguration.class))
+        .withPropertyValues("camunda.security.session.persistent.enabled=true")
+        .withBean("clusterSessionStore", SessionStorePort.class, RecordingSessionStore::new)
+        .withBean(ScopedSessionStorePortProvider.class, () -> provider)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+
+              final var filterA = sessionRepositoryFilter(webappChain(ctx, "a"));
+              // downstream creates + mutates a session; the filter commits it in its finally block
+              final FilterChain createsSession =
+                  (req, res) ->
+                      ((HttpServletRequest) req).getSession(true).setAttribute("marker", "v");
+
+              filterA.doFilter(
+                  new MockHttpServletRequest("GET", BASE_A + "/operate/dashboard"),
+                  new MockHttpServletResponse(),
+                  createsSession);
+
+              assertThat(storeA.upsertedIds())
+                  .as("the commit through scope A's filter writes to scope A's store")
+                  .hasSize(1);
+              assertThat(storeB.upsertedIds()).as("scope B's store must be untouched").isEmpty();
+            });
+  }
+
+  /**
+   * The durable {@link WebSessionRepository} backing the scope's {@link SessionRepositoryFilter}.
+   */
+  private static WebSessionRepository durableRepository(final SecurityFilterChain chain) {
+    final var filter =
+        chain.getFilters().stream()
+            .filter(SessionRepositoryFilter.class::isInstance)
+            .map(SessionRepositoryFilter.class::cast)
+            .findFirst()
+            .orElseThrow(
+                () -> new AssertionError("No SessionRepositoryFilter found on chain " + chain));
+    try {
+      final var field = SessionRepositoryFilter.class.getDeclaredField("sessionRepository");
+      field.setAccessible(true);
+      final Object repo = field.get(filter);
+      if (!(repo instanceof final WebSessionRepository webRepo)) {
+        throw new AssertionError(
+            "Expected a durable WebSessionRepository backing the filter, got: " + repo.getClass());
+      }
+      return webRepo;
+    } catch (final ReflectiveOperationException ex) {
+      throw new AssertionError("Could not access sessionRepository field on filter", ex);
+    }
+  }
+
+  private static SessionStorePort storePortOf(final WebSessionRepository repository) {
+    // Reflect on the sessionStorePort() accessor (package-private, different package here) rather
+    // than the backing field, so a field rename doesn't silently break the test.
+    try {
+      final var accessor = WebSessionRepository.class.getDeclaredMethod("sessionStorePort");
+      accessor.setAccessible(true);
+      return (SessionStorePort) accessor.invoke(repository);
+    } catch (final ReflectiveOperationException ex) {
+      throw new AssertionError("Could not invoke sessionStorePort() on WebSessionRepository", ex);
+    }
+  }
+
   /** Resolves the {@link OrderedSecurityFilterChainWrapper} for the given scope suffix (a or b). */
   private static OrderedSecurityFilterChainWrapper webappChain(
       final org.springframework.context.ApplicationContext ctx, final String scopeSuffix) {
@@ -437,6 +592,51 @@ class ScopedWebappSessionIsolationTest {
     @Bean
     ObjectMapper objectMapper() {
       return new ObjectMapper();
+    }
+  }
+
+  private static final class NoopSessionStore implements SessionStorePort {
+    @Override
+    public PersistentSession get(final String sessionId) {
+      return null;
+    }
+
+    @Override
+    public void upsert(final PersistentSession session) {}
+
+    @Override
+    public void delete(final String sessionId) {}
+
+    @Override
+    public List<PersistentSession> getAll() {
+      return List.of();
+    }
+  }
+
+  /** Records the ids upserted into it, so a commit can be asserted to land in this store. */
+  private static final class RecordingSessionStore implements SessionStorePort {
+    private final List<String> upsertedIds = new ArrayList<>();
+
+    @Override
+    public PersistentSession get(final String sessionId) {
+      return null;
+    }
+
+    @Override
+    public void upsert(final PersistentSession session) {
+      upsertedIds.add(session.id());
+    }
+
+    @Override
+    public void delete(final String sessionId) {}
+
+    @Override
+    public List<PersistentSession> getAll() {
+      return List.of();
+    }
+
+    List<String> upsertedIds() {
+      return upsertedIds;
     }
   }
 }
