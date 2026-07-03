@@ -13,7 +13,11 @@ import static java.time.Instant.now;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpSession;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -267,6 +272,56 @@ class CamundaOidcLogoutSuccessHandlerTest {
     request.setContextPath("/component");
     request.setRequestURI("/component/some/path");
     return request;
+  }
+
+  private static MockHttpServletRequest fetchRequestWithReferer(final String referer) {
+    final MockHttpServletRequest request = requestWithReferer(referer);
+    request.addHeader("Sec-Fetch-Dest", "empty");
+    return request;
+  }
+
+  @Test
+  void fetchLogoutWithEndSessionReturnsJsonBodyWithUrl() throws IOException, ServletException {
+    final MockHttpServletRequest request = fetchRequestWithReferer(SAME_ORIGIN_REFERER);
+    final MockHttpServletResponse response = new MockHttpServletResponse();
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    handler.onLogoutSuccess(request, response, oidcAuthentication("user@camunda.com"));
+
+    assertThat(response.getStatus()).isEqualTo(200);
+    assertThat(response.getContentType()).contains(MediaType.APPLICATION_JSON_VALUE);
+
+    final JsonNode body = new ObjectMapper().readTree(response.getContentAsString());
+    assertThat(body.get("url").asText()).contains("https://idp.com/logout");
+    assertThat(body.get("url").asText()).contains("logout_hint=user@camunda.com");
+  }
+
+  @Test
+  void fetchLogoutWithoutEndSessionReturnsNoContent() throws IOException, ServletException {
+    final MockHttpServletRequest request = fetchRequestWithReferer(SAME_ORIGIN_REFERER);
+    final MockHttpServletResponse response = new MockHttpServletResponse();
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistrationWithoutEndSessionEndpoint());
+
+    handler.onLogoutSuccess(request, response, oidcAuthentication("user@camunda.com"));
+
+    assertThat(response.getStatus()).isEqualTo(204);
+    assertThat(response.getContentAsString()).isEmpty();
+  }
+
+  @Test
+  void nonFetchLogoutWithEndSessionEmitsRedirect() throws IOException, ServletException {
+    final MockHttpServletRequest request = requestWithReferer(SAME_ORIGIN_REFERER);
+    request.addHeader("Accept", "text/html");
+    final MockHttpServletResponse response = new MockHttpServletResponse();
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    handler.onLogoutSuccess(request, response, oidcAuthentication("user@camunda.com"));
+
+    assertThat(response.getStatus()).isEqualTo(302);
+    assertThat(response.getRedirectedUrl()).contains("https://idp.com/logout");
   }
 
   private static OAuth2AuthenticationToken oidcAuthentication(final String loginHint) {
