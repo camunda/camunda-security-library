@@ -7,14 +7,21 @@
  */
 package io.camunda.security.spring.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.client.oidc.web.logout.OidcClientInitiatedLogoutSuccessHandler;
@@ -63,12 +70,73 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
       "The identity provider's end_session_endpoint is not available. "
           + "The local session has been terminated, but the IdP session will still be active.";
 
+  private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
   private final ClientRegistrationRepository clientRegistrationRepository;
 
   public CamundaOidcLogoutSuccessHandler(
       final ClientRegistrationRepository clientRegistrationRepository) {
     super(clientRegistrationRepository);
     this.clientRegistrationRepository = clientRegistrationRepository;
+  }
+
+  /**
+   * Handles logout success differently depending on how the client called {@code /logout}:
+   *
+   * <ul>
+   *   <li>Full-page navigations (no {@code Sec-Fetch-Dest: empty}, no JSON {@code Accept}) delegate
+   *       to {@link OidcClientInitiatedLogoutSuccessHandler#onLogoutSuccess} and keep the standard
+   *       302 redirect to the IdP's {@code end_session_endpoint}.
+   *   <li>Fetch/XHR calls (as issued by the Orchestration Cluster webapps) instead receive a 2xx
+   *       response they can act on: 200 with a JSON body {@code {"url": "<end-session-url>"}} when
+   *       an end-session URL is available, or 204 with no body when it is not. A 302 cannot drive a
+   *       cross-origin top-level navigation from a fetch call, so the frontend needs the URL back
+   *       to navigate itself.
+   * </ul>
+   */
+  @Override
+  public void onLogoutSuccess(
+      final HttpServletRequest request,
+      final HttpServletResponse response,
+      final Authentication authentication)
+      throws IOException, ServletException {
+    if (!isFetchRequest(request)) {
+      super.onLogoutSuccess(request, response, authentication);
+      return;
+    }
+
+    final String targetUrl = determineTargetUrl(request, response, authentication);
+    if (Objects.equals(targetUrl, getDefaultTargetUrl())) {
+      LOG.trace("No end-session URL available for fetch-based logout. Responding with 204.");
+      response.setStatus(HttpServletResponse.SC_NO_CONTENT);
+      return;
+    }
+
+    LOG.trace("Responding to fetch-based logout with 200 and end-session URL '{}'.", targetUrl);
+    response.setStatus(HttpServletResponse.SC_OK);
+    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+    response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+    OBJECT_MAPPER.writeValue(response.getWriter(), Map.of("url", targetUrl));
+  }
+
+  /**
+   * Detects fetch/XHR calls as opposed to full-page (top-level) navigations.
+   *
+   * <p>Primary signal is the {@code Sec-Fetch-Dest} header: browsers set it to {@code empty} for
+   * {@code fetch()}/XHR requests and to {@code document}/{@code iframe}/{@code frame} for
+   * navigations. When the header is absent (older browsers, some HTTP clients), falls back to
+   * checking whether {@code Accept} contains {@code application/json}.
+   */
+  private static boolean isFetchRequest(final HttpServletRequest request) {
+    final String secFetchDest = request.getHeader("Sec-Fetch-Dest");
+    if (secFetchDest != null && !secFetchDest.isBlank()) {
+      return !("document".equalsIgnoreCase(secFetchDest)
+          || "iframe".equalsIgnoreCase(secFetchDest)
+          || "frame".equalsIgnoreCase(secFetchDest));
+    }
+    final String accept = request.getHeader(HttpHeaders.ACCEPT);
+    return accept != null
+        && accept.toLowerCase(Locale.ROOT).contains(MediaType.APPLICATION_JSON_VALUE);
   }
 
   @Override
