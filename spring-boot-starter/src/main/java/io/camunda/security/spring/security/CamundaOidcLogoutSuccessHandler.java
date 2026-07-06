@@ -112,7 +112,7 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
       return;
     }
 
-    LOG.trace("Responding to fetch-based logout with 200 and end-session URL '{}'.", targetUrl);
+    LOG.trace("Responding to fetch-based logout with 200 and an end-session URL.");
     response.setStatus(HttpServletResponse.SC_OK);
     response.setContentType(MediaType.APPLICATION_JSON_VALUE);
     response.setCharacterEncoding(StandardCharsets.UTF_8.name());
@@ -123,16 +123,15 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
    * Detects fetch/XHR calls as opposed to full-page (top-level) navigations.
    *
    * <p>Primary signal is the {@code Sec-Fetch-Dest} header: browsers set it to {@code empty} for
-   * {@code fetch()}/XHR requests and to {@code document}/{@code iframe}/{@code frame} for
-   * navigations. When the header is absent (older browsers, some HTTP clients), falls back to
-   * checking whether {@code Accept} contains {@code application/json}.
+   * {@code fetch()}/XHR requests and to other values (e.g. {@code document}, {@code iframe}, {@code
+   * frame}, or subresource dests like {@code image}/{@code script}) for anything else. Only {@code
+   * empty} is treated as fetch. When the header is absent (older browsers, some HTTP clients),
+   * falls back to checking whether {@code Accept} contains {@code application/json}.
    */
   private static boolean isFetchRequest(final HttpServletRequest request) {
     final String secFetchDest = request.getHeader("Sec-Fetch-Dest");
     if (secFetchDest != null && !secFetchDest.isBlank()) {
-      return !("document".equalsIgnoreCase(secFetchDest)
-          || "iframe".equalsIgnoreCase(secFetchDest)
-          || "frame".equalsIgnoreCase(secFetchDest));
+      return "empty".equalsIgnoreCase(secFetchDest);
     }
     final String accept = request.getHeader(HttpHeaders.ACCEPT);
     return accept != null

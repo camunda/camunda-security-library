@@ -324,6 +324,38 @@ class CamundaOidcLogoutSuccessHandlerTest {
     assertThat(response.getRedirectedUrl()).contains("https://idp.com/logout");
   }
 
+  @Test
+  void fetchLogoutWithJsonAcceptFallbackReturnsJsonBodyWithUrl()
+      throws IOException, ServletException {
+    final MockHttpServletRequest request = requestWithReferer(SAME_ORIGIN_REFERER);
+    request.addHeader("Accept", "application/json");
+    final MockHttpServletResponse response = new MockHttpServletResponse();
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    handler.onLogoutSuccess(request, response, oidcAuthentication("user@camunda.com"));
+
+    assertThat(response.getStatus()).isEqualTo(200);
+    assertThat(response.getContentType()).contains(MediaType.APPLICATION_JSON_VALUE);
+
+    final JsonNode body = new ObjectMapper().readTree(response.getContentAsString());
+    assertThat(body.get("url").asText()).contains("https://idp.com/logout");
+  }
+
+  @Test
+  void subresourceSecFetchDestIsNotTreatedAsFetch() throws IOException, ServletException {
+    final MockHttpServletRequest request = requestWithReferer(SAME_ORIGIN_REFERER);
+    request.addHeader("Sec-Fetch-Dest", "image");
+    final MockHttpServletResponse response = new MockHttpServletResponse();
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    handler.onLogoutSuccess(request, response, oidcAuthentication("user@camunda.com"));
+
+    assertThat(response.getStatus()).isEqualTo(302);
+    assertThat(response.getRedirectedUrl()).contains("https://idp.com/logout");
+  }
+
   private static OAuth2AuthenticationToken oidcAuthentication(final String loginHint) {
     final Map<String, Object> claims = new HashMap<>();
     claims.put("sub", "user-id");
