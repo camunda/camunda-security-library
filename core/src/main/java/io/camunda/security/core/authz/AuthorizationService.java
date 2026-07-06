@@ -25,10 +25,14 @@ import org.slf4j.LoggerFactory;
  * paths:
  *
  * <p><strong>Scope-based checks</strong> ({@link #check(CamundaAuthentication,
- * RequiredAuthorization)}): Delegates to {@link AuthorizationChecker}. Checks with {@link
- * AuthorizationResourceType#TENANT} resource type produce {@link AuthorizationRejection.Tenant};
- * all other resource types produce {@link AuthorizationRejection.Permission}. Tenant checks only
- * run when multi-tenancy is enabled; permission checks only run when authorization is enabled.
+ * RequiredAuthorization)}): Delegates to {@link AuthorizationChecker}. Every check routed through
+ * this method is an RBAC check gated on {@code authorizationEnabled}. Checks with {@link
+ * AuthorizationResourceType#TENANT} resource type are RBAC on tenant <em>entities</em> (create /
+ * update / delete a tenant, add / remove members) and produce {@link
+ * AuthorizationRejection.Tenant}; all other resource types produce {@link
+ * AuthorizationRejection.Permission}. This is <em>not</em> the tenant-membership dimension ("may
+ * this principal act within tenant X"), which is handled separately by {@code TenantAccessProvider}
+ * / {@code TenantCheck} and does not flow through this port. See ADR-0030 and issue #486.
  *
  * <p><strong>Property-based checks</strong> ({@link #check(CamundaAuthentication,
  * RequiredAuthorization, Object)}): Delegates to the registered {@link
@@ -36,10 +40,9 @@ import org.slf4j.LoggerFactory;
  * There is no equivalent path in {@link AuthorizationChecker}. Callers must not bypass this method
  * for property-based authorization.
  *
- * <p>When both authorization and multi-tenancy checks are globally disabled, all check methods
- * short-circuit and return {@link Either#right(Object) Either.right(null)} without delegating. Use
- * {@link #skipChecks()} to query this condition before constructing expensive auth objects on hot
- * paths.
+ * <p>{@link #skipChecks()} is a hot-path convenience for callers: it returns {@code true} when both
+ * authorization and multi-tenancy checks are globally disabled, so callers can avoid constructing
+ * expensive authentication objects before invoking a check method.
  */
 public final class AuthorizationService implements AuthorizationCheckPort {
 
@@ -76,32 +79,28 @@ public final class AuthorizationService implements AuthorizationCheckPort {
    * Scope-based authorization check. Evaluates each resource ID in {@code authorization} against
    * the principal's granted scopes via {@link AuthorizationChecker}.
    *
-   * <p>Tenant resource-type checks ({@link AuthorizationResourceType#TENANT}) only run when
-   * multi-tenancy is enabled; all other checks only run when authorization is enabled.
+   * <p>This is an RBAC check gated on {@code authorizationEnabled}, for every resource type
+   * including {@link AuthorizationResourceType#TENANT} (which represents RBAC on tenant entities,
+   * not tenant membership). The tenant-membership dimension is handled separately by {@code
+   * TenantAccessProvider} / {@code TenantCheck} and does not flow through this port. See ADR-0030
+   * and issue #486.
    *
-   * @return {@link Either#right(Object) right(null)} when authorized or when the relevant flag is
+   * @return {@link Either#right(Object) right(null)} when authorized or when authorization is
    *     disabled; {@link Either#left(Object) left(rejection)} when the principal lacks access
    */
   @Override
   public <T> Either<AuthorizationRejection, Void> check(
       final CamundaAuthentication authentication, final RequiredAuthorization<T> authorization) {
-    if (skipChecks()) {
-      return Either.right(null);
-    }
-
-    final boolean isTenantCheck =
-        AuthorizationResourceType.TENANT.equals(authorization.resourceType());
-
-    if (isTenantCheck && !multiTenancyChecksEnabled) {
-      return Either.right(null);
-    }
-    if (!isTenantCheck && !authorizationEnabled) {
+    if (!authorizationEnabled) {
       return Either.right(null);
     }
 
     if (!authorization.hasAnyResourceIds()) {
       return Either.right(null);
     }
+
+    final boolean isTenantResource =
+        AuthorizationResourceType.TENANT.equals(authorization.resourceType());
 
     for (final String resourceId : authorization.resourceIds()) {
       final AuthorizationScope scope = AuthorizationScope.of(resourceId);
@@ -112,7 +111,7 @@ public final class AuthorizationService implements AuthorizationCheckPort {
             authorization.resourceType(),
             authorization.permissionType(),
             resourceId);
-        if (isTenantCheck) {
+        if (isTenantResource) {
           return Either.left(new AuthorizationRejection.Tenant(resourceId));
         }
         return Either.left(
@@ -140,7 +139,7 @@ public final class AuthorizationService implements AuthorizationCheckPort {
       final CamundaAuthentication authentication,
       final RequiredAuthorization<T> authorization,
       final T resource) {
-    if (skipChecks() || !authorizationEnabled) {
+    if (!authorizationEnabled) {
       return Either.right(null);
     }
 
