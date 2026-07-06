@@ -73,6 +73,20 @@ public record CamundaAuthentication(
     claims = immutableClaimsWithoutNullValues(claims);
   }
 
+  /**
+   * @return A log-safe, formatted principal string with either {@code user=<username>}, {@code
+   *     client=<clientId>}, or {@code unknown}.
+   */
+  public String formattedPrincipal() {
+    if (authenticatedUsername() != null) {
+      return "user=" + authenticatedUsername();
+    }
+    if (authenticatedClientId() != null) {
+      return "client=" + authenticatedClientId();
+    }
+    return "unknown";
+  }
+
   private static <T> List<T> listOrEmpty(final List<T> values) {
     if (values == null) {
       return List.of();
