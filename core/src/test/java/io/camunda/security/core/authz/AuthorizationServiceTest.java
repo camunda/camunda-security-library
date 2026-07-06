@@ -21,6 +21,7 @@ import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.authz.AuthorizationRejection;
 import io.camunda.security.api.model.authz.AuthorizationScope;
+import io.camunda.security.api.model.authz.PermissionType;
 import io.camunda.security.core.auth.RequiredAuthorization;
 import java.util.List;
 import java.util.Optional;
@@ -101,19 +102,62 @@ class AuthorizationServiceTest {
                 PROCESS_DEFINITION, READ_PROCESS_DEFINITION, "p1"));
   }
 
+  // --- TENANT resource type: RBAC on tenant entities, gated on authorizationEnabled (#486) ---
+  // The {authz on/off} x {multi-tenancy on/off} matrix. resourceType==TENANT is RBAC on tenant
+  // entities (not the membership dimension), so it is gated on authorizationEnabled regardless of
+  // multi-tenancy. See ADR-0030.
+
   @Test
-  void scopeCheckReturnsTenantRejectionForTenantResourceType() {
+  void tenantCheckReturnsTenantRejectionWhenAuthzAndMultiTenancyEnabledAndCheckerDenies() {
     when(authorizationChecker.isAuthorized(any(), eq(alice), any())).thenReturn(false);
     final var req = RequiredAuthorization.of(b -> b.tenant().read().resourceId("t1"));
-    final var result = service(false, true).check(alice, req);
+    final var result = service(true, true).check(alice, req);
     assertThat(result.isLeft()).isTrue();
     assertThat(result.leftValue()).isEqualTo(new AuthorizationRejection.Tenant("t1"));
   }
 
   @Test
-  void scopeCheckSkipsTenantCheckWhenMultiTenancyDisabled() {
+  void tenantCheckReturnsRightWhenAuthzAndMultiTenancyEnabledAndCheckerApproves() {
+    when(authorizationChecker.isAuthorized(any(), eq(alice), any())).thenReturn(true);
     final var req = RequiredAuthorization.of(b -> b.tenant().read().resourceId("t1"));
+    assertThat(service(true, true).check(alice, req).isRight()).isTrue();
+  }
+
+  @Test
+  void tenantCheckRunsWhenAuthzEnabledAndMultiTenancyDisabledAndCheckerDenies() {
+    // Fail-open regression fix (#486): tenant management RBAC must be enforced even when
+    // multi-tenancy is off. Mirrors the real caller: TENANT permission on the wildcard scope.
+    when(authorizationChecker.isAuthorized(any(), eq(alice), any())).thenReturn(false);
+    final var req =
+        RequiredAuthorization.of(
+            b -> b.tenant().permissionType(PermissionType.CREATE).resourceId("*"));
+    final var result = service(true, false).check(alice, req);
+    assertThat(result.isLeft()).isTrue();
+    assertThat(result.leftValue()).isEqualTo(new AuthorizationRejection.Tenant("*"));
+  }
+
+  @Test
+  void tenantCheckReturnsRightWhenAuthzEnabledAndMultiTenancyDisabledAndCheckerApproves() {
+    when(authorizationChecker.isAuthorized(any(), eq(alice), any())).thenReturn(true);
+    final var req =
+        RequiredAuthorization.of(
+            b -> b.tenant().permissionType(PermissionType.CREATE).resourceId("*"));
     assertThat(service(true, false).check(alice, req).isRight()).isTrue();
+  }
+
+  @Test
+  void tenantCheckReturnsRightWhenAuthorizationDisabledAndMultiTenancyEnabled() {
+    // Fail-closed regression fix (#486): with authorizations off there is no RBAC to enforce,
+    // so a TENANT check is authorized and the checker is never consulted.
+    final var req = RequiredAuthorization.of(b -> b.tenant().read().resourceId("t1"));
+    assertThat(service(false, true).check(alice, req).isRight()).isTrue();
+    verifyNoInteractions(authorizationChecker);
+  }
+
+  @Test
+  void tenantCheckReturnsRightWhenBothFlagsDisabled() {
+    final var req = RequiredAuthorization.of(b -> b.tenant().read().resourceId("t1"));
+    assertThat(service(false, false).check(alice, req).isRight()).isTrue();
     verifyNoInteractions(authorizationChecker);
   }
 
