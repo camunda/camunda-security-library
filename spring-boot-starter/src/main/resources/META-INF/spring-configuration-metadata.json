@@ -36,6 +36,12 @@
       "sourceMethod": "getAuthorizeRequest()"
     },
     {
+      "name": "camunda.security.authentication.oidc.diagnostics",
+      "type": "io.camunda.security.api.model.config.oidc.OidcDiagnosticsConfiguration",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "sourceMethod": "getDiagnostics()"
+    },
+    {
       "name": "camunda.security.authentication.oidc.user-info-augmentation",
       "type": "io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfiguration",
       "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
@@ -263,6 +269,12 @@
       "type": "java.time.Duration",
       "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
       "defaultValue": "PT60S"
+    },
+    {
+      "name": "camunda.security.authentication.oidc.diagnostics.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcDiagnosticsConfiguration",
+      "defaultValue": false
     },
     {
       "name": "camunda.security.authentication.oidc.end-session-endpoint-uri",

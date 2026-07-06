@@ -19,6 +19,7 @@ import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.filter.AdminUserCheckFilter;
 import io.camunda.security.spring.filter.OAuth2RefreshTokenFilter;
+import io.camunda.security.spring.filter.OidcRedirectDiagnosticsFilter;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.handler.OAuth2AuthenticationExceptionHandler;
@@ -29,6 +30,8 @@ import io.camunda.security.spring.scope.BasePaths;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import java.util.LinkedHashMap;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -39,6 +42,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
@@ -72,6 +76,8 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
  * cluster OAuth2 stack and the {@link HttpSecurity} instance) remain method parameters.
  */
 public final class ScopedWebappSecurityChainBuilder {
+
+  private static final Logger LOG = LoggerFactory.getLogger(ScopedWebappSecurityChainBuilder.class);
 
   private final AuthFailureHandler authFailureHandler;
   private final CamundaSecurityLibraryProperties properties;
@@ -228,6 +234,8 @@ public final class ScopedWebappSecurityChainBuilder {
                 LoginLinksBuilder.defaultOauth2LoginPickerFilter(
                     clientRegistrationRepository, loginUrl));
     filterChainBuilder.addFilterAfter(loginPickerFilter, CsrfFilter.class);
+
+    applyOidcRedirectDiagnosticsFilter(filterChainBuilder, redirectUri);
 
     return filterChainBuilder.build();
   }
@@ -550,7 +558,26 @@ public final class ScopedWebappSecurityChainBuilder {
     // writes before the picker commits the response.
     filterChainBuilder.addFilterAfter(scopedPicker, CsrfFilter.class);
 
+    applyOidcRedirectDiagnosticsFilter(filterChainBuilder, redirectUri);
+
     return filterChainBuilder.build();
+  }
+
+  private void applyOidcRedirectDiagnosticsFilter(
+      final HttpSecurity http, final String callbackPath) {
+    final var oidc = properties.getAuthentication().getOidc();
+    if (oidc != null && oidc.getDiagnostics().isEnabled()) {
+      // Positioned before the redirect filter so diagnostics wrap the redirect generation and
+      // can inspect the resulting Location header on the way back out.
+      http.addFilterBefore(
+          new OidcRedirectDiagnosticsFilter(callbackPath),
+          OAuth2AuthorizationRequestRedirectFilter.class);
+      LOG.info(
+          "OIDC redirect diagnostics filter enabled"
+              + " (camunda.security.authentication.oidc.diagnostics.enabled=true)."
+              + " Enable DEBUG logging for {} to see full redirect diagnostics.",
+          OidcRedirectDiagnosticsFilter.class.getName());
+    }
   }
 
   private SecurityFilterChain buildBasicWebappChainInternal(
