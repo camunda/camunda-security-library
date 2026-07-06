@@ -18,9 +18,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpSession;
 import java.io.IOException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,6 +44,9 @@ import org.springframework.security.oauth2.core.oidc.OidcIdToken;
 import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.oauth2.core.user.OAuth2User;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.util.UriComponents;
+import org.springframework.web.util.UriComponentsBuilder;
 
 @ExtendWith(MockitoExtension.class)
 class CamundaOidcLogoutSuccessHandlerTest {
@@ -293,8 +299,13 @@ class CamundaOidcLogoutSuccessHandlerTest {
     assertThat(response.getContentType()).contains(MediaType.APPLICATION_JSON_VALUE);
 
     final JsonNode body = new ObjectMapper().readTree(response.getContentAsString());
-    assertThat(body.get("url").asText()).contains("https://idp.com/logout");
-    assertThat(body.get("url").asText()).contains("logout_hint=user@camunda.com");
+    final MultiValueMap<String, String> query =
+        queryParams(body.get("url").asText(), "idp.com", "/logout");
+    assertThat(query.getFirst("id_token_hint")).isNotBlank();
+    assertThat(
+            URLDecoder.decode(
+                Objects.requireNonNull(query.getFirst("logout_hint")), StandardCharsets.UTF_8))
+        .isEqualTo("user@camunda.com");
   }
 
   @Test
@@ -321,7 +332,9 @@ class CamundaOidcLogoutSuccessHandlerTest {
     handler.onLogoutSuccess(request, response, oidcAuthentication("user@camunda.com"));
 
     assertThat(response.getStatus()).isEqualTo(302);
-    assertThat(response.getRedirectedUrl()).contains("https://idp.com/logout");
+    final MultiValueMap<String, String> query =
+        queryParams(response.getRedirectedUrl(), "idp.com", "/logout");
+    assertThat(query.getFirst("id_token_hint")).isNotBlank();
   }
 
   @Test
@@ -339,7 +352,13 @@ class CamundaOidcLogoutSuccessHandlerTest {
     assertThat(response.getContentType()).contains(MediaType.APPLICATION_JSON_VALUE);
 
     final JsonNode body = new ObjectMapper().readTree(response.getContentAsString());
-    assertThat(body.get("url").asText()).contains("https://idp.com/logout");
+    final MultiValueMap<String, String> query =
+        queryParams(body.get("url").asText(), "idp.com", "/logout");
+    assertThat(query.getFirst("id_token_hint")).isNotBlank();
+    assertThat(
+            URLDecoder.decode(
+                Objects.requireNonNull(query.getFirst("logout_hint")), StandardCharsets.UTF_8))
+        .isEqualTo("user@camunda.com");
   }
 
   @Test
@@ -354,6 +373,15 @@ class CamundaOidcLogoutSuccessHandlerTest {
 
     assertThat(response.getStatus()).isEqualTo(302);
     assertThat(response.getRedirectedUrl()).contains("https://idp.com/logout");
+  }
+
+  private static MultiValueMap<String, String> queryParams(
+      final String url, final String expectedHost, final String expectedPath) {
+    final UriComponents parsed = UriComponentsBuilder.fromUriString(url).build();
+    assertThat(parsed.getScheme()).isEqualTo("https");
+    assertThat(parsed.getHost()).isEqualTo(expectedHost);
+    assertThat(parsed.getPath()).isEqualTo(expectedPath);
+    return parsed.getQueryParams();
   }
 
   private static OAuth2AuthenticationToken oidcAuthentication(final String loginHint) {
