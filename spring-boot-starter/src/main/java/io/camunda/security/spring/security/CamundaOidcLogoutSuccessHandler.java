@@ -72,6 +72,11 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
 
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
+  private static final String SEC_FETCH_DEST_HEADER = "Sec-Fetch-Dest";
+
+  /** The {@code Sec-Fetch-Dest} value browsers send for {@code fetch()}/XHR requests. */
+  private static final String SEC_FETCH_DEST_EMPTY = "empty";
+
   private final ClientRegistrationRepository clientRegistrationRepository;
 
   public CamundaOidcLogoutSuccessHandler(
@@ -129,9 +134,9 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
    * falls back to checking whether {@code Accept} contains {@code application/json}.
    */
   private static boolean isFetchRequest(final HttpServletRequest request) {
-    final String secFetchDest = request.getHeader("Sec-Fetch-Dest");
+    final String secFetchDest = request.getHeader(SEC_FETCH_DEST_HEADER);
     if (secFetchDest != null && !secFetchDest.isBlank()) {
-      return "empty".equalsIgnoreCase(secFetchDest);
+      return SEC_FETCH_DEST_EMPTY.equalsIgnoreCase(secFetchDest);
     }
     final String accept = request.getHeader(HttpHeaders.ACCEPT);
     return accept != null
