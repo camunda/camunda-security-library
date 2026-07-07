@@ -10,12 +10,11 @@ package io.camunda.security.spring.security;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_UNPROTECTED;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.core.port.out.MembershipQuery;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
-import io.camunda.security.spring.converter.LazyTokenClaimsConverter;
 import io.camunda.security.spring.filter.JwtCookieAuthenticationFilter;
 import io.camunda.security.spring.spi.JwtCookieTokenPort;
 import io.camunda.security.spring.spi.OidcAuthenticationEntryPoint;
@@ -289,7 +288,7 @@ class OidcJwtCookieWebappSecurityConfigurationTest {
               return List.of();
             }
           };
-      final var converter = new LazyTokenClaimsConverter(new OidcConfiguration(), membershipPort);
+      final var converter = new LazyTokenClaimsConverter("sub", null, false, membershipPort);
       return new JwtCookieAuthenticationFilter(
           JwtCookieAuthenticationFilter.DEFAULT_COOKIE_NAME, tokenPort, converter, entryPoint);
     }
