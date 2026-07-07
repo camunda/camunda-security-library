@@ -131,7 +131,7 @@ public final class AuthorizationService implements AuthorizationCheckPort {
    * runs when authorization is globally enabled.
    *
    * @param resource the resource instance to evaluate the property against
-   * @return {@link Either#right(Object) right(null)} when authorized or when the relevant flag is
+   * @return {@link Either#right(Object) right(null)} when authorized or when authorization is
    *     disabled; {@link Either#left(Object) left(rejection)} when access is denied via a
    *     registered evaluator
    */
