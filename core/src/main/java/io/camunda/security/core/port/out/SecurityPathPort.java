@@ -23,8 +23,8 @@ public interface SecurityPathPort {
   Set<String> apiPaths();
 
   /**
-   * API paths accessible without authentication (e.g., {@code "/v2/license"}, {@code "/v2/status"},
-   * {@code "/api/healthz/readyz"}).
+   * API paths accessible without authentication (e.g., {@code "/v2/license"}, {@code
+   * "/v2/status"}). These must be a subset of {@link #apiPaths()}.
    */
   Set<String> unprotectedApiPaths();
 

@@ -29,14 +29,7 @@ public final class CamundaSecurityFilterChainConstants {
 
   public static final int ORDER_UNPROTECTED = 0;
   public static final int ORDER_WEBAPP_API = 1;
-
-  /**
-   * Order for the JWT-cookie webapp catch-all chain ({@link
-   * OidcJwtCookieWebappSecurityConfiguration}). Sits between the API/scoped-webapp chains (Order 1)
-   * and the safety-net deny-all chain (Order 3).
-   */
   public static final int ORDER_JWT_COOKIE_WEBAPP = 2;
-
   public static final int ORDER_UNHANDLED = 3;
 
   private CamundaSecurityFilterChainConstants() {}
