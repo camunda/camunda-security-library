@@ -8,7 +8,7 @@
 package io.camunda.security.spring.filter;
 
 import io.camunda.security.api.model.CamundaAuthentication;
-import io.camunda.security.spring.converter.LazyTokenClaimsConverter;
+import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.spring.spi.JwtCookieTokenPort;
 import io.camunda.security.spring.spi.OidcAuthenticationEntryPoint;
 import jakarta.servlet.FilterChain;

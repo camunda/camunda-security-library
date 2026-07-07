@@ -16,9 +16,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.model.CamundaAuthentication;
-import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.port.out.MembershipPort;
-import io.camunda.security.spring.converter.LazyTokenClaimsConverter;
 import io.camunda.security.spring.spi.JwtCookieTokenPort;
 import io.camunda.security.spring.spi.OidcAuthenticationEntryPoint;
 import jakarta.servlet.http.Cookie;
@@ -144,10 +143,7 @@ class JwtCookieAuthenticationFilterTest {
 
   @Test
   void membershipPortIsCalledLazilyOnFirstFieldRead() throws Exception {
-    final var oidcConfig = new OidcConfiguration();
-    oidcConfig.setUsernameClaim("sub");
-    oidcConfig.setClientIdClaim("azp");
-    final var realConverter = new LazyTokenClaimsConverter(oidcConfig, membershipPort);
+    final var realConverter = new LazyTokenClaimsConverter("sub", "azp", false, membershipPort);
     final var realFilter =
         new JwtCookieAuthenticationFilter(
             COOKIE_NAME, tokenPort, realConverter, authenticationEntryPoint);
