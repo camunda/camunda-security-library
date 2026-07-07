@@ -46,6 +46,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0028: Extend CSL authorization model to serve both search-layer and zeebe engine](../adr/0028-unified-authz-framework-in-core.md)
 - [ADR-0029: Per-scope session store ownership for durable web sessions](../adr/0029-per-scope-session-store-ownership.md)
 - [ADR-0030: Tenant-entity authorization is RBAC gated on authorizationEnabled](../adr/0030-tenant-entity-authorization-is-rbac.md)
+- [ADR-0031: Replace the global Spring Session filter with an explicit default-scope session filter](../adr/0031-explicit-default-session-filter-replaces-global-filter.md)
 
 ---
 

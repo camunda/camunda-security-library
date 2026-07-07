@@ -18,6 +18,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
  * Filter chain serving webapp UI paths under HTTP Basic authentication. The chain itself permits
@@ -37,7 +38,10 @@ import org.springframework.security.web.SecurityFilterChain;
     name = "camunda.security.authentication.method",
     havingValue = "basic",
     matchIfMissing = true)
-@Import(ScopedWebappSecurityChainBuilderConfiguration.class)
+@Import({
+  ScopedWebappSecurityChainBuilderConfiguration.class,
+  DefaultWebSessionFilterConfiguration.class
+})
 public class BasicAuthWebappSecurityConfiguration {
 
   private static final Logger LOG =
@@ -46,9 +50,11 @@ public class BasicAuthWebappSecurityConfiguration {
   @Bean
   @Order(ORDER_WEBAPP_API)
   public SecurityFilterChain basicAuthWebappSecurityFilterChain(
-      final HttpSecurity http, final ScopedWebappSecurityChainBuilder chainBuilder)
+      final HttpSecurity http,
+      final ScopedWebappSecurityChainBuilder chainBuilder,
+      final SessionRepositoryFilter<?> defaultSessionRepositoryFilter)
       throws Exception {
     LOG.info("Web Applications Login/Logout is set up with Basic Authentication.");
-    return chainBuilder.buildBasicWebappChain(http);
+    return chainBuilder.buildBasicWebappChain(http, defaultSessionRepositoryFilter);
   }
 }

@@ -19,6 +19,7 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
  * Filter chain that protects webapp UI paths with OIDC OAuth2 login and supports session-based
@@ -30,7 +31,10 @@ import org.springframework.security.web.SecurityFilterChain;
  */
 @Configuration
 @ConditionalOnProperty(name = "camunda.security.authentication.method", havingValue = "oidc")
-@Import(ScopedWebappSecurityChainBuilderConfiguration.class)
+@Import({
+  ScopedWebappSecurityChainBuilderConfiguration.class,
+  DefaultWebSessionFilterConfiguration.class
+})
 public class OidcWebappSecurityConfiguration {
 
   @Bean
@@ -40,10 +44,15 @@ public class OidcWebappSecurityConfiguration {
       final ScopedWebappSecurityChainBuilder chainBuilder,
       final ClientRegistrationRepository clientRegistrationRepository,
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
-      final OAuth2AuthorizedClientManager authorizedClientManager)
+      final OAuth2AuthorizedClientManager authorizedClientManager,
+      final SessionRepositoryFilter<?> defaultSessionRepositoryFilter)
       throws Exception {
 
     return chainBuilder.buildOidcWebappChain(
-        http, clientRegistrationRepository, authorizedClientRepository, authorizedClientManager);
+        http,
+        clientRegistrationRepository,
+        authorizedClientRepository,
+        authorizedClientManager,
+        defaultSessionRepositoryFilter);
   }
 }

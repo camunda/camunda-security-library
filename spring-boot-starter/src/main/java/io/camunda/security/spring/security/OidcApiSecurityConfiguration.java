@@ -22,6 +22,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
  * Filter chain that protects API paths with OIDC JWT bearer authentication.
@@ -34,7 +35,10 @@ import org.springframework.security.web.SecurityFilterChain;
  */
 @Configuration
 @Conditional(ProtectedOidcApiCondition.class)
-@Import(ScopedApiSecurityChainBuilderConfiguration.class)
+@Import({
+  ScopedApiSecurityChainBuilderConfiguration.class,
+  DefaultWebSessionFilterConfiguration.class
+})
 public class OidcApiSecurityConfiguration {
 
   private static final Logger LOG = LoggerFactory.getLogger(OidcApiSecurityConfiguration.class);
@@ -45,10 +49,15 @@ public class OidcApiSecurityConfiguration {
       final HttpSecurity http,
       final ScopedApiSecurityChainBuilder builder,
       final JwtDecoder jwtDecoder,
-      final SecurityPathPort pathPort)
+      final SecurityPathPort pathPort,
+      final SessionRepositoryFilter<?> defaultSessionRepositoryFilter)
       throws Exception {
     LOG.info("The API is protected by OIDC JWT authentication.");
     return builder.buildOidcApiChain(
-        http, pathPort.apiPaths(), pathPort.unprotectedApiPaths(), jwtDecoder);
+        http,
+        pathPort.apiPaths(),
+        pathPort.unprotectedApiPaths(),
+        jwtDecoder,
+        defaultSessionRepositoryFilter);
   }
 }

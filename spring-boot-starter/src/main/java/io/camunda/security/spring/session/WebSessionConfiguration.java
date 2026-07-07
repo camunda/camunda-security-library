@@ -26,7 +26,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.support.GenericConversionService;
-import org.springframework.session.config.annotation.web.http.EnableSpringHttpSession;
 
 /**
  * Wires the persistent web-session lifecycle: the Spring Session {@link WebSessionRepository}, its
@@ -39,9 +38,18 @@ import org.springframework.session.config.annotation.web.http.EnableSpringHttpSe
  * camunda.security.session.persistent.enabled=true}). Every bean is {@link
  * ConditionalOnMissingBean} so hosts can override individual pieces — for example the {@code
  * webSessionDeletionUncaughtExceptionHandler} to plug in their own fatal-error handling.
+ *
+ * <p>Does <strong>not</strong> use {@code @EnableSpringHttpSession} (ADR-0031): that mechanism
+ * installs a single container-wide {@code SessionRepositoryFilter} ahead of Spring Security's
+ * {@code FilterChainProxy}, so it ran for every request regardless of which security chain
+ * ultimately matched — including physical-tenant scoped paths, which install their own per-scope
+ * filter inside their own chain. The two filters resolving the same cookie against different stores
+ * corrupted Spring Session's shared {@code INVALID_SESSION_ID_ATTR} request attribute. The {@link
+ * WebSessionRepository} bean produced here is consumed directly by each chain's own
+ * explicitly-installed filter instead (see {@code DefaultWebSessionFilterConfiguration} and {@code
+ * ScopedSecurityChainRegistrar}).
  */
 @Configuration
-@EnableSpringHttpSession
 @ConditionalOnPersistentWebSessionEnabled
 public class WebSessionConfiguration {
 
