@@ -8,11 +8,19 @@
 package io.camunda.security.spring.filter;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import jakarta.servlet.FilterChain;
+import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
@@ -165,5 +173,92 @@ class OidcRedirectDiagnosticsFilterTest {
     // when / then
     assertThat(OidcRedirectDiagnosticsFilter.indicatesLostSession(request, CALLBACK_PATH))
         .isFalse();
+  }
+
+  @Test
+  void shouldWarnOnRedirectUriMismatch() throws Exception {
+    // given - a request behind a proxy; the chain generates a Location whose redirect_uri has
+    // a different port from the one computed from the forwarded headers
+    final var request = new MockHttpServletRequest("GET", "/oauth2/authorization/oidc");
+    request.addHeader("X-Forwarded-Proto", "https");
+    request.addHeader("X-Forwarded-Host", "app.example.com");
+    final var response = new MockHttpServletResponse();
+    final var chain = mock(FilterChain.class);
+    doAnswer(
+            inv -> {
+              ((HttpServletResponse) inv.getArgument(1))
+                  .setHeader(
+                      "Location",
+                      "https://idp.example.com/authorize"
+                          + "?redirect_uri=https%3A%2F%2Fapp.example.com%3A8443%2Fsso-callback");
+              return null;
+            })
+        .when(chain)
+        .doFilter(any(), any());
+    final var filter = new OidcRedirectDiagnosticsFilter(CALLBACK_PATH);
+
+    final ListAppender<ILoggingEvent> appender = attachAppender();
+    try {
+      filter.doFilter(request, response, chain);
+    } finally {
+      detachAppender(appender);
+    }
+
+    // chain was always called — the filter is purely observational
+    verify(chain).doFilter(request, response);
+    // WARN about redirect_uri mismatch was logged
+    assertThat(appender.list)
+        .anySatisfy(
+            event -> {
+              assertThat(event.getLevel()).isEqualTo(Level.WARN);
+              assertThat(event.getFormattedMessage()).contains("redirect_uri mismatch");
+            });
+    // filter did not mutate the response: only the Location header the chain set is present
+    assertThat(response.getHeaderNames()).containsExactlyInAnyOrder("Location");
+    assertThat(response.getStatus()).isEqualTo(200);
+  }
+
+  @Test
+  void shouldWarnOnLostSession() throws Exception {
+    // given - a callback carrying an authorization code but no HTTP session
+    final var request = new MockHttpServletRequest("GET", CALLBACK_PATH);
+    request.setParameter("code", "auth-code-abc");
+    // no request.getSession(true) — session is intentionally absent
+    final var response = new MockHttpServletResponse();
+    final var chain = mock(FilterChain.class);
+    final var filter = new OidcRedirectDiagnosticsFilter(CALLBACK_PATH);
+
+    final ListAppender<ILoggingEvent> appender = attachAppender();
+    try {
+      filter.doFilter(request, response, chain);
+    } finally {
+      detachAppender(appender);
+    }
+
+    // chain was always called — the filter is purely observational
+    verify(chain).doFilter(request, response);
+    // WARN about missing session was logged
+    assertThat(appender.list)
+        .anySatisfy(
+            event -> {
+              assertThat(event.getLevel()).isEqualTo(Level.WARN);
+              assertThat(event.getFormattedMessage()).contains("no valid HTTP session");
+            });
+    // filter did not mutate the response
+    assertThat(response.getHeaderNames()).isEmpty();
+    assertThat(response.getStatus()).isEqualTo(200);
+  }
+
+  private static ListAppender<ILoggingEvent> attachAppender() {
+    final Logger logger = (Logger) LoggerFactory.getLogger(OidcRedirectDiagnosticsFilter.class);
+    final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    appender.start();
+    logger.addAppender(appender);
+    return appender;
+  }
+
+  private static void detachAppender(final ListAppender<ILoggingEvent> appender) {
+    final Logger logger = (Logger) LoggerFactory.getLogger(OidcRedirectDiagnosticsFilter.class);
+    logger.detachAppender(appender);
   }
 }
