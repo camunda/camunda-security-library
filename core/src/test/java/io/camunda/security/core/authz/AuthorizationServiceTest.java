@@ -50,15 +50,6 @@ class AuthorizationServiceTest {
 
   private AuthorizationService service(
       final boolean authorizationEnabled, final boolean multiTenancyChecksEnabled) {
-    return new AuthorizationService(
-        authorizationChecker,
-        propertyEvaluatorRegistry,
-        authorizationEnabled,
-        multiTenancyChecksEnabled);
-  }
-
-  private AuthorizationService serviceWithConverter(
-      final boolean authorizationEnabled, final boolean multiTenancyChecksEnabled) {
     final var converter = new LazyTokenClaimsConverter("sub", "client_id", false, membershipPort);
     return new AuthorizationService(
         authorizationChecker,
@@ -281,7 +272,7 @@ class AuthorizationServiceTest {
     final var claims = Map.<String, Object>of("sub", "alice");
 
     // when
-    final var result = serviceWithConverter(true, false).check(claims, req);
+    final var result = service(true, false).check(claims, req);
 
     // then
     assertThat(result.isRight()).isTrue();
@@ -297,7 +288,7 @@ class AuthorizationServiceTest {
     final var claims = Map.<String, Object>of("sub", "alice");
 
     // when
-    final var result = serviceWithConverter(true, false).check(claims, req);
+    final var result = service(true, false).check(claims, req);
 
     // then
     assertThat(result.isLeft()).isTrue();
@@ -325,23 +316,9 @@ class AuthorizationServiceTest {
             b -> b.processDefinition().readProcessDefinition().resourceId("p1"));
 
     // when / then
-    assertThatThrownBy(() -> serviceWithConverter(true, false).check(Map.of("x", "y"), req))
+    assertThatThrownBy(() -> service(true, false).check(Map.of("x", "y"), req))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Neither username claim");
-  }
-
-  @Test
-  void shouldThrowIllegalStateExceptionWhenClaimsConverterNotConfigured() {
-    // given
-    final var req =
-        RequiredAuthorization.of(
-            b -> b.processDefinition().readProcessDefinition().resourceId("p1"));
-    final var claims = Map.<String, Object>of("sub", "alice");
-
-    // when / then
-    assertThatThrownBy(() -> service(true, false).check(claims, req))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("Claims-map check requires a LazyTokenClaimsConverter");
   }
 
   @Test

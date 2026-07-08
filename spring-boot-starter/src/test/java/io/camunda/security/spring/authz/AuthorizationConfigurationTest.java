@@ -17,6 +17,7 @@ import io.camunda.security.api.model.authz.EntityType;
 import io.camunda.security.api.model.authz.PermissionType;
 import io.camunda.security.core.authz.AuthorizationChecker;
 import io.camunda.security.core.authz.AuthorizationService;
+import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
@@ -37,6 +38,7 @@ class AuthorizationConfigurationTest {
 
   @Mock AuthorizationChecker mockChecker;
   @Mock AuthorizationCheckPort mockAuthorizationCheckPort;
+  @Mock LazyTokenClaimsConverter mockConverter;
 
   @SuppressWarnings("unchecked")
   @Mock
@@ -46,7 +48,8 @@ class AuthorizationConfigurationTest {
       new ApplicationContextRunner()
           .withConfiguration(
               AutoConfigurations.of(
-                  CamundaSecurityConfiguration.class, AuthorizationConfiguration.class));
+                  CamundaSecurityConfiguration.class, AuthorizationConfiguration.class))
+          .withBean(LazyTokenClaimsConverter.class, () -> mockConverter);
 
   @Test
   void beanIsRegisteredWhenAuthorizationCheckerIsPresent() {
@@ -68,6 +71,7 @@ class AuthorizationConfigurationTest {
         .withConfiguration(
             AutoConfigurations.of(
                 CamundaSecurityConfiguration.class, AuthorizationConfiguration.class))
+        .withBean(LazyTokenClaimsConverter.class, () -> mockConverter)
         .run(ctx -> assertThat(ctx).hasSingleBean(AuthorizationService.class));
   }
 

@@ -54,26 +54,8 @@ public final class AuthorizationService implements AuthorizationCheckPort {
   private final boolean authorizationEnabled;
   private final boolean multiTenancyChecksEnabled;
 
-  /** Nullable: null when the 4-parameter constructor is used. */
   private final LazyTokenClaimsConverter claimsConverter;
 
-  public AuthorizationService(
-      final AuthorizationChecker authorizationChecker,
-      final PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry,
-      final boolean authorizationEnabled,
-      final boolean multiTenancyChecksEnabled) {
-    this(
-        authorizationChecker,
-        propertyEvaluatorRegistry,
-        authorizationEnabled,
-        multiTenancyChecksEnabled,
-        null);
-  }
-
-  /**
-   * @param claimsConverter nullable; required only when callers invoke {@link #check(Map,
-   *     RequiredAuthorization)}. Pass {@code null} when the claims-map overload is not needed.
-   */
   public AuthorizationService(
       final AuthorizationChecker authorizationChecker,
       final PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry,
@@ -84,9 +66,9 @@ public final class AuthorizationService implements AuthorizationCheckPort {
         Objects.requireNonNull(authorizationChecker, "authorizationChecker");
     this.propertyEvaluatorRegistry =
         Objects.requireNonNull(propertyEvaluatorRegistry, "propertyEvaluatorRegistry");
+    this.claimsConverter = Objects.requireNonNull(claimsConverter, "claimsConverter");
     this.authorizationEnabled = authorizationEnabled;
     this.multiTenancyChecksEnabled = multiTenancyChecksEnabled;
-    this.claimsConverter = claimsConverter;
   }
 
   /**
@@ -109,11 +91,6 @@ public final class AuthorizationService implements AuthorizationCheckPort {
       return Either.right(null);
     }
 
-    if (claimsConverter == null) {
-      throw new IllegalStateException(
-          "Claims-map check requires a LazyTokenClaimsConverter; construct AuthorizationService with a "
-              + "converter (e.g. via the 5-parameter constructor).");
-    }
     return check(claimsConverter.convert(claims), authorization);
   }
 
