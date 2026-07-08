@@ -13,6 +13,7 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.HashSet;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -36,8 +37,12 @@ public class BaseSecurityConfiguration {
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort)
       throws Exception {
+
+    final var permittedPaths = new HashSet<>(pathPort.unprotectedPaths());
+    permittedPaths.addAll(pathPort.unprotectedApiPaths());
+
     final var filterChainBuilder =
-        http.securityMatcher(pathPort.unprotectedPaths().toArray(String[]::new))
+        http.securityMatcher(permittedPaths.toArray(String[]::new))
             .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
             .csrf(AbstractHttpConfigurer::disable)
             .cors(AbstractHttpConfigurer::disable)

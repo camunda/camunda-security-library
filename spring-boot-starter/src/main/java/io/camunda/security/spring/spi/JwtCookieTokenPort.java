@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.spi;
 
+import io.camunda.security.spring.filter.JwtCookieAuthenticationFilter;
 import java.util.Map;
 import org.springframework.security.core.AuthenticationException;
 
@@ -19,6 +20,16 @@ import org.springframework.security.core.AuthenticationException;
  * MembershipPort} — this service must not attempt membership resolution.
  */
 public interface JwtCookieTokenPort {
+
+  /**
+   * Optionally override this method if you want to use a different cookie name than the default
+   * {@link JwtCookieAuthenticationFilter.DEFAULT_COOKIE_NAME}
+   *
+   * @return The name of the cookie to read the JWT from.
+   */
+  default String getCookieName() {
+    return JwtCookieAuthenticationFilter.DEFAULT_COOKIE_NAME;
+  }
 
   /**
    * Issues a signed JWT to be stored in the authentication cookie for the given user.

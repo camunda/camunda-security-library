@@ -10,10 +10,7 @@ package io.camunda.security.spring.filter;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
@@ -44,8 +41,7 @@ import org.springframework.security.web.authentication.preauth.PreAuthenticatedA
 @ExtendWith(MockitoExtension.class)
 class JwtCookieAuthenticationFilterTest {
 
-  private static final String COOKIE_NAME = "X-Camunda-Authorization";
-  private static final String COOKIE_VALUE = "test.jwt.token";
+  private static final String MOCK_COOKIE_VALUE = "test.jwt.token";
 
   @Mock private JwtCookieTokenPort tokenPort;
   @Mock private LazyTokenClaimsConverter tokenClaimsConverter;
@@ -58,8 +54,9 @@ class JwtCookieAuthenticationFilterTest {
   void setUp() {
     filter =
         new JwtCookieAuthenticationFilter(
-            COOKIE_NAME, tokenPort, tokenClaimsConverter, authenticationEntryPoint);
+            tokenPort, tokenClaimsConverter, authenticationEntryPoint);
     SecurityContextHolder.clearContext();
+    lenient().when(tokenPort.getCookieName()).thenCallRealMethod();
   }
 
   @AfterEach
@@ -71,12 +68,11 @@ class JwtCookieAuthenticationFilterTest {
   void validCookieSetsAuthenticationInSecurityContext() throws Exception {
     final var claims = Map.<String, Object>of("sub", "alice");
     final var camundaAuth = CamundaAuthentication.of(b -> b.user("alice"));
-    when(tokenPort.validate(COOKIE_VALUE)).thenReturn(claims);
+    when(tokenPort.validate(MOCK_COOKIE_VALUE)).thenReturn(claims);
     when(tokenClaimsConverter.convert(claims)).thenReturn(camundaAuth);
 
     final var chain = new MockFilterChain();
-    filter.doFilter(
-        requestWithCookie(COOKIE_NAME, COOKIE_VALUE), new MockHttpServletResponse(), chain);
+    filter.doFilter(requestWithMockJwtCookie(), new MockHttpServletResponse(), chain);
 
     assertThat(chain.getRequest()).isNotNull();
     final var auth = SecurityContextHolder.getContext().getAuthentication();
@@ -86,24 +82,23 @@ class JwtCookieAuthenticationFilterTest {
   }
 
   @Test
-  void missingCookieDelegatesToEntryPointWithoutContinuingChain() throws Exception {
+  void missingCookieContinuesChain() throws Exception {
     final var response = new MockHttpServletResponse();
     final var chain = new MockFilterChain();
     filter.doFilter(requestWithoutCookies(), response, chain);
 
-    assertThat(chain.getRequest()).isNull();
-    verify(authenticationEntryPoint)
-        .commence(any(), eq(response), any(AuthenticationException.class));
-    verifyNoInteractions(tokenPort);
+    assertThat(chain.getRequest()).isNotNull();
+    verifyNoInteractions(authenticationEntryPoint);
     verifyNoInteractions(tokenClaimsConverter);
   }
 
   @Test
   void invalidTokenDelegatesToEntryPointWithoutContinuingChain() throws Exception {
-    when(tokenPort.validate(COOKIE_VALUE)).thenThrow(new BadCredentialsException("expired token"));
+    when(tokenPort.validate(MOCK_COOKIE_VALUE))
+        .thenThrow(new BadCredentialsException("expired token"));
     final var response = new MockHttpServletResponse();
     final var chain = new MockFilterChain();
-    filter.doFilter(requestWithCookie(COOKIE_NAME, COOKIE_VALUE), response, chain);
+    filter.doFilter(requestWithMockJwtCookie(), response, chain);
 
     assertThat(chain.getRequest()).isNull();
     verify(authenticationEntryPoint)
@@ -113,13 +108,13 @@ class JwtCookieAuthenticationFilterTest {
   @Test
   void conversionExceptionDelegatesToEntryPointWithoutContinuingChain() throws Exception {
     final var claims = Map.<String, Object>of("sub", "alice");
-    when(tokenPort.validate(COOKIE_VALUE)).thenReturn(claims);
+    when(tokenPort.validate(MOCK_COOKIE_VALUE)).thenReturn(claims);
     when(tokenClaimsConverter.convert(claims))
         .thenThrow(
             new OAuth2AuthenticationException(new OAuth2Error(OAuth2ErrorCodes.INVALID_TOKEN)));
     final var response = new MockHttpServletResponse();
     final var chain = new MockFilterChain();
-    filter.doFilter(requestWithCookie(COOKIE_NAME, COOKIE_VALUE), response, chain);
+    filter.doFilter(requestWithMockJwtCookie(), response, chain);
 
     assertThat(chain.getRequest()).isNull();
     verify(authenticationEntryPoint)
@@ -133,8 +128,7 @@ class JwtCookieAuthenticationFilterTest {
     SecurityContextHolder.getContext().setAuthentication(existing);
 
     final var chain = new MockFilterChain();
-    filter.doFilter(
-        requestWithCookie(COOKIE_NAME, COOKIE_VALUE), new MockHttpServletResponse(), chain);
+    filter.doFilter(requestWithMockJwtCookie(), new MockHttpServletResponse(), chain);
 
     assertThat(chain.getRequest()).isNotNull();
     verifyNoInteractions(tokenPort);
@@ -145,16 +139,14 @@ class JwtCookieAuthenticationFilterTest {
   void membershipPortIsCalledLazilyOnFirstFieldRead() throws Exception {
     final var realConverter = new LazyTokenClaimsConverter("sub", "azp", false, membershipPort);
     final var realFilter =
-        new JwtCookieAuthenticationFilter(
-            COOKIE_NAME, tokenPort, realConverter, authenticationEntryPoint);
+        new JwtCookieAuthenticationFilter(tokenPort, realConverter, authenticationEntryPoint);
 
     final var claims = Map.<String, Object>of("sub", "alice");
-    when(tokenPort.validate(COOKIE_VALUE)).thenReturn(claims);
+    when(tokenPort.validate(MOCK_COOKIE_VALUE)).thenReturn(claims);
     when(membershipPort.groupIds(any())).thenReturn(List.of("g1"));
 
     final var chain = new MockFilterChain();
-    realFilter.doFilter(
-        requestWithCookie(COOKIE_NAME, COOKIE_VALUE), new MockHttpServletResponse(), chain);
+    realFilter.doFilter(requestWithMockJwtCookie(), new MockHttpServletResponse(), chain);
 
     // MembershipPort must not be called just from setting authentication
     verify(membershipPort, never()).groupIds(any());
@@ -170,9 +162,12 @@ class JwtCookieAuthenticationFilterTest {
     verify(membershipPort).groupIds(any());
   }
 
-  private static MockHttpServletRequest requestWithCookie(final String name, final String value) {
+  private static MockHttpServletRequest requestWithMockJwtCookie() {
     final var request = new MockHttpServletRequest();
-    request.setCookies(new Cookie(name, value));
+    request.setCookies(
+        new Cookie(
+            JwtCookieAuthenticationFilter.DEFAULT_COOKIE_NAME,
+            JwtCookieAuthenticationFilterTest.MOCK_COOKIE_VALUE));
     return request;
   }
 

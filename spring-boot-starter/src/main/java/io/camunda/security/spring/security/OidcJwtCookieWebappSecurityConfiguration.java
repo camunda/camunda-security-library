@@ -9,11 +9,12 @@ package io.camunda.security.spring.security;
 
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_JWT_COOKIE_WEBAPP;
 
+import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.filter.JwtCookieAuthenticationFilter;
+import io.camunda.security.spring.spi.JwtCookieTokenPort;
 import io.camunda.security.spring.spi.OidcAuthenticationEntryPoint;
-import java.util.HashSet;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -53,6 +54,16 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class OidcJwtCookieWebappSecurityConfiguration {
 
   @Bean
+  @ConditionalOnMissingBean(name = "jwtCookieAuthenticationFilter")
+  public JwtCookieAuthenticationFilter jwtCookieAuthenticationFilter(
+      JwtCookieTokenPort tokenPort,
+      LazyTokenClaimsConverter tokenClaimsConverter,
+      OidcAuthenticationEntryPoint authenticationEntryPoint) {
+    return new JwtCookieAuthenticationFilter(
+        tokenPort, tokenClaimsConverter, authenticationEntryPoint);
+  }
+
+  @Bean
   @Order(ORDER_JWT_COOKIE_WEBAPP)
   @ConditionalOnMissingBean(name = "oidcJwtCookieWebappSecurityFilterChain")
   public SecurityFilterChain oidcJwtCookieWebappSecurityFilterChain(
@@ -63,16 +74,8 @@ public class OidcJwtCookieWebappSecurityConfiguration {
       final OidcAuthenticationEntryPoint authenticationEntryPoint)
       throws Exception {
 
-    final var permittedPaths = new HashSet<>(pathPort.unprotectedPaths());
-    permittedPaths.addAll(pathPort.unprotectedApiPaths());
-
-    http.securityMatcher("/**")
-        .authorizeHttpRequests(
-            auth ->
-                auth.requestMatchers(permittedPaths.toArray(String[]::new))
-                    .permitAll()
-                    .anyRequest()
-                    .authenticated())
+    http.securityMatcher(pathPort.webappPaths().toArray(String[]::new))
+        .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
         .addFilterBefore(jwtCookieAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
         .sessionManagement(
             session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

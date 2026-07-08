@@ -7,7 +7,6 @@
  */
 package io.camunda.security.spring.security;
 
-import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_UNPROTECTED;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
@@ -28,12 +27,10 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.annotation.Order;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
@@ -47,7 +44,8 @@ class OidcJwtCookieWebappSecurityConfigurationTest {
   // the sole catch-all and Spring Security's duplicate-matcher validator does not reject it.
   private final WebApplicationContextRunner runner =
       new WebApplicationContextRunner()
-          .withUserConfiguration(StubFilter.class, StubEntryPoint.class, TestWebSecurityBase.class)
+          .withUserConfiguration(
+              StubFilter.class, StubEntryPoint.class, BaseSecurityConfiguration.class)
           .withConfiguration(
               AutoConfigurations.of(
                   CamundaSecurityConfiguration.class,
@@ -172,25 +170,6 @@ class OidcJwtCookieWebappSecurityConfigurationTest {
 
   // ---- stub configurations ----
 
-  /** Provides @EnableWebSecurity and the unprotected-paths chain; no deny-all /** catch-all. */
-  @Configuration
-  @EnableWebSecurity
-  static class TestWebSecurityBase {
-
-    @Bean
-    @Order(ORDER_UNPROTECTED)
-    SecurityFilterChain unprotectedPathsSecurityFilterChain(
-        final HttpSecurity http, final SecurityPathPort pathPort) throws Exception {
-      return http.securityMatcher(pathPort.unprotectedPaths().toArray(String[]::new))
-          .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
-          .csrf(AbstractHttpConfigurer::disable)
-          .cors(AbstractHttpConfigurer::disable)
-          .formLogin(AbstractHttpConfigurer::disable)
-          .anonymous(AbstractHttpConfigurer::disable)
-          .build();
-    }
-  }
-
   @Configuration
   static class DefaultPaths {
 
@@ -289,8 +268,7 @@ class OidcJwtCookieWebappSecurityConfigurationTest {
             }
           };
       final var converter = new LazyTokenClaimsConverter("sub", null, false, membershipPort);
-      return new JwtCookieAuthenticationFilter(
-          JwtCookieAuthenticationFilter.DEFAULT_COOKIE_NAME, tokenPort, converter, entryPoint);
+      return new JwtCookieAuthenticationFilter(tokenPort, converter, entryPoint);
     }
   }
 
@@ -309,7 +287,7 @@ class OidcJwtCookieWebappSecurityConfigurationTest {
 
     @Bean(name = "oidcJwtCookieWebappSecurityFilterChain")
     SecurityFilterChain customCookieChain(final HttpSecurity http) throws Exception {
-      return http.securityMatcher("/**")
+      return http.securityMatcher("/foo")
           .authorizeHttpRequests(auth -> auth.anyRequest().denyAll())
           .csrf(AbstractHttpConfigurer::disable)
           .build();

@@ -22,7 +22,6 @@ import org.jspecify.annotations.NonNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
-import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -49,8 +48,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * PreAuthenticatedAuthenticationToken} and stored in the {@link SecurityContextHolder}. Downstream
  * code (e.g. {@code DefaultCamundaAuthenticationProvider}) can extract it from there.
  *
- * <p>On failure — missing cookie, invalid or expired JWT, or conversion error — the filter
- * delegates to the injected {@link OidcAuthenticationEntryPoint} and does not continue the chain.
+ * <p>On failure — invalid or expired JWT, or conversion error — the filter delegates to the
+ * injected {@link OidcAuthenticationEntryPoint} and does not continue the chain.
  *
  * <p>Requests that already carry an authenticated (non-anonymous) {@link Authentication} in the
  * {@link SecurityContextHolder} bypass this filter entirely.
@@ -65,17 +64,14 @@ public final class JwtCookieAuthenticationFilter extends OncePerRequestFilter {
 
   private static final Logger LOG = LoggerFactory.getLogger(JwtCookieAuthenticationFilter.class);
 
-  private final String cookieName;
   private final JwtCookieTokenPort tokenPort;
   private final LazyTokenClaimsConverter tokenClaimsConverter;
   private final OidcAuthenticationEntryPoint authenticationEntryPoint;
 
   public JwtCookieAuthenticationFilter(
-      final String cookieName,
       final JwtCookieTokenPort tokenPort,
       final LazyTokenClaimsConverter tokenClaimsConverter,
       final OidcAuthenticationEntryPoint authenticationEntryPoint) {
-    this.cookieName = cookieName;
     this.tokenPort = tokenPort;
     this.tokenClaimsConverter = tokenClaimsConverter;
     this.authenticationEntryPoint = authenticationEntryPoint;
@@ -93,14 +89,11 @@ public final class JwtCookieAuthenticationFilter extends OncePerRequestFilter {
       return;
     }
 
-    final String cookieValue = extractCookie(request);
+    final String cookieValue = extractCookie(request, tokenPort.getCookieName());
     if (cookieValue == null) {
-      LOG.debug("No '{}' cookie on request to {}", cookieName, request.getRequestURI());
-      authenticationEntryPoint.commence(
-          request,
-          response,
-          new InsufficientAuthenticationException(
-              "No auth cookie '%s' found".formatted(cookieName)));
+      LOG.debug(
+          "No '{}' cookie on request to {}", tokenPort.getCookieName(), request.getRequestURI());
+      filterChain.doFilter(request, response);
       return;
     }
 
@@ -113,11 +106,14 @@ public final class JwtCookieAuthenticationFilter extends OncePerRequestFilter {
       SecurityContextHolder.getContext().setAuthentication(authentication);
       LOG.debug(
           "Authenticated request via cookie '{}' (principal: {})",
-          cookieName,
+          tokenPort.getCookieName(),
           camundaAuthentication.formattedPrincipal());
       filterChain.doFilter(request, response);
     } catch (final AuthenticationException ex) {
-      LOG.debug("Cookie token validation failed for '{}': {}", cookieName, ex.getMessage());
+      LOG.debug(
+          "Cookie token validation failed for '{}': {}",
+          tokenPort.getCookieName(),
+          ex.getMessage());
       SecurityContextHolder.clearContext();
       authenticationEntryPoint.commence(request, response, ex);
     }
@@ -130,7 +126,7 @@ public final class JwtCookieAuthenticationFilter extends OncePerRequestFilter {
         && !(auth instanceof AnonymousAuthenticationToken);
   }
 
-  private String extractCookie(final HttpServletRequest request) {
+  private static String extractCookie(final HttpServletRequest request, String cookieName) {
     final Cookie[] cookies = request.getCookies();
     if (cookies == null) {
       return null;
