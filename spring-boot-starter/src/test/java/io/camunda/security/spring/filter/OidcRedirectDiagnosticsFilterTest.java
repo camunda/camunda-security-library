@@ -10,7 +10,6 @@ package io.camunda.security.spring.filter;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 import ch.qos.logback.classic.Level;
@@ -20,13 +19,19 @@ import ch.qos.logback.core.read.ListAppender;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
+@ExtendWith(MockitoExtension.class)
 class OidcRedirectDiagnosticsFilterTest {
 
   private static final String CALLBACK_PATH = "/sso-callback";
+
+  @Mock private FilterChain chain;
 
   @Test
   void shouldComputeExternalBaseUrlFromForwardedHeaders() {
@@ -155,7 +160,6 @@ class OidcRedirectDiagnosticsFilterTest {
     request.addHeader("X-Forwarded-Host", "auth.example.com");
     request.addHeader("X-Forwarded-Port", "not-a-port");
     final var response = new MockHttpServletResponse();
-    final var chain = mock(FilterChain.class);
     final var filter = new OidcRedirectDiagnosticsFilter(CALLBACK_PATH);
 
     // when / then — the filter is purely observational; a bad header must never fail the request
@@ -183,7 +187,6 @@ class OidcRedirectDiagnosticsFilterTest {
     request.addHeader("X-Forwarded-Proto", "https");
     request.addHeader("X-Forwarded-Host", "app.example.com");
     final var response = new MockHttpServletResponse();
-    final var chain = mock(FilterChain.class);
     doAnswer(
             inv -> {
               ((HttpServletResponse) inv.getArgument(1))
@@ -225,7 +228,6 @@ class OidcRedirectDiagnosticsFilterTest {
     request.setParameter("code", "auth-code-abc");
     // no request.getSession(true) — session is intentionally absent
     final var response = new MockHttpServletResponse();
-    final var chain = mock(FilterChain.class);
     final var filter = new OidcRedirectDiagnosticsFilter(CALLBACK_PATH);
 
     final ListAppender<ILoggingEvent> appender = attachAppender();
