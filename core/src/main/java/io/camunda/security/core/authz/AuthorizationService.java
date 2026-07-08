@@ -15,6 +15,7 @@ import io.camunda.security.api.model.authz.AuthorizationResourceType;
 import io.camunda.security.api.model.authz.AuthorizationScope;
 import io.camunda.security.core.auth.RequiredAuthorization;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -53,17 +54,39 @@ public final class AuthorizationService implements AuthorizationCheckPort {
   private final boolean authorizationEnabled;
   private final boolean multiTenancyChecksEnabled;
 
+  /** Nullable: null when the 4-parameter constructor is used. */
+  private final LazyTokenClaimsConverter claimsConverter;
+
   public AuthorizationService(
       final AuthorizationChecker authorizationChecker,
       final PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry,
       final boolean authorizationEnabled,
       final boolean multiTenancyChecksEnabled) {
+    this(
+        authorizationChecker,
+        propertyEvaluatorRegistry,
+        authorizationEnabled,
+        multiTenancyChecksEnabled,
+        null);
+  }
+
+  /**
+   * @param claimsConverter nullable; required only when callers invoke {@link #check(Map,
+   *     RequiredAuthorization)}. Pass {@code null} when the claims-map overload is not needed.
+   */
+  public AuthorizationService(
+      final AuthorizationChecker authorizationChecker,
+      final PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry,
+      final boolean authorizationEnabled,
+      final boolean multiTenancyChecksEnabled,
+      final LazyTokenClaimsConverter claimsConverter) {
     this.authorizationChecker =
         Objects.requireNonNull(authorizationChecker, "authorizationChecker");
     this.propertyEvaluatorRegistry =
         Objects.requireNonNull(propertyEvaluatorRegistry, "propertyEvaluatorRegistry");
     this.authorizationEnabled = authorizationEnabled;
     this.multiTenancyChecksEnabled = multiTenancyChecksEnabled;
+    this.claimsConverter = claimsConverter;
   }
 
   /**
@@ -73,6 +96,25 @@ public final class AuthorizationService implements AuthorizationCheckPort {
    */
   public boolean skipChecks() {
     return !authorizationEnabled && !multiTenancyChecksEnabled;
+  }
+
+  @Override
+  public <T> Either<AuthorizationRejection, Void> check(
+      final Map<String, Object> claims, final RequiredAuthorization<T> authorization) {
+    if (!authorizationEnabled) {
+      return Either.right(null);
+    }
+
+    if (!authorization.hasAnyResourceIds()) {
+      return Either.right(null);
+    }
+
+    if (claimsConverter == null) {
+      throw new IllegalStateException(
+          "Claims-map check requires a LazyTokenClaimsConverter; construct AuthorizationService with a "
+              + "converter (e.g. via the 5-parameter constructor).");
+    }
+    return check(claimsConverter.convert(claims), authorization);
   }
 
   /**
