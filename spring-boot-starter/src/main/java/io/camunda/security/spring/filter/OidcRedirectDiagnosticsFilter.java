@@ -130,9 +130,7 @@ public final class OidcRedirectDiagnosticsFilter extends OncePerRequestFilter {
     return requestUri != null && requestUri.contains(AUTHORIZATION_REQUEST_PREFIX);
   }
 
-  static boolean isCallback(final String requestUri, final String callbackPath) {
-    return requestUri != null && callbackPath != null && requestUri.contains(callbackPath);
-  }
+return requestUri != null && callbackPath != null && requestUri.endsWith(callbackPath);
 
   /**
    * Returns {@code true} when a callback request carries an authorization {@code code} but has no
