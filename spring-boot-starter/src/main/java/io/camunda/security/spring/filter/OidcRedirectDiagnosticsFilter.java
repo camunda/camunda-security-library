@@ -194,8 +194,7 @@ public final class OidcRedirectDiagnosticsFilter extends OncePerRequestFilter {
           "X-Forwarded-Proto",
           "X-Forwarded-Host",
           "X-Forwarded-Port",
-          "X-Forwarded-Prefix",
-          "Forwarded"
+          "X-Forwarded-Prefix"
         }) {
       final String value = request.getHeader(name);
       if (value != null) {
