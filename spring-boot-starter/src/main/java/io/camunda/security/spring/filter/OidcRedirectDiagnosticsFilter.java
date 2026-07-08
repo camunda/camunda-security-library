@@ -66,6 +66,11 @@ public final class OidcRedirectDiagnosticsFilter extends OncePerRequestFilter {
       final HttpServletResponse response,
       final FilterChain filterChain)
       throws ServletException, IOException {
+    final String requestUri = request.getRequestURI();
+    if (!isAuthorizationRequest(requestUri) && !isCallback(requestUri, callbackPath)) {
+      filterChain.doFilter(request, response);
+      return;
+    }
 
     // Diagnostics are purely observational: any failure here must never break the chain.
     // A malformed forwarded header (e.g. a non-numeric X-Forwarded-Port) must not produce a 500.
