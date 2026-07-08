@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.session.MapSessionRepository;
 import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
@@ -73,6 +74,20 @@ class DefaultWebSessionFilterConfigurationTest {
                     .hasSingleBean(SessionRepositoryFilter.class)
                     .getBean(SessionRepositoryFilter.class)
                     .isSameAs(hostFilter));
+  }
+
+  @Test
+  void filterRegistrationIsDisabledSoSpringBootDoesNotAutoRegisterItGlobally() {
+    runner.run(
+        ctx -> {
+          assertThat(ctx).hasSingleBean(FilterRegistrationBean.class);
+          final FilterRegistrationBean<?> registration = ctx.getBean(FilterRegistrationBean.class);
+          assertThat(registration.isEnabled())
+              .as(
+                  "must be disabled — otherwise Spring Boot auto-registers the filter as a"
+                      + " container-wide filter, reintroducing ADR-0031's nested-filter bug")
+              .isFalse();
+        });
   }
 
   private static SessionRepository<?> sessionRepository(final SessionRepositoryFilter<?> filter) {

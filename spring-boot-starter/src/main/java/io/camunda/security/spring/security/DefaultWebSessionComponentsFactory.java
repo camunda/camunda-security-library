@@ -36,7 +36,10 @@ final class DefaultWebSessionComponentsFactory {
    * Builds the default cookie serializer, honouring the deployment's standard {@code
    * server.servlet.session.cookie.*} properties (name, http-only, secure, same-site). {@code
    * secure} is left to {@link DefaultCookieSerializer}'s own per-request auto-detection unless
-   * explicitly configured. No path-scoping is applied: the default surface is rooted at {@code /}.
+   * explicitly configured. No basePath-scoping is applied — unlike a physical-tenant scope's
+   * cookie, this one carries no {@code ContextPathScopedCookieSerializer} wrapper — but {@link
+   * DefaultCookieSerializer} still scopes the cookie {@code Path} to the request's context path on
+   * its own, so deployments under a non-root context path are unaffected.
    */
   static CookieSerializer cookieSerializer(final Environment environment) {
     final var cookieName = environment.getProperty(COOKIE_NAME_PROPERTY, SESSION_COOKIE);

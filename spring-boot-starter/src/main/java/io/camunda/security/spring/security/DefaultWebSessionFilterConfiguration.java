@@ -9,8 +9,10 @@ package io.camunda.security.spring.security;
 
 import io.camunda.security.spring.session.WebSessionRepositories;
 import io.camunda.security.spring.session.WebSessionRepository;
+import jakarta.servlet.Filter;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
@@ -38,5 +40,22 @@ public class DefaultWebSessionFilterConfiguration {
     final var repository =
         WebSessionRepositories.durableOrInMemory(webSessionRepositoryProvider.getIfAvailable());
     return DefaultWebSessionComponentsFactory.sessionRepositoryFilter(environment, repository);
+  }
+
+  /**
+   * {@code defaultSessionRepositoryFilter} is itself a servlet {@link jakarta.servlet.Filter} bean,
+   * so without this Spring Boot would auto-register it as a container-wide filter — in addition to
+   * its explicit per-chain installation via {@code addFilterBefore(SecurityContextHolderFilter)} —
+   * reintroducing exactly the nested-filter, shared-request-attribute interference ADR-0031
+   * removes. Mirrors {@code AdminUserCheckFilterConfiguration} / {@code
+   * WebAppAuthorizationFilterConfiguration}.
+   */
+  @Bean
+  public FilterRegistrationBean<Filter> defaultSessionRepositoryFilterRegistration(
+      final SessionRepositoryFilter<?> defaultSessionRepositoryFilter) {
+    final FilterRegistrationBean<Filter> registration =
+        new FilterRegistrationBean<>(defaultSessionRepositoryFilter);
+    registration.setEnabled(false);
+    return registration;
   }
 }
