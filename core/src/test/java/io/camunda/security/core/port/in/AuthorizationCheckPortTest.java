@@ -16,6 +16,7 @@ import io.camunda.security.api.model.authz.AuthorizationResourceType;
 import io.camunda.security.api.model.authz.PermissionType;
 import io.camunda.security.core.auth.RequiredAuthorization;
 import io.camunda.security.core.authz.RejectionAggregator;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class AuthorizationCheckPortTest {
@@ -24,14 +25,7 @@ class AuthorizationCheckPortTest {
 
   @Test
   void checkWhenAuthorizedReturnsRight() {
-    final AuthorizationCheckPort port =
-        new AuthorizationCheckPort() {
-          @Override
-          public <T> Either<AuthorizationRejection, Void> check(
-              CamundaAuthentication authentication, RequiredAuthorization<T> authorization) {
-            return Either.right(null);
-          }
-        };
+    final AuthorizationCheckPort port = new AlwaysRight();
     final var req =
         RequiredAuthorization.of(
             b -> b.processDefinition().readProcessDefinition().resourceId("proc-1"));
@@ -43,14 +37,7 @@ class AuthorizationCheckPortTest {
     final var rejection =
         new AuthorizationRejection.Permission(
             AuthorizationResourceType.PROCESS_DEFINITION, PermissionType.READ, "proc-1");
-    final AuthorizationCheckPort port =
-        new AuthorizationCheckPort() {
-          @Override
-          public <T> Either<AuthorizationRejection, Void> check(
-              CamundaAuthentication authentication, RequiredAuthorization<T> authorization) {
-            return Either.left(rejection);
-          }
-        };
+    final AuthorizationCheckPort port = new AlwaysLeft(rejection);
     final var req =
         RequiredAuthorization.of(
             b -> b.processDefinition().readProcessDefinition().resourceId("proc-1"));
@@ -62,14 +49,7 @@ class AuthorizationCheckPortTest {
   @Test
   void checkWhenTenantDeniedReturnsLeftWithTenantRejection() {
     final var rejection = new AuthorizationRejection.Tenant("t1");
-    final AuthorizationCheckPort port =
-        new AuthorizationCheckPort() {
-          @Override
-          public <T> Either<AuthorizationRejection, Void> check(
-              CamundaAuthentication authentication, RequiredAuthorization<T> authorization) {
-            return Either.left(rejection);
-          }
-        };
+    final AuthorizationCheckPort port = new AlwaysLeft(rejection);
     final var req =
         RequiredAuthorization.of(
             b -> b.processDefinition().readProcessDefinition().resourceId("proc-1"));
@@ -78,14 +58,7 @@ class AuthorizationCheckPortTest {
 
   @Test
   void checkResultsComposableWithRejectionAggregator() {
-    final AuthorizationCheckPort approveAll =
-        new AuthorizationCheckPort() {
-          @Override
-          public <T> Either<AuthorizationRejection, Void> check(
-              CamundaAuthentication authentication, RequiredAuthorization<T> authorization) {
-            return Either.right(null);
-          }
-        };
+    final AuthorizationCheckPort approveAll = new AlwaysRight();
     final var req1 =
         RequiredAuthorization.of(
             b -> b.processDefinition().readProcessDefinition().resourceId("p1"));
@@ -98,5 +71,39 @@ class AuthorizationCheckPortTest {
             .add(approveAll.check(auth, req2))
             .build();
     assertThat(result.isRight()).isTrue();
+  }
+
+  private static final class AlwaysRight implements AuthorizationCheckPort {
+    @Override
+    public <T> Either<AuthorizationRejection, Void> check(
+        final CamundaAuthentication authentication, final RequiredAuthorization<T> authorization) {
+      return Either.right(null);
+    }
+
+    @Override
+    public <T> Either<AuthorizationRejection, Void> check(
+        final Map<String, Object> claims, final RequiredAuthorization<T> authorization) {
+      return Either.right(null);
+    }
+  }
+
+  private static final class AlwaysLeft implements AuthorizationCheckPort {
+    private final AuthorizationRejection rejection;
+
+    private AlwaysLeft(final AuthorizationRejection rejection) {
+      this.rejection = rejection;
+    }
+
+    @Override
+    public <T> Either<AuthorizationRejection, Void> check(
+        final CamundaAuthentication authentication, final RequiredAuthorization<T> authorization) {
+      return Either.left(rejection);
+    }
+
+    @Override
+    public <T> Either<AuthorizationRejection, Void> check(
+        final Map<String, Object> claims, final RequiredAuthorization<T> authorization) {
+      return Either.left(rejection);
+    }
   }
 }

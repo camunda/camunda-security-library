@@ -13,6 +13,8 @@ import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.context.CamundaAuthenticationHolder;
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.api.context.MembershipResolutionContextPropagator;
+import io.camunda.security.core.authz.LazyTokenClaimsConverter;
+import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.context.holder.HttpSessionBasedAuthenticationHolder;
 import io.camunda.security.spring.context.holder.RequestContextBasedAuthenticationHolder;
@@ -20,12 +22,19 @@ import io.camunda.security.spring.converter.UnprotectedCamundaAuthenticationConv
 import java.util.List;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+@ExtendWith(MockitoExtension.class)
 class CamundaAuthenticationBeansConfigurationTest {
+
+  @Mock MembershipPort mockMembershipPort;
+  @Mock LazyTokenClaimsConverter mockCustomConverter;
 
   private final WebApplicationContextRunner runner =
       new WebApplicationContextRunner()
@@ -149,6 +158,26 @@ class CamundaAuthenticationBeansConfigurationTest {
                     .hasSingleBean(MembershipResolutionContextPropagator.class)
                     .getBean(MembershipResolutionContextPropagator.class)
                     .isInstanceOf(HostMembershipResolutionContextPropagator.StubPropagator.class));
+  }
+
+  @Test
+  void lazyTokenClaimsConverterIsRegisteredWhenMembershipPortIsPresent() {
+    runner
+        .withBean(MembershipPort.class, () -> mockMembershipPort)
+        .run(ctx -> assertThat(ctx).hasSingleBean(LazyTokenClaimsConverter.class));
+  }
+
+  @Test
+  void lazyTokenClaimsConverterBacksOffWhenHostProvidesOne() {
+    runner
+        .withBean(MembershipPort.class, () -> mockMembershipPort)
+        .withBean(LazyTokenClaimsConverter.class, () -> mockCustomConverter)
+        .run(
+            ctx ->
+                assertThat(ctx)
+                    .hasSingleBean(LazyTokenClaimsConverter.class)
+                    .getBean(LazyTokenClaimsConverter.class)
+                    .isSameAs(mockCustomConverter));
   }
 
   // ---- stub host configurations --------------------------------------------
