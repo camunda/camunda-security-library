@@ -39,15 +39,11 @@ import org.springframework.core.convert.support.GenericConversionService;
  * ConditionalOnMissingBean} so hosts can override individual pieces — for example the {@code
  * webSessionDeletionUncaughtExceptionHandler} to plug in their own fatal-error handling.
  *
- * <p>Does <strong>not</strong> use {@code @EnableSpringHttpSession} (ADR-0031): that mechanism
- * installs a single container-wide {@code SessionRepositoryFilter} ahead of Spring Security's
- * {@code FilterChainProxy}, so it ran for every request regardless of which security chain
- * ultimately matched — including physical-tenant scoped paths, which install their own per-scope
- * filter inside their own chain. The two filters resolving the same cookie against different stores
- * corrupted Spring Session's shared {@code INVALID_SESSION_ID_ATTR} request attribute. The {@link
- * WebSessionRepository} bean produced here is consumed directly by each chain's own
- * explicitly-installed filter instead (see {@code DefaultWebSessionFilterConfiguration} and {@code
- * ScopedSecurityChainRegistrar}).
+ * <p>The {@link WebSessionRepository} bean produced here is consumed directly by each chain's own
+ * explicitly-installed {@code SessionRepositoryFilter} — see {@code
+ * DefaultWebSessionFilterConfiguration} for the default surface and {@code
+ * ScopedSecurityChainRegistrar} for physical-tenant scopes. See ADR-0031 for why filters are
+ * installed per chain rather than through a single container-wide filter.
  */
 @Configuration
 @ConditionalOnPersistentWebSessionEnabled

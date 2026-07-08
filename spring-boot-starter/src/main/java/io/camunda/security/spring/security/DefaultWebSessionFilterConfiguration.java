@@ -7,22 +7,20 @@
  */
 package io.camunda.security.spring.security;
 
+import io.camunda.security.spring.session.WebSessionRepositories;
 import io.camunda.security.spring.session.WebSessionRepository;
-import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.session.MapSessionRepository;
-import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
  * Provides the {@link SessionRepositoryFilter} installed on the default (non-scoped) webapp and API
- * chains (ADR-0031). Unconditionally active — unlike {@code WebSessionConfiguration}, which is
- * gated on persistent sessions being enabled — because the primary chains always need a session
- * filter, exactly as every physical-tenant scope always gets one.
+ * chains (ADR-0031). Always active: the primary chains always need a session filter, exactly as
+ * every physical-tenant scope always gets one.
  *
  * <p>The backing {@link org.springframework.session.SessionRepository} follows the same preference
  * order as scoped chains: the shared durable {@link WebSessionRepository} bean (present only when
@@ -37,9 +35,8 @@ public class DefaultWebSessionFilterConfiguration {
   public SessionRepositoryFilter<?> defaultSessionRepositoryFilter(
       final Environment environment,
       final ObjectProvider<WebSessionRepository> webSessionRepositoryProvider) {
-    final WebSessionRepository durable = webSessionRepositoryProvider.getIfAvailable();
-    final SessionRepository<?> repository =
-        durable != null ? durable : new MapSessionRepository(new ConcurrentHashMap<>());
+    final var repository =
+        WebSessionRepositories.durableOrInMemory(webSessionRepositoryProvider.getIfAvailable());
     return DefaultWebSessionComponentsFactory.sessionRepositoryFilter(environment, repository);
   }
 }

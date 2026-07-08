@@ -121,7 +121,7 @@ public final class ScopedWebappSecurityChainBuilder {
    * constants.
    *
    * <p>The supplied {@code sessionRepositoryFilter} is installed before {@link
-   * SecurityContextHolderFilter}, exactly as a physical-tenant scope's chain does (ADR-0031).
+   * SecurityContextHolderFilter} (see ADR-0031).
    */
   public SecurityFilterChain buildOidcWebappChain(
       final HttpSecurity http,
@@ -138,8 +138,7 @@ public final class ScopedWebappSecurityChainBuilder {
     final var logoutUrl = LOGOUT_URL;
     final var redirectUri = REDIRECT_URI;
 
-    // Install the default session filter before the security context filter, exactly as every
-    // physical-tenant scope's chain does (ADR-0031) — no separately registered global filter.
+    // Install the session filter before the security context filter.
     http.addFilterBefore(sessionRepositoryFilter, SecurityContextHolderFilter.class);
 
     final var filterChainBuilder =
@@ -239,7 +238,7 @@ public final class ScopedWebappSecurityChainBuilder {
    * CSL constants.
    *
    * <p>The supplied {@code sessionRepositoryFilter} is installed before {@link
-   * SecurityContextHolderFilter}, exactly as a physical-tenant scope's chain does (ADR-0031).
+   * SecurityContextHolderFilter} (see ADR-0031).
    */
   public SecurityFilterChain buildBasicWebappChain(
       final HttpSecurity http, final SessionRepositoryFilter<?> sessionRepositoryFilter)
@@ -250,8 +249,7 @@ public final class ScopedWebappSecurityChainBuilder {
     final var loginUrl = LOGIN_URL;
     final var logoutUrl = LOGOUT_URL;
 
-    // Install the default session filter before the security context filter, exactly as every
-    // physical-tenant scope's chain does (ADR-0031) — no separately registered global filter.
+    // Install the session filter before the security context filter.
     http.addFilterBefore(sessionRepositoryFilter, SecurityContextHolderFilter.class);
 
     final var filterChainBuilder =

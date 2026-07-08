@@ -53,6 +53,64 @@ class DefaultWebSessionComponentsFactoryTest {
   }
 
   @Test
+  void defaultsToHttpOnlyAndLaxSameSiteWhenPropertiesAbsent() {
+    final var serializer =
+        DefaultWebSessionComponentsFactory.cookieSerializer(new MockEnvironment());
+
+    final var request = new MockHttpServletRequest();
+    final var response = new MockHttpServletResponse();
+    serializer.writeCookieValue(new CookieSerializer.CookieValue(request, response, "abc"));
+
+    final var setCookieHeader = response.getHeader("Set-Cookie");
+    assertThat(setCookieHeader).contains("HttpOnly").contains("SameSite=Lax");
+  }
+
+  @Test
+  void honoursConfiguredHttpOnlyProperty() {
+    final var environment = new MockEnvironment();
+    environment.setProperty("server.servlet.session.cookie.http-only", "false");
+    final var serializer = DefaultWebSessionComponentsFactory.cookieSerializer(environment);
+
+    final var request = new MockHttpServletRequest();
+    final var response = new MockHttpServletResponse();
+    serializer.writeCookieValue(new CookieSerializer.CookieValue(request, response, "abc"));
+
+    assertThat(response.getHeader("Set-Cookie"))
+        .as("must honour server.servlet.session.cookie.http-only=false")
+        .doesNotContain("HttpOnly");
+  }
+
+  @Test
+  void honoursConfiguredSameSiteProperty() {
+    final var environment = new MockEnvironment();
+    environment.setProperty("server.servlet.session.cookie.same-site", "Strict");
+    final var serializer = DefaultWebSessionComponentsFactory.cookieSerializer(environment);
+
+    final var request = new MockHttpServletRequest();
+    final var response = new MockHttpServletResponse();
+    serializer.writeCookieValue(new CookieSerializer.CookieValue(request, response, "abc"));
+
+    assertThat(response.getHeader("Set-Cookie"))
+        .as("must honour server.servlet.session.cookie.same-site=Strict")
+        .contains("SameSite=Strict");
+  }
+
+  @Test
+  void honoursConfiguredSecureProperty() {
+    final var environment = new MockEnvironment();
+    environment.setProperty("server.servlet.session.cookie.secure", "true");
+    final var serializer = DefaultWebSessionComponentsFactory.cookieSerializer(environment);
+
+    final var request = new MockHttpServletRequest();
+    final var response = new MockHttpServletResponse();
+    serializer.writeCookieValue(new CookieSerializer.CookieValue(request, response, "abc"));
+
+    assertThat(response.getHeader("Set-Cookie"))
+        .as("must honour server.servlet.session.cookie.secure=true")
+        .contains("Secure");
+  }
+
+  @Test
   void buildsSessionRepositoryFilterOverTheGivenRepository() {
     final var repo = new MapSessionRepository(new ConcurrentHashMap<>());
     final SessionRepositoryFilter<?> filter =

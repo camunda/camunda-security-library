@@ -18,30 +18,39 @@ import org.springframework.session.web.http.DefaultCookieSerializer;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
- * Builds the Spring Session components for the default (non-scoped) webapp/API chains, mirroring
- * {@code ScopedWebSessionComponentsFactory} so the default surface gets its session filter the same
- * way a physical-tenant scope does (ADR-0031) — no {@code @EnableSpringHttpSession}, no separately
- * registered global filter.
+ * Builds the Spring Session components for the default (non-scoped) webapp/API chains: a cookie
+ * serializer and the {@link SessionRepositoryFilter} installed on those chains. Mirrors {@code
+ * ScopedWebSessionComponentsFactory}'s approach for physical-tenant scopes (see ADR-0031).
  */
 final class DefaultWebSessionComponentsFactory {
 
   private static final String COOKIE_NAME_PROPERTY = "server.servlet.session.cookie.name";
+  private static final String COOKIE_HTTP_ONLY_PROPERTY = "server.servlet.session.cookie.http-only";
+  private static final String COOKIE_SECURE_PROPERTY = "server.servlet.session.cookie.secure";
+  private static final String COOKIE_SAME_SITE_PROPERTY = "server.servlet.session.cookie.same-site";
+  private static final String DEFAULT_SAME_SITE = "Lax";
 
   private DefaultWebSessionComponentsFactory() {}
 
   /**
-   * Builds the default cookie serializer. The cookie name honours the deployment's configured
-   * {@code server.servlet.session.cookie.name}, falling back to {@link
-   * CamundaSecurityFilterChainConstants#SESSION_COOKIE} — the same property/default PR #477's
-   * removed global resolver used. No path-scoping is applied: the default surface is rooted at
-   * {@code /}.
+   * Builds the default cookie serializer, honouring the deployment's standard {@code
+   * server.servlet.session.cookie.*} properties (name, http-only, secure, same-site). {@code
+   * secure} is left to {@link DefaultCookieSerializer}'s own per-request auto-detection unless
+   * explicitly configured. No path-scoping is applied: the default surface is rooted at {@code /}.
    */
   static CookieSerializer cookieSerializer(final Environment environment) {
     final var cookieName = environment.getProperty(COOKIE_NAME_PROPERTY, SESSION_COOKIE);
+    final var httpOnly = environment.getProperty(COOKIE_HTTP_ONLY_PROPERTY, Boolean.class, true);
+    final var sameSite = environment.getProperty(COOKIE_SAME_SITE_PROPERTY, DEFAULT_SAME_SITE);
+    final var secure = environment.getProperty(COOKIE_SECURE_PROPERTY, Boolean.class);
+
     final var serializer = new DefaultCookieSerializer();
     serializer.setCookieName(cookieName);
-    serializer.setUseHttpOnlyCookie(true);
-    serializer.setSameSite("Lax");
+    serializer.setUseHttpOnlyCookie(httpOnly);
+    serializer.setSameSite(sameSite);
+    if (secure != null) {
+      serializer.setUseSecureCookie(secure);
+    }
     return serializer;
   }
 

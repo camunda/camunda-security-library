@@ -15,6 +15,7 @@ import io.camunda.security.spring.session.WebSessionConfiguration;
 import io.camunda.security.spring.session.WebSessionRepository;
 import java.lang.reflect.Field;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
@@ -58,6 +59,20 @@ class DefaultWebSessionFilterConfigurationTest {
                   .as("must reuse the durable WebSessionRepository bean, not a fresh in-memory one")
                   .isSameAs(ctx.getBean(WebSessionRepository.class));
             });
+  }
+
+  @Test
+  void backsOffWhenHostSuppliesItsOwnSessionRepositoryFilter() {
+    final var hostFilter =
+        new SessionRepositoryFilter<>(new MapSessionRepository(new ConcurrentHashMap<>()));
+    runner
+        .withBean(SessionRepositoryFilter.class, () -> hostFilter)
+        .run(
+            ctx ->
+                assertThat(ctx)
+                    .hasSingleBean(SessionRepositoryFilter.class)
+                    .getBean(SessionRepositoryFilter.class)
+                    .isSameAs(hostFilter));
   }
 
   private static SessionRepository<?> sessionRepository(final SessionRepositoryFilter<?> filter) {

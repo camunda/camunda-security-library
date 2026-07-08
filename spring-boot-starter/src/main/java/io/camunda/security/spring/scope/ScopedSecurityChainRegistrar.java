@@ -16,6 +16,7 @@ import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.oidc.ScopedJwtDecoderFactory;
 import io.camunda.security.spring.security.ScopedWebappSecurityChainBuilder;
 import io.camunda.security.spring.session.ScopedWebSessionRepositoryFactory;
+import io.camunda.security.spring.session.WebSessionRepositories;
 import io.camunda.security.spring.session.WebSessionRepository;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -275,11 +276,9 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
       // normalize to match how the rest of the scope subsystem keys base paths
       return perScopeFactory.forBasePath(BasePaths.normalize(basePath, "basePath"));
     }
-    final WebSessionRepository sharedDurableRepo =
+    final var sharedDurableRepo =
         beanFactory.getBeanProvider(WebSessionRepository.class).getIfAvailable();
-    return sharedDurableRepo != null
-        ? sharedDurableRepo
-        : new MapSessionRepository(new ConcurrentHashMap<>());
+    return WebSessionRepositories.durableOrInMemory(sharedDurableRepo);
   }
 
   private OrderedSecurityFilterChainWrapper buildWebappChain(
