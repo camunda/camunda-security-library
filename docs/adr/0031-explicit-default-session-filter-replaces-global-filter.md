@@ -89,7 +89,11 @@ built and installed exactly the way a physical-tenant scope's is.** There is no 
 in kind between "the default surface" and "a scope" from the session filter's point of view — both
 are one dedicated `SessionRepositoryFilter` instance, installed into the specific chain(s) that serve
 that surface, resolving its own `SessionRepository`. No two filters ever see the same request, so
-there is no shared-attribute interaction left to have.
+there is no shared-attribute interaction left to have. This symmetry is about filter *behavior*, not
+about Spring wiring: the default surface still gets its own `DefaultWebSessionFilterConfiguration`
+rather than going through `ScopedSecurityChainRegistrar`, because it is a single, fixed instance
+wired at compile-time through the primary `@Configuration` classes, whereas scopes are an
+open-ended, host-defined list discovered at runtime from `CamundaSecurityScopeProvider`.
 
 ### 1. `@EnableSpringHttpSession` is removed from `WebSessionConfiguration`
 
