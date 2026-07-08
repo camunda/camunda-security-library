@@ -11,13 +11,17 @@ import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.Either;
 import io.camunda.security.api.model.authz.AuthorizationRejection;
+import io.camunda.security.api.model.authz.AuthorizationResourceMatcher;
 import io.camunda.security.api.model.authz.AuthorizationResourceType;
 import io.camunda.security.api.model.authz.AuthorizationScope;
 import io.camunda.security.core.auth.RequiredAuthorization;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -143,16 +147,26 @@ public final class AuthorizationService implements AuthorizationCheckPort {
   }
 
   /**
-   * Property-based authorization check. Evaluates whether the principal is authorized to access
-   * {@code resource} based on each property name declared in {@code authorization}.
+   * Property-based authorization check. The principal is authorized to access {@code resource} when
+   * it holds a <em>stored</em> property-scoped grant for the {@code authorization}'s resource type
+   * and permission whose property is declared in {@code authorization}, <em>and</em> the registered
+   * {@link PropertyAuthorizationEvaluator} for that property matches {@code resource}.
    *
-   * <p>Property names with no registered {@link PropertyAuthorizationEvaluator} are skipped. Only
-   * runs when authorization is globally enabled.
+   * <p>Both conditions are required: a stored property-scoped grant alone does not authorize (the
+   * evaluator must match the concrete resource), and a matching evaluator alone does not authorize
+   * (the principal must actually hold the property-scoped grant). This closes the gap where a
+   * value-only evaluation authorized any principal that happened to match the resource property,
+   * regardless of the permissions it was granted.
+   *
+   * <p>Only stored scopes with matcher {@link AuthorizationResourceMatcher#PROPERTY} participate;
+   * id- and wildcard-scoped grants are evaluated by {@link #check(CamundaAuthentication,
+   * RequiredAuthorization)}. Granted properties not declared in {@code authorization}, and declared
+   * properties with no registered evaluator, do not authorize. Only runs when authorization is
+   * globally enabled.
    *
    * @param resource the resource instance to evaluate the property against
    * @return {@link Either#right(Object) right(null)} when authorized or when authorization is
-   *     disabled; {@link Either#left(Object) left(rejection)} when access is denied via a
-   *     registered evaluator
+   *     disabled; {@link Either#left(Object) left(rejection)} otherwise
    */
   public <T> Either<AuthorizationRejection, Void> check(
       final CamundaAuthentication authentication,
@@ -166,24 +180,38 @@ public final class AuthorizationService implements AuthorizationCheckPort {
       return Either.right(null);
     }
 
-    for (final String propertyName : authorization.resourcePropertyNames()) {
+    final Set<String> declaredPropertyNames = authorization.resourcePropertyNames();
+    final List<AuthorizationScope> grantedScopes =
+        authorizationChecker.retrieveAuthorizedAuthorizationScopes(authentication, authorization);
+
+    for (final AuthorizationScope scope : grantedScopes) {
+      if (scope.getMatcher() != AuthorizationResourceMatcher.PROPERTY) {
+        continue;
+      }
+      final String propertyName = scope.getResourcePropertyName();
+      if (!declaredPropertyNames.contains(propertyName)) {
+        continue;
+      }
       final Optional<PropertyAuthorizationEvaluator<T>> maybeEvaluator =
           propertyEvaluatorRegistry.findEvaluator(propertyName);
       if (maybeEvaluator.isPresent()
-          && !maybeEvaluator.get().isAuthorized(authentication, resource)) {
-        LOG.debug(
-            "Property-based authorization denied for [{}] on [{}] property [{}] of resource type [{}]",
-            principalType(authentication),
-            authorization.permissionType(),
-            propertyName,
-            authorization.resourceType());
-        return Either.left(
-            new AuthorizationRejection.Permission(
-                authorization.resourceType(), authorization.permissionType(), propertyName));
+          && maybeEvaluator.get().isAuthorized(authentication, resource)) {
+        return Either.right(null);
       }
     }
 
-    return Either.right(null);
+    LOG.debug(
+        "Property-based authorization denied for [{}] on [{}] properties {} of resource type [{}]",
+        principalType(authentication),
+        authorization.permissionType(),
+        declaredPropertyNames,
+        authorization.resourceType());
+    return Either.left(
+        new AuthorizationRejection.Permission(
+            authorization.resourceType(),
+            authorization.permissionType(),
+            // sort for a deterministic message: resourcePropertyNames() is an unordered Set
+            String.join(",", new TreeSet<>(declaredPropertyNames))));
   }
 
   private static String principalType(final CamundaAuthentication authentication) {

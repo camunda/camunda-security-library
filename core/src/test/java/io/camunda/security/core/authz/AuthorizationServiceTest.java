@@ -207,7 +207,7 @@ class AuthorizationServiceTest {
     final var req =
         RequiredAuthorization.of(b -> b.userTask().readUserTask().authorizedByAssignee());
     assertThat(service(false, false).check(alice, req, "task-1").isRight()).isTrue();
-    verifyNoInteractions(propertyEvaluatorRegistry);
+    verifyNoInteractions(authorizationChecker, propertyEvaluatorRegistry);
   }
 
   @Test
@@ -215,18 +215,20 @@ class AuthorizationServiceTest {
     final var req =
         RequiredAuthorization.of(b -> b.userTask().readUserTask().authorizedByAssignee());
     assertThat(service(false, true).check(alice, req, "task-1").isRight()).isTrue();
-    verifyNoInteractions(propertyEvaluatorRegistry);
+    verifyNoInteractions(authorizationChecker, propertyEvaluatorRegistry);
   }
 
   @Test
   void propertyCheckReturnsRightWhenNoPropertyNamesSet() {
     final var req = RequiredAuthorization.of(b -> b.userTask().readUserTask().resourceId("t1"));
     assertThat(service(true, false).check(alice, req, "task-1").isRight()).isTrue();
-    verifyNoInteractions(propertyEvaluatorRegistry);
+    verifyNoInteractions(authorizationChecker, propertyEvaluatorRegistry);
   }
 
   @Test
-  void propertyCheckDelegatesToRegistryAndReturnsRightWhenEvaluatorApproves() {
+  void propertyCheckReturnsRightWhenGrantedPropertyScopeAndEvaluatorApprove() {
+    when(authorizationChecker.retrieveAuthorizedAuthorizationScopes(eq(alice), any()))
+        .thenReturn(List.of(AuthorizationScope.property(RequiredAuthorization.PROP_ASSIGNEE)));
     when(evaluator.isAuthorized(alice, "task-1")).thenReturn(true);
     when(propertyEvaluatorRegistry.<String>findEvaluator(RequiredAuthorization.PROP_ASSIGNEE))
         .thenReturn(Optional.of(evaluator));
@@ -236,7 +238,9 @@ class AuthorizationServiceTest {
   }
 
   @Test
-  void propertyCheckReturnsPermissionRejectionWhenEvaluatorDenies() {
+  void propertyCheckReturnsRejectionWhenGrantedScopeButEvaluatorDenies() {
+    when(authorizationChecker.retrieveAuthorizedAuthorizationScopes(eq(alice), any()))
+        .thenReturn(List.of(AuthorizationScope.property(RequiredAuthorization.PROP_ASSIGNEE)));
     when(evaluator.isAuthorized(alice, "task-1")).thenReturn(false);
     when(propertyEvaluatorRegistry.<String>findEvaluator(RequiredAuthorization.PROP_ASSIGNEE))
         .thenReturn(Optional.of(evaluator));
@@ -251,11 +255,86 @@ class AuthorizationServiceTest {
   }
 
   @Test
-  void propertyCheckReturnsRightWhenNoEvaluatorRegistered() {
+  void propertyCheckReturnsRejectionWhenNoStoredScopeEvenIfResourceMatches() {
+    // core fix: matching the resource property must NOT authorize without a stored property grant
+    when(authorizationChecker.retrieveAuthorizedAuthorizationScopes(eq(alice), any()))
+        .thenReturn(List.of());
+    final var req =
+        RequiredAuthorization.of(b -> b.userTask().readUserTask().authorizedByAssignee());
+    final var result = service(true, false).check(alice, req, "task-1");
+    assertThat(result.isLeft()).isTrue();
+    assertThat(result.leftValue())
+        .isEqualTo(
+            new AuthorizationRejection.Permission(
+                USER_TASK, READ_USER_TASK, RequiredAuthorization.PROP_ASSIGNEE));
+    verifyNoInteractions(propertyEvaluatorRegistry);
+  }
+
+  @Test
+  void propertyCheckIgnoresNonPropertyScopes() {
+    when(authorizationChecker.retrieveAuthorizedAuthorizationScopes(eq(alice), any()))
+        .thenReturn(List.of(AuthorizationScope.id("task-1"), AuthorizationScope.WILDCARD));
+    final var req =
+        RequiredAuthorization.of(b -> b.userTask().readUserTask().authorizedByAssignee());
+    assertThat(service(true, false).check(alice, req, "task-1").isLeft()).isTrue();
+    verifyNoInteractions(propertyEvaluatorRegistry);
+  }
+
+  @Test
+  void propertyCheckIgnoresGrantedScopeNotDeclaredInAuthorization() {
+    // granted a candidateGroups property scope, but the request only asks about assignee
+    when(authorizationChecker.retrieveAuthorizedAuthorizationScopes(eq(alice), any()))
+        .thenReturn(
+            List.of(AuthorizationScope.property(RequiredAuthorization.PROP_CANDIDATE_GROUPS)));
+    final var req =
+        RequiredAuthorization.of(b -> b.userTask().readUserTask().authorizedByAssignee());
+    assertThat(service(true, false).check(alice, req, "task-1").isLeft()).isTrue();
+    verifyNoInteractions(propertyEvaluatorRegistry);
+  }
+
+  @Test
+  void propertyCheckReturnsRejectionWhenGrantedPropertyHasNoEvaluator() {
+    when(authorizationChecker.retrieveAuthorizedAuthorizationScopes(eq(alice), any()))
+        .thenReturn(List.of(AuthorizationScope.property(RequiredAuthorization.PROP_ASSIGNEE)));
     when(propertyEvaluatorRegistry.findEvaluator(any())).thenReturn(Optional.empty());
     final var req =
         RequiredAuthorization.of(b -> b.userTask().readUserTask().authorizedByAssignee());
+    assertThat(service(true, false).check(alice, req, "task-1").isLeft()).isTrue();
+  }
+
+  @Test
+  void propertyCheckAuthorizesWhenAnyDeclaredGrantedPropertyMatches() {
+    // request declares assignee + candidateGroups; principal holds a matching candidateGroups grant
+    when(authorizationChecker.retrieveAuthorizedAuthorizationScopes(eq(alice), any()))
+        .thenReturn(
+            List.of(AuthorizationScope.property(RequiredAuthorization.PROP_CANDIDATE_GROUPS)));
+    when(evaluator.isAuthorized(alice, "task-1")).thenReturn(true);
+    when(propertyEvaluatorRegistry.<String>findEvaluator(
+            RequiredAuthorization.PROP_CANDIDATE_GROUPS))
+        .thenReturn(Optional.of(evaluator));
+    final var req =
+        RequiredAuthorization.of(
+            b -> b.userTask().readUserTask().authorizedByAssignee().authorizedByCandidateGroups());
     assertThat(service(true, false).check(alice, req, "task-1").isRight()).isTrue();
+  }
+
+  @Test
+  void propertyCheckRejectionListsDeclaredPropertiesSorted() {
+    when(authorizationChecker.retrieveAuthorizedAuthorizationScopes(eq(alice), any()))
+        .thenReturn(List.of());
+    final var req =
+        RequiredAuthorization.of(
+            b -> b.userTask().readUserTask().authorizedByCandidateUsers().authorizedByAssignee());
+    final var result = service(true, false).check(alice, req, "task-1");
+    assertThat(result.isLeft()).isTrue();
+    assertThat(result.leftValue())
+        .isEqualTo(
+            new AuthorizationRejection.Permission(
+                USER_TASK,
+                READ_USER_TASK,
+                RequiredAuthorization.PROP_ASSIGNEE
+                    + ","
+                    + RequiredAuthorization.PROP_CANDIDATE_USERS));
   }
 
   // --- claims-map check overload ---
