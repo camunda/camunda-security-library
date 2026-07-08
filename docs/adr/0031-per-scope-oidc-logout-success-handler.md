@@ -2,7 +2,7 @@
 status: Proposed
 ---
 
-# ADR-0031: Per-scope OIDC logout success handler
+# ADR-0031: CSL-owned per-chain OIDC logout success handler
 
 **Deciders**: Sebastian Bathke (megglos)
 
@@ -15,151 +15,141 @@ Proposed
 [ADR-0027](0027-scoped-webapp-security-chains-and-per-scope-sessions.md) added per-scope **webapp**
 chains: for each `ScopedSecurityDescriptor` (`basePath` + `AuthenticationConfiguration`), CSL
 assembles an `oauth2Login` chain whose endpoints — login, logout, `sso-callback`, cookie name/path,
-authorization base URI — are all **derived from `basePath`**. It also established, as a hard
-constraint carried over from [ADR-0025](0025-camunda-security-scope-provider-spi.md), that the
-descriptor stays **surface-agnostic**: it rejected "growing the descriptor with webapp fields
-(cookie name/path, redirect URI, login URL)" precisely because *all of those are derivable from
-`basePath`*.
+authorization base URI — are all **derived from `basePath`**, keeping the descriptor
+surface-agnostic (as [ADR-0025](0025-camunda-security-scope-provider-spi.md) required).
 
-OIDC **logout** has one piece that is not. The RP-initiated logout success handler
-(`CamundaOidcLogoutSuccessHandler`, extending Spring's `OidcClientInitiatedLogoutSuccessHandler`)
-sends the IdP a `post_logout_redirect_uri` telling it where to send the browser after the IdP
-session ends. CSL exposes this handler as a single host-registered `LogoutSuccessHandler` bean
-(`@ConditionalOnMissingBean`); a host sets its target via
-`setPostLogoutRedirectUri("{baseUrl}/post-logout")`, where `/post-logout` is a route **the host
-application serves** after logout.
+OIDC **logout** breaks this cleanly-derived model. RP-initiated logout is done by a
+`LogoutSuccessHandler` — CSL's `CamundaOidcLogoutSuccessHandler`, extending Spring's
+`OidcClientInitiatedLogoutSuccessHandler` — which sends the IdP a `post_logout_redirect_uri` (where
+to return the browser after the IdP session ends) and resolves the `end_session_endpoint` /
+`client_id` from the authenticated user's `ClientRegistration`.
 
-`ScopedWebappSecurityChainBuilder` currently wires that same shared bean into *every* scoped chain:
+CSL currently exposes this as a **single host-overridable bean**
+(`OidcBeansConfiguration.camundaOidcLogoutSuccessHandler`, `@ConditionalOnMissingBean`), built with
+the host's **cluster** `ClientRegistrationRepository` and **no** `post_logout_redirect_uri` set.
+Both the primary and every scoped webapp chain consume that one bean via an
+`ObjectProvider<LogoutSuccessHandler>`. A host that wants a post-logout landing page overrides the
+bean, e.g. `setPostLogoutRedirectUri("{baseUrl}/post-logout")`.
 
-```java
-logoutSuccessHandlerProvider.ifAvailable(logout::logoutSuccessHandler);
-```
+That single shared bean is structurally unfit for scoped chains, because the correct handler for a
+chain depends on two things the chain has but a singleton cannot carry:
 
-This is wrong for scoped chains in two ways:
+1. **The chain's own `ClientRegistrationRepository`.** A scoped chain builds and uses its **own**
+   per-scope `InMemoryClientRegistrationRepository` (from the descriptor's assigned providers only).
+   The shared bean carries the cluster repo, so it cannot resolve a scoped user's registration —
+   `end_session_endpoint` / `client_id` do not resolve and IdP logout is never driven.
+2. **The chain's `basePath` prefix.** `OidcClientInitiatedLogoutSuccessHandler` expands `{baseUrl}`
+   to `scheme://host:port` + the servlet **context path** only. A CSL `basePath`
+   (`/physical-tenants/<id>`) is a custom application path, not a context path, so it is dropped:
+   logout under `/physical-tenants/<id>/` redirects to `http://host/post-logout` instead of
+   `http://host/physical-tenants/<id>/post-logout`.
 
-1. **The basePath prefix is dropped.** `OidcClientInitiatedLogoutSuccessHandler` expands `{baseUrl}`
-   to `scheme://host:port` + the servlet **context path**. A CSL `basePath`
-   (`/physical-tenants/<id>`) is a custom application path, not a servlet context path, so it is not
-   part of `{baseUrl}`. A user logging out under `/physical-tenants/<id>/` is redirected to
-   `http://host/post-logout` instead of `http://host/physical-tenants/<id>/post-logout`.
+No configuration of the shared bean can fix this, and neither can any design where the **host**
+supplies the handler: the scoped repo is built inside CSL, and the prefix is CSL's to apply. The
+only host input that is genuinely non-derivable is the post-logout **route** (`/post-logout`) — an
+application landing page CSL cannot synthesize.
 
-2. **The wrong `ClientRegistrationRepository` is used.** The shared bean is built with the host's
-   **cluster** `ClientRegistrationRepository`. RP-initiated logout resolves the authenticated user's
-   `ClientRegistration` — and thus the `end_session_endpoint` and `client_id` — from that repo. A
-   scoped webapp chain builds and uses its **own** per-scope `InMemoryClientRegistrationRepository`
-   (`buildOidcWebappChainInternal`), from the descriptor's assigned providers only. The shared
-   handler cannot resolve a scoped user's registration, so it falls back to the default target and
-   never drives IdP logout.
-
-The redirect target is `{baseUrl}` + `basePath` + `<host post-logout route>`. The first two parts
-CSL already knows (`basePath` is the scope identity, and everything else in the scoped chain is
-derived from it). The third — the host's post-logout landing route — is application policy CSL
-cannot synthesize. This is the distinction from the descriptor fields ADR-0027 rejected: those were
-*derivable*; this one is not.
-
-The question: how does a scoped webapp chain get a logout success handler that (a) redirects under
-the scope's `basePath` and (b) resolves logout against the scope's own registrations — without
-re-introducing host-side chain assembly and without leaking derivable surface concerns into the
-host contract?
+The question: how should CSL produce a logout success handler that is correct for **every** webapp
+chain — primary and scoped alike — using each chain's own repository and prefix, with a uniform
+setup rather than a per-chain special case?
 
 ## Decision
 
-**CSL builds the scoped logout success handler; the host supplies only the one non-derivable
-datum — its post-logout route — as an optional field on `ScopedSecurityDescriptor`.**
+**CSL owns handler construction for every OIDC webapp chain. The host contributes only a
+post-logout path via configuration — never a handler bean.** The `LogoutSuccessHandler` bean seam is
+removed.
 
-### 1. `ScopedSecurityDescriptor` gains an optional `logoutRedirectPath`
+### 1. One config property for the post-logout route
+
+Add an optional CSL property, `camunda.security.authentication.oidc.post-logout-redirect-path`
+(relative to the chain root, e.g. `/post-logout`). It carries the single non-derivable datum. It is
+**optional**: when unset, no `post_logout_redirect_uri` is sent and the IdP applies its own default
+— the current default behavior, preserved.
+
+The descriptor is **not** changed: the path lives in CSL config and applies uniformly, so
+ADR-0027's surface-agnostic descriptor is fully preserved.
+
+### 2. CSL builds the handler per chain, from that chain's repo and prefix
+
+`ScopedWebappSecurityChainBuilder` builds the handler in both its primary and scoped OIDC build
+paths, via one helper:
 
 ```java
-public record ScopedSecurityDescriptor(
-    String basePath, AuthenticationConfiguration authentication, @Nullable String logoutRedirectPath) {
-
-  // Backward-compatible: existing 2-arg callers keep compiling; null = opt out.
-  public ScopedSecurityDescriptor(final String basePath, final AuthenticationConfiguration authentication) {
-    this(basePath, authentication, null);
+private LogoutSuccessHandler oidcLogoutSuccessHandler(
+    final ClientRegistrationRepository repo, final String prefix) {
+  final var handler = new CamundaOidcLogoutSuccessHandler(repo);
+  final var path = properties.getAuthentication().getOidc().getPostLogoutRedirectPath();
+  if (path != null) {
+    handler.setPostLogoutRedirectUri("{baseUrl}" + prefix + path);
   }
+  return handler;
 }
 ```
 
-- `logoutRedirectPath` is the host's post-logout landing route, relative to the scope root
-  (e.g. `/post-logout`). Validated when non-null: must be absolute (`/`-prefixed).
-- `null` means opt out — the chain keeps today's behavior (shared provider), so primary-only and
-  non-opting hosts are unaffected.
-- A non-canonical 2-arg constructor preserves the ADR-0025/0027 constructor shape, so this is
-  source- and behavior-compatible for existing adopters.
+- **Primary chain**: `oidcLogoutSuccessHandler(clientRegistrationRepository, "")` → cluster repo,
+  `{baseUrl}/post-logout`.
+- **Scoped chain**: `oidcLogoutSuccessHandler(scopedRepo, prefix)` → the scope's own repo,
+  `{baseUrl}<basePath>/post-logout`.
 
-This is the **only** addition to the host contract, and it carries the single piece of information
-CSL cannot derive. All other logout endpoints (`basePath + /logout`) remain derived, per ADR-0027.
+`prefix` is the only variable between the two. `{baseUrl}` supplies scheme/host/port; the literal
+`prefix` re-inserts what `{baseUrl}` drops; the configured path is the host route. Because each
+chain passes its own repository, `end_session_endpoint` / `client_id` resolve correctly for both.
 
-### 2. CSL constructs a per-scope handler with the scope's own repository
+### 3. Remove the bean seam
 
-In `ScopedWebappSecurityChainBuilder.buildOidcWebappChainInternal`, where the scoped
-`ClientRegistrationRepository` already exists, replace the shared-provider wiring with:
-
-```java
-if (logoutRedirectPath != null) {
-  final var handler = new CamundaOidcLogoutSuccessHandler(clientRegistrationRepository); // scoped repo
-  handler.setPostLogoutRedirectUri("{baseUrl}" + prefix + logoutRedirectPath);
-  logout.logoutSuccessHandler(handler);
-} else {
-  logoutSuccessHandlerProvider.ifAvailable(logout::logoutSuccessHandler);
-}
-```
-
-`{baseUrl}` supplies scheme/host/port; the literal `prefix` (the scope's normalized `basePath`)
-re-inserts what `{baseUrl}` drops; `logoutRedirectPath` is the host route. Constructing the handler
-here — same package as `CamundaOidcLogoutSuccessHandler`, with the scoped repo in scope — fixes both
-defects in one place: the redirect prefix **and** per-scope `end_session`/`client_id` resolution.
-
-`logoutRedirectPath` is threaded from the descriptor (already passed through
-`ScopedSecurityChainRegistrar`) into `buildScopedWebappChain`.
-
-### 3. The primary (non-scoped) chain is unchanged
-
-The host's `hostLogoutSuccessHandler` bean and its `{baseUrl}/post-logout` continue to serve the
-primary webapp chain via the existing `@ConditionalOnMissingBean` + provider mechanism. Only scoped
-chains that opt in via `logoutRedirectPath` diverge.
+Delete the `camundaOidcLogoutSuccessHandler` `@ConditionalOnMissingBean` bean and the
+`ObjectProvider<LogoutSuccessHandler>` field on the builder. Hosts stop registering a
+`LogoutSuccessHandler` bean (the Camunda 8 Orchestration Cluster drops its `hostLogoutSuccessHandler`
+override and sets the property instead).
 
 ## Consequences
 
 **Positive**
 
-- Scoped OIDC logout redirects under the scope's `basePath` and drives IdP `end_session` with the
-  scope's own client — both defects fixed by one localized change.
-- CSL retains ownership of chain assembly (ADR-0025/0027): the host contributes *policy data*, not a
-  handler or a chain. This respects ADR-0027's rejection of host-built per-scope components.
-- Minimal host surface: one optional descriptor field, set once in the host's
-  `CamundaSecurityScopeProvider`. No new bean type, no factory interface, no templating knowledge on
-  the host side.
-- Additive and backward-compatible: the 2-arg descriptor constructor is retained; `null` opts out;
-  primary-only hosts are unaffected.
+- **Primary and scoped chains use one code path** — same helper, `prefix` the only difference. No
+  branch, no opt-out, no chain-specific special-casing.
+- Every chain's handler carries **its own** `ClientRegistrationRepository`, so RP-initiated logout
+  (`end_session` / `client_id`) resolves correctly on both surfaces — fixing the scoped defect and
+  making the primary chain's construction explicit and consistent.
+- Scoped post-logout redirects resolve under the scope's `basePath`.
+- **No `ScopedSecurityDescriptor` change** — ADR-0027's surface-agnostic descriptor is untouched;
+  the non-derivable route lives in CSL config, applied uniformly.
+- Backward-compatible default: unset path → no `post_logout_redirect_uri` → IdP default, exactly as
+  today.
 
 **Negative / accepted trade-offs**
 
-- The descriptor grows by one field, softening ADR-0027's "no webapp fields" stance. Accepted
-  because the field carries a **non-derivable** host route, categorically unlike the derivable
-  endpoints ADR-0027 rejected. The distinction is made explicit to keep the boundary principled.
+- Hosts can no longer replace the logout handler with an arbitrary `LogoutSuccessHandler`. The only
+  known customization is the redirect path, now a property; broader per-host logout behavior is out
+  of scope (YAGNI) and, if ever needed, would be exposed uniformly rather than via a shared bean.
+- A single global path assumes every chain shares the same post-logout route. True for the physical
+  tenant model; a future need for per-scope routes would be a follow-up (a per-descriptor override
+  layered on top of the global default), not a reason to keep the broken seam now.
 - Per-scope `post_logout_redirect_uri`s must each be allow-listed at the IdP; multi-tenant
-  deployments need wildcard/pattern registration. This is a deployment concern, not a CSL one.
+  deployments need wildcard/pattern registration. A deployment concern, not a CSL one.
 
 ## Alternatives Considered
 
-- **Host provides the scoped handler (factory `Function<basePath, LogoutSuccessHandler>` or a
-  per-basePath registry bean).** Rejected — structurally impossible to do correctly: the scope's
-  `ClientRegistrationRepository` is built *inside* CSL from the descriptor's providers, so a
-  host-built handler would carry the wrong (cluster) repo and could not resolve the scope's
-  `end_session`/`client_id`. Handing the scoped repo out to a host factory would leak CSL internals
-  and re-introduce the host-side assembly ADR-0027 rejected.
+- **Keep the host-provided `LogoutSuccessHandler` bean; only fix scoped chains.** Rejected — the
+  root cause is the shared singleton itself: the correct target depends on the chain's own repo and
+  prefix, which a singleton cannot carry. Any "fix scoped only" keeps two divergent paths and leaves
+  the fallback wired to the wrong (cluster) repo, i.e. still broken.
 
-- **Global CSL property for the post-logout suffix.** Rejected — a scope is runtime SPI data; the
-  post-logout route is per-scope policy. Mixing a static config property into the SPI-driven scope
-  model is less cohesive than one optional field next to `basePath`, and it forecloses heterogeneous
-  scopes for no gain.
+- **Per-scope `logoutRedirectPath` on `ScopedSecurityDescriptor` (CSL builds the scoped handler).**
+  The original proposal in this ADR's first draft. Rejected in favor of unification — it fixed only
+  the scoped chain, kept the host bean seam for the primary chain (two mechanisms), and softened
+  ADR-0027's no-webapp-fields stance. The global property fixes both chains with one mechanism and
+  no descriptor change.
 
-- **Derive the scoped post-logout target to the scope root (`{baseUrl}<basePath>/`), no host
-  input.** Rejected — fully ADR-0027-consistent but changes post-logout UX (no dedicated landing
-  route), may not match the IdP-registered allow-list entry the host chose, and breaks parity with
-  the primary chain's `/post-logout`. Not worth avoiding one optional field.
+- **Host provides the scoped handler (factory / per-basePath registry bean).** Rejected —
+  structurally impossible to do correctly: the scope's `ClientRegistrationRepository` is built
+  inside CSL, so a host-built handler carries the wrong repo. Handing the scoped repo to a host
+  factory would leak CSL internals and re-introduce the host-side assembly ADR-0027 rejected.
 
-- **Read the suffix back from the host's shared handler and re-prefix it.** Rejected — the
+- **Mandatory path (fail-fast if unset).** Rejected — most explicit, but a breaking change for OIDC
+  adopters that rely on default logout with no post-logout redirect. Optional-with-IdP-default keeps
+  today's behavior while making every chain's handler correct.
+
+- **Read the route back from the host's shared handler and re-prefix it.** Rejected — the
   `post_logout_redirect_uri` template is a private field of `OidcClientInitiatedLogoutSuccessHandler`
   and cannot be reliably extracted.
