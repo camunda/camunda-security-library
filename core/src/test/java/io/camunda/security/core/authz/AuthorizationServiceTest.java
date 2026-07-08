@@ -12,6 +12,7 @@ import static io.camunda.security.api.model.authz.AuthorizationResourceType.USER
 import static io.camunda.security.api.model.authz.PermissionType.READ_PROCESS_DEFINITION;
 import static io.camunda.security.api.model.authz.PermissionType.READ_USER_TASK;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -19,11 +20,15 @@ import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
 import io.camunda.security.api.model.CamundaAuthentication;
+import io.camunda.security.api.model.Either;
 import io.camunda.security.api.model.authz.AuthorizationRejection;
 import io.camunda.security.api.model.authz.AuthorizationScope;
 import io.camunda.security.api.model.authz.PermissionType;
 import io.camunda.security.core.auth.RequiredAuthorization;
+import io.camunda.security.core.port.in.AuthorizationCheckPort;
+import io.camunda.security.core.port.out.MembershipPort;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,6 +40,7 @@ class AuthorizationServiceTest {
 
   @Mock private AuthorizationChecker authorizationChecker;
   @Mock private PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry;
+  @Mock private MembershipPort membershipPort;
 
   @SuppressWarnings("unchecked")
   @Mock
@@ -49,6 +55,17 @@ class AuthorizationServiceTest {
         propertyEvaluatorRegistry,
         authorizationEnabled,
         multiTenancyChecksEnabled);
+  }
+
+  private AuthorizationService serviceWithConverter(
+      final boolean authorizationEnabled, final boolean multiTenancyChecksEnabled) {
+    final var converter = new LazyTokenClaimsConverter("sub", "client_id", false, membershipPort);
+    return new AuthorizationService(
+        authorizationChecker,
+        propertyEvaluatorRegistry,
+        authorizationEnabled,
+        multiTenancyChecksEnabled,
+        converter);
   }
 
   // --- skipChecks ---
@@ -250,5 +267,103 @@ class AuthorizationServiceTest {
     final var req =
         RequiredAuthorization.of(b -> b.userTask().readUserTask().authorizedByAssignee());
     assertThat(service(true, false).check(alice, req, "task-1").isRight()).isTrue();
+  }
+
+  // --- claims-map check overload ---
+
+  @Test
+  void shouldDelegateCheckToClaimsConverterAndAuthorizationChecker() {
+    // given
+    when(authorizationChecker.isAuthorized(any(), any(), any())).thenReturn(true);
+    final var req =
+        RequiredAuthorization.of(
+            b -> b.processDefinition().readProcessDefinition().resourceId("p1"));
+    final var claims = Map.<String, Object>of("sub", "alice");
+
+    // when
+    final var result = serviceWithConverter(true, false).check(claims, req);
+
+    // then
+    assertThat(result.isRight()).isTrue();
+  }
+
+  @Test
+  void shouldReturnLeftWhenCheckerDeniesOnClaimsMap() {
+    // given
+    when(authorizationChecker.isAuthorized(any(), any(), any())).thenReturn(false);
+    final var req =
+        RequiredAuthorization.of(
+            b -> b.processDefinition().readProcessDefinition().resourceId("p1"));
+    final var claims = Map.<String, Object>of("sub", "alice");
+
+    // when
+    final var result = serviceWithConverter(true, false).check(claims, req);
+
+    // then
+    assertThat(result.isLeft()).isTrue();
+    assertThat(result.leftValue())
+        .isEqualTo(
+            new AuthorizationRejection.Permission(
+                PROCESS_DEFINITION, READ_PROCESS_DEFINITION, "p1"));
+  }
+
+  @Test
+  void shouldReturnRightWhenAuthorizationDisabledOnClaimsMap() {
+    final var req =
+        RequiredAuthorization.of(
+            b -> b.processDefinition().readProcessDefinition().resourceId("p1"));
+    final var claims = Map.<String, Object>of("sub", "alice");
+
+    assertThat(service(false, false).check(claims, req).isRight()).isTrue();
+  }
+
+  @Test
+  void shouldThrowIllegalArgumentExceptionWhenClaimsMissingPrincipal() {
+    // given
+    final var req =
+        RequiredAuthorization.of(
+            b -> b.processDefinition().readProcessDefinition().resourceId("p1"));
+
+    // when / then
+    assertThatThrownBy(() -> serviceWithConverter(true, false).check(Map.of("x", "y"), req))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Neither username claim");
+  }
+
+  @Test
+  void shouldThrowIllegalStateExceptionWhenClaimsConverterNotConfigured() {
+    // given
+    final var req =
+        RequiredAuthorization.of(
+            b -> b.processDefinition().readProcessDefinition().resourceId("p1"));
+    final var claims = Map.<String, Object>of("sub", "alice");
+
+    // when / then
+    assertThatThrownBy(() -> service(true, false).check(claims, req))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("Claims-map check requires a LazyTokenClaimsConverter");
+  }
+
+  @Test
+  void shouldThrowUnsupportedOperationExceptionFromDefaultMethod() {
+    // given
+    final AuthorizationCheckPort port =
+        new AuthorizationCheckPort() {
+          @Override
+          public <T> Either<AuthorizationRejection, Void> check(
+              final CamundaAuthentication authentication,
+              final RequiredAuthorization<T> authorization) {
+            return Either.right(null);
+          }
+        };
+    final var req =
+        RequiredAuthorization.of(
+            b -> b.processDefinition().readProcessDefinition().resourceId("p1"));
+    final var claims = Map.<String, Object>of("sub", "alice");
+
+    // when / then
+    assertThatThrownBy(() -> port.check(claims, req))
+        .isInstanceOf(UnsupportedOperationException.class)
+        .hasMessageContaining("Claims-map check not supported");
   }
 }
