@@ -1,14 +1,14 @@
 ---
-status: Proposed
+status: Accepted
 ---
 
 # ADR-0031: Replace the global Spring Session filter with an explicit default-scope session filter
 
-**Deciders**: Ben Sheppard (Ben-Sheppard), Sebastian Bathke (megglos), Joaquin Felici (joaquinfelici)
+**Deciders**: Patrick Wunderlich (p-wunderlich), Sebastian Bathke (megglos), Joaquin Felici (joaquinfelici)
 
 ## Status
 
-Proposed
+Accepted
 
 Revises [ADR-0017](0017-session-store-port-and-web-session-ownership.md)'s `@EnableSpringHttpSession`
 mechanism and the filter-installation aspect of [ADR-0027](0027-scoped-webapp-security-chains-and-per-scope-sessions.md)
