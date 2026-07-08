@@ -570,11 +570,6 @@ public class OidcConfiguration {
       return this;
     }
 
-    public Builder diagnostics(final OidcDiagnosticsConfiguration diagnostics) {
-      this.diagnostics = diagnostics;
-      return this;
-    }
-
     public OidcConfiguration build() {
       final OidcConfiguration config = new OidcConfiguration();
       config.setIssuerUri(issuerUri);
