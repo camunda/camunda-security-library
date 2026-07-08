@@ -208,10 +208,8 @@ public final class OidcRedirectDiagnosticsFilter extends OncePerRequestFilter {
     final Map<String, String> params = new LinkedHashMap<>();
     request
         .getParameterMap()
-        .forEach(
-            (key, values) ->
-                params.put(
-                    key, REDACTED_PARAMS.contains(key) ? REDACTED : String.join(",", values)));
+        .keySet()
+        .forEach(key -> params.put(key, REDACTED_PARAMS.contains(key) ? REDACTED : "present"));
     return params;
   }
 
