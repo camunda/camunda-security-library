@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 
-public class OidcRedirectDiagnosticsFilterTest {
+class OidcRedirectDiagnosticsFilterTest {
 
   private static final String CALLBACK_PATH = "/sso-callback";
 
