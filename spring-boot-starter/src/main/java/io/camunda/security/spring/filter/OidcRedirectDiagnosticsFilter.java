@@ -67,15 +67,36 @@ public final class OidcRedirectDiagnosticsFilter extends OncePerRequestFilter {
       final FilterChain filterChain)
       throws ServletException, IOException {
 
-    final String externalBaseUrl = computeExternalBaseUrl(request);
-    final String expectedRedirectUri = externalBaseUrl + callbackPath;
+    // Diagnostics are purely observational: any failure here must never break the chain.
+    // A malformed forwarded header (e.g. a non-numeric X-Forwarded-Port) must not produce a 500.
+    String expectedRedirectUri = null;
+    try {
+      final String externalBaseUrl = computeExternalBaseUrl(request);
+      expectedRedirectUri = externalBaseUrl + callbackPath;
+      logRequestDiagnostics(request, externalBaseUrl, expectedRedirectUri);
+    } catch (final RuntimeException e) {
+      LOG.debug(
+          "OIDC redirect diagnostics pre-request step failed; skipping diagnostics for {} {}",
+          request.getMethod(),
+          request.getRequestURI(),
+          e);
+    }
 
-    logRequestDiagnostics(request, externalBaseUrl, expectedRedirectUri);
-
+    final String capturedExpectedUri = expectedRedirectUri;
     try {
       filterChain.doFilter(request, response);
     } finally {
-      inspectResponse(request, response, expectedRedirectUri);
+      if (capturedExpectedUri != null) {
+        try {
+          inspectResponse(request, response, capturedExpectedUri);
+        } catch (final RuntimeException e) {
+          LOG.debug(
+              "OIDC redirect diagnostics post-request step failed for {} {}",
+              request.getMethod(),
+              request.getRequestURI(),
+              e);
+        }
+      }
     }
   }
 
@@ -130,7 +151,9 @@ public final class OidcRedirectDiagnosticsFilter extends OncePerRequestFilter {
     return requestUri != null && requestUri.contains(AUTHORIZATION_REQUEST_PREFIX);
   }
 
-return requestUri != null && callbackPath != null && requestUri.endsWith(callbackPath);
+  static boolean isCallback(final String requestUri, final String callbackPath) {
+    return requestUri != null && callbackPath != null && requestUri.endsWith(callbackPath);
+  }
 
   /**
    * Returns {@code true} when a callback request carries an authorization {@code code} but has no
@@ -208,17 +231,17 @@ return requestUri != null && callbackPath != null && requestUri.endsWith(callbac
       applyForwardedHost(builder, firstToken(forwardedHost));
     }
 
-final String forwardedPort = request.getHeader("X-Forwarded-Port");
-if (forwardedPort != null && !forwardedPort.isBlank()) {
-  try {
-    final int port = Integer.parseInt(firstToken(forwardedPort));
-    if (port >= 1 && port <= 65535) {
-      builder.port(port);
+    final String forwardedPort = request.getHeader("X-Forwarded-Port");
+    if (forwardedPort != null && !forwardedPort.isBlank()) {
+      try {
+        final int port = Integer.parseInt(firstToken(forwardedPort));
+        if (port >= 1 && port <= 65535) {
+          builder.port(port);
+        }
+      } catch (final NumberFormatException e) {
+        LOG.debug("Ignoring invalid X-Forwarded-Port '{}'", forwardedPort, e);
+      }
     }
-  } catch (final NumberFormatException e) {
-    LOG.debug("Ignoring invalid X-Forwarded-Port '{}'", forwardedPort, e);
-  }
-}
 
     final String forwardedPrefix = request.getHeader("X-Forwarded-Prefix");
     final String prefix =

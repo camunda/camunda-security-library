@@ -565,9 +565,9 @@ public final class ScopedWebappSecurityChainBuilder {
 
   private void applyOidcRedirectDiagnosticsFilter(
       final HttpSecurity http, final String callbackPath) {
-final var authentication = properties.getAuthentication();
-final var oidc = authentication != null ? authentication.getOidc() : null;
-if (oidc != null && oidc.getDiagnostics() != null && oidc.getDiagnostics().isEnabled()) {
+    final var authentication = properties.getAuthentication();
+    final var oidc = authentication != null ? authentication.getOidc() : null;
+    if (oidc != null && oidc.getDiagnostics() != null && oidc.getDiagnostics().isEnabled()) {
       // Positioned before the redirect filter so diagnostics wrap the redirect generation and
       // can inspect the resulting Location header on the way back out.
       http.addFilterBefore(

@@ -8,9 +8,13 @@
 package io.camunda.security.spring.filter;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
+import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 
 class OidcRedirectDiagnosticsFilterTest {
 
@@ -132,6 +136,23 @@ class OidcRedirectDiagnosticsFilterTest {
     // when / then
     assertThat(OidcRedirectDiagnosticsFilter.indicatesLostSession(request, CALLBACK_PATH))
         .isFalse();
+  }
+
+  @Test
+  void shouldNotBreakChainWhenForwardedPortIsMalformed() throws Exception {
+    // given - a reverse proxy that sends a non-numeric X-Forwarded-Port value; Spring's
+    // UriComponentsBuilder rejects non-integer ports during URI assembly
+    final var request = new MockHttpServletRequest("GET", "/oauth2/authorization/oidc");
+    request.addHeader("X-Forwarded-Proto", "https");
+    request.addHeader("X-Forwarded-Host", "auth.example.com");
+    request.addHeader("X-Forwarded-Port", "not-a-port");
+    final var response = new MockHttpServletResponse();
+    final var chain = mock(FilterChain.class);
+    final var filter = new OidcRedirectDiagnosticsFilter(CALLBACK_PATH);
+
+    // when / then — the filter is purely observational; a bad header must never fail the request
+    filter.doFilter(request, response, chain);
+    verify(chain).doFilter(request, response);
   }
 
   @Test
