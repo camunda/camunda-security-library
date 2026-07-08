@@ -15,9 +15,12 @@ import io.camunda.security.api.context.CamundaSecurityScopeProvider;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
+import io.camunda.security.api.model.session.PersistentSession;
 import io.camunda.security.core.port.out.BasicAuthUserDetailsPort;
 import io.camunda.security.core.port.out.BasicAuthUserDetailsPort.CamundaUserDetails;
+import io.camunda.security.core.port.out.ScopedSessionStorePortProvider;
 import io.camunda.security.core.port.out.SecurityPathPort;
+import io.camunda.security.core.port.out.SessionStorePort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
@@ -25,14 +28,17 @@ import io.camunda.security.spring.oidc.OidcClaimsProviderConfiguration;
 import io.camunda.security.spring.oidc.OidcTestServer;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.scope.ScopedSecurityChainConfiguration;
+import io.camunda.security.spring.session.WebSessionConfiguration;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import io.camunda.security.spring.user.UserConfiguration;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -185,6 +191,72 @@ class DefaultAndScopedSessionRegressionTest {
   }
 
   /**
+   * Durable-storage variant of the regression above: #55852 was specifically about persistent web
+   * sessions, so this repeats the same mixed default+scoped, two-round-trip sequence with real
+   * {@link SessionStorePort}-backed durable repositories — a distinct store for the default surface
+   * and a distinct one for the scope, exactly the storage topology the original bug depended on.
+   */
+  @Test
+  void scopedSessionCommittedViaRealLoginSurvivesASecondRequestWithDurablePersistentStores()
+      throws Exception {
+    final var defaultStore = new InMemorySessionStore();
+    final var scopedStore = new InMemorySessionStore();
+    final ScopedSessionStorePortProvider provider =
+        basePath -> BASE_PT.equals(basePath) ? scopedStore : defaultStore;
+
+    runner()
+        .withConfiguration(
+            AutoConfigurations.of(
+                ScopedSecurityChainConfiguration.class, WebSessionConfiguration.class))
+        .withUserConfiguration(SingleBasicScopeProvider.class)
+        .withPropertyValues("camunda.security.session.persistent.enabled=true")
+        .withBean("clusterSessionStore", SessionStorePort.class, () -> defaultStore)
+        .withBean(ScopedSessionStorePortProvider.class, () -> provider)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              stubResolvableUser(ctx, "alice", "s3cret");
+
+              final var defaultWebappChain =
+                  ctx.getBean("basicAuthWebappSecurityFilterChain", SecurityFilterChain.class);
+              final var defaultApiChain =
+                  ctx.getBean("basicAuthApiSecurityFilterChain", SecurityFilterChain.class);
+              final var scopedWebappChain = scopedChain(ctx, "scopedWebappSecurityFilterChain-");
+              final var scopedApiChain = scopedChain(ctx, "scopedApiSecurityFilterChain-");
+
+              final var proxy =
+                  new FilterChainProxy(
+                      List.of(
+                          defaultWebappChain, defaultApiChain, scopedWebappChain, scopedApiChain));
+
+              final var scopedCookie =
+                  logIn(proxy, BASE_PT + "/login", "alice", "s3cret", SCOPED_COOKIE);
+
+              assertThat(scopedStore.all())
+                  .as("login must durably persist the session in the SCOPE's own store")
+                  .hasSize(1);
+              assertThat(defaultStore.all())
+                  .as("the default surface's store must be untouched by the scope's login")
+                  .isEmpty();
+
+              // second request: reuse the scoped cookie — must be read back from the durable store
+              final var request = new MockHttpServletRequest("GET", BASE_PT + "/api/resource");
+              request.setCookies(scopedCookie);
+              final var response = new MockHttpServletResponse();
+              final var next = new MockFilterChain();
+              proxy.doFilter(request, response, next);
+
+              assertThat(response.getStatus())
+                  .as(
+                      "a durably-persisted PT-scoped session must authenticate the next scoped"
+                          + " request even with the default chains present in the same"
+                          + " FilterChainProxy")
+                  .isEqualTo(200);
+              assertThat(next.getRequest()).isNotNull();
+            });
+  }
+
+  /**
    * Structural coverage for the OIDC configs: they take the same new {@code
    * defaultSessionRepositoryFilter} parameter as the BASIC configs, so this asserts the filter is
    * actually installed on both the OIDC webapp and API chains — the OIDC-specific gap flagged
@@ -244,9 +316,8 @@ class DefaultAndScopedSessionRegressionTest {
       final String username,
       final String rawPassword) {
     final var encoder = ctx.getBean(PasswordEncoder.class);
-    final var port = ctx.getBean(BasicAuthUserDetailsPort.class);
-    Mockito.when(port.loadUser(username))
-        .thenReturn(new CamundaUserDetails(username, encoder.encode(rawPassword)));
+    final var port = (ConfigurableUserDetailsPort) ctx.getBean(BasicAuthUserDetailsPort.class);
+    port.resolve(username, encoder.encode(rawPassword));
   }
 
   /** Drives a real form login and returns the session cookie it commits. */
@@ -329,7 +400,23 @@ class DefaultAndScopedSessionRegressionTest {
 
     @Bean
     BasicAuthUserDetailsPort userDetailsPort() {
-      return Mockito.mock(BasicAuthUserDetailsPort.class);
+      return new ConfigurableUserDetailsPort();
+    }
+  }
+
+  /** Resolves whichever username/password was last configured via {@link #resolve}. */
+  private static final class ConfigurableUserDetailsPort implements BasicAuthUserDetailsPort {
+
+    private volatile CamundaUserDetails details;
+
+    void resolve(final String username, final String encodedPassword) {
+      details = new CamundaUserDetails(username, encodedPassword);
+    }
+
+    @Override
+    public CamundaUserDetails loadUser(final String username) {
+      final var current = details;
+      return current != null && current.username().equals(username) ? current : null;
     }
   }
 
@@ -348,6 +435,36 @@ class DefaultAndScopedSessionRegressionTest {
     @Bean
     ObjectMapper objectMapper() {
       return new ObjectMapper();
+    }
+  }
+
+  /** A real (if in-memory) {@link SessionStorePort}: genuine get/upsert/delete, not a no-op. */
+  private static final class InMemorySessionStore implements SessionStorePort {
+
+    private final Map<String, PersistentSession> sessions = new ConcurrentHashMap<>();
+
+    @Override
+    public PersistentSession get(final String sessionId) {
+      return sessions.get(sessionId);
+    }
+
+    @Override
+    public void upsert(final PersistentSession session) {
+      sessions.put(session.id(), session);
+    }
+
+    @Override
+    public void delete(final String sessionId) {
+      sessions.remove(sessionId);
+    }
+
+    @Override
+    public List<PersistentSession> getAll() {
+      return List.copyOf(sessions.values());
+    }
+
+    Collection<PersistentSession> all() {
+      return sessions.values();
     }
   }
 }
