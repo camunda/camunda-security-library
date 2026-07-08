@@ -8,6 +8,7 @@
 package io.camunda.security.spring.converter;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -31,6 +32,7 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -106,6 +108,21 @@ class OidcUserAuthenticationConverterTest {
 
     assertThat(converter.convert(token)).isSameAs(expected);
     verify(jwtDecoder, never()).decode(any());
+  }
+
+  @Test
+  void wrapsIllegalArgumentExceptionAsOAuth2AuthenticationException() {
+    // given - tokenClaimsConverter.convert() throws (e.g. Entra v1.0 token guard)
+    final var token = mockAuthToken("oidc");
+    when(authorizedClientRepository.loadAuthorizedClient("oidc", token, request)).thenReturn(null);
+    final var oidcUser = mock(OidcUser.class);
+    when(token.getPrincipal()).thenReturn(oidcUser);
+    when(oidcUser.getAttributes()).thenReturn(Map.of("sub", "alice"));
+    when(tokenClaimsConverter.convert(any())).thenThrow(new IllegalArgumentException("bad token"));
+
+    assertThatThrownBy(() -> converter.convert(token))
+        .isInstanceOf(OAuth2AuthenticationException.class)
+        .hasMessageContaining("bad token");
   }
 
   @SuppressWarnings("unchecked")

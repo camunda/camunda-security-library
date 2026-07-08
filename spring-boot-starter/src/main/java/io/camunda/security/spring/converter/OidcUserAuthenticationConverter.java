@@ -26,6 +26,9 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
@@ -106,14 +109,19 @@ public class OidcUserAuthenticationConverter
 
   @Override
   public CamundaAuthentication convert(final Authentication authentication) {
-    return Optional.of(authentication)
-        .map(OAuth2AuthenticationToken.class::cast)
-        .map(this::getClaims)
-        .map(tokenClaimsConverter::convert)
-        .orElseThrow(
-            () ->
-                new IllegalStateException(
-                    "Failed to convert 'OAuth2AuthenticationToken' to 'CamundaAuthentication"));
+    try {
+      return Optional.of(authentication)
+          .map(OAuth2AuthenticationToken.class::cast)
+          .map(this::getClaims)
+          .map(tokenClaimsConverter::convert)
+          .orElseThrow(
+              () ->
+                  new IllegalStateException(
+                      "Failed to convert 'OAuth2AuthenticationToken' to 'CamundaAuthentication'"));
+    } catch (final IllegalArgumentException e) {
+      throw new OAuth2AuthenticationException(
+          new OAuth2Error(OAuth2ErrorCodes.INVALID_TOKEN, e.getMessage(), null), e);
+    }
   }
 
   protected Map<String, Object> getClaims(final OAuth2AuthenticationToken authenticationToken) {
