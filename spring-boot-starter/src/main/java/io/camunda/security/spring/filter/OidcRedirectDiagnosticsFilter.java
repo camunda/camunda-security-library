@@ -282,6 +282,7 @@ public final class OidcRedirectDiagnosticsFilter extends OncePerRequestFilter {
     if (value == null || value.isBlank() || "/".equals(value)) {
       return "";
     }
-    return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
+    final String trimmed = value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
+    return trimmed.startsWith("/") ? trimmed : "/" + trimmed;
   }
 }
