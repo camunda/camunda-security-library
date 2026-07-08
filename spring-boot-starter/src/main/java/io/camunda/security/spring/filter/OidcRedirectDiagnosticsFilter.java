@@ -210,10 +210,17 @@ public final class OidcRedirectDiagnosticsFilter extends OncePerRequestFilter {
       applyForwardedHost(builder, firstToken(forwardedHost));
     }
 
-    final String forwardedPort = request.getHeader("X-Forwarded-Port");
-    if (forwardedPort != null && !forwardedPort.isBlank()) {
-      builder.port(firstToken(forwardedPort));
+final String forwardedPort = request.getHeader("X-Forwarded-Port");
+if (forwardedPort != null && !forwardedPort.isBlank()) {
+  try {
+    final int port = Integer.parseInt(firstToken(forwardedPort));
+    if (port >= 1 && port <= 65535) {
+      builder.port(port);
     }
+  } catch (final NumberFormatException e) {
+    LOG.debug("Ignoring invalid X-Forwarded-Port '{}'", forwardedPort, e);
+  }
+}
 
     final String forwardedPrefix = request.getHeader("X-Forwarded-Prefix");
     final String prefix =
