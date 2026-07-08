@@ -10,6 +10,7 @@ package io.camunda.security.spring.authz;
 import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
 import io.camunda.security.core.authz.AuthorizationChecker;
 import io.camunda.security.core.authz.AuthorizationService;
+import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.authz.PropertyAuthorizationEvaluatorRegistry;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
@@ -52,17 +53,21 @@ public class AuthorizationConfiguration {
    * @param authorizationChecker the scope evaluation kernel
    * @param evaluators all registered property-based evaluators; empty list is valid
    * @param properties CSL configuration properties for authorization and multi-tenancy flags
+   * @param claimsConverter converter from raw JWT claims to {@link
+   *     io.camunda.security.api.model.CamundaAuthentication}; provided by the host application
    */
   @Bean
   @ConditionalOnMissingBean(AuthorizationCheckPort.class)
   public AuthorizationService authorizationService(
       final AuthorizationChecker authorizationChecker,
       final List<PropertyAuthorizationEvaluator<?>> evaluators,
-      final CamundaSecurityLibraryProperties properties) {
+      final CamundaSecurityLibraryProperties properties,
+      final LazyTokenClaimsConverter claimsConverter) {
     return new AuthorizationService(
         authorizationChecker,
         new PropertyAuthorizationEvaluatorRegistry(evaluators),
         properties.getAuthorizations().isEnabled(),
-        properties.getMultiTenancy().isChecksEnabled());
+        properties.getMultiTenancy().isChecksEnabled(),
+        claimsConverter);
   }
 }
