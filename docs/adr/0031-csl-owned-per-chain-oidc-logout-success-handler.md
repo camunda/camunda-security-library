@@ -111,6 +111,11 @@ literal prefix adds back what `{baseUrl}` drops. The route comes from the port. 
 passes its own repository, the `end_session_endpoint` and `client_id` resolve correctly on both
 surfaces.
 
+The join produces exactly one slash. `prefix` is the normalized base path from `BasePaths.normalize`,
+which strips any trailing slash (so it is `""` for the primary chain or `/physical-tenants/<id>` for a
+scope). The route must start with `/`, the same convention the port's other path methods use. So
+`prefix + path` never yields a double slash, and the redirect URI stays stable for IdP allow-listing.
+
 ### 3. Remove the bean seam
 
 Delete the `camundaOidcLogoutSuccessHandler` `@ConditionalOnMissingBean` bean and the
