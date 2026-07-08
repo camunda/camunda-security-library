@@ -111,8 +111,7 @@ class OidcUserAuthenticationConverterTest {
   }
 
   @Test
-  void wrapsIllegalArgumentExceptionAsOAuth2AuthenticationException() {
-    // given - tokenClaimsConverter.convert() throws (e.g. Entra v1.0 token guard)
+  void shouldWrapIllegalArgumentExceptionAsOAuth2AuthenticationException() {
     final var token = mockAuthToken("oidc");
     when(authorizedClientRepository.loadAuthorizedClient("oidc", token, request)).thenReturn(null);
     final var oidcUser = mock(OidcUser.class);
