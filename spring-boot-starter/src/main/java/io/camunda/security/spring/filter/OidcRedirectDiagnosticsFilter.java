@@ -49,10 +49,20 @@ public final class OidcRedirectDiagnosticsFilter extends OncePerRequestFilter {
 
   private static final Logger LOG = LoggerFactory.getLogger(OidcRedirectDiagnosticsFilter.class);
 
-  private static final String AUTHORIZATION_REQUEST_PREFIX = "/oauth2/authorization/";
   private static final Set<String> REDACTED_PARAMS =
-      Set.of("code", "client_secret", "id_token", "access_token", "token", "state", "credential");
-  private static final String REDACTED = "***";
+      Set.of(
+          "code",
+          "client_secret",
+          "client_assertion",
+          "assertion",
+          "id_token",
+          "access_token",
+          "refresh_token",
+          "token",
+          "state",
+          "nonce",
+          "code_verifier",
+          "credential");
 
   private final String callbackPath;
 
