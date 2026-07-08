@@ -49,6 +49,9 @@ public final class OidcRedirectDiagnosticsFilter extends OncePerRequestFilter {
 
   private static final Logger LOG = LoggerFactory.getLogger(OidcRedirectDiagnosticsFilter.class);
 
+  private static final String AUTHORIZATION_REQUEST_PREFIX = "/oauth2/authorization/";
+  private static final String REDACTED = "***";
+
   private static final Set<String> REDACTED_PARAMS =
       Set.of(
           "code",
@@ -201,10 +204,7 @@ public final class OidcRedirectDiagnosticsFilter extends OncePerRequestFilter {
     final Map<String, String> headers = new LinkedHashMap<>();
     for (final String name :
         new String[] {
-          "X-Forwarded-Proto",
-          "X-Forwarded-Host",
-          "X-Forwarded-Port",
-          "X-Forwarded-Prefix"
+          "X-Forwarded-Proto", "X-Forwarded-Host", "X-Forwarded-Port", "X-Forwarded-Prefix"
         }) {
       final String value = request.getHeader(name);
       if (value != null) {
