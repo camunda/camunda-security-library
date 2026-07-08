@@ -182,7 +182,7 @@ public final class OidcRedirectDiagnosticsFilter extends OncePerRequestFilter {
       // logged alongside — the plain expected redirect URI.
       return value == null ? null : UriUtils.decode(value, StandardCharsets.UTF_8);
     } catch (final RuntimeException e) {
-      LOG.debug("Could not parse redirect_uri from Location header '{}'", location, e);
+      LOG.debug("Could not parse redirect_uri from Location header", e);
       return null;
     }
   }
