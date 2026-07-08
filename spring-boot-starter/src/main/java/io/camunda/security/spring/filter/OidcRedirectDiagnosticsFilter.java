@@ -126,7 +126,7 @@ public final class OidcRedirectDiagnosticsFilter extends OncePerRequestFilter {
       final String expectedRedirectUri) {
     final String requestUri = request.getRequestURI();
 
-    if (isAuthorizationRequest(requestUri)) {
+    if (expectedRedirectUri != null && isAuthorizationRequest(requestUri)) {
       final String actualRedirectUri = extractRedirectUri(response.getHeader(HttpHeaders.LOCATION));
       if (actualRedirectUri != null && !actualRedirectUri.equals(expectedRedirectUri)) {
         LOG.warn(
