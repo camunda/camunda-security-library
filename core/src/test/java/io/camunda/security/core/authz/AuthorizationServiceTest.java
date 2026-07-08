@@ -20,12 +20,10 @@ import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
 import io.camunda.security.api.model.CamundaAuthentication;
-import io.camunda.security.api.model.Either;
 import io.camunda.security.api.model.authz.AuthorizationRejection;
 import io.camunda.security.api.model.authz.AuthorizationScope;
 import io.camunda.security.api.model.authz.PermissionType;
 import io.camunda.security.core.auth.RequiredAuthorization;
-import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.core.port.out.MembershipPort;
 import java.util.List;
 import java.util.Map;
@@ -319,28 +317,5 @@ class AuthorizationServiceTest {
     assertThatThrownBy(() -> service(true, false).check(Map.of("x", "y"), req))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Neither username claim");
-  }
-
-  @Test
-  void shouldThrowUnsupportedOperationExceptionFromDefaultMethod() {
-    // given
-    final AuthorizationCheckPort port =
-        new AuthorizationCheckPort() {
-          @Override
-          public <T> Either<AuthorizationRejection, Void> check(
-              final CamundaAuthentication authentication,
-              final RequiredAuthorization<T> authorization) {
-            return Either.right(null);
-          }
-        };
-    final var req =
-        RequiredAuthorization.of(
-            b -> b.processDefinition().readProcessDefinition().resourceId("p1"));
-    final var claims = Map.<String, Object>of("sub", "alice");
-
-    // when / then
-    assertThatThrownBy(() -> port.check(claims, req))
-        .isInstanceOf(UnsupportedOperationException.class)
-        .hasMessageContaining("Claims-map check not supported");
   }
 }

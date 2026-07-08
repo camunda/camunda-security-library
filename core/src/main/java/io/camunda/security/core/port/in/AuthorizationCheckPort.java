@@ -31,13 +31,7 @@ public interface AuthorizationCheckPort {
    *
    * <p>Callers must ensure the map contains at least one principal claim (as configured by the
    * implementation). Otherwise implementations may throw {@link IllegalArgumentException}.
-   *
-   * <p>The default implementation throws {@link UnsupportedOperationException}. Implementations
-   * that support this method should override it.
    */
-  default <T> Either<AuthorizationRejection, Void> check(
-      Map<String, Object> claims, RequiredAuthorization<T> authorization) {
-    throw new UnsupportedOperationException(
-        "Claims-map check not supported by this AuthorizationCheckPort implementation.");
-  }
+  <T> Either<AuthorizationRejection, Void> check(
+      Map<String, Object> claims, RequiredAuthorization<T> authorization);
 }

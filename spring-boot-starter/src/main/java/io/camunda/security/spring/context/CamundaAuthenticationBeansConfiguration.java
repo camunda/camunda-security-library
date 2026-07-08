@@ -11,7 +11,9 @@ import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.context.CamundaAuthenticationHolder;
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.api.context.MembershipResolutionContextPropagator;
+import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.context.holder.CamundaAuthenticationDelegatingHolder;
+import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.annotation.ConditionalOnUnprotectedApi;
 import io.camunda.security.spring.context.holder.HttpSessionBasedAuthenticationHolder;
@@ -20,6 +22,7 @@ import io.camunda.security.spring.converter.CamundaSpringAuthenticationDelegatin
 import io.camunda.security.spring.converter.UnprotectedCamundaAuthenticationConverter;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -71,6 +74,28 @@ public class CamundaAuthenticationBeansConfiguration {
   @ConditionalOnMissingBean
   public MembershipResolutionContextPropagator membershipResolutionContextPropagator() {
     return MembershipResolutionContextPropagator.identity();
+  }
+
+  /**
+   * Default {@link LazyTokenClaimsConverter} wired from OIDC configuration and the host-supplied
+   * {@link MembershipPort}. Hosts that need custom claim names or a different conversion strategy
+   * register their own {@link LazyTokenClaimsConverter} bean; {@link ConditionalOnMissingBean}
+   * backs this default off when they do.
+   */
+  @Bean
+  @ConditionalOnBean(MembershipPort.class)
+  @ConditionalOnMissingBean
+  public LazyTokenClaimsConverter lazyTokenClaimsConverter(
+      final CamundaSecurityLibraryProperties properties,
+      final MembershipPort membershipPort,
+      final MembershipResolutionContextPropagator contextPropagator) {
+    final var oidc = properties.getAuthentication().getOidc();
+    return new LazyTokenClaimsConverter(
+        oidc.getUsernameClaim(),
+        oidc.getClientIdClaim(),
+        oidc.isPreferUsernameClaim(),
+        membershipPort,
+        contextPropagator);
   }
 
   @Bean
