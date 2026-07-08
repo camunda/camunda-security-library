@@ -570,6 +570,16 @@ public final class ScopedWebappSecurityChainBuilder {
     if (oidc != null && oidc.getDiagnostics() != null && oidc.getDiagnostics().isEnabled()) {
       // Positioned before the redirect filter so diagnostics wrap the redirect generation and
       // can inspect the resulting Location header on the way back out.
+      //
+      // Note on scoped chains: callbackPath for a scoped chain is already prefix + REDIRECT_URI
+      // (e.g. /operate/sso-callback). OidcRedirectDiagnosticsFilter computes expectedRedirectUri
+      // as computeExternalBaseUrl(request) + callbackPath. computeExternalBaseUrl appends
+      // X-Forwarded-Prefix (or the servlet context path) to the scheme/host/port. When a reverse
+      // proxy sets X-Forwarded-Prefix to the same scope prefix (e.g. /operate), that prefix is
+      // counted twice and the redirect_uri mismatch WARN may fire as a false positive. This is a
+      // diagnostic limitation only — the actual auth flow is unaffected. Operators seeing a
+      // persistent mismatch WARN on a scoped deployment should check whether X-Forwarded-Prefix
+      // duplicates the path prefix already present in callbackPath before investigating further.
       http.addFilterBefore(
           new OidcRedirectDiagnosticsFilter(callbackPath),
           OAuth2AuthorizationRequestRedirectFilter.class);
