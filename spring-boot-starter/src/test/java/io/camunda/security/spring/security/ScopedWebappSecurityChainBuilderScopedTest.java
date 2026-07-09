@@ -40,7 +40,6 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.DefaultSecurityFilterChain;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.session.MapSessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
@@ -386,7 +385,6 @@ class ScopedWebappSecurityChainBuilderScopedTest {
         final HttpSecurity http,
         final ScopedWebappSecurityChainBuilder builder,
         final ObjectProvider<OidcTokenEndpointCustomizer> tokenEndpointCustomizerProvider,
-        final ObjectProvider<LogoutSuccessHandler> logoutSuccessHandlerProvider,
         final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
         final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider)
         throws Exception {

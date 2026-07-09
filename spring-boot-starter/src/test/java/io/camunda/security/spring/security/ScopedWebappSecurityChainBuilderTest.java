@@ -9,7 +9,9 @@ package io.camunda.security.spring.security;
 
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.LOGIN_URL;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
@@ -102,5 +104,52 @@ class ScopedWebappSecurityChainBuilderTest {
             ScopedWebappSecurityChainBuilder.resolveOauthRedirectTarget(
                 repo, LOGIN_URL, PRIMARY_AUTH_BASE_URI))
         .isEqualTo("/oauth2/authorization/oidc");
+  }
+
+  // post_logout_redirect_uri template: "{baseUrl}" + prefix + route
+
+  /** Primary chain uses the empty prefix, so the route sits directly under {@code {baseUrl}}. */
+  @Test
+  void primaryPrefixProducesUnprefixedTemplate() {
+    assertThat(
+            ScopedWebappSecurityChainBuilder.postLogoutRedirectUri("", Optional.of("/post-logout")))
+        .isEqualTo("{baseUrl}/post-logout");
+  }
+
+  /**
+   * Scoped chain prepends its normalized base path (that {@code {baseUrl}} would otherwise drop),
+   * so the redirect resolves under the scope. Also proves the single-slash join.
+   */
+  @Test
+  void scopedPrefixIsPrependedToTemplate() {
+    assertThat(
+            ScopedWebappSecurityChainBuilder.postLogoutRedirectUri(
+                "/physical-tenants/t1", Optional.of("/post-logout")))
+        .isEqualTo("{baseUrl}/physical-tenants/t1/post-logout");
+  }
+
+  /** No route configured (the default): callers send no {@code post_logout_redirect_uri}. */
+  @Test
+  void absentRouteProducesEmptyTemplate() {
+    assertThat(ScopedWebappSecurityChainBuilder.postLogoutRedirectUri("", Optional.empty()))
+        .isEmpty();
+  }
+
+  /** A blank route is treated as absent. */
+  @Test
+  void blankRouteProducesEmptyTemplate() {
+    assertThat(ScopedWebappSecurityChainBuilder.postLogoutRedirectUri("", Optional.of(" ")))
+        .isEmpty();
+  }
+
+  /** A route without a leading slash is malformed for IdP allow-listing; fail fast at build. */
+  @Test
+  void routeWithoutLeadingSlashThrows() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(
+            () ->
+                ScopedWebappSecurityChainBuilder.postLogoutRedirectUri(
+                    "", Optional.of("post-logout")))
+        .withMessageContaining("must start with '/'");
   }
 }

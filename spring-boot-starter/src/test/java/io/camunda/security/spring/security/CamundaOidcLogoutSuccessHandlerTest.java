@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -373,6 +374,28 @@ class CamundaOidcLogoutSuccessHandlerTest {
 
     assertThat(response.getStatus()).isEqualTo(302);
     assertThat(response.getRedirectedUrl()).contains("https://idp.com/logout");
+  }
+
+  /** A scoped chain's {@code post_logout_redirect_uri} resolves under the scope's base path. */
+  @Test
+  void scopedPostLogoutRedirectUriResolvesUnderScopeBasePath() {
+    handler.setPostLogoutRedirectUri(
+        ScopedWebappSecurityChainBuilder.postLogoutRedirectUri(
+            "/physical-tenants/t1", Optional.of("/post-logout")));
+    final MockHttpServletRequest request = requestWithReferer(SAME_ORIGIN_REFERER);
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    final String targetUrl =
+        handler.determineTargetUrl(
+            request, new MockHttpServletResponse(), oidcAuthentication(null));
+
+    final MultiValueMap<String, String> query = queryParams(targetUrl, "idp.com", "/logout");
+    assertThat(
+            URLDecoder.decode(
+                Objects.requireNonNull(query.getFirst("post_logout_redirect_uri")),
+                StandardCharsets.UTF_8))
+        .isEqualTo("https://camunda.com/component/physical-tenants/t1/post-logout");
   }
 
   private static MultiValueMap<String, String> queryParams(
