@@ -168,6 +168,7 @@ public final class AuthorizationService implements AuthorizationCheckPort {
    * @return {@link Either#right(Object) right(null)} when authorized or when authorization is
    *     disabled; {@link Either#left(Object) left(rejection)} otherwise
    */
+  @Override
   public <T> Either<AuthorizationRejection, Void> check(
       final CamundaAuthentication authentication,
       final RequiredAuthorization<T> authorization,

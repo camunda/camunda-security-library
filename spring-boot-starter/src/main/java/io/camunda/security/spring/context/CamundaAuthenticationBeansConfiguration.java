@@ -11,6 +11,7 @@ import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.context.CamundaAuthenticationHolder;
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.api.context.MembershipResolutionContextPropagator;
+import io.camunda.security.core.authz.AuthorizationServiceFactory;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.context.holder.CamundaAuthenticationDelegatingHolder;
 import io.camunda.security.core.port.out.MembershipPort;
@@ -90,7 +91,7 @@ public class CamundaAuthenticationBeansConfiguration {
       final MembershipPort membershipPort,
       final MembershipResolutionContextPropagator contextPropagator) {
     final var oidc = properties.getAuthentication().getOidc();
-    return new LazyTokenClaimsConverter(
+    return AuthorizationServiceFactory.newTokenClaimsConverter(
         oidc.getUsernameClaim(),
         oidc.getClientIdClaim(),
         oidc.isPreferUsernameClaim(),
