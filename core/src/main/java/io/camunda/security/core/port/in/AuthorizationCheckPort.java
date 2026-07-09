@@ -34,4 +34,24 @@ public interface AuthorizationCheckPort {
    */
   <T> Either<AuthorizationRejection, Void> check(
       Map<String, Object> claims, RequiredAuthorization<T> authorization);
+
+  /**
+   * Property-based authorization check. Evaluates whether the principal is authorized to access the
+   * concrete {@code resource} instance via a stored property-scoped grant declared in {@code
+   * authorization} whose registered evaluator matches the resource.
+   *
+   * <p>Distinct from the scope-based {@link #check(CamundaAuthentication, RequiredAuthorization)}:
+   * property-based authorization requires the concrete resource instance to evaluate the property
+   * against. Lifting it onto the port (rather than only the concrete implementation) lets consumers
+   * that need property checks depend on this interface instead of the implementation type. See
+   * ADR-0033.
+   *
+   * @param authentication the resolved authentication context of the caller
+   * @param authorization the authorization requirement declaring resource property names
+   * @param resource the resource instance to evaluate declared properties against
+   * @return {@link Either#right(Object) right(null)} when authorized or when authorization is
+   *     disabled; {@link Either#left(Object) left(rejection)} otherwise
+   */
+  <T> Either<AuthorizationRejection, Void> check(
+      CamundaAuthentication authentication, RequiredAuthorization<T> authorization, T resource);
 }

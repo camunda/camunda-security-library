@@ -8,6 +8,7 @@
 package io.camunda.security.core.authz;
 
 import io.camunda.security.api.context.MembershipResolutionContextPropagator;
+import io.camunda.security.api.context.TokenClaimsAuthenticationResolver;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.oidc.OidcPrincipalLoader;
 import io.camunda.security.core.port.out.MembershipPort;
@@ -29,8 +30,12 @@ import org.slf4j.LoggerFactory;
  *
  * <p>See ADR-0028 for why the constructor accepts primitive claim strings rather than {@code
  * OidcConfiguration}: it keeps {@code core} free of config-object coupling.
+ *
+ * <p>Implements the {@link TokenClaimsAuthenticationResolver} {@code api} port (see ADR-0033) so
+ * non-Spring consumers can depend on the public port rather than this concrete {@code core} type.
+ * The port method {@link #resolve(Map)} delegates to the pre-existing {@link #convert(Map)}.
  */
-public final class LazyTokenClaimsConverter {
+public final class LazyTokenClaimsConverter implements TokenClaimsAuthenticationResolver {
 
   private static final Logger LOG = LoggerFactory.getLogger(LazyTokenClaimsConverter.class);
 
@@ -74,6 +79,11 @@ public final class LazyTokenClaimsConverter {
     this.membershipPort = Objects.requireNonNull(membershipPort, "membershipPort");
     this.contextPropagator = Objects.requireNonNull(contextPropagator, "contextPropagator");
     oidcPrincipalLoader = new OidcPrincipalLoader(usernameClaim, clientIdClaim);
+  }
+
+  @Override
+  public CamundaAuthentication resolve(final Map<String, Object> claims) {
+    return convert(claims);
   }
 
   public CamundaAuthentication convert(final Map<String, Object> claims) {

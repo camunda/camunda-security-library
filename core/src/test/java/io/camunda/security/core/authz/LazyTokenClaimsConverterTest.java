@@ -57,6 +57,20 @@ class LazyTokenClaimsConverterTest {
   }
 
   @Test
+  void resolvePortMethodConvertsClaimsToAuthentication() {
+    // given
+    final io.camunda.security.api.context.TokenClaimsAuthenticationResolver resolver = converter;
+    final var claims = Map.<String, Object>of("sub", "alice");
+
+    // when
+    final var auth = resolver.resolve(claims);
+
+    // then
+    assertThat(auth.authenticatedUsername()).isEqualTo("alice");
+    assertThat(auth.claims()).isEqualTo(claims);
+  }
+
+  @Test
   void portIsNotInvokedUntilFieldIsRead() {
     converter.convert(Map.of("sub", "alice"));
 

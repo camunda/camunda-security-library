@@ -95,6 +95,38 @@ class AuthorizationConfigurationTest {
   }
 
   @Test
+  void authorizationServiceUsesHostSuppliedAuthorizationChecker() {
+    // given a host-overridden checker bean, the assembled service must delegate scope checks to it
+    when(mockChecker.isAuthorized(
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any()))
+        .thenReturn(true);
+    runner
+        .withPropertyValues("camunda.security.authorizations.enabled=true")
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
+        .run(
+            ctx -> {
+              // when
+              final var service = ctx.getBean(AuthorizationService.class);
+              final var auth =
+                  io.camunda.security.api.model.CamundaAuthentication.of(b -> b.user("alice"));
+              final var req =
+                  io.camunda.security.core.auth.RequiredAuthorization.of(
+                      b -> b.processDefinition().readProcessDefinition().resourceId("p1"));
+              final var result = service.check(auth, req);
+
+              // then the host checker was consulted and its result honoured
+              assertThat(result.isRight()).isTrue();
+              org.mockito.Mockito.verify(mockChecker)
+                  .isAuthorized(
+                      org.mockito.ArgumentMatchers.any(),
+                      org.mockito.ArgumentMatchers.eq(auth),
+                      org.mockito.ArgumentMatchers.any());
+            });
+  }
+
+  @Test
   void authorizationServiceUsesPropertiesFlags() {
     runner
         .withPropertyValues(
