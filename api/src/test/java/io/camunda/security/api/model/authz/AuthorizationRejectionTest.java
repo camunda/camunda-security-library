@@ -74,6 +74,16 @@ class AuthorizationRejectionTest {
   }
 
   @Test
+  void propertyRejectionRejectsNullPropertyNames() {
+    assertThatThrownBy(
+            () ->
+                new AuthorizationRejection.Property(
+                    AuthorizationResourceType.USER_TASK, PermissionType.READ, null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("propertyNames");
+  }
+
+  @Test
   void propertyRejectionSortsPropertyNames() {
     final var r =
         new AuthorizationRejection.Property(
