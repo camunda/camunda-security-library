@@ -7,6 +7,7 @@
  */
 package io.camunda.security.core.port.out;
 
+import io.camunda.security.api.model.authz.AuthorizationResourceMatcher;
 import io.camunda.security.api.model.authz.AuthorizationResourceType;
 import io.camunda.security.api.model.authz.AuthorizationScope;
 import io.camunda.security.api.model.authz.EntityType;
@@ -25,9 +26,10 @@ import java.util.Set;
  * extracting the relevant principal identities from the authentication object before invoking the
  * port.
  *
- * <p>The three methods cover the three query patterns {@code AuthorizationChecker} needs: bulk
- * scope retrieval for search pre-filtering, point scope existence checks for get-by-id operations,
- * and permission discovery for resource detail views.
+ * <p>The core query patterns {@code AuthorizationChecker} needs: bulk scope retrieval for search
+ * pre-filtering, property-scoped bulk retrieval for the property-based authorization check, point
+ * scope existence checks for get-by-id operations, and permission discovery for resource detail
+ * views.
  */
 public interface AuthorizationScopeRepositoryPort {
 
@@ -46,6 +48,37 @@ public interface AuthorizationScopeRepositoryPort {
       Map<EntityType, Set<String>> ownerIds,
       AuthorizationResourceType resourceType,
       PermissionType permissionType);
+
+  /**
+   * Returns the {@link AuthorizationScope} records with matcher {@link
+   * AuthorizationResourceMatcher#PROPERTY} that the given owners hold for the specified resource
+   * type and permission, restricted to {@code propertyNames}. Used by the property-based
+   * authorization check, which trusts this contract and does not re-filter the result.
+   *
+   * <p><strong>Contract:</strong> every returned scope must have matcher {@code PROPERTY} and a
+   * {@code resourcePropertyName} contained in {@code propertyNames}. The default implementation
+   * delegates to {@link #findAuthorizedScopes} and filters in memory, so it changes no behavior for
+   * hosts that don't override it. Hosts with a large scope volume per principal should override
+   * this with a store-level filtered query to avoid the property check pulling every scope for the
+   * (resourceType, permissionType) pair.
+   *
+   * @param ownerIds a map of entity type to the set of IDs belonging to that entity type for the
+   *     authenticated principal (user ID, client ID, group IDs, role IDs, mapping-rule IDs)
+   * @param resourceType the type of resource being accessed
+   * @param permissionType the permission being exercised
+   * @param propertyNames the declared resource property names to restrict the result to
+   * @return the matching PROPERTY-scoped authorization scopes, or an empty list if none exist
+   */
+  default List<AuthorizationScope> findAuthorizedPropertyScopes(
+      final Map<EntityType, Set<String>> ownerIds,
+      final AuthorizationResourceType resourceType,
+      final PermissionType permissionType,
+      final Set<String> propertyNames) {
+    return findAuthorizedScopes(ownerIds, resourceType, permissionType).stream()
+        .filter(scope -> scope.getMatcher() == AuthorizationResourceMatcher.PROPERTY)
+        .filter(scope -> propertyNames.contains(scope.getResourcePropertyName()))
+        .toList();
+  }
 
   /**
    * Returns {@code true} if any authorization record exists that grants the given owners access to

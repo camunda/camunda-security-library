@@ -34,10 +34,12 @@ import org.slf4j.LoggerFactory;
  * results (rather than throwing) when the authentication carries no identifiable principal — this
  * covers anonymous and unset authentication contexts.
  *
- * <p>The three public methods correspond to the three query patterns used by OC:
+ * <p>The public methods correspond to the query patterns used by OC:
  *
  * <ul>
  *   <li>{@link #retrieveAuthorizedAuthorizationScopes} — bulk scope fetch for search pre-filtering
+ *   <li>{@link #retrieveAuthorizedPropertyScopes} — bulk property-scope fetch for the
+ *       property-based authorization check
  *   <li>{@link #isAuthorized} — point check for get-by-id operations
  *   <li>{@link #collectPermissionTypes} — permission discovery for resource detail views
  * </ul>
@@ -83,6 +85,42 @@ public final class AuthorizationChecker {
                   ownerIds, authorization.resourceType(), authorization.permissionType());
           LOG.debug(
               "Retrieved {} authorization scope(s) for resource type [{}], permission [{}]",
+              scopes.size(),
+              authorization.resourceType(),
+              authorization.permissionType());
+          return scopes;
+        },
+        List::of);
+  }
+
+  /**
+   * Returns the {@code PROPERTY}-matcher {@link AuthorizationScope} records the principal holds for
+   * the resource type and permission declared in {@code authorization}, restricted to {@code
+   * propertyNames}. Used by the property-based authorization check to avoid pulling every scope for
+   * the (resourceType, permissionType) pair.
+   *
+   * <p>Returns an empty list when the authentication carries no identifiable principal (anonymous
+   * or unset).
+   *
+   * @param authentication the resolved authentication context of the caller
+   * @param authorization the authorization requirement specifying the resource type and permission
+   * @param propertyNames the declared resource property names to restrict the result to
+   */
+  public List<AuthorizationScope> retrieveAuthorizedPropertyScopes(
+      final CamundaAuthentication authentication,
+      final RequiredAuthorization<?> authorization,
+      final Set<String> propertyNames) {
+    return getOrElseDefaultResult(
+        authentication,
+        ownerIds -> {
+          final var scopes =
+              scopeRepository.findAuthorizedPropertyScopes(
+                  ownerIds,
+                  authorization.resourceType(),
+                  authorization.permissionType(),
+                  propertyNames);
+          LOG.debug(
+              "Retrieved {} property authorization scope(s) for resource type [{}], permission [{}]",
               scopes.size(),
               authorization.resourceType(),
               authorization.permissionType());
