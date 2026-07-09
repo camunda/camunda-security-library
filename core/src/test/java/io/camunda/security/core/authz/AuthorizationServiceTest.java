@@ -28,6 +28,7 @@ import io.camunda.security.core.port.out.MembershipPort;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -226,8 +227,8 @@ class AuthorizationServiceTest {
   }
 
   @Test
-  void propertyCheckReturnsRightWhenGrantedPropertyScopeAndEvaluatorApprove() {
-    when(authorizationChecker.retrieveAuthorizedAuthorizationScopes(eq(alice), any()))
+  void propertyCheckReturnsRightWhenGrantedPropertyScopeAndEvaluatorApproves() {
+    when(authorizationChecker.retrieveAuthorizedPropertyScopes(eq(alice), any(), any()))
         .thenReturn(List.of(AuthorizationScope.property(RequiredAuthorization.PROP_ASSIGNEE)));
     when(evaluator.isAuthorized(alice, "task-1")).thenReturn(true);
     when(propertyEvaluatorRegistry.<String>findEvaluator(RequiredAuthorization.PROP_ASSIGNEE))
@@ -239,7 +240,7 @@ class AuthorizationServiceTest {
 
   @Test
   void propertyCheckReturnsRejectionWhenGrantedScopeButEvaluatorDenies() {
-    when(authorizationChecker.retrieveAuthorizedAuthorizationScopes(eq(alice), any()))
+    when(authorizationChecker.retrieveAuthorizedPropertyScopes(eq(alice), any(), any()))
         .thenReturn(List.of(AuthorizationScope.property(RequiredAuthorization.PROP_ASSIGNEE)));
     when(evaluator.isAuthorized(alice, "task-1")).thenReturn(false);
     when(propertyEvaluatorRegistry.<String>findEvaluator(RequiredAuthorization.PROP_ASSIGNEE))
@@ -250,14 +251,14 @@ class AuthorizationServiceTest {
     assertThat(result.isLeft()).isTrue();
     assertThat(result.leftValue())
         .isEqualTo(
-            new AuthorizationRejection.Permission(
-                USER_TASK, READ_USER_TASK, RequiredAuthorization.PROP_ASSIGNEE));
+            new AuthorizationRejection.Property(
+                USER_TASK, READ_USER_TASK, Set.of(RequiredAuthorization.PROP_ASSIGNEE)));
   }
 
   @Test
   void propertyCheckReturnsRejectionWhenNoStoredScopeEvenIfResourceMatches() {
     // core fix: matching the resource property must NOT authorize without a stored property grant
-    when(authorizationChecker.retrieveAuthorizedAuthorizationScopes(eq(alice), any()))
+    when(authorizationChecker.retrieveAuthorizedPropertyScopes(eq(alice), any(), any()))
         .thenReturn(List.of());
     final var req =
         RequiredAuthorization.of(b -> b.userTask().readUserTask().authorizedByAssignee());
@@ -265,36 +266,14 @@ class AuthorizationServiceTest {
     assertThat(result.isLeft()).isTrue();
     assertThat(result.leftValue())
         .isEqualTo(
-            new AuthorizationRejection.Permission(
-                USER_TASK, READ_USER_TASK, RequiredAuthorization.PROP_ASSIGNEE));
-    verifyNoInteractions(propertyEvaluatorRegistry);
-  }
-
-  @Test
-  void propertyCheckIgnoresNonPropertyScopes() {
-    when(authorizationChecker.retrieveAuthorizedAuthorizationScopes(eq(alice), any()))
-        .thenReturn(List.of(AuthorizationScope.id("task-1"), AuthorizationScope.WILDCARD));
-    final var req =
-        RequiredAuthorization.of(b -> b.userTask().readUserTask().authorizedByAssignee());
-    assertThat(service(true, false).check(alice, req, "task-1").isLeft()).isTrue();
-    verifyNoInteractions(propertyEvaluatorRegistry);
-  }
-
-  @Test
-  void propertyCheckIgnoresGrantedScopeNotDeclaredInAuthorization() {
-    // granted a candidateGroups property scope, but the request only asks about assignee
-    when(authorizationChecker.retrieveAuthorizedAuthorizationScopes(eq(alice), any()))
-        .thenReturn(
-            List.of(AuthorizationScope.property(RequiredAuthorization.PROP_CANDIDATE_GROUPS)));
-    final var req =
-        RequiredAuthorization.of(b -> b.userTask().readUserTask().authorizedByAssignee());
-    assertThat(service(true, false).check(alice, req, "task-1").isLeft()).isTrue();
+            new AuthorizationRejection.Property(
+                USER_TASK, READ_USER_TASK, Set.of(RequiredAuthorization.PROP_ASSIGNEE)));
     verifyNoInteractions(propertyEvaluatorRegistry);
   }
 
   @Test
   void propertyCheckReturnsRejectionWhenGrantedPropertyHasNoEvaluator() {
-    when(authorizationChecker.retrieveAuthorizedAuthorizationScopes(eq(alice), any()))
+    when(authorizationChecker.retrieveAuthorizedPropertyScopes(eq(alice), any(), any()))
         .thenReturn(List.of(AuthorizationScope.property(RequiredAuthorization.PROP_ASSIGNEE)));
     when(propertyEvaluatorRegistry.findEvaluator(any())).thenReturn(Optional.empty());
     final var req =
@@ -305,7 +284,7 @@ class AuthorizationServiceTest {
   @Test
   void propertyCheckAuthorizesWhenAnyDeclaredGrantedPropertyMatches() {
     // request declares assignee + candidateGroups; principal holds a matching candidateGroups grant
-    when(authorizationChecker.retrieveAuthorizedAuthorizationScopes(eq(alice), any()))
+    when(authorizationChecker.retrieveAuthorizedPropertyScopes(eq(alice), any(), any()))
         .thenReturn(
             List.of(AuthorizationScope.property(RequiredAuthorization.PROP_CANDIDATE_GROUPS)));
     when(evaluator.isAuthorized(alice, "task-1")).thenReturn(true);
@@ -319,8 +298,8 @@ class AuthorizationServiceTest {
   }
 
   @Test
-  void propertyCheckRejectionListsDeclaredPropertiesSorted() {
-    when(authorizationChecker.retrieveAuthorizedAuthorizationScopes(eq(alice), any()))
+  void propertyCheckRejectionListsAllDeclaredPropertyNames() {
+    when(authorizationChecker.retrieveAuthorizedPropertyScopes(eq(alice), any(), any()))
         .thenReturn(List.of());
     final var req =
         RequiredAuthorization.of(
@@ -329,12 +308,12 @@ class AuthorizationServiceTest {
     assertThat(result.isLeft()).isTrue();
     assertThat(result.leftValue())
         .isEqualTo(
-            new AuthorizationRejection.Permission(
+            new AuthorizationRejection.Property(
                 USER_TASK,
                 READ_USER_TASK,
-                RequiredAuthorization.PROP_ASSIGNEE
-                    + ","
-                    + RequiredAuthorization.PROP_CANDIDATE_USERS));
+                Set.of(
+                    RequiredAuthorization.PROP_ASSIGNEE,
+                    RequiredAuthorization.PROP_CANDIDATE_USERS)));
   }
 
   // --- claims-map check overload ---

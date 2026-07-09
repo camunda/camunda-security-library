@@ -163,6 +163,40 @@ class AuthorizationCheckerTest {
   }
 
   @Nested
+  class RetrieveAuthorizedPropertyScopes {
+
+    @Test
+    void delegatesToPortWithUserOwnerIdsAndPropertyNames() {
+      final var auth = CamundaAuthentication.of(a -> a.user("alice"));
+      final var authorization = RequiredAuthorization.of(a -> a.userTask().readUserTask());
+      final var expectedScope = AuthorizationScope.property("assignee");
+      when(scopeRepository.findAuthorizedPropertyScopes(
+              eq(Map.of(EntityType.USER, Set.of("alice"))),
+              eq(AuthorizationResourceType.USER_TASK),
+              eq(PermissionType.READ_USER_TASK),
+              eq(Set.of("assignee"))))
+          .thenReturn(List.of(expectedScope));
+
+      final var result =
+          authorizationChecker.retrieveAuthorizedPropertyScopes(
+              auth, authorization, Set.of("assignee"));
+
+      assertThat(result).containsExactly(expectedScope);
+    }
+
+    @Test
+    void returnsEmptyListWhenOwnerIdsIsEmpty() {
+      final var authorization = RequiredAuthorization.of(a -> a.userTask().readUserTask());
+
+      final var result =
+          authorizationChecker.retrieveAuthorizedPropertyScopes(
+              CamundaAuthentication.of(a -> a), authorization, Set.of("assignee"));
+
+      assertThat(result).isEmpty();
+    }
+  }
+
+  @Nested
   class IsAuthorized {
 
     @Test

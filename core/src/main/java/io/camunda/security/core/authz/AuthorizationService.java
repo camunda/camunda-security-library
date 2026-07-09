@@ -181,17 +181,12 @@ public final class AuthorizationService implements AuthorizationCheckPort {
     }
 
     final Set<String> declaredPropertyNames = authorization.resourcePropertyNames();
-    final List<AuthorizationScope> grantedScopes =
-        authorizationChecker.retrieveAuthorizedAuthorizationScopes(authentication, authorization);
+    final List<AuthorizationScope> grantedPropertyScopes =
+        authorizationChecker.retrieveAuthorizedPropertyScopes(
+            authentication, authorization, declaredPropertyNames);
 
-    for (final AuthorizationScope scope : grantedScopes) {
-      if (scope.getMatcher() != AuthorizationResourceMatcher.PROPERTY) {
-        continue;
-      }
+    for (final AuthorizationScope scope : grantedPropertyScopes) {
       final String propertyName = scope.getResourcePropertyName();
-      if (!declaredPropertyNames.contains(propertyName)) {
-        continue;
-      }
       final Optional<PropertyAuthorizationEvaluator<T>> maybeEvaluator =
           propertyEvaluatorRegistry.findEvaluator(propertyName);
       if (maybeEvaluator.isPresent()
@@ -200,8 +195,7 @@ public final class AuthorizationService implements AuthorizationCheckPort {
       }
     }
 
-    final String sortedDeclaredPropertyNames =
-        String.join(",", new TreeSet<>(declaredPropertyNames));
+    final Set<String> sortedDeclaredPropertyNames = new TreeSet<>(declaredPropertyNames);
 
     LOG.debug(
         "Property-based authorization denied for [{}] on [{}] properties {} of resource type [{}]",
@@ -210,7 +204,7 @@ public final class AuthorizationService implements AuthorizationCheckPort {
         sortedDeclaredPropertyNames,
         authorization.resourceType());
     return Either.left(
-        new AuthorizationRejection.Permission(
+        new AuthorizationRejection.Property(
             authorization.resourceType(),
             authorization.permissionType(),
             sortedDeclaredPropertyNames));

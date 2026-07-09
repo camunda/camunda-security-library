@@ -9,6 +9,7 @@ package io.camunda.security.api.model.authz;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class AuthorizationRejectionTest {
@@ -53,6 +54,24 @@ class AuthorizationRejectionTest {
   }
 
   @Test
+  void propertyRejectionHoldsAllFields() {
+    final var r =
+        new AuthorizationRejection.Property(
+            AuthorizationResourceType.USER_TASK, PermissionType.READ, Set.of("assignee"));
+    assertThat(r.resourceType()).isEqualTo(AuthorizationResourceType.USER_TASK);
+    assertThat(r.permissionType()).isEqualTo(PermissionType.READ);
+    assertThat(r.propertyNames()).containsExactly("assignee");
+  }
+
+  @Test
+  void propertyIsInstanceOfAuthorizationRejection() {
+    assertThat(
+            new AuthorizationRejection.Property(
+                AuthorizationResourceType.USER_TASK, PermissionType.READ, Set.of("assignee")))
+        .isInstanceOf(AuthorizationRejection.class);
+  }
+
+  @Test
   void switchOnSubtypeIsExhaustive() {
     // Compile-time exhaustiveness check — adding a new subtype breaks this.
     final AuthorizationRejection r = new AuthorizationRejection.Tenant("t");
@@ -60,6 +79,7 @@ class AuthorizationRejectionTest {
         switch (r) {
           case AuthorizationRejection.Tenant t -> "tenant:" + t.tenantId();
           case AuthorizationRejection.Permission p -> "permission:" + p.resourceId();
+          case AuthorizationRejection.Property p -> "property:" + p.propertyNames();
         };
     assertThat(label).isEqualTo("tenant:t");
   }
