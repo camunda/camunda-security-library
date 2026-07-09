@@ -13,10 +13,13 @@ import io.camunda.security.core.oidc.OidcPrincipalLoader;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.core.port.out.MembershipPort.PrincipalType;
 import io.camunda.security.core.port.out.MembershipQuery;
+import java.net.URI;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Converts a raw {@code Map<String, Object>} claims map into a {@link CamundaAuthentication} with
@@ -28,6 +31,16 @@ import java.util.Objects;
  * OidcConfiguration}: it keeps {@code core} free of config-object coupling.
  */
 public final class LazyTokenClaimsConverter {
+
+  private static final Logger LOG = LoggerFactory.getLogger(LazyTokenClaimsConverter.class);
+
+  // Microsoft identity platform issuer hosts. v2.0 tokens are issued by login.microsoftonline.com
+  // (issuer ends in /v2.0); v1.0 tokens are issued by sts.windows.net.
+  private static final String MS_ISSUER_V2_HOST = "login.microsoftonline.com";
+  private static final String MS_ISSUER_V1_HOST = "sts.windows.net";
+  private static final String ISSUER_CLAIM = "iss";
+  private static final String TOKEN_VERSION_CLAIM = "ver";
+  private static final String REQUIRED_ENTRA_TOKEN_VERSION = "2.0";
 
   private final OidcPrincipalLoader oidcPrincipalLoader;
   private final boolean preferUsernameClaim;
@@ -64,6 +77,7 @@ public final class LazyTokenClaimsConverter {
   }
 
   public CamundaAuthentication convert(final Map<String, Object> claims) {
+    validateEntraTokenVersion(claims);
     final Map<String, Object> snapshotClaims =
         Collections.unmodifiableMap(
             new HashMap<>(claims)); // snapshot; lazy resolution sees a stable map
@@ -128,5 +142,53 @@ public final class LazyTokenClaimsConverter {
               .tenantsSupplier(() -> lazyTenantIds)
               .claims(snapshotClaims);
         });
+  }
+
+  /**
+   * Fails authentication hard when a Microsoft Entra (Azure AD) token is not a v2.0 token.
+   *
+   * <p>This converter runs on both access-token claims (API/bearer flow) and ID-token claims
+   * (webapp login flow), so two distinct misconfigurations land here. Access tokens are emitted as
+   * v1.0 when the app registration leaves {@code api.requestedAccessTokenVersion} unset; ID tokens
+   * are v1.0 when the v1.0 authority is used instead of a {@code /v2.0} issuer endpoint. Both
+   * surface as {@code iss=sts.windows.net}, {@code ver=1.0}, fail downstream validation, and
+   * typically manifest as a silent redirect loop back to Entra. Detecting the mismatch here turns
+   * that into a clear, actionable failure for operators.
+   */
+  private void validateEntraTokenVersion(final Map<String, Object> tokenClaims) {
+    final Object issuer = tokenClaims.get(ISSUER_CLAIM);
+    if (!(issuer instanceof final String issuerUri) || !isMicrosoftIssuer(issuerUri)) {
+      return;
+    }
+
+    final Object version = tokenClaims.get(TOKEN_VERSION_CLAIM);
+    if (REQUIRED_ENTRA_TOKEN_VERSION.equals(version)) {
+      return;
+    }
+
+    // Logged at WARN, not ERROR: this is a client/configuration fault (a bad incoming token) that
+    // is per-request and fully caller-controllable, so a client replaying a v1 token must not be
+    // able to flood ERROR logs or trip alerting. No stacktrace is logged for the same reason.
+    LOG.warn(
+        "Rejected a Microsoft Entra token from issuer '{}' with an unsupported token version (ver='{}'). "
+            + "Camunda requires v2.0 tokens. For access tokens (API/bearer flow), set 'api.requestedAccessTokenVersion' to 2 "
+            + "in the Entra app registration manifest (Azure portal: App registrations > your app > Manifest). For ID tokens "
+            + "(webapp login flow), configure the v2.0 authority by using an issuer-uri that ends in '/v2.0'. Then retry; "
+            + "v1.0 tokens otherwise fail validation and cause a redirect loop back to Entra.",
+        issuerUri,
+        version);
+
+    throw new IllegalArgumentException(
+        "Microsoft Entra token version '%s' is not supported; v2.0 is required. For access tokens, set api.requestedAccessTokenVersion = 2 in the Entra app registration manifest; for ID tokens (login flow), use a v2.0 issuer-uri ending in /v2.0."
+            .formatted(version));
+  }
+
+  private static boolean isMicrosoftIssuer(final String issuerUri) {
+    try {
+      final String host = URI.create(issuerUri).getHost();
+      return MS_ISSUER_V2_HOST.equalsIgnoreCase(host) || MS_ISSUER_V1_HOST.equalsIgnoreCase(host);
+    } catch (final RuntimeException e) {
+      return false;
+    }
   }
 }

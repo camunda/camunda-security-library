@@ -70,6 +70,7 @@ public class OidcConfiguration {
   private boolean userInfoEnabled = DEFAULT_USER_INFO_ENABLED;
   private OidcUserInfoAugmentationConfiguration userInfoAugmentation =
       new OidcUserInfoAugmentationConfiguration();
+  private OidcDiagnosticsConfiguration diagnostics = new OidcDiagnosticsConfiguration();
 
   public void validate() {
     if (assertionConfiguration != null) {
@@ -324,6 +325,14 @@ public class OidcConfiguration {
     this.userInfoAugmentation = userInfoAugmentation;
   }
 
+  public OidcDiagnosticsConfiguration getDiagnostics() {
+    return diagnostics;
+  }
+
+  public void setDiagnostics(final OidcDiagnosticsConfiguration diagnostics) {
+    this.diagnostics = diagnostics != null ? diagnostics : new OidcDiagnosticsConfiguration();
+  }
+
   /**
    * Returns whether any OIDC property deviates from the default configuration.
    *
@@ -371,7 +380,8 @@ public class OidcConfiguration {
         || currentAssertionConfiguration.getKidDigestAlgorithm() != KidDigestAlgorithm.SHA256
         || currentAssertionConfiguration.getKidEncoding() != KidEncoding.BASE64URL
         || currentAssertionConfiguration.getKidCase() != null
-        || !DEFAULT_CLOCK_SKEW.equals(clockSkew);
+        || !DEFAULT_CLOCK_SKEW.equals(clockSkew)
+        || diagnostics.isEnabled();
   }
 
   public static Builder builder() {
@@ -410,6 +420,7 @@ public class OidcConfiguration {
     private boolean userInfoEnabled = DEFAULT_USER_INFO_ENABLED;
     private OidcUserInfoAugmentationConfiguration userInfoAugmentation =
         new OidcUserInfoAugmentationConfiguration();
+    private OidcDiagnosticsConfiguration diagnostics = new OidcDiagnosticsConfiguration();
 
     public Builder issuerUri(final String issuerUri) {
       this.issuerUri = issuerUri;
@@ -590,6 +601,7 @@ public class OidcConfiguration {
       config.setIdpLogoutEnabled(idpLogoutEnabled);
       config.setUserInfoEnabled(userInfoEnabled);
       config.setUserInfoAugmentation(userInfoAugmentation);
+      config.setDiagnostics(diagnostics);
       return config;
     }
   }

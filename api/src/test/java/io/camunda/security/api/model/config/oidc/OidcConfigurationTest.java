@@ -254,6 +254,15 @@ public class OidcConfigurationTest {
             OidcConfiguration.builder()
                 .assertionConfiguration(AssertionConfiguration.builder().build())
                 .build(),
-            false));
+            false),
+        Arguments.of("diagnostics.enabled is set", oidcConfigWithEnabledDiagnostics(), true));
+  }
+
+  private static OidcConfiguration oidcConfigWithEnabledDiagnostics() {
+    final var diagnostics = new OidcDiagnosticsConfiguration();
+    diagnostics.setEnabled(true);
+    final var config = new OidcConfiguration();
+    config.setDiagnostics(diagnostics);
+    return config;
   }
 }

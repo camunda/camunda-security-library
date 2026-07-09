@@ -8,6 +8,7 @@
 package io.camunda.security.core.authz;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -160,6 +161,55 @@ class LazyTokenClaimsConverterTest {
     // then the host context was bound while the membership lookup ran, and cleared afterwards
     assertThat(observedDuringLookup.get()).isEqualTo("bound");
     assertThat(boundContext.get()).isNull();
+  }
+
+  @Test
+  void rejectsEntraV1TokenFromStsWindowsNet() {
+    // given - a v1.0 access token from sts.windows.net (api.requestedAccessTokenVersion not set)
+    final var claims =
+        Map.<String, Object>of(
+            "sub", "alice",
+            "iss", "https://sts.windows.net/tenant-id/",
+            "ver", "1.0");
+
+    assertThatThrownBy(() -> converter.convert(claims))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("v2.0 is required");
+  }
+
+  @Test
+  void rejectsEntraV1TokenFromLoginMicrosoftonlineCom() {
+    // given - an ID token from the v1.0 authority (issuer does not end in /v2.0)
+    final var claims =
+        Map.<String, Object>of(
+            "sub", "alice",
+            "iss", "https://login.microsoftonline.com/tenant-id/",
+            "ver", "1.0");
+
+    assertThatThrownBy(() -> converter.convert(claims))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("v2.0 is required");
+  }
+
+  @Test
+  void acceptsEntraV2TokenFromLoginMicrosoftonlineCom() {
+    // given - a valid v2.0 token from login.microsoftonline.com
+    final var claims =
+        Map.<String, Object>of(
+            "sub", "alice",
+            "iss", "https://login.microsoftonline.com/tenant-id/v2.0",
+            "ver", "2.0");
+
+    assertThatNoException().isThrownBy(() -> converter.convert(claims));
+  }
+
+  @Test
+  void nonMicrosoftIssuerIsUnaffectedByEntraGuard() {
+    // given - a token from a non-Microsoft issuer with no ver claim
+    final var claims =
+        Map.<String, Object>of("sub", "alice", "iss", "https://keycloak.example.com/realms/main");
+
+    assertThatNoException().isThrownBy(() -> converter.convert(claims));
   }
 
   @Test
