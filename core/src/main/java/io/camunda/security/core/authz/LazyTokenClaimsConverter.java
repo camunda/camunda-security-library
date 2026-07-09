@@ -31,7 +31,7 @@ import org.slf4j.LoggerFactory;
  * <p>See ADR-0028 for why the constructor accepts primitive claim strings rather than {@code
  * OidcConfiguration}: it keeps {@code core} free of config-object coupling.
  *
- * <p>Implements the {@link TokenClaimsAuthenticationResolver} {@code api} port (see ADR-0033) so
+ * <p>Implements the {@link TokenClaimsAuthenticationResolver} {@code api} port (see ADR-0028) so
  * non-Spring consumers can depend on the public port rather than this concrete {@code core} type.
  * The port method {@link #resolve(Map)} delegates to the pre-existing {@link #convert(Map)}.
  */
