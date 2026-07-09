@@ -102,7 +102,7 @@ In the starter, `AuthorizationConfiguration` wires the service as a
 `@ConditionalOnMissingBean` Spring bean. The zeebe engine is not a Spring context
 ([ADR-0008](0008-no-spring-boot-auto-configuration.md)), so graph assembly is captured in a
 plain-Java factory `AuthorizationPortsFactory` (`core/authz`). Its sole public method
-`create(...)` takes the outbound ports, the evaluator registry, the config flags, and the claim
+`create(...)` takes the outbound ports, the evaluator list, the config flags, and the claim
 configuration (`usernameClaim`/`clientIdClaim`/`preferUsernameClaim`, optional
 `MembershipResolutionContextPropagator`), builds the whole graph, and returns an
 `AuthorizationPorts` holder exposing only `AuthorizationCheckPort checkPort()` and
