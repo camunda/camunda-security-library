@@ -8,6 +8,7 @@
 package io.camunda.security.api.model.authz;
 
 import java.util.Collections;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -41,6 +42,7 @@ public sealed interface AuthorizationRejection
       implements AuthorizationRejection {
 
     public Property {
+      Objects.requireNonNull(propertyNames, "propertyNames");
       // defensively copy into an unmodifiable, deterministically-ordered set so callers can't
       // mutate the rejection after construction and toString()/equals() stay stable for logging
       propertyNames = Collections.unmodifiableSet(new TreeSet<>(propertyNames));
