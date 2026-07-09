@@ -21,6 +21,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
  * Filter chain that protects API paths with HTTP Basic authentication.
@@ -33,7 +34,10 @@ import org.springframework.security.web.SecurityFilterChain;
  */
 @Configuration
 @Conditional(ProtectedBasicAuthApiCondition.class)
-@Import(ScopedApiSecurityChainBuilderConfiguration.class)
+@Import({
+  ScopedApiSecurityChainBuilderConfiguration.class,
+  DefaultWebSessionFilterConfiguration.class
+})
 public class BasicAuthApiSecurityConfiguration {
 
   private static final Logger LOG =
@@ -44,9 +48,11 @@ public class BasicAuthApiSecurityConfiguration {
   public SecurityFilterChain basicAuthApiSecurityFilterChain(
       final HttpSecurity http,
       final ScopedApiSecurityChainBuilder builder,
-      final SecurityPathPort pathPort)
+      final SecurityPathPort pathPort,
+      final SessionRepositoryFilter<?> defaultSessionRepositoryFilter)
       throws Exception {
     LOG.info("The API is protected by HTTP Basic authentication.");
-    return builder.buildBasicApiChain(http, pathPort.apiPaths(), pathPort.unprotectedApiPaths());
+    return builder.buildBasicApiChain(
+        http, pathPort.apiPaths(), pathPort.unprotectedApiPaths(), defaultSessionRepositoryFilter);
   }
 }

@@ -20,6 +20,7 @@ import io.camunda.security.spring.security.AdminUserCheckFilterConfiguration;
 import io.camunda.security.spring.security.BaseSecurityConfiguration;
 import io.camunda.security.spring.security.BasicAuthApiSecurityConfiguration;
 import io.camunda.security.spring.security.BasicAuthWebappSecurityConfiguration;
+import io.camunda.security.spring.security.DefaultWebSessionFilterConfiguration;
 import io.camunda.security.spring.security.OidcApiSecurityConfiguration;
 import io.camunda.security.spring.security.OidcWebappSecurityConfiguration;
 import io.camunda.security.spring.security.ScopedWebappSecurityChainBuilderConfiguration;
@@ -61,6 +62,7 @@ import org.springframework.context.annotation.Import;
   BaseSecurityConfiguration.class,
   BasicAuthApiSecurityConfiguration.class,
   BasicAuthWebappSecurityConfiguration.class,
+  DefaultWebSessionFilterConfiguration.class,
   OidcApiSecurityConfiguration.class,
   OidcWebappSecurityConfiguration.class,
   ScopedApiSecurityChainBuilderConfiguration.class,

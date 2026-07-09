@@ -26,7 +26,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.support.GenericConversionService;
-import org.springframework.session.config.annotation.web.http.EnableSpringHttpSession;
 
 /**
  * Wires the persistent web-session lifecycle: the Spring Session {@link WebSessionRepository}, its
@@ -39,9 +38,14 @@ import org.springframework.session.config.annotation.web.http.EnableSpringHttpSe
  * camunda.security.session.persistent.enabled=true}). Every bean is {@link
  * ConditionalOnMissingBean} so hosts can override individual pieces — for example the {@code
  * webSessionDeletionUncaughtExceptionHandler} to plug in their own fatal-error handling.
+ *
+ * <p>The {@link WebSessionRepository} bean produced here is consumed directly by each chain's own
+ * explicitly-installed {@code SessionRepositoryFilter} — see {@code
+ * DefaultWebSessionFilterConfiguration} for the default surface and {@code
+ * ScopedSecurityChainRegistrar} for physical-tenant scopes. See ADR-0031 for why filters are
+ * installed per chain rather than through a single container-wide filter.
  */
 @Configuration
-@EnableSpringHttpSession
 @ConditionalOnPersistentWebSessionEnabled
 public class WebSessionConfiguration {
 

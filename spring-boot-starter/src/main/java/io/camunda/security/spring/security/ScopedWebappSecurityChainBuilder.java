@@ -119,19 +119,27 @@ public final class ScopedWebappSecurityChainBuilder {
    * are derived from {@link SecurityPathPort#webappPaths()} and {@link
    * SecurityPathPort#unauthenticatedWebappPaths()}; login/logout/redirect URLs use the CSL
    * constants.
+   *
+   * <p>The supplied {@code sessionRepositoryFilter} is installed before {@link
+   * SecurityContextHolderFilter} (see ADR-0031).
    */
   public SecurityFilterChain buildOidcWebappChain(
       final HttpSecurity http,
       final ClientRegistrationRepository clientRegistrationRepository,
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
-      final OAuth2AuthorizedClientManager authorizedClientManager)
+      final OAuth2AuthorizedClientManager authorizedClientManager,
+      final SessionRepositoryFilter<?> sessionRepositoryFilter)
       throws Exception {
+    Objects.requireNonNull(sessionRepositoryFilter, "sessionRepositoryFilter must not be null");
 
     final var matchers = pathPort.webappPaths();
     final var unauthenticatedMatchers = pathPort.unauthenticatedWebappPaths();
     final var loginUrl = LOGIN_URL;
     final var logoutUrl = LOGOUT_URL;
     final var redirectUri = REDIRECT_URI;
+
+    // Install the session filter before the security context filter.
+    http.addFilterBefore(sessionRepositoryFilter, SecurityContextHolderFilter.class);
 
     final var filterChainBuilder =
         http.securityMatcher(matchers.toArray(String[]::new))
@@ -228,12 +236,21 @@ public final class ScopedWebappSecurityChainBuilder {
    * Builds the HTTP-Basic form-login webapp chain for the primary (non-scoped) webapp paths.
    * Matchers, login URL, and logout URL are derived from the injected {@link SecurityPathPort} and
    * CSL constants.
+   *
+   * <p>The supplied {@code sessionRepositoryFilter} is installed before {@link
+   * SecurityContextHolderFilter} (see ADR-0031).
    */
-  public SecurityFilterChain buildBasicWebappChain(final HttpSecurity http) throws Exception {
+  public SecurityFilterChain buildBasicWebappChain(
+      final HttpSecurity http, final SessionRepositoryFilter<?> sessionRepositoryFilter)
+      throws Exception {
+    Objects.requireNonNull(sessionRepositoryFilter, "sessionRepositoryFilter must not be null");
 
     final var matchers = pathPort.webappPaths();
     final var loginUrl = LOGIN_URL;
     final var logoutUrl = LOGOUT_URL;
+
+    // Install the session filter before the security context filter.
+    http.addFilterBefore(sessionRepositoryFilter, SecurityContextHolderFilter.class);
 
     final var filterChainBuilder =
         http.securityMatcher(matchers.toArray(String[]::new))
