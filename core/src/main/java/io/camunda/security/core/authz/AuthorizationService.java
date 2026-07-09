@@ -211,7 +211,9 @@ public final class AuthorizationService implements AuthorizationCheckPort {
         authorization.resourceType());
     return Either.left(
         new AuthorizationRejection.Permission(
-            authorization.resourceType(), authorization.permissionType(), sortedDeclaredPropertyNames));
+            authorization.resourceType(),
+            authorization.permissionType(),
+            sortedDeclaredPropertyNames));
   }
 
   private static String principalType(final CamundaAuthentication authentication) {
