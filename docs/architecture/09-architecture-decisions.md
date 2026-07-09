@@ -48,6 +48,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0030: Tenant-entity authorization is RBAC gated on authorizationEnabled](../adr/0030-tenant-entity-authorization-is-rbac.md)
 - [ADR-0031: Replace the global Spring Session filter with an explicit default-scope session filter](../adr/0031-explicit-default-session-filter-replaces-global-filter.md)
 - [ADR-0032: CSL-owned per-chain OIDC logout success handler](../adr/0032-csl-owned-per-chain-oidc-logout-success-handler.md)
+- [ADR-0033: Reject Microsoft Entra v1 tokens at the token-claims conversion layer](../adr/0033-reject-entra-v1-tokens.md)
 
 ---
 
