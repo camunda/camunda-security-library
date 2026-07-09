@@ -67,6 +67,16 @@ A new inbound port covers all check variants needed by both layers: scope-based,
 skip-checks query returning `boolean` for hot-path short-circuiting. Both the search layer and the
 zeebe engine use this port.
 
+Property-based checks are expressed by the 3-arg overload
+`<T> Either<AuthorizationRejection, Void> check(CamundaAuthentication, RequiredAuthorization<T>, T)`
+on the port, where the `T resource` carries the resource properties to evaluate. This overload
+originally existed only on the concrete `AuthorizationService`; it is lifted onto
+`AuthorizationCheckPort` so property authorization is expressible against the interface and a
+consumer that needs property checks no longer has to hold the concrete class. `skipChecks()` is
+deliberately **not** lifted onto the port — it is a concrete hot-path convenience, and the zeebe
+engine's `CslAuthorizationCheck` delegates to the port without skip-logic, so adding it would be
+speculative.
+
 Port signatures use the existing CSL types (`CamundaAuthentication`, `RequiredAuthorization<T>`)
 rather than introducing a new bundled request type. If `RequiredAuthorization<T>` needs extension
 to carry tenant context or resource properties, that extension is general-purpose. The exact API
@@ -105,6 +115,16 @@ CSL consumer. The `spring-boot-starter` no longer carries a parallel implementat
 `OidcTokenAuthenticationConverter` wraps the core class directly and translates
 `IllegalArgumentException` to `OAuth2AuthenticationException` at the Spring boundary.
 
+Claims→authentication conversion is exposed as an inbound port
+`TokenClaimsAuthenticationResolver` (`api/context`), a single method
+`CamundaAuthentication resolve(Map<String,Object> claims)`. `LazyTokenClaimsConverter` implements
+it, with the port method delegating to the pre-existing `convert(Map)` so existing `convert(...)`
+callers are untouched. The port lives in `api` (not `core`) so a non-Spring consumer gets the
+framework-free public surface for claims resolution and never names the concrete converter. It is
+intentionally **not** modelled on the existing generic `CamundaAuthenticationConverter<T>`
+(`supports`/`convert`): that contract probes a framework-specific authentication object, whereas
+this port unconditionally resolves an already-extracted claims map — different semantics.
+
 **Dual-path for group resolution**: the engine's `MembershipPort.groupIds()` adapter must
 implement `ClaimsExtractor`'s existing dual-path: check `Authorization.USER_GROUPS_CLAIMS` in
 the claims map first (pre-resolved groups); fall back to `MembershipState` if absent.
@@ -125,10 +145,34 @@ evaluation paths within `AuthorizationService` must be documented explicitly in 
 
 In `spring-boot-starter`, `AuthorizationService` is wired as a Spring bean by
 `AuthorizationConfiguration` (following the same `@ConditionalOnMissingBean` pattern as
-`AuthorizationCheckerConfiguration`). The zeebe engine receives the `AuthorizationService`
-instance from the Spring context — the dist module's `BrokerModuleConfiguration` passes the
-bean reference into the engine during bootstrap, so the engine itself does not need to
-construct it or manage its dependencies.
+`AuthorizationCheckerConfiguration`).
+
+The zeebe engine is **not** a Spring context (per [ADR-0008](0008-no-spring-boot-auto-configuration.md)
+the starter beans activate only by explicit host `@Import` and never auto-activate), so it cannot
+receive these beans. Rather than hand-assembling the graph — which forces the engine to name the
+`core`-internal `AuthorizationChecker` and `LazyTokenClaimsConverter` — the assembly is captured in a
+plain-Java factory `AuthorizationPortsFactory` (`core/authz`). Its `create(...)` takes the outbound
+ports (`AuthorizationScopeRepositoryPort`, `MembershipPort`), the
+`PropertyAuthorizationEvaluatorRegistry`, the config flags, and the claim configuration
+(`usernameClaim` / `clientIdClaim` / `preferUsernameClaim`, plus an optional
+`MembershipResolutionContextPropagator` defaulting to identity). It builds the whole graph internally
+and returns an `AuthorizationPorts` holder exposing the two inbound ports —
+`AuthorizationCheckPort checkPort()` and `TokenClaimsAuthenticationResolver claimsResolver()` — backed
+by the **same** converter instance, mirroring the shared-converter wiring in Spring. A non-Spring
+consumer therefore depends only on `api` + `port/in` and never names a `core`-internal type. A static
+factory (not a builder) is used because the argument set is small, fixed, and fully required.
+
+**DRY for the Spring side.** The three starter `@Configuration` classes
+(`AuthorizationCheckerConfiguration`, `AuthorizationConfiguration`,
+`CamundaAuthenticationBeansConfiguration`) delegate their construction step to **granular** factory
+building blocks (`newAuthorizationChecker`, `newTokenClaimsConverter`, `newAuthorizationService`)
+rather than the all-in-one `create(...)`. This is deliberate: each remains a separately
+`@ConditionalOnMissingBean`-overridable bean, so a host override (e.g. a custom `AuthorizationChecker`)
+still flows into the service. Routing the Spring bean through `create(...)` would make the factory
+build its own internal checker and converter, silently discarding host overrides — a behaviour change.
+The all-in-one `create(...)` is for the non-Spring consumer only. The granular methods return their
+concrete `core` types, but they are called cross-module by the starter only (CSL-internal); external
+consumers use `create(...)` and see interfaces.
 
 ### 7. Reuse `MembershipPort` + `AuthorizationScopeRepositoryPort` as unified outbound ports
 
@@ -189,6 +233,11 @@ delegate to `AuthorizationService` internally.
   contracts need stabilizing before the engine integration begins.
 - `LazyTokenClaimsConverter` makes raw-claims-to-auth conversion available to any non-Spring
   consumer of CSL, not just the zeebe engine.
+- A non-Spring consumer (the zeebe engine, camunda/camunda#56803) depends only on `api` + `port/in`
+  (`AuthorizationCheckPort`, `TokenClaimsAuthenticationResolver`) plus the `core` factory entry point,
+  never on the internal `AuthorizationChecker` / `LazyTokenClaimsConverter` types. Graph assembly is
+  defined once; the Spring and non-Spring paths build it identically.
+- Property-based authorization is part of the port contract, available to any consumer.
 
 **Negative / accepted trade-offs**
 
@@ -207,6 +256,13 @@ delegate to `AuthorizationService` internally.
   required concern, not a nice-to-have optimisation.
 - `MembershipPort.groupIds()` adapter must implement a dual path: `USER_GROUPS_CLAIMS` claim
   first, then `MembershipState`. This must be documented in Inc 4 acceptance criteria.
+- `AuthorizationCheckPort` gains an abstract method (the 3-arg property check). Every implementer must
+  provide it; the in-repo test doubles were updated, and any future hand-rolled (non-Mockito)
+  implementer must implement it too.
+- `AuthorizationPortsFactory` exposes both an all-in-one `create(...)` and three granular building
+  blocks (`newAuthorizationChecker` / `newTokenClaimsConverter` / `newAuthorizationService`) returning
+  concrete `core` types. The granular methods exist to preserve Spring's per-bean override points; they
+  are a small, documented, CSL-internal surface, not general-purpose API.
 
 ## Alternatives Considered
 
@@ -220,3 +276,13 @@ delegate to `AuthorizationService` internally.
 - **Keep zeebe engine's `AuthorizationCheckBehavior` as a separate parallel evaluator, no
   migration into CSL.** Rejected — the two evaluators diverge over time; bugs fixed in one are
   not fixed in the other; maintenance burden grows as the platform expands.
+- **A builder on `AuthorizationService` instead of the plain-Java factory.** Rejected — the input set
+  is fixed and required; a builder adds ceremony without solving any optional-argument problem.
+- **Route the Spring `authorizationService` bean through the all-in-one `create(...)`.** Rejected — it
+  would make the factory construct its own checker/converter, silently discarding host bean overrides
+  (a behaviour change). Granular delegation preserves the override points.
+- **Reuse `CamundaAuthenticationConverter<T>` for claims resolution.** Rejected — its
+  `supports`/`convert` shape targets framework-specific authentication objects, not a raw claims map;
+  the semantics do not fit.
+- **Lift `skipChecks()` onto `AuthorizationCheckPort`.** Deferred — no consumer calls it through the
+  port; adding it now would be speculative (YAGNI).
