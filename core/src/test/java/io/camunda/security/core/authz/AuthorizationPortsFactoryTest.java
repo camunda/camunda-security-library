@@ -40,7 +40,7 @@ class AuthorizationPortsFactoryTest {
     return AuthorizationPortsFactory.create(
         scopeRepository,
         membershipPort,
-        new PropertyAuthorizationEvaluatorRegistry(List.of()),
+        List.of(),
         authorizationEnabled,
         false,
         "sub",
@@ -102,7 +102,7 @@ class AuthorizationPortsFactoryTest {
         AuthorizationPortsFactory.create(
                 scopeRepository,
                 membershipPort,
-                new PropertyAuthorizationEvaluatorRegistry(List.of(evaluator)),
+                List.of(evaluator),
                 true,
                 false,
                 "sub",

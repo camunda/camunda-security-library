@@ -8,10 +8,12 @@
 package io.camunda.security.core.authz;
 
 import io.camunda.security.api.context.MembershipResolutionContextPropagator;
+import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
 import io.camunda.security.api.context.TokenClaimsAuthenticationResolver;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
 import io.camunda.security.core.port.out.MembershipPort;
+import java.util.List;
 
 /**
  * Plain-Java factory that assembles the authorization graph without a Spring context.
@@ -44,13 +46,12 @@ public final class AuthorizationPortsFactory {
    *
    * <p>Uses {@link MembershipResolutionContextPropagator#identity()} — appropriate for consumers
    * whose {@link MembershipPort} does not depend on request-scoped state. Use {@link
-   * #create(AuthorizationScopeRepositoryPort, MembershipPort,
-   * PropertyAuthorizationEvaluatorRegistry, boolean, boolean, String, String, boolean,
-   * MembershipResolutionContextPropagator)} to supply a custom propagator.
+   * #create(AuthorizationScopeRepositoryPort, MembershipPort, List, boolean, boolean, String,
+   * String, boolean, MembershipResolutionContextPropagator)} to supply a custom propagator.
    *
    * @param scopeRepository the host-supplied authorization store adapter
    * @param membershipPort the host-supplied membership resolution adapter
-   * @param propertyEvaluatorRegistry registry of property-based evaluators (may be empty)
+   * @param propertyEvaluators list of property-based evaluators (may be empty)
    * @param authorizationEnabled whether RBAC authorization checks are globally enabled
    * @param multiTenancyChecksEnabled whether multi-tenancy checks are globally enabled
    * @param usernameClaim the OIDC claim carrying the username (may be {@code null})
@@ -62,7 +63,7 @@ public final class AuthorizationPortsFactory {
   public static AuthorizationPorts create(
       final AuthorizationScopeRepositoryPort scopeRepository,
       final MembershipPort membershipPort,
-      final PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry,
+      final List<PropertyAuthorizationEvaluator<?>> propertyEvaluators,
       final boolean authorizationEnabled,
       final boolean multiTenancyChecksEnabled,
       final String usernameClaim,
@@ -71,7 +72,7 @@ public final class AuthorizationPortsFactory {
     return create(
         scopeRepository,
         membershipPort,
-        propertyEvaluatorRegistry,
+        propertyEvaluators,
         authorizationEnabled,
         multiTenancyChecksEnabled,
         usernameClaim,
@@ -81,15 +82,15 @@ public final class AuthorizationPortsFactory {
   }
 
   /**
-   * Full-control variant of {@link #create(AuthorizationScopeRepositoryPort, MembershipPort,
-   * PropertyAuthorizationEvaluatorRegistry, boolean, boolean, String, String, boolean)} that also
-   * accepts a {@link MembershipResolutionContextPropagator} for hosts whose membership lookups
-   * depend on request-scoped state.
+   * Full-control variant of {@link #create(AuthorizationScopeRepositoryPort, MembershipPort, List,
+   * boolean, boolean, String, String, boolean)} that also accepts a {@link
+   * MembershipResolutionContextPropagator} for hosts whose membership lookups depend on
+   * request-scoped state.
    */
   public static AuthorizationPorts create(
       final AuthorizationScopeRepositoryPort scopeRepository,
       final MembershipPort membershipPort,
-      final PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry,
+      final List<PropertyAuthorizationEvaluator<?>> propertyEvaluators,
       final boolean authorizationEnabled,
       final boolean multiTenancyChecksEnabled,
       final String usernameClaim,
@@ -103,7 +104,7 @@ public final class AuthorizationPortsFactory {
     final var service =
         new AuthorizationService(
             checker,
-            propertyEvaluatorRegistry,
+            new PropertyAuthorizationEvaluatorRegistry(propertyEvaluators),
             authorizationEnabled,
             multiTenancyChecksEnabled,
             converter);
