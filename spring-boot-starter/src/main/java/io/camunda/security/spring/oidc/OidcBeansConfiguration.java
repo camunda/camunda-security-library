@@ -10,7 +10,6 @@ package io.camunda.security.spring.oidc;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
-import io.camunda.security.spring.security.CamundaOidcLogoutSuccessHandler;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -29,7 +28,6 @@ import org.springframework.security.oauth2.client.web.HttpSessionOAuth2Authorize
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 
 /**
  * Provides default OIDC infrastructure beans ({@link JwtDecoder}, {@link
@@ -151,21 +149,6 @@ public class OidcBeansConfiguration {
   @ConditionalOnMissingBean
   public OAuth2AuthorizedClientRepository authorizedClientRepository() {
     return new HttpSessionOAuth2AuthorizedClientRepository();
-  }
-
-  /**
-   * Default {@link LogoutSuccessHandler} for the OIDC webapp chain. Preserves OC's RP-initiated
-   * logout behaviour: a same-origin {@code Referer} is stored as the post-logout redirect URI on
-   * the session under {@link CamundaOidcLogoutSuccessHandler#POST_LOGOUT_REDIRECT_ATTRIBUTE}, and
-   * the OIDC {@code login_hint} claim is forwarded as {@code logout_hint} to the IdP's end-session
-   * endpoint. Backs off via {@link ConditionalOnMissingBean} when the host registers its own {@link
-   * LogoutSuccessHandler}.
-   */
-  @Bean
-  @ConditionalOnMissingBean(LogoutSuccessHandler.class)
-  public LogoutSuccessHandler camundaOidcLogoutSuccessHandler(
-      final ClientRegistrationRepository clientRegistrationRepository) {
-    return new CamundaOidcLogoutSuccessHandler(clientRegistrationRepository);
   }
 
   @Bean
