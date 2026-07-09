@@ -162,17 +162,20 @@ by the **same** converter instance, mirroring the shared-converter wiring in Spr
 consumer therefore depends only on `api` + `port/in` and never names a `core`-internal type. A static
 factory (not a builder) is used because the argument set is small, fixed, and fully required.
 
-**DRY for the Spring side.** The three starter `@Configuration` classes
-(`AuthorizationCheckerConfiguration`, `AuthorizationConfiguration`,
-`CamundaAuthenticationBeansConfiguration`) delegate their construction step to **granular** factory
-building blocks (`newAuthorizationChecker`, `newTokenClaimsConverter`, `newAuthorizationService`)
-rather than the all-in-one `create(...)`. This is deliberate: each remains a separately
-`@ConditionalOnMissingBean`-overridable bean, so a host override (e.g. a custom `AuthorizationChecker`)
-still flows into the service. Routing the Spring bean through `create(...)` would make the factory
-build its own internal checker and converter, silently discarding host overrides — a behaviour change.
-The all-in-one `create(...)` is for the non-Spring consumer only. The granular methods return their
-concrete `core` types, but they are called cross-module by the starter only (CSL-internal); external
-consumers use `create(...)` and see interfaces.
+**The factory's only public method is `create(...)`; it exposes nothing but the two inbound ports.**
+The three starter `@Configuration` classes (`AuthorizationCheckerConfiguration`,
+`AuthorizationConfiguration`, `CamundaAuthenticationBeansConfiguration`) do **not** route through the
+factory — each constructs its concrete bean directly (`new AuthorizationChecker(...)`,
+`new AuthorizationService(...)`, `new LazyTokenClaimsConverter(...)`). The starter legitimately names
+those `core` types because they are its bean types, and constructing them per-bean keeps each a
+separately `@ConditionalOnMissingBean`-overridable bean, so a host override (e.g. a custom
+`AuthorizationChecker`) still flows into the service. The factory deliberately does **not** publish
+granular `new*` building blocks: doing so would put `core`-internal types (`AuthorizationChecker`,
+`AuthorizationService`, `LazyTokenClaimsConverter`) back onto a public API surface — exactly what this
+decision removes. The trivial per-`new` assembly is expressed twice (once in `create(...)`, once
+across the starter beans), which is preferred over leaking those types. Routing the Spring beans
+through the all-in-one `create(...)` is likewise rejected — it would build an internal checker and
+converter and silently discard host overrides (a behaviour change).
 
 ### 7. Reuse `MembershipPort` + `AuthorizationScopeRepositoryPort` as unified outbound ports
 
@@ -259,10 +262,12 @@ delegate to `AuthorizationService` internally.
 - `AuthorizationCheckPort` gains an abstract method (the 3-arg property check). Every implementer must
   provide it; the in-repo test doubles were updated, and any future hand-rolled (non-Mockito)
   implementer must implement it too.
-- `AuthorizationPortsFactory` exposes both an all-in-one `create(...)` and three granular building
-  blocks (`newAuthorizationChecker` / `newTokenClaimsConverter` / `newAuthorizationService`) returning
-  concrete `core` types. The granular methods exist to preserve Spring's per-bean override points; they
-  are a small, documented, CSL-internal surface, not general-purpose API.
+- The trivial per-`new` assembly is expressed twice — once in `AuthorizationPortsFactory.create(...)`
+  and once across the three starter beans that construct their objects directly. This duplication is
+  accepted deliberately: the alternative (public granular `new*` factory methods) would put the
+  `core`-internal `AuthorizationChecker` / `AuthorizationService` / `LazyTokenClaimsConverter` types
+  back onto a public API surface, which this decision exists to remove. The factory's public surface
+  is therefore just `create(...)`, returning only ports.
 
 ## Alternatives Considered
 
@@ -280,7 +285,12 @@ delegate to `AuthorizationService` internally.
   is fixed and required; a builder adds ceremony without solving any optional-argument problem.
 - **Route the Spring `authorizationService` bean through the all-in-one `create(...)`.** Rejected — it
   would make the factory construct its own checker/converter, silently discarding host bean overrides
-  (a behaviour change). Granular delegation preserves the override points.
+  (a behaviour change). The starter beans construct their objects directly instead, preserving each
+  bean's override point.
+- **Publish granular `new*` factory methods for the starter to reuse (DRY).** Rejected — it would
+  expose the `core`-internal `AuthorizationChecker` / `AuthorizationService` / `LazyTokenClaimsConverter`
+  types on a public API surface. The starter constructs them directly instead; the duplicated one-line
+  assembly is a smaller cost than the leaked types.
 - **Reuse `CamundaAuthenticationConverter<T>` for claims resolution.** Rejected — its
   `supports`/`convert` shape targets framework-specific authentication objects, not a raw claims map;
   the semantics do not fit.

@@ -8,7 +8,6 @@
 package io.camunda.security.spring.authz;
 
 import io.camunda.security.core.authz.AuthorizationChecker;
-import io.camunda.security.core.authz.AuthorizationPortsFactory;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -50,6 +49,6 @@ public class AuthorizationCheckerConfiguration {
   @ConditionalOnMissingBean
   public AuthorizationChecker authorizationChecker(
       final AuthorizationScopeRepositoryPort scopeRepository) {
-    return AuthorizationPortsFactory.newAuthorizationChecker(scopeRepository);
+    return new AuthorizationChecker(scopeRepository);
   }
 }
