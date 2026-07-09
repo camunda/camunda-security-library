@@ -9,7 +9,6 @@ package io.camunda.security.spring.authz;
 
 import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
 import io.camunda.security.core.authz.AuthorizationChecker;
-import io.camunda.security.core.authz.AuthorizationPortsFactory;
 import io.camunda.security.core.authz.AuthorizationService;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.authz.PropertyAuthorizationEvaluatorRegistry;
@@ -64,7 +63,7 @@ public class AuthorizationConfiguration {
       final List<PropertyAuthorizationEvaluator<?>> evaluators,
       final CamundaSecurityLibraryProperties properties,
       final LazyTokenClaimsConverter claimsConverter) {
-    return AuthorizationPortsFactory.newAuthorizationService(
+    return new AuthorizationService(
         authorizationChecker,
         new PropertyAuthorizationEvaluatorRegistry(evaluators),
         properties.getAuthorizations().isEnabled(),

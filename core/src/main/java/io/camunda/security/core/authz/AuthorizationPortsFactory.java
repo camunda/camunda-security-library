@@ -12,7 +12,6 @@ import io.camunda.security.api.context.TokenClaimsAuthenticationResolver;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
 import io.camunda.security.core.port.out.MembershipPort;
-import java.util.Objects;
 
 /**
  * Plain-Java factory that assembles the authorization graph without a Spring context.
@@ -28,10 +27,11 @@ import java.util.Objects;
  * <em>same</em> converter instance, matching the Spring wiring where a single converter bean is
  * shared. See ADR-0028.
  *
- * <p>The {@code spring-boot-starter} configuration classes delegate their final wiring step to this
- * factory (via {@link #newAuthorizationChecker} / {@link #newAuthorizationService}), so both entry
- * points build the graph the same way (DRY) while the Spring side keeps its per-bean override
- * points intact.
+ * <p>This is the entry point for non-Spring consumers only; its sole public method is {@link
+ * #create}, which exposes nothing but the two inbound ports. The {@code spring-boot-starter}
+ * constructs its own {@link AuthorizationChecker} / {@link AuthorizationService} / {@link
+ * LazyTokenClaimsConverter} beans directly (it legitimately names those {@code core} types as its
+ * bean types), keeping each a separately overridable bean — it does not route through this factory.
  */
 public final class AuthorizationPortsFactory {
 
@@ -97,72 +97,17 @@ public final class AuthorizationPortsFactory {
       final boolean preferUsernameClaim,
       final MembershipResolutionContextPropagator contextPropagator) {
     final var converter =
-        newTokenClaimsConverter(
+        new LazyTokenClaimsConverter(
             usernameClaim, clientIdClaim, preferUsernameClaim, membershipPort, contextPropagator);
-    final var checker = newAuthorizationChecker(scopeRepository);
+    final var checker = new AuthorizationChecker(scopeRepository);
     final var service =
-        newAuthorizationService(
+        new AuthorizationService(
             checker,
             propertyEvaluatorRegistry,
             authorizationEnabled,
             multiTenancyChecksEnabled,
             converter);
     return new AuthorizationPorts(service, converter);
-  }
-
-  /**
-   * Builds the claims-to-authentication converter. Exposed so the {@code spring-boot-starter}
-   * builds its {@link LazyTokenClaimsConverter} bean through the same code path as {@link #create}.
-   *
-   * @param usernameClaim the OIDC claim carrying the username (may be {@code null})
-   * @param clientIdClaim the OIDC claim carrying the client id (may be {@code null})
-   * @param preferUsernameClaim whether to prefer the username claim over the client-id claim
-   * @param membershipPort the host-supplied membership resolution adapter
-   * @param contextPropagator propagator that rebinds request-scoped state around deferred lookups
-   */
-  public static LazyTokenClaimsConverter newTokenClaimsConverter(
-      final String usernameClaim,
-      final String clientIdClaim,
-      final boolean preferUsernameClaim,
-      final MembershipPort membershipPort,
-      final MembershipResolutionContextPropagator contextPropagator) {
-    return new LazyTokenClaimsConverter(
-        usernameClaim,
-        clientIdClaim,
-        preferUsernameClaim,
-        Objects.requireNonNull(membershipPort, "membershipPort"),
-        Objects.requireNonNull(contextPropagator, "contextPropagator"));
-  }
-
-  /**
-   * Builds the scope-evaluation kernel. Exposed so the {@code spring-boot-starter} builds its
-   * {@link AuthorizationChecker} bean through the same code path as {@link #create}.
-   *
-   * @param scopeRepository the host-supplied authorization store adapter
-   */
-  public static AuthorizationChecker newAuthorizationChecker(
-      final AuthorizationScopeRepositoryPort scopeRepository) {
-    return new AuthorizationChecker(scopeRepository);
-  }
-
-  /**
-   * Builds the {@link AuthorizationService} from an already-constructed checker and converter.
-   * Exposed so the {@code spring-boot-starter} builds its {@link AuthorizationService} bean through
-   * the same code path as {@link #create}, while keeping the checker and converter as separately
-   * host-overridable beans.
-   */
-  public static AuthorizationService newAuthorizationService(
-      final AuthorizationChecker authorizationChecker,
-      final PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry,
-      final boolean authorizationEnabled,
-      final boolean multiTenancyChecksEnabled,
-      final LazyTokenClaimsConverter claimsConverter) {
-    return new AuthorizationService(
-        authorizationChecker,
-        propertyEvaluatorRegistry,
-        authorizationEnabled,
-        multiTenancyChecksEnabled,
-        claimsConverter);
   }
 
   /**
