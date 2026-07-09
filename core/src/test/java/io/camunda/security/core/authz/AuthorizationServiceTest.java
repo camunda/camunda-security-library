@@ -45,6 +45,10 @@ class AuthorizationServiceTest {
   @Mock
   private PropertyAuthorizationEvaluator<String> evaluator;
 
+  @SuppressWarnings("unchecked")
+  @Mock
+  private PropertyAuthorizationEvaluator<String> secondEvaluator;
+
   private final CamundaAuthentication alice = CamundaAuthentication.of(b -> b.user("alice"));
 
   private AuthorizationService service(
@@ -291,6 +295,28 @@ class AuthorizationServiceTest {
     when(propertyEvaluatorRegistry.<String>findEvaluator(
             RequiredAuthorization.PROP_CANDIDATE_GROUPS))
         .thenReturn(Optional.of(evaluator));
+    final var req =
+        RequiredAuthorization.of(
+            b -> b.userTask().readUserTask().authorizedByAssignee().authorizedByCandidateGroups());
+    assertThat(service(true, false).check(alice, req, "task-1").isRight()).isTrue();
+  }
+
+  @Test
+  void propertyCheckAuthorizesWhenFirstGrantedEvaluatorDeniesButSecondApproves() {
+    // covers the loop's continue-past-denial path: the first granted+declared property scope's
+    // evaluator denies, the second one approves
+    when(authorizationChecker.retrieveAuthorizedPropertyScopes(eq(alice), any(), any()))
+        .thenReturn(
+            List.of(
+                AuthorizationScope.property(RequiredAuthorization.PROP_ASSIGNEE),
+                AuthorizationScope.property(RequiredAuthorization.PROP_CANDIDATE_GROUPS)));
+    when(evaluator.isAuthorized(alice, "task-1")).thenReturn(false);
+    when(propertyEvaluatorRegistry.<String>findEvaluator(RequiredAuthorization.PROP_ASSIGNEE))
+        .thenReturn(Optional.of(evaluator));
+    when(secondEvaluator.isAuthorized(alice, "task-1")).thenReturn(true);
+    when(propertyEvaluatorRegistry.<String>findEvaluator(
+            RequiredAuthorization.PROP_CANDIDATE_GROUPS))
+        .thenReturn(Optional.of(secondEvaluator));
     final var req =
         RequiredAuthorization.of(
             b -> b.userTask().readUserTask().authorizedByAssignee().authorizedByCandidateGroups());
