@@ -200,18 +200,18 @@ public final class AuthorizationService implements AuthorizationCheckPort {
       }
     }
 
+    final String sortedDeclaredPropertyNames =
+        String.join(",", new TreeSet<>(declaredPropertyNames));
+
     LOG.debug(
         "Property-based authorization denied for [{}] on [{}] properties {} of resource type [{}]",
         principalType(authentication),
         authorization.permissionType(),
-        declaredPropertyNames,
+        sortedDeclaredPropertyNames,
         authorization.resourceType());
     return Either.left(
         new AuthorizationRejection.Permission(
-            authorization.resourceType(),
-            authorization.permissionType(),
-            // sort for a deterministic message: resourcePropertyNames() is an unordered Set
-            String.join(",", new TreeSet<>(declaredPropertyNames))));
+            authorization.resourceType(), authorization.permissionType(), sortedDeclaredPropertyNames));
   }
 
   private static String principalType(final CamundaAuthentication authentication) {
