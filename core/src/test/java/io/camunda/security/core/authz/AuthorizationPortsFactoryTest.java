@@ -28,16 +28,16 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
-class AuthorizationServiceFactoryTest {
+class AuthorizationPortsFactoryTest {
 
   @Mock private AuthorizationScopeRepositoryPort scopeRepository;
   @Mock private MembershipPort membershipPort;
 
   private final CamundaAuthentication alice = CamundaAuthentication.of(b -> b.user("alice"));
 
-  private AuthorizationServiceFactory.Authorization createGraph(
+  private AuthorizationPortsFactory.AuthorizationPorts createGraph(
       final boolean authorizationEnabled) {
-    return AuthorizationServiceFactory.create(
+    return AuthorizationPortsFactory.create(
         scopeRepository,
         membershipPort,
         new PropertyAuthorizationEvaluatorRegistry(List.of()),
@@ -52,7 +52,7 @@ class AuthorizationServiceFactoryTest {
   void shouldProduceAuthorizationCheckPortThatAuthorizesWhenScopeGranted() {
     // given
     when(scopeRepository.hasAuthorizedScope(any(), any(), any(), anyList())).thenReturn(true);
-    final AuthorizationCheckPort port = createGraph(true).authorizationCheckPort();
+    final AuthorizationCheckPort port = createGraph(true).checkPort();
     final var req =
         RequiredAuthorization.of(
             b -> b.processDefinition().readProcessDefinition().resourceId("proc-1"));
@@ -68,7 +68,7 @@ class AuthorizationServiceFactoryTest {
   void shouldProduceAuthorizationCheckPortThatRejectsWhenScopeMissing() {
     // given
     when(scopeRepository.hasAuthorizedScope(any(), any(), any(), anyList())).thenReturn(false);
-    final AuthorizationCheckPort port = createGraph(true).authorizationCheckPort();
+    final AuthorizationCheckPort port = createGraph(true).checkPort();
     final var req =
         RequiredAuthorization.of(
             b -> b.processDefinition().readProcessDefinition().resourceId("proc-1"));
@@ -99,7 +99,7 @@ class AuthorizationServiceFactoryTest {
         .thenReturn(
             List.of(io.camunda.security.api.model.authz.AuthorizationScope.property("assignee")));
     final AuthorizationCheckPort port =
-        AuthorizationServiceFactory.create(
+        AuthorizationPortsFactory.create(
                 scopeRepository,
                 membershipPort,
                 new PropertyAuthorizationEvaluatorRegistry(List.of(evaluator)),
@@ -108,7 +108,7 @@ class AuthorizationServiceFactoryTest {
                 "sub",
                 "client_id",
                 false)
-            .authorizationCheckPort();
+            .checkPort();
     final var req =
         RequiredAuthorization.of(
             b -> b.userTask().updateUserTask().authorizedByProperty("assignee"));
@@ -123,7 +123,7 @@ class AuthorizationServiceFactoryTest {
   @Test
   void shouldSkipChecksWhenAuthorizationDisabled() {
     // given
-    final AuthorizationCheckPort port = createGraph(false).authorizationCheckPort();
+    final AuthorizationCheckPort port = createGraph(false).checkPort();
     final var req =
         RequiredAuthorization.of(
             b -> b.processDefinition().readProcessDefinition().resourceId("proc-1"));
@@ -138,8 +138,7 @@ class AuthorizationServiceFactoryTest {
   @Test
   void shouldProduceResolverThatConvertsClaimsToUser() {
     // given
-    final TokenClaimsAuthenticationResolver resolver =
-        createGraph(true).tokenClaimsAuthenticationResolver();
+    final TokenClaimsAuthenticationResolver resolver = createGraph(true).claimsResolver();
 
     // when
     final CamundaAuthentication authentication = resolver.resolve(Map.of("sub", "bob"));
@@ -151,8 +150,7 @@ class AuthorizationServiceFactoryTest {
   @Test
   void shouldProduceResolverThatRejectsClaimsWithoutPrincipal() {
     // given
-    final TokenClaimsAuthenticationResolver resolver =
-        createGraph(true).tokenClaimsAuthenticationResolver();
+    final TokenClaimsAuthenticationResolver resolver = createGraph(true).claimsResolver();
 
     // when / then
     assertThatThrownBy(() -> resolver.resolve(Map.of("unrelated", "value")))
