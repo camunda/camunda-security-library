@@ -23,19 +23,19 @@ import java.util.Objects;
  * Zeebe engine cannot use those starter beans and had to hand-assemble the graph, naming the {@code
  * core}-internal {@link AuthorizationChecker} and {@link LazyTokenClaimsConverter} types directly.
  * This factory captures the same assembly in {@code core} so those consumers can depend only on
- * ports: {@link #create} returns an {@link Authorization} holder exposing the {@link
+ * ports: {@link #create} returns an {@link AuthorizationPorts} holder exposing the {@link
  * AuthorizationCheckPort} and the {@link TokenClaimsAuthenticationResolver} — both backed by the
  * <em>same</em> converter instance, matching the Spring wiring where a single converter bean is
- * shared. See ADR-0033.
+ * shared. See ADR-0028.
  *
  * <p>The {@code spring-boot-starter} configuration classes delegate their final wiring step to this
  * factory (via {@link #newAuthorizationChecker} / {@link #newAuthorizationService}), so both entry
  * points build the graph the same way (DRY) while the Spring side keeps its per-bean override
  * points intact.
  */
-public final class AuthorizationServiceFactory {
+public final class AuthorizationPortsFactory {
 
-  private AuthorizationServiceFactory() {}
+  private AuthorizationPortsFactory() {}
 
   /**
    * Assembles the full authorization graph from outbound ports and configuration, with no Spring
@@ -59,7 +59,7 @@ public final class AuthorizationServiceFactory {
    * @return a holder exposing the {@link AuthorizationCheckPort} and {@link
    *     TokenClaimsAuthenticationResolver}
    */
-  public static Authorization create(
+  public static AuthorizationPorts create(
       final AuthorizationScopeRepositoryPort scopeRepository,
       final MembershipPort membershipPort,
       final PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry,
@@ -86,7 +86,7 @@ public final class AuthorizationServiceFactory {
    * accepts a {@link MembershipResolutionContextPropagator} for hosts whose membership lookups
    * depend on request-scoped state.
    */
-  public static Authorization create(
+  public static AuthorizationPorts create(
       final AuthorizationScopeRepositoryPort scopeRepository,
       final MembershipPort membershipPort,
       final PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry,
@@ -107,7 +107,7 @@ public final class AuthorizationServiceFactory {
             authorizationEnabled,
             multiTenancyChecksEnabled,
             converter);
-    return new Authorization(service, converter);
+    return new AuthorizationPorts(service, converter);
   }
 
   /**
@@ -166,13 +166,12 @@ public final class AuthorizationServiceFactory {
   }
 
   /**
-   * Holder for the assembled authorization graph. Both accessors are backed by the same converter
-   * instance, mirroring the shared-converter wiring in the {@code spring-boot-starter}.
+   * Holder for the assembled authorization in-ports. Both accessors are backed by the same
+   * converter instance, mirroring the shared-converter wiring in the {@code spring-boot-starter}.
    *
-   * @param authorizationCheckPort the assembled authorization check port
-   * @param tokenClaimsAuthenticationResolver the claims-to-authentication resolver
+   * @param checkPort the assembled authorization check port
+   * @param claimsResolver the claims-to-authentication resolver
    */
-  public record Authorization(
-      AuthorizationCheckPort authorizationCheckPort,
-      TokenClaimsAuthenticationResolver tokenClaimsAuthenticationResolver) {}
+  public record AuthorizationPorts(
+      AuthorizationCheckPort checkPort, TokenClaimsAuthenticationResolver claimsResolver) {}
 }
