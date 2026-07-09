@@ -51,4 +51,9 @@ class SecurityPathPortTest {
   void adminFilterBypassPathsDefaultsToEmpty() {
     assertThat(MINIMAL.adminFilterBypassPaths()).isEmpty();
   }
+
+  @Test
+  void postLogoutRedirectPathDefaultsToEmpty() {
+    assertThat(MINIMAL.postLogoutRedirectPath()).isEmpty();
+  }
 }
