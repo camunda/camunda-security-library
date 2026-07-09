@@ -8,9 +8,11 @@
 package io.camunda.security.core.authz;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
@@ -133,6 +135,72 @@ class AuthorizationPortsFactoryTest {
 
     // then — authorized without consulting the scope repository
     assertThat(result.isRight()).isTrue();
+    verifyNoInteractions(scopeRepository);
+  }
+
+  @Test
+  void shouldProduceAuthorizationCheckPortThatChecksClaimsMap() {
+    // given
+    when(scopeRepository.hasAuthorizedScope(any(), any(), any(), anyList())).thenReturn(true);
+    final AuthorizationCheckPort port = createGraph(true).checkPort();
+    final var req =
+        RequiredAuthorization.of(
+            b -> b.processDefinition().readProcessDefinition().resourceId("proc-1"));
+
+    // when
+    final var result = port.check(Map.of("sub", "bob"), req);
+
+    // then
+    assertThat(result.isRight()).isTrue();
+  }
+
+  @Test
+  void shouldProduceAuthorizationCheckPortThatRejectsClaimsWithoutPrincipal() {
+    // given
+    final AuthorizationCheckPort port = createGraph(true).checkPort();
+    final var req =
+        RequiredAuthorization.of(
+            b -> b.processDefinition().readProcessDefinition().resourceId("proc-1"));
+
+    // when / then
+    assertThatThrownBy(() -> port.check(Map.of("unrelated", "value"), req))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void shouldFailFastOnNullRequiredArguments() {
+    assertThatNullPointerException()
+        .isThrownBy(
+            () ->
+                AuthorizationPortsFactory.create(
+                    null, membershipPort, List.of(), true, false, "sub", "client_id", false))
+        .withMessageContaining("scopeRepository");
+    assertThatNullPointerException()
+        .isThrownBy(
+            () ->
+                AuthorizationPortsFactory.create(
+                    scopeRepository, null, List.of(), true, false, "sub", "client_id", false))
+        .withMessageContaining("membershipPort");
+    assertThatNullPointerException()
+        .isThrownBy(
+            () ->
+                AuthorizationPortsFactory.create(
+                    scopeRepository, membershipPort, null, true, false, "sub", "client_id", false))
+        .withMessageContaining("propertyEvaluators");
+    assertThatNullPointerException()
+        .isThrownBy(
+            () ->
+                AuthorizationPortsFactory.create(
+                    scopeRepository,
+                    membershipPort,
+                    List.of(),
+                    true,
+                    false,
+                    "sub",
+                    "client_id",
+                    false,
+                    null))
+        .withMessageContaining("contextPropagator");
   }
 
   @Test

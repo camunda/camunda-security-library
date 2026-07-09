@@ -14,6 +14,7 @@ import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
 import io.camunda.security.core.port.out.MembershipPort;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Plain-Java factory that assembles the authorization graph without a Spring context.
@@ -59,6 +60,8 @@ public final class AuthorizationPortsFactory {
    * @param preferUsernameClaim whether to prefer the username claim over the client-id claim
    * @return a holder exposing the {@link AuthorizationCheckPort} and {@link
    *     TokenClaimsAuthenticationResolver}
+   * @throws NullPointerException if {@code scopeRepository}, {@code membershipPort}, or {@code
+   *     propertyEvaluators} is {@code null}
    */
   public static AuthorizationPorts create(
       final AuthorizationScopeRepositoryPort scopeRepository,
@@ -97,6 +100,10 @@ public final class AuthorizationPortsFactory {
       final String clientIdClaim,
       final boolean preferUsernameClaim,
       final MembershipResolutionContextPropagator contextPropagator) {
+    Objects.requireNonNull(scopeRepository, "scopeRepository must not be null");
+    Objects.requireNonNull(membershipPort, "membershipPort must not be null");
+    Objects.requireNonNull(propertyEvaluators, "propertyEvaluators must not be null");
+    Objects.requireNonNull(contextPropagator, "contextPropagator must not be null");
     final var converter =
         new LazyTokenClaimsConverter(
             usernameClaim, clientIdClaim, preferUsernameClaim, membershipPort, contextPropagator);
