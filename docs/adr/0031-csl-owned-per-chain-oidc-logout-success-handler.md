@@ -4,7 +4,7 @@ status: Proposed
 
 # ADR-0031: CSL-owned per-chain OIDC logout success handler
 
-**Deciders**: Sebastian Bathke (megglos)
+**Deciders**: Sebastian Bathke (megglos), Patrick Wunderlich (p-wunderlich), Ana Vinogradova (ana-vinogradova-camunda)
 
 ## Status
 
