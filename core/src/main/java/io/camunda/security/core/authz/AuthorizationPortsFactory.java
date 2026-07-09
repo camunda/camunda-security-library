@@ -25,16 +25,19 @@ import java.util.Objects;
  * Zeebe engine cannot use those starter beans and had to hand-assemble the graph, naming the {@code
  * core}-internal {@link AuthorizationChecker} and {@link LazyTokenClaimsConverter} types directly.
  * This factory captures the same assembly in {@code core} so those consumers can depend only on
- * ports: {@link #create} returns an {@link AuthorizationPorts} holder exposing the {@link
+ * ports: {@link #create(AuthorizationScopeRepositoryPort, MembershipPort, List, boolean, boolean,
+ * String, String, boolean) create} returns an {@link AuthorizationPorts} holder exposing the {@link
  * AuthorizationCheckPort} and the {@link TokenClaimsAuthenticationResolver} — both backed by the
  * <em>same</em> converter instance, matching the Spring wiring where a single converter bean is
  * shared. See ADR-0028.
  *
- * <p>This is the entry point for non-Spring consumers only; its sole public method is {@link
- * #create}, which exposes nothing but the two inbound ports. The {@code spring-boot-starter}
- * constructs its own {@link AuthorizationChecker} / {@link AuthorizationService} / {@link
- * LazyTokenClaimsConverter} beans directly (it legitimately names those {@code core} types as its
- * bean types), keeping each a separately overridable bean — it does not route through this factory.
+ * <p>This is the entry point for non-Spring consumers only; its sole public method is {@code
+ * create(...)} (two overloads differing only in the optional {@link
+ * MembershipResolutionContextPropagator}), which exposes nothing but the two inbound ports. The
+ * {@code spring-boot-starter} constructs its own {@link AuthorizationChecker} / {@link
+ * AuthorizationService} / {@link LazyTokenClaimsConverter} beans directly (it legitimately names
+ * those {@code core} types as its bean types), keeping each a separately overridable bean — it does
+ * not route through this factory.
  */
 public final class AuthorizationPortsFactory {
 
