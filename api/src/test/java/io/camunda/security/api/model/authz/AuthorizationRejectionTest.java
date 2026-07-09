@@ -8,7 +8,9 @@
 package io.camunda.security.api.model.authz;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.HashSet;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -69,6 +71,35 @@ class AuthorizationRejectionTest {
             new AuthorizationRejection.Property(
                 AuthorizationResourceType.USER_TASK, PermissionType.READ, Set.of("assignee")))
         .isInstanceOf(AuthorizationRejection.class);
+  }
+
+  @Test
+  void propertyRejectionSortsPropertyNames() {
+    final var r =
+        new AuthorizationRejection.Property(
+            AuthorizationResourceType.USER_TASK,
+            PermissionType.READ,
+            new HashSet<>(Set.of("candidateUsers", "assignee")));
+    assertThat(r.propertyNames()).containsExactly("assignee", "candidateUsers");
+  }
+
+  @Test
+  void propertyRejectionDefensivelyCopiesPropertyNames() {
+    final var mutableInput = new HashSet<>(Set.of("assignee"));
+    final var r =
+        new AuthorizationRejection.Property(
+            AuthorizationResourceType.USER_TASK, PermissionType.READ, mutableInput);
+    mutableInput.add("candidateUsers");
+    assertThat(r.propertyNames()).containsExactly("assignee");
+  }
+
+  @Test
+  void propertyRejectionExposesUnmodifiablePropertyNames() {
+    final var r =
+        new AuthorizationRejection.Property(
+            AuthorizationResourceType.USER_TASK, PermissionType.READ, Set.of("assignee"));
+    assertThatThrownBy(() -> r.propertyNames().add("candidateUsers"))
+        .isInstanceOf(UnsupportedOperationException.class);
   }
 
   @Test
