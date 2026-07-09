@@ -7,7 +7,9 @@
  */
 package io.camunda.security.api.model.authz;
 
+import java.util.Collections;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * Describes why an authorization check was rejected.
@@ -36,5 +38,12 @@ public sealed interface AuthorizationRejection
       AuthorizationResourceType resourceType,
       PermissionType permissionType,
       Set<String> propertyNames)
-      implements AuthorizationRejection {}
+      implements AuthorizationRejection {
+
+    public Property {
+      // defensively copy into an unmodifiable, deterministically-ordered set so callers can't
+      // mutate the rejection after construction and toString()/equals() stay stable for logging
+      propertyNames = Collections.unmodifiableSet(new TreeSet<>(propertyNames));
+    }
+  }
 }
