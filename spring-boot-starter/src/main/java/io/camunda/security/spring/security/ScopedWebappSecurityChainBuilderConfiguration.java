@@ -24,7 +24,6 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProvider
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
-import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.authentication.ui.DefaultLoginPageGeneratingFilter;
 import org.springframework.web.cors.CorsConfigurationSource;
 
@@ -49,7 +48,6 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort,
       final ObjectProvider<OidcTokenEndpointCustomizer> tokenEndpointCustomizerProvider,
-      final ObjectProvider<LogoutSuccessHandler> logoutSuccessHandlerProvider,
       final ObjectProvider<OidcUserService> oidcUserServiceProvider,
       final ObjectProvider<OAuth2AuthorizationRequestResolver> authorizationRequestResolverProvider,
       final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
@@ -64,7 +62,6 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
         properties,
         pathPort,
         tokenEndpointCustomizerProvider,
-        logoutSuccessHandlerProvider,
         oidcUserServiceProvider,
         authorizationRequestResolverProvider,
         webAppAuthorizationFilterProvider,

@@ -36,14 +36,17 @@ import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.DefaultSecurityFilterChain;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.logout.LogoutFilter;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.session.MapSessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * Verifies {@link ScopedWebappSecurityChainBuilder#buildScopedWebappChain}: path-prefixed matchers,
@@ -182,6 +185,76 @@ class ScopedWebappSecurityChainBuilderScopedTest {
               .as("SessionRepositoryFilter must appear before SecurityContextHolderFilter")
               .isLessThan(securityContextIndex);
         });
+  }
+
+  /**
+   * Regression: the scoped OIDC chain must wire its logout success handler with the <em>scoped</em>
+   * {@link ClientRegistrationRepository}, not the cluster one. Only the scoped repo carries the
+   * scoped registration (prefixed redirect URI), so RP-initiated logout can resolve {@code
+   * end_session_endpoint}/{@code client_id} for scoped users. Guards against reintroducing the
+   * defect where the handler was taken from a cluster-level provider.
+   */
+  @Test
+  void scopedOidcChainWiresLogoutSuccessHandlerWithScopedClientRegistrationRepository() {
+    runner.run(
+        ctx -> {
+          final var chain =
+              (DefaultSecurityFilterChain)
+                  ctx.getBean("scopedOidcTestChain", SecurityFilterChain.class);
+          final var logoutFilter =
+              chain.getFilters().stream()
+                  .filter(LogoutFilter.class::isInstance)
+                  .map(LogoutFilter.class::cast)
+                  .findFirst()
+                  .orElseThrow(
+                      () -> new AssertionError("scoped OIDC chain must have a LogoutFilter"));
+
+          final var successHandler =
+              (LogoutSuccessHandler)
+                  ReflectionTestUtils.getField(logoutFilter, "logoutSuccessHandler");
+          assertThat(successHandler)
+              .as("scoped OIDC logout must use the CSL-owned OIDC logout success handler")
+              .isInstanceOf(CamundaOidcLogoutSuccessHandler.class);
+
+          final var repo =
+              (ClientRegistrationRepository)
+                  ReflectionTestUtils.getField(successHandler, "clientRegistrationRepository");
+          final var registration = repo.findByRegistrationId("oidc");
+          assertThat(registration)
+              .as("logout handler's repository must resolve the scoped registration")
+              .isNotNull();
+          assertThat(registration.getRedirectUri())
+              .as("resolved registration must be the scoped one (redirect URI carries the prefix)")
+              .isEqualTo("{baseUrl}" + BASE_PATH + "/sso-callback");
+        });
+  }
+
+  /**
+   * A host may (wrongly) override {@link SecurityPathPort#postLogoutRedirectPath()} to return a
+   * bare {@code null} despite the {@code Optional} return type. The builder must fail fast with a
+   * clear message and migration hint, not NPE deep inside the redirect-URI template.
+   */
+  @Test
+  void scopedOidcChainFailsFastWhenPostLogoutRedirectPathReturnsNull() {
+    new WebApplicationContextRunner()
+        .withUserConfiguration(ObjectMapperConfig.class, NullPostLogoutPathConfig.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                BaseSecurityConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                ScopedOidcInfrastructureConfiguration.class,
+                ScopedWebappSecurityChainBuilderConfiguration.class))
+        .run(
+            ctx -> {
+              assertThat(ctx).hasFailed();
+              assertThat(ctx.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(NullPointerException.class)
+                  .hasMessageContaining(
+                      "SecurityPathPort#postLogoutRedirectPath() must not return null")
+                  .hasMessageContaining("return Optional.empty()");
+            });
   }
 
   @Test
@@ -371,6 +444,43 @@ class ScopedWebappSecurityChainBuilderScopedTest {
     }
   }
 
+  /**
+   * Supplies a {@link SecurityPathPort} whose {@code postLogoutRedirectPath()} returns {@code null}
+   * (a contract violation) and an OIDC scoped chain that exercises the logout handler wiring, so
+   * the fail-fast guard is triggered during context startup.
+   */
+  @Configuration
+  static class NullPostLogoutPathConfig {
+
+    @Bean
+    JwtDecoder jwtDecoderNullPostLogout() {
+      return token -> {
+        throw new UnsupportedOperationException("stub — not called in this test");
+      };
+    }
+
+    @Bean
+    SecurityPathPort securityPathPort() {
+      // null (not Optional.empty()) simulates a host that violates the non-null Optional contract.
+      return StubSecurityPaths.builder().postLogoutRedirectPath(null).build();
+    }
+
+    @Bean("scopedOidcNullPostLogoutChain")
+    SecurityFilterChain scopedOidcNullPostLogoutChain(
+        final HttpSecurity http, final ScopedWebappSecurityChainBuilder builder) throws Exception {
+      final var authentication = ScopedSingleIdpConfig.buildOidcAuthentication("oidc");
+      final var sessionFilter =
+          new SessionRepositoryFilter<>(new MapSessionRepository(new ConcurrentHashMap<>()));
+      return builder.buildScopedWebappChain(
+          http,
+          BASE_PATH,
+          authentication,
+          sessionFilter,
+          "camunda-session-physical-tenants-t1",
+          "X-CSRF-TOKEN-physical-tenants-t1");
+    }
+  }
+
   @Configuration
   static class ScopedSingleIdpConfig {
 
@@ -386,7 +496,6 @@ class ScopedWebappSecurityChainBuilderScopedTest {
         final HttpSecurity http,
         final ScopedWebappSecurityChainBuilder builder,
         final ObjectProvider<OidcTokenEndpointCustomizer> tokenEndpointCustomizerProvider,
-        final ObjectProvider<LogoutSuccessHandler> logoutSuccessHandlerProvider,
         final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
         final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider)
         throws Exception {
@@ -405,8 +514,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
       return new SessionRepositoryFilter<>(new MapSessionRepository(new ConcurrentHashMap<>()));
     }
 
-    private static AuthenticationConfiguration buildOidcAuthentication(
-        final String... registrationIds) {
+    static AuthenticationConfiguration buildOidcAuthentication(final String... registrationIds) {
       final var auth = new AuthenticationConfiguration();
       auth.setMethod(AuthenticationMethod.OIDC);
       final var providers = new OidcProvidersConfiguration();

@@ -7,6 +7,7 @@
  */
 package io.camunda.security.core.port.out;
 
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -77,5 +78,20 @@ public interface SecurityPathPort {
    */
   default Set<String> adminFilterBypassPaths() {
     return Set.of();
+  }
+
+  /**
+   * Path the browser returns to after OIDC logout, relative to the chain root (e.g. {@code
+   * "/post-logout"}). The host owns this route; it is not end-user configuration. CSL prefixes it
+   * with the chain's base path and sends it to the IdP as the {@code post_logout_redirect_uri}, so
+   * a scoped chain resolves it under its own base path (e.g. {@code
+   * "/physical-tenants/<id>/post-logout"}).
+   *
+   * <p>Must start with {@code "/"} when present. Return {@link Optional#empty()} (the default) to
+   * send no {@code post_logout_redirect_uri}, letting the IdP apply its own default — the current
+   * behaviour for existing implementers.
+   */
+  default Optional<String> postLogoutRedirectPath() {
+    return Optional.empty();
   }
 }

@@ -30,6 +30,7 @@ import io.camunda.security.spring.scope.BasePaths;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import java.util.LinkedHashMap;
 import java.util.Objects;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -84,7 +85,6 @@ public final class ScopedWebappSecurityChainBuilder {
   private final CamundaSecurityLibraryProperties properties;
   private final SecurityPathPort pathPort;
   private final ObjectProvider<OidcTokenEndpointCustomizer> tokenEndpointCustomizerProvider;
-  private final ObjectProvider<LogoutSuccessHandler> logoutSuccessHandlerProvider;
   private final ObjectProvider<OidcUserService> oidcUserServiceProvider;
   private final ObjectProvider<OAuth2AuthorizationRequestResolver>
       authorizationRequestResolverProvider;
@@ -101,7 +101,6 @@ public final class ScopedWebappSecurityChainBuilder {
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort,
       final ObjectProvider<OidcTokenEndpointCustomizer> tokenEndpointCustomizerProvider,
-      final ObjectProvider<LogoutSuccessHandler> logoutSuccessHandlerProvider,
       final ObjectProvider<OidcUserService> oidcUserServiceProvider,
       final ObjectProvider<OAuth2AuthorizationRequestResolver> authorizationRequestResolverProvider,
       final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
@@ -115,7 +114,6 @@ public final class ScopedWebappSecurityChainBuilder {
     this.properties = properties;
     this.pathPort = pathPort;
     this.tokenEndpointCustomizerProvider = tokenEndpointCustomizerProvider;
-    this.logoutSuccessHandlerProvider = logoutSuccessHandlerProvider;
     this.oidcUserServiceProvider = oidcUserServiceProvider;
     this.authorizationRequestResolverProvider = authorizationRequestResolverProvider;
     this.webAppAuthorizationFilterProvider = webAppAuthorizationFilterProvider;
@@ -204,7 +202,8 @@ public final class ScopedWebappSecurityChainBuilder {
                       .logoutUrl(logoutUrl)
                       .deleteCookies(SESSION_COOKIE, X_CSRF_TOKEN)
                       .invalidateHttpSession(true);
-                  logoutSuccessHandlerProvider.ifAvailable(logout::logoutSuccessHandler);
+                  logout.logoutSuccessHandler(
+                      oidcLogoutSuccessHandler(clientRegistrationRepository, ""));
                 });
 
     // Refresh expired access tokens transparently after AuthorizationFilter; the logout handler
@@ -388,6 +387,42 @@ public final class ScopedWebappSecurityChainBuilder {
     };
   }
 
+  /**
+   * Builds the {@code post_logout_redirect_uri} template {@code "{baseUrl}" + prefix + route}. The
+   * literal {@code prefix} (the chain's normalized base path, {@code ""} for the primary chain)
+   * adds back the CSL base path that {@code {baseUrl}} drops. Returns {@code ""} when no route is
+   * configured, or when the configured route is blank/whitespace (treated as absent), so callers
+   * send no {@code post_logout_redirect_uri}.
+   *
+   * @throws IllegalArgumentException if a non-blank route does not start with {@code "/"}.
+   */
+  static String postLogoutRedirectUri(final String prefix, final Optional<String> route) {
+    final String path = route.orElse("");
+    if (path.isBlank()) {
+      return "";
+    }
+    if (!path.startsWith("/")) {
+      throw new IllegalArgumentException(
+          "postLogoutRedirectPath must start with '/', but was: " + path);
+    }
+    return "{baseUrl}" + prefix + path;
+  }
+
+  private LogoutSuccessHandler oidcLogoutSuccessHandler(
+      final ClientRegistrationRepository repo, final String prefix) {
+    final var handler = new CamundaOidcLogoutSuccessHandler(repo);
+    final var route =
+        Objects.requireNonNull(
+            pathPort.postLogoutRedirectPath(),
+            "SecurityPathPort#postLogoutRedirectPath() must not return null; "
+                + "return Optional.empty() to send no post_logout_redirect_uri");
+    final var uri = postLogoutRedirectUri(prefix, route);
+    if (!uri.isEmpty()) {
+      handler.setPostLogoutRedirectUri(uri);
+    }
+    return handler;
+  }
+
   // Moved verbatim from OidcWebappSecurityConfiguration; package-private for unit testing.
   static AuthenticationEntryPoint oidcWebappAuthenticationEntryPoint(
       final ClientRegistrationRepository clientRegistrationRepository, final String loginUrl) {
@@ -534,7 +569,8 @@ public final class ScopedWebappSecurityChainBuilder {
                           pathScopedCookieClearingLogoutHandler(scopedSessionCookieName, prefix))
                       .addLogoutHandler(
                           pathScopedCookieClearingLogoutHandler(scopedCsrfCookieName, prefix));
-                  logoutSuccessHandlerProvider.ifAvailable(logout::logoutSuccessHandler);
+                  logout.logoutSuccessHandler(
+                      oidcLogoutSuccessHandler(clientRegistrationRepository, prefix));
                 });
 
     // Refresh expired access tokens transparently after AuthorizationFilter; the logout handler

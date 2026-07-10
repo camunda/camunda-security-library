@@ -12,7 +12,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
-import io.camunda.security.spring.security.CamundaOidcLogoutSuccessHandler;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -30,12 +29,11 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 
 /**
- * Verifies the {@link LogoutSuccessHandler} wiring exposed by {@link OidcBeansConfiguration}: the
- * CSL ships {@link CamundaOidcLogoutSuccessHandler} as the default, and a host-registered {@link
- * LogoutSuccessHandler} bean suppresses it via {@link
- * org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean}. The {@link
- * io.camunda.security.spring.security.OidcWebappSecurityConfiguration} chain picks the resulting
- * bean up via its existing {@code ObjectProvider<LogoutSuccessHandler>} plumbing.
+ * Verifies the default OIDC beans exposed by {@link OidcBeansConfiguration} and their {@link
+ * org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean} back-off. The OIDC
+ * logout success handler is built per chain by {@code ScopedWebappSecurityChainBuilder} rather than
+ * exposed as a bean, so no {@link LogoutSuccessHandler} bean is registered here (see {@link
+ * #noLogoutSuccessHandlerBeanIsRegistered()}).
  */
 class OidcBeansConfigurationTest {
 
@@ -58,27 +56,8 @@ class OidcBeansConfigurationTest {
                   CamundaSecurityConfiguration.class, OidcBeansConfiguration.class));
 
   @Test
-  void defaultCamundaOidcLogoutSuccessHandlerIsRegisteredWhenNoHostBeanPresent() {
-    runner.run(
-        ctx -> {
-          assertThat(ctx).hasSingleBean(LogoutSuccessHandler.class);
-          assertThat(ctx)
-              .getBean(LogoutSuccessHandler.class)
-              .isInstanceOf(CamundaOidcLogoutSuccessHandler.class);
-        });
-  }
-
-  @Test
-  void hostRegisteredLogoutSuccessHandlerSuppressesTheDefault() {
-    runner
-        .withUserConfiguration(HostLogoutSuccessHandler.class)
-        .run(
-            ctx -> {
-              assertThat(ctx).hasSingleBean(LogoutSuccessHandler.class);
-              assertThat(ctx)
-                  .getBean(LogoutSuccessHandler.class)
-                  .isInstanceOf(HostLogoutSuccessHandler.NoOpLogoutSuccessHandler.class);
-            });
+  void noLogoutSuccessHandlerBeanIsRegistered() {
+    runner.run(ctx -> assertThat(ctx).doesNotHaveBean(LogoutSuccessHandler.class));
   }
 
   @Test
@@ -157,24 +136,6 @@ class OidcBeansConfigurationTest {
     @Bean
     OAuth2AuthorizedClientManager authorizedClientManager() {
       return request -> null;
-    }
-  }
-
-  @Configuration
-  static class HostLogoutSuccessHandler {
-
-    @Bean
-    LogoutSuccessHandler hostLogoutSuccessHandler() {
-      return new NoOpLogoutSuccessHandler();
-    }
-
-    static final class NoOpLogoutSuccessHandler
-        implements org.springframework.security.web.authentication.logout.LogoutSuccessHandler {
-      @Override
-      public void onLogoutSuccess(
-          final jakarta.servlet.http.HttpServletRequest request,
-          final jakarta.servlet.http.HttpServletResponse response,
-          final org.springframework.security.core.Authentication authentication) {}
     }
   }
 
