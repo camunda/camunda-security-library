@@ -499,7 +499,7 @@ public CamundaAuthenticationConverter<Authentication> authenticationConverter() 
 
 ## Extension hooks
 
-Three extension points let hosts contribute additional path-scoped API chains or customise specific OAuth2/OIDC concerns without replacing entire chains. Host-specific filter wiring (authorization filters, header rewrites, matcher tweaks) will be addressed in a follow-up PR with a more focused approach than a generic `HttpSecurity` mutator.
+Five extension points let hosts contribute additional path-scoped API chains, customise specific OAuth2/OIDC concerns, enable CORS, or add an HTTPS redirect — all without replacing entire chains. Host-specific filter wiring beyond these hooks (authorization filters, header rewrites, matcher tweaks) will be addressed in a follow-up PR.
 
 ### `CamundaSecurityScopeProvider` — contribute path-scoped API chains
 
@@ -586,6 +586,49 @@ public OidcTokenEndpointCustomizer privateKeyJwtCustomizer(MyJwkProvider jwks) {
   };
 }
 ```
+
+### `CorsConfigurationSource` — enable CORS
+
+By default CSL disables CORS on every security filter chain. To enable it, register a `CorsConfigurationSource` bean:
+
+```java
+@Bean
+public CorsConfigurationSource corsConfigurationSource() {
+    CorsConfiguration config = new CorsConfiguration();
+    config.addAllowedOriginPattern("https://*.example.com");
+    config.addAllowedMethod("*");
+    config.addAllowedHeader("*");
+    config.setAllowCredentials(true);
+    UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+    source.registerCorsConfiguration("/**", config);
+    return source;
+}
+```
+
+CSL picks up the bean automatically via `@ConditionalOnMissingBean` and applies it to all security filter chains, including the catch-all deny chain (so preflight `OPTIONS` requests for unmatched paths also receive CORS headers). When no bean is registered the previous behaviour (CORS disabled) is preserved.
+
+> **Do not register mappings on `NoOpCorsConfigurationSource`.** If you inject the default `CorsConfigurationSource` bean and call `registerCorsConfiguration(...)` on it, the registrations are silently ignored because CSL keys off the marker type, not the registered mappings. Always register your own `CorsConfigurationSource` bean to enable CORS.
+
+See [ADR-0034](../adr/0034-cors-and-https-redirect-host-hooks.md) for the design rationale.
+
+### `HttpsRedirectCustomizer` — enforce HTTPS
+
+To redirect HTTP requests to HTTPS, register an `HttpsRedirectCustomizer` bean:
+
+```java
+@Bean
+public HttpsRedirectCustomizer httpsRedirectCustomizer() {
+    return http -> http.addFilterBefore(
+        new MyHttpsRedirectFilter(),
+        org.springframework.security.web.context.SecurityContextHolderFilter.class);
+}
+```
+
+The customizer receives full `HttpSecurity` access, so the redirect strategy, excluded paths, and response code are entirely host-controlled. CSL applies the customizer to every filter chain. When no bean is registered CSL leaves HTTP→HTTPS policy to the host's infrastructure layer (load balancer, ingress).
+
+The anchor passed to `addFilterBefore` must exist in the target chain. `SecurityContextHolderFilter` is always present in CSL's chains and is the safe choice.
+
+See [ADR-0034](../adr/0034-cors-and-https-redirect-host-hooks.md) for the design rationale.
 
 ### Other host beans the chains pick up automatically
 

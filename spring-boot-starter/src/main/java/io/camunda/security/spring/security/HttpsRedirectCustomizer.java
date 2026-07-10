@@ -13,10 +13,9 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
  * SPI for inserting an HTTPS redirect filter into CSL security filter chains.
  *
  * <p>Register a bean of this type to redirect HTTP requests to HTTPS. CSL applies the customizer to
- * every filter chain that serves real content: the unprotected-path chain, the catch-all deny
- * chain, the dev-mode unprotected API chain, scoped API chains, and scoped webapp chains. No bean
- * present means no redirect — CSL's default is to leave HTTP→HTTPS policy to the host's
- * infrastructure layer.
+ * every filter chain: the unprotected-path chain, the catch-all deny chain, the dev-mode
+ * unprotected API chain, scoped API chains, and scoped webapp chains. No bean present means no
+ * redirect — CSL's default is to leave HTTP→HTTPS policy to the host's infrastructure layer.
  *
  * <p>The customizer receives full access to {@link HttpSecurity}, so the redirect strategy,
  * excluded paths, and response code are entirely host-controlled. A typical implementation:
