@@ -9,6 +9,8 @@ package io.camunda.security.spring.context.holder;
 
 import static java.time.temporal.ChronoUnit.MILLIS;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import io.camunda.security.api.context.CamundaAuthenticationHolder;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
@@ -17,19 +19,31 @@ import jakarta.servlet.http.HttpSession;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Associates a {@link CamundaAuthentication} to an existing {@link HttpSession}. As long as the
  * {@link HttpSession} stays active, the same {@link CamundaAuthentication} is returned.
+ *
+ * <p>Refresh dedup does not rely on {@link HttpSession} object identity: under Spring Session,
+ * {@code SessionRepository.findById(id)} returns a distinct object per call for the same underlying
+ * session, so a lock on the {@link HttpSession} instance would not serialize concurrent requests
+ * against the same session id. Instead, {@link #refreshClaims} is a JVM-local, session-id-keyed
+ * guard that is the authority for "has this session already been refreshed", independent of any
+ * single request's {@link HttpSession} snapshot (see ADR-0035).
  */
 public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticationHolder {
 
   public static final String CAMUNDA_AUTHENTICATION_SESSION_HOLDER_KEY =
       "io.camunda.security.session:CamundaAuthentication";
   public static final String LAST_REFRESH_ATTR = "AUTH_LAST_REFRESH";
-  private final Duration authenticationRefreshInterval;
 
+  private static final Duration REFRESH_CLAIM_TTL = Duration.ofMinutes(30);
+  private static final long REFRESH_CLAIM_MAX_SIZE = 10_000;
+
+  private final Duration authenticationRefreshInterval;
   private final HttpServletRequest request;
+  private final Cache<String, Instant> refreshClaims;
 
   public HttpSessionBasedAuthenticationHolder(
       final HttpServletRequest request,
@@ -37,6 +51,11 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
     this.request = request;
     authenticationRefreshInterval =
         Duration.parse(authenticationConfiguration.getAuthenticationRefreshInterval());
+    refreshClaims =
+        Caffeine.newBuilder()
+            .expireAfterWrite(REFRESH_CLAIM_TTL)
+            .maximumSize(REFRESH_CLAIM_MAX_SIZE)
+            .build();
   }
 
   @Override
@@ -77,13 +96,26 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
   }
 
   private void lockAndRefresh(final HttpSession session, final Instant now) {
-    final Instant lastRefresh;
-    synchronized (session) {
-      lastRefresh = (Instant) session.getAttribute(LAST_REFRESH_ATTR);
-      if (isRefreshRequired(lastRefresh, now)) {
-        removeCamundaAuthenticationInSession(session);
-        session.setAttribute(LAST_REFRESH_ATTR, now);
-      }
+    final AtomicBoolean shouldRefresh = new AtomicBoolean(false);
+    // compute() on the session id is the authority for the decision, not session.getAttribute():
+    // concurrent requests against the same session id can each hold a distinct HttpSession
+    // snapshot (see class javadoc / ADR-0035), so only a JVM-local guard keyed by the stable
+    // session id — not the HttpSession object, and not its possibly-stale attribute state —
+    // can dedup the refresh across them.
+    refreshClaims
+        .asMap()
+        .compute(
+            session.getId(),
+            (id, lastClaimed) -> {
+              if (lastClaimed == null || isRefreshRequired(lastClaimed, now)) {
+                shouldRefresh.set(true);
+                return now;
+              }
+              return lastClaimed;
+            });
+    if (shouldRefresh.get()) {
+      removeCamundaAuthenticationInSession(session);
+      session.setAttribute(LAST_REFRESH_ATTR, now);
     }
   }
 
