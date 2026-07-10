@@ -84,6 +84,11 @@ public final class AuthorizationService implements AuthorizationCheckPort {
     return !authorizationEnabled && !multiTenancyChecksEnabled;
   }
 
+  /** Exposed package-privately so tests can assert the shared-converter wiring invariant. */
+  LazyTokenClaimsConverter claimsConverter() {
+    return claimsConverter;
+  }
+
   @Override
   public <T> Either<AuthorizationRejection, Void> check(
       final Map<String, Object> claims, final RequiredAuthorization<T> authorization) {
