@@ -9,12 +9,15 @@ package io.camunda.security.spring.scope;
 
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
+import io.camunda.security.spring.cors.NoOpCorsConfigurationSource;
 import io.camunda.security.spring.handler.AuthFailureHandler;
+import io.camunda.security.spring.security.HttpsRedirectCustomizer;
 import io.camunda.security.spring.security.OidcResourceServerCustomizer;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.cors.CorsConfigurationSource;
 
 /**
  * Provides the shared {@link ScopedApiSecurityChainBuilder} bean unconditionally. The builder is
@@ -36,8 +39,15 @@ public class ScopedApiSecurityChainBuilderConfiguration {
       final CamundaSecurityLibraryProperties properties,
       final AuthFailureHandler authFailureHandler,
       final SecurityPathPort pathPort,
-      final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers) {
+      final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers,
+      final ObjectProvider<CorsConfigurationSource> corsSourceProvider,
+      final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers) {
     return new ScopedApiSecurityChainBuilder(
-        properties, authFailureHandler, pathPort, resourceServerCustomizers);
+        properties,
+        authFailureHandler,
+        pathPort,
+        resourceServerCustomizers,
+        corsSourceProvider.getIfAvailable(NoOpCorsConfigurationSource::new),
+        httpsRedirectCustomizers);
   }
 }

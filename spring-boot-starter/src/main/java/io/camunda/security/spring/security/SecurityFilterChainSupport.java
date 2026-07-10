@@ -14,6 +14,7 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 import io.camunda.security.api.model.config.headers.HeaderConfiguration;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
+import io.camunda.security.spring.cors.NoOpCorsConfigurationSource;
 import io.camunda.security.spring.csrf.CsrfProtectionRequestMatcher;
 import io.camunda.security.spring.scope.BasePaths;
 import jakarta.servlet.Filter;
@@ -38,6 +39,7 @@ import org.springframework.security.web.header.writers.CrossOriginEmbedderPolicy
 import org.springframework.security.web.header.writers.CrossOriginOpenerPolicyHeaderWriter;
 import org.springframework.security.web.header.writers.CrossOriginResourcePolicyHeaderWriter;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /** Shared helpers for assembling CSL security filter chains. */
@@ -186,6 +188,37 @@ public final class SecurityFilterChainSupport {
       final ObjectProvider<F> provider,
       final Class<? extends Filter> afterFilter) {
     provider.ifAvailable(filter -> http.addFilterAfter(filter, afterFilter));
+  }
+
+  /**
+   * Configures CORS on the given filter chain using the provided {@link CorsConfigurationSource}.
+   * When the source is the CSL no-op default ({@link NoOpCorsConfigurationSource}), CORS is
+   * explicitly disabled — preserving the previous always-disabled behaviour. Any host-provided
+   * source is always honoured, including a {@link
+   * org.springframework.web.cors.UrlBasedCorsConfigurationSource} that starts empty and is
+   * populated later via config refresh.
+   */
+  public static void applyCorsConfiguration(
+      final HttpSecurity http, final CorsConfigurationSource corsSource) throws Exception {
+    if (corsSource instanceof NoOpCorsConfigurationSource) {
+      http.cors(AbstractHttpConfigurer::disable);
+    } else {
+      http.cors(cors -> cors.configurationSource(corsSource));
+    }
+  }
+
+  /**
+   * Applies every registered {@link HttpsRedirectCustomizer} bean to the given filter chain, in
+   * {@link org.springframework.core.annotation.Order} order. When no bean is registered this is a
+   * no-op, so CSL's default is no HTTP→HTTPS redirect.
+   */
+  public static void applyHttpsRedirectCustomizers(
+      final HttpSecurity http,
+      final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers)
+      throws Exception {
+    for (final var customizer : httpsRedirectCustomizers.orderedStream().toList()) {
+      customizer.customize(http);
+    }
   }
 
   /**

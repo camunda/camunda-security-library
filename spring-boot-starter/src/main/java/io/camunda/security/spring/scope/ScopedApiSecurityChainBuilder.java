@@ -14,6 +14,7 @@ import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.handler.LoggingAuthenticationFailureHandler;
+import io.camunda.security.spring.security.HttpsRedirectCustomizer;
 import io.camunda.security.spring.security.OidcResourceServerCustomizer;
 import io.camunda.security.spring.security.SecurityFilterChainSupport;
 import java.util.Collection;
@@ -34,6 +35,7 @@ import org.springframework.security.web.authentication.AuthenticationEntryPointF
 import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.savedrequest.NullRequestCache;
 import org.springframework.session.web.http.SessionRepositoryFilter;
+import org.springframework.web.cors.CorsConfigurationSource;
 
 /**
  * Reusable builder that is the single source of truth for the CSL API filter-chain shape. Both
@@ -54,16 +56,22 @@ public final class ScopedApiSecurityChainBuilder {
   private final AuthFailureHandler authFailureHandler;
   private final SecurityPathPort pathPort;
   private final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers;
+  private final CorsConfigurationSource corsSource;
+  private final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers;
 
   public ScopedApiSecurityChainBuilder(
       final CamundaSecurityLibraryProperties properties,
       final AuthFailureHandler authFailureHandler,
       final SecurityPathPort pathPort,
-      final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers) {
+      final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers,
+      final CorsConfigurationSource corsSource,
+      final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers) {
     this.properties = properties;
     this.authFailureHandler = authFailureHandler;
     this.pathPort = pathPort;
     this.resourceServerCustomizers = resourceServerCustomizers;
+    this.corsSource = corsSource;
+    this.httpsRedirectCustomizers = httpsRedirectCustomizers;
   }
 
   /**
@@ -127,12 +135,14 @@ public final class ScopedApiSecurityChainBuilder {
                 })
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.NEVER))
             .requestCache(cache -> cache.requestCache(new NullRequestCache()))
-            .cors(AbstractHttpConfigurer::disable)
             .formLogin(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable)
             .oauth2Login(AbstractHttpConfigurer::disable)
             .oidcLogout(AbstractHttpConfigurer::disable)
             .logout(AbstractHttpConfigurer::disable);
+    SecurityFilterChainSupport.applyCorsConfiguration(filterChainBuilder, corsSource);
+    SecurityFilterChainSupport.applyHttpsRedirectCustomizers(
+        filterChainBuilder, httpsRedirectCustomizers);
     SecurityFilterChainSupport.applyCsrfConfiguration(
         filterChainBuilder, properties, pathPort, csrfCookiePath, csrfCookieName);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
@@ -179,7 +189,6 @@ public final class ScopedApiSecurityChainBuilder {
                         .permitAll()
                         .anyRequest()
                         .authenticated())
-            .cors(AbstractHttpConfigurer::disable)
             .formLogin(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable)
             .httpBasic(org.springframework.security.config.Customizer.withDefaults())
@@ -190,6 +199,9 @@ public final class ScopedApiSecurityChainBuilder {
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.NEVER))
             .requestCache(cache -> cache.requestCache(new NullRequestCache()));
 
+    SecurityFilterChainSupport.applyCorsConfiguration(filterChainBuilder, corsSource);
+    SecurityFilterChainSupport.applyHttpsRedirectCustomizers(
+        filterChainBuilder, httpsRedirectCustomizers);
     SecurityFilterChainSupport.applyCsrfConfiguration(
         filterChainBuilder, properties, pathPort, csrfCookiePath, csrfCookieName);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
@@ -323,11 +335,13 @@ public final class ScopedApiSecurityChainBuilder {
     final var filterChainBuilder =
         http.securityMatcher(matchers.toArray(String[]::new))
             .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
-            .cors(AbstractHttpConfigurer::disable)
             .exceptionHandling(eh -> eh.accessDeniedHandler(authFailureHandler))
             .formLogin(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable);
 
+    SecurityFilterChainSupport.applyCorsConfiguration(filterChainBuilder, corsSource);
+    SecurityFilterChainSupport.applyHttpsRedirectCustomizers(
+        filterChainBuilder, httpsRedirectCustomizers);
     SecurityFilterChainSupport.applyCsrfConfiguration(
         filterChainBuilder,
         properties,

@@ -11,9 +11,11 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
+import io.camunda.security.spring.cors.NoOpCorsConfigurationSource;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -21,6 +23,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfigurationSource;
 
 /**
  * Development-only filter chain that leaves all API paths unprotected. Activated when {@code
@@ -41,19 +44,24 @@ public class UnprotectedApiSecurityConfiguration {
       final HttpSecurity http,
       final AuthFailureHandler authFailureHandler,
       final CamundaSecurityLibraryProperties properties,
-      final SecurityPathPort pathPort)
+      final SecurityPathPort pathPort,
+      final ObjectProvider<CorsConfigurationSource> corsSourceProvider,
+      final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers)
       throws Exception {
     LOG.warn(
         "The API is unprotected. This is intended for development only. API paths: {}",
         pathPort.apiPaths());
+    final var corsSource = corsSourceProvider.getIfAvailable(NoOpCorsConfigurationSource::new);
     final var filterChainBuilder =
         http.securityMatcher(pathPort.apiPaths().toArray(String[]::new))
             .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
-            .cors(AbstractHttpConfigurer::disable)
             .exceptionHandling(eh -> eh.accessDeniedHandler(authFailureHandler))
             .formLogin(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable);
 
+    SecurityFilterChainSupport.applyCorsConfiguration(filterChainBuilder, corsSource);
+    SecurityFilterChainSupport.applyHttpsRedirectCustomizers(
+        filterChainBuilder, httpsRedirectCustomizers);
     SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
