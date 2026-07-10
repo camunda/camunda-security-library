@@ -10,6 +10,8 @@ package io.camunda.security.spring.context.holder;
 import static io.camunda.security.spring.context.holder.HttpSessionBasedAuthenticationHolder.CAMUNDA_AUTHENTICATION_SESSION_HOLDER_KEY;
 import static io.camunda.security.spring.context.holder.HttpSessionBasedAuthenticationHolder.LAST_REFRESH_ATTR;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -19,6 +21,15 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -179,5 +190,117 @@ public class HttpSessionBasedAuthenticationHolderTest {
 
     // then: the existing refresh timestamp is not overwritten
     assertThat(session.getAttribute(LAST_REFRESH_ATTR)).isEqualTo(firstRefresh);
+  }
+
+  /**
+   * Models what a real {@code SessionRepository.findById(id)} returns for concurrent requests
+   * against the same session id under Spring Session: two distinct {@link HttpSession} Java objects
+   * backed by the same underlying attribute storage (see camunda-security-library#510). The refresh
+   * dedup must hold even though {@code synchronized (session)} synchronizes on two different
+   * monitors here.
+   *
+   * <p>Mirrors production wiring, where {@code HttpSessionBasedAuthenticationHolder} is a singleton
+   * bean and {@code HttpServletRequest} is a request-scoped proxy: one holder instance is shared by
+   * both concurrent requests, each thread resolving its own {@link HttpSession} via a thread-bound
+   * {@link ThreadLocal}, exactly as the scoped proxy would.
+   */
+  @Test
+  public void shouldOnlyRefreshOnceAcrossDistinctSessionInstancesForSameSessionId()
+      throws Exception {
+    // given: two distinct HttpSession objects sharing one backing attribute store, both
+    // observing an authentication with an expired last-refresh timestamp
+    final var authentication = mock(CamundaAuthentication.class);
+    final Map<String, Object> backingStore = new ConcurrentHashMap<>();
+    final AtomicInteger refreshCount = new AtomicInteger();
+    final var barrier = new CyclicBarrier(2);
+    final var awaitedOnce = ThreadLocal.withInitial(() -> false);
+
+    backingStore.put(CAMUNDA_AUTHENTICATION_SESSION_HOLDER_KEY, authentication);
+    backingStore.put(LAST_REFRESH_ATTR, Instant.now().minus(Duration.ofSeconds(10)));
+
+    when(authenticationConfiguration.getAuthenticationRefreshInterval())
+        .thenReturn(Duration.ofMillis(1).toString());
+
+    final var sessionA =
+        sharedBackedSession(backingStore, refreshCount, barrier, awaitedOnce, "shared-session-id");
+    final var sessionB =
+        sharedBackedSession(backingStore, refreshCount, barrier, awaitedOnce, "shared-session-id");
+
+    final ThreadLocal<HttpSession> currentSession = new ThreadLocal<>();
+    final var request = mock(HttpServletRequest.class);
+    lenient().when(request.getSession(eq(false))).thenAnswer(invocation -> currentSession.get());
+
+    final var sharedHolder =
+        new HttpSessionBasedAuthenticationHolder(request, authenticationConfiguration);
+
+    // when: both requests observe the expired timestamp and race to refresh concurrently
+    final ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      final Callable<CamundaAuthentication> callA =
+          () -> {
+            currentSession.set(sessionA);
+            return sharedHolder.get();
+          };
+      final Callable<CamundaAuthentication> callB =
+          () -> {
+            currentSession.set(sessionB);
+            return sharedHolder.get();
+          };
+      final Future<CamundaAuthentication> futureA = executor.submit(callA);
+      final Future<CamundaAuthentication> futureB = executor.submit(callB);
+      futureA.get(5, TimeUnit.SECONDS);
+      futureB.get(5, TimeUnit.SECONDS);
+    } finally {
+      executor.shutdownNow();
+    }
+
+    // then: only one of the two concurrent requests actually performed the refresh
+    assertThat(refreshCount.get()).isEqualTo(1);
+  }
+
+  private static HttpSession sharedBackedSession(
+      final Map<String, Object> backingStore,
+      final AtomicInteger refreshCount,
+      final CyclicBarrier barrier,
+      final ThreadLocal<Boolean> awaitedOnce,
+      final String sessionId)
+      throws Exception {
+    final var session = mock(HttpSession.class);
+    lenient().when(session.getId()).thenReturn(sessionId);
+    lenient()
+        .when(session.getAttribute(anyString()))
+        .thenAnswer(
+            invocation -> {
+              final String attributeName = invocation.getArgument(0, String.class);
+              if (LAST_REFRESH_ATTR.equals(attributeName) && !awaitedOnce.get()) {
+                // force both requests to observe the still-expired timestamp before either
+                // has a chance to write the refreshed one, deterministically reproducing the
+                // concurrent-refresh race described in camunda-security-library#510
+                awaitedOnce.set(true);
+                barrier.await(5, TimeUnit.SECONDS);
+              }
+              return backingStore.get(attributeName);
+            });
+    lenient()
+        .doAnswer(
+            invocation -> {
+              backingStore.put(invocation.getArgument(0, String.class), invocation.getArgument(1));
+              return null;
+            })
+        .when(session)
+        .setAttribute(anyString(), any());
+    lenient()
+        .doAnswer(
+            invocation -> {
+              final String attributeName = invocation.getArgument(0, String.class);
+              backingStore.remove(attributeName);
+              if (CAMUNDA_AUTHENTICATION_SESSION_HOLDER_KEY.equals(attributeName)) {
+                refreshCount.incrementAndGet();
+              }
+              return null;
+            })
+        .when(session)
+        .removeAttribute(anyString());
+    return session;
   }
 }
