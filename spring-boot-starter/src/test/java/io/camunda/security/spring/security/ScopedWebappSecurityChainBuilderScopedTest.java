@@ -36,13 +36,17 @@ import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.DefaultSecurityFilterChain;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.logout.LogoutFilter;
+import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.session.MapSessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * Verifies {@link ScopedWebappSecurityChainBuilder#buildScopedWebappChain}: path-prefixed matchers,
@@ -180,6 +184,48 @@ class ScopedWebappSecurityChainBuilderScopedTest {
           assertThat(sessionFilterIndex)
               .as("SessionRepositoryFilter must appear before SecurityContextHolderFilter")
               .isLessThan(securityContextIndex);
+        });
+  }
+
+  /**
+   * Regression: the scoped OIDC chain must wire its logout success handler with the <em>scoped</em>
+   * {@link ClientRegistrationRepository}, not the cluster one. Only the scoped repo carries the
+   * scoped registration (prefixed redirect URI), so RP-initiated logout can resolve {@code
+   * end_session_endpoint}/{@code client_id} for scoped users. Guards against reintroducing the
+   * defect where the handler was taken from a cluster-level provider.
+   */
+  @Test
+  void scopedOidcChainWiresLogoutSuccessHandlerWithScopedClientRegistrationRepository() {
+    runner.run(
+        ctx -> {
+          final var chain =
+              (DefaultSecurityFilterChain)
+                  ctx.getBean("scopedOidcTestChain", SecurityFilterChain.class);
+          final var logoutFilter =
+              chain.getFilters().stream()
+                  .filter(LogoutFilter.class::isInstance)
+                  .map(LogoutFilter.class::cast)
+                  .findFirst()
+                  .orElseThrow(
+                      () -> new AssertionError("scoped OIDC chain must have a LogoutFilter"));
+
+          final var successHandler =
+              (LogoutSuccessHandler)
+                  ReflectionTestUtils.getField(logoutFilter, "logoutSuccessHandler");
+          assertThat(successHandler)
+              .as("scoped OIDC logout must use the CSL-owned OIDC logout success handler")
+              .isInstanceOf(CamundaOidcLogoutSuccessHandler.class);
+
+          final var repo =
+              (ClientRegistrationRepository)
+                  ReflectionTestUtils.getField(successHandler, "clientRegistrationRepository");
+          final var registration = repo.findByRegistrationId("oidc");
+          assertThat(registration)
+              .as("logout handler's repository must resolve the scoped registration")
+              .isNotNull();
+          assertThat(registration.getRedirectUri())
+              .as("resolved registration must be the scoped one (redirect URI carries the prefix)")
+              .isEqualTo("{baseUrl}" + BASE_PATH + "/sso-callback");
         });
   }
 

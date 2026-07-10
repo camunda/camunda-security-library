@@ -391,9 +391,10 @@ public final class ScopedWebappSecurityChainBuilder {
    * Builds the {@code post_logout_redirect_uri} template {@code "{baseUrl}" + prefix + route}. The
    * literal {@code prefix} (the chain's normalized base path, {@code ""} for the primary chain)
    * adds back the CSL base path that {@code {baseUrl}} drops. Returns {@code ""} when no route is
-   * configured, so callers send no {@code post_logout_redirect_uri}.
+   * configured, or when the configured route is blank/whitespace (treated as absent), so callers
+   * send no {@code post_logout_redirect_uri}.
    *
-   * @throws IllegalArgumentException if a route is present but does not start with {@code "/"}.
+   * @throws IllegalArgumentException if a non-blank route does not start with {@code "/"}.
    */
   static String postLogoutRedirectUri(final String prefix, final Optional<String> route) {
     final String path = route.orElse("");
