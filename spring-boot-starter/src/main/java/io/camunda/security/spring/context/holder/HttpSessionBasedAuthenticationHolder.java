@@ -19,7 +19,6 @@ import jakarta.servlet.http.HttpSession;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Associates a {@link CamundaAuthentication} to an existing {@link HttpSession}. As long as the
@@ -100,24 +99,25 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
     // concurrently, and the rollback path below must not risk a second, possibly-throwing call
     // masking the original refresh failure.
     final String sessionId = session.getId();
-    final AtomicBoolean shouldRefresh = new AtomicBoolean(false);
     // compute() on the session id is the authority for the decision, not session.getAttribute():
     // concurrent requests against the same session id can each hold a distinct HttpSession
     // snapshot (see class javadoc / ADR-0035), so only a JVM-local guard keyed by the stable
     // session id — not the HttpSession object, and not its possibly-stale attribute state —
-    // can dedup the refresh across them.
-    refreshClaims
-        .asMap()
-        .compute(
-            sessionId,
-            (id, lastClaimed) -> {
-              if (lastClaimed == null || isRefreshRequired(lastClaimed, now)) {
-                shouldRefresh.set(true);
-                return now;
-              }
-              return lastClaimed;
-            });
-    if (shouldRefresh.get()) {
+    // can dedup the refresh across them. The remapping function stays side-effect free (it may be
+    // re-invoked under contention); the return value, not a captured flag, is the sole signal for
+    // whether this caller is the one that advanced the claim.
+    final Instant claimed =
+        refreshClaims
+            .asMap()
+            .compute(
+                sessionId,
+                (id, lastClaimed) ->
+                    lastClaimed == null || isRefreshRequired(lastClaimed, now) ? now : lastClaimed);
+    // reference equality, not Instant.equals(): two concurrent callers can capture
+    // value-identical Instants (clock resolution can be coarser than the race window), so value
+    // equality alone cannot tell which caller's write actually landed. `now` is a distinct object
+    // per call, so `==` reliably identifies whether *this* call's claim is the one that won.
+    if (claimed == now) {
       try {
         removeCamundaAuthenticationInSession(session);
         session.setAttribute(LAST_REFRESH_ATTR, now);

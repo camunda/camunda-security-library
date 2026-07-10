@@ -216,10 +216,15 @@ public class HttpSessionBasedAuthenticationHolderTest {
     final var awaitedOnce = ThreadLocal.withInitial(() -> false);
 
     backingStore.put(CAMUNDA_AUTHENTICATION_SESSION_HOLDER_KEY, authentication);
-    backingStore.put(LAST_REFRESH_ATTR, Instant.now().minus(Duration.ofSeconds(10)));
+    backingStore.put(LAST_REFRESH_ATTR, Instant.now().minus(Duration.ofMinutes(10)));
 
+    // A refresh interval on the order of milliseconds would make this test flaky: `now` is
+    // captured independently per thread *before* either reaches the barrier below, so ordinary
+    // thread-scheduling jitter between the two captures (executor startup, JIT, GC) can easily
+    // exceed a few milliseconds. A 1-second interval keeps that jitter negligible by comparison
+    // while the 10-minutes-old seed above is still unambiguously expired against it.
     when(authenticationConfiguration.getAuthenticationRefreshInterval())
-        .thenReturn(Duration.ofMillis(1).toString());
+        .thenReturn(Duration.ofSeconds(1).toString());
 
     final var sessionA =
         sharedBackedSession(backingStore, refreshCount, barrier, awaitedOnce, "shared-session-id");
@@ -274,11 +279,15 @@ public class HttpSessionBasedAuthenticationHolderTest {
             invocation -> {
               final String attributeName = invocation.getArgument(0, String.class);
               if (LAST_REFRESH_ATTR.equals(attributeName) && !awaitedOnce.get()) {
-                // force both requests to observe the still-expired timestamp before either
-                // has a chance to write the refreshed one, deterministically reproducing the
-                // concurrent-refresh race described in camunda-security-library#510
+                // capture the still-expired value before awaiting the barrier: once released,
+                // scheduling may let one thread run to completion (including writing the
+                // refreshed value back into the shared backingStore) before the other thread's
+                // post-barrier code even resumes, so reading backingStore only after the barrier
+                // would make the race non-deterministic under a skewed schedule
                 awaitedOnce.set(true);
+                final Object capturedValue = backingStore.get(attributeName);
                 barrier.await(5, TimeUnit.SECONDS);
+                return capturedValue;
               }
               return backingStore.get(attributeName);
             });
