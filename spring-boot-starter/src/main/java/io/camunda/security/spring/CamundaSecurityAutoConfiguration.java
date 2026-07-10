@@ -10,6 +10,7 @@ package io.camunda.security.spring;
 import io.camunda.security.spring.authz.AuthorizationCheckerConfiguration;
 import io.camunda.security.spring.authz.AuthorizationConfiguration;
 import io.camunda.security.spring.context.CamundaAuthenticationBeansConfiguration;
+import io.camunda.security.spring.cors.CorsBeansConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
 import io.camunda.security.spring.oidc.OidcClaimsProviderConfiguration;
@@ -70,6 +71,7 @@ import org.springframework.context.annotation.Import;
   ScopedWebappSecurityChainBuilderConfiguration.class,
   UnprotectedApiSecurityConfiguration.class,
   AuthFailureHandlerConfiguration.class,
+  CorsBeansConfiguration.class,
   OidcBeansConfiguration.class,
   OidcClaimsProviderConfiguration.class,
   ScopedOidcInfrastructureConfiguration.class,

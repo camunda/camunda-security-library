@@ -63,6 +63,7 @@ import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.util.matcher.RequestHeaderRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.session.web.http.SessionRepositoryFilter;
+import org.springframework.web.cors.CorsConfigurationSource;
 
 /**
  * Single source of truth for the CSL webapp filter-chain shape (OIDC oauth2Login and HTTP-Basic
@@ -92,6 +93,8 @@ public final class ScopedWebappSecurityChainBuilder {
   private final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider;
   private final OAuth2AuthorizedClientManagerFactory authorizedClientManagerFactory;
   private final ScopedClientRegistrationFactory scopedClientRegistrationFactory;
+  private final CorsConfigurationSource corsSource;
+  private final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers;
 
   public ScopedWebappSecurityChainBuilder(
       final AuthFailureHandler authFailureHandler,
@@ -105,7 +108,9 @@ public final class ScopedWebappSecurityChainBuilder {
       final ObjectProvider<DefaultLoginPageGeneratingFilter> oidcLoginPickerProvider,
       final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider,
       final OAuth2AuthorizedClientManagerFactory authorizedClientManagerFactory,
-      final ScopedClientRegistrationFactory scopedClientRegistrationFactory) {
+      final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
+      final CorsConfigurationSource corsSource,
+      final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers) {
     this.authFailureHandler = authFailureHandler;
     this.properties = properties;
     this.pathPort = pathPort;
@@ -118,6 +123,8 @@ public final class ScopedWebappSecurityChainBuilder {
     this.adminUserCheckFilterProvider = adminUserCheckFilterProvider;
     this.authorizedClientManagerFactory = authorizedClientManagerFactory;
     this.scopedClientRegistrationFactory = scopedClientRegistrationFactory;
+    this.corsSource = corsSource;
+    this.httpsRedirectCustomizers = httpsRedirectCustomizers;
   }
 
   /**
@@ -167,7 +174,6 @@ public final class ScopedWebappSecurityChainBuilder {
                             oidcWebappAuthenticationEntryPoint(
                                 clientRegistrationRepository, loginUrl))
                         .accessDeniedHandler(authFailureHandler))
-            .cors(AbstractHttpConfigurer::disable)
             .formLogin(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable)
             // No oauth2ResourceServer on the webapp chain: it authenticates users interactively via
@@ -220,6 +226,9 @@ public final class ScopedWebappSecurityChainBuilder {
       filterChainBuilder.addFilterAfter(webAppFilter, OAuth2RefreshTokenFilter.class);
     }
 
+    SecurityFilterChainSupport.applyCorsConfiguration(filterChainBuilder, corsSource);
+    SecurityFilterChainSupport.applyHttpsRedirectCustomizers(
+        filterChainBuilder, httpsRedirectCustomizers);
     SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
@@ -263,7 +272,6 @@ public final class ScopedWebappSecurityChainBuilder {
     final var filterChainBuilder =
         http.securityMatcher(matchers.toArray(String[]::new))
             .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
-            .cors(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable)
             .formLogin(
                 formLogin ->
@@ -304,6 +312,9 @@ public final class ScopedWebappSecurityChainBuilder {
       filterChainBuilder.addFilterAfter(webAppFilter, anchor);
     }
 
+    SecurityFilterChainSupport.applyCorsConfiguration(filterChainBuilder, corsSource);
+    SecurityFilterChainSupport.applyHttpsRedirectCustomizers(
+        filterChainBuilder, httpsRedirectCustomizers);
     SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
@@ -493,7 +504,6 @@ public final class ScopedWebappSecurityChainBuilder {
                             oidcWebappAuthenticationEntryPoint(
                                 clientRegistrationRepository, loginUrl, authorizationBaseUri))
                         .accessDeniedHandler(authFailureHandler))
-            .cors(AbstractHttpConfigurer::disable)
             .formLogin(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable)
             // No oauth2ResourceServer on the webapp chain: it authenticates users interactively via
@@ -547,6 +557,9 @@ public final class ScopedWebappSecurityChainBuilder {
       filterChainBuilder.addFilterAfter(webAppFilter, OAuth2RefreshTokenFilter.class);
     }
 
+    SecurityFilterChainSupport.applyCorsConfiguration(filterChainBuilder, corsSource);
+    SecurityFilterChainSupport.applyHttpsRedirectCustomizers(
+        filterChainBuilder, httpsRedirectCustomizers);
     SecurityFilterChainSupport.applyCsrfConfiguration(
         filterChainBuilder, properties, pathPort, prefix, scopedCsrfCookieName);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
@@ -609,7 +622,6 @@ public final class ScopedWebappSecurityChainBuilder {
     final var filterChainBuilder =
         http.securityMatcher(matchers.toArray(String[]::new))
             .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
-            .cors(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable)
             .formLogin(
                 formLogin ->
@@ -653,6 +665,9 @@ public final class ScopedWebappSecurityChainBuilder {
       filterChainBuilder.addFilterAfter(webAppFilter, anchor);
     }
 
+    SecurityFilterChainSupport.applyCorsConfiguration(filterChainBuilder, corsSource);
+    SecurityFilterChainSupport.applyHttpsRedirectCustomizers(
+        filterChainBuilder, httpsRedirectCustomizers);
     SecurityFilterChainSupport.applyCsrfConfiguration(
         filterChainBuilder, properties, pathPort, prefix, scopedCsrfCookieName);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());

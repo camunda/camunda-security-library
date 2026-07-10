@@ -9,6 +9,7 @@ package io.camunda.security.spring.security;
 
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
+import io.camunda.security.spring.cors.NoOpCorsConfigurationSource;
 import io.camunda.security.spring.filter.AdminUserCheckFilter;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
@@ -25,6 +26,7 @@ import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedCli
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.authentication.ui.DefaultLoginPageGeneratingFilter;
+import org.springframework.web.cors.CorsConfigurationSource;
 
 /**
  * Provides the {@link ScopedWebappSecurityChainBuilder} and {@link
@@ -54,7 +56,9 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
       final ObjectProvider<DefaultLoginPageGeneratingFilter> oidcLoginPickerProvider,
       final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider,
       final OAuth2AuthorizedClientManagerFactory authorizedClientManagerFactory,
-      final ScopedClientRegistrationFactory scopedClientRegistrationFactory) {
+      final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
+      final ObjectProvider<CorsConfigurationSource> corsSourceProvider,
+      final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers) {
     return new ScopedWebappSecurityChainBuilder(
         authFailureHandler,
         properties,
@@ -67,7 +71,9 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
         oidcLoginPickerProvider,
         adminUserCheckFilterProvider,
         authorizedClientManagerFactory,
-        scopedClientRegistrationFactory);
+        scopedClientRegistrationFactory,
+        corsSourceProvider.getIfAvailable(NoOpCorsConfigurationSource::new),
+        httpsRedirectCustomizers);
   }
 
   // Also declared in ScopedOidcInfrastructureConfiguration; provided here too so this configuration
