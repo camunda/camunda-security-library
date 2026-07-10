@@ -25,6 +25,8 @@ import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -229,6 +231,34 @@ class ScopedWebappSecurityChainBuilderScopedTest {
         });
   }
 
+  /**
+   * A host may (wrongly) override {@link SecurityPathPort#postLogoutRedirectPath()} to return a
+   * bare {@code null} despite the {@code Optional} return type. The builder must fail fast with a
+   * clear message and migration hint, not NPE deep inside the redirect-URI template.
+   */
+  @Test
+  void scopedOidcChainFailsFastWhenPostLogoutRedirectPathReturnsNull() {
+    new WebApplicationContextRunner()
+        .withUserConfiguration(ObjectMapperConfig.class, NullPostLogoutPathConfig.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                BaseSecurityConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                ScopedOidcInfrastructureConfiguration.class,
+                ScopedWebappSecurityChainBuilderConfiguration.class))
+        .run(
+            ctx -> {
+              assertThat(ctx).hasFailed();
+              assertThat(ctx.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(NullPointerException.class)
+                  .hasMessageContaining(
+                      "SecurityPathPort#postLogoutRedirectPath() must not return null")
+                  .hasMessageContaining("return Optional.empty()");
+            });
+  }
+
   @Test
   void pickerLinksArePrefixedWithBasePathForMultiIdp() throws Exception {
     new WebApplicationContextRunner()
@@ -416,6 +446,73 @@ class ScopedWebappSecurityChainBuilderScopedTest {
     }
   }
 
+  /**
+   * Supplies a {@link SecurityPathPort} whose {@code postLogoutRedirectPath()} returns {@code null}
+   * (a contract violation) and an OIDC scoped chain that exercises the logout handler wiring, so
+   * the fail-fast guard is triggered during context startup.
+   */
+  @Configuration
+  static class NullPostLogoutPathConfig {
+
+    @Bean
+    JwtDecoder jwtDecoderNullPostLogout() {
+      return token -> {
+        throw new UnsupportedOperationException("stub — not called in this test");
+      };
+    }
+
+    @Bean
+    SecurityPathPort securityPathPort() {
+      final var delegate = StubSecurityPaths.builder().build();
+      return new SecurityPathPort() {
+        @Override
+        public Set<String> apiPaths() {
+          return delegate.apiPaths();
+        }
+
+        @Override
+        public Set<String> unprotectedApiPaths() {
+          return delegate.unprotectedApiPaths();
+        }
+
+        @Override
+        public Set<String> unprotectedPaths() {
+          return delegate.unprotectedPaths();
+        }
+
+        @Override
+        public Set<String> webappPaths() {
+          return delegate.webappPaths();
+        }
+
+        @Override
+        public Set<String> webComponentNames() {
+          return delegate.webComponentNames();
+        }
+
+        @Override
+        public Optional<String> postLogoutRedirectPath() {
+          return null;
+        }
+      };
+    }
+
+    @Bean("scopedOidcNullPostLogoutChain")
+    SecurityFilterChain scopedOidcNullPostLogoutChain(
+        final HttpSecurity http, final ScopedWebappSecurityChainBuilder builder) throws Exception {
+      final var authentication = ScopedSingleIdpConfig.buildOidcAuthentication("oidc");
+      final var sessionFilter =
+          new SessionRepositoryFilter<>(new MapSessionRepository(new ConcurrentHashMap<>()));
+      return builder.buildScopedWebappChain(
+          http,
+          BASE_PATH,
+          authentication,
+          sessionFilter,
+          "camunda-session-physical-tenants-t1",
+          "X-CSRF-TOKEN-physical-tenants-t1");
+    }
+  }
+
   @Configuration
   static class ScopedSingleIdpConfig {
 
@@ -449,8 +546,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
       return new SessionRepositoryFilter<>(new MapSessionRepository(new ConcurrentHashMap<>()));
     }
 
-    private static AuthenticationConfiguration buildOidcAuthentication(
-        final String... registrationIds) {
+    static AuthenticationConfiguration buildOidcAuthentication(final String... registrationIds) {
       final var auth = new AuthenticationConfiguration();
       auth.setMethod(AuthenticationMethod.OIDC);
       final var providers = new OidcProvidersConfiguration();

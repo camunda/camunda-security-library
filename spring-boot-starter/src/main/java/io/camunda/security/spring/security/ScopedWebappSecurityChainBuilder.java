@@ -411,7 +411,12 @@ public final class ScopedWebappSecurityChainBuilder {
   private LogoutSuccessHandler oidcLogoutSuccessHandler(
       final ClientRegistrationRepository repo, final String prefix) {
     final var handler = new CamundaOidcLogoutSuccessHandler(repo);
-    final var uri = postLogoutRedirectUri(prefix, pathPort.postLogoutRedirectPath());
+    final var route =
+        Objects.requireNonNull(
+            pathPort.postLogoutRedirectPath(),
+            "SecurityPathPort#postLogoutRedirectPath() must not return null; "
+                + "return Optional.empty() to send no post_logout_redirect_uri");
+    final var uri = postLogoutRedirectUri(prefix, route);
     if (!uri.isEmpty()) {
       handler.setPostLogoutRedirectUri(uri);
     }
