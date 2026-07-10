@@ -36,9 +36,11 @@ public interface AuthorizationCheckPort {
       Map<String, Object> claims, RequiredAuthorization<T> authorization);
 
   /**
-   * Property-based authorization check. Evaluates whether the principal is authorized to access the
-   * concrete {@code resource} instance via a stored property-scoped grant declared in {@code
-   * authorization} whose registered evaluator matches the resource.
+   * Property-based authorization check. The principal is authorized to access the concrete {@code
+   * resource} instance when it holds a stored property-scoped grant for a property declared in
+   * {@code authorization}, <em>and</em> the evaluator registered for that property matches {@code
+   * resource}. Evaluators are looked up by property name; matching the resource is what the
+   * selected evaluator then does.
    *
    * <p>Distinct from the scope-based {@link #check(CamundaAuthentication, RequiredAuthorization)}:
    * property-based authorization requires the concrete resource instance to evaluate the property
