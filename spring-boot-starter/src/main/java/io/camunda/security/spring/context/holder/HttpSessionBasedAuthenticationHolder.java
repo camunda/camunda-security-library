@@ -96,6 +96,10 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
   }
 
   private void lockAndRefresh(final HttpSession session, final Instant now) {
+    // captured once: session.getId() can itself throw if the session is invalidated
+    // concurrently, and the rollback path below must not risk a second, possibly-throwing call
+    // masking the original refresh failure.
+    final String sessionId = session.getId();
     final AtomicBoolean shouldRefresh = new AtomicBoolean(false);
     // compute() on the session id is the authority for the decision, not session.getAttribute():
     // concurrent requests against the same session id can each hold a distinct HttpSession
@@ -105,7 +109,7 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
     refreshClaims
         .asMap()
         .compute(
-            session.getId(),
+            sessionId,
             (id, lastClaimed) -> {
               if (lastClaimed == null || isRefreshRequired(lastClaimed, now)) {
                 shouldRefresh.set(true);
@@ -122,7 +126,7 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
         // session was invalidated concurrently), roll it back so a later request is not blocked
         // from retrying for the remainder of the cache TTL. Guarded removal: only clears the
         // entry if it still holds the value this call just wrote.
-        refreshClaims.asMap().remove(session.getId(), now);
+        refreshClaims.asMap().remove(sessionId, now);
         throw e;
       }
     }
