@@ -114,8 +114,17 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
               return lastClaimed;
             });
     if (shouldRefresh.get()) {
-      removeCamundaAuthenticationInSession(session);
-      session.setAttribute(LAST_REFRESH_ATTR, now);
+      try {
+        removeCamundaAuthenticationInSession(session);
+        session.setAttribute(LAST_REFRESH_ATTR, now);
+      } catch (final RuntimeException e) {
+        // the claim was already advanced to `now` above; if the refresh itself failed (e.g. the
+        // session was invalidated concurrently), roll it back so a later request is not blocked
+        // from retrying for the remainder of the cache TTL. Guarded removal: only clears the
+        // entry if it still holds the value this call just wrote.
+        refreshClaims.asMap().remove(session.getId(), now);
+        throw e;
+      }
     }
   }
 
