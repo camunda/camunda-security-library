@@ -4,7 +4,7 @@ status: Accepted
 
 # ADR-0035: JVM-local, session-ID-keyed guard for authentication refresh dedup
 
-**Deciders**: Sebastian Bathke, Joaquin Felici. 
+**Deciders**: Sebastian Bathke, Joaquin Felici
 
 ## Status
 
@@ -67,13 +67,26 @@ source of truth for "has this session already been refreshed", independent of an
   `session.setAttribute(LAST_REFRESH_ATTR, now)`) and advances the claim; every other concurrent
   caller — regardless of which `HttpSession` object it holds — sees an already-current claim and
   skips.
-- The cache is expiring (`expireAfterWrite`, sized a small multiple of the configured
+- The cache is expiring (`expireAfterWrite`, a fixed 30-minute TTL, independent of the configured
   `authentication-refresh-interval`) so claims for sessions that are no longer active are evicted
-  rather than accumulating forever. No explicit removal on logout/invalidation is needed — a stale
-  claim for a dead session is harmless (nothing reads it again) and ages out on its own.
+  rather than accumulating forever. The TTL only bounds memory for dead sessions — it plays no role
+  in correctness, because `lockAndRefresh` is only ever invoked after the outer
+  `session.getAttribute(LAST_REFRESH_ATTR)` check has already decided a refresh is due; a cache miss
+  inside `compute` is treated identically to "never claimed," which still lets exactly one caller
+  win. A fixed TTL is deliberately not derived from `authentication-refresh-interval`: a shorter
+  window would still be safe (it's already generous relative to the millisecond-scale race it
+  guards against), and a longer configured interval must not inflate how long a dead session's
+  entry lingers. No explicit removal on logout/invalidation is needed — a stale claim for a dead
+  session is harmless (nothing reads it again) and ages out on its own.
 - `SessionStorePort`, `WebSessionRepository`, and `WebSession` are untouched. The guard lives
   entirely inside `HttpSessionBasedAuthenticationHolder`, which keeps working against the generic
   `jakarta.servlet.http.HttpSession` contract exactly as before.
+- The claim is advanced inside `compute` before the refresh side effects
+  (`removeCamundaAuthenticationInSession` + `session.setAttribute`) run. If those side effects throw
+  — for example the session was invalidated concurrently, which makes any further `HttpSession`
+  access throw `IllegalStateException` — the claim is rolled back (removed, guarded so it only
+  removes the value this call just wrote) before the exception propagates, so a subsequent request
+  is not blocked from retrying the refresh for the remainder of the TTL.
 
 ### Why these particular boundaries
 

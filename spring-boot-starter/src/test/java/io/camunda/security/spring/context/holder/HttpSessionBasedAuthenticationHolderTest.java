@@ -252,6 +252,7 @@ public class HttpSessionBasedAuthenticationHolderTest {
       futureB.get(5, TimeUnit.SECONDS);
     } finally {
       executor.shutdownNow();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
     }
 
     // then: only one of the two concurrent requests actually performed the refresh
