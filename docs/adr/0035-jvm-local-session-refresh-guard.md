@@ -78,6 +78,13 @@ source of truth for "has this session already been refreshed", independent of an
   guards against), and a longer configured interval must not inflate how long a dead session's
   entry lingers. No explicit removal on logout/invalidation is needed — a stale claim for a dead
   session is harmless (nothing reads it again) and ages out on its own.
+- The cache is also size-bounded (`maximumSize`, 10,000 entries) as a memory-safety backstop
+  against unbounded growth if a host runs far more concurrently-active sessions than expected.
+  Unlike the TTL, this bound is *not* correctness-neutral: Caffeine can evict an entry for
+  capacity reasons before its TTL elapses, including — in principle — an entry for a session that
+  is still genuinely active. An eviction at that exact moment reopens the original race for that
+  one session (a concurrent `compute` sees a miss and treats it as "never claimed"). See
+  Consequences for why this is accepted rather than sized to be unreachable.
 - `SessionStorePort`, `WebSessionRepository`, and `WebSession` are untouched. The guard lives
   entirely inside `HttpSessionBasedAuthenticationHolder`, which keeps working against the generic
   `jakarta.servlet.http.HttpSession` contract exactly as before.
@@ -130,6 +137,13 @@ source of truth for "has this session already been refreshed", independent of an
   empty while the session attribute still holds an old timestamp) — harmless, because an empty cache
   entry is treated the same as "never claimed", which correctly allows exactly one refresh to
   proceed.
+- The `maximumSize` bound is not correctness-neutral the way the TTL is: capacity-driven eviction
+  of a still-active session's entry reopens the exact race this ADR closes, for that one session,
+  until it claims again. Accepted because 10,000 concurrently-active sessions per JVM is already a
+  large working set relative to typical CSL host deployments, the reopened race is no worse than
+  the pre-fix behavior (not a regression), and sizing the cache to be practically unreachable would
+  reintroduce unbounded growth as a real host-configurable size trades off against — the same
+  problem the bound exists to prevent.
 
 ## Alternatives Considered
 
