@@ -25,8 +25,6 @@ import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -463,38 +461,8 @@ class ScopedWebappSecurityChainBuilderScopedTest {
 
     @Bean
     SecurityPathPort securityPathPort() {
-      final var delegate = StubSecurityPaths.builder().build();
-      return new SecurityPathPort() {
-        @Override
-        public Set<String> apiPaths() {
-          return delegate.apiPaths();
-        }
-
-        @Override
-        public Set<String> unprotectedApiPaths() {
-          return delegate.unprotectedApiPaths();
-        }
-
-        @Override
-        public Set<String> unprotectedPaths() {
-          return delegate.unprotectedPaths();
-        }
-
-        @Override
-        public Set<String> webappPaths() {
-          return delegate.webappPaths();
-        }
-
-        @Override
-        public Set<String> webComponentNames() {
-          return delegate.webComponentNames();
-        }
-
-        @Override
-        public Optional<String> postLogoutRedirectPath() {
-          return null;
-        }
-      };
+      // null (not Optional.empty()) simulates a host that violates the non-null Optional contract.
+      return StubSecurityPaths.builder().postLogoutRedirectPath(null).build();
     }
 
     @Bean("scopedOidcNullPostLogoutChain")

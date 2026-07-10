@@ -8,6 +8,7 @@
 package io.camunda.security.spring.testsupport;
 
 import io.camunda.security.core.port.out.SecurityPathPort;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -31,6 +32,7 @@ public final class StubSecurityPaths {
     private Set<String> unprotectedPaths = Set.of("/error");
     private Set<String> webappPaths = Set.of("/operate/**", "/login", "/logout");
     private Set<String> webComponentNames = Set.of("operate");
+    private Optional<String> postLogoutRedirectPath = Optional.empty();
 
     public Builder apiPaths(final String... v) {
       this.apiPaths = Set.of(v);
@@ -57,12 +59,22 @@ public final class StubSecurityPaths {
       return this;
     }
 
+    /**
+     * Sets the value {@code postLogoutRedirectPath()} returns. Accepts {@code null} on purpose, so
+     * tests can simulate a host that violates the non-null {@code Optional} contract.
+     */
+    public Builder postLogoutRedirectPath(final Optional<String> v) {
+      this.postLogoutRedirectPath = v;
+      return this;
+    }
+
     public SecurityPathPort build() {
       final Set<String> finalApiPaths = apiPaths;
       final Set<String> finalUnprotectedApiPaths = unprotectedApiPaths;
       final Set<String> finalUnprotectedPaths = unprotectedPaths;
       final Set<String> finalWebappPaths = webappPaths;
       final Set<String> finalWebComponentNames = webComponentNames;
+      final Optional<String> finalPostLogoutRedirectPath = postLogoutRedirectPath;
       return new SecurityPathPort() {
         @Override
         public Set<String> apiPaths() {
@@ -87,6 +99,11 @@ public final class StubSecurityPaths {
         @Override
         public Set<String> webComponentNames() {
           return finalWebComponentNames;
+        }
+
+        @Override
+        public Optional<String> postLogoutRedirectPath() {
+          return finalPostLogoutRedirectPath;
         }
       };
     }
