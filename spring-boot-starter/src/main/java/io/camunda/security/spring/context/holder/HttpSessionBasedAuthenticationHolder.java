@@ -95,12 +95,13 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
     final Instant now = Instant.now();
     final Instant lastRefresh = (Instant) session.getAttribute(LAST_REFRESH_ATTR);
     if (lastRefresh != null && isRefreshRequired(lastRefresh, now)) {
-      lockAndRefresh(session, now);
+      lockAndRefresh(session, now, lastRefresh);
     }
     return (CamundaAuthentication) session.getAttribute(CAMUNDA_AUTHENTICATION_SESSION_HOLDER_KEY);
   }
 
-  private void lockAndRefresh(final HttpSession session, final Instant now) {
+  private void lockAndRefresh(
+      final HttpSession session, final Instant now, final Instant observedLastRefresh) {
     // captured once: session.getId() can itself throw if the session is invalidated
     // concurrently, and the rollback path below must not risk a second, possibly-throwing call
     // masking the original refresh failure.
@@ -112,13 +113,26 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
     // can dedup the refresh across them. The remapping function stays side-effect free (it may be
     // re-invoked under contention); the return value, not a captured flag, is the sole signal for
     // whether this caller is the one that advanced the claim.
+    //
+    // The remap intentionally does NOT reuse isRefreshRequired/authenticationRefreshInterval to
+    // decide whether an existing claim is still valid: that interval is a business refresh
+    // cadence, not a bound on how long a burst of concurrent requests reacting to the same stale
+    // read may take to resolve. Re-deriving claim validity from elapsed wall-clock time meant a
+    // request delayed past the refresh interval (CI scheduling skew, GC pause) could see another
+    // caller's just-completed claim as "expired" and win a second, redundant refresh for the exact
+    // staleness that first claim already resolved (camunda-security-library#517). Instead, a claim
+    // is only re-claimable once it predates what THIS caller itself observed as stale: if some
+    // other claim already advanced past that observed reading, a refresh has already happened for
+    // the staleness this caller is reacting to, independent of how much time has since passed.
     final Instant claimed =
         refreshClaims
             .asMap()
             .compute(
                 sessionId,
                 (id, lastClaimed) ->
-                    lastClaimed == null || isRefreshRequired(lastClaimed, now) ? now : lastClaimed);
+                    lastClaimed == null || !lastClaimed.isAfter(observedLastRefresh)
+                        ? now
+                        : lastClaimed);
     // reference equality, not Instant.equals(): two concurrent callers can capture
     // value-identical Instants (clock resolution can be coarser than the race window), so value
     // equality alone cannot tell which caller's write actually landed. `now` is a distinct object
