@@ -36,6 +36,18 @@ class ResourceTypeTest {
   }
 
   @Test
+  void processDefinitionSupportsSuspendProcessInstance() {
+    assertThat(ResourceType.PROCESS_DEFINITION.getSupportedPermissionTypes())
+        .contains(PermissionType.SUSPEND_PROCESS_INSTANCE);
+  }
+
+  @Test
+  void batchSupportsCreateBatchOperationSuspendProcessInstance() {
+    assertThat(ResourceType.BATCH.getSupportedPermissionTypes())
+        .contains(PermissionType.CREATE_BATCH_OPERATION_SUSPEND_PROCESS_INSTANCE);
+  }
+
+  @Test
   void getSupportedPermissionTypesReturnsImmutableView() {
     final var permissions = ResourceType.COMPONENT.getSupportedPermissionTypes();
 
