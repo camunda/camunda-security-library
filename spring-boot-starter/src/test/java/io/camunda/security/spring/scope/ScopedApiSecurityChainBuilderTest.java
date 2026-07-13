@@ -51,6 +51,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
@@ -363,11 +364,29 @@ class ScopedApiSecurityChainBuilderTest {
             throw new AssertionError("buildUnprotectedScopedApiChain threw unexpectedly", e);
           }
 
-          assertThat(chain.getFilters())
+          final var filters = chain.getFilters();
+          assertThat(filters)
               .as(
                   "the unprotected scoped API chain must install the per-scope session filter, so a"
                       + " scoped session is resolved and CSRF protection engages")
               .contains(sessionFilter);
+
+          final int sessionFilterIndex = filters.indexOf(sessionFilter);
+          int contextHolderFilterIndex = -1;
+          for (int i = 0; i < filters.size(); i++) {
+            if (filters.get(i) instanceof SecurityContextHolderFilter) {
+              contextHolderFilterIndex = i;
+              break;
+            }
+          }
+          assertThat(contextHolderFilterIndex)
+              .as("SecurityContextHolderFilter must be present on the chain")
+              .isNotNegative();
+          assertThat(sessionFilterIndex)
+              .as(
+                  "the SessionRepositoryFilter must run before SecurityContextHolderFilter so the"
+                      + " session-backed HttpSession is available when the security context is read")
+              .isLessThan(contextHolderFilterIndex);
         });
   }
 
