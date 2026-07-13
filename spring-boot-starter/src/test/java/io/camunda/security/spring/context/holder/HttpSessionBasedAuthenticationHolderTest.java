@@ -10,6 +10,7 @@ package io.camunda.security.spring.context.holder;
 import static io.camunda.security.spring.context.holder.HttpSessionBasedAuthenticationHolder.CAMUNDA_AUTHENTICATION_SESSION_HOLDER_KEY;
 import static io.camunda.security.spring.context.holder.HttpSessionBasedAuthenticationHolder.LAST_REFRESH_ATTR;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -29,6 +30,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -261,6 +263,52 @@ public class HttpSessionBasedAuthenticationHolderTest {
     }
 
     // then: only one of the two concurrent requests actually performed the refresh
+    assertThat(refreshCount.get()).isEqualTo(1);
+  }
+
+  /**
+   * When the refresh side effect throws (e.g. the session was invalidated concurrently), the claim
+   * advanced inside {@code compute} must be rolled back so a later request can retry the refresh
+   * instead of being blocked for the remainder of the cache TTL. Had the claim stuck, the second
+   * request's {@code compute} would see a still-current claim and skip, leaving the session
+   * un-refreshed until the TTL elapses.
+   */
+  @Test
+  public void shouldRollBackClaimWhenRefreshFailsSoLaterRequestCanRetry() {
+    // given: a session whose refresh is due, but the first refresh attempt fails midway
+    final var authentication = mock(CamundaAuthentication.class);
+    final var refreshInterval = Duration.ofSeconds(1);
+    when(authenticationConfiguration.getAuthenticationRefreshInterval())
+        .thenReturn(refreshInterval.toString());
+    holder = new HttpSessionBasedAuthenticationHolder(request, authenticationConfiguration);
+
+    final Instant expiredRefresh = Instant.now().minus(refreshInterval).minusMillis(1);
+    final var failFirstRemove = new AtomicBoolean(true);
+    final var refreshCount = new AtomicInteger();
+
+    final var session = mock(HttpSession.class);
+    when(session.getId()).thenReturn("session-id");
+    when(session.getAttribute(LAST_REFRESH_ATTR)).thenReturn(expiredRefresh);
+    when(session.getAttribute(CAMUNDA_AUTHENTICATION_SESSION_HOLDER_KEY))
+        .thenReturn(authentication);
+    doAnswer(
+            invocation -> {
+              // first attempt throws (as a concurrently-invalidated session would); later ones pass
+              if (failFirstRemove.getAndSet(false)) {
+                throw new IllegalStateException("session invalidated");
+              }
+              refreshCount.incrementAndGet();
+              return null;
+            })
+        .when(session)
+        .removeAttribute(eq(CAMUNDA_AUTHENTICATION_SESSION_HOLDER_KEY));
+    when(request.getSession(eq(false))).thenReturn(session);
+
+    // when: the first request refreshes and the refresh side effect throws
+    assertThatThrownBy(() -> holder.get()).isInstanceOf(IllegalStateException.class);
+
+    // then: the claim was rolled back, so a following request retries the refresh
+    holder.get();
     assertThat(refreshCount.get()).isEqualTo(1);
   }
 
