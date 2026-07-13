@@ -88,6 +88,10 @@ source of truth for "has this session already been refreshed", independent of an
 - `SessionStorePort`, `WebSessionRepository`, and `WebSession` are untouched. The guard lives
   entirely inside `HttpSessionBasedAuthenticationHolder`, which keeps working against the generic
   `jakarta.servlet.http.HttpSession` contract exactly as before.
+- `refreshClaims` is a per-instance cache, so the holder must stay a **singleton** for the dedup to
+  hold — a prototype- or request-scoped holder would give each request its own cache and reopen the
+  race. The default `httpSessionBasedAuthenticationHolder` bean is singleton-scoped; the class
+  javadoc states this as a precondition for any host that overrides the bean.
 - The claim is advanced inside `compute` before the refresh side effects
   (`removeCamundaAuthenticationInSession` + `session.setAttribute`) run. If those side effects throw
   — for example the session was invalidated concurrently, which makes any further `HttpSession`
