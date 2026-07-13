@@ -319,9 +319,21 @@ public final class ScopedApiSecurityChainBuilder {
    * <p>Used when {@code camunda.security.authentication.unprotected-api=true}: in that mode the
    * primary API chain is already permit-all, and contributed scoped chains must follow suit so the
    * whole API surface behaves consistently.
+   *
+   * <p>When a {@code sessionRepositoryFilter} is provided it is installed before {@link
+   * SecurityContextHolderFilter} so a session minted on the scope's webapp chain is resolved here
+   * too. Without it the scoped {@code camunda-session} cookie is never read: an endpoint like
+   * {@code /physical-tenants/<id>/v2/authentication/me} would see an anonymous request, and CSRF
+   * protection — which requires a token only when {@code request.getSession(false)} is non-null —
+   * would never engage. {@link SessionCreationPolicy#NEVER} keeps this chain from creating a
+   * session of its own, mirroring {@link
+   * io.camunda.security.spring.security.UnprotectedApiSecurityConfiguration}.
    */
   public SecurityFilterChain buildUnprotectedScopedApiChain(
-      final HttpSecurity http, final String basePath) throws Exception {
+      final HttpSecurity http,
+      final String basePath,
+      final SessionRepositoryFilter<?> sessionRepositoryFilter)
+      throws Exception {
     Objects.requireNonNull(http, "http must not be null");
     Objects.requireNonNull(basePath, "basePath must not be null");
     final var prefix = BasePaths.normalize(basePath, "basePath");
@@ -332,10 +344,16 @@ public final class ScopedApiSecurityChainBuilder {
     final var matchers = pathPort.apiPaths().stream().map(p -> prefix + p).toList();
     LOG.debug(
         "Building unprotected scoped API chain for basePath={}, matchers={}", basePath, matchers);
+    if (sessionRepositoryFilter != null) {
+      // Install the per-scope session filter before SecurityContextHolderFilter so the
+      // Spring-Session-backed HttpSession is available when the security context is read.
+      http.addFilterBefore(sessionRepositoryFilter, SecurityContextHolderFilter.class);
+    }
     final var filterChainBuilder =
         http.securityMatcher(matchers.toArray(String[]::new))
             .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
             .exceptionHandling(eh -> eh.accessDeniedHandler(authFailureHandler))
+            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.NEVER))
             .formLogin(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable);
 
@@ -351,6 +369,15 @@ public final class ScopedApiSecurityChainBuilder {
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
 
     return filterChainBuilder.build();
+  }
+
+  /**
+   * Convenience overload of {@link #buildUnprotectedScopedApiChain(HttpSecurity, String,
+   * SessionRepositoryFilter)} that installs no SessionRepositoryFilter.
+   */
+  public SecurityFilterChain buildUnprotectedScopedApiChain(
+      final HttpSecurity http, final String basePath) throws Exception {
+    return buildUnprotectedScopedApiChain(http, basePath, null);
   }
 
   private static ObjectPostProcessor<BearerTokenAuthenticationFilter>

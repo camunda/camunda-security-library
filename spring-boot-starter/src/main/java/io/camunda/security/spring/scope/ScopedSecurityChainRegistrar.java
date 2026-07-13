@@ -201,7 +201,8 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
       final var properties = beanFactory.getBean(CamundaSecurityLibraryProperties.class);
       final SecurityFilterChain chain;
       if (properties.getAuthentication().isUnprotectedApi()) {
-        chain = builder.buildUnprotectedScopedApiChain(http, descriptor.basePath());
+        final var sessionFilter = getOrBuildSessionFilter(beanFactory, descriptor.basePath());
+        chain = builder.buildUnprotectedScopedApiChain(http, descriptor.basePath(), sessionFilter);
       } else {
         final var sessionFilter = getOrBuildSessionFilter(beanFactory, descriptor.basePath());
         chain =
