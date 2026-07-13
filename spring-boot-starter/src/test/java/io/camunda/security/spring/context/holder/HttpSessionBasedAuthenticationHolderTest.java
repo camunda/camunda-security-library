@@ -312,6 +312,125 @@ public class HttpSessionBasedAuthenticationHolderTest {
     assertThat(refreshCount.get()).isEqualTo(1);
   }
 
+  /**
+   * The claim written by {@code compute()} must not be treated as expired merely because wall time
+   * has passed the refresh interval since it was made: the winner may still be mid-flight (its own
+   * session write has not landed yet), and a second, later-arriving request must defer to it rather
+   * than re-claim (see camunda-security-library#517).
+   *
+   * <p>Simulates this by blocking the winning thread's session write on a latch, past a very short
+   * refresh interval, before a second request observes the same still-stale session state.
+   */
+  @Test
+  public void shouldNotReclaimWhenWinningClaimHasNotYetWrittenBackToSession() throws Exception {
+    // given: a shared session store observed as stale by two requests, and a very short refresh
+    // interval so real elapsed time can trivially exceed it while the winner is still mid-refresh
+    final var authentication = mock(CamundaAuthentication.class);
+    final Map<String, Object> backingStore = new ConcurrentHashMap<>();
+    final AtomicInteger refreshCount = new AtomicInteger();
+    final var winnerBlocked = new CyclicBarrier(2);
+    final var releaseWinner = new CyclicBarrier(2);
+
+    final Instant staleRefresh = Instant.now().minus(Duration.ofMinutes(10));
+    backingStore.put(CAMUNDA_AUTHENTICATION_SESSION_HOLDER_KEY, authentication);
+    backingStore.put(LAST_REFRESH_ATTR, staleRefresh);
+
+    when(authenticationConfiguration.getAuthenticationRefreshInterval())
+        .thenReturn(Duration.ofMillis(10).toString());
+
+    final var sessionA =
+        blockingSharedBackedSession(
+            backingStore, refreshCount, winnerBlocked, releaseWinner, "shared-session-id");
+    final var sessionB = sharedBackedSession(backingStore, refreshCount, "shared-session-id");
+
+    final ThreadLocal<HttpSession> currentSession = new ThreadLocal<>();
+    final var request = mock(HttpServletRequest.class);
+    lenient().when(request.getSession(eq(false))).thenAnswer(invocation -> currentSession.get());
+    final var sharedHolder =
+        new HttpSessionBasedAuthenticationHolder(request, authenticationConfiguration);
+
+    final ExecutorService executor = Executors.newFixedThreadPool(1);
+    try {
+      // when: thread A wins the claim and blocks before writing it back to the session
+      final Future<?> futureA =
+          executor.submit(
+              () -> {
+                currentSession.set(sessionA);
+                sharedHolder.get();
+              });
+      winnerBlocked.await(5, TimeUnit.SECONDS);
+
+      // real time now exceeds the 10ms refresh interval while A's claim has not been written back
+      Thread.sleep(100);
+
+      // thread B observes the same still-stale session and must defer to A's claim, not reclaim
+      currentSession.set(sessionB);
+      sharedHolder.get();
+
+      releaseWinner.await(5, TimeUnit.SECONDS);
+      futureA.get(5, TimeUnit.SECONDS);
+    } finally {
+      executor.shutdownNow();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
+    }
+
+    // then: only the original winner performed the refresh
+    assertThat(refreshCount.get()).isEqualTo(1);
+  }
+
+  private static HttpSession blockingSharedBackedSession(
+      final Map<String, Object> backingStore,
+      final AtomicInteger refreshCount,
+      final CyclicBarrier winnerBlocked,
+      final CyclicBarrier releaseWinner,
+      final String sessionId)
+      throws Exception {
+    final var session = sharedBackedSession(backingStore, refreshCount, sessionId);
+    doAnswer(
+            invocation -> {
+              winnerBlocked.await(5, TimeUnit.SECONDS);
+              releaseWinner.await(5, TimeUnit.SECONDS);
+              backingStore.remove(CAMUNDA_AUTHENTICATION_SESSION_HOLDER_KEY);
+              refreshCount.incrementAndGet();
+              return null;
+            })
+        .when(session)
+        .removeAttribute(eq(CAMUNDA_AUTHENTICATION_SESSION_HOLDER_KEY));
+    return session;
+  }
+
+  private static HttpSession sharedBackedSession(
+      final Map<String, Object> backingStore,
+      final AtomicInteger refreshCount,
+      final String sessionId) {
+    final var session = mock(HttpSession.class);
+    lenient().when(session.getId()).thenReturn(sessionId);
+    lenient()
+        .when(session.getAttribute(anyString()))
+        .thenAnswer(invocation -> backingStore.get(invocation.getArgument(0, String.class)));
+    lenient()
+        .doAnswer(
+            invocation -> {
+              backingStore.put(invocation.getArgument(0, String.class), invocation.getArgument(1));
+              return null;
+            })
+        .when(session)
+        .setAttribute(anyString(), any());
+    lenient()
+        .doAnswer(
+            invocation -> {
+              final String attributeName = invocation.getArgument(0, String.class);
+              backingStore.remove(attributeName);
+              if (CAMUNDA_AUTHENTICATION_SESSION_HOLDER_KEY.equals(attributeName)) {
+                refreshCount.incrementAndGet();
+              }
+              return null;
+            })
+        .when(session)
+        .removeAttribute(anyString());
+    return session;
+  }
+
   private static HttpSession sharedBackedSession(
       final Map<String, Object> backingStore,
       final AtomicInteger refreshCount,
