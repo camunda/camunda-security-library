@@ -34,4 +34,23 @@ class ContextPathScopedCsrfTokenRepositoryTest {
         .as("Set-Cookie must contain an entry with Path=/ctx/tenant-a")
         .anyMatch(h -> h.contains("Path=/ctx/tenant-a"));
   }
+
+  @Test
+  void shouldPrependServletContextPathWhenLoadingDeferredToken() {
+    // given
+    final var delegate = new CookieCsrfTokenRepository();
+    final var repository =
+        new ContextPathScopedCsrfTokenRepository(delegate, "/physical-tenants/default");
+    final var request = new MockHttpServletRequest();
+    request.setContextPath("/core");
+    final var response = new MockHttpServletResponse();
+
+    // when
+    repository.loadDeferredToken(request, response).get();
+
+    // then
+    assertThat(response.getHeaders("Set-Cookie"))
+        .as("Set-Cookie must contain an entry with Path=/core/physical-tenants/default")
+        .anyMatch(h -> h.contains("Path=/core/physical-tenants/default"));
+  }
 }

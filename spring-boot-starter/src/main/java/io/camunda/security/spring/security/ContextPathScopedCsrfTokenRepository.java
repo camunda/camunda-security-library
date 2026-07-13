@@ -45,9 +45,7 @@ final class ContextPathScopedCsrfTokenRepository implements CsrfTokenRepository 
   @Override
   public void saveToken(
       final CsrfToken token, final HttpServletRequest request, final HttpServletResponse response) {
-    // request.getContextPath() is a deployment constant — same value for every request in a given
-    // deployment — so per-request reconfiguration of the shared delegate's path is benign.
-    delegate.setCookiePath(request.getContextPath() + basePath);
+    configureCookiePath(request);
     delegate.saveToken(token, request, response);
   }
 
@@ -59,6 +57,13 @@ final class ContextPathScopedCsrfTokenRepository implements CsrfTokenRepository 
   @Override
   public DeferredCsrfToken loadDeferredToken(
       final HttpServletRequest request, final HttpServletResponse response) {
+    configureCookiePath(request);
     return delegate.loadDeferredToken(request, response);
+  }
+
+  private void configureCookiePath(final HttpServletRequest request) {
+    // request.getContextPath() is a deployment constant — same value for every request in a given
+    // deployment — so per-request reconfiguration of the shared delegate's path is benign.
+    delegate.setCookiePath(request.getContextPath() + basePath);
   }
 }
