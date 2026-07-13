@@ -33,6 +33,7 @@ import io.camunda.security.spring.user.UserConfiguration;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.ObjectProvider;
@@ -53,6 +54,8 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
+import org.springframework.session.MapSessionRepository;
+import org.springframework.session.web.http.SessionRepositoryFilter;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 /**
@@ -331,6 +334,40 @@ class ScopedApiSecurityChainBuilderTest {
             throw new AssertionError("buildUnprotectedScopedApiChain threw unexpectedly", e);
           }
           assertCsrfCookieName(chain, ScopedSecurityChainRegistrar.csrfCookieName(BASE_PATH));
+        });
+  }
+
+  @Test
+  void buildUnprotectedScopedApiChainInstallsSessionRepositoryFilter() {
+    basicRunner.run(
+        ctx -> {
+          final var http = ctx.getBean(HttpSecurity.class);
+          final var properties = ctx.getBean(CamundaSecurityLibraryProperties.class);
+          final var authFailureHandler = ctx.getBean(AuthFailureHandler.class);
+          final var pathPort = ctx.getBean(SecurityPathPort.class);
+          final var builder =
+              new ScopedApiSecurityChainBuilder(
+                  properties,
+                  authFailureHandler,
+                  pathPort,
+                  ctx.getBeanProvider(OidcResourceServerCustomizer.class),
+                  ctx.getBean(CorsConfigurationSource.class),
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class));
+          final var sessionFilter =
+              new SessionRepositoryFilter<>(new MapSessionRepository(new ConcurrentHashMap<>()));
+
+          final SecurityFilterChain chain;
+          try {
+            chain = builder.buildUnprotectedScopedApiChain(http, BASE_PATH, sessionFilter);
+          } catch (final Exception e) {
+            throw new AssertionError("buildUnprotectedScopedApiChain threw unexpectedly", e);
+          }
+
+          assertThat(chain.getFilters())
+              .as(
+                  "the unprotected scoped API chain must install the per-scope session filter, so a"
+                      + " scoped session is resolved and CSRF protection engages")
+              .contains(sessionFilter);
         });
   }
 
