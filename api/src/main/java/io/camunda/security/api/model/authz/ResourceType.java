@@ -87,6 +87,7 @@ public enum ResourceType {
       PermissionType.SUSPEND_PROCESS_INSTANCE),
   USER_TASK(
       PermissionType.READ, PermissionType.UPDATE, PermissionType.CLAIM, PermissionType.COMPLETE),
+  SECRET(PermissionType.READ, PermissionType.REVEAL),
 
   /** Internal default when no resource was set. */
   UNSPECIFIED();
