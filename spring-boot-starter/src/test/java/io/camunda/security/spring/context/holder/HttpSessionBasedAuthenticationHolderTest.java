@@ -384,18 +384,21 @@ public class HttpSessionBasedAuthenticationHolderTest {
   }
 
   /**
-   * The claim written by {@code compute()} must not be treated as expired merely because wall time
-   * has passed the refresh interval since it was made: the winner may still be mid-flight (its own
-   * session write has not landed yet), and a second, later-arriving request must defer to it rather
-   * than re-claim (see camunda-security-library#517).
+   * The claim written by {@code compute()} must not be treated as expired based on how much time
+   * has elapsed since it was made: the winner may still be mid-flight (its own session write has
+   * not landed yet), and a second, later-arriving request must defer to it rather than re-claim
+   * (see camunda-security-library#517).
    *
-   * <p>Simulates this by blocking the winning thread's session write on a barrier, past a very
-   * short refresh interval, before a second request observes the same still-stale session state.
+   * <p>Fully deterministic, no wall-clock waiting: a barrier holds the winner past its claim but
+   * before its session write, then the second request runs. The refresh interval is zero, so an
+   * elapsed-time predicate would treat the claim as expired the instant it is made — the strongest
+   * form of the race — yet the observed-staleness check still defers.
    */
   @Test
   public void shouldNotReclaimWhenWinningClaimHasNotYetWrittenBackToSession() throws Exception {
-    // given: a shared session store observed as stale by two requests, and a very short refresh
-    // interval so real elapsed time can trivially exceed it while the winner is still mid-refresh
+    // given: a shared session store observed as stale by two requests, and a zero refresh interval
+    // so an elapsed-time predicate would consider any claim expired without any time needing to
+    // pass
     final var authentication = mock(CamundaAuthentication.class);
     final Map<String, Object> backingStore = new ConcurrentHashMap<>();
     final AtomicInteger refreshCount = new AtomicInteger();
@@ -407,7 +410,7 @@ public class HttpSessionBasedAuthenticationHolderTest {
     backingStore.put(LAST_REFRESH_ATTR, staleRefresh);
 
     when(authenticationConfiguration.getAuthenticationRefreshInterval())
-        .thenReturn(Duration.ofMillis(10).toString());
+        .thenReturn(Duration.ZERO.toString());
 
     final var sessionA =
         blockingSharedBackedSession(
@@ -433,10 +436,8 @@ public class HttpSessionBasedAuthenticationHolderTest {
               });
       winnerBlocked.await(5, TimeUnit.SECONDS);
 
-      // real time now exceeds the 10ms refresh interval while A's claim has not been written back
-      Thread.sleep(100);
-
-      // thread B observes the same still-stale session and must defer to A's claim, not reclaim
+      // A has claimed but is blocked before writing its refresh back; thread B now observes the
+      // same still-stale session and must defer to A's claim, not reclaim it
       currentSession.set(sessionB);
       sharedHolder.get();
 
