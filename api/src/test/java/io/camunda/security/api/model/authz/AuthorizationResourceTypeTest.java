@@ -48,6 +48,20 @@ class AuthorizationResourceTypeTest {
   }
 
   @Test
+  void secretSupportsReadAndReveal() {
+    assertThat(AuthorizationResourceType.SECRET.getSupportedPermissionTypes())
+        .containsExactlyInAnyOrder(PermissionType.READ, PermissionType.REVEAL);
+  }
+
+  @Test
+  void buildResourcePermissionsMapHasSecretReadReveal() {
+    final var map = AuthorizationResourceType.buildResourcePermissionsMap();
+
+    assertThat(map).doesNotContainKey("UNSPECIFIED");
+    assertThat(map.get("SECRET")).containsExactlyInAnyOrder("READ", "REVEAL");
+  }
+
+  @Test
   void getSupportedPermissionTypesReturnsImmutableView() {
     final var permissions = AuthorizationResourceType.COMPONENT.getSupportedPermissionTypes();
 

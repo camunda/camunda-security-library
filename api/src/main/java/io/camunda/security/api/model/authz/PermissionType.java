@@ -20,6 +20,7 @@ public enum PermissionType {
   READ(true),
   READ_JOB_METRIC(true),
   READ_USAGE_METRIC(true),
+  REVEAL,
   UPDATE,
 
   /** Engine usage permissions. */
@@ -55,8 +56,7 @@ public enum PermissionType {
   SUSPEND_PROCESS_INSTANCE,
   UPDATE_PROCESS_INSTANCE,
   UPDATE_TASK_LISTENER,
-  UPDATE_USER_TASK,
-  REVEAL;
+  UPDATE_USER_TASK;
 
   private final boolean isReadPermission;
 

@@ -31,6 +31,7 @@ public enum AuthorizationResourceType {
       PermissionType.DELETE_PROCESS,
       PermissionType.DELETE_RESOURCE),
   ROLE(PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE, PermissionType.DELETE),
+  SECRET(PermissionType.READ, PermissionType.REVEAL),
   SYSTEM(
       PermissionType.READ,
       PermissionType.READ_USAGE_METRIC,
@@ -81,7 +82,6 @@ public enum AuthorizationResourceType {
       PermissionType.SUSPEND_PROCESS_INSTANCE),
   USER_TASK(
       PermissionType.READ, PermissionType.UPDATE, PermissionType.CLAIM, PermissionType.COMPLETE),
-  SECRET(PermissionType.READ, PermissionType.REVEAL),
   UNSPECIFIED();
 
   private final Set<PermissionType> supportedPermissionTypes;
