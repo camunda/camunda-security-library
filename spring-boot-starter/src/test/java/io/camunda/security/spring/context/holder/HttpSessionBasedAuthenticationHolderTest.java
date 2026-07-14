@@ -344,10 +344,12 @@ public class HttpSessionBasedAuthenticationHolderTest {
     final var sessionB = sharedBackedSession(backingStore, refreshCount, "shared-session-id");
 
     final ThreadLocal<HttpSession> currentSession = new ThreadLocal<>();
-    final var request = mock(HttpServletRequest.class);
-    lenient().when(request.getSession(eq(false))).thenAnswer(invocation -> currentSession.get());
+    final var sharedRequest = mock(HttpServletRequest.class);
+    lenient()
+        .when(sharedRequest.getSession(eq(false)))
+        .thenAnswer(invocation -> currentSession.get());
     final var sharedHolder =
-        new HttpSessionBasedAuthenticationHolder(request, authenticationConfiguration);
+        new HttpSessionBasedAuthenticationHolder(sharedRequest, authenticationConfiguration);
 
     final ExecutorService executor = Executors.newFixedThreadPool(1);
     try {
