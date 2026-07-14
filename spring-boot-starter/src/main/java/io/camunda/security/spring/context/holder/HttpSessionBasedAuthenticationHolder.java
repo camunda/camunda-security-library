@@ -106,24 +106,10 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
     // concurrently, and the rollback path below must not risk a second, possibly-throwing call
     // masking the original refresh failure.
     final String sessionId = session.getId();
-    // compute() on the session id is the authority for the decision, not session.getAttribute():
-    // concurrent requests against the same session id can each hold a distinct HttpSession
-    // snapshot (see class javadoc / ADR-0035), so only a JVM-local guard keyed by the stable
-    // session id — not the HttpSession object, and not its possibly-stale attribute state —
-    // can dedup the refresh across them. The remapping function stays side-effect free (it may be
-    // re-invoked under contention); the return value, not a captured flag, is the sole signal for
-    // whether this caller is the one that advanced the claim.
-    //
-    // The remap intentionally does NOT reuse isRefreshRequired/authenticationRefreshInterval to
-    // decide whether an existing claim is still valid: that interval is a business refresh
-    // cadence, not a bound on how long a burst of concurrent requests reacting to the same stale
-    // read may take to resolve. Re-deriving claim validity from elapsed wall-clock time meant a
-    // request delayed past the refresh interval (CI scheduling skew, GC pause) could see another
-    // caller's just-completed claim as "expired" and win a second, redundant refresh for the exact
-    // staleness that first claim already resolved (camunda-security-library#517). Instead, a claim
-    // is only re-claimable once it predates what THIS caller itself observed as stale: if some
-    // other claim already advanced past that observed reading, a refresh has already happened for
-    // the staleness this caller is reacting to, independent of how much time has since passed.
+    // Claim validity is judged against observedLastRefresh, not elapsed time: reusing
+    // isRefreshRequired/authenticationRefreshInterval here let a delayed caller see another's
+    // in-flight claim as "expired" and trigger a redundant refresh for the same staleness episode
+    // (camunda-security-library#517).
     final Instant claimed =
         refreshClaims
             .asMap()

@@ -64,8 +64,8 @@ source of truth for "has this session already been refreshed", independent of an
   it decides whether `lastClaimed` (the JVM-local claim) is still valid by comparing it against the
   caller's own `observedLastRefresh` — the `AUTH_LAST_REFRESH` value that caller read and judged
   stale, not the (possibly stale) `session.getAttribute(LAST_REFRESH_ATTR)` re-read at `compute`
-  time, and not elapsed wall-clock time against `authentication-refresh-interval` (see Addendum:
-  claim-validity is not elapsed-time-based). Only the caller whose `compute` sees a claim that
+  time, and not elapsed wall-clock time against `authentication-refresh-interval` (see Addendum
+  below). Only the caller whose `compute` sees a claim that
   predates its own observed staleness performs the refresh (`removeCamundaAuthenticationInSession` +
   `session.setAttribute(LAST_REFRESH_ATTR, now)`) and advances the claim; every other concurrent
   caller — regardless of which `HttpSession` object it holds — sees an already-current claim and
@@ -166,35 +166,23 @@ source of truth for "has this session already been refreshed", independent of an
   decision input does not close the stale-snapshot gap — a second thread can still observe an
   expired attribute value copied before the first thread's `save()` committed.
 
-## Addendum: claim-validity is not elapsed-time-based (camunda-security-library#517)
+## Addendum: claim validity is judged by observed staleness, not elapsed time (camunda-security-library#517)
 
-The `compute` remap's original implementation re-derived whether `lastClaimed` was still valid by
-calling the same `isRefreshRequired(lastClaimed, now)` predicate used to decide session-attribute
-staleness — i.e. "has `authentication-refresh-interval` elapsed since the last claim". This
-conflated two distinct concerns: `authentication-refresh-interval` is a business cadence (how often
-authentication should be refreshed), not a bound on how long a burst of concurrent requests reacting
-to one staleness event may take to resolve.
+The original `compute` remap reused `isRefreshRequired(lastClaimed, now)` — the same elapsed-time
+check used for session-attribute staleness — to decide whether an existing claim was still valid.
+That conflates two different things: `authentication-refresh-interval` is a business refresh
+cadence, not a bound on how long concurrent requests take to resolve one staleness episode.
 
-The winning caller advances the claim in `compute` *before* performing the refresh side effects
-(`removeCamundaAuthenticationInSession` + `session.setAttribute`) — see Decision. If a second,
-concurrent caller's own `compute` call happens to run after enough wall-clock time has passed
-`authentication-refresh-interval` since the winner's claim — trivially possible with a short
-interval under ordinary scheduling jitter (thread-pool contention, GC pauses), independent of how
-fast the winner's own side effects actually complete — the elapsed-time check saw the winner's claim
-as "expired" and let the second caller win a second, redundant refresh for the exact same staleness
-episode the first refresh was already resolving. Observed in CI as one thread producing an earlier
-timestamp and several other threads independently converging on one, later, shared timestamp.
+Because the claim is advanced *before* the refresh side effects run, a second caller whose own
+`compute` call happened to run after the interval had elapsed — trivial under CI scheduling jitter
+— would see the winner's claim as "expired" and trigger a redundant second refresh for the same
+staleness episode. This matches what CI showed: one early timestamp plus several requests
+converging on one later, shared timestamp.
 
-The fix (applied directly to the `compute` remap, no other design element of this ADR changes):
-claim validity is judged against what the calling thread itself *observed* as stale
-(`observedLastRefresh`, the `AUTH_LAST_REFRESH` value read before the outer staleness check decided
-a refresh was due), not against elapsed real time. A claim is only re-claimable once it demonstrably
-predates that observation — i.e. no refresh has happened yet for the staleness this caller is
-reacting to — regardless of how long the current claimant takes to finish. This closes the race for
-any `authentication-refresh-interval`, including intervals short enough that ordinary scheduling
-jitter exceeds them, without depending on a magic grace-period constant.
+**Fix:** judge claim validity against `observedLastRefresh` — the staleness the calling thread
+itself observed — instead of elapsed time. A claim is only re-claimable once it predates that
+observation, regardless of how long the current claimant takes to finish. This holds for any
+refresh interval, including ones short enough for scheduling jitter to exceed.
 
-Confirmed via `HttpSessionBasedAuthenticationHolderTest#shouldNotReclaimWhenWinningClaimHasNotYetWrittenBackToSession`,
-which blocks the winning claimant's session write past the configured interval before a second
-caller observes the same pre-refresh session state; the elapsed-time predicate reliably produces a
-second refresh under this test, the observed-reference predicate does not.
+Verified by `HttpSessionBasedAuthenticationHolderTest#shouldNotReclaimWhenWinningClaimHasNotYetWrittenBackToSession`:
+it reliably fails under the old elapsed-time predicate and passes with the fix.
