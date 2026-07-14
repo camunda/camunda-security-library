@@ -318,8 +318,8 @@ public class HttpSessionBasedAuthenticationHolderTest {
    * session write has not landed yet), and a second, later-arriving request must defer to it rather
    * than re-claim (see camunda-security-library#517).
    *
-   * <p>Simulates this by blocking the winning thread's session write on a latch, past a very short
-   * refresh interval, before a second request observes the same still-stale session state.
+   * <p>Simulates this by blocking the winning thread's session write on a barrier, past a very
+   * short refresh interval, before a second request observes the same still-stale session state.
    */
   @Test
   public void shouldNotReclaimWhenWinningClaimHasNotYetWrittenBackToSession() throws Exception {
