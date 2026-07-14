@@ -48,6 +48,20 @@ class ResourceTypeTest {
   }
 
   @Test
+  void secretSupportsReadAndReveal() {
+    assertThat(ResourceType.SECRET.getSupportedPermissionTypes())
+        .containsExactlyInAnyOrder(PermissionType.READ, PermissionType.REVEAL);
+  }
+
+  @Test
+  void buildResourcePermissionsMapHasSecretReadReveal() {
+    final var map = ResourceType.buildResourcePermissionsMap();
+
+    assertThat(map).doesNotContainKey("UNSPECIFIED");
+    assertThat(map.get("SECRET")).containsExactlyInAnyOrder("READ", "REVEAL");
+  }
+
+  @Test
   void getSupportedPermissionTypesReturnsImmutableView() {
     final var permissions = ResourceType.COMPONENT.getSupportedPermissionTypes();
 

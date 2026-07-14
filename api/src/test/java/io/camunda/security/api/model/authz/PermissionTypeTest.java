@@ -36,8 +36,7 @@ class PermissionTypeTest {
 
   @Test
   void revealIsNotFlaggedAsReadPermission() {
-    // isReadPermission() drives automatic wildcard grants to built-in read-only roles;
-    // REVEAL exposes secret values and must never be auto-granted that way.
+    // REVEAL exposes secret values, so it must not be treated as a read permission.
     assertThat(PermissionType.REVEAL.isReadPermission()).isFalse();
   }
 }
