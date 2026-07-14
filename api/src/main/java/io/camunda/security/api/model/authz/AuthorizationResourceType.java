@@ -47,6 +47,7 @@ public enum AuthorizationResourceType {
       PermissionType.CREATE_BATCH_OPERATION_MIGRATE_PROCESS_INSTANCE,
       PermissionType.CREATE_BATCH_OPERATION_MODIFY_PROCESS_INSTANCE,
       PermissionType.CREATE_BATCH_OPERATION_RESOLVE_INCIDENT,
+      PermissionType.CREATE_BATCH_OPERATION_SUSPEND_PROCESS_INSTANCE,
       PermissionType.CREATE_BATCH_OPERATION_UPDATE_JOB,
       PermissionType.CREATE_BATCH_OPERATION_DELETE_DECISION_INSTANCE,
       PermissionType.CREATE_BATCH_OPERATION_DELETE_DECISION_DEFINITION,
@@ -76,7 +77,8 @@ public enum AuthorizationResourceType {
       PermissionType.MODIFY_PROCESS_INSTANCE,
       PermissionType.COMPLETE_USER_TASK,
       PermissionType.CANCEL_PROCESS_INSTANCE,
-      PermissionType.DELETE_PROCESS_INSTANCE),
+      PermissionType.DELETE_PROCESS_INSTANCE,
+      PermissionType.SUSPEND_PROCESS_INSTANCE),
   USER_TASK(
       PermissionType.READ, PermissionType.UPDATE, PermissionType.CLAIM, PermissionType.COMPLETE),
   UNSPECIFIED();
@@ -84,7 +86,7 @@ public enum AuthorizationResourceType {
   private final Set<PermissionType> supportedPermissionTypes;
 
   AuthorizationResourceType(final PermissionType... supportedPermissionTypes) {
-    this.supportedPermissionTypes = new HashSet<>(Arrays.asList(supportedPermissionTypes));
+    this.supportedPermissionTypes = Set.copyOf(Arrays.asList(supportedPermissionTypes));
   }
 
   public Set<PermissionType> getSupportedPermissionTypes() {

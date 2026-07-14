@@ -26,4 +26,11 @@ class PermissionTypeTest {
     assertThat(PermissionType.DELETE.isReadPermission()).isFalse();
     assertThat(PermissionType.CREATE.isReadPermission()).isFalse();
   }
+
+  @Test
+  void suspendProcessInstancePermissionsAreNotReadPermissions() {
+    assertThat(PermissionType.SUSPEND_PROCESS_INSTANCE.isReadPermission()).isFalse();
+    assertThat(PermissionType.CREATE_BATCH_OPERATION_SUSPEND_PROCESS_INSTANCE.isReadPermission())
+        .isFalse();
+  }
 }
