@@ -33,4 +33,11 @@ class PermissionTypeTest {
     assertThat(PermissionType.CREATE_BATCH_OPERATION_SUSPEND_PROCESS_INSTANCE.isReadPermission())
         .isFalse();
   }
+
+  @Test
+  void revealIsNotFlaggedAsReadPermission() {
+    // isReadPermission() drives automatic wildcard grants to built-in read-only roles;
+    // REVEAL exposes secret values and must never be auto-granted that way.
+    assertThat(PermissionType.REVEAL.isReadPermission()).isFalse();
+  }
 }
