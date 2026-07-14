@@ -86,7 +86,7 @@ public enum AuthorizationResourceType {
   private final Set<PermissionType> supportedPermissionTypes;
 
   AuthorizationResourceType(final PermissionType... supportedPermissionTypes) {
-    this.supportedPermissionTypes = new HashSet<>(Arrays.asList(supportedPermissionTypes));
+    this.supportedPermissionTypes = Set.copyOf(Arrays.asList(supportedPermissionTypes));
   }
 
   public Set<PermissionType> getSupportedPermissionTypes() {
