@@ -267,6 +267,77 @@ public class HttpSessionBasedAuthenticationHolderTest {
   }
 
   /**
+   * Production analogue of {@link
+   * #shouldOnlyRefreshOnceAcrossDistinctSessionInstancesForSameSessionId}: under Spring Session
+   * each concurrent request resolves its own {@link HttpSession} snapshot with its own backing
+   * storage, and writes are persisted only at end-of-request {@code save()} — so one request never
+   * observes another's in-flight refresh. Dedup therefore cannot lean on any shared session state;
+   * it must hold purely through the JVM-local, session-id-keyed guard (ADR-0035).
+   */
+  @Test
+  public void shouldOnlyRefreshOnceAcrossSessionsWithSeparateBackingStoresForSameSessionId()
+      throws Exception {
+    // given: two HttpSession objects for the same session id, each with its OWN backing store, both
+    // observing an authentication with an expired last-refresh timestamp
+    final var authentication = mock(CamundaAuthentication.class);
+    final Map<String, Object> backingStoreA = new ConcurrentHashMap<>();
+    final Map<String, Object> backingStoreB = new ConcurrentHashMap<>();
+    final AtomicInteger refreshCount = new AtomicInteger();
+    final var barrier = new CyclicBarrier(2);
+    final var awaitedOnce = ThreadLocal.withInitial(() -> false);
+
+    final var staleRefresh = Instant.now().minus(Duration.ofMinutes(10));
+    backingStoreA.put(CAMUNDA_AUTHENTICATION_SESSION_HOLDER_KEY, authentication);
+    backingStoreA.put(LAST_REFRESH_ATTR, staleRefresh);
+    backingStoreB.put(CAMUNDA_AUTHENTICATION_SESSION_HOLDER_KEY, authentication);
+    backingStoreB.put(LAST_REFRESH_ATTR, staleRefresh);
+
+    // a 1-second interval keeps per-thread scheduling jitter negligible while the 10-minutes-old
+    // seed stays unambiguously expired (see the sibling shared-store test for the full rationale).
+    when(authenticationConfiguration.getAuthenticationRefreshInterval())
+        .thenReturn(Duration.ofSeconds(1).toString());
+
+    final var sessionA =
+        sharedBackedSession(backingStoreA, refreshCount, barrier, awaitedOnce, "shared-session-id");
+    final var sessionB =
+        sharedBackedSession(backingStoreB, refreshCount, barrier, awaitedOnce, "shared-session-id");
+
+    final ThreadLocal<HttpSession> currentSession = new ThreadLocal<>();
+    final var sharedRequest = mock(HttpServletRequest.class);
+    lenient()
+        .when(sharedRequest.getSession(eq(false)))
+        .thenAnswer(invocation -> currentSession.get());
+
+    final var sharedHolder =
+        new HttpSessionBasedAuthenticationHolder(sharedRequest, authenticationConfiguration);
+
+    // when: both requests observe the expired timestamp and race to refresh concurrently
+    final ExecutorService executor = Executors.newFixedThreadPool(2);
+    try {
+      final Callable<CamundaAuthentication> callA =
+          () -> {
+            currentSession.set(sessionA);
+            return sharedHolder.get();
+          };
+      final Callable<CamundaAuthentication> callB =
+          () -> {
+            currentSession.set(sessionB);
+            return sharedHolder.get();
+          };
+      final Future<CamundaAuthentication> futureA = executor.submit(callA);
+      final Future<CamundaAuthentication> futureB = executor.submit(callB);
+      futureA.get(5, TimeUnit.SECONDS);
+      futureB.get(5, TimeUnit.SECONDS);
+    } finally {
+      executor.shutdownNow();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
+    }
+
+    // then: the JVM-local guard alone deduplicated the refresh across the two isolated stores
+    assertThat(refreshCount.get()).isEqualTo(1);
+  }
+
+  /**
    * When the refresh side effect throws (e.g. the session was invalidated concurrently), the claim
    * advanced inside {@code compute} must be rolled back so a later request can retry the refresh
    * instead of being blocked for the remainder of the cache TTL. Had the claim stuck, the second
