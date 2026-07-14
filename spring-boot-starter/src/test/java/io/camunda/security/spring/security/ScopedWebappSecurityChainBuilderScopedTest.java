@@ -36,7 +36,10 @@ import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.DefaultSecurityFilterChain;
 import org.springframework.security.web.FilterChainProxy;
@@ -155,6 +158,83 @@ class ScopedWebappSecurityChainBuilderScopedTest {
               .as("bearer token on webapp path must return 401, not a redirect")
               .isEqualTo(401);
         });
+  }
+
+  @Test
+  void scopedChainUsesHostRegisteredOidcAuthenticationEntryPointWhenPresent() throws Exception {
+    new WebApplicationContextRunner()
+        .withUserConfiguration(
+            ObjectMapperConfig.class,
+            StubPaths.class,
+            ScopedSingleIdpConfig.class,
+            HostOidcAuthenticationEntryPointConfig.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                BaseSecurityConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                ScopedOidcInfrastructureConfiguration.class,
+                ScopedWebappSecurityChainBuilderConfiguration.class))
+        .run(
+            ctx -> {
+              final var chain = ctx.getBean("scopedOidcTestChain", SecurityFilterChain.class);
+              final var proxy = new FilterChainProxy(List.of(chain));
+              final var request =
+                  new MockHttpServletRequest("GET", BASE_PATH + "/operate/dashboard");
+              final var response = new MockHttpServletResponse();
+
+              proxy.doFilter(request, response, new MockFilterChain());
+
+              assertThat(response.getStatus())
+                  .as("host-registered entry point must handle the unauthenticated request")
+                  .isEqualTo(HostOidcAuthenticationEntryPointConfig.STUB_STATUS);
+            });
+  }
+
+  @Test
+  void scopedChainAdoptsLibraryDefaultOidcEntryPointWhenBothConfigurationsArePresent()
+      throws Exception {
+    new WebApplicationContextRunner()
+        .withUserConfiguration(
+            ObjectMapperConfig.class,
+            StubPaths.class,
+            ScopedSingleIdpConfig.class,
+            GlobalClientRegistrationRepositoryConfig.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                BaseSecurityConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                ScopedOidcInfrastructureConfiguration.class,
+                ScopedWebappSecurityChainBuilderConfiguration.class,
+                OidcAuthenticationEntryPointConfiguration.class))
+        .run(
+            ctx -> {
+              final var chain = ctx.getBean("scopedOidcTestChain", SecurityFilterChain.class);
+              final var proxy = new FilterChainProxy(List.of(chain));
+              final var request =
+                  new MockHttpServletRequest("GET", BASE_PATH + "/operate/dashboard");
+              request.addHeader("Authorization", "Bearer sometoken");
+              final var response = new MockHttpServletResponse();
+
+              proxy.doFilter(request, response, new MockFilterChain());
+
+              // Documents current, intentional behavior: co-importing CSL's own
+              // OidcAuthenticationEntryPointConfiguration default bean is adopted the same way a
+              // host override would be, replacing the bearer-aware
+              // DelegatingAuthenticationEntryPoint
+              // fallback. Bearer requests are therefore redirected (302), not rejected with 401,
+              // once
+              // that configuration is present. If this assertion ever needs to change, update the
+              // Javadoc on ScopedWebappSecurityChainBuilder#resolveOidcAuthenticationEntryPoint
+              // too.
+              assertThat(response.getStatus())
+                  .as(
+                      "co-importing OidcAuthenticationEntryPointConfiguration replaces the"
+                          + " bearer-aware fallback, so bearer requests are redirected rather than"
+                          + " rejected with 401")
+                  .isEqualTo(302);
+            });
   }
 
   @Test
@@ -593,6 +673,42 @@ class ScopedWebappSecurityChainBuilderScopedTest {
           .webappPaths(
               "/operate/**", "/login", "/logout", "/sso-callback", "/oauth2/authorization/**")
           .build();
+    }
+  }
+
+  @Configuration
+  static class HostOidcAuthenticationEntryPointConfig {
+
+    static final int STUB_STATUS = 599;
+
+    @Bean
+    io.camunda.security.spring.spi.OidcAuthenticationEntryPoint oidcAuthenticationEntryPoint() {
+      return (request, response, authException) -> response.setStatus(STUB_STATUS);
+    }
+  }
+
+  /**
+   * Supplies a top-level {@link ClientRegistrationRepository} bean, distinct from the scoped
+   * builder's own internally-constructed repository. This satisfies {@link
+   * OidcAuthenticationEntryPointConfiguration#oidcAuthenticationEntryPoint(ClientRegistrationRepository)}'s
+   * required dependency when that configuration is co-imported in a test — mirroring how a real
+   * host that imports the global {@code OidcBeansConfiguration} alongside per-scope chains would
+   * supply this bean.
+   */
+  @Configuration
+  static class GlobalClientRegistrationRepositoryConfig {
+
+    @Bean
+    ClientRegistrationRepository clientRegistrationRepository() {
+      return new InMemoryClientRegistrationRepository(
+          ClientRegistration.withRegistrationId("oidc")
+              .clientId("client-oidc")
+              .clientSecret("secret")
+              .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+              .redirectUri("{baseUrl}/sso-callback")
+              .authorizationUri("http://localhost/oidc/auth")
+              .tokenUri("http://localhost/oidc/token")
+              .build());
     }
   }
 
