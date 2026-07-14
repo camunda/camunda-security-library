@@ -168,21 +168,22 @@ source of truth for "has this session already been refreshed", independent of an
 
 ## Addendum: claim validity is judged by observed staleness, not elapsed time (camunda-security-library#517)
 
-The original `compute` remap reused `isRefreshRequired(lastClaimed, now)` — the same elapsed-time
-check used for session-attribute staleness — to decide whether an existing claim was still valid.
-That conflates two different things: `authentication-refresh-interval` is a business refresh
-cadence, not a bound on how long concurrent requests take to resolve one staleness episode.
+The original `compute` remap decided whether an existing claim was still valid by reusing
+`isRefreshRequired(lastClaimed, now)` — the same elapsed-time check used for session-attribute
+staleness. That mixes up two different things: `authentication-refresh-interval` is how often
+authentication should be refreshed, not a limit on how long concurrent requests may take to settle
+one staleness episode.
 
-Because the claim is advanced *before* the refresh side effects run, a second caller whose own
-`compute` call happened to run after the interval had elapsed — trivial under CI scheduling jitter
-— would see the winner's claim as "expired" and trigger a redundant second refresh for the same
+The claim is advanced *before* the refresh side effects run. So if a second caller's own `compute`
+call happened to run after the interval had passed — easy to hit under CI scheduling jitter — it
+would see the winner's claim as "expired" and trigger a redundant second refresh for the same
 staleness episode. This matches what CI showed: one early timestamp plus several requests
 converging on one later, shared timestamp.
 
 **Fix:** judge claim validity against `observedLastRefresh` — the staleness the calling thread
-itself observed — instead of elapsed time. A claim is only re-claimable once it predates that
-observation, regardless of how long the current claimant takes to finish. This holds for any
-refresh interval, including ones short enough for scheduling jitter to exceed.
+itself saw — instead of elapsed time. A claim can only be re-claimed once it predates that
+observation, no matter how long the current claimant takes to finish. This holds for any refresh
+interval, including ones short enough for scheduling jitter to exceed.
 
 Verified by `HttpSessionBasedAuthenticationHolderTest#shouldNotReclaimWhenWinningClaimHasNotYetWrittenBackToSession`:
 it reliably fails under the old elapsed-time predicate and passes with the fix.
