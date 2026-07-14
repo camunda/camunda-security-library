@@ -106,10 +106,9 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
     // concurrently, and the rollback path below must not risk a second, possibly-throwing call
     // masking the original refresh failure.
     final String sessionId = session.getId();
-    // Claim validity is judged against observedLastRefresh, not elapsed time: reusing
-    // isRefreshRequired/authenticationRefreshInterval here let a delayed caller see another's
-    // in-flight claim as "expired" and trigger a redundant refresh for the same staleness episode
-    // (camunda-security-library#517).
+    // A claim is only re-claimable once it predates observedLastRefresh — the staleness this
+    // caller itself saw — so a slow claimant cannot be raced by another caller re-winning the same
+    // claim.
     final Instant claimed =
         refreshClaims
             .asMap()
