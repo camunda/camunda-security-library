@@ -173,8 +173,8 @@ public final class ScopedWebappSecurityChainBuilder {
             .exceptionHandling(
                 eh ->
                     eh.authenticationEntryPoint(
-                            oidcWebappAuthenticationEntryPoint(
-                                clientRegistrationRepository, loginUrl))
+                            resolveOidcAuthenticationEntryPoint(
+                                clientRegistrationRepository, loginUrl, "/oauth2/authorization"))
                         .accessDeniedHandler(authFailureHandler))
             .formLogin(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable)
