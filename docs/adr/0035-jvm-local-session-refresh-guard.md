@@ -62,11 +62,10 @@ source of truth for "has this session already been refreshed", independent of an
 - `lockAndRefresh` no longer synchronizes on the `HttpSession`. Instead it calls
   `refreshClaims.asMap().compute(sessionId, (id, lastClaimed) -> ...)`: inside the atomic `compute`,
   it decides whether `lastClaimed` (the JVM-local claim) is still valid by comparing it against the
-  caller's own `observedLastRefresh` — the `AUTH_LAST_REFRESH` value that caller read and judged
-  stale, not the (possibly stale) `session.getAttribute(LAST_REFRESH_ATTR)` re-read at `compute`
-  time, and not elapsed wall-clock time against `authentication-refresh-interval` (see Addendum
-  below). Only the caller whose `compute` sees a claim that
-  predates its own observed staleness performs the refresh (`removeCamundaAuthenticationInSession` +
+  `AUTH_LAST_REFRESH` value this request read from its session snapshot — captured before the
+  `compute` remap runs, not re-read inside it, and not compared as elapsed wall-clock time against
+  `authentication-refresh-interval` (see Addendum below). Only the caller whose `compute` sees a
+  claim no newer than that value performs the refresh (`removeCamundaAuthenticationInSession` +
   `session.setAttribute(LAST_REFRESH_ATTR, now)`) and advances the claim; every other concurrent
   caller — regardless of which `HttpSession` object it holds — sees an already-current claim and
   skips.
@@ -180,10 +179,10 @@ would see the winner's claim as "expired" and trigger a redundant second refresh
 staleness episode. This matches what CI showed: one early timestamp plus several requests
 converging on one later, shared timestamp.
 
-**Fix:** judge claim validity against `observedLastRefresh` — the staleness the calling thread
-itself saw — instead of elapsed time. A claim can only be re-claimed once it predates that
-observation, no matter how long the current claimant takes to finish. This holds for any refresh
-interval, including ones short enough for scheduling jitter to exceed.
+**Fix:** judge claim validity against the `AUTH_LAST_REFRESH` value the request itself read from
+its session snapshot, instead of elapsed time. A claim can only be re-claimed once it is at or
+before that value, no matter how long the current claimant takes to finish. This holds for any
+refresh interval, including ones short enough for scheduling jitter to exceed.
 
 Verified by `HttpSessionBasedAuthenticationHolderTest#shouldNotReclaimWhenWinningClaimHasNotYetWrittenBackToSession`:
 it reliably fails under the old elapsed-time predicate and passes with the fix.

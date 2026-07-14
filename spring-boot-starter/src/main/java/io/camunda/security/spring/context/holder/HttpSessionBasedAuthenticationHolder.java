@@ -95,29 +95,29 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
     final Instant now = Instant.now();
     final Instant lastRefresh = (Instant) session.getAttribute(LAST_REFRESH_ATTR);
     if (lastRefresh != null && isRefreshRequired(lastRefresh, now)) {
-      lockAndRefresh(session, now, lastRefresh);
+      lockAndRefresh(session, now);
     }
     return (CamundaAuthentication) session.getAttribute(CAMUNDA_AUTHENTICATION_SESSION_HOLDER_KEY);
   }
 
-  private void lockAndRefresh(
-      final HttpSession session, final Instant now, final Instant observedLastRefresh) {
+  private void lockAndRefresh(final HttpSession session, final Instant now) {
     // captured once: session.getId() can itself throw if the session is invalidated
     // concurrently, and the rollback path below must not risk a second, possibly-throwing call
     // masking the original refresh failure.
     final String sessionId = session.getId();
-    // A claim is only re-claimable once it predates observedLastRefresh — the staleness this
-    // caller itself saw — so a slow claimant cannot be raced by another caller re-winning the same
-    // claim.
+    // the last-refresh timestamp this request read from its own session snapshot. Under Spring
+    // Session each request holds a distinct snapshot that is only written back at end of request,
+    // so this value is stable for the whole request.
+    final Instant lastRefresh = (Instant) session.getAttribute(LAST_REFRESH_ATTR);
+    // refresh only if the existing claim is no newer than that last-refresh value: a newer claim
+    // means another request has already refreshed for the same staleness, so this one defers to it.
     final Instant claimed =
         refreshClaims
             .asMap()
             .compute(
                 sessionId,
                 (id, lastClaimed) ->
-                    lastClaimed == null || !lastClaimed.isAfter(observedLastRefresh)
-                        ? now
-                        : lastClaimed);
+                    lastClaimed == null || !lastClaimed.isAfter(lastRefresh) ? now : lastClaimed);
     // reference equality, not Instant.equals(): two concurrent callers can capture
     // value-identical Instants (clock resolution can be coarser than the race window), so value
     // equality alone cannot tell which caller's write actually landed. `now` is a distinct object
