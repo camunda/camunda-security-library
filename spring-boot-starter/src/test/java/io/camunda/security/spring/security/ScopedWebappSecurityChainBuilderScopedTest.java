@@ -219,15 +219,12 @@ class ScopedWebappSecurityChainBuilderScopedTest {
 
               proxy.doFilter(request, response, new MockFilterChain());
 
-              // Documents current, intentional behavior: co-importing CSL's own
+              // Documents current, intentional behavior. Co-importing CSL's own
               // OidcAuthenticationEntryPointConfiguration default bean is adopted the same way a
-              // host override would be, replacing the bearer-aware
-              // DelegatingAuthenticationEntryPoint
-              // fallback. Bearer requests are therefore redirected (302), not rejected with 401,
-              // once
-              // that configuration is present. If this assertion ever needs to change, update the
-              // Javadoc on ScopedWebappSecurityChainBuilder#resolveOidcAuthenticationEntryPoint
-              // too.
+              // host override would be, replacing the bearer-aware entry point fallback. With this
+              // configuration present, bearer requests are therefore redirected (302) instead of
+              // rejected with 401. If this assertion ever needs to change, update the Javadoc on
+              // ScopedWebappSecurityChainBuilder#resolveOidcAuthenticationEntryPoint too.
               assertThat(response.getStatus())
                   .as(
                       "co-importing OidcAuthenticationEntryPointConfiguration replaces the"
