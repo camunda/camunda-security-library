@@ -139,6 +139,53 @@ class OidcWebappBearerTokenRejectedTest {
         });
   }
 
+  @Test
+  void hostRegisteredOidcAuthenticationEntryPointIsUsedInsteadOfDefaultRedirect() throws Exception {
+    new WebApplicationContextRunner()
+        .withUserConfiguration(
+            ObjectMapperConfig.class,
+            StubPaths.class,
+            SingleIdpClientRegistration.class,
+            HostOidcAuthenticationEntryPointConfig.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                BaseSecurityConfiguration.class,
+                OidcWebappSecurityConfiguration.class,
+                ScopedWebappSecurityChainBuilderConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                OidcBeansConfiguration.class,
+                ScopedOidcInfrastructureConfiguration.class))
+        .withPropertyValues(OIDC_PROPERTIES)
+        .run(
+            ctx -> {
+              final var chain = ctx.getBean(OIDC_CHAIN_BEAN, SecurityFilterChain.class);
+              final var proxy = new FilterChainProxy(List.of(chain));
+              final var request = new MockHttpServletRequest("GET", "/operate/dashboard");
+              final var response = new MockHttpServletResponse();
+
+              proxy.doFilter(request, response, new MockFilterChain());
+
+              assertThat(response.getStatus())
+                  .as("host-registered entry point must handle the unauthenticated request")
+                  .isEqualTo(HostOidcAuthenticationEntryPointConfig.STUB_STATUS);
+              assertThat(response.getRedirectedUrl())
+                  .as("host entry point replaces the default IdP redirect")
+                  .isNull();
+            });
+  }
+
+  @Configuration
+  static class HostOidcAuthenticationEntryPointConfig {
+
+    static final int STUB_STATUS = 598;
+
+    @Bean
+    io.camunda.security.spring.spi.OidcAuthenticationEntryPoint oidcAuthenticationEntryPoint() {
+      return (request, response, authException) -> response.setStatus(STUB_STATUS);
+    }
+  }
+
   @Configuration
   static class ObjectMapperConfig {
 

@@ -16,6 +16,7 @@ import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
+import io.camunda.security.spring.spi.OidcAuthenticationEntryPoint;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -56,7 +57,8 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
       final OAuth2AuthorizedClientManagerFactory authorizedClientManagerFactory,
       final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
       final ObjectProvider<CorsConfigurationSource> corsSourceProvider,
-      final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers) {
+      final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
+      final ObjectProvider<OidcAuthenticationEntryPoint> oidcAuthenticationEntryPointProvider) {
     return new ScopedWebappSecurityChainBuilder(
         authFailureHandler,
         properties,
@@ -70,7 +72,8 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
         authorizedClientManagerFactory,
         scopedClientRegistrationFactory,
         corsSourceProvider.getIfAvailable(NoOpCorsConfigurationSource::new),
-        httpsRedirectCustomizers);
+        httpsRedirectCustomizers,
+        oidcAuthenticationEntryPointProvider);
   }
 
   // Also declared in ScopedOidcInfrastructureConfiguration; provided here too so this configuration

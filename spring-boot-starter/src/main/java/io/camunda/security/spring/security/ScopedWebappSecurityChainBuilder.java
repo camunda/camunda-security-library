@@ -28,6 +28,7 @@ import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
 import io.camunda.security.spring.scope.BasePaths;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
+import io.camunda.security.spring.spi.OidcAuthenticationEntryPoint;
 import java.util.LinkedHashMap;
 import java.util.Objects;
 import java.util.Optional;
@@ -95,6 +96,7 @@ public final class ScopedWebappSecurityChainBuilder {
   private final ScopedClientRegistrationFactory scopedClientRegistrationFactory;
   private final CorsConfigurationSource corsSource;
   private final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers;
+  private final ObjectProvider<OidcAuthenticationEntryPoint> oidcAuthenticationEntryPointProvider;
 
   public ScopedWebappSecurityChainBuilder(
       final AuthFailureHandler authFailureHandler,
@@ -109,7 +111,8 @@ public final class ScopedWebappSecurityChainBuilder {
       final OAuth2AuthorizedClientManagerFactory authorizedClientManagerFactory,
       final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
       final CorsConfigurationSource corsSource,
-      final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers) {
+      final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
+      final ObjectProvider<OidcAuthenticationEntryPoint> oidcAuthenticationEntryPointProvider) {
     this.authFailureHandler = authFailureHandler;
     this.properties = properties;
     this.pathPort = pathPort;
@@ -123,6 +126,7 @@ public final class ScopedWebappSecurityChainBuilder {
     this.scopedClientRegistrationFactory = scopedClientRegistrationFactory;
     this.corsSource = corsSource;
     this.httpsRedirectCustomizers = httpsRedirectCustomizers;
+    this.oidcAuthenticationEntryPointProvider = oidcAuthenticationEntryPointProvider;
   }
 
   /**
@@ -169,8 +173,8 @@ public final class ScopedWebappSecurityChainBuilder {
             .exceptionHandling(
                 eh ->
                     eh.authenticationEntryPoint(
-                            oidcWebappAuthenticationEntryPoint(
-                                clientRegistrationRepository, loginUrl))
+                            resolveOidcAuthenticationEntryPoint(
+                                clientRegistrationRepository, loginUrl, "/oauth2/authorization"))
                         .accessDeniedHandler(authFailureHandler))
             .formLogin(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable)
@@ -447,6 +451,50 @@ public final class ScopedWebappSecurityChainBuilder {
     return delegatingEntryPoint;
   }
 
+  /**
+   * Prefers any {@link OidcAuthenticationEntryPoint} bean present in the application context over
+   * the library default, following the same "adopter hook with a built-in fallback" pattern as
+   * {@link HttpsRedirectCustomizer}. {@code ObjectProvider.getIfAvailable(Supplier)} isn't used
+   * here: its fallback factory would have to return {@link OidcAuthenticationEntryPoint}, not the
+   * broader {@link AuthenticationEntryPoint} the static default actually produces, so it would need
+   * wrapping in a throwaway lambda purely to satisfy that type. The plain {@code getIfAvailable()}
+   * plus null-check below avoids that indirection and matches the idiom this class already uses for
+   * {@code webAppAuthorizationFilterProvider} and {@code adminUserCheckFilterProvider}.
+   *
+   * <p><b>Note:</b> this adopts <em>any</em> {@link OidcAuthenticationEntryPoint} bean in context —
+   * a host-registered override or {@link OidcAuthenticationEntryPointConfiguration}'s own
+   * library-supplied default (used today only by {@code JwtCookieAuthenticationFilter}, and not
+   * currently imported by any active chain — see that class's Javadoc) are indistinguishable here.
+   * That default is a plain redirect with no bearer-vs-browser distinction; co-importing {@link
+   * OidcAuthenticationEntryPointConfiguration} alongside this builder replaces the bearer-aware
+   * {@code DelegatingAuthenticationEntryPoint} fallback below and changes bearer-token requests
+   * from 401 to a redirect. This is a known, intentional consequence of adopting the SPI wholesale
+   * (matching how {@code JwtCookieAuthenticationFilter} already treats the same bean) — see {@code
+   * scopedChainAdoptsLibraryDefaultOidcEntryPointWhenBothConfigurationsArePresent} for the
+   * characterization test pinning this behavior so a future change to precedence is made
+   * deliberately, not accidentally.
+   */
+  private AuthenticationEntryPoint resolveOidcAuthenticationEntryPoint(
+      final ClientRegistrationRepository clientRegistrationRepository,
+      final String loginUrl,
+      final String authorizationBaseUri) {
+    final var configuredEntryPoint = oidcAuthenticationEntryPointProvider.getIfAvailable();
+    if (configuredEntryPoint != null) {
+      LOG.debug(
+          "Using configured OidcAuthenticationEntryPoint bean ({}) for OIDC webapp chain"
+              + " (loginUrl={})",
+          configuredEntryPoint.getClass().getName(),
+          loginUrl);
+      return configuredEntryPoint;
+    }
+    LOG.debug(
+        "No OidcAuthenticationEntryPoint bean registered; using the built-in default for OIDC"
+            + " webapp chain (loginUrl={})",
+        loginUrl);
+    return oidcWebappAuthenticationEntryPoint(
+        clientRegistrationRepository, loginUrl, authorizationBaseUri);
+  }
+
   // Moved verbatim from OidcWebappSecurityConfiguration; package-private for unit testing.
   static String resolveOauthRedirectTarget(
       final ClientRegistrationRepository clientRegistrationRepository, final String loginUrl) {
@@ -536,7 +584,7 @@ public final class ScopedWebappSecurityChainBuilder {
             .exceptionHandling(
                 eh ->
                     eh.authenticationEntryPoint(
-                            oidcWebappAuthenticationEntryPoint(
+                            resolveOidcAuthenticationEntryPoint(
                                 clientRegistrationRepository, loginUrl, authorizationBaseUri))
                         .accessDeniedHandler(authFailureHandler))
             .formLogin(AbstractHttpConfigurer::disable)
