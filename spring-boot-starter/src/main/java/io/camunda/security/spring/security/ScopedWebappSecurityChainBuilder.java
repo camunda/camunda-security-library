@@ -476,10 +476,20 @@ public final class ScopedWebappSecurityChainBuilder {
       final String loginUrl,
       final String authorizationBaseUri) {
     final var hostEntryPoint = oidcAuthenticationEntryPointProvider.getIfAvailable();
-    return hostEntryPoint != null
-        ? hostEntryPoint
-        : oidcWebappAuthenticationEntryPoint(
-            clientRegistrationRepository, loginUrl, authorizationBaseUri);
+    if (hostEntryPoint != null) {
+      LOG.debug(
+          "Using host-registered OidcAuthenticationEntryPoint bean ({}) for OIDC webapp chain"
+              + " (loginUrl={})",
+          hostEntryPoint.getClass().getName(),
+          loginUrl);
+      return hostEntryPoint;
+    }
+    LOG.debug(
+        "No OidcAuthenticationEntryPoint bean registered; using the built-in default for OIDC"
+            + " webapp chain (loginUrl={})",
+        loginUrl);
+    return oidcWebappAuthenticationEntryPoint(
+        clientRegistrationRepository, loginUrl, authorizationBaseUri);
   }
 
   // Moved verbatim from OidcWebappSecurityConfiguration; package-private for unit testing.
