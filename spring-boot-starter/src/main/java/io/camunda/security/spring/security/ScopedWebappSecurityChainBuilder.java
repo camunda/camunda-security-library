@@ -454,9 +454,12 @@ public final class ScopedWebappSecurityChainBuilder {
   /**
    * Prefers any {@link OidcAuthenticationEntryPoint} bean present in the application context over
    * the library default, following the same "adopter hook with a built-in fallback" pattern as
-   * {@link HttpsRedirectCustomizer}. {@code ObjectProvider.getIfAvailable(Supplier)} can't be used
-   * directly here because the fallback factory returns {@link AuthenticationEntryPoint}, not the
-   * narrower {@link OidcAuthenticationEntryPoint} type the provider is parameterized on.
+   * {@link HttpsRedirectCustomizer}. {@code ObjectProvider.getIfAvailable(Supplier)} isn't used
+   * here: its fallback factory would have to return {@link OidcAuthenticationEntryPoint}, not the
+   * broader {@link AuthenticationEntryPoint} the static default actually produces, so it would need
+   * wrapping in a throwaway lambda purely to satisfy that type. The plain {@code getIfAvailable()}
+   * plus null-check below avoids that indirection and matches the idiom this class already uses for
+   * {@code webAppAuthorizationFilterProvider} and {@code adminUserCheckFilterProvider}.
    *
    * <p><b>Note:</b> this adopts <em>any</em> {@link OidcAuthenticationEntryPoint} bean in context —
    * a host-registered override or {@link OidcAuthenticationEntryPointConfiguration}'s own
