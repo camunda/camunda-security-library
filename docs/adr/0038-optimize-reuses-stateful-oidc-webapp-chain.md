@@ -70,12 +70,15 @@ and its SPIs are retired and not merged.
 Concretely:
 
 - Optimize imports the standard CSL chains. It provides a `SecurityPathPort` where
-  `webappPaths()` returns the catch-all `/**`, `apiPaths()` returns only the bearer-only
-  public API (`/api/public/**`, `/api/ingestion/variable`), `unprotectedApiPaths()` returns
-  the public paths under `/api` (`/api/readyz`, `/api/ui-configuration`, `/api/localization`,
-  `/api/authentication/callback`, `/api/authentication/logout`, `/api/external/**`), and
-  `unprotectedPaths()` returns the public non-API paths (`/external/**`, static resources,
-  `/actuator/**`).
+  `webappPaths()` returns the catch-all `/**`, and `apiPaths()` returns only the bearer-only
+  public API (`/api/public/**`, `/api/ingestion/variable`). `unprotectedApiPaths()` keeps its
+  contract of being a subset of `apiPaths()` (it holds the public parts of the bearer surface,
+  and is empty for Optimize). Every other public path — including the public endpoints under
+  `/api` (`/api/readyz`, `/api/ui-configuration`, `/api/localization`, `/api/external/**`) as
+  well as `/external/**`, static resources, and `/actuator/**` — goes into `unprotectedPaths()`.
+  Both unprotected sets are unioned by the order-0 permit-all chain and the CSRF allow-list, so
+  a public path works the same in either bucket; the subset contract on `unprotectedApiPaths()`
+  is what keeps its meaning tight (the paths the API chain itself must permit).
 - The webapp chain runs with server-side sessions, backed by an Optimize-provided
   `SessionStorePort` adapter over Optimize's Elasticsearch, following OC's pattern. OC's own
   adapter is not reused (it lives in a component Optimize does not depend on), so Optimize
@@ -90,16 +93,14 @@ Concretely:
   must be made suppressible so two `/**` chains do not collide at startup. A follow-up will
   investigate removing that deny chain entirely (it is tech debt, not urgent).
 - The `/**` webapp chain must sort below the bearer API chain, so API paths are claimed first
-  and the catch-all does not shadow them. The stock `OidcWebappSecurityConfiguration` runs at
-  the same order as the API chain (`ORDER_WEBAPP_API`), which is correct only when the webapp
-  matcher and `apiPaths()` are disjoint (as in OC). Optimize therefore registers its webapp
-  chain at a lower precedence (a higher order value) via the shared
-  `ScopedWebappSecurityChainBuilder`. A follow-up should make the webapp chain order
-  configurable in CSL so a catch-all host can use the umbrella directly instead of re-declaring
-  the bean.
-- The Javadoc constraint on `SecurityPathPort.unprotectedApiPaths()` ("must be a subset of
-  `apiPaths()`") is removed. A public path under `/api` (for example a login callback) is
-  not part of the bearer API surface, so the coupling was wrong.
+  and the catch-all does not shadow them. Today the API chain and the webapp chain share one
+  order (`ORDER_WEBAPP_API`), which only works because their matchers are disjoint (as in OC).
+  CSL is changed to give the two chains **distinct orders, API before webapp**, so a `/**`
+  webapp catch-all sorts below the API chain automatically. This is behavior-preserving for
+  existing hosts (their API and webapp matchers are disjoint, so a request still matches exactly
+  one chain) and lets Optimize use the stock webapp chain through the umbrella without
+  re-declaring any bean. The assumption is that no host wants a webapp path to win over an
+  overlapping API path; bearer-API-first is the intended convention.
 - Optimize deletes its custom security stack: `AbstractSecurityConfigurerAdapter` and its
   subclasses, `SessionService`, `AuthCookieService`, `TerminatedSessionService`, the cookie
   filters, and the Identity SDK login code.
@@ -134,8 +135,8 @@ The move is done in one step, not in phases. There is no interim stateless adopt
 - The custom cookie stack and its debt (cookie splitting, terminated-session list,
   `SameSite`-only CSRF, custom Identity SDK) are removed, not carried forward.
 - CSL gains almost no new code. The stateful chain, the bearer API chain, and the
-  unprotected chain already exist. The only CSL changes are making the deny chain suppressible,
-  making the webapp chain order configurable, and the one Javadoc fix.
+  unprotected chain already exist. The only CSL changes are making the deny chain suppressible
+  and giving the API and webapp chains distinct orders (API first).
 - No throwaway work. Nothing is built to be deleted later, which the phased stateless
   approach would have required.
 
