@@ -499,7 +499,7 @@ public CamundaAuthenticationConverter<Authentication> authenticationConverter() 
 
 ## Extension hooks
 
-Five extension points let hosts contribute additional path-scoped API chains, customise specific OAuth2/OIDC concerns, enable CORS, or add an HTTPS redirect — all without replacing entire chains. Host-specific filter wiring beyond these hooks (authorization filters, header rewrites, matcher tweaks) will be addressed in a follow-up PR.
+Seven extension points let hosts contribute additional path-scoped API chains, customise specific OAuth2/OIDC concerns, enable CORS, add an HTTPS redirect, or contribute CSP/security-header behavior — all without replacing entire chains. Host-specific filter wiring beyond these hooks (authorization filters, matcher tweaks) will be addressed in a follow-up PR.
 
 ### `CamundaSecurityScopeProvider` — contribute path-scoped API chains
 
@@ -629,6 +629,33 @@ The customizer receives full `HttpSecurity` access, so the redirect strategy, ex
 The anchor passed to `addFilterBefore` must exist in the target chain. `SecurityContextHolderFilter` is always present in CSL's chains and is the safe choice.
 
 See [ADR-0034](../adr/0034-cors-and-https-redirect-host-hooks.md) for the design rationale.
+
+### `CspCustomizer` — dynamic Content-Security-Policy behavior
+
+Register a `CspCustomizer` bean to contribute per-request or per-route CSP behavior CSL's static, property-driven configuration cannot express (e.g. a fresh nonce on every response):
+
+```java
+@Bean
+public CspCustomizer nonceBasedCsp() {
+  return http -> http.headers(headers -> headers.addHeaderWriter(new MyNonceCspHeaderWriter()));
+}
+```
+
+CSL applies every registered customizer, in `@Order` order, to every content-serving filter chain (the same set `HttpsRedirectCustomizer` applies to, minus the catch-all deny-all chain, which serves no content). This coexists with `camunda.security.http-headers.content-security-policy.*` — your custom `HeaderWriter` is additive via `addHeaderWriter`, not a replacement for CSL's static configuration, unless your writer itself overwrites the header. See [ADR-0037](../adr/0037-csp-and-security-headers-customizer-hooks.md) for the design rationale.
+
+### `SecurityHeadersCustomizer` — additional or route-varying response headers
+
+Register a `SecurityHeadersCustomizer` bean to contribute headers CSL's static `camunda.security.http-headers.*` configuration doesn't know about, or to vary header application by route:
+
+```java
+@Bean
+public SecurityHeadersCustomizer extraHeaders() {
+  return http -> http.headers(headers -> headers.addHeaderWriter(
+      (request, response) -> response.setHeader("X-My-Header", "value")));
+}
+```
+
+Applied the same way and to the same chains as `CspCustomizer` above. See [ADR-0037](../adr/0037-csp-and-security-headers-customizer-hooks.md) for the design rationale.
 
 ### Other host beans the chains pick up automatically
 
