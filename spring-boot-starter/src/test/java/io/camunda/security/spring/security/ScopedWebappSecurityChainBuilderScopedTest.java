@@ -23,14 +23,15 @@ import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.Mockito;
-import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
@@ -54,18 +55,15 @@ import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.session.MapSessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * Verifies {@link ScopedWebappSecurityChainBuilder#buildScopedWebappChain}: path-prefixed matchers,
  * session filter placement, login redirect, and picker link prefixing.
  */
-@ExtendWith(MockitoExtension.class)
 class ScopedWebappSecurityChainBuilderScopedTest {
 
   private static final String BASE_PATH = "/physical-tenants/t1";
-
-  @Mock private CspCustomizer cspCustomizer;
-  @Mock private SecurityHeadersCustomizer headersCustomizer;
 
   private final WebApplicationContextRunner runner =
       new WebApplicationContextRunner()
@@ -104,20 +102,34 @@ class ScopedWebappSecurityChainBuilderScopedTest {
   }
 
   @Test
-  void scopedChainAppliesRegisteredCspAndSecurityHeadersCustomizers() {
+  void scopedChainAppliesRegisteredCspCustomizer() {
     runner
-        .withBean("cspCustomizer", CspCustomizer.class, () -> cspCustomizer)
-        .withBean("headersCustomizer", SecurityHeadersCustomizer.class, () -> headersCustomizer)
+        .withUserConfiguration(StubCspCustomizerConfig.class)
         .run(
             ctx -> {
-              final var chain = ctx.getBean("scopedOidcTestChain", SecurityFilterChain.class);
-              assertThat(chain).isNotNull();
-              try {
-                Mockito.verify(cspCustomizer, Mockito.atLeastOnce()).customize(Mockito.any());
-                Mockito.verify(headersCustomizer, Mockito.atLeastOnce()).customize(Mockito.any());
-              } catch (final Exception e) {
-                throw new AssertionError("customizer verification failed", e);
-              }
+              final var chain =
+                  (DefaultSecurityFilterChain)
+                      ctx.getBean("scopedOidcTestChain", SecurityFilterChain.class);
+              assertThat(chain.getFilters())
+                  .as("MarkerFilter added by CspCustomizer must be in scopedOidcTestChain")
+                  .anySatisfy(f -> assertThat(f).isInstanceOf(CspMarkerFilter.class));
+            });
+  }
+
+  @Test
+  void scopedChainAppliesRegisteredSecurityHeadersCustomizer() {
+    runner
+        .withUserConfiguration(StubSecurityHeadersCustomizerConfig.class)
+        .run(
+            ctx -> {
+              final var chain =
+                  (DefaultSecurityFilterChain)
+                      ctx.getBean("scopedOidcTestChain", SecurityFilterChain.class);
+              assertThat(chain.getFilters())
+                  .as(
+                      "MarkerFilter added by SecurityHeadersCustomizer must be in"
+                          + " scopedOidcTestChain")
+                  .anySatisfy(f -> assertThat(f).isInstanceOf(SecurityHeadersMarkerFilter.class));
             });
   }
 
@@ -788,6 +800,50 @@ class ScopedWebappSecurityChainBuilderScopedTest {
           sessionFilter,
           "camunda-session-physical-tenants-t2",
           "X-CSRF-TOKEN-physical-tenants-t2");
+    }
+  }
+
+  static final class CspMarkerFilter extends OncePerRequestFilter {
+
+    @Override
+    protected void doFilterInternal(
+        final HttpServletRequest request,
+        final HttpServletResponse response,
+        final FilterChain filterChain)
+        throws ServletException, IOException {
+      filterChain.doFilter(request, response);
+    }
+  }
+
+  static final class SecurityHeadersMarkerFilter extends OncePerRequestFilter {
+
+    @Override
+    protected void doFilterInternal(
+        final HttpServletRequest request,
+        final HttpServletResponse response,
+        final FilterChain filterChain)
+        throws ServletException, IOException {
+      filterChain.doFilter(request, response);
+    }
+  }
+
+  @Configuration
+  static class StubCspCustomizerConfig {
+
+    @Bean
+    CspCustomizer cspCustomizer() {
+      return http -> http.addFilterBefore(new CspMarkerFilter(), SecurityContextHolderFilter.class);
+    }
+  }
+
+  @Configuration
+  static class StubSecurityHeadersCustomizerConfig {
+
+    @Bean
+    SecurityHeadersCustomizer securityHeadersCustomizer() {
+      return http ->
+          http.addFilterBefore(
+              new SecurityHeadersMarkerFilter(), SecurityContextHolderFilter.class);
     }
   }
 }
