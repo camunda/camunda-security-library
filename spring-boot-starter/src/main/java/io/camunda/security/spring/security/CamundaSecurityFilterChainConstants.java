@@ -32,8 +32,18 @@ public final class CamundaSecurityFilterChainConstants {
       "camunda.security.authentication.webapp-enabled";
 
   public static final int ORDER_UNPROTECTED = 0;
-  public static final int ORDER_WEBAPP_API = 1;
-  public static final int ORDER_UNHANDLED = 2;
+
+  /**
+   * The bearer API chain sorts before the webapp chain ({@link #ORDER_API} &lt; {@link
+   * #ORDER_WEBAPP}). This only matters when the two matchers overlap — for hosts with disjoint API
+   * and webapp matchers (OC, Hub) the relative order has no observable effect. A host whose webapp
+   * matcher is the catch-all {@code /**} (Optimize, ADR-0036) relies on API-first so the bearer API
+   * paths are claimed before the catch-all.
+   */
+  public static final int ORDER_API = 1;
+
+  public static final int ORDER_WEBAPP = 2;
+  public static final int ORDER_UNHANDLED = 3;
 
   private CamundaSecurityFilterChainConstants() {}
 }

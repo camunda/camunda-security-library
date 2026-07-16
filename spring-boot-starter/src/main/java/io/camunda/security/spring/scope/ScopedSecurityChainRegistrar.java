@@ -7,7 +7,7 @@
  */
 package io.camunda.security.spring.scope;
 
-import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP_API;
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_API;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
 import io.camunda.security.api.context.CamundaSecurityScopeProvider;
@@ -231,7 +231,7 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
                 },
                 sessionFilter);
       }
-      return new OrderedSecurityFilterChainWrapper(chain, ORDER_WEBAPP_API);
+      return new OrderedSecurityFilterChainWrapper(chain, ORDER_API);
     } catch (final IllegalStateException ex) {
       throw ex;
     } catch (final Exception ex) {
@@ -298,7 +298,7 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
               sessionFilter,
               sessionCookieName(descriptor.basePath()),
               csrfCookieName(descriptor.basePath()));
-      return new OrderedSecurityFilterChainWrapper(chain, ORDER_WEBAPP_API);
+      return new OrderedSecurityFilterChainWrapper(chain, ORDER_API);
     } catch (final IllegalStateException ex) {
       throw ex;
     } catch (final Exception ex) {

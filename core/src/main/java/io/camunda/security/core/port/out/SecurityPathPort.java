@@ -25,15 +25,15 @@ public interface SecurityPathPort {
 
   /**
    * API paths accessible without authentication (e.g., {@code "/v2/license"}, {@code
-   * "/v2/status"}). These need not be a subset of {@link #apiPaths()}: a public path under the API
-   * namespace (for example a login callback such as {@code "/api/authentication/callback"}) is not
-   * part of the bearer-protected API surface, yet still belongs here.
+   * "/v2/status"}). These must be a subset of {@link #apiPaths()}.
    */
   Set<String> unprotectedApiPaths();
 
   /**
-   * Non-API paths accessible without authentication (e.g., {@code "/actuator/**"}, {@code
-   * "/error"}).
+   * Paths accessible without authentication that are not part of the bearer API surface in {@link
+   * #apiPaths()} (e.g., {@code "/actuator/**"}, {@code "/error"}). A public endpoint under the API
+   * namespace that is not in {@link #apiPaths()} — for example a login callback — belongs here, not
+   * in {@link #unprotectedApiPaths()}.
    */
   Set<String> unprotectedPaths();
 

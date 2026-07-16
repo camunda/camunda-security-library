@@ -7,7 +7,7 @@
  */
 package io.camunda.security.spring.security;
 
-import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP_API;
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,7 +45,7 @@ public class BasicAuthWebappSecurityConfiguration {
       LoggerFactory.getLogger(BasicAuthWebappSecurityConfiguration.class);
 
   @Bean
-  @Order(ORDER_WEBAPP_API)
+  @Order(ORDER_WEBAPP)
   public SecurityFilterChain basicAuthWebappSecurityFilterChain(
       final HttpSecurity http,
       final ScopedWebappSecurityChainBuilder chainBuilder,

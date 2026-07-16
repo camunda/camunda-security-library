@@ -7,7 +7,7 @@
  */
 package io.camunda.security.spring.security;
 
-import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP_API;
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
@@ -38,7 +38,7 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
 public class OidcWebappSecurityConfiguration {
 
   @Bean
-  @Order(ORDER_WEBAPP_API)
+  @Order(ORDER_WEBAPP)
   public SecurityFilterChain oidcWebappSecurityFilterChain(
       final HttpSecurity http,
       final ScopedWebappSecurityChainBuilder chainBuilder,
