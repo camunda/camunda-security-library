@@ -14,9 +14,11 @@ import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.handler.LoggingAuthenticationFailureHandler;
+import io.camunda.security.spring.security.CspCustomizer;
 import io.camunda.security.spring.security.HttpsRedirectCustomizer;
 import io.camunda.security.spring.security.OidcResourceServerCustomizer;
 import io.camunda.security.spring.security.SecurityFilterChainSupport;
+import io.camunda.security.spring.security.SecurityHeadersCustomizer;
 import java.util.Collection;
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -58,6 +60,8 @@ public final class ScopedApiSecurityChainBuilder {
   private final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers;
   private final CorsConfigurationSource corsSource;
   private final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers;
+  private final ObjectProvider<CspCustomizer> cspCustomizers;
+  private final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers;
 
   public ScopedApiSecurityChainBuilder(
       final CamundaSecurityLibraryProperties properties,
@@ -65,13 +69,17 @@ public final class ScopedApiSecurityChainBuilder {
       final SecurityPathPort pathPort,
       final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers,
       final CorsConfigurationSource corsSource,
-      final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers) {
+      final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
+      final ObjectProvider<CspCustomizer> cspCustomizers,
+      final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers) {
     this.properties = properties;
     this.authFailureHandler = authFailureHandler;
     this.pathPort = pathPort;
     this.resourceServerCustomizers = resourceServerCustomizers;
     this.corsSource = corsSource;
     this.httpsRedirectCustomizers = httpsRedirectCustomizers;
+    this.cspCustomizers = cspCustomizers;
+    this.securityHeadersCustomizers = securityHeadersCustomizers;
   }
 
   /**
@@ -146,6 +154,9 @@ public final class ScopedApiSecurityChainBuilder {
     SecurityFilterChainSupport.applyCsrfConfiguration(
         filterChainBuilder, properties, pathPort, csrfCookiePath, csrfCookieName);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
+    SecurityFilterChainSupport.applyCspCustomizers(filterChainBuilder, cspCustomizers);
+    SecurityFilterChainSupport.applySecurityHeadersCustomizers(
+        filterChainBuilder, securityHeadersCustomizers);
 
     return filterChainBuilder.build();
   }
@@ -205,6 +216,9 @@ public final class ScopedApiSecurityChainBuilder {
     SecurityFilterChainSupport.applyCsrfConfiguration(
         filterChainBuilder, properties, pathPort, csrfCookiePath, csrfCookieName);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
+    SecurityFilterChainSupport.applyCspCustomizers(filterChainBuilder, cspCustomizers);
+    SecurityFilterChainSupport.applySecurityHeadersCustomizers(
+        filterChainBuilder, securityHeadersCustomizers);
 
     return filterChainBuilder.build();
   }
@@ -367,6 +381,9 @@ public final class ScopedApiSecurityChainBuilder {
         basePath,
         ScopedSecurityChainRegistrar.csrfCookieName(basePath));
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
+    SecurityFilterChainSupport.applyCspCustomizers(filterChainBuilder, cspCustomizers);
+    SecurityFilterChainSupport.applySecurityHeadersCustomizers(
+        filterChainBuilder, securityHeadersCustomizers);
 
     return filterChainBuilder.build();
   }

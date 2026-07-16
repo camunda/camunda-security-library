@@ -26,17 +26,21 @@ import io.camunda.security.spring.cors.CorsBeansConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.security.BaseSecurityConfiguration;
+import io.camunda.security.spring.security.CspCustomizer;
 import io.camunda.security.spring.security.HttpsRedirectCustomizer;
 import io.camunda.security.spring.security.OidcResourceServerCustomizer;
+import io.camunda.security.spring.security.SecurityHeadersCustomizer;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import io.camunda.security.spring.user.UserConfiguration;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -290,6 +294,65 @@ class ScopedApiSecurityChainBuilderTest {
   }
 
   // -------------------------------------------------------------------------
+  // CSP / security-headers customizer hooks (camunda-security-library#538, #539)
+  // -------------------------------------------------------------------------
+
+  @Test
+  void buildOidcApiChainAppliesRegisteredCspAndSecurityHeadersCustomizers() {
+    final var stubJwt =
+        Jwt.withTokenValue("stub-token")
+            .header("alg", "none")
+            .claim("sub", "user1")
+            .issuedAt(Instant.now())
+            .expiresAt(Instant.now().plusSeconds(300))
+            .build();
+    final JwtDecoder stubDecoder = mock(JwtDecoder.class);
+    when(stubDecoder.decode(any())).thenReturn(stubJwt);
+
+    oidcRunner.run(
+        ctx -> {
+          final var http = ctx.getBean(HttpSecurity.class);
+          final var properties = ctx.getBean(CamundaSecurityLibraryProperties.class);
+          final var authFailureHandler = ctx.getBean(AuthFailureHandler.class);
+          final var pathPort = ctx.getBean(SecurityPathPort.class);
+
+          final CspCustomizer cspCustomizer = mock(CspCustomizer.class);
+          final SecurityHeadersCustomizer headersCustomizer = mock(SecurityHeadersCustomizer.class);
+          final var builder =
+              new ScopedApiSecurityChainBuilder(
+                  properties,
+                  authFailureHandler,
+                  pathPort,
+                  ctx.getBeanProvider(OidcResourceServerCustomizer.class),
+                  ctx.getBean(CorsConfigurationSource.class),
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  singleBeanProvider(CspCustomizer.class, cspCustomizer),
+                  singleBeanProvider(SecurityHeadersCustomizer.class, headersCustomizer));
+
+          final SecurityFilterChain chain;
+          try {
+            chain = builder.buildOidcApiChain(http, List.of("/api/**"), List.of(), stubDecoder);
+          } catch (final Exception e) {
+            throw new AssertionError("buildOidcApiChain threw unexpectedly", e);
+          }
+          assertThat(chain).isNotNull();
+
+          try {
+            Mockito.verify(cspCustomizer, Mockito.times(1)).customize(http);
+            Mockito.verify(headersCustomizer, Mockito.times(1)).customize(http);
+          } catch (final Exception e) {
+            throw new AssertionError("customizer verification failed", e);
+          }
+        });
+  }
+
+  private static <T> ObjectProvider<T> singleBeanProvider(final Class<T> type, final T bean) {
+    final var factory = new StaticListableBeanFactory();
+    factory.addBean("bean", bean);
+    return factory.getBeanProvider(type);
+  }
+
+  // -------------------------------------------------------------------------
   // Per-scope CSRF cookie name
   // -------------------------------------------------------------------------
 
@@ -326,7 +389,9 @@ class ScopedApiSecurityChainBuilderTest {
                   pathPort,
                   ctx.getBeanProvider(OidcResourceServerCustomizer.class),
                   ctx.getBean(CorsConfigurationSource.class),
-                  ctx.getBeanProvider(HttpsRedirectCustomizer.class));
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  ctx.getBeanProvider(CspCustomizer.class),
+                  ctx.getBeanProvider(SecurityHeadersCustomizer.class));
 
           final SecurityFilterChain chain;
           try {
@@ -353,7 +418,9 @@ class ScopedApiSecurityChainBuilderTest {
                   pathPort,
                   ctx.getBeanProvider(OidcResourceServerCustomizer.class),
                   ctx.getBean(CorsConfigurationSource.class),
-                  ctx.getBeanProvider(HttpsRedirectCustomizer.class));
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  ctx.getBeanProvider(CspCustomizer.class),
+                  ctx.getBeanProvider(SecurityHeadersCustomizer.class));
           final var sessionFilter =
               new SessionRepositoryFilter<>(new MapSessionRepository(new ConcurrentHashMap<>()));
 
@@ -467,7 +534,9 @@ class ScopedApiSecurityChainBuilderTest {
                   pathPort,
                   ctx.getBeanProvider(OidcResourceServerCustomizer.class),
                   ctx.getBean(CorsConfigurationSource.class),
-                  ctx.getBeanProvider(HttpsRedirectCustomizer.class));
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  ctx.getBeanProvider(CspCustomizer.class),
+                  ctx.getBeanProvider(SecurityHeadersCustomizer.class));
           assertThatNullPointerException()
               .isThrownBy(() -> builder.buildScopedApiChain(null, BASE_PATH, null, () -> null))
               .withMessageContaining("authentication");
@@ -489,7 +558,9 @@ class ScopedApiSecurityChainBuilderTest {
                   pathPort,
                   ctx.getBeanProvider(OidcResourceServerCustomizer.class),
                   ctx.getBean(CorsConfigurationSource.class),
-                  ctx.getBeanProvider(HttpsRedirectCustomizer.class));
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  ctx.getBeanProvider(CspCustomizer.class),
+                  ctx.getBeanProvider(SecurityHeadersCustomizer.class));
           final var authWithNullMethod = new AuthenticationConfiguration();
           authWithNullMethod.setMethod(null);
           assertThatNullPointerException()
@@ -515,7 +586,9 @@ class ScopedApiSecurityChainBuilderTest {
                   pathPort,
                   ctx.getBeanProvider(OidcResourceServerCustomizer.class),
                   ctx.getBean(CorsConfigurationSource.class),
-                  ctx.getBeanProvider(HttpsRedirectCustomizer.class));
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  ctx.getBeanProvider(CspCustomizer.class),
+                  ctx.getBeanProvider(SecurityHeadersCustomizer.class));
           final var auth = new AuthenticationConfiguration();
           auth.setMethod(AuthenticationMethod.BASIC);
           assertThatNullPointerException()
@@ -539,7 +612,9 @@ class ScopedApiSecurityChainBuilderTest {
                   pathPort,
                   ctx.getBeanProvider(OidcResourceServerCustomizer.class),
                   ctx.getBean(CorsConfigurationSource.class),
-                  ctx.getBeanProvider(HttpsRedirectCustomizer.class));
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  ctx.getBeanProvider(CspCustomizer.class),
+                  ctx.getBeanProvider(SecurityHeadersCustomizer.class));
           final var auth = new AuthenticationConfiguration();
           auth.setMethod(AuthenticationMethod.OIDC);
           assertThatNullPointerException()
@@ -564,7 +639,9 @@ class ScopedApiSecurityChainBuilderTest {
                   pathPort,
                   ctx.getBeanProvider(OidcResourceServerCustomizer.class),
                   ctx.getBean(CorsConfigurationSource.class),
-                  ctx.getBeanProvider(HttpsRedirectCustomizer.class));
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  ctx.getBeanProvider(CspCustomizer.class),
+                  ctx.getBeanProvider(SecurityHeadersCustomizer.class));
           final var auth = new AuthenticationConfiguration();
           auth.setMethod(AuthenticationMethod.OIDC);
           assertThatNullPointerException()
@@ -594,7 +671,9 @@ class ScopedApiSecurityChainBuilderTest {
                   pathPort,
                   ctx.getBeanProvider(OidcResourceServerCustomizer.class),
                   ctx.getBean(CorsConfigurationSource.class),
-                  ctx.getBeanProvider(HttpsRedirectCustomizer.class));
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  ctx.getBeanProvider(CspCustomizer.class),
+                  ctx.getBeanProvider(SecurityHeadersCustomizer.class));
           final var auth = new AuthenticationConfiguration();
           auth.setMethod(AuthenticationMethod.BASIC);
           assertThatIllegalArgumentException()
@@ -619,7 +698,9 @@ class ScopedApiSecurityChainBuilderTest {
                   pathPort,
                   ctx.getBeanProvider(OidcResourceServerCustomizer.class),
                   ctx.getBean(CorsConfigurationSource.class),
-                  ctx.getBeanProvider(HttpsRedirectCustomizer.class));
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  ctx.getBeanProvider(CspCustomizer.class),
+                  ctx.getBeanProvider(SecurityHeadersCustomizer.class));
           assertThatIllegalArgumentException()
               .isThrownBy(() -> builder.buildUnprotectedScopedApiChain(http, "/"))
               .withMessageContaining("must not be the root path");
@@ -642,7 +723,9 @@ class ScopedApiSecurityChainBuilderTest {
                   pathPort,
                   ctx.getBeanProvider(OidcResourceServerCustomizer.class),
                   ctx.getBean(CorsConfigurationSource.class),
-                  ctx.getBeanProvider(HttpsRedirectCustomizer.class));
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  ctx.getBeanProvider(CspCustomizer.class),
+                  ctx.getBeanProvider(SecurityHeadersCustomizer.class));
           final var auth = new AuthenticationConfiguration();
           auth.setMethod(AuthenticationMethod.OIDC);
           assertThatNullPointerException()
@@ -666,7 +749,9 @@ class ScopedApiSecurityChainBuilderTest {
                   pathPort,
                   ctx.getBeanProvider(OidcResourceServerCustomizer.class),
                   ctx.getBean(CorsConfigurationSource.class),
-                  ctx.getBeanProvider(HttpsRedirectCustomizer.class));
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  ctx.getBeanProvider(CspCustomizer.class),
+                  ctx.getBeanProvider(SecurityHeadersCustomizer.class));
           assertThatNullPointerException()
               .isThrownBy(
                   () -> builder.buildOidcApiChain(http, List.of("/api/**"), List.of(), null))
@@ -713,7 +798,9 @@ class ScopedApiSecurityChainBuilderTest {
         final SecurityPathPort pathPort,
         final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers,
         final CorsConfigurationSource corsSource,
-        final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers)
+        final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
+        final ObjectProvider<CspCustomizer> cspCustomizers,
+        final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers)
         throws Exception {
       final var builder =
           new ScopedApiSecurityChainBuilder(
@@ -722,7 +809,9 @@ class ScopedApiSecurityChainBuilderTest {
               pathPort,
               resourceServerCustomizers,
               corsSource,
-              httpsRedirectCustomizers);
+              httpsRedirectCustomizers,
+              cspCustomizers,
+              securityHeadersCustomizers);
       final var authentication = new AuthenticationConfiguration();
       authentication.setMethod(AuthenticationMethod.BASIC);
       return builder.buildScopedApiChain(http, BASE_PATH, authentication, () -> null);
@@ -748,7 +837,9 @@ class ScopedApiSecurityChainBuilderTest {
         final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers,
         final ObjectProvider<JwtDecoder> decoderProvider,
         final CorsConfigurationSource corsSource,
-        final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers)
+        final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
+        final ObjectProvider<CspCustomizer> cspCustomizers,
+        final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers)
         throws Exception {
       final var builder =
           new ScopedApiSecurityChainBuilder(
@@ -757,7 +848,9 @@ class ScopedApiSecurityChainBuilderTest {
               pathPort,
               resourceServerCustomizers,
               corsSource,
-              httpsRedirectCustomizers);
+              httpsRedirectCustomizers,
+              cspCustomizers,
+              securityHeadersCustomizers);
       final var authentication = new AuthenticationConfiguration();
       authentication.setMethod(AuthenticationMethod.OIDC);
       // Supplier resolves the stub decoder from context; falls back to a reject-all decoder.
