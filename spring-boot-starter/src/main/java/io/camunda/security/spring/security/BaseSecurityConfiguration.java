@@ -15,6 +15,7 @@ import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.cors.NoOpCorsConfigurationSource;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -60,8 +61,19 @@ public class BaseSecurityConfiguration {
     return filterChainBuilder.build();
   }
 
+  /**
+   * Catch-all deny chain (lowest priority). A host that installs its own {@code /**} catch-all
+   * webapp chain (e.g. Optimize, which reuses the OIDC webapp chain with a {@code /**} matcher, see
+   * ADR-0036) must suppress this bean, otherwise Spring Security rejects the two duplicate {@code
+   * /**} matchers at startup. Set {@code camunda.security.unhandled-paths-chain.enabled=false} to
+   * suppress it. Enabled by default so existing hosts are unaffected.
+   */
   @Bean
   @Order(ORDER_UNHANDLED)
+  @ConditionalOnProperty(
+      name = "camunda.security.unhandled-paths-chain.enabled",
+      havingValue = "true",
+      matchIfMissing = true)
   public SecurityFilterChain protectedUnhandledPathsSecurityFilterChain(
       final HttpSecurity http,
       final ObjectProvider<CorsConfigurationSource> corsSourceProvider,
