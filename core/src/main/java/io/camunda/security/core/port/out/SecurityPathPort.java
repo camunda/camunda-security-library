@@ -25,7 +25,9 @@ public interface SecurityPathPort {
 
   /**
    * API paths accessible without authentication (e.g., {@code "/v2/license"}, {@code
-   * "/v2/status"}). These must be a subset of {@link #apiPaths()}.
+   * "/v2/status"}). These need not be a subset of {@link #apiPaths()}: a public path under the API
+   * namespace (for example a login callback such as {@code "/api/authentication/callback"}) is not
+   * part of the bearer-protected API surface, yet still belongs here.
    */
   Set<String> unprotectedApiPaths();
 
