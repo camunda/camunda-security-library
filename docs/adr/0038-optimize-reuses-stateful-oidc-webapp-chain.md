@@ -111,6 +111,32 @@ Concretely:
 
 The move is done in one step, not in phases. There is no interim stateless adoption.
 
+### Backward compatibility for operators
+
+Adopting CSL changes the config surface from Optimize's own keys (`security.auth.*`, `api.*`,
+`security.responseHeaders.*`, loaded through `ConfigurationService`) to CSL's `camunda.security.*`.
+Operators are not forced to migrate. The adoption ships a config bridge — a Spring
+`EnvironmentPostProcessor`, mirroring OC's `PersistentWebSessionPropertiesPostProcessor` — that
+reads the existing Optimize keys and emits the equivalent `camunda.security.*` properties at low
+precedence, so an explicit new value always wins. The keys fall into three groups:
+
+- **Mapped** — OIDC/Identity (`security.auth.ccsm.*` and the `camunda.identity.*` from
+  `application-ccsm.yaml` → `camunda.security.authentication.oidc.{issuer-uri, client-id,
+  client-secret, audiences}`), token lifetime (`security.auth.token.lifeMin` → session timeout),
+  response headers (`security.responseHeaders.HSTS.*`, `Content-Security-Policy`,
+  `X-Content-Type-Options` → `camunda.security.http-headers.*`), and the public-API JWK/audience
+  (`api.jwtSetUri`, `api.audience`).
+- **Obsolete by design** — `security.auth.token.secret`, `security.auth.cookie.maxSize` (cookie
+  splitting), the `same-site` flag, `api.accessToken` (static shared token), and
+  `X-XSS-Protection` lose meaning under server-side sessions and the CSL chains. The bridge ignores
+  them and logs a deprecation warning; it does not fail startup.
+- **SaaS-managed / no analog** — some CCSaaS Auth0 keys (`m2mClient.*`, `users.cloud.accountsUrl`)
+  have no CSL equivalent and remain platform concerns.
+
+This preserves the config surface, not the behavior: even with old config honored, logout, refresh,
+and cookie handling change because sessions are now server-side. The full key-by-key mapping table
+lives with the spike.
+
 ### Why these particular boundaries
 
 - **Reuse the existing chain instead of a new one.** OC already runs this chain in
@@ -157,6 +183,9 @@ The move is done in one step, not in phases. There is no interim stateless adopt
 - Optimize must implement its own `SessionStorePort` adapter and create a new session index;
   OC's adapter cannot be reused across the module boundary. The old auth-storage index (the
   terminated-session store) has to be removed as part of the upgrade.
+- Some legacy config keys become no-ops under the new model. The compat bridge honors what maps
+  and logs a deprecation warning for the rest, so operators are not forced to migrate, but the
+  bridge and its deprecation surface are extra code to maintain until the old keys are dropped.
 
 ## Alternatives Considered
 
