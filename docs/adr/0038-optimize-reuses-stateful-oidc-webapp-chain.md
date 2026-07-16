@@ -25,7 +25,7 @@ cookie. To make login and API calls work, Optimize carries a lot of custom code:
 - a JWT cookie that is split across several cookies (`X-Optimize-Authorization_0`, `_1`, ...)
   because a single cookie can exceed the header size limit of some reverse proxies,
 - a separate refresh-token cookie and, on SaaS, a stored service-token cookie,
-- `TerminatedSessionService`, a server-side list of logged-out token ids in Elasticsearch,
+- `TerminatedSessionService`, a server-side list of logged-out token IDs in Elasticsearch,
   which exists only so that a logout can invalidate a stateless token before it expires,
 - CSRF turned off, replaced by a `SameSite=Strict` cookie flag,
 - for the self-managed case (CCSM), a custom Camunda Identity SDK login flow instead of
