@@ -23,6 +23,9 @@ request and varies `frame-ancestors`/`X-Frame-Options` by whether a route is emb
 `Origin-Agent-Cluster`, `X-DNS-Prefetch-Control`, and `X-Download-Options` — none of which CSL's
 static configuration can express. Tracked as #538 (CSP) and #539 (headers).
 
+What SPI shape lets a host contribute per-request CSP nonces and route-varying security headers
+without CSL hard-coding a nonce strategy or a fixed header set?
+
 ## Decision
 
 Add two new hooks, both following the exact existing `HttpsRedirectCustomizer` pattern (see

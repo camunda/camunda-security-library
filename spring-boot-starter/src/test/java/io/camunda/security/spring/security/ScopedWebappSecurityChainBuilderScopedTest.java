@@ -27,7 +27,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
 import org.mockito.Mockito;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
@@ -56,9 +59,13 @@ import org.springframework.test.util.ReflectionTestUtils;
  * Verifies {@link ScopedWebappSecurityChainBuilder#buildScopedWebappChain}: path-prefixed matchers,
  * session filter placement, login redirect, and picker link prefixing.
  */
+@ExtendWith(MockitoExtension.class)
 class ScopedWebappSecurityChainBuilderScopedTest {
 
   private static final String BASE_PATH = "/physical-tenants/t1";
+
+  @Mock private CspCustomizer cspCustomizer;
+  @Mock private SecurityHeadersCustomizer headersCustomizer;
 
   private final WebApplicationContextRunner runner =
       new WebApplicationContextRunner()
@@ -98,10 +105,6 @@ class ScopedWebappSecurityChainBuilderScopedTest {
 
   @Test
   void scopedChainAppliesRegisteredCspAndSecurityHeadersCustomizers() {
-    final CspCustomizer cspCustomizer = Mockito.mock(CspCustomizer.class);
-    final SecurityHeadersCustomizer headersCustomizer =
-        Mockito.mock(SecurityHeadersCustomizer.class);
-
     runner
         .withBean("cspCustomizer", CspCustomizer.class, () -> cspCustomizer)
         .withBean("headersCustomizer", SecurityHeadersCustomizer.class, () -> headersCustomizer)
