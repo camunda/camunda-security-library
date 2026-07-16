@@ -31,11 +31,14 @@ import io.camunda.security.spring.security.OidcResourceServerCustomizer;
 import io.camunda.security.spring.security.SecurityHeadersCustomizer;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import io.camunda.security.spring.user.UserConfiguration;
+import jakarta.servlet.FilterChain;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.ObjectProvider;
@@ -45,13 +48,19 @@ import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.convert.converter.Converter;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
@@ -346,6 +355,365 @@ class ScopedApiSecurityChainBuilderTest {
     final var factory = new StaticListableBeanFactory();
     factory.addBean("bean", bean);
     return factory.getBeanProvider(type);
+  }
+
+  // -------------------------------------------------------------------------
+  // Per-chain JwtAuthenticationConverter (camunda-security-library#537)
+  // -------------------------------------------------------------------------
+
+  @Test
+  void buildOidcApiChainAppliesSuppliedJwtAuthenticationConverter() {
+    final var stubJwt =
+        Jwt.withTokenValue("stub-token")
+            .header("alg", "none")
+            .claim("sub", "user1")
+            .issuedAt(Instant.now())
+            .expiresAt(Instant.now().plusSeconds(300))
+            .build();
+    final JwtDecoder stubDecoder = mock(JwtDecoder.class);
+    when(stubDecoder.decode(any())).thenReturn(stubJwt);
+
+    final GrantedAuthority customAuthority =
+        new SimpleGrantedAuthority("ROLE_CUSTOM_FROM_CONVERTER");
+    final Converter<Jwt, Authentication> customConverter =
+        jwt -> new JwtAuthenticationToken(jwt, List.of(customAuthority));
+
+    oidcRunner.run(
+        ctx -> {
+          final var http = ctx.getBean(HttpSecurity.class);
+          final var properties = ctx.getBean(CamundaSecurityLibraryProperties.class);
+          final var authFailureHandler = ctx.getBean(AuthFailureHandler.class);
+          final var pathPort = ctx.getBean(SecurityPathPort.class);
+          final var builder =
+              new ScopedApiSecurityChainBuilder(
+                  properties,
+                  authFailureHandler,
+                  pathPort,
+                  ctx.getBeanProvider(OidcResourceServerCustomizer.class),
+                  ctx.getBean(CorsConfigurationSource.class),
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  ctx.getBeanProvider(SecurityHeadersCustomizer.class));
+
+          final SecurityFilterChain chain =
+              builder.buildOidcApiChain(
+                  http, List.of("/api/**"), List.of(), stubDecoder, customConverter, null);
+          final var proxy = new FilterChainProxy(List.of(chain));
+
+          final var request = new MockHttpServletRequest("GET", "/api/foo");
+          request.addHeader("Authorization", "Bearer stub-token");
+          final var response = new MockHttpServletResponse();
+          final var captured = new AtomicReference<Authentication>();
+          final FilterChain next =
+              (req, res) -> captured.set(SecurityContextHolder.getContext().getAuthentication());
+
+          proxy.doFilter(request, response, next);
+
+          assertThat(captured.get())
+              .as("terminal authentication must reach the app after the custom converter runs")
+              .isNotNull();
+          final List<GrantedAuthority> authorities =
+              new ArrayList<>(captured.get().getAuthorities());
+          assertThat(authorities)
+              .as("authorities must reflect the supplied converter, not Spring's default mapping")
+              .containsExactly(customAuthority);
+        });
+  }
+
+  @Test
+  void buildOidcApiChainWithoutConverterKeepsDefaultJwtAuthenticationConverterBehavior() {
+    final var stubJwt =
+        Jwt.withTokenValue("stub-token")
+            .header("alg", "none")
+            .claim("sub", "user1")
+            .issuedAt(Instant.now())
+            .expiresAt(Instant.now().plusSeconds(300))
+            .build();
+    final JwtDecoder stubDecoder = mock(JwtDecoder.class);
+    when(stubDecoder.decode(any())).thenReturn(stubJwt);
+
+    oidcRunner.run(
+        ctx -> {
+          final var http = ctx.getBean(HttpSecurity.class);
+          final var properties = ctx.getBean(CamundaSecurityLibraryProperties.class);
+          final var authFailureHandler = ctx.getBean(AuthFailureHandler.class);
+          final var pathPort = ctx.getBean(SecurityPathPort.class);
+          final var builder =
+              new ScopedApiSecurityChainBuilder(
+                  properties,
+                  authFailureHandler,
+                  pathPort,
+                  ctx.getBeanProvider(OidcResourceServerCustomizer.class),
+                  ctx.getBean(CorsConfigurationSource.class),
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  ctx.getBeanProvider(SecurityHeadersCustomizer.class));
+
+          // Existing 4-arg overload — must behave exactly as it did before this change.
+          final SecurityFilterChain chain =
+              builder.buildOidcApiChain(http, List.of("/api/**"), List.of(), stubDecoder);
+          final var proxy = new FilterChainProxy(List.of(chain));
+
+          final var request = new MockHttpServletRequest("GET", "/api/foo");
+          request.addHeader("Authorization", "Bearer stub-token");
+          final var response = new MockHttpServletResponse();
+          final var captured = new AtomicReference<Authentication>();
+          final FilterChain next =
+              (req, res) -> captured.set(SecurityContextHolder.getContext().getAuthentication());
+
+          proxy.doFilter(request, response, next);
+
+          assertThat(captured.get())
+              .as("default Spring Security JWT authentication must still be produced")
+              .isInstanceOf(JwtAuthenticationToken.class);
+          // The default converter maps the 'scope'/'scp' claim to SCOPE_* authorities; stubJwt has
+          // none, so no SCOPE_* authority is present, proving the custom converter from the other
+          // tests in this class was not silently applied here — this test only asserts the absence
+          // of SCOPE_*/custom authorities.
+          final List<String> authorityNames =
+              captured.get().getAuthorities().stream().map(GrantedAuthority::getAuthority).toList();
+          assertThat(authorityNames)
+              .as("no SCOPE_* authority must be present since stubJwt has no scope/scp claim")
+              .noneMatch(name -> name.startsWith("SCOPE_"));
+        });
+  }
+
+  @Test
+  void buildOidcApiChainRejectsConverterReturningNonAbstractAuthenticationToken() {
+    // The converter parameter's public type is Converter<Jwt, Authentication>, but Spring
+    // Security's jwtAuthenticationConverter(...) requires an AbstractAuthenticationToken. A
+    // converter that returns some other Authentication implementation must fail the request with
+    // 401 (via InvalidBearerTokenException), not throw an uncaught ClassCastException.
+    final var stubJwt =
+        Jwt.withTokenValue("stub-token")
+            .header("alg", "none")
+            .claim("sub", "user1")
+            .issuedAt(Instant.now())
+            .expiresAt(Instant.now().plusSeconds(300))
+            .build();
+    final JwtDecoder stubDecoder = mock(JwtDecoder.class);
+    when(stubDecoder.decode(any())).thenReturn(stubJwt);
+
+    // A Mockito mock of Authentication is NOT an AbstractAuthenticationToken (unlike
+    // TestingAuthenticationToken, JwtAuthenticationToken, etc., which all extend it) — this is
+    // the only reliable way to produce a non-conforming Authentication for this test.
+    final Converter<Jwt, Authentication> nonConformingConverter = jwt -> mock(Authentication.class);
+
+    oidcRunner.run(
+        ctx -> {
+          final var http = ctx.getBean(HttpSecurity.class);
+          final var properties = ctx.getBean(CamundaSecurityLibraryProperties.class);
+          final var authFailureHandler = ctx.getBean(AuthFailureHandler.class);
+          final var pathPort = ctx.getBean(SecurityPathPort.class);
+          final var builder =
+              new ScopedApiSecurityChainBuilder(
+                  properties,
+                  authFailureHandler,
+                  pathPort,
+                  ctx.getBeanProvider(OidcResourceServerCustomizer.class),
+                  ctx.getBean(CorsConfigurationSource.class),
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  ctx.getBeanProvider(SecurityHeadersCustomizer.class));
+
+          final SecurityFilterChain chain =
+              builder.buildOidcApiChain(
+                  http, List.of("/api/**"), List.of(), stubDecoder, nonConformingConverter, null);
+          final var proxy = new FilterChainProxy(List.of(chain));
+
+          final var request = new MockHttpServletRequest("GET", "/api/foo");
+          request.addHeader("Authorization", "Bearer stub-token");
+          final var response = new MockHttpServletResponse();
+
+          proxy.doFilter(request, response, new MockFilterChain());
+
+          assertThat(response.getStatus())
+              .as(
+                  "a converter returning a non-AbstractAuthenticationToken must fail as 401, not"
+                      + " throw uncaught")
+              .isEqualTo(401);
+        });
+  }
+
+  @Test
+  void buildOidcApiChainRejectsConverterReturningNull() {
+    // A converter that returns null (a reachable host bug, e.g. an incomplete claim mapping) must
+    // hit the "null" branch of the adapter's DEBUG log (the client-facing message is the same for
+    // both branches) and still fail as 401, not NPE.
+    final var stubJwt =
+        Jwt.withTokenValue("stub-token")
+            .header("alg", "none")
+            .claim("sub", "user1")
+            .issuedAt(Instant.now())
+            .expiresAt(Instant.now().plusSeconds(300))
+            .build();
+    final JwtDecoder stubDecoder = mock(JwtDecoder.class);
+    when(stubDecoder.decode(any())).thenReturn(stubJwt);
+
+    final Converter<Jwt, Authentication> nullReturningConverter = jwt -> null;
+
+    oidcRunner.run(
+        ctx -> {
+          final var http = ctx.getBean(HttpSecurity.class);
+          final var properties = ctx.getBean(CamundaSecurityLibraryProperties.class);
+          final var authFailureHandler = ctx.getBean(AuthFailureHandler.class);
+          final var pathPort = ctx.getBean(SecurityPathPort.class);
+          final var builder =
+              new ScopedApiSecurityChainBuilder(
+                  properties,
+                  authFailureHandler,
+                  pathPort,
+                  ctx.getBeanProvider(OidcResourceServerCustomizer.class),
+                  ctx.getBean(CorsConfigurationSource.class),
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  ctx.getBeanProvider(SecurityHeadersCustomizer.class));
+
+          final SecurityFilterChain chain =
+              builder.buildOidcApiChain(
+                  http, List.of("/api/**"), List.of(), stubDecoder, nullReturningConverter, null);
+          final var proxy = new FilterChainProxy(List.of(chain));
+
+          final var request = new MockHttpServletRequest("GET", "/api/foo");
+          request.addHeader("Authorization", "Bearer stub-token");
+          final var response = new MockHttpServletResponse();
+
+          proxy.doFilter(request, response, new MockFilterChain());
+
+          assertThat(response.getStatus())
+              .as("a converter returning null must fail as 401, not throw uncaught")
+              .isEqualTo(401);
+        });
+  }
+
+  @Test
+  void buildScopedApiChainAppliesSuppliedJwtAuthenticationConverterSupplier() {
+    final var stubJwt =
+        Jwt.withTokenValue("stub-token")
+            .header("alg", "none")
+            .claim("sub", "user1")
+            .issuedAt(Instant.now())
+            .expiresAt(Instant.now().plusSeconds(300))
+            .build();
+    final JwtDecoder stubDecoder = mock(JwtDecoder.class);
+    when(stubDecoder.decode(any())).thenReturn(stubJwt);
+
+    final GrantedAuthority customAuthority = new SimpleGrantedAuthority("ROLE_SCOPED_CUSTOM");
+    final Converter<Jwt, Authentication> customConverter =
+        jwt -> new JwtAuthenticationToken(jwt, List.of(customAuthority));
+
+    oidcRunner.run(
+        ctx -> {
+          final var http = ctx.getBean(HttpSecurity.class);
+          final var properties = ctx.getBean(CamundaSecurityLibraryProperties.class);
+          final var authFailureHandler = ctx.getBean(AuthFailureHandler.class);
+          final var pathPort = ctx.getBean(SecurityPathPort.class);
+          final var builder =
+              new ScopedApiSecurityChainBuilder(
+                  properties,
+                  authFailureHandler,
+                  pathPort,
+                  ctx.getBeanProvider(OidcResourceServerCustomizer.class),
+                  ctx.getBean(CorsConfigurationSource.class),
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  ctx.getBeanProvider(SecurityHeadersCustomizer.class));
+          final var auth = new AuthenticationConfiguration();
+          auth.setMethod(AuthenticationMethod.OIDC);
+
+          final SecurityFilterChain chain =
+              builder.buildScopedApiChain(
+                  http, BASE_PATH, auth, () -> stubDecoder, () -> customConverter, null);
+          final var proxy = new FilterChainProxy(List.of(chain));
+
+          final var request = new MockHttpServletRequest("GET", SCOPED_PATH);
+          request.addHeader("Authorization", "Bearer stub-token");
+          final var response = new MockHttpServletResponse();
+          final var captured = new AtomicReference<Authentication>();
+          final FilterChain next =
+              (req, res) -> captured.set(SecurityContextHolder.getContext().getAuthentication());
+
+          proxy.doFilter(request, response, next);
+
+          assertThat(captured.get())
+              .as("scoped chain must reach the app with the custom converter's authentication")
+              .isNotNull();
+          final List<GrantedAuthority> authorities =
+              new ArrayList<>(captured.get().getAuthorities());
+          assertThat(authorities)
+              .as("authorities must reflect the per-scope supplied converter")
+              .containsExactly(customAuthority);
+        });
+  }
+
+  @Test
+  void buildScopedApiChainRejectsNullOidcAuthenticationConverterSupplier() {
+    // The requireNonNull on the supplier reference fires before http/matchers are used — mirrors
+    // the existing oidcDecoderSupplier null-guard, since both are mandatory references even though
+    // the converter supplier is allowed to *return* null (meaning "no override").
+    basicRunner.run(
+        ctx -> {
+          final var properties = ctx.getBean(CamundaSecurityLibraryProperties.class);
+          final var authFailureHandler = ctx.getBean(AuthFailureHandler.class);
+          final var pathPort = ctx.getBean(SecurityPathPort.class);
+          final var builder =
+              new ScopedApiSecurityChainBuilder(
+                  properties,
+                  authFailureHandler,
+                  pathPort,
+                  ctx.getBeanProvider(OidcResourceServerCustomizer.class),
+                  ctx.getBean(CorsConfigurationSource.class),
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  ctx.getBeanProvider(SecurityHeadersCustomizer.class));
+          final var auth = new AuthenticationConfiguration();
+          auth.setMethod(AuthenticationMethod.OIDC);
+          assertThatNullPointerException()
+              .isThrownBy(
+                  () ->
+                      builder.buildScopedApiChain(
+                          null, BASE_PATH, auth, () -> mock(JwtDecoder.class), null, null))
+              .withMessageContaining("oidcAuthenticationConverterSupplier");
+        });
+  }
+
+  @Test
+  void buildScopedApiChainAllowsConverterSupplierToReturnNull() {
+    // A converter supplier returning null means "no override" — must NOT throw, unlike the decoder
+    // supplier, which requires a non-null JwtDecoder result.
+    final var stubJwt =
+        Jwt.withTokenValue("stub-token")
+            .header("alg", "none")
+            .claim("sub", "user1")
+            .issuedAt(Instant.now())
+            .expiresAt(Instant.now().plusSeconds(300))
+            .build();
+    final JwtDecoder stubDecoder = mock(JwtDecoder.class);
+    when(stubDecoder.decode(any())).thenReturn(stubJwt);
+
+    oidcRunner.run(
+        ctx -> {
+          final var http = ctx.getBean(HttpSecurity.class);
+          final var properties = ctx.getBean(CamundaSecurityLibraryProperties.class);
+          final var authFailureHandler = ctx.getBean(AuthFailureHandler.class);
+          final var pathPort = ctx.getBean(SecurityPathPort.class);
+          final var builder =
+              new ScopedApiSecurityChainBuilder(
+                  properties,
+                  authFailureHandler,
+                  pathPort,
+                  ctx.getBeanProvider(OidcResourceServerCustomizer.class),
+                  ctx.getBean(CorsConfigurationSource.class),
+                  ctx.getBeanProvider(HttpsRedirectCustomizer.class),
+                  ctx.getBeanProvider(SecurityHeadersCustomizer.class));
+          final var auth = new AuthenticationConfiguration();
+          auth.setMethod(AuthenticationMethod.OIDC);
+
+          final SecurityFilterChain chain;
+          try {
+            chain =
+                builder.buildScopedApiChain(
+                    http, BASE_PATH, auth, () -> stubDecoder, () -> null, null);
+          } catch (final Exception e) {
+            throw new AssertionError(
+                "buildScopedApiChain must not throw when the converter supplier returns null", e);
+          }
+          assertThat(chain).isNotNull();
+        });
   }
 
   // -------------------------------------------------------------------------
