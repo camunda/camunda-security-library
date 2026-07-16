@@ -35,7 +35,7 @@ Add two new hooks, both following the exact existing `HttpsRedirectCustomizer` p
 - `CspCustomizer` — for CSP-specific dynamic behavior (nonce generation, per-route policy).
 - `SecurityHeadersCustomizer` — for any other adopter-contributed header behavior.
 
-Unlike the per-chain `JwtAuthenticationConverter` hook (ADR-0036, camunda-security-library#537),
+Unlike the per-chain `JwtAuthenticationConverter` hook (camunda-security-library#537),
 these are genuinely chain-wide concerns — a host implements its nonce/route logic *inside* its own
 bean (typically a custom `HeaderWriter` added via `http.headers(headers ->
 headers.addHeaderWriter(...))`), the same way `HttpsRedirectCustomizer` implementations add their
@@ -80,7 +80,7 @@ and has no `setupSecureHeaders` call today.
   Rejected — nonce generation strategy, cookie/attribute propagation to templates, and per-route
   exemptions are all host-specific decisions CSL has no opinion on, the same reasoning ADR-0034
   applied to HTTPS-redirect strategy.
-- **Per-invocation parameter, like ADR-0036's `JwtAuthenticationConverter` hook.** Rejected — CSP and
+- **Per-invocation parameter, like the `JwtAuthenticationConverter` hook (camunda-security-library#537).** Rejected — CSP and
   header behavior is not genuinely per-chain-instance the way JWT authority mapping can be (multiple
   API versions needing different converters simultaneously); one customizer bean applied uniformly,
   with route-based logic living inside the host's own `HeaderWriter`, is sufficient and matches the
