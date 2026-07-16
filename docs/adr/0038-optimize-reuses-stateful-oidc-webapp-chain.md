@@ -46,12 +46,14 @@ in a server session, and refreshes tokens transparently. It reuses the host's
 [ADR-0027](0027-scoped-webapp-security-chains-and-per-scope-sessions.md)). The API bearer
 chain ([ADR-0023](0023-oidc-bearer-tokens-on-api-chain-only.md)) stays as it is.
 
-The one thing that blocked Optimize from using that stateful chain was the need for a
-shared session store when Optimize runs several instances. That block is gone: Optimize
-always has a backing Elasticsearch store, and it already uses it for the terminated-session
-list. The same Elasticsearch-backed session store that OC uses can be used 1:1 for
-Optimize. A shared store also means no sticky load balancer is needed, so Optimize keeps
-affinity-free scaling.
+A shared session store for multi-instance Optimize was never actually a blocker. Optimize
+always runs a backing Elasticsearch store and already uses it for the terminated-session
+list, so the same Elasticsearch-backed session store OC uses works 1:1 for Optimize. A
+shared store also means no sticky load balancer is needed, so Optimize keeps affinity-free
+scaling. What held Optimize back was hesitation to change behavior: moving from the
+self-contained cookie to server-side sessions changes logout, refresh, and cookie handling.
+We now accept that change deliberately, because unifying authentication procedures and setup
+across the Camunda stack is exactly what we want to achieve over the mid to long run.
 
 The question this ADR answers: should Optimize adopt CSL's existing stateful OIDC webapp
 chain, or should CSL keep and maintain a stateless JWT-cookie chain to preserve Optimize's
@@ -149,8 +151,9 @@ The move is done in one step, not in phases. There is no interim stateless adopt
   would use, and keeps the cookie splitting and the terminated-session workaround alive.
 - **Phase 1 adopt CSL statelessly (keep the cookie), phase 2 switch to server sessions.**
   Rejected. Phase 1 would keep all the cookie debt live, and the part of CSL that makes
-  `oauth2Login` run statelessly would be built only to be deleted in phase 2. Poor value
-  once the session store turned out to be free.
+  `oauth2Login` run statelessly would be built only to be deleted in phase 2. Poor value:
+  the session store was available all along, so there is nothing to de-risk by staying
+  stateless first, and the behavior change is what we want anyway.
 - **Phase 1 with a stateless `oauth2Login` bridge, phase 2 switch to server sessions.**
   Rejected for the same reason, and it front-loads the login-engine swap while still
   carrying the cookie debt. It has the worst effort-to-value ratio.
