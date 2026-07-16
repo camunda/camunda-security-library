@@ -51,6 +51,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0033: Reject Microsoft Entra v1 tokens at the token-claims conversion layer](../adr/0033-reject-entra-v1-tokens.md)
 - [ADR-0034: CORS and HTTPS redirect hooks for host applications](../adr/0034-cors-and-https-redirect-host-hooks.md)
 - [ADR-0035: JVM-local, session-ID-keyed guard for authentication refresh dedup](../adr/0035-jvm-local-session-refresh-guard.md)
+- [ADR-0036: Per-chain JwtAuthenticationConverter hook on ScopedApiSecurityChainBuilder](../adr/0036-per-chain-jwt-authentication-converter-hook.md)
 - [ADR-0037: Security-headers customizer hook (covers CSP)](../adr/0037-csp-and-security-headers-customizer-hooks.md)
 
 ---
