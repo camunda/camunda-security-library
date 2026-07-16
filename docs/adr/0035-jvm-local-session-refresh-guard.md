@@ -186,3 +186,26 @@ refresh interval, including ones short enough for scheduling jitter to exceed.
 
 Verified by `HttpSessionBasedAuthenticationHolderTest#shouldNotReclaimWhenWinningClaimHasNotYetWrittenBackToSession`:
 it reliably fails under the old elapsed-time predicate and passes with the fix.
+
+## Addendum: dropping the `maximumSize` bound (camunda-security-library#533)
+
+The original design paired `expireAfterWrite` with `maximumSize(10_000)` as a hard backstop against
+unbounded cache growth. Review on the originating PR flagged that this was the one part of the
+design that added a correctness caveat: unlike TTL eviction, capacity-driven eviction can remove a
+still-active session's claim, reopening the exact race this ADR closes for that one session.
+
+Revisiting the trade-off: dropping `maximumSize` means there is no longer a hard cap on cache
+size — Caffeine's `expireAfterWrite` reaps expired entries lazily (on subsequent cache access), not
+the instant they go stale, and growth is bounded only by how many distinct sessions actually
+refresh within roughly the TTL window, not by any enforced maximum. That is accepted because this
+growth is proportional to genuine concurrent load rather than an unconditional leak, and a hard
+cap's only benefit — a memory ceiling — comes at the cost of silently reopening the exact race this
+ADR closes, under the highest-load conditions where that matters most.
+
+**Decision:** drop `maximumSize`. `refreshClaims` is bounded by `expireAfterWrite` only, with no
+hard cap on size. This removes the one correctness caveat in the design in exchange for that
+ceiling.
+
+The Decision and Consequences sections above are left unchanged as the historical record of what
+was originally accepted and why; this addendum is the current state and supersedes them on this
+one point without rewriting them.

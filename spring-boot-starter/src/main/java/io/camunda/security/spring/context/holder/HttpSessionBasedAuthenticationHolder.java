@@ -44,7 +44,6 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
   public static final String LAST_REFRESH_ATTR = "AUTH_LAST_REFRESH";
 
   private static final Duration REFRESH_CLAIM_TTL = Duration.ofMinutes(30);
-  private static final long REFRESH_CLAIM_MAX_SIZE = 10_000;
 
   private final Duration authenticationRefreshInterval;
   private final HttpServletRequest request;
@@ -56,11 +55,7 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
     this.request = request;
     authenticationRefreshInterval =
         Duration.parse(authenticationConfiguration.getAuthenticationRefreshInterval());
-    refreshClaims =
-        Caffeine.newBuilder()
-            .expireAfterWrite(REFRESH_CLAIM_TTL)
-            .maximumSize(REFRESH_CLAIM_MAX_SIZE)
-            .build();
+    refreshClaims = Caffeine.newBuilder().expireAfterWrite(REFRESH_CLAIM_TTL).build();
   }
 
   @Override
