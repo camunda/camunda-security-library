@@ -48,12 +48,15 @@ chain ([ADR-0023](0023-oidc-bearer-tokens-on-api-chain-only.md)) stays as it is.
 
 A shared session store for multi-instance Optimize was never actually a blocker. Optimize
 always runs a backing Elasticsearch store and already uses it for the terminated-session
-list, so the same Elasticsearch-backed session store OC uses works 1:1 for Optimize. A
-shared store also means no sticky load balancer is needed, so Optimize keeps affinity-free
-scaling. What held Optimize back was hesitation to change behavior: moving from the
-self-contained cookie to server-side sessions changes logout, refresh, and cookie handling.
-We now accept that change deliberately, because unifying authentication procedures and setup
-across the Camunda stack is exactly what we want to achieve over the mid to long run.
+list, so there is no new infrastructure to add. Optimize cannot reuse OC's session-store
+adapter as-is, though: that adapter lives in a component Optimize does not depend on. Optimize
+implements its own `SessionStorePort` adapter over its Elasticsearch and creates its own
+session index. A shared store also means no sticky load balancer is needed, so Optimize keeps
+affinity-free scaling. What held Optimize back was hesitation to change behavior: moving from
+the self-contained cookie to server-side sessions changes logout, refresh, and cookie
+handling. We now accept that change deliberately, because unifying authentication procedures
+and setup across the Camunda stack is exactly what we want to achieve over the mid to long
+run.
 
 The question this ADR answers: should Optimize adopt CSL's existing stateful OIDC webapp
 chain, or should CSL keep and maintain a stateless JWT-cookie chain to preserve Optimize's
@@ -73,10 +76,12 @@ Concretely:
   `/api/authentication/callback`, `/api/authentication/logout`, `/api/external/**`), and
   `unprotectedPaths()` returns the public non-API paths (`/external/**`, static resources,
   `/actuator/**`).
-- The webapp chain runs with server-side sessions, backed by the same Elasticsearch
-  `SessionStorePort` adapter OC uses. Login is Spring `oauth2Login` against Camunda Identity
-  (CCSM) or Auth0 (CCSaaS), configured as OIDC client registrations. This removes the custom
-  Identity SDK flow.
+- The webapp chain runs with server-side sessions, backed by an Optimize-provided
+  `SessionStorePort` adapter over Optimize's Elasticsearch, following OC's pattern. OC's own
+  adapter is not reused (it lives in a component Optimize does not depend on), so Optimize
+  reimplements it and creates its own session index. Login is Spring `oauth2Login` against
+  Camunda Identity (CCSM) or Auth0 (CCSaaS), configured as OIDC client registrations. This
+  removes the custom Identity SDK flow.
 - The bearer API chain ([ADR-0023](0023-oidc-bearer-tokens-on-api-chain-only.md)) is
   unchanged. A logged-in browser calls the API off its session; direct machine clients use a
   bearer token on `apiPaths()`.
@@ -112,10 +117,11 @@ The move is done in one step, not in phases. There is no interim stateless adopt
   problem is gone. Logout invalidates the session in the store, so the terminated-session
   list is no longer needed. CSRF and secure headers come from CSL defaults instead of the
   `SameSite`-only workaround.
-- **The session store is free.** Optimize already requires Elasticsearch and already writes
-  session state to it, so this reuses infrastructure the deployment already has. A shared
-  store keeps scaling affinity-free, which is the property statelessness was really
-  protecting.
+- **No new infrastructure.** Optimize already requires Elasticsearch and already writes
+  session state to it, so the deployment gains nothing new to run. Optimize still implements
+  its own `SessionStorePort` adapter and session index (OC's adapter is not reusable across
+  the module boundary), but that is code, not a new operational component. A shared store
+  keeps scaling affinity-free, which is the property statelessness was really protecting.
 - **Tokens live in the session.** The IdP access and refresh tokens sit in the session's
   authorized-client repository and refresh transparently via `OAuth2RefreshTokenFilter`.
   This covers the SaaS service-token need better than a cookie.
@@ -143,6 +149,9 @@ The move is done in one step, not in phases. There is no interim stateless adopt
   new operational coupling, although on a store Optimize already runs.
 - Read latency of the session store is on the request path. OC already proves this works,
   but it must be confirmed under Optimize's request profile.
+- Optimize must implement its own `SessionStorePort` adapter and create a new session index;
+  OC's adapter cannot be reused across the module boundary. The old auth-storage index (the
+  terminated-session store) has to be removed as part of the upgrade.
 
 ## Alternatives Considered
 
