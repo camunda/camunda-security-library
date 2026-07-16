@@ -21,10 +21,10 @@ claim-to-authority mapping (the `scope`/`scp` claim).
 A host may need multiple simultaneous OIDC API chains in the same application, each requiring a
 *different* converter — for example, distinct chains for API v1 and API v2, where each version
 maps JWT claims to authorities differently. This rules out a single global override: any hook
-that resolves to one bean-per-application (a `@ConditionalOnMissingBean` override, or a
+that resolves to one bean-per-application — a `@ConditionalOnMissingBean` override, or a
 `@FunctionalInterface` collected via `ObjectProvider` and applied identically to every chain, as
-`HttpsRedirectCustomizer` and `OidcResourceServerCustomizer` both do — see
-[ADR-0034](0034-cors-and-https-redirect-host-hooks.md)) cannot express "chain A gets converter X,
+`HttpsRedirectCustomizer` and `OidcResourceServerCustomizer` both do (see
+[ADR-0034](0034-cors-and-https-redirect-host-hooks.md)) — cannot express "chain A gets converter X,
 chain B gets converter Y" within one running application.
 
 This gap was surfaced while scoping camunda/camunda-hub's P7 phase-swap

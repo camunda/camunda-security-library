@@ -473,6 +473,11 @@ class ScopedApiSecurityChainBuilderTest {
           assertThat(authorityNames)
               .as("no SCOPE_* authority must be present since stubJwt has no scope/scp claim")
               .noneMatch(name -> name.startsWith("SCOPE_"));
+          assertThat(authorityNames)
+              .as(
+                  "the custom converter's authority must NOT be present — proves it was not"
+                      + " silently applied by the decoder-only overload")
+              .doesNotContain("ROLE_CUSTOM_FROM_CONVERTER");
         });
   }
 
