@@ -39,7 +39,9 @@ public class BaseSecurityConfiguration {
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort,
       final ObjectProvider<CorsConfigurationSource> corsSourceProvider,
-      final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers)
+      final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
+      final ObjectProvider<CspCustomizer> cspCustomizers,
+      final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers)
       throws Exception {
     final var corsSource = corsSourceProvider.getIfAvailable(NoOpCorsConfigurationSource::new);
     final var filterChainBuilder =
@@ -53,6 +55,9 @@ public class BaseSecurityConfiguration {
     SecurityFilterChainSupport.applyHttpsRedirectCustomizers(
         filterChainBuilder, httpsRedirectCustomizers);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
+    SecurityFilterChainSupport.applyCspCustomizers(filterChainBuilder, cspCustomizers);
+    SecurityFilterChainSupport.applySecurityHeadersCustomizers(
+        filterChainBuilder, securityHeadersCustomizers);
 
     return filterChainBuilder.build();
   }

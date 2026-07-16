@@ -10,9 +10,12 @@ package io.camunda.security.spring.security;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.camunda.security.core.port.out.BasicAuthUserDetailsPort;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
+import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
+import io.camunda.security.spring.user.UserConfiguration;
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -30,45 +33,29 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Verifies the {@link HttpsRedirectCustomizer} SPI contract: when a host registers a customizer
- * bean it is invoked during chain construction and any filters it adds are present in the built
- * {@code unprotectedPathsSecurityFilterChain}; when no bean is registered the chain is unaffected.
+ * Verifies the {@link CspCustomizer} and {@link SecurityHeadersCustomizer} SPI contracts on {@link
+ * UnprotectedApiSecurityConfiguration#unprotectedApiSecurityFilterChain}: when a host registers a
+ * customizer bean it is invoked during chain construction and any filter it adds is present in the
+ * built chain.
  */
-class HttpsRedirectCustomizerIntegrationTest {
+class UnprotectedApiCustomizerIntegrationTest {
 
-  private static final String UNPROTECTED_CHAIN_BEAN = "unprotectedPathsSecurityFilterChain";
+  private static final String UNPROTECTED_API_CHAIN_BEAN = "unprotectedApiSecurityFilterChain";
 
   private final WebApplicationContextRunner runner =
       new WebApplicationContextRunner()
-          .withUserConfiguration(ObjectMapperConfig.class, StubPaths.class)
+          .withUserConfiguration(
+              ObjectMapperConfig.class, StubPaths.class, StubUserDetailsPort.class)
           .withConfiguration(
               AutoConfigurations.of(
-                  CamundaSecurityConfiguration.class, BaseSecurityConfiguration.class))
-          .withPropertyValues("camunda.security.authentication.method=basic");
-
-  @Test
-  void markerFilterIsPresentWhenCustomizerBeanIsRegistered() {
-    runner
-        .withUserConfiguration(StubHttpsRedirectCustomizerConfig.class)
-        .run(
-            ctx -> {
-              final var chain = ctx.getBean(UNPROTECTED_CHAIN_BEAN, SecurityFilterChain.class);
-              assertThat(filtersOf(chain))
-                  .as("MarkerFilter added by HttpsRedirectCustomizer must be in the filter chain")
-                  .anySatisfy(f -> assertThat(f).isInstanceOf(MarkerFilter.class));
-            });
-  }
-
-  @Test
-  void markerFilterIsAbsentWhenNoCustomizerBeanIsRegistered() {
-    runner.run(
-        ctx -> {
-          final var chain = ctx.getBean(UNPROTECTED_CHAIN_BEAN, SecurityFilterChain.class);
-          assertThat(filtersOf(chain))
-              .as("no HttpsRedirectCustomizer registered — MarkerFilter must not be in the chain")
-              .noneSatisfy(f -> assertThat(f).isInstanceOf(MarkerFilter.class));
-        });
-  }
+                  CamundaSecurityConfiguration.class,
+                  BaseSecurityConfiguration.class,
+                  AuthFailureHandlerConfiguration.class,
+                  UnprotectedApiSecurityConfiguration.class,
+                  UserConfiguration.class))
+          .withPropertyValues(
+              "camunda.security.authentication.method=basic",
+              "camunda.security.authentication.unprotected-api=true");
 
   @Test
   void cspMarkerFilterIsPresentWhenCspCustomizerBeanIsRegistered() {
@@ -76,7 +63,7 @@ class HttpsRedirectCustomizerIntegrationTest {
         .withUserConfiguration(StubCspCustomizerConfig.class)
         .run(
             ctx -> {
-              final var chain = ctx.getBean(UNPROTECTED_CHAIN_BEAN, SecurityFilterChain.class);
+              final var chain = ctx.getBean(UNPROTECTED_API_CHAIN_BEAN, SecurityFilterChain.class);
               assertThat(filtersOf(chain))
                   .as("MarkerFilter added by CspCustomizer must be in the filter chain")
                   .anySatisfy(f -> assertThat(f).isInstanceOf(MarkerFilter.class));
@@ -89,11 +76,22 @@ class HttpsRedirectCustomizerIntegrationTest {
         .withUserConfiguration(StubSecurityHeadersCustomizerConfig.class)
         .run(
             ctx -> {
-              final var chain = ctx.getBean(UNPROTECTED_CHAIN_BEAN, SecurityFilterChain.class);
+              final var chain = ctx.getBean(UNPROTECTED_API_CHAIN_BEAN, SecurityFilterChain.class);
               assertThat(filtersOf(chain))
                   .as("MarkerFilter added by SecurityHeadersCustomizer must be in the filter chain")
                   .anySatisfy(f -> assertThat(f).isInstanceOf(MarkerFilter.class));
             });
+  }
+
+  @Test
+  void markerFilterIsAbsentWhenNoCustomizerBeanIsRegistered() {
+    runner.run(
+        ctx -> {
+          final var chain = ctx.getBean(UNPROTECTED_API_CHAIN_BEAN, SecurityFilterChain.class);
+          assertThat(filtersOf(chain))
+              .as("no customizer registered — MarkerFilter must not be in the chain")
+              .noneSatisfy(f -> assertThat(f).isInstanceOf(MarkerFilter.class));
+        });
   }
 
   private static List<Filter> filtersOf(final SecurityFilterChain chain) {
@@ -109,18 +107,6 @@ class HttpsRedirectCustomizerIntegrationTest {
         final FilterChain filterChain)
         throws ServletException, IOException {
       filterChain.doFilter(request, response);
-    }
-  }
-
-  @Configuration
-  static class StubHttpsRedirectCustomizerConfig {
-
-    @Bean
-    HttpsRedirectCustomizer httpsRedirectCustomizer() {
-      return http ->
-          http.addFilterBefore(
-              new MarkerFilter(),
-              org.springframework.security.web.context.SecurityContextHolderFilter.class);
     }
   }
 
@@ -149,20 +135,29 @@ class HttpsRedirectCustomizerIntegrationTest {
   }
 
   @Configuration
-  static class StubPaths {
-
-    @Bean
-    SecurityPathPort securityPathPort() {
-      return StubSecurityPaths.builder().unprotectedPaths("/actuator/**").build();
-    }
-  }
-
-  @Configuration
   static class ObjectMapperConfig {
 
     @Bean
     ObjectMapper objectMapper() {
       return new ObjectMapper();
+    }
+  }
+
+  @Configuration
+  static class StubPaths {
+
+    @Bean
+    SecurityPathPort securityPathPort() {
+      return StubSecurityPaths.builder().build();
+    }
+  }
+
+  @Configuration
+  static class StubUserDetailsPort {
+
+    @Bean
+    BasicAuthUserDetailsPort userDetailsPort() {
+      return username -> null;
     }
   }
 }
