@@ -27,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
@@ -93,6 +94,28 @@ class ScopedWebappSecurityChainBuilderScopedTest {
               .as("chain must NOT match requests outside the scoped basePath")
               .isFalse();
         });
+  }
+
+  @Test
+  void scopedChainAppliesRegisteredCspAndSecurityHeadersCustomizers() {
+    final CspCustomizer cspCustomizer = Mockito.mock(CspCustomizer.class);
+    final SecurityHeadersCustomizer headersCustomizer =
+        Mockito.mock(SecurityHeadersCustomizer.class);
+
+    runner
+        .withBean("cspCustomizer", CspCustomizer.class, () -> cspCustomizer)
+        .withBean("headersCustomizer", SecurityHeadersCustomizer.class, () -> headersCustomizer)
+        .run(
+            ctx -> {
+              final var chain = ctx.getBean("scopedOidcTestChain", SecurityFilterChain.class);
+              assertThat(chain).isNotNull();
+              try {
+                Mockito.verify(cspCustomizer, Mockito.atLeastOnce()).customize(Mockito.any());
+                Mockito.verify(headersCustomizer, Mockito.atLeastOnce()).customize(Mockito.any());
+              } catch (final Exception e) {
+                throw new AssertionError("customizer verification failed", e);
+              }
+            });
   }
 
   @Test

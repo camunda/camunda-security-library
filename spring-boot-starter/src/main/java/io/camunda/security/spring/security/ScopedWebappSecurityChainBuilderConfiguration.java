@@ -58,7 +58,9 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
       final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
       final ObjectProvider<CorsConfigurationSource> corsSourceProvider,
       final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
-      final ObjectProvider<OidcAuthenticationEntryPoint> oidcAuthenticationEntryPointProvider) {
+      final ObjectProvider<OidcAuthenticationEntryPoint> oidcAuthenticationEntryPointProvider,
+      final ObjectProvider<CspCustomizer> cspCustomizers,
+      final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers) {
     return new ScopedWebappSecurityChainBuilder(
         authFailureHandler,
         properties,
@@ -73,7 +75,9 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
         scopedClientRegistrationFactory,
         corsSourceProvider.getIfAvailable(NoOpCorsConfigurationSource::new),
         httpsRedirectCustomizers,
-        oidcAuthenticationEntryPointProvider);
+        oidcAuthenticationEntryPointProvider,
+        cspCustomizers,
+        securityHeadersCustomizers);
   }
 
   // Also declared in ScopedOidcInfrastructureConfiguration; provided here too so this configuration
