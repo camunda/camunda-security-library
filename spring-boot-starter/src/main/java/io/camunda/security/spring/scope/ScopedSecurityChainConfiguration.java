@@ -33,8 +33,8 @@ import org.springframework.security.web.SecurityFilterChain;
  * nothing — Hub and single-tenant OC remain byte-for-byte unchanged.
  *
  * <p>Each contributed chain is wrapped in an {@link OrderedSecurityFilterChainWrapper} that returns
- * {@link io.camunda.security.spring.security.CamundaSecurityFilterChainConstants#ORDER_WEBAPP_API}
- * from {@link org.springframework.core.Ordered#getOrder()}. The wrapper is required because {@code
+ * {@link io.camunda.security.spring.security.CamundaSecurityFilterChainConstants#ORDER_API} from
+ * {@link org.springframework.core.Ordered#getOrder()}. The wrapper is required because {@code
  * DefaultSecurityFilterChain} is not {@link org.springframework.core.Ordered}; without an explicit
  * order a chain sorts last (behind the catch-all deny chain). Contributed chains reuse the primary
  * API order rather than a dedicated band: their base paths are disjoint from CSL's own matchers, so

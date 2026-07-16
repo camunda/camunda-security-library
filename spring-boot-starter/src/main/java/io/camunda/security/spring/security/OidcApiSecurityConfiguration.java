@@ -7,7 +7,7 @@
  */
 package io.camunda.security.spring.security;
 
-import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP_API;
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_API;
 
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.scope.ScopedApiSecurityChainBuilder;
@@ -45,7 +45,7 @@ public class OidcApiSecurityConfiguration {
   private static final Logger LOG = LoggerFactory.getLogger(OidcApiSecurityConfiguration.class);
 
   @Bean
-  @Order(ORDER_WEBAPP_API)
+  @Order(ORDER_API)
   public SecurityFilterChain oidcApiSecurityFilterChain(
       final HttpSecurity http,
       final ScopedApiSecurityChainBuilder builder,

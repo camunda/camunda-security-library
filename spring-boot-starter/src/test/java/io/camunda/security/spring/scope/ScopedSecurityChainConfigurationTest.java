@@ -224,7 +224,7 @@ class ScopedSecurityChainConfigurationTest {
   // 5. Ordering: contributed chain sorts before the catch-all deny chain
   @Test
   void contributedChainOrderedBeforeCatchAll() {
-    // Contributed chains reuse ORDER_WEBAPP_API and must sort before the ORDER_UNHANDLED catch-all.
+    // Contributed chains reuse ORDER_API and must sort before the ORDER_UNHANDLED catch-all.
     basicRunner()
         .withUserConfiguration(SingleBasicDescriptorProvider.class)
         .run(
@@ -232,11 +232,11 @@ class ScopedSecurityChainConfigurationTest {
               final var contributed = contributedChain(ctx);
               assertThat(contributed.getOrder())
                   .as(
-                      "contributed chain order must equal ORDER_WEBAPP_API (%d) and sort before"
+                      "contributed chain order must equal ORDER_API (%d) and sort before"
                           + " ORDER_UNHANDLED (%d)",
-                      CamundaSecurityFilterChainConstants.ORDER_WEBAPP_API,
+                      CamundaSecurityFilterChainConstants.ORDER_API,
                       CamundaSecurityFilterChainConstants.ORDER_UNHANDLED)
-                  .isEqualTo(CamundaSecurityFilterChainConstants.ORDER_WEBAPP_API)
+                  .isEqualTo(CamundaSecurityFilterChainConstants.ORDER_API)
                   .isLessThan(CamundaSecurityFilterChainConstants.ORDER_UNHANDLED);
             });
   }
