@@ -76,9 +76,13 @@ Concretely:
   and is empty for Optimize). Every other public path — including the public endpoints under
   `/api` (`/api/readyz`, `/api/ui-configuration`, `/api/localization`, `/api/external/**`) as
   well as `/external/**`, static resources, and `/actuator/**` — goes into `unprotectedPaths()`.
-  Both unprotected sets are unioned by the order-0 permit-all chain and the CSRF allow-list, so
-  a public path works the same in either bucket; the subset contract on `unprotectedApiPaths()`
-  is what keeps its meaning tight (the paths the API chain itself must permit).
+  The two buckets are permitted by different chains: `unprotectedPaths()` is the security matcher
+  of the order-0 unprotected chain, while `unprotectedApiPaths()` is permitted inside the API
+  chain (and is on CSL's CSRF allow-list). So a public path outside the bearer surface must go
+  into `unprotectedPaths()` to be reachable at all — placing it in `unprotectedApiPaths()` while
+  it is not in `apiPaths()` would leave it permitted by neither chain. That is why Optimize's
+  public `/api` paths live in `unprotectedPaths()`, and why the subset contract on
+  `unprotectedApiPaths()` matters.
 - The webapp chain runs with server-side sessions, backed by an Optimize-provided
   `SessionStorePort` adapter over Optimize's Elasticsearch, following OC's pattern. OC's own
   adapter is not reused (it lives in a component Optimize does not depend on), so Optimize
