@@ -30,11 +30,12 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Verifies the {@link HttpsRedirectCustomizer} SPI contract: when a host registers a customizer
- * bean it is invoked during chain construction and any filters it adds are present in the built
- * {@code unprotectedPathsSecurityFilterChain}; when no bean is registered the chain is unaffected.
+ * Verifies the {@link HttpsRedirectCustomizer} and {@link SecurityHeadersCustomizer} SPI contracts
+ * on {@code unprotectedPathsSecurityFilterChain} (from {@link BaseSecurityConfiguration}): when a
+ * host registers a customizer bean it is invoked during chain construction and any filters it adds
+ * are present in the built chain; when no bean is registered the chain is unaffected.
  */
-class HttpsRedirectCustomizerIntegrationTest {
+class UnprotectedPathsCustomizerIntegrationTest {
 
   private static final String UNPROTECTED_CHAIN_BEAN = "unprotectedPathsSecurityFilterChain";
 
@@ -70,6 +71,19 @@ class HttpsRedirectCustomizerIntegrationTest {
         });
   }
 
+  @Test
+  void securityHeadersMarkerFilterIsPresentWhenSecurityHeadersCustomizerBeanIsRegistered() {
+    runner
+        .withUserConfiguration(StubSecurityHeadersCustomizerConfig.class)
+        .run(
+            ctx -> {
+              final var chain = ctx.getBean(UNPROTECTED_CHAIN_BEAN, SecurityFilterChain.class);
+              assertThat(filtersOf(chain))
+                  .as("MarkerFilter added by SecurityHeadersCustomizer must be in the filter chain")
+                  .anySatisfy(f -> assertThat(f).isInstanceOf(MarkerFilter.class));
+            });
+  }
+
   private static List<Filter> filtersOf(final SecurityFilterChain chain) {
     return ((DefaultSecurityFilterChain) chain).getFilters();
   }
@@ -91,6 +105,18 @@ class HttpsRedirectCustomizerIntegrationTest {
 
     @Bean
     HttpsRedirectCustomizer httpsRedirectCustomizer() {
+      return http ->
+          http.addFilterBefore(
+              new MarkerFilter(),
+              org.springframework.security.web.context.SecurityContextHolderFilter.class);
+    }
+  }
+
+  @Configuration
+  static class StubSecurityHeadersCustomizerConfig {
+
+    @Bean
+    SecurityHeadersCustomizer securityHeadersCustomizer() {
       return http ->
           http.addFilterBefore(
               new MarkerFilter(),

@@ -23,6 +23,11 @@ import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -50,6 +55,7 @@ import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.session.MapSessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * Verifies {@link ScopedWebappSecurityChainBuilder#buildScopedWebappChain}: path-prefixed matchers,
@@ -93,6 +99,23 @@ class ScopedWebappSecurityChainBuilderScopedTest {
               .as("chain must NOT match requests outside the scoped basePath")
               .isFalse();
         });
+  }
+
+  @Test
+  void scopedChainAppliesRegisteredSecurityHeadersCustomizer() {
+    runner
+        .withUserConfiguration(StubSecurityHeadersCustomizerConfig.class)
+        .run(
+            ctx -> {
+              final var chain =
+                  (DefaultSecurityFilterChain)
+                      ctx.getBean("scopedOidcTestChain", SecurityFilterChain.class);
+              assertThat(chain.getFilters())
+                  .as(
+                      "MarkerFilter added by SecurityHeadersCustomizer must be in"
+                          + " scopedOidcTestChain")
+                  .anySatisfy(f -> assertThat(f).isInstanceOf(SecurityHeadersMarkerFilter.class));
+            });
   }
 
   @Test
@@ -762,6 +785,29 @@ class ScopedWebappSecurityChainBuilderScopedTest {
           sessionFilter,
           "camunda-session-physical-tenants-t2",
           "X-CSRF-TOKEN-physical-tenants-t2");
+    }
+  }
+
+  static final class SecurityHeadersMarkerFilter extends OncePerRequestFilter {
+
+    @Override
+    protected void doFilterInternal(
+        final HttpServletRequest request,
+        final HttpServletResponse response,
+        final FilterChain filterChain)
+        throws ServletException, IOException {
+      filterChain.doFilter(request, response);
+    }
+  }
+
+  @Configuration
+  static class StubSecurityHeadersCustomizerConfig {
+
+    @Bean
+    SecurityHeadersCustomizer securityHeadersCustomizer() {
+      return http ->
+          http.addFilterBefore(
+              new SecurityHeadersMarkerFilter(), SecurityContextHolderFilter.class);
     }
   }
 }

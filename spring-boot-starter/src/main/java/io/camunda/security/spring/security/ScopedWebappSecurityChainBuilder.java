@@ -97,6 +97,7 @@ public final class ScopedWebappSecurityChainBuilder {
   private final CorsConfigurationSource corsSource;
   private final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers;
   private final ObjectProvider<OidcAuthenticationEntryPoint> oidcAuthenticationEntryPointProvider;
+  private final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers;
 
   public ScopedWebappSecurityChainBuilder(
       final AuthFailureHandler authFailureHandler,
@@ -112,7 +113,8 @@ public final class ScopedWebappSecurityChainBuilder {
       final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
       final CorsConfigurationSource corsSource,
       final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
-      final ObjectProvider<OidcAuthenticationEntryPoint> oidcAuthenticationEntryPointProvider) {
+      final ObjectProvider<OidcAuthenticationEntryPoint> oidcAuthenticationEntryPointProvider,
+      final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers) {
     this.authFailureHandler = authFailureHandler;
     this.properties = properties;
     this.pathPort = pathPort;
@@ -127,6 +129,7 @@ public final class ScopedWebappSecurityChainBuilder {
     this.corsSource = corsSource;
     this.httpsRedirectCustomizers = httpsRedirectCustomizers;
     this.oidcAuthenticationEntryPointProvider = oidcAuthenticationEntryPointProvider;
+    this.securityHeadersCustomizers = securityHeadersCustomizers;
   }
 
   /**
@@ -234,6 +237,8 @@ public final class ScopedWebappSecurityChainBuilder {
         filterChainBuilder, httpsRedirectCustomizers);
     SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
+    SecurityFilterChainSupport.applySecurityHeadersCustomizers(
+        filterChainBuilder, securityHeadersCustomizers);
 
     // Install the multi-IdP login picker (GH-269): the custom entry point trips
     // DefaultLoginPageConfigurer's gate, so the picker would otherwise be dropped and multi-IdP
@@ -320,6 +325,8 @@ public final class ScopedWebappSecurityChainBuilder {
         filterChainBuilder, httpsRedirectCustomizers);
     SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
+    SecurityFilterChainSupport.applySecurityHeadersCustomizers(
+        filterChainBuilder, securityHeadersCustomizers);
 
     return filterChainBuilder.build();
   }
@@ -647,6 +654,8 @@ public final class ScopedWebappSecurityChainBuilder {
     SecurityFilterChainSupport.applyCsrfConfiguration(
         filterChainBuilder, properties, pathPort, prefix, scopedCsrfCookieName);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
+    SecurityFilterChainSupport.applySecurityHeadersCustomizers(
+        filterChainBuilder, securityHeadersCustomizers);
 
     // Install the multi-IdP login picker (GH-269): the custom entry point trips
     // DefaultLoginPageConfigurer's gate, so the picker would otherwise be dropped and multi-IdP
@@ -755,6 +764,8 @@ public final class ScopedWebappSecurityChainBuilder {
     SecurityFilterChainSupport.applyCsrfConfiguration(
         filterChainBuilder, properties, pathPort, prefix, scopedCsrfCookieName);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
+    SecurityFilterChainSupport.applySecurityHeadersCustomizers(
+        filterChainBuilder, securityHeadersCustomizers);
 
     return filterChainBuilder.build();
   }

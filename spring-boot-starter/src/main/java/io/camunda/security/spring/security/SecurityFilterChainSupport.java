@@ -222,6 +222,21 @@ public final class SecurityFilterChainSupport {
   }
 
   /**
+   * Applies every registered {@link SecurityHeadersCustomizer} bean to the given filter chain, in
+   * {@link org.springframework.core.annotation.Order} order. When no bean is registered this is a
+   * no-op, so CSL's static, property-driven header configuration (see {@link #setupSecureHeaders})
+   * is unaffected. See ADR-0037.
+   */
+  public static void applySecurityHeadersCustomizers(
+      final HttpSecurity http,
+      final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers)
+      throws Exception {
+    for (final var customizer : securityHeadersCustomizers.orderedStream().toList()) {
+      customizer.customize(http);
+    }
+  }
+
+  /**
    * Filter that adds the CSRF token to the response header for authenticated GET requests and login
    * POST responses. Browser-based clients read the token from the response header and include it on
    * subsequent state-changing requests.
