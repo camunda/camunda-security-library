@@ -46,17 +46,14 @@ in a server session, and refreshes tokens transparently. It reuses the host's
 [ADR-0027](0027-scoped-webapp-security-chains-and-per-scope-sessions.md)). The API bearer
 chain ([ADR-0023](0023-oidc-bearer-tokens-on-api-chain-only.md)) stays as it is.
 
-A shared session store for multi-instance Optimize was never actually a blocker. Optimize
-always runs a backing Elasticsearch store and already uses it for the terminated-session
-list, so there is no new infrastructure to add. Optimize cannot reuse OC's session-store
-adapter as-is, though: that adapter lives in a component Optimize does not depend on. Optimize
-implements its own `SessionStorePort` adapter over its Elasticsearch and creates its own
-session index. A shared store also means no sticky load balancer is needed, so Optimize keeps
-affinity-free scaling. What held Optimize back was hesitation to change behavior: moving from
-the self-contained cookie to server-side sessions changes logout, refresh, and cookie
-handling. We now accept that change deliberately, because unifying authentication procedures
-and setup across the Camunda stack is exactly what we want to achieve over the mid to long
-run.
+A shared session store for multi-instance Optimize was never a blocker. Optimize already runs
+Elasticsearch and uses it for the terminated-session list, so no new infrastructure is added, and
+a shared store keeps scaling affinity-free (no sticky load balancer). Optimize cannot reuse OC's
+session-store adapter, which lives in a component Optimize does not depend on, so it implements its
+own adapter and session index. What held Optimize back was reluctance to change behavior: moving
+from the self-contained cookie to server-side sessions changes logout, refresh, and cookie
+handling. We take that change deliberately, because unifying authentication across the Camunda
+stack is the mid-to-long-run goal.
 
 The question this ADR answers: should Optimize adopt CSL's existing stateful OIDC webapp
 chain, or should CSL keep and maintain a stateless JWT-cookie chain to preserve Optimize's
@@ -69,20 +66,15 @@ and its SPIs are retired and not merged.
 
 Concretely:
 
-- Optimize imports the standard CSL chains. It provides a `SecurityPathPort` where
-  `webappPaths()` returns the catch-all `/**`, and `apiPaths()` returns only the bearer-only
-  public API (`/api/public/**`, `/api/ingestion/variable`). `unprotectedApiPaths()` keeps its
-  contract of being a subset of `apiPaths()` (it holds the public parts of the bearer surface,
-  and is empty for Optimize). Every other public path — including the public endpoints under
-  `/api` (`/api/readyz`, `/api/ui-configuration`, `/api/localization`, `/api/external/**`) as
-  well as `/external/**`, static resources, and `/actuator/**` — goes into `unprotectedPaths()`.
-  The two buckets are permitted by different chains: `unprotectedPaths()` is the security matcher
-  of the order-0 unprotected chain, while `unprotectedApiPaths()` is permitted inside the API
-  chain (and is on CSL's CSRF allow-list). So a public path outside the bearer surface must go
-  into `unprotectedPaths()` to be reachable at all — placing it in `unprotectedApiPaths()` while
-  it is not in `apiPaths()` would leave it permitted by neither chain. In practice only paths that
-  are in `apiPaths()` benefit from being listed in `unprotectedApiPaths()`, so every other public
-  path (Optimize's public `/api` endpoints included) has to be an `unprotectedPaths()` entry.
+- Optimize imports the standard CSL chains and provides a `SecurityPathPort`: `webappPaths()` is
+  the catch-all `/**`; `apiPaths()` is only the bearer-only public API (`/api/public/**`,
+  `/api/ingestion/variable`); `unprotectedApiPaths()` is empty. Every other public path goes into
+  `unprotectedPaths()`: the public `/api` endpoints (`/api/readyz`, `/api/ui-configuration`,
+  `/api/localization`, `/api/external/**`) plus `/external/**`, static resources, and
+  `/actuator/**`. In practice `unprotectedApiPaths()` should list only paths that are also in
+  `apiPaths()`, because the order-0 chain matches `unprotectedPaths()` while `unprotectedApiPaths()`
+  is only permitted inside the API chain (whose matcher is `apiPaths()`). A public path not in
+  `apiPaths()` is reachable only from `unprotectedPaths()`.
 - The webapp chain runs with server-side sessions, backed by an Optimize-provided
   `SessionStorePort` adapter over Optimize's Elasticsearch, following OC's pattern. OC's own
   adapter is not reused (it lives in a component Optimize does not depend on), so Optimize
@@ -96,15 +88,12 @@ Concretely:
   deny chain (`protectedUnhandledPathsSecurityFilterChain` in `BaseSecurityConfiguration`)
   must be made suppressible so two `/**` chains do not collide at startup. A follow-up will
   investigate removing that deny chain entirely (it is tech debt, not urgent).
-- The `/**` webapp chain must sort below the bearer API chain, so API paths are claimed first
-  and the catch-all does not shadow them. Today the API chain and the webapp chain share one
-  order (`ORDER_WEBAPP_API`), which only works because their matchers are disjoint (as in OC).
-  CSL is changed to give the two chains **distinct orders, API before webapp**, so a `/**`
-  webapp catch-all sorts below the API chain automatically. This is behavior-preserving for
-  existing hosts (their API and webapp matchers are disjoint, so a request still matches exactly
-  one chain) and lets Optimize use the stock webapp chain through the umbrella without
-  re-declaring any bean. The assumption is that no host wants a webapp path to win over an
-  overlapping API path; bearer-API-first is the intended convention.
+- The `/**` webapp chain must sort below the bearer API chain so API paths are claimed first.
+  Today both chains share one order (`ORDER_WEBAPP_API`), which works only because their matchers
+  are disjoint (OC). CSL is changed to give them **distinct orders, API before webapp**. This is
+  behavior-preserving for existing hosts (disjoint matchers still match one chain) and lets
+  Optimize use the stock webapp chain via the umbrella without re-declaring a bean. It assumes no
+  host needs a webapp path to beat an overlapping API path; bearer-API-first is the convention.
 - Optimize deletes its custom security stack: `AbstractSecurityConfigurerAdapter` and its
   subclasses, `SessionService`, `AuthCookieService`, `TerminatedSessionService`, the cookie
   filters, and the Identity SDK login code.
@@ -186,12 +175,11 @@ lives with the spike.
 - Some legacy config keys become no-ops under the new model. The compat bridge honors what maps
   and logs a deprecation warning for the rest, so operators are not forced to migrate, but the
   bridge and its deprecation surface are extra code to maintain until the old keys are dropped.
-- CSRF is enabled to align with OC, which is not backend-only: the Optimize frontend must send the
-  `X-CSRF-TOKEN` header on state-changing requests. This is small — Optimize routes every request
-  through one wrapper (`optimize/client/src/modules/request.ts`), so it mirrors the existing
-  Operate/Tasklist interceptor (read the token from the response header into `sessionStorage`, echo
-  it on POST/PUT/PATCH/DELETE). The public `/external` share endpoints stay CSRF-exempt because
-  they are in `unprotectedPaths()` (CSL's CSRF allow-list). This replaces Optimize's previous
+- CSRF is enabled to align with OC and needs a frontend change: the SPA must send the
+  `X-CSRF-TOKEN` header on state-changing requests. This is small, because Optimize routes every
+  call through one wrapper (`optimize/client/src/modules/request.ts`), mirroring the Operate/Tasklist
+  interceptor (token from the response header into `sessionStorage`, echoed on POST/PUT/PATCH/DELETE).
+  Public `/external` share endpoints stay exempt via `unprotectedPaths()`. This replaces Optimize's
   `SameSite`-only protection.
 
 ## Alternatives Considered
