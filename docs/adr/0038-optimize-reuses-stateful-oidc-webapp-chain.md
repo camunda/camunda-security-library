@@ -1,5 +1,5 @@
 ---
-status: Accepted
+status: Proposed
 ---
 
 # ADR-0038: Optimize reuses the stateful OIDC webapp chain and the JWT-cookie chain is retired
@@ -8,7 +8,7 @@ status: Accepted
 
 ## Status
 
-Accepted
+Proposed
 
 ## Context
 
