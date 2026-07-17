@@ -24,11 +24,16 @@ import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
@@ -97,6 +102,42 @@ public final class ScopedApiSecurityChainBuilder {
         matchers,
         unprotectedMatchers,
         jwtDecoder,
+        null,
+        sessionRepositoryFilter,
+        null,
+        X_CSRF_TOKEN);
+  }
+
+  /**
+   * Builds an OIDC resource-server API chain over the given matchers, using the supplied decoder
+   * and a host-supplied {@code jwtAuthenticationConverter}. A {@code null} converter preserves
+   * Spring Security's default {@code JwtAuthenticationConverter} behavior — this builder never
+   * calls {@code jwtAuthenticationConverter(...)} in that case, so pre-existing callers of the
+   * decoder-only overload are unaffected.
+   *
+   * <p>See ADR-0036 for why this is a per-invocation parameter rather than a globally-registered
+   * customizer bean: a single application may need multiple simultaneous chains (e.g. distinct API
+   * versions), each with a different converter.
+   *
+   * <p>When a {@code sessionRepositoryFilter} is provided it is installed before {@link
+   * SecurityContextHolderFilter} so that an existing session's {@code SecurityContext} is restored;
+   * bearer validation remains unchanged and {@link SessionCreationPolicy#NEVER} is retained so no
+   * session is created by this chain.
+   */
+  public SecurityFilterChain buildOidcApiChain(
+      final HttpSecurity http,
+      final Collection<String> matchers,
+      final Collection<String> unprotectedMatchers,
+      final JwtDecoder jwtDecoder,
+      final Converter<Jwt, Authentication> jwtAuthenticationConverter,
+      final SessionRepositoryFilter<?> sessionRepositoryFilter)
+      throws Exception {
+    return buildOidcApiChainWith(
+        http,
+        matchers,
+        unprotectedMatchers,
+        jwtDecoder,
+        jwtAuthenticationConverter,
         sessionRepositoryFilter,
         null,
         X_CSRF_TOKEN);
@@ -107,6 +148,7 @@ public final class ScopedApiSecurityChainBuilder {
       final Collection<String> matchers,
       final Collection<String> unprotectedMatchers,
       final JwtDecoder jwtDecoder,
+      final Converter<Jwt, Authentication> jwtAuthenticationConverter,
       final SessionRepositoryFilter<?> sessionRepositoryFilter,
       final String csrfCookiePath,
       final String csrfCookieName)
@@ -129,8 +171,15 @@ public final class ScopedApiSecurityChainBuilder {
                         .authenticated())
             .oauth2ResourceServer(
                 oauth2 -> {
+                  oauth2.jwt(
+                      jwt -> {
+                        jwt.decoder(jwtDecoder);
+                        if (jwtAuthenticationConverter != null) {
+                          jwt.jwtAuthenticationConverter(
+                              toAbstractAuthenticationTokenConverter(jwtAuthenticationConverter));
+                        }
+                      });
                   oauth2
-                      .jwt(jwt -> jwt.decoder(jwtDecoder))
                       .accessDeniedHandler(authFailureHandler)
                       .withObjectPostProcessor(postProcessBearerTokenFailureHandler());
                   resourceServerCustomizers
@@ -241,12 +290,35 @@ public final class ScopedApiSecurityChainBuilder {
       final Supplier<JwtDecoder> oidcDecoderSupplier,
       final SessionRepositoryFilter<?> sessionRepositoryFilter)
       throws Exception {
+    return buildScopedApiChain(
+        http, basePath, authentication, oidcDecoderSupplier, () -> null, sessionRepositoryFilter);
+  }
+
+  /**
+   * Overload of {@link #buildScopedApiChain(HttpSecurity, String, AuthenticationConfiguration,
+   * Supplier, SessionRepositoryFilter)} that additionally accepts a per-scope {@code Converter<Jwt,
+   * Authentication>} supplier for the OIDC arm. A {@code null} supplier reference is rejected
+   * (mirroring {@code oidcDecoderSupplier}'s mandatory-reference treatment), but the supplier is
+   * allowed to <em>return</em> {@code null} to mean "no converter override for this scope" — unlike
+   * {@code oidcDecoderSupplier}, whose result must never be {@code null}. See ADR-0036.
+   */
+  public SecurityFilterChain buildScopedApiChain(
+      final HttpSecurity http,
+      final String basePath,
+      final AuthenticationConfiguration authentication,
+      final Supplier<JwtDecoder> oidcDecoderSupplier,
+      final Supplier<Converter<Jwt, Authentication>> oidcAuthenticationConverterSupplier,
+      final SessionRepositoryFilter<?> sessionRepositoryFilter)
+      throws Exception {
     Objects.requireNonNull(basePath, "basePath must not be null");
     Objects.requireNonNull(authentication, "authentication must not be null");
     final var method =
         Objects.requireNonNull(
             authentication.getMethod(), "authentication.method must not be null");
     Objects.requireNonNull(oidcDecoderSupplier, "oidcDecoderSupplier must not be null");
+    Objects.requireNonNull(
+        oidcAuthenticationConverterSupplier,
+        "oidcAuthenticationConverterSupplier must not be null");
     Objects.requireNonNull(http, "http must not be null");
     final var prefix = BasePaths.normalize(basePath, "basePath");
     if (prefix.isEmpty()) {
@@ -261,11 +333,13 @@ public final class ScopedApiSecurityChainBuilder {
         final var decoder =
             Objects.requireNonNull(
                 oidcDecoderSupplier.get(), "oidcDecoderSupplier must not return a null JwtDecoder");
+        final var converter = oidcAuthenticationConverterSupplier.get();
         yield buildOidcApiChainWith(
             http,
             matchers,
             unprotected,
             decoder,
+            converter,
             sessionRepositoryFilter,
             basePath,
             csrfCookieName);
@@ -388,6 +462,30 @@ public final class ScopedApiSecurityChainBuilder {
   public SecurityFilterChain buildUnprotectedScopedApiChain(
       final HttpSecurity http, final String basePath) throws Exception {
     return buildUnprotectedScopedApiChain(http, basePath, null);
+  }
+
+  /**
+   * Adapts a host-supplied {@code Converter<Jwt, Authentication>} to the {@code Converter<Jwt, ?
+   * extends AbstractAuthenticationToken>} shape Spring Security's {@code
+   * JwtConfigurer#jwtAuthenticationConverter} requires. Mirrors the adapter every host currently
+   * has to write itself (e.g. Hub's {@code PublicApiSecurityConfiguration}) — centralizing it here
+   * means hosts migrating onto this hook can delete their own copy.
+   */
+  private static Converter<Jwt, AbstractAuthenticationToken> toAbstractAuthenticationTokenConverter(
+      final Converter<Jwt, Authentication> jwtAuthenticationConverter) {
+    return jwt -> {
+      final var authentication = jwtAuthenticationConverter.convert(jwt);
+      if (authentication instanceof AbstractAuthenticationToken token) {
+        return token;
+      }
+      // InvalidBearerTokenException's message reaches the client via the WWW-Authenticate
+      // error_description, so it must not leak internal implementation details (e.g. the
+      // Authentication implementation class name) — log the concrete type server-side instead.
+      LOG.debug(
+          "jwtAuthenticationConverter must return an AbstractAuthenticationToken, got: {}",
+          authentication != null ? authentication.getClass().getName() : "null");
+      throw new InvalidBearerTokenException("jwtAuthenticationConverter returned an invalid token");
+    };
   }
 
   private static ObjectPostProcessor<BearerTokenAuthenticationFilter>

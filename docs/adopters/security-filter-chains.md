@@ -499,7 +499,7 @@ public CamundaAuthenticationConverter<Authentication> authenticationConverter() 
 
 ## Extension hooks
 
-Six extension points let hosts contribute additional path-scoped API chains, customise specific OAuth2/OIDC concerns, enable CORS, add an HTTPS redirect, or contribute CSP/security-header behavior — all without replacing entire chains. Host-specific filter wiring beyond these hooks (authorization filters, matcher tweaks) will be addressed in a follow-up PR.
+Seven extension points let hosts contribute additional path-scoped API chains, customise specific OAuth2/OIDC concerns, supply a per-chain JWT authentication converter, enable CORS, add an HTTPS redirect, or contribute CSP/security-header behavior — all without replacing entire chains. Host-specific filter wiring beyond these hooks (authorization filters, matcher tweaks) will be addressed in a follow-up PR.
 
 ### `CamundaSecurityScopeProvider` — contribute path-scoped API chains
 
@@ -573,6 +573,45 @@ public OidcResourceServerCustomizer protectedResourceMetadata(...) {
   return oauth2 -> oauth2.protectedResourceMetadata(...);
 }
 ```
+
+### `JwtAuthenticationConverter` — per-chain JWT authority mapping
+
+`ScopedApiSecurityChainBuilder.buildOidcApiChain(...)` and `buildScopedApiChain(...)` each have an
+overload that accepts a Spring Security `Converter<Jwt, Authentication>` (a.k.a.
+`JwtAuthenticationConverter`), applied only to that specific chain instance:
+
+```java
+@Bean
+public SecurityFilterChain apiV1FilterChain(
+    final HttpSecurity http,
+    final ScopedApiSecurityChainBuilder builder,
+    final JwtDecoder jwtDecoder,
+    @Qualifier("apiV1") final Converter<Jwt, Authentication> apiV1Converter)
+    throws Exception {
+  return builder.buildOidcApiChain(
+      http, List.of("/v1/**"), List.of(), jwtDecoder, apiV1Converter, null);
+}
+```
+
+Use this when your application builds **multiple simultaneous OIDC API chains that need different
+authority-mapping logic** — for example, distinct chains per API version. This is a genuinely
+per-chain hook, not a globally-registered customizer: passing `null` (or, for the
+`buildScopedApiChain` overload, a supplier that returns `null`) preserves Spring Security's default
+`JwtAuthenticationConverter` behavior for that chain. See
+[ADR-0036](../adr/0036-per-chain-jwt-authentication-converter-hook.md) for why this is a method
+parameter rather than an `ObjectProvider`-discovered bean like `OidcResourceServerCustomizer` or
+`HttpsRedirectCustomizer` below.
+
+> **Not the same as CSL's `CamundaAuthenticationConverter`.** The [Authentication
+> converters](#authentication-converters) section above documents `OidcTokenAuthenticationConverter`
+> and `JwtGrantedAuthoritiesAuthenticationConverter` — CSL's own higher-level contract that maps a
+> Spring Security `Authentication` into a `CamundaAuthentication` (tenants, roles, memberships).
+> This section is about the lower-level Spring Security seam that runs *before* that: the raw
+> `Converter<Jwt, Authentication>` wired directly into `oauth2ResourceServer().jwt(...)`, which
+> determines what kind of `Authentication`/`GrantedAuthority` set exists in the first place before
+> CSL's own converter ever sees it. Most deployments only need CSL's `CamundaAuthenticationConverter`
+> layer; this per-chain hook exists for the narrower case of a host running multiple API chains that
+> must each map JWT claims to authorities differently before CSL's layer runs.
 
 ### `OidcTokenEndpointCustomizer` — customise the OAuth2 login token endpoint
 
