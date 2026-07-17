@@ -80,9 +80,9 @@ Concretely:
   of the order-0 unprotected chain, while `unprotectedApiPaths()` is permitted inside the API
   chain (and is on CSL's CSRF allow-list). So a public path outside the bearer surface must go
   into `unprotectedPaths()` to be reachable at all — placing it in `unprotectedApiPaths()` while
-  it is not in `apiPaths()` would leave it permitted by neither chain. That is why Optimize's
-  public `/api` paths live in `unprotectedPaths()`, and why the subset contract on
-  `unprotectedApiPaths()` matters.
+  it is not in `apiPaths()` would leave it permitted by neither chain. In practice only paths that
+  are in `apiPaths()` benefit from being listed in `unprotectedApiPaths()`, so every other public
+  path (Optimize's public `/api` endpoints included) has to be an `unprotectedPaths()` entry.
 - The webapp chain runs with server-side sessions, backed by an Optimize-provided
   `SessionStorePort` adapter over Optimize's Elasticsearch, following OC's pattern. OC's own
   adapter is not reused (it lives in a component Optimize does not depend on), so Optimize
