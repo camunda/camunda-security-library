@@ -10,24 +10,25 @@ package io.camunda.security.spring.security;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 
 /**
- * SPI for contributing additional response headers, or route-varying header behavior, to CSL
- * security filter chains.
+ * SPI for contributing dynamic response-header behavior to CSL security filter chains — including
+ * Content-Security-Policy, or any other header CSL's static configuration doesn't know about.
  *
- * <p>CSL's own {@code camunda.security.http-headers.*} configuration applies a fixed, static set of
- * headers uniformly across the whole chain. Register a bean of this type to add headers CSL doesn't
- * know about, or to vary header application by route:
+ * <p>CSL's own {@code camunda.security.http-headers.*} configuration (including {@code
+ * content-security-policy.*}) applies a fixed, static set of headers uniformly across the whole
+ * chain — it cannot generate a fresh CSP nonce per request, vary a header by route, or add a header
+ * CSL has no opinion on. Register a bean of this type to add that behavior, typically via a custom
+ * {@code HeaderWriter}:
  *
  * <pre>{@code
  * @Bean
- * public SecurityHeadersCustomizer extraHeaders() {
- *   return http -> http.headers(headers -> headers.addHeaderWriter(
- *       (request, response) -> response.setHeader("X-My-Header", "value")));
+ * public SecurityHeadersCustomizer nonceBasedCsp() {
+ *   return http -> http.headers(headers -> headers.addHeaderWriter(new MyNonceCspHeaderWriter()));
  * }
  * }</pre>
  *
  * <p>CSL applies every registered customizer, in {@code @Order} order, to every content-serving
- * filter chain. No bean present means no additional headers beyond CSL's static configuration. See
- * ADR-0037 for the design rationale.
+ * filter chain. No bean present means no additional header behavior beyond CSL's static
+ * configuration. See ADR-0037 for the design rationale.
  */
 @FunctionalInterface
 public interface SecurityHeadersCustomizer {

@@ -31,43 +31,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 class SecurityFilterChainSupportCustomizerTest {
 
   @Mock private HttpSecurity http;
-  @Mock private CspCustomizer cspCustomizer;
   @Mock private SecurityHeadersCustomizer securityHeadersCustomizer;
-
-  @Test
-  void applyCspCustomizersInvokesRegisteredCustomizer() throws Exception {
-    final ObjectProvider<CspCustomizer> provider =
-        objectProviderOf(CspCustomizer.class, cspCustomizer);
-
-    SecurityFilterChainSupport.applyCspCustomizers(http, provider);
-
-    verify(cspCustomizer, times(1)).customize(http);
-  }
-
-  @Test
-  void applyCspCustomizersIsNoOpWhenNoneRegistered() throws Exception {
-    final ObjectProvider<CspCustomizer> provider = emptyObjectProvider();
-
-    SecurityFilterChainSupport.applyCspCustomizers(http, provider);
-
-    verifyNoInteractions(http);
-  }
-
-  @Test
-  @SuppressWarnings("unchecked")
-  void applyCspCustomizersInvokesMultipleRegisteredCustomizersInOrder() throws Exception {
-    try (var ctx = new AnnotationConfigApplicationContext(OrderedCspCustomizersConfig.class)) {
-      final ObjectProvider<CspCustomizer> provider = ctx.getBeanProvider(CspCustomizer.class);
-
-      SecurityFilterChainSupport.applyCspCustomizers(http, provider);
-
-      final List<String> invocationOrder =
-          (List<String>) ctx.getBean("invocationOrder", List.class);
-      assertThat(invocationOrder)
-          .as("both registered customizers must run, in @Order sequence")
-          .containsExactly("first", "second");
-    }
-  }
 
   @Test
   void applySecurityHeadersCustomizersInvokesRegisteredCustomizer() throws Exception {
@@ -125,27 +89,6 @@ class SecurityFilterChainSupportCustomizerTest {
         return Stream.empty();
       }
     };
-  }
-
-  @Configuration
-  static class OrderedCspCustomizersConfig {
-
-    @Bean
-    List<String> invocationOrder() {
-      return new ArrayList<>();
-    }
-
-    @Bean
-    @Order(1)
-    CspCustomizer firstCspCustomizer(final List<String> invocationOrder) {
-      return http -> invocationOrder.add("first");
-    }
-
-    @Bean
-    @Order(2)
-    CspCustomizer secondCspCustomizer(final List<String> invocationOrder) {
-      return http -> invocationOrder.add("second");
-    }
   }
 
   @Configuration

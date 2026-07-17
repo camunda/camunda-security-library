@@ -33,7 +33,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Verifies the {@link CspCustomizer} and {@link SecurityHeadersCustomizer} SPI contracts on {@link
+ * Verifies the {@link SecurityHeadersCustomizer} SPI contract on {@link
  * UnprotectedApiSecurityConfiguration#unprotectedApiSecurityFilterChain}: when a host registers a
  * customizer bean it is invoked during chain construction and any filter it adds is present in the
  * built chain.
@@ -56,19 +56,6 @@ class UnprotectedApiCustomizerIntegrationTest {
           .withPropertyValues(
               "camunda.security.authentication.method=basic",
               "camunda.security.authentication.unprotected-api=true");
-
-  @Test
-  void cspMarkerFilterIsPresentWhenCspCustomizerBeanIsRegistered() {
-    runner
-        .withUserConfiguration(StubCspCustomizerConfig.class)
-        .run(
-            ctx -> {
-              final var chain = ctx.getBean(UNPROTECTED_API_CHAIN_BEAN, SecurityFilterChain.class);
-              assertThat(filtersOf(chain))
-                  .as("MarkerFilter added by CspCustomizer must be in the filter chain")
-                  .anySatisfy(f -> assertThat(f).isInstanceOf(MarkerFilter.class));
-            });
-  }
 
   @Test
   void securityHeadersMarkerFilterIsPresentWhenSecurityHeadersCustomizerBeanIsRegistered() {
@@ -107,18 +94,6 @@ class UnprotectedApiCustomizerIntegrationTest {
         final FilterChain filterChain)
         throws ServletException, IOException {
       filterChain.doFilter(request, response);
-    }
-  }
-
-  @Configuration
-  static class StubCspCustomizerConfig {
-
-    @Bean
-    CspCustomizer cspCustomizer() {
-      return http ->
-          http.addFilterBefore(
-              new MarkerFilter(),
-              org.springframework.security.web.context.SecurityContextHolderFilter.class);
     }
   }
 

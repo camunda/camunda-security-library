@@ -59,7 +59,6 @@ public class UnprotectedApiSecurityConfiguration {
       final SecurityPathPort pathPort,
       final ObjectProvider<CorsConfigurationSource> corsSourceProvider,
       final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
-      final ObjectProvider<CspCustomizer> cspCustomizers,
       final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers,
       final SessionRepositoryFilter<?> defaultSessionRepositoryFilter)
       throws Exception {
@@ -83,7 +82,6 @@ public class UnprotectedApiSecurityConfiguration {
         filterChainBuilder, httpsRedirectCustomizers);
     SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
-    SecurityFilterChainSupport.applyCspCustomizers(filterChainBuilder, cspCustomizers);
     SecurityFilterChainSupport.applySecurityHeadersCustomizers(
         filterChainBuilder, securityHeadersCustomizers);
 

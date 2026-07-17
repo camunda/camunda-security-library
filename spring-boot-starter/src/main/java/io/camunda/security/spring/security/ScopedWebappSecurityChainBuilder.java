@@ -97,7 +97,6 @@ public final class ScopedWebappSecurityChainBuilder {
   private final CorsConfigurationSource corsSource;
   private final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers;
   private final ObjectProvider<OidcAuthenticationEntryPoint> oidcAuthenticationEntryPointProvider;
-  private final ObjectProvider<CspCustomizer> cspCustomizers;
   private final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers;
 
   public ScopedWebappSecurityChainBuilder(
@@ -115,7 +114,6 @@ public final class ScopedWebappSecurityChainBuilder {
       final CorsConfigurationSource corsSource,
       final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
       final ObjectProvider<OidcAuthenticationEntryPoint> oidcAuthenticationEntryPointProvider,
-      final ObjectProvider<CspCustomizer> cspCustomizers,
       final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers) {
     this.authFailureHandler = authFailureHandler;
     this.properties = properties;
@@ -131,7 +129,6 @@ public final class ScopedWebappSecurityChainBuilder {
     this.corsSource = corsSource;
     this.httpsRedirectCustomizers = httpsRedirectCustomizers;
     this.oidcAuthenticationEntryPointProvider = oidcAuthenticationEntryPointProvider;
-    this.cspCustomizers = cspCustomizers;
     this.securityHeadersCustomizers = securityHeadersCustomizers;
   }
 
@@ -240,7 +237,6 @@ public final class ScopedWebappSecurityChainBuilder {
         filterChainBuilder, httpsRedirectCustomizers);
     SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
-    SecurityFilterChainSupport.applyCspCustomizers(filterChainBuilder, cspCustomizers);
     SecurityFilterChainSupport.applySecurityHeadersCustomizers(
         filterChainBuilder, securityHeadersCustomizers);
 
@@ -329,7 +325,6 @@ public final class ScopedWebappSecurityChainBuilder {
         filterChainBuilder, httpsRedirectCustomizers);
     SecurityFilterChainSupport.applyCsrfConfiguration(filterChainBuilder, properties, pathPort);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
-    SecurityFilterChainSupport.applyCspCustomizers(filterChainBuilder, cspCustomizers);
     SecurityFilterChainSupport.applySecurityHeadersCustomizers(
         filterChainBuilder, securityHeadersCustomizers);
 
@@ -659,7 +654,6 @@ public final class ScopedWebappSecurityChainBuilder {
     SecurityFilterChainSupport.applyCsrfConfiguration(
         filterChainBuilder, properties, pathPort, prefix, scopedCsrfCookieName);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
-    SecurityFilterChainSupport.applyCspCustomizers(filterChainBuilder, cspCustomizers);
     SecurityFilterChainSupport.applySecurityHeadersCustomizers(
         filterChainBuilder, securityHeadersCustomizers);
 
@@ -770,7 +764,6 @@ public final class ScopedWebappSecurityChainBuilder {
     SecurityFilterChainSupport.applyCsrfConfiguration(
         filterChainBuilder, properties, pathPort, prefix, scopedCsrfCookieName);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
-    SecurityFilterChainSupport.applyCspCustomizers(filterChainBuilder, cspCustomizers);
     SecurityFilterChainSupport.applySecurityHeadersCustomizers(
         filterChainBuilder, securityHeadersCustomizers);
 

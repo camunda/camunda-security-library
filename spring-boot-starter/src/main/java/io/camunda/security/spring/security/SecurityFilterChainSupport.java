@@ -222,20 +222,6 @@ public final class SecurityFilterChainSupport {
   }
 
   /**
-   * Applies every registered {@link CspCustomizer} bean to the given filter chain, in {@link
-   * org.springframework.core.annotation.Order} order. When no bean is registered this is a no-op,
-   * so CSL's static, property-driven CSP configuration (see {@link #setupSecureHeaders}) is
-   * unaffected. See ADR-0037.
-   */
-  public static void applyCspCustomizers(
-      final HttpSecurity http, final ObjectProvider<CspCustomizer> cspCustomizers)
-      throws Exception {
-    for (final var customizer : cspCustomizers.orderedStream().toList()) {
-      customizer.customize(http);
-    }
-  }
-
-  /**
    * Applies every registered {@link SecurityHeadersCustomizer} bean to the given filter chain, in
    * {@link org.springframework.core.annotation.Order} order. When no bean is registered this is a
    * no-op, so CSL's static, property-driven header configuration (see {@link #setupSecureHeaders})

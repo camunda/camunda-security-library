@@ -102,21 +102,6 @@ class ScopedWebappSecurityChainBuilderScopedTest {
   }
 
   @Test
-  void scopedChainAppliesRegisteredCspCustomizer() {
-    runner
-        .withUserConfiguration(StubCspCustomizerConfig.class)
-        .run(
-            ctx -> {
-              final var chain =
-                  (DefaultSecurityFilterChain)
-                      ctx.getBean("scopedOidcTestChain", SecurityFilterChain.class);
-              assertThat(chain.getFilters())
-                  .as("MarkerFilter added by CspCustomizer must be in scopedOidcTestChain")
-                  .anySatisfy(f -> assertThat(f).isInstanceOf(CspMarkerFilter.class));
-            });
-  }
-
-  @Test
   void scopedChainAppliesRegisteredSecurityHeadersCustomizer() {
     runner
         .withUserConfiguration(StubSecurityHeadersCustomizerConfig.class)
@@ -803,18 +788,6 @@ class ScopedWebappSecurityChainBuilderScopedTest {
     }
   }
 
-  static final class CspMarkerFilter extends OncePerRequestFilter {
-
-    @Override
-    protected void doFilterInternal(
-        final HttpServletRequest request,
-        final HttpServletResponse response,
-        final FilterChain filterChain)
-        throws ServletException, IOException {
-      filterChain.doFilter(request, response);
-    }
-  }
-
   static final class SecurityHeadersMarkerFilter extends OncePerRequestFilter {
 
     @Override
@@ -824,15 +797,6 @@ class ScopedWebappSecurityChainBuilderScopedTest {
         final FilterChain filterChain)
         throws ServletException, IOException {
       filterChain.doFilter(request, response);
-    }
-  }
-
-  @Configuration
-  static class StubCspCustomizerConfig {
-
-    @Bean
-    CspCustomizer cspCustomizer() {
-      return http -> http.addFilterBefore(new CspMarkerFilter(), SecurityContextHolderFilter.class);
     }
   }
 

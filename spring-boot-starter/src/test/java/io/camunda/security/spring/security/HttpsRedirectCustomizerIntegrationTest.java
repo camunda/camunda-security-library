@@ -71,19 +71,6 @@ class HttpsRedirectCustomizerIntegrationTest {
   }
 
   @Test
-  void cspMarkerFilterIsPresentWhenCspCustomizerBeanIsRegistered() {
-    runner
-        .withUserConfiguration(StubCspCustomizerConfig.class)
-        .run(
-            ctx -> {
-              final var chain = ctx.getBean(UNPROTECTED_CHAIN_BEAN, SecurityFilterChain.class);
-              assertThat(filtersOf(chain))
-                  .as("MarkerFilter added by CspCustomizer must be in the filter chain")
-                  .anySatisfy(f -> assertThat(f).isInstanceOf(MarkerFilter.class));
-            });
-  }
-
-  @Test
   void securityHeadersMarkerFilterIsPresentWhenSecurityHeadersCustomizerBeanIsRegistered() {
     runner
         .withUserConfiguration(StubSecurityHeadersCustomizerConfig.class)
@@ -117,18 +104,6 @@ class HttpsRedirectCustomizerIntegrationTest {
 
     @Bean
     HttpsRedirectCustomizer httpsRedirectCustomizer() {
-      return http ->
-          http.addFilterBefore(
-              new MarkerFilter(),
-              org.springframework.security.web.context.SecurityContextHolderFilter.class);
-    }
-  }
-
-  @Configuration
-  static class StubCspCustomizerConfig {
-
-    @Bean
-    CspCustomizer cspCustomizer() {
       return http ->
           http.addFilterBefore(
               new MarkerFilter(),

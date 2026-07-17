@@ -40,7 +40,6 @@ public class BaseSecurityConfiguration {
       final SecurityPathPort pathPort,
       final ObjectProvider<CorsConfigurationSource> corsSourceProvider,
       final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
-      final ObjectProvider<CspCustomizer> cspCustomizers,
       final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers)
       throws Exception {
     final var corsSource = corsSourceProvider.getIfAvailable(NoOpCorsConfigurationSource::new);
@@ -55,7 +54,6 @@ public class BaseSecurityConfiguration {
     SecurityFilterChainSupport.applyHttpsRedirectCustomizers(
         filterChainBuilder, httpsRedirectCustomizers);
     SecurityFilterChainSupport.setupSecureHeaders(filterChainBuilder, properties.getHttpHeaders());
-    SecurityFilterChainSupport.applyCspCustomizers(filterChainBuilder, cspCustomizers);
     SecurityFilterChainSupport.applySecurityHeadersCustomizers(
         filterChainBuilder, securityHeadersCustomizers);
 
