@@ -97,6 +97,14 @@ a decoder is required for the chain to function at all; a converter is genuinely
   the request as a 401 (`InvalidBearerTokenException`) rather than at compile time — this is a
   runtime contract, not enforced by the type system, matching the constraint every host already
   lived with before this change.
+- The per-chain converter is applied inside the same `JwtConfigurer` that `OidcResourceServerCustomizer`
+  beans also configure, and both write to the same underlying `jwtAuthenticationConverter(...)`
+  setter — last writer wins. If a host also registers an `OidcResourceServerCustomizer` that itself
+  calls `jwtAuthenticationConverter(...)`, that customizer's converter overrides the one passed to
+  this hook, since customizers run after the per-chain converter is set. No shipped customizer does
+  this today, and the same precedence already held for `jwtDecoder(...)` before this change, so
+  nothing regresses — but a host combining both hooks on the same chain should be aware of the
+  ordering.
 
 ## Alternatives Considered
 

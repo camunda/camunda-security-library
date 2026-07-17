@@ -478,9 +478,13 @@ public final class ScopedApiSecurityChainBuilder {
       if (authentication instanceof AbstractAuthenticationToken token) {
         return token;
       }
-      throw new InvalidBearerTokenException(
-          "jwtAuthenticationConverter must return an AbstractAuthenticationToken, got: "
-              + (authentication != null ? authentication.getClass().getName() : "null"));
+      // InvalidBearerTokenException's message reaches the client via the WWW-Authenticate
+      // error_description, so it must not leak internal implementation details (e.g. the
+      // Authentication implementation class name) — log the concrete type server-side instead.
+      LOG.debug(
+          "jwtAuthenticationConverter must return an AbstractAuthenticationToken, got: {}",
+          authentication != null ? authentication.getClass().getName() : "null");
+      throw new InvalidBearerTokenException("jwtAuthenticationConverter returned an invalid token");
     };
   }
 
