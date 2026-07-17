@@ -104,10 +104,12 @@ The move is done in one step, not in phases. There is no interim stateless adopt
 
 Adopting CSL changes the config surface from Optimize's own keys (`security.auth.*`, `api.*`,
 `security.responseHeaders.*`, loaded through `ConfigurationService`) to CSL's `camunda.security.*`.
-Operators are not forced to migrate. The adoption ships a config bridge — a Spring
-`EnvironmentPostProcessor`, mirroring OC's `PersistentWebSessionPropertiesPostProcessor` — that
+Operators are not forced to migrate immediately. The adoption ships a config bridge (a Spring
+`EnvironmentPostProcessor`, mirroring OC's `PersistentWebSessionPropertiesPostProcessor`) that
 reads the existing Optimize keys and emits the equivalent `camunda.security.*` properties at low
-precedence, so an explicit new value always wins. The keys fall into three groups:
+precedence, so an explicit new value always wins. Every recognized legacy key is marked deprecated
+and logs a warning on use that names its `camunda.security.*` replacement; the old keys stay
+supported until 8.11 and are removed afterwards. The keys fall into three groups:
 
 - **Mapped** — OIDC/Identity (`security.auth.ccsm.*` and the `camunda.identity.*` from
   `application-ccsm.yaml` → `camunda.security.authentication.oidc.{issuer-uri, client-id,
@@ -172,9 +174,10 @@ lives with the spike.
 - Optimize must implement its own `SessionStorePort` adapter and create a new session index;
   OC's adapter cannot be reused across the module boundary. The old auth-storage index (the
   terminated-session store) has to be removed as part of the upgrade.
-- Some legacy config keys become no-ops under the new model. The compat bridge honors what maps
-  and logs a deprecation warning for the rest, so operators are not forced to migrate, but the
-  bridge and its deprecation surface are extra code to maintain until the old keys are dropped.
+- Some legacy config keys become no-ops under the new model. The compat bridge maps what still
+  applies and logs a deprecation warning on every recognized legacy key, steering operators to
+  `camunda.security.*` before the old keys are removed in 8.11. The bridge and its deprecation
+  surface are extra code to maintain until then.
 - CSRF is enabled to align with OC and needs a frontend change: the SPA must send the
   `X-CSRF-TOKEN` header on state-changing requests. This is small, because Optimize routes every
   call through one wrapper (`optimize/client/src/modules/request.ts`), mirroring the Operate/Tasklist
