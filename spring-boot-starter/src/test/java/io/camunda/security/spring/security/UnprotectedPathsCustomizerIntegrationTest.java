@@ -30,11 +30,12 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Verifies the {@link HttpsRedirectCustomizer} SPI contract: when a host registers a customizer
- * bean it is invoked during chain construction and any filters it adds are present in the built
- * {@code unprotectedPathsSecurityFilterChain}; when no bean is registered the chain is unaffected.
+ * Verifies the {@link HttpsRedirectCustomizer} and {@link SecurityHeadersCustomizer} SPI contracts
+ * on {@code unprotectedPathsSecurityFilterChain} (from {@link BaseSecurityConfiguration}): when a
+ * host registers a customizer bean it is invoked during chain construction and any filters it adds
+ * are present in the built chain; when no bean is registered the chain is unaffected.
  */
-class HttpsRedirectCustomizerIntegrationTest {
+class UnprotectedPathsCustomizerIntegrationTest {
 
   private static final String UNPROTECTED_CHAIN_BEAN = "unprotectedPathsSecurityFilterChain";
 
