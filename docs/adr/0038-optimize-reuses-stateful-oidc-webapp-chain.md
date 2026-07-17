@@ -186,6 +186,12 @@ lives with the spike.
 - Some legacy config keys become no-ops under the new model. The compat bridge honors what maps
   and logs a deprecation warning for the rest, so operators are not forced to migrate, but the
   bridge and its deprecation surface are extra code to maintain until the old keys are dropped.
+- CSL's default token-based CSRF is not backend-only: the Optimize frontend would have to read
+  the CSRF token and send it as the `X-CSRF-TOKEN` header on state-changing requests (as
+  Operate/Tasklist do). To avoid forcing that frontend change in the initial adoption, Optimize
+  keeps CSRF disabled and relies on the session cookie's `SameSite` flag (its current protection);
+  adopting token-based CSRF to align with OC is a follow-up that includes an `optimize/client`
+  interceptor.
 
 ## Alternatives Considered
 
