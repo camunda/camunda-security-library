@@ -17,6 +17,7 @@ public enum PermissionType {
   DELETE_FORM,
   DELETE_PROCESS,
   DELETE_RESOURCE,
+  PAUSE,
   READ(true),
   READ_JOB_METRIC(true),
   READ_USAGE_METRIC(true),
