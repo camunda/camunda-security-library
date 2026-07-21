@@ -39,4 +39,10 @@ class PermissionTypeTest {
     // REVEAL exposes secret values, so it must not be treated as a read permission.
     assertThat(PermissionType.REVEAL.isReadPermission()).isFalse();
   }
+
+  @Test
+  void pauseIsNotFlaggedAsReadPermission() {
+    // PAUSE is a control operation (e.g. pausing exporting), not a read.
+    assertThat(PermissionType.PAUSE.isReadPermission()).isFalse();
+  }
 }

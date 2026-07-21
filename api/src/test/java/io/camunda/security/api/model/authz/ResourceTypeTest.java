@@ -62,6 +62,20 @@ class ResourceTypeTest {
   }
 
   @Test
+  void exporterSupportsPause() {
+    assertThat(ResourceType.EXPORTER.getSupportedPermissionTypes())
+        .containsExactly(PermissionType.PAUSE);
+  }
+
+  @Test
+  void buildResourcePermissionsMapHasExporterPause() {
+    final var map = ResourceType.buildResourcePermissionsMap();
+
+    assertThat(map).doesNotContainKey("UNSPECIFIED");
+    assertThat(map.get("EXPORTER")).containsExactly("PAUSE");
+  }
+
+  @Test
   void getSupportedPermissionTypesReturnsImmutableView() {
     final var permissions = ResourceType.COMPONENT.getSupportedPermissionTypes();
 

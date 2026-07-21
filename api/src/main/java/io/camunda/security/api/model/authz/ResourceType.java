@@ -67,6 +67,7 @@ public enum ResourceType {
       PermissionType.READ_DECISION_INSTANCE,
       PermissionType.DELETE_DECISION_INSTANCE),
   DECISION_REQUIREMENTS_DEFINITION(PermissionType.READ),
+  EXPORTER(PermissionType.PAUSE),
   EXPRESSION(PermissionType.EVALUATE),
   GLOBAL_LISTENER(
       PermissionType.CREATE_TASK_LISTENER,
