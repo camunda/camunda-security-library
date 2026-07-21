@@ -140,6 +140,30 @@ class OidcClaimsProviderConfigurationTest {
   }
 
   @Test
+  void noCachingProviderWhenClientRegistrationRepositoryAbsent() {
+    // Simulates method=oidc + webapp-enabled=false + user-info-augmentation.enabled=true with no
+    // host-supplied ClientRegistrationRepository: ClientRegistrationRepository is only registered
+    // when the webapp chain is enabled (see OidcWebappClientBeansConfiguration), so
+    // cachingOidcClaimsProvider must back off rather than fail to start. noopOidcClaimsProvider's
+    // condition (enabled=false, matchIfMissing=true) is false here too, so no OidcClaimsProvider
+    // bean registers at all — the same silent-absence pattern as the other webapp-enabled=false
+    // gates.
+    new ApplicationContextRunner()
+        .withPropertyValues(
+            "camunda.security.authentication.method=oidc",
+            "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
+        .withUserConfiguration(StubObjectMapper.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class))
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              assertThat(ctx).doesNotHaveBean(OidcClaimsProvider.class);
+            });
+  }
+
+  @Test
   void noBeansRegisteredWhenMethodIsNotOidc() {
     new ApplicationContextRunner()
         .withPropertyValues("camunda.security.authentication.method=basic")
