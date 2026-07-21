@@ -411,6 +411,12 @@
       "defaultValue": false
     },
     {
+      "name": "camunda.security.authentication.webapp-enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.AuthenticationConfiguration",
+      "defaultValue": true
+    },
+    {
       "name": "camunda.security.authorizations.enabled",
       "type": "java.lang.Boolean",
       "sourceType": "io.camunda.security.api.model.config.AuthorizationsConfiguration",

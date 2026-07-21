@@ -284,4 +284,24 @@ class CamundaSecurityLibraryPropertiesTest {
                   .contains(tuple("tenant1", "Tenant One"));
             });
   }
+
+  @Test
+  void shouldDefaultWebappEnabledToTrue() {
+    runner.run(
+        context -> {
+          final var properties = context.getBean(CamundaSecurityLibraryProperties.class);
+          assertThat(properties.getAuthentication().isWebappEnabled()).isTrue();
+        });
+  }
+
+  @Test
+  void shouldBindWebappEnabledFalse() {
+    runner
+        .withPropertyValues("camunda.security.authentication.webapp-enabled=false")
+        .run(
+            context -> {
+              final var properties = context.getBean(CamundaSecurityLibraryProperties.class);
+              assertThat(properties.getAuthentication().isWebappEnabled()).isFalse();
+            });
+  }
 }
