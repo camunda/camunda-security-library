@@ -94,6 +94,12 @@ Concretely:
   behavior-preserving for existing hosts (disjoint matchers still match one chain) and lets
   Optimize use the stock webapp chain via the umbrella without re-declaring a bean. It assumes no
   host needs a webapp path to beat an overlapping API path; bearer-API-first is the convention.
+- The webapp chain's OIDC callback (redirection-endpoint) path is configurable: CSL derives it from
+  `camunda.security.authentication.oidc.redirect-uri`, defaulting to `/sso-callback`. Optimize sets
+  it to `/api/authentication/callback` (its historical callback), so the Identity-provisioned IdP
+  client, which already registers that path, is reused and operators do not have to change their
+  Keycloak/Identity client. Without this, CSL's fixed `/sso-callback` would force every operator to
+  add a new valid redirect URI to their IdP client.
 - Optimize deletes its custom security stack: `AbstractSecurityConfigurerAdapter` and its
   subclasses, `SessionService`, `AuthCookieService`, `TerminatedSessionService`, the cookie
   filters, and the Identity SDK login code.
@@ -156,8 +162,9 @@ lives with the spike.
 - The custom cookie stack and its debt (cookie splitting, terminated-session list,
   `SameSite`-only CSRF, custom Identity SDK) are removed, not carried forward.
 - CSL gains almost no new code. The stateful chain, the bearer API chain, and the
-  unprotected chain already exist. The only CSL changes are making the deny chain suppressible
-  and giving the API and webapp chains distinct orders (API first).
+  unprotected chain already exist. The only CSL changes are making the deny chain suppressible,
+  giving the API and webapp chains distinct orders (API first), and making the OIDC callback path
+  configurable.
 - No throwaway work. Nothing is built to be deleted later, which the phased stateless
   approach would have required.
 
