@@ -16,6 +16,7 @@ import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.handler.JsonProblemDetailAuthFailureHandler;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
+import io.camunda.security.spring.oidc.OidcWebappClientBeansConfiguration;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.scope.ScopedApiSecurityChainBuilderConfiguration;
 import io.camunda.security.spring.security.BaseSecurityConfiguration;
@@ -56,6 +57,7 @@ class CamundaSecurityConfigurationTest {
                   UnprotectedApiSecurityConfiguration.class,
                   AuthFailureHandlerConfiguration.class,
                   OidcBeansConfiguration.class,
+                  OidcWebappClientBeansConfiguration.class,
                   ScopedOidcInfrastructureConfiguration.class))
           .withUserConfiguration(StubPaths.class)
           .withUserConfiguration(StubUserDetailsService.class);

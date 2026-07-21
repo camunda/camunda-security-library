@@ -14,6 +14,7 @@ import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
+import io.camunda.security.spring.oidc.OidcWebappClientBeansConfiguration;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import org.junit.jupiter.api.Test;
@@ -72,6 +73,7 @@ class OidcWebappLoginPickerTest {
                   ScopedWebappSecurityChainBuilderConfiguration.class,
                   AuthFailureHandlerConfiguration.class,
                   OidcBeansConfiguration.class,
+                  OidcWebappClientBeansConfiguration.class,
                   ScopedOidcInfrastructureConfiguration.class))
           .withPropertyValues(OIDC_PROPERTIES);
 
@@ -112,6 +114,7 @@ class OidcWebappLoginPickerTest {
                 ScopedWebappSecurityChainBuilderConfiguration.class,
                 AuthFailureHandlerConfiguration.class,
                 OidcBeansConfiguration.class,
+                OidcWebappClientBeansConfiguration.class,
                 ScopedOidcInfrastructureConfiguration.class))
         .withPropertyValues(OIDC_PROPERTIES)
         .run(

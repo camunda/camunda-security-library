@@ -15,6 +15,7 @@ import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.CamundaOidcAuthorizationRequestResolver;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
+import io.camunda.security.spring.oidc.OidcWebappClientBeansConfiguration;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import jakarta.servlet.Filter;
@@ -72,6 +73,7 @@ class OidcWebappAuthorizationRequestResolverHookTest {
                   ScopedWebappSecurityChainBuilderConfiguration.class,
                   AuthFailureHandlerConfiguration.class,
                   OidcBeansConfiguration.class,
+                  OidcWebappClientBeansConfiguration.class,
                   ScopedOidcInfrastructureConfiguration.class))
           .withPropertyValues(OIDC_PROPERTIES);
 

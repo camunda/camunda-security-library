@@ -16,6 +16,7 @@ import io.camunda.security.spring.cors.CorsBeansConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
 import io.camunda.security.spring.oidc.OidcClaimsProviderConfiguration;
+import io.camunda.security.spring.oidc.OidcWebappClientBeansConfiguration;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.scope.ScopedApiSecurityChainBuilderConfiguration;
 import io.camunda.security.spring.scope.ScopedSecurityChainConfiguration;
@@ -95,6 +96,7 @@ class CamundaSecurityAutoConfigurationTest {
             AuthFailureHandlerConfiguration.class,
             CorsBeansConfiguration.class,
             OidcBeansConfiguration.class,
+            OidcWebappClientBeansConfiguration.class,
             OidcClaimsProviderConfiguration.class,
             ScopedOidcInfrastructureConfiguration.class,
             WebAppAuthorizationFilterConfiguration.class,
