@@ -27,6 +27,10 @@ public final class CamundaSecurityFilterChainConstants {
   public static final String UNPROTECTED_API_PROPERTY =
       "camunda.security.authentication.unprotected-api";
 
+  /** Property key for the webapp-chain activation toggle. */
+  public static final String WEBAPP_ENABLED_PROPERTY =
+      "camunda.security.authentication.webapp-enabled";
+
   public static final int ORDER_UNPROTECTED = 0;
   public static final int ORDER_WEBAPP_API = 1;
   public static final int ORDER_UNHANDLED = 2;
