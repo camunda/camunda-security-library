@@ -48,9 +48,19 @@ public class UserConfiguration {
     return authentication -> List.of();
   }
 
+  /**
+   * Requires session-scoped OAuth2 client infrastructure ({@link OAuth2AuthorizedClientRepository})
+   * to look up the current user's authorized client, so this bean only activates when the webapp
+   * chain is enabled ({@code camunda.security.authentication.webapp-enabled} is not {@code false});
+   * that repository bean is only registered in that case (see {@link
+   * io.camunda.security.spring.oidc.OidcWebappClientBeansConfiguration}). A bearer-only OIDC host
+   * that disables the webapp chain therefore gets no default {@link CamundaUserPort} from CSL and
+   * must supply its own if it needs one.
+   */
   @Bean
   @ConditionalOnMissingBean(CamundaUserPort.class)
   @ConditionalOnAuthenticationMethod(AuthenticationMethod.OIDC)
+  @ConditionalOnBean(OAuth2AuthorizedClientRepository.class)
   public CamundaUserPort oidcCamundaUserService(
       final CamundaAuthenticationProvider authenticationProvider,
       final AuthorizedComponentsPort authorizedComponentsPort,
