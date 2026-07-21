@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -55,11 +56,22 @@ public class OidcClaimsProviderConfiguration {
     return OidcUserInfoHttpClient.defaultHttpClient();
   }
 
+  /**
+   * Requires session-scoped OAuth2 client-registration infrastructure ({@link
+   * ClientRegistrationRepository}) to resolve the per-issuer UserInfo URIs, so this bean only
+   * activates when the webapp chain is enabled ({@code
+   * camunda.security.authentication.webapp-enabled} is not {@code false}); that repository bean is
+   * only registered in that case (see {@link OidcWebappClientBeansConfiguration}). A bearer-only
+   * OIDC host that disables the webapp chain and enables UserInfo augmentation without supplying
+   * its own {@link ClientRegistrationRepository} or {@link OidcClaimsProvider} therefore gets no
+   * UserInfo-augmenting default from CSL.
+   */
   @Bean
   @ConditionalOnProperty(
       name = "camunda.security.authentication.oidc.user-info-augmentation.enabled",
       havingValue = "true")
   @ConditionalOnMissingBean(OidcClaimsProvider.class)
+  @ConditionalOnBean(ClientRegistrationRepository.class)
   OidcClaimsProvider cachingOidcClaimsProvider(
       final ClientRegistrationRepository clientRegistrationRepository,
       final CamundaSecurityLibraryProperties properties,

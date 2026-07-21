@@ -9,8 +9,8 @@ package io.camunda.security.spring.security;
 
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP_API;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.annotation.Order;
@@ -30,7 +30,7 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
  * ScopedWebappSecurityChainBuilder}.
  */
 @Configuration
-@ConditionalOnProperty(name = "camunda.security.authentication.method", havingValue = "oidc")
+@Conditional(ProtectedOidcWebappCondition.class)
 @Import({
   ScopedWebappSecurityChainBuilderConfiguration.class,
   DefaultWebSessionFilterConfiguration.class

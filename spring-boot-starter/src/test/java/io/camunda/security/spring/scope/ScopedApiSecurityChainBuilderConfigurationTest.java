@@ -14,6 +14,7 @@ import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
+import io.camunda.security.spring.oidc.OidcWebappClientBeansConfiguration;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.security.BaseSecurityConfiguration;
 import io.camunda.security.spring.security.OidcApiSecurityConfiguration;
@@ -71,6 +72,7 @@ class ScopedApiSecurityChainBuilderConfigurationTest {
                 OidcApiSecurityConfiguration.class,
                 AuthFailureHandlerConfiguration.class,
                 OidcBeansConfiguration.class,
+                OidcWebappClientBeansConfiguration.class,
                 ScopedOidcInfrastructureConfiguration.class))
         .withPropertyValues(OIDC_PROPERTIES)
         .run(

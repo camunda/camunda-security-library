@@ -58,6 +58,22 @@ class UserConfigurationTest {
   }
 
   @Test
+  void doesNotRegisterOidcCamundaUserPortWhenAuthorizedClientRepositoryAbsent() {
+    new WebApplicationContextRunner()
+        .withBean(CamundaSecurityLibraryProperties.class)
+        .withBean(
+            CamundaAuthenticationProvider.class,
+            () -> Mockito.mock(CamundaAuthenticationProvider.class))
+        .withConfiguration(AutoConfigurations.of(UserConfiguration.class))
+        .withPropertyValues("camunda.security.authentication.method=oidc")
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              assertThat(ctx).doesNotHaveBean(CamundaUserPort.class);
+            });
+  }
+
+  @Test
   void hostCamundaUserPortBeanWins() {
     runner
         .withPropertyValues("camunda.security.authentication.method=oidc")

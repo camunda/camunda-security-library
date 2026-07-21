@@ -53,7 +53,9 @@ class OidcBeansConfigurationTest {
           .withUserConfiguration(StubOidcInfrastructure.class)
           .withConfiguration(
               AutoConfigurations.of(
-                  CamundaSecurityConfiguration.class, OidcBeansConfiguration.class));
+                  CamundaSecurityConfiguration.class,
+                  OidcBeansConfiguration.class,
+                  OidcWebappClientBeansConfiguration.class));
 
   @Test
   void noLogoutSuccessHandlerBeanIsRegistered() {

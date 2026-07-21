@@ -26,6 +26,7 @@ import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
 import io.camunda.security.spring.oidc.OidcClaimsProviderConfiguration;
 import io.camunda.security.spring.oidc.OidcTestServer;
+import io.camunda.security.spring.oidc.OidcWebappClientBeansConfiguration;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.scope.ScopedSecurityChainConfiguration;
 import io.camunda.security.spring.session.WebSessionConfiguration;
@@ -274,6 +275,7 @@ class DefaultAndScopedSessionRegressionTest {
                 OidcApiSecurityConfiguration.class,
                 AuthFailureHandlerConfiguration.class,
                 OidcBeansConfiguration.class,
+                OidcWebappClientBeansConfiguration.class,
                 OidcClaimsProviderConfiguration.class,
                 ScopedOidcInfrastructureConfiguration.class,
                 UserConfiguration.class))

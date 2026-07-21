@@ -25,6 +25,9 @@ public class AuthenticationConfiguration {
   /** Default for {@code camunda.security.authentication.unprotected-api}. */
   public static final boolean DEFAULT_UNPROTECTED_API = false;
 
+  /** Default for {@code camunda.security.authentication.webapp-enabled}. */
+  public static final boolean DEFAULT_WEBAPP_ENABLED = true;
+
   /** Authentication method. Either {@code basic} or {@code oidc}. Defaults to {@code basic}. */
   private AuthenticationMethod method = DEFAULT_METHOD;
 
@@ -33,6 +36,18 @@ public class AuthenticationConfiguration {
    * OIDC and basic auth API protection chains in favour of a permit-all chain.
    */
   private boolean unprotectedApi = DEFAULT_UNPROTECTED_API;
+
+  /**
+   * When {@code false}, the webapp UI chain ({@code OidcWebappSecurityConfiguration} or {@code
+   * BasicAuthWebappSecurityConfiguration}, depending on {@link #method}) is not activated, leaving
+   * only the API-protection chain active. Defaults to {@code true} (webapp chain active, matching
+   * behavior before this property existed).
+   *
+   * <p>Bound as {@code camunda.security.authentication.webapp-enabled} — a flat boolean, matching
+   * the sibling {@link #unprotectedApi} property, rather than the nested {@code webapp.enabled}
+   * shape originally proposed in camunda-security-library#548.
+   */
+  private boolean webappEnabled = DEFAULT_WEBAPP_ENABLED;
 
   /**
    * Authentication refresh interval in ISO-8601 duration format (for example {@code PT30S}).
@@ -61,6 +76,14 @@ public class AuthenticationConfiguration {
 
   public void setUnprotectedApi(final boolean unprotectedApi) {
     this.unprotectedApi = unprotectedApi;
+  }
+
+  public boolean isWebappEnabled() {
+    return webappEnabled;
+  }
+
+  public void setWebappEnabled(final boolean webappEnabled) {
+    this.webappEnabled = webappEnabled;
   }
 
   public String getAuthenticationRefreshInterval() {
