@@ -191,6 +191,13 @@ lives with the spike.
   interceptor (token from the response header into `sessionStorage`, echoed on POST/PUT/PATCH/DELETE).
   Public `/external` share endpoints stay exempt via `unprotectedPaths()`. This replaces Optimize's
   `SameSite`-only protection.
+- Adoption requires host-side integration beyond configuration, surfaced during the spike. Two
+  concrete cases: (1) Optimize's SPA-routing servlet filter runs ahead of the security chain and
+  must let the CSL auth endpoints (`/oauth2/**`, the callback, `/login`, `/logout`) pass through
+  instead of rewriting them to the SPA; (2) removing the custom session service means the
+  application's "current user" resolution must read from the CSL authentication (the Spring
+  `SecurityContext` / `CamundaAuthentication`) instead of the old cookie or bearer token, at every
+  call site that resolves the request user.
 
 ## Alternatives Considered
 
