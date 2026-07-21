@@ -11,7 +11,7 @@
 #   PREV_TAG          previous release tag to scope the range from. If unset,
 #                     it is resolved via `git describe --tags --abbrev=0 "${RELEASE_TAG}^"`.
 #
-# Requires: gh CLI (authenticated via GH_TOKEN), git, jq.
+# Requires: gh CLI (authenticated via GH_TOKEN), git.
 set -euo pipefail
 
 : "${REPO:?REPO is required}"
@@ -41,9 +41,12 @@ if [[ -n "${PREV_TAG}" ]]; then
   generate_notes_args+=(-f previous_tag_name="${PREV_TAG}")
 fi
 
-notes_body=$(gh api "repos/${REPO}/releases/generate-notes" \
+if ! notes_body=$(gh api "repos/${REPO}/releases/generate-notes" \
   "${generate_notes_args[@]}" \
-  --jq '.body' || true)
+  --jq '.body'); then
+  echo "::warning::Failed to fetch release notes from generate-notes API — cannot determine PRs in range."
+  exit 0
+fi
 
 # Extract PR numbers from the generated notes markdown (format: /pull/123)
 pr_numbers=$(echo "${notes_body}" | grep -oP '/pull/\K[0-9]+' | sort -un || true)
@@ -54,10 +57,11 @@ if [[ -z "${pr_numbers}" ]]; then
 fi
 
 declare -A labeled_issues
+failed_prs=0
 
 for pr_number in ${pr_numbers}; do
   echo "Resolving closing issue references for PR #${pr_number}..."
-  closing_issues=$(gh api graphql \
+  if ! closing_issues=$(gh api graphql \
     -f query='
       query($owner: String!, $repo: String!, $pr: Int!) {
         repository(owner: $owner, name: $repo) {
@@ -73,7 +77,11 @@ for pr_number in ${pr_numbers}; do
     -F owner="${REPO%%/*}" \
     -F repo="${REPO##*/}" \
     -F pr="${pr_number}" \
-    --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[].number' || true)
+    --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[].number'); then
+    echo "::warning::Failed to fetch closing issues for PR #${pr_number} — skipping."
+    ((failed_prs++)) || true
+    continue
+  fi
 
   for issue_number in ${closing_issues}; do
     labeled_issues["${issue_number}"]=1
@@ -85,9 +93,13 @@ if [[ ${#labeled_issues[@]} -eq 0 ]]; then
   exit 0
 fi
 
+failed_labels=0
 for issue_number in "${!labeled_issues[@]}"; do
   echo "Applying '${LABEL}' to issue #${issue_number}..."
-  gh issue edit "${issue_number}" --repo "${REPO}" --add-label "${LABEL}"
+  if ! gh issue edit "${issue_number}" --repo "${REPO}" --add-label "${LABEL}"; then
+    echo "::warning::Failed to apply label to issue #${issue_number} — continuing."
+    ((failed_labels++)) || true
+  fi
 done
 
-echo "Done. Labeled ${#labeled_issues[@]} issue(s) with '${LABEL}'."
+echo "Done. Labeled ${#labeled_issues[@]} issue(s) with '${LABEL}' (${failed_labels} failed, ${failed_prs} PR lookups skipped)."
