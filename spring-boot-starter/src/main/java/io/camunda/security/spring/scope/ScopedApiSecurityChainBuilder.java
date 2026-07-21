@@ -18,6 +18,7 @@ import io.camunda.security.spring.security.HttpsRedirectCustomizer;
 import io.camunda.security.spring.security.OidcResourceServerCustomizer;
 import io.camunda.security.spring.security.SecurityFilterChainSupport;
 import io.camunda.security.spring.security.SecurityHeadersCustomizer;
+import io.camunda.security.spring.spi.OidcApiAuthenticationEntryPoint;
 import java.util.Collection;
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -36,6 +37,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AuthenticationEntryPointFailureHandler;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
@@ -65,7 +67,13 @@ public final class ScopedApiSecurityChainBuilder {
   private final CorsConfigurationSource corsSource;
   private final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers;
   private final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers;
+  private final ObjectProvider<OidcApiAuthenticationEntryPoint> apiAuthenticationEntryPointProvider;
 
+  /**
+   * Delegates to the full constructor with no {@link OidcApiAuthenticationEntryPoint} provider,
+   * preserving the exact {@link BearerTokenAuthenticationEntryPoint} default for callers built
+   * before that hook existed (camunda-security-library#561).
+   */
   public ScopedApiSecurityChainBuilder(
       final CamundaSecurityLibraryProperties properties,
       final AuthFailureHandler authFailureHandler,
@@ -74,6 +82,26 @@ public final class ScopedApiSecurityChainBuilder {
       final CorsConfigurationSource corsSource,
       final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
       final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers) {
+    this(
+        properties,
+        authFailureHandler,
+        pathPort,
+        resourceServerCustomizers,
+        corsSource,
+        httpsRedirectCustomizers,
+        securityHeadersCustomizers,
+        null);
+  }
+
+  public ScopedApiSecurityChainBuilder(
+      final CamundaSecurityLibraryProperties properties,
+      final AuthFailureHandler authFailureHandler,
+      final SecurityPathPort pathPort,
+      final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers,
+      final CorsConfigurationSource corsSource,
+      final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
+      final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers,
+      final ObjectProvider<OidcApiAuthenticationEntryPoint> apiAuthenticationEntryPointProvider) {
     this.properties = properties;
     this.authFailureHandler = authFailureHandler;
     this.pathPort = pathPort;
@@ -81,6 +109,7 @@ public final class ScopedApiSecurityChainBuilder {
     this.corsSource = corsSource;
     this.httpsRedirectCustomizers = httpsRedirectCustomizers;
     this.securityHeadersCustomizers = securityHeadersCustomizers;
+    this.apiAuthenticationEntryPointProvider = apiAuthenticationEntryPointProvider;
   }
 
   /**
@@ -169,6 +198,14 @@ public final class ScopedApiSecurityChainBuilder {
                         .permitAll()
                         .anyRequest()
                         .authenticated())
+            // Explicitly configuring the entry point here (rather than relying on
+            // OAuth2ResourceServerConfigurer's automatic defaultAuthenticationEntryPointFor) is
+            // what makes a host-registered OidcApiAuthenticationEntryPoint bean apply to *missing*
+            // credentials, handled by ExceptionTranslationFilter — as opposed to the
+            // ObjectPostProcessor below, which only covers a *malformed/invalid* token presented to
+            // BearerTokenAuthenticationFilter directly (camunda-security-library#561).
+            .exceptionHandling(
+                eh -> eh.authenticationEntryPoint(resolveApiAuthenticationEntryPoint()))
             .oauth2ResourceServer(
                 oauth2 -> {
                   oauth2.jwt(
@@ -488,13 +525,35 @@ public final class ScopedApiSecurityChainBuilder {
     };
   }
 
-  private static ObjectPostProcessor<BearerTokenAuthenticationFilter>
+  /**
+   * Resolves any {@link OidcApiAuthenticationEntryPoint} bean present in the application context in
+   * preference to the library's default (following the same "adopter hook with a built-in fallback"
+   * pattern as {@link HttpsRedirectCustomizer}); falls back to a fresh {@link
+   * BearerTokenAuthenticationEntryPoint} when no provider was supplied at all (legacy 7-arg
+   * constructor, camunda-security-library#561) or no bean is registered, preserving the RFC 6750
+   * challenge pinned by {@code OidcApiWwwAuthenticateChallengeTest}.
+   */
+  private AuthenticationEntryPoint resolveApiAuthenticationEntryPoint() {
+    return apiAuthenticationEntryPointProvider != null
+        ? apiAuthenticationEntryPointProvider.getIfAvailable(
+            () -> new BearerTokenAuthenticationEntryPoint()::commence)
+        : new BearerTokenAuthenticationEntryPoint();
+  }
+
+  /**
+   * Covers the *malformed/invalid* bearer token case: {@link BearerTokenAuthenticationFilter}
+   * handles its own {@link org.springframework.security.core.AuthenticationException} rather than
+   * letting it reach {@code ExceptionTranslationFilter}, so this must be wired independently of
+   * {@link #resolveApiAuthenticationEntryPoint()}'s use in {@code exceptionHandling(...)} above,
+   * even though both resolve the same entry point.
+   */
+  private ObjectPostProcessor<BearerTokenAuthenticationFilter>
       postProcessBearerTokenFailureHandler() {
     return new ObjectPostProcessor<>() {
       @Override
       public <O extends BearerTokenAuthenticationFilter> O postProcess(final O filter) {
         final var defaultFailureHandler =
-            new AuthenticationEntryPointFailureHandler(new BearerTokenAuthenticationEntryPoint());
+            new AuthenticationEntryPointFailureHandler(resolveApiAuthenticationEntryPoint());
         final var loggingFailureHandler =
             new LoggingAuthenticationFailureHandler(defaultFailureHandler);
         filter.setAuthenticationFailureHandler(loggingFailureHandler);

@@ -14,6 +14,7 @@ import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.security.HttpsRedirectCustomizer;
 import io.camunda.security.spring.security.OidcResourceServerCustomizer;
 import io.camunda.security.spring.security.SecurityHeadersCustomizer;
+import io.camunda.security.spring.spi.OidcApiAuthenticationEntryPoint;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -43,7 +44,8 @@ public class ScopedApiSecurityChainBuilderConfiguration {
       final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers,
       final ObjectProvider<CorsConfigurationSource> corsSourceProvider,
       final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
-      final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers) {
+      final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers,
+      final ObjectProvider<OidcApiAuthenticationEntryPoint> apiAuthenticationEntryPointProvider) {
     return new ScopedApiSecurityChainBuilder(
         properties,
         authFailureHandler,
@@ -51,6 +53,7 @@ public class ScopedApiSecurityChainBuilderConfiguration {
         resourceServerCustomizers,
         corsSourceProvider.getIfAvailable(NoOpCorsConfigurationSource::new),
         httpsRedirectCustomizers,
-        securityHeadersCustomizers);
+        securityHeadersCustomizers,
+        apiAuthenticationEntryPointProvider);
   }
 }

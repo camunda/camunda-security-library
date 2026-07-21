@@ -37,7 +37,8 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
 @Conditional(ProtectedOidcApiCondition.class)
 @Import({
   ScopedApiSecurityChainBuilderConfiguration.class,
-  DefaultWebSessionFilterConfiguration.class
+  DefaultWebSessionFilterConfiguration.class,
+  OidcApiAuthenticationEntryPointConfiguration.class
 })
 public class OidcApiSecurityConfiguration {
 
