@@ -45,4 +45,10 @@ class PermissionTypeTest {
     // PAUSE is a control operation (e.g. pausing exporting), not a read.
     assertThat(PermissionType.PAUSE.isReadPermission()).isFalse();
   }
+
+  @Test
+  void restoreIsNotFlaggedAsReadPermission() {
+    // RESTORE is a control operation (e.g. restoring a backup), not a read.
+    assertThat(PermissionType.RESTORE.isReadPermission()).isFalse();
+  }
 }

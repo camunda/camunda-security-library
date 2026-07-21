@@ -21,6 +21,7 @@ public enum PermissionType {
   READ(true),
   READ_JOB_METRIC(true),
   READ_USAGE_METRIC(true),
+  RESTORE,
   REVEAL,
   UPDATE,
 

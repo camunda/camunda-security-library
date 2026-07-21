@@ -62,6 +62,24 @@ class ResourceTypeTest {
   }
 
   @Test
+  void backupSupportsCreateReadDeleteRestore() {
+    assertThat(ResourceType.BACKUP.getSupportedPermissionTypes())
+        .containsExactlyInAnyOrder(
+            PermissionType.CREATE,
+            PermissionType.READ,
+            PermissionType.DELETE,
+            PermissionType.RESTORE);
+  }
+
+  @Test
+  void buildResourcePermissionsMapHasBackupPermissions() {
+    final var map = ResourceType.buildResourcePermissionsMap();
+
+    assertThat(map).doesNotContainKey("UNSPECIFIED");
+    assertThat(map.get("BACKUP")).containsExactlyInAnyOrder("CREATE", "READ", "DELETE", "RESTORE");
+  }
+
+  @Test
   void exporterSupportsPause() {
     assertThat(ResourceType.EXPORTER.getSupportedPermissionTypes())
         .containsExactly(PermissionType.PAUSE);

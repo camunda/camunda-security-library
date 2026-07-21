@@ -21,6 +21,7 @@ public enum ResourceType {
   AUDIT_LOG(PermissionType.READ),
   AUTHORIZATION(
       PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE, PermissionType.DELETE),
+  BACKUP(PermissionType.CREATE, PermissionType.READ, PermissionType.DELETE, PermissionType.RESTORE),
   CLUSTER_VARIABLE(
       PermissionType.CREATE, PermissionType.DELETE, PermissionType.UPDATE, PermissionType.READ),
   COMPONENT(PermissionType.ACCESS),
