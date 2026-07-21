@@ -152,4 +152,32 @@ class ScopedWebappSecurityChainBuilderTest {
                     "", Optional.of("post-logout")))
         .withMessageContaining("must start with '/'");
   }
+
+  // redirection-endpoint path resolution (ADR-0036): configurable callback path
+
+  @Test
+  void redirectionEndpointPathDefaultsWhenRedirectUriUnset() {
+    assertThat(
+            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(null, "/sso-callback"))
+        .isEqualTo("/sso-callback");
+    assertThat(
+            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath("  ", "/sso-callback"))
+        .isEqualTo("/sso-callback");
+  }
+
+  @Test
+  void redirectionEndpointPathStripsBaseUrlPlaceholder() {
+    assertThat(
+            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
+                "{baseUrl}/api/authentication/callback", "/sso-callback"))
+        .isEqualTo("/api/authentication/callback");
+  }
+
+  @Test
+  void redirectionEndpointPathStripsSchemeHostAndQuery() {
+    assertThat(
+            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
+                "https://optimize.example.com/sso-callback?x=1", "/sso-callback"))
+        .isEqualTo("/sso-callback");
+  }
 }

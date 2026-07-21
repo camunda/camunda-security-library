@@ -154,7 +154,14 @@ public final class ScopedWebappSecurityChainBuilder {
     final var unauthenticatedMatchers = pathPort.unauthenticatedWebappPaths();
     final var loginUrl = LOGIN_URL;
     final var logoutUrl = LOGOUT_URL;
-    final var redirectUri = REDIRECT_URI;
+    // The OAuth2 redirection-endpoint path (where Spring listens for the authorization-code
+    // callback) is derived from the configured client redirect-uri, so a host can align it with the
+    // callback its IdP client already has registered (ADR-0036). Defaults to REDIRECT_URI
+    // (/sso-callback) when redirect-uri is unset, preserving existing behaviour.
+    final var authentication = properties.getAuthentication();
+    final var oidc = authentication != null ? authentication.getOidc() : null;
+    final var redirectUri =
+        resolveRedirectionEndpointPath(oidc != null ? oidc.getRedirectUri() : null, REDIRECT_URI);
 
     // Install the session filter before the security context filter.
     http.addFilterBefore(sessionRepositoryFilter, SecurityContextHolderFilter.class);
@@ -396,6 +403,40 @@ public final class ScopedWebappSecurityChainBuilder {
           throw new IllegalStateException(
               "Unsupported authentication method: " + authentication.getMethod());
     };
+  }
+
+  /**
+   * Resolves the OAuth2 redirection-endpoint path (where Spring listens for the authorization-code
+   * callback) from the configured client {@code redirect-uri}. Strips a leading {@code {baseUrl}}
+   * placeholder or a {@code scheme://host} prefix and any query/fragment, so a host can point the
+   * callback at whatever path its IdP client already has registered (ADR-0036, Optimize reuses
+   * {@code /api/authentication/callback}). Falls back to {@code defaultPath} when the redirect-uri
+   * is unset or yields no path, preserving the default {@code /sso-callback} behaviour.
+   */
+  static String resolveRedirectionEndpointPath(
+      final String configuredRedirectUri, final String defaultPath) {
+    if (configuredRedirectUri == null || configuredRedirectUri.isBlank()) {
+      return defaultPath;
+    }
+    String path = configuredRedirectUri.trim();
+    if (path.startsWith("{baseUrl}")) {
+      path = path.substring("{baseUrl}".length());
+    } else {
+      final int scheme = path.indexOf("://");
+      if (scheme >= 0) {
+        final int slash = path.indexOf('/', scheme + 3);
+        path = slash >= 0 ? path.substring(slash) : "";
+      }
+    }
+    final int query = path.indexOf('?');
+    if (query >= 0) {
+      path = path.substring(0, query);
+    }
+    final int fragment = path.indexOf('#');
+    if (fragment >= 0) {
+      path = path.substring(0, fragment);
+    }
+    return path.isBlank() ? defaultPath : path;
   }
 
   /**
