@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.oidc;
 
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.REDIRECT_URI;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -161,7 +162,7 @@ class ScopedClientRegistrationFactoryTest {
 
     // then it falls back to the cluster redirection endpoint rather than a null redirect-uri
     assertThat(registrations).hasSize(1);
-    assertThat(registrations.get(0).getRedirectUri()).isEqualTo("{baseUrl}/sso-callback");
+    assertThat(registrations.get(0).getRedirectUri()).isEqualTo("{baseUrl}" + REDIRECT_URI);
   }
 
   @Test
