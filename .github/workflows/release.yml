@@ -50,6 +50,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: write
+      issues: write
       pull-requests: write
       # Required for GitHub Models API access (used in "Generate AI release summary" step)
       # See: https://docs.github.com/en/github-models/prototyping-with-ai-models
@@ -258,6 +259,12 @@ jobs:
             --target "${RELEASE_BRANCH}" \
             --title "${RELEASE_VERSION}" \
             --generate-notes
+
+      - name: Label issues delivered in this release
+        if: ${{ !inputs.dryRun }}
+        env:
+          REPO: ${{ github.repository }}
+        run: .github/scripts/label-issues-with-release-version.sh
 
       - name: Generate AI release summary
         if: ${{ !inputs.dryRun }}
