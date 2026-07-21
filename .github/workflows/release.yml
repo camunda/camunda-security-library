@@ -259,6 +259,13 @@ jobs:
             --title "${RELEASE_VERSION}" \
             --generate-notes
 
+      - name: Label issues delivered in this release
+        if: ${{ !inputs.dryRun }}
+        env:
+          REPO: ${{ github.repository }}
+          RELEASE_BRANCH: ${{ steps.resolve.outputs.releaseBranch }}
+        run: .github/scripts/label-issues-with-release-version.sh
+
       - name: Generate AI release summary
         if: ${{ !inputs.dryRun }}
         # Uses GitHub Models API (https://docs.github.com/en/github-models) which
