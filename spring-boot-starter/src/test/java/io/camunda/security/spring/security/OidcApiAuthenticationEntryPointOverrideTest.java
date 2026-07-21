@@ -27,6 +27,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.oauth2.jwt.BadJwtException;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
 
@@ -67,6 +69,9 @@ class OidcApiAuthenticationEntryPointOverrideTest {
                   ScopedOidcInfrastructureConfiguration.class))
           .withPropertyValues(OIDC_PROPERTIES);
 
+  private final WebApplicationContextRunner runnerWithInvalidTokenDecoder =
+      runner.withUserConfiguration(FailingJwtDecoderConfig.class);
+
   @Test
   void anonymousApiRequestIsRedirectedByHostRegisteredEntryPoint() throws Exception {
     runner.run(
@@ -74,6 +79,29 @@ class OidcApiAuthenticationEntryPointOverrideTest {
           final var chain = ctx.getBean(API_CHAIN_BEAN, SecurityFilterChain.class);
           final var proxy = new FilterChainProxy(List.of(chain));
           final var request = new MockHttpServletRequest("GET", "/api/anything");
+          final var response = new MockHttpServletResponse();
+
+          proxy.doFilter(request, response, new MockFilterChain());
+
+          assertThat(response.getStatus()).isEqualTo(302);
+          assertThat(response.getRedirectedUrl()).isEqualTo("/login?returnUrl=/api/anything");
+        });
+  }
+
+  /**
+   * Covers the second failure path {@link ScopedApiSecurityChainBuilder} wires to the same
+   * host-registered entry point: a malformed/invalid bearer token handled directly by {@code
+   * BearerTokenAuthenticationFilter}'s own failure handler, as opposed to the missing-credentials
+   * path above (handled by {@code ExceptionTranslationFilter}).
+   */
+  @Test
+  void invalidBearerTokenRequestIsRedirectedByHostRegisteredEntryPoint() throws Exception {
+    runnerWithInvalidTokenDecoder.run(
+        ctx -> {
+          final var chain = ctx.getBean(API_CHAIN_BEAN, SecurityFilterChain.class);
+          final var proxy = new FilterChainProxy(List.of(chain));
+          final var request = new MockHttpServletRequest("GET", "/api/anything");
+          request.addHeader("Authorization", "Bearer invalid-token");
           final var response = new MockHttpServletResponse();
 
           proxy.doFilter(request, response, new MockFilterChain());
@@ -108,6 +136,17 @@ class OidcApiAuthenticationEntryPointOverrideTest {
     OidcApiAuthenticationEntryPoint oidcApiAuthenticationEntryPoint() {
       return (request, response, authException) ->
           response.sendRedirect("/login?returnUrl=" + request.getRequestURI());
+    }
+  }
+
+  @Configuration
+  static class FailingJwtDecoderConfig {
+
+    @Bean
+    JwtDecoder jwtDecoder() {
+      return (token) -> {
+        throw new BadJwtException("stub decoder always rejects: " + token);
+      };
     }
   }
 }
