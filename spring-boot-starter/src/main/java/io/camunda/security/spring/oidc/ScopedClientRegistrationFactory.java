@@ -9,6 +9,7 @@ package io.camunda.security.spring.oidc;
 
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.camunda.security.spring.security.CamundaSecurityFilterChainConstants;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -122,10 +123,10 @@ public final class ScopedClientRegistrationFactory {
    * is the map key in the multi-provider shape and {@link OidcConfiguration#getRegistrationId()} in
    * the legacy flat shape.
    *
-   * <p>When {@code scopedRedirectUriPath} is non-null and non-blank, the redirect-uri is set to
-   * {@code {baseUrl}<scopedRedirectUriPath>} so it matches the prefixed redirection endpoint of the
-   * scoped webapp chain. Spring expands the {@code {baseUrl}} placeholder to the application's base
-   * URL — {@code scheme://host:port} plus the servlet context path, if any — at request time.
+   * <p>The redirect-uri is resolved by {@link #resolveRedirectUri}: a scoped path wins, then an
+   * explicitly-configured {@code redirect-uri}, then the {@code {baseUrl}/sso-callback} default.
+   * Spring expands the {@code {baseUrl}} placeholder to the application's base URL — {@code
+   * scheme://host:port} plus the servlet context path, if any — at request time.
    */
   private static ClientRegistration buildClientRegistration(
       final String registrationId,
@@ -138,10 +139,7 @@ public final class ScopedClientRegistrationFactory {
               + " or use a non-blank key under"
               + " camunda.security.authentication.providers.oidc.<id>.*");
     }
-    final var redirectUri =
-        StringUtils.hasText(scopedRedirectUriPath)
-            ? "{baseUrl}" + scopedRedirectUriPath
-            : oidc.getRedirectUri();
+    final var redirectUri = resolveRedirectUri(oidc, scopedRedirectUriPath);
     final ClientRegistration.Builder builder =
         clientRegistrationBuilder(registrationId, oidc)
             .registrationId(registrationId)
@@ -174,6 +172,31 @@ public final class ScopedClientRegistrationFactory {
     return ClientRegistration.withClientRegistration(built)
         .providerConfigurationMetadata(merged)
         .build();
+  }
+
+  /**
+   * Resolves the {@code redirect_uri} for a registration, in precedence order:
+   *
+   * <ol>
+   *   <li>a scoped path (per-scope chain) as {@code {baseUrl}<scopedRedirectUriPath>}, so the
+   *       callback matches the prefixed redirection endpoint of that chain;
+   *   <li>an explicitly-configured {@code redirect-uri} on the {@link OidcConfiguration};
+   *   <li>the {@code {baseUrl}/sso-callback} default, matching the redirection endpoint registered
+   *       under {@link CamundaSecurityFilterChainConstants#REDIRECT_URI}.
+   * </ol>
+   *
+   * <p>The default lets a provider that omits {@code redirect-uri} still complete the login flow,
+   * matching the behaviour of OC's former {@code ClientRegistrationFactory}.
+   */
+  private static String resolveRedirectUri(
+      final OidcConfiguration oidc, final String scopedRedirectUriPath) {
+    if (StringUtils.hasText(scopedRedirectUriPath)) {
+      return "{baseUrl}" + scopedRedirectUriPath;
+    }
+    if (StringUtils.hasText(oidc.getRedirectUri())) {
+      return oidc.getRedirectUri();
+    }
+    return "{baseUrl}" + CamundaSecurityFilterChainConstants.REDIRECT_URI;
   }
 
   /**

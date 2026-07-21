@@ -146,6 +146,46 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
+  void shouldDefaultRedirectUriToSsoCallbackWhenUnsetAndNoScopedPath() {
+    // given a provider that configures no redirect-uri
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("my-client")
+            .authorizationUri("https://idp.example.com/auth")
+            .tokenUri("https://idp.example.com/token")
+            .jwkSetUri("https://idp.example.com/jwks")
+            .build();
+
+    // when
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    // then it falls back to the cluster redirection endpoint rather than a null redirect-uri
+    assertThat(registrations).hasSize(1);
+    assertThat(registrations.get(0).getRedirectUri()).isEqualTo("{baseUrl}/sso-callback");
+  }
+
+  @Test
+  void shouldPreferScopedPathOverDefaultWhenRedirectUriUnset() {
+    // given a provider that configures no redirect-uri, built for a scoped chain
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("my-client")
+            .authorizationUri("https://idp.example.com/auth")
+            .tokenUri("https://idp.example.com/token")
+            .jwkSetUri("https://idp.example.com/jwks")
+            .build();
+
+    // when
+    final var registrations =
+        factory.createFromProviderMap(Map.of("myid", oidc), "/physical-tenants/t1/sso-callback");
+
+    // then the scoped path wins over the default
+    assertThat(registrations).hasSize(1);
+    assertThat(registrations.get(0).getRedirectUri())
+        .isEqualTo("{baseUrl}/physical-tenants/t1/sso-callback");
+  }
+
+  @Test
   void shouldCarryAudiencesInProviderConfigurationMetadata() {
     // given
     final var oidc =
