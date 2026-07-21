@@ -45,8 +45,8 @@ notes_body=$(gh api "repos/${REPO}/releases/generate-notes" \
   "${generate_notes_args[@]}" \
   --jq '.body' || true)
 
-# Extract PR numbers from the generated notes markdown (format: #123)
-pr_numbers=$(echo "${notes_body}" | grep -oP '#\K[0-9]+' | sort -un || true)
+# Extract PR numbers from the generated notes markdown (format: /pull/123)
+pr_numbers=$(echo "${notes_body}" | grep -oP '/pull/\K[0-9]+' | sort -un || true)
 
 if [[ -z "${pr_numbers}" ]]; then
   echo "No merged PRs found in range — nothing to label."
