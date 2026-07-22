@@ -99,7 +99,13 @@ Concretely:
   it to `/api/authentication/callback` (its historical callback), so the Identity-provisioned IdP
   client, which already registers that path, is reused and operators do not have to change their
   Keycloak/Identity client. Without this, CSL's fixed `/sso-callback` would force every operator to
-  add a new valid redirect URI to their IdP client.
+  add a new valid redirect URI to their IdP client. On CCSaaS the callback is different: Auth0
+  cannot wildcard callback paths, so a single root `/sso-callback?uuid=<clusterId>` is registered
+  and the cloud ingress rewrites it to `/<clusterId>/sso-callback`. Optimize runs under
+  `server.servlet.context-path=/<clusterId>` (derived from the clusterId) so it serves the webapp
+  and the rewritten callback under that prefix, and the redirect-uri is built from the base host
+  (not `{baseUrl}`, which would embed the context path) plus the `?uuid` parameter — reproducing the
+  legacy value so the pre-registered Auth0 callback stays unchanged.
 - Optimize deletes its custom security stack: `AbstractSecurityConfigurerAdapter` and its
   subclasses, `SessionService`, `AuthCookieService`, `TerminatedSessionService`, the cookie
   filters, and the Identity SDK login code.
@@ -127,8 +133,12 @@ supported until 8.11 and are removed afterwards. The keys fall into three groups
   splitting), the `same-site` flag, `api.accessToken` (static shared token), and
   `X-XSS-Protection` lose meaning under server-side sessions and the CSL chains. The bridge ignores
   them and logs a deprecation warning; it does not fail startup.
-- **SaaS-managed / no analog** — some CCSaaS Auth0 keys (`m2mClient.*`, `users.cloud.accountsUrl`)
-  have no CSL equivalent and remain platform concerns.
+- **CCSaaS / Auth0** — the cloud config is bridged too (verified against SaaS): client id/secret,
+  issuer (from the Auth0 domain), organization and cluster (`camunda.security.saas.*` plus
+  `...oidc.organization-id`), the public-API audience, and the cloud Accounts API audience (sent as
+  the Auth0 `audience` authorize-request parameter so the login token is accepted by the Accounts
+  API). The clusterId also derives the servlet context path. Only `m2mClient.*` (the notification
+  M2M client) and `users.cloud.accountsUrl` have no CSL analog and remain platform concerns.
 
 This preserves the config surface, not the behavior: even with old config honored, logout, refresh,
 and cookie handling change because sessions are now server-side. The full key-by-key mapping table
@@ -164,7 +174,11 @@ lives with the spike.
 - CSL gains almost no new code. The stateful chain, the bearer API chain, and the
   unprotected chain already exist. The only CSL changes are making the deny chain suppressible,
   giving the API and webapp chains distinct orders (API first), and making the OIDC callback path
-  configurable.
+  configurable. Notably, the full CCSaaS integration (organization/cluster validation, the SaaS
+  Accounts audience, user-id migration, reading the IdP access token) needed **no further CSL
+  changes** — it used existing CSL extension points (host-supplied token validators via
+  `TokenValidatorFactory`, the `OidcUserService` hook, `authorize-request.additional-parameters`,
+  and the authorized-client repository).
 - No throwaway work. Nothing is built to be deleted later, which the phased stateless
   approach would have required.
 
@@ -191,13 +205,26 @@ lives with the spike.
   interceptor (token from the response header into `sessionStorage`, echoed on POST/PUT/PATCH/DELETE).
   Public `/external` share endpoints stay exempt via `unprotectedPaths()`. This replaces Optimize's
   `SameSite`-only protection.
-- Adoption requires host-side integration beyond configuration, surfaced during the spike. Two
-  concrete cases: (1) Optimize's SPA-routing servlet filter runs ahead of the security chain and
-  must let the CSL auth endpoints (`/oauth2/**`, the callback, `/login`, `/logout`) pass through
-  instead of rewriting them to the SPA; (2) removing the custom session service means the
-  application's "current user" resolution must read from the CSL authentication (the Spring
-  `SecurityContext` / `CamundaAuthentication`) instead of the old cookie or bearer token, at every
-  call site that resolves the request user.
+- Adoption requires meaningful host-side integration beyond configuration — the spike showed this
+  is the bulk of the work, especially for CCSaaS. Concrete cases surfaced:
+  1. Optimize's SPA-routing servlet filter runs ahead of the security chain and must let the CSL
+     auth endpoints (`/oauth2/**`, the callback, `/login`, `/logout`) pass through instead of
+     rewriting them to the SPA.
+  2. Removing the custom session service means "current user" resolution must read from the CSL
+     authentication (the Spring `SecurityContext`, an `OAuth2AuthenticationToken`) at every call
+     site that resolves the request user.
+  3. Wherever host code needs the IdP access token (CCSM Identity calls, the CCSaaS Accounts API),
+     it must read it from the OIDC session's authorized-client repository instead of the old
+     service-token cookie or a bearer token.
+  4. CCSaaS access control (organization membership + role, cluster-id claim) is supplied by the
+     host: an `OidcUserService` gate for the interactive login plus org/cluster validators plugged
+     into CSL's `TokenValidatorFactory`.
+  5. SaaS user-id migration moves to a Spring `InteractiveAuthenticationSuccessEvent` listener.
+  6. Any legacy host bean that publishes a `ClientRegistrationRepository` /
+     `OAuth2AuthorizedClientService` (e.g. the CCSaaS Auth0 config) must be gated off under CSL, or
+     CSL adopts it via `@ConditionalOnMissingBean` and the host's `camunda.security.*` config is
+     ignored.
+  The full running log of these is in the spike's `SPIKE-NOTES.md`.
 
 ## Alternatives Considered
 
