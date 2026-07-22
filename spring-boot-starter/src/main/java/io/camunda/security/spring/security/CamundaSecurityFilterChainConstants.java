@@ -38,7 +38,7 @@ public final class CamundaSecurityFilterChainConstants {
    * chain ({@link #ORDER_API} &lt; {@link #ORDER_WEBAPP}). This only matters when the two matchers
    * overlap — for hosts with disjoint API and webapp matchers (OC, Hub) the relative order has no
    * observable effect. A host whose webapp matcher is the catch-all {@code /**} (Optimize,
-   * ADR-0036) relies on API-first so the API paths are claimed before the catch-all.
+   * ADR-0038) relies on API-first so the API paths are claimed before the catch-all.
    */
   public static final int ORDER_API = 1;
 
