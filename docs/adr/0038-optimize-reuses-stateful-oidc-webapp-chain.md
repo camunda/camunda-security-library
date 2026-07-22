@@ -61,8 +61,11 @@ current model?
 
 ## Decision
 
-Optimize adopts CSL's existing stateful OIDC webapp chain. The dedicated JWT-cookie chain
-and its SPIs are retired and not merged.
+Optimize adopts CSL's existing stateful OIDC webapp chain. The dedicated JWT-cookie chain is
+retired. Its artifacts merged earlier via PR #492 — the `JwtCookieAuthenticationFilter` and the
+`JwtCookieTokenPort` SPI — are no longer wired into any active chain and will be removed rather
+than maintained. The shared OIDC entry-point SPI `OidcAuthenticationEntryPoint` is not part of the
+JWT-cookie stack and is kept: both the stateful webapp chain and Optimize use it.
 
 Concretely:
 
