@@ -147,6 +147,25 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
+  void shouldRejectConfiguredRedirectUriWithoutBaseUrlOrSchemePrefix() {
+    // given a bare-path redirect-uri (no {baseUrl} template, no scheme://host)
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("my-client")
+            .authorizationUri("https://idp.example.com/auth")
+            .tokenUri("https://idp.example.com/token")
+            .jwkSetUri("https://idp.example.com/jwks")
+            .redirectUri("/api/authentication/callback")
+            .build();
+
+    // when / then: the redirect_uri sent to the IdP would be non-absolute and break login
+    assertThatThrownBy(() -> factory.createFromProviderMap(Map.of("myid", oidc)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("{baseUrl}")
+        .hasMessageContaining("/api/authentication/callback");
+  }
+
+  @Test
   void shouldDefaultRedirectUriToSsoCallbackWhenUnsetAndNoScopedPath() {
     // given a provider that configures no redirect-uri
     final var oidc =
