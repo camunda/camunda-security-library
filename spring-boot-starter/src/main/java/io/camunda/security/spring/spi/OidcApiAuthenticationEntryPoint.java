@@ -7,12 +7,12 @@
  */
 package io.camunda.security.spring.spi;
 
-import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
 import org.springframework.security.web.AuthenticationEntryPoint;
 
 /**
  * Handles authentication failures (missing or invalid bearer token) on the OIDC API chain. The
- * library-supplied default delegates to Spring's {@link BearerTokenAuthenticationEntryPoint},
+ * library-supplied default delegates to Spring's {@link
+ * org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint},
  * preserving the RFC 6750 {@code WWW-Authenticate: Bearer} challenge; hosts override this bean to
  * apply different behavior for some or all requests on the chain (e.g. redirecting browser
  * navigations to a login page while still returning a bearer challenge for genuine API calls).
