@@ -142,6 +142,15 @@ public class OidcConfiguration {
     this.grantType = grantType;
   }
 
+  /**
+   * The OAuth2 client {@code redirect_uri} sent to the IdP. When set, it must start with the {@code
+   * {baseUrl}} template placeholder (Spring expands it to the application's base URL) or be an
+   * absolute {@code scheme://host} URL — the {@code redirect_uri} sent to the IdP has to be
+   * absolute. A bare path (e.g. {@code /api/authentication/callback}) is rejected at startup: the
+   * local redirection-endpoint filter would derive a working path from it, but the IdP would
+   * receive a non-absolute {@code redirect_uri} and reject the login. Leave unset to use the {@code
+   * {baseUrl}/sso-callback} default.
+   */
   public String getRedirectUri() {
     return redirectUri;
   }

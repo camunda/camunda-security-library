@@ -180,13 +180,19 @@ public final class ScopedClientRegistrationFactory {
    * <ol>
    *   <li>a scoped path (per-scope chain) as {@code {baseUrl}<scopedRedirectUriPath>}, so the
    *       callback matches the prefixed redirection endpoint of that chain;
-   *   <li>an explicitly-configured {@code redirect-uri} on the {@link OidcConfiguration};
+   *   <li>an explicitly-configured {@code redirect-uri} on the {@link OidcConfiguration}, which
+   *       must start with {@code {baseUrl}} or be an absolute {@code scheme://host} URL (a bare
+   *       path is rejected — see {@link OidcConfiguration#getRedirectUri()});
    *   <li>the {@code {baseUrl}/sso-callback} default, matching the redirection endpoint registered
    *       under {@link CamundaSecurityFilterChainConstants#REDIRECT_URI}.
    * </ol>
    *
    * <p>The default lets a provider that omits {@code redirect-uri} still complete the login flow,
    * matching the behaviour of OC's former {@code ClientRegistrationFactory}.
+   *
+   * @throws IllegalArgumentException if the configured {@code redirect-uri} is a bare path (no
+   *     {@code {baseUrl}} template and no {@code scheme://host}); it would derive a working local
+   *     filter path but send a non-absolute {@code redirect_uri} to the IdP, breaking login.
    */
   private static String resolveRedirectUri(
       final OidcConfiguration oidc, final String scopedRedirectUriPath) {
@@ -194,7 +200,15 @@ public final class ScopedClientRegistrationFactory {
       return "{baseUrl}" + scopedRedirectUriPath;
     }
     if (StringUtils.hasText(oidc.getRedirectUri())) {
-      return oidc.getRedirectUri();
+      final String configured = oidc.getRedirectUri();
+      if (!configured.startsWith("{baseUrl}") && !configured.contains("://")) {
+        throw new IllegalArgumentException(
+            "camunda.security.authentication.oidc.redirect-uri must start with '{baseUrl}' or be an"
+                + " absolute 'scheme://host' URL so the redirect_uri sent to the IdP is absolute,"
+                + " but was: "
+                + configured);
+      }
+      return configured;
     }
     return "{baseUrl}" + CamundaSecurityFilterChainConstants.REDIRECT_URI;
   }
