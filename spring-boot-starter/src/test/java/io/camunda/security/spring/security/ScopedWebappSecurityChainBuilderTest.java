@@ -182,6 +182,14 @@ class ScopedWebappSecurityChainBuilderTest {
   }
 
   @Test
+  void redirectionEndpointPathRewritesRegistrationIdPlaceholderToWildcard() {
+    assertThat(
+            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
+                "{baseUrl}/login/oauth2/code/{registrationId}", "/sso-callback"))
+        .isEqualTo("/login/oauth2/code/*");
+  }
+
+  @Test
   void redirectionEndpointPathRejectsResolvedPathWithoutLeadingSlash() {
     assertThatIllegalArgumentException()
         .isThrownBy(
