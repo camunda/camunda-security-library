@@ -31,8 +31,8 @@ cookie. To make login and API calls work, Optimize carries a lot of custom code:
 - for the self-managed case (CCSM), a custom Camunda Identity SDK login flow instead of
   Spring's `oauth2Login`.
 
-A first attempt (issue #166, PR #492) added a dedicated third webapp chain to CSL,
-`OidcJwtCookieWebappSecurityConfiguration`, together with a `JwtCookieAuthenticationFilter`,
+A first attempt (issue #166, PR #492) proposed a dedicated third webapp chain in CSL,
+`OidcJwtCookieWebappSecurityConfiguration`, building on a `JwtCookieAuthenticationFilter`,
 a `JwtCookieTokenPort` SPI, and an `OidcAuthenticationEntryPoint` SPI, so that CSL could
 serve Optimize's stateless cookie model. During review the direction was questioned: this
 mostly moves Optimize's existing code and its debt into CSL instead of letting Optimize
@@ -61,11 +61,14 @@ current model?
 
 ## Decision
 
-Optimize adopts CSL's existing stateful OIDC webapp chain. The dedicated JWT-cookie chain is
-retired. Its artifacts merged earlier via PR #492 — the `JwtCookieAuthenticationFilter` and the
-`JwtCookieTokenPort` SPI — are no longer wired into any active chain and will be removed rather
-than maintained. The shared OIDC entry-point SPI `OidcAuthenticationEntryPoint` is not part of the
-JWT-cookie stack and is kept: both the stateful webapp chain and Optimize use it.
+Optimize adopts CSL's existing stateful OIDC webapp chain. The dedicated JWT-cookie webapp chain
+is not pursued: PR #492, which proposed the `OidcJwtCookieWebappSecurityConfiguration` chain, is
+closed without merging, so that chain class never lands. Two earlier building blocks did land on
+`main` — the `JwtCookieAuthenticationFilter` (#444) and the `JwtCookieTokenPort` SPI (#431) — but
+they are already orphaned (no chain wires them); a separate cleanup PR removes them. The follow-up
+is therefore "close #492 unmerged plus a cleanup PR", not "revert a merged #492". The shared OIDC
+entry-point SPI `OidcAuthenticationEntryPoint` is not part of the JWT-cookie stack and is kept:
+both the stateful webapp chain and Optimize use it.
 
 Concretely:
 
