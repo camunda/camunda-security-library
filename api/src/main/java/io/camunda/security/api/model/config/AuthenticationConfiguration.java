@@ -28,6 +28,9 @@ public class AuthenticationConfiguration {
   /** Default for {@code camunda.security.authentication.webapp-enabled}. */
   public static final boolean DEFAULT_WEBAPP_ENABLED = true;
 
+  /** Default for {@code camunda.security.authentication.catch-all-unhandled-paths-enabled}. */
+  public static final boolean DEFAULT_CATCH_ALL_UNHANDLED_PATHS_ENABLED = true;
+
   /** Authentication method. Either {@code basic} or {@code oidc}. Defaults to {@code basic}. */
   private AuthenticationMethod method = DEFAULT_METHOD;
 
@@ -48,6 +51,15 @@ public class AuthenticationConfiguration {
    * shape originally proposed in camunda-security-library#548.
    */
   private boolean webappEnabled = DEFAULT_WEBAPP_ENABLED;
+
+  /**
+   * When {@code true} (default), the always-on catch-all deny chain ({@code
+   * protectedUnhandledPathsSecurityFilterChain}) is registered so any path not claimed by another
+   * chain is denied. A host whose own webapp chain already uses a {@code /**} catch-all matcher
+   * (e.g. Optimize) sets this to {@code false} so the two {@code /**} chains do not collide at
+   * startup. Disabling it without another catch-all chain leaves unhandled paths unsecured.
+   */
+  private boolean catchAllUnhandledPathsEnabled = DEFAULT_CATCH_ALL_UNHANDLED_PATHS_ENABLED;
 
   /**
    * Authentication refresh interval in ISO-8601 duration format (for example {@code PT30S}).
@@ -84,6 +96,14 @@ public class AuthenticationConfiguration {
 
   public void setWebappEnabled(final boolean webappEnabled) {
     this.webappEnabled = webappEnabled;
+  }
+
+  public boolean isCatchAllUnhandledPathsEnabled() {
+    return catchAllUnhandledPathsEnabled;
+  }
+
+  public void setCatchAllUnhandledPathsEnabled(final boolean catchAllUnhandledPathsEnabled) {
+    this.catchAllUnhandledPathsEnabled = catchAllUnhandledPathsEnabled;
   }
 
   public String getAuthenticationRefreshInterval() {

@@ -20,8 +20,9 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * Verifies that the catch-all deny chain can be suppressed via {@code
- * camunda.security.unhandled-paths-chain.enabled=false}, which a host with its own {@code /**}
- * webapp chain (Optimize, ADR-0036) needs so the two catch-all matchers do not collide.
+ * camunda.security.authentication.catch-all-unhandled-paths-enabled=false}, which a host with its
+ * own {@code /**} webapp chain (Optimize, ADR-0036) needs so the two catch-all matchers do not
+ * collide.
  */
 class BaseSecurityConfigurationUnhandledChainToggleTest {
 
@@ -40,7 +41,8 @@ class BaseSecurityConfigurationUnhandledChainToggleTest {
   @Test
   void denyChainSuppressedWhenDisabled() {
     runner
-        .withPropertyValues("camunda.security.unhandled-paths-chain.enabled=false")
+        .withPropertyValues(
+            "camunda.security.authentication.catch-all-unhandled-paths-enabled=false")
         .run(ctx -> assertThat(ctx).doesNotHaveBean("protectedUnhandledPathsSecurityFilterChain"));
   }
 
