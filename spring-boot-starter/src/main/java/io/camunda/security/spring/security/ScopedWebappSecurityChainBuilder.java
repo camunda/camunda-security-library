@@ -413,6 +413,11 @@ public final class ScopedWebappSecurityChainBuilder {
    * {@code /api/authentication/callback}). Falls back to {@code defaultPath} when the redirect-uri
    * is unset or yields no path, preserving the default {@code /sso-callback} behaviour.
    *
+   * <p>A {@code {registrationId}} placeholder (as in Spring's default template {@code
+   * {baseUrl}/login/oauth2/code/{registrationId}}) is rewritten to an Ant {@code *} wildcard, since
+   * {@code redirectionEndpoint().baseUri(...)} matches literally and would otherwise never match a
+   * concrete callback such as {@code /login/oauth2/code/oidc}.
+   *
    * @throws IllegalArgumentException if the redirect-uri yields a non-blank path that does not
    *     start with {@code "/"} (e.g. {@code "{baseUrl}api/callback"}); Spring Security's {@code
    *     redirectionEndpoint().baseUri(...)} requires a leading slash, so we reject early with a
@@ -441,6 +446,9 @@ public final class ScopedWebappSecurityChainBuilder {
     if (fragment >= 0) {
       path = path.substring(0, fragment);
     }
+    // Spring's default template ends in "{registrationId}"; the redirection-endpoint matcher must
+    // use an Ant wildcard for that segment so it matches the resolved id (e.g. ".../code/oidc").
+    path = path.replace("{registrationId}", "*");
     if (path.isBlank()) {
       return defaultPath;
     }
