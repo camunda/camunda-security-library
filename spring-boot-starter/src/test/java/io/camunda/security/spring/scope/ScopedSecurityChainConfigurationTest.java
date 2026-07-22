@@ -224,7 +224,8 @@ class ScopedSecurityChainConfigurationTest {
   // 5. Ordering: contributed chain sorts before the catch-all deny chain
   @Test
   void contributedChainOrderedBeforeCatchAll() {
-    // Contributed chains reuse ORDER_API and must sort before the ORDER_UNHANDLED catch-all.
+    // The scoped API chain uses ORDER_API (the scoped webapp chain uses ORDER_WEBAPP); both must
+    // sort before the ORDER_UNHANDLED catch-all. contributedChain(...) resolves the API chain here.
     basicRunner()
         .withUserConfiguration(SingleBasicDescriptorProvider.class)
         .run(

@@ -8,6 +8,7 @@
 package io.camunda.security.spring.scope;
 
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_API;
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
 import io.camunda.security.api.context.CamundaSecurityScopeProvider;
@@ -298,7 +299,9 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
               sessionFilter,
               sessionCookieName(descriptor.basePath()),
               csrfCookieName(descriptor.basePath()));
-      return new OrderedSecurityFilterChainWrapper(chain, ORDER_API);
+      // Webapp chain sorts after the scoped API chain (ORDER_API < ORDER_WEBAPP) so a scoped
+      // catch-all webapp matcher cannot claim API requests ahead of the scoped API chain.
+      return new OrderedSecurityFilterChainWrapper(chain, ORDER_WEBAPP);
     } catch (final IllegalStateException ex) {
       throw ex;
     } catch (final Exception ex) {

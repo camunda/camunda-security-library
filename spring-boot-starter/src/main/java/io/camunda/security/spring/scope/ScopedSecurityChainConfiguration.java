@@ -32,13 +32,16 @@ import org.springframework.security.web.SecurityFilterChain;
  * <p>When no {@link CamundaSecurityScopeProvider} bean is present, this configuration registers
  * nothing — Hub and single-tenant OC remain byte-for-byte unchanged.
  *
- * <p>Each contributed chain is wrapped in an {@link OrderedSecurityFilterChainWrapper} that returns
- * {@link io.camunda.security.spring.security.CamundaSecurityFilterChainConstants#ORDER_API} from
- * {@link org.springframework.core.Ordered#getOrder()}. The wrapper is required because {@code
+ * <p>Each contributed chain is wrapped in an {@link OrderedSecurityFilterChainWrapper}: the scoped
+ * API chain uses {@link
+ * io.camunda.security.spring.security.CamundaSecurityFilterChainConstants#ORDER_API} and the scoped
+ * webapp chain uses {@link
+ * io.camunda.security.spring.security.CamundaSecurityFilterChainConstants#ORDER_WEBAPP}, mirroring
+ * the primary chains' API-before-webapp split. The wrapper is required because {@code
  * DefaultSecurityFilterChain} is not {@link org.springframework.core.Ordered}; without an explicit
- * order a chain sorts last (behind the catch-all deny chain). Contributed chains reuse the primary
- * API order rather than a dedicated band: their base paths are disjoint from CSL's own matchers, so
- * the only requirement is that they sort before the catch-all deny chain.
+ * order a chain sorts last (behind the catch-all deny chain). API-before-webapp ensures that, if a
+ * scope's webapp matcher overlaps its API matcher (e.g. a catch-all webapp), the scoped API chain
+ * still claims API requests first; and both sort before the catch-all deny chain.
  *
  * <p>Imports the infrastructure it consumes — {@link ScopedApiSecurityChainBuilderConfiguration}
  * (the {@link ScopedApiSecurityChainBuilder}), {@link
