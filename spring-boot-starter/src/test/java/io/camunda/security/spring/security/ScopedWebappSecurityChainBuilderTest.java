@@ -153,7 +153,7 @@ class ScopedWebappSecurityChainBuilderTest {
         .withMessageContaining("must start with '/'");
   }
 
-  // redirection-endpoint path resolution (ADR-0036): configurable callback path
+  // redirection-endpoint path resolution (ADR-0038): configurable callback path
 
   @Test
   void redirectionEndpointPathDefaultsWhenRedirectUriUnset() {
