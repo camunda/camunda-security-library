@@ -191,10 +191,11 @@ lives with the spike.
   `oauth2Login`), the session model (stateless cookie to server session), and logout
   semantics at once, in one release. There is no incremental fallback.
 - Users must log in again once after the upgrade, because the old cookie is no longer valid.
-- The webapp chain now depends on the Elasticsearch session store being reachable. This is
-  new operational coupling, although on a store Optimize already runs.
-- Read latency of the session store is on the request path. OC already proves this works,
-  but it must be confirmed under Optimize's request profile.
+- Read latency of the session store is on the auth request path. This is not a new operational
+  dependency: the store lives in the same Elasticsearch backend Optimize already requires to run,
+  and today's auth already reads that backend on every request (the terminated-session check that
+  the server-side session read now replaces). OC already proves the session-store read works, but
+  its latency must still be confirmed under Optimize's request profile.
 - Optimize must implement its own `SessionStorePort` adapter and create a new session index;
   OC's adapter cannot be reused across the module boundary. The old auth-storage index (the
   terminated-session store) has to be removed as part of the upgrade.
