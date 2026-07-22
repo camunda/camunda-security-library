@@ -528,10 +528,12 @@ public final class ScopedApiSecurityChainBuilder {
   /**
    * Resolves any {@link OidcApiAuthenticationEntryPoint} bean present in the application context in
    * preference to the library's default (following the same "adopter hook with a built-in fallback"
-   * pattern as {@link HttpsRedirectCustomizer}); falls back to a fresh {@link
-   * BearerTokenAuthenticationEntryPoint} when no provider was supplied at all (legacy 7-arg
-   * constructor, camunda-security-library#561) or no bean is registered, preserving the RFC 6750
-   * challenge pinned by {@code OidcApiWwwAuthenticateChallengeTest}.
+   * pattern as {@link HttpsRedirectCustomizer}). When no provider was supplied at all (legacy 7-arg
+   * constructor, camunda-security-library#561) the fallback is a fresh {@link
+   * BearerTokenAuthenticationEntryPoint} directly; when a provider was supplied but no bean is
+   * registered, the fallback is an {@link OidcApiAuthenticationEntryPoint} lambda delegating to
+   * {@link BearerTokenAuthenticationEntryPoint#commence}. Both preserve the RFC 6750 challenge
+   * pinned by {@code OidcApiWwwAuthenticateChallengeTest}.
    */
   private AuthenticationEntryPoint resolveApiAuthenticationEntryPoint() {
     return apiAuthenticationEntryPointProvider != null

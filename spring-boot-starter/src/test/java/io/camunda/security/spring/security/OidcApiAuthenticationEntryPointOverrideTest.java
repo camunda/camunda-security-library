@@ -144,8 +144,8 @@ class OidcApiAuthenticationEntryPointOverrideTest {
 
     @Bean
     JwtDecoder jwtDecoder() {
-      return (token) -> {
-        throw new BadJwtException("stub decoder always rejects: " + token);
+      return token -> {
+        throw new BadJwtException("stub decoder always rejects the presented token");
       };
     }
   }
