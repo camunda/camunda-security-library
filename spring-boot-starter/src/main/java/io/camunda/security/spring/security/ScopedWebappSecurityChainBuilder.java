@@ -412,6 +412,11 @@ public final class ScopedWebappSecurityChainBuilder {
    * callback at whatever path its IdP client already has registered (ADR-0036, Optimize reuses
    * {@code /api/authentication/callback}). Falls back to {@code defaultPath} when the redirect-uri
    * is unset or yields no path, preserving the default {@code /sso-callback} behaviour.
+   *
+   * @throws IllegalArgumentException if the redirect-uri yields a non-blank path that does not
+   *     start with {@code "/"} (e.g. {@code "{baseUrl}api/callback"}); Spring Security's {@code
+   *     redirectionEndpoint().baseUri(...)} requires a leading slash, so we reject early with a
+   *     clear message instead of failing obscurely at request time.
    */
   static String resolveRedirectionEndpointPath(
       final String configuredRedirectUri, final String defaultPath) {
@@ -436,7 +441,17 @@ public final class ScopedWebappSecurityChainBuilder {
     if (fragment >= 0) {
       path = path.substring(0, fragment);
     }
-    return path.isBlank() ? defaultPath : path;
+    if (path.isBlank()) {
+      return defaultPath;
+    }
+    if (!path.startsWith("/")) {
+      throw new IllegalArgumentException(
+          "OIDC redirect-uri must resolve to a path starting with '/', but '"
+              + configuredRedirectUri
+              + "' resolved to: "
+              + path);
+    }
+    return path;
   }
 
   /**

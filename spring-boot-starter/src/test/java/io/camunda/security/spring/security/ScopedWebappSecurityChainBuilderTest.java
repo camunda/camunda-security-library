@@ -180,4 +180,15 @@ class ScopedWebappSecurityChainBuilderTest {
                 "https://optimize.example.com/sso-callback?x=1", "/sso-callback"))
         .isEqualTo("/sso-callback");
   }
+
+  @Test
+  void redirectionEndpointPathRejectsResolvedPathWithoutLeadingSlash() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(
+            () ->
+                ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
+                    "{baseUrl}api/callback", "/sso-callback"))
+        .withMessageContaining("must resolve to a path starting with '/'")
+        .withMessageContaining("api/callback");
+  }
 }
