@@ -468,6 +468,14 @@ public final class ScopedWebappSecurityChainBuilder {
     // use an Ant wildcard for that segment so it matches the resolved id (e.g. ".../code/oidc").
     path = path.replace("{registrationId}", "*");
     if (path.isBlank()) {
+      LOG.warn(
+          "OIDC redirect-uri '{}' carries no callback path beyond the servlet context-path '{}'; "
+              + "falling back to the default redirection-endpoint path '{}'. The OIDC login "
+              + "callback will be served at that default — set a redirect-uri with an explicit "
+              + "callback segment to override it.",
+          configuredRedirectUri,
+          contextPath,
+          defaultPath);
       return defaultPath;
     }
     if (!path.startsWith("/")) {
@@ -477,6 +485,14 @@ public final class ScopedWebappSecurityChainBuilder {
               + "' resolved to: "
               + path);
     }
+    // Log the resolved matcher path so the callback the chain listens on is reconstructable from
+    // logs alone (this resolution silently broke logins for a full alpha cycle — see GH-569).
+    LOG.debug(
+        "Resolved OIDC redirection-endpoint path '{}' from redirect-uri '{}' (servlet context-path"
+            + " '{}')",
+        path,
+        configuredRedirectUri,
+        contextPath);
     return path;
   }
 
