@@ -35,7 +35,8 @@ class CamundaAuthenticationTest {
     assertThatThrownBy(
             () ->
                 new CamundaAuthentication(
-                    "foo", "bar", false, List.of(), List.of(), List.of(), List.of(), Map.of()))
+                    "foo", "bar", false, null, List.of(), List.of(), List.of(), List.of(),
+                    Map.of()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Only one of username or clientId may be set");
   }
@@ -43,7 +44,7 @@ class CamundaAuthenticationTest {
   @Test
   void shouldNormalizeNullCollectionsToImmutableEmptyCollections() {
     final var authentication =
-        new CamundaAuthentication("demo-user", null, false, null, null, null, null, null);
+        new CamundaAuthentication("demo-user", null, false, null, null, null, null, null, null);
 
     assertThat(authentication.authenticatedGroupIds()).isEmpty();
     assertThat(authentication.authenticatedRoleIds()).isEmpty();
@@ -68,7 +69,7 @@ class CamundaAuthenticationTest {
 
     final var authentication =
         new CamundaAuthentication(
-            "demo-user", null, false, groupIds, roleIds, tenantIds, mappingRuleIds, claims);
+            "demo-user", null, false, null, groupIds, roleIds, tenantIds, mappingRuleIds, claims);
 
     groupIds.add("group-2");
     roleIds.add("role-2");
@@ -117,7 +118,7 @@ class CamundaAuthenticationTest {
     claims.put("family_name", null);
 
     final var authentication =
-        new CamundaAuthentication("demo-user", null, false, null, null, null, null, claims);
+        new CamundaAuthentication("demo-user", null, false, null, null, null, null, null, claims);
 
     assertThat(authentication.claims()).hasSize(1).containsEntry("sub", "demo-user");
     assertThatThrownBy(() -> authentication.claims().put("scope", "read"))
@@ -305,7 +306,7 @@ class CamundaAuthenticationTest {
     // Round-trip the list through the canonical constructor and verify the supplier still hasn't
     // run — the constructor's defensive-copy step must not eagerly materialise a LazyList.
     final var rebuilt =
-        new CamundaAuthentication("demo-user", null, false, lazy, null, null, null, null);
+        new CamundaAuthentication("demo-user", null, false, null, lazy, null, null, null, null);
 
     assertThat(invocations).hasValue(0);
     assertThat(rebuilt.authenticatedGroupIds()).containsExactly("group-1");

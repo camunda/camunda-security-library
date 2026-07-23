@@ -14,6 +14,7 @@ import io.camunda.security.api.context.MembershipResolutionContextPropagator;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.context.holder.CamundaAuthenticationDelegatingHolder;
 import io.camunda.security.core.port.out.MembershipPort;
+import io.camunda.security.core.port.out.OrganizationPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.annotation.ConditionalOnUnprotectedApi;
 import io.camunda.security.spring.context.holder.HttpSessionBasedAuthenticationHolder;
@@ -22,6 +23,7 @@ import io.camunda.security.spring.converter.CamundaSpringAuthenticationDelegatin
 import io.camunda.security.spring.converter.UnprotectedCamundaAuthenticationConverter;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -88,6 +90,7 @@ public class CamundaAuthenticationBeansConfiguration {
   public LazyTokenClaimsConverter lazyTokenClaimsConverter(
       final CamundaSecurityLibraryProperties properties,
       final MembershipPort membershipPort,
+      final @Autowired(required = false) OrganizationPort organizationPort,
       final MembershipResolutionContextPropagator contextPropagator) {
     final var oidc = properties.getAuthentication().getOidc();
     return new LazyTokenClaimsConverter(
@@ -95,6 +98,7 @@ public class CamundaAuthenticationBeansConfiguration {
         oidc.getClientIdClaim(),
         oidc.isPreferUsernameClaim(),
         membershipPort,
+        organizationPort,
         contextPropagator);
   }
 

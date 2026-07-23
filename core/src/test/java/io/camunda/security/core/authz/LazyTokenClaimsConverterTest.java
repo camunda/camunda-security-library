@@ -37,7 +37,7 @@ class LazyTokenClaimsConverterTest {
 
   @BeforeEach
   void setUp() {
-    converter = new LazyTokenClaimsConverter("sub", "azp", true, membershipPort);
+    converter = new LazyTokenClaimsConverter("sub", "azp", true, membershipPort, null);
   }
 
   @Test
@@ -82,7 +82,8 @@ class LazyTokenClaimsConverterTest {
 
   @Test
   void convertsClientPrincipalWhenNoUsername() {
-    final var noUsernameConverter = new LazyTokenClaimsConverter(null, "azp", true, membershipPort);
+    final var noUsernameConverter =
+        new LazyTokenClaimsConverter(null, "azp", true, membershipPort, null);
     final var claims = Map.<String, Object>of("azp", "service-client");
     when(membershipPort.groupIds(any())).thenReturn(List.of());
 
@@ -95,7 +96,7 @@ class LazyTokenClaimsConverterTest {
   @Test
   void preferClientIdWhenFlagFalse() {
     final var preferClientConverter =
-        new LazyTokenClaimsConverter("sub", "azp", false, membershipPort);
+        new LazyTokenClaimsConverter("sub", "azp", false, membershipPort, null);
     final var claims = Map.<String, Object>of("sub", "alice", "azp", "service-client");
 
     final var auth = preferClientConverter.convert(claims);
@@ -134,7 +135,7 @@ class LazyTokenClaimsConverterTest {
           return supplier;
         };
     final var capturingConverter =
-        new LazyTokenClaimsConverter("sub", "azp", true, membershipPort, propagator);
+        new LazyTokenClaimsConverter("sub", "azp", true, membershipPort, null, propagator);
 
     // when the authentication is built (before any membership field is read)
     capturingConverter.convert(Map.of("sub", "alice"));
@@ -166,7 +167,7 @@ class LazyTokenClaimsConverterTest {
               return List.of("g1");
             });
     final var capturingConverter =
-        new LazyTokenClaimsConverter("sub", "azp", true, membershipPort, propagator);
+        new LazyTokenClaimsConverter("sub", "azp", true, membershipPort, null, propagator);
     final var auth = capturingConverter.convert(Map.of("sub", "alice"));
 
     // when the lazy group list is materialised

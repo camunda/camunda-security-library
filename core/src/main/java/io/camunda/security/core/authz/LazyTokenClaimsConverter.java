@@ -14,11 +14,13 @@ import io.camunda.security.core.oidc.OidcPrincipalLoader;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.core.port.out.MembershipPort.PrincipalType;
 import io.camunda.security.core.port.out.MembershipQuery;
+import io.camunda.security.core.port.out.OrganizationPort;
 import java.net.URI;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,18 +54,21 @@ public final class LazyTokenClaimsConverter implements TokenClaimsAuthentication
   private final String usernameClaim;
   private final String clientIdClaim;
   private final MembershipPort membershipPort;
+  @Nullable private final OrganizationPort organizationPort;
   private final MembershipResolutionContextPropagator contextPropagator;
 
   public LazyTokenClaimsConverter(
       final String usernameClaim,
       final String clientIdClaim,
       final boolean preferUsernameClaim,
-      final MembershipPort membershipPort) {
+      final MembershipPort membershipPort,
+      final OrganizationPort organizationPort) {
     this(
         usernameClaim,
         clientIdClaim,
         preferUsernameClaim,
         membershipPort,
+        organizationPort,
         MembershipResolutionContextPropagator.identity());
   }
 
@@ -72,11 +77,13 @@ public final class LazyTokenClaimsConverter implements TokenClaimsAuthentication
       final String clientIdClaim,
       final boolean preferUsernameClaim,
       final MembershipPort membershipPort,
+      final @Nullable OrganizationPort organizationPort,
       final MembershipResolutionContextPropagator contextPropagator) {
     this.usernameClaim = usernameClaim;
     this.clientIdClaim = clientIdClaim;
     this.preferUsernameClaim = preferUsernameClaim;
     this.membershipPort = Objects.requireNonNull(membershipPort, "membershipPort");
+    this.organizationPort = organizationPort;
     this.contextPropagator = Objects.requireNonNull(contextPropagator, "contextPropagator");
     oidcPrincipalLoader = new OidcPrincipalLoader(usernameClaim, clientIdClaim);
   }
@@ -94,6 +101,8 @@ public final class LazyTokenClaimsConverter implements TokenClaimsAuthentication
     final var principals = oidcPrincipalLoader.load(snapshotClaims);
     final var username = principals.username();
     final var clientId = principals.clientId();
+    final var organizationId =
+        organizationPort == null ? null : organizationPort.getOrganizationId();
 
     if (username == null && clientId == null) {
       throw new IllegalArgumentException(
@@ -146,7 +155,8 @@ public final class LazyTokenClaimsConverter implements TokenClaimsAuthentication
           } else {
             a.user(principalName);
           }
-          return a.mappingRulesSupplier(() -> lazyMappingRuleIds)
+          return a.organizationId(organizationId)
+              .mappingRulesSupplier(() -> lazyMappingRuleIds)
               .groupIdsSupplier(() -> lazyGroupIds)
               .roleIdsSupplier(() -> lazyRoleIds)
               .tenantsSupplier(() -> lazyTenantIds)

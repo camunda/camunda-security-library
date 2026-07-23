@@ -150,5 +150,9 @@ class ResourcePermissionServiceTest {
       lastResourceType = resourceType;
       return result;
     }
+
+    @Override
+    public void createAuthorization(
+        CamundaAuthentication authentication, Authorization authorization) {}
   }
 }

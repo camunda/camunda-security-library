@@ -40,6 +40,7 @@ public record CamundaAuthentication(
     String authenticatedUsername,
     String authenticatedClientId,
     boolean anonymousUser,
+    String organizationId,
     List<String> authenticatedGroupIds,
     List<String> authenticatedRoleIds,
     List<String> authenticatedTenantIds,
@@ -141,6 +142,7 @@ public record CamundaAuthentication(
     private String username;
     private String clientId;
     private boolean anonymous;
+    private String organizationId;
     private final List<String> groupIds = new ArrayList<>();
     private final List<String> roleIds = new ArrayList<>();
     private final List<String> tenants = new ArrayList<>();
@@ -163,6 +165,11 @@ public record CamundaAuthentication(
 
     public Builder anonymous(final boolean value) {
       anonymous = value;
+      return this;
+    }
+
+    public Builder organizationId(final String value) {
+      organizationId = value;
       return this;
     }
 
@@ -242,6 +249,7 @@ public record CamundaAuthentication(
           username,
           clientId,
           anonymous,
+          organizationId,
           resolveMembershipField("groupIds", groupIds, groupIdsSupplier),
           resolveMembershipField("roleIds", roleIds, roleIdsSupplier),
           resolveMembershipField("tenants", tenants, tenantsSupplier),

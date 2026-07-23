@@ -53,7 +53,8 @@ class AuthorizationServiceTest {
 
   private AuthorizationService service(
       final boolean authorizationEnabled, final boolean multiTenancyChecksEnabled) {
-    final var converter = new LazyTokenClaimsConverter("sub", "client_id", false, membershipPort);
+    final var converter =
+        new LazyTokenClaimsConverter("sub", "client_id", false, membershipPort, null);
     return new AuthorizationService(
         authorizationChecker,
         propertyEvaluatorRegistry,

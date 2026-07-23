@@ -26,4 +26,6 @@ public interface AuthorizationRepositoryPort {
 
   Set<Authorization> findAuthorizations(
       CamundaAuthentication authentication, ResourceType resourceType);
+
+  void createAuthorization(CamundaAuthentication authentication, Authorization authorization);
 }

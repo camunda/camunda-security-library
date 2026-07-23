@@ -1,0 +1,18 @@
+/*
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH under
+ * one or more contributor license agreements. See the NOTICE file distributed
+ * with this work for additional information regarding copyright ownership.
+ * Licensed under the Camunda License 1.0. You may not use this file
+ * except in compliance with the Camunda License 1.0.
+ */
+package io.camunda.security.core.port.out;
+
+/**
+ * Outbound port for reading the organizationId of the security scope.
+ *
+ * <p>When no implementation is provided, CSL will assume a standalone cluster/application.
+ */
+public interface OrganizationPort {
+
+  String getOrganizationId();
+}

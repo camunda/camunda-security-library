@@ -169,6 +169,10 @@ class BasicAuthWebappPermitAllChainTest {
             final CamundaAuthentication authentication, final ResourceType resourceType) {
           return Set.of();
         }
+
+        @Override
+        public void createAuthorization(
+            CamundaAuthentication authentication, Authorization authorization) {}
       };
     }
   }

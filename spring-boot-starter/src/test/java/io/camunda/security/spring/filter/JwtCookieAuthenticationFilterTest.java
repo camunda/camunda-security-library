@@ -143,7 +143,8 @@ class JwtCookieAuthenticationFilterTest {
 
   @Test
   void membershipPortIsCalledLazilyOnFirstFieldRead() throws Exception {
-    final var realConverter = new LazyTokenClaimsConverter("sub", "azp", false, membershipPort);
+    final var realConverter =
+        new LazyTokenClaimsConverter("sub", "azp", false, membershipPort, null);
     final var realFilter =
         new JwtCookieAuthenticationFilter(
             COOKIE_NAME, tokenPort, realConverter, authenticationEntryPoint);

@@ -42,6 +42,7 @@ class AuthorizationPortsFactoryTest {
     return AuthorizationPortsFactory.create(
         scopeRepository,
         membershipPort,
+        null,
         List.of(),
         authorizationEnabled,
         false,
@@ -104,6 +105,7 @@ class AuthorizationPortsFactoryTest {
         AuthorizationPortsFactory.create(
                 scopeRepository,
                 membershipPort,
+                null,
                 List.of(evaluator),
                 true,
                 false,
@@ -173,19 +175,27 @@ class AuthorizationPortsFactoryTest {
         .isThrownBy(
             () ->
                 AuthorizationPortsFactory.create(
-                    null, membershipPort, List.of(), true, false, "sub", "client_id", false))
+                    null, membershipPort, null, List.of(), true, false, "sub", "client_id", false))
         .withMessageContaining("scopeRepository");
     assertThatNullPointerException()
         .isThrownBy(
             () ->
                 AuthorizationPortsFactory.create(
-                    scopeRepository, null, List.of(), true, false, "sub", "client_id", false))
+                    scopeRepository, null, null, List.of(), true, false, "sub", "client_id", false))
         .withMessageContaining("membershipPort");
     assertThatNullPointerException()
         .isThrownBy(
             () ->
                 AuthorizationPortsFactory.create(
-                    scopeRepository, membershipPort, null, true, false, "sub", "client_id", false))
+                    scopeRepository,
+                    membershipPort,
+                    null,
+                    null,
+                    true,
+                    false,
+                    "sub",
+                    "client_id",
+                    false))
         .withMessageContaining("propertyEvaluators");
     assertThatNullPointerException()
         .isThrownBy(
@@ -193,6 +203,7 @@ class AuthorizationPortsFactoryTest {
                 AuthorizationPortsFactory.create(
                     scopeRepository,
                     membershipPort,
+                    null,
                     List.of(),
                     true,
                     false,

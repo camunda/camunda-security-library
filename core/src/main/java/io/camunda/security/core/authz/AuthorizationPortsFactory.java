@@ -13,6 +13,7 @@ import io.camunda.security.api.context.TokenClaimsAuthenticationResolver;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
 import io.camunda.security.core.port.out.MembershipPort;
+import io.camunda.security.core.port.out.OrganizationPort;
 import java.util.List;
 import java.util.Objects;
 
@@ -25,11 +26,11 @@ import java.util.Objects;
  * Zeebe engine cannot use those starter beans and had to hand-assemble the graph, naming the {@code
  * core}-internal {@link AuthorizationChecker} and {@link LazyTokenClaimsConverter} types directly.
  * This factory captures the same assembly in {@code core} so those consumers can depend only on
- * ports: {@link #create(AuthorizationScopeRepositoryPort, MembershipPort, List, boolean, boolean,
- * String, String, boolean) create} returns an {@link AuthorizationPorts} holder exposing the {@link
- * AuthorizationCheckPort} and the {@link TokenClaimsAuthenticationResolver} — both backed by the
- * <em>same</em> converter instance, matching the Spring wiring where a single converter bean is
- * shared. See ADR-0028.
+ * ports: {@link #create(AuthorizationScopeRepositoryPort, MembershipPort, OrganizationPort, List,
+ * boolean, boolean, String, String, boolean) create} returns an {@link AuthorizationPorts} holder
+ * exposing the {@link AuthorizationCheckPort} and the {@link TokenClaimsAuthenticationResolver} —
+ * both backed by the <em>same</em> converter instance, matching the Spring wiring where a single
+ * converter bean is shared. See ADR-0028.
  *
  * <p>This is the entry point for non-Spring consumers only; its sole public method is {@code
  * create(...)} (two overloads differing only in the optional {@link
@@ -50,11 +51,13 @@ public final class AuthorizationPortsFactory {
    *
    * <p>Uses {@link MembershipResolutionContextPropagator#identity()} — appropriate for consumers
    * whose {@link MembershipPort} does not depend on request-scoped state. Use {@link
-   * #create(AuthorizationScopeRepositoryPort, MembershipPort, List, boolean, boolean, String,
-   * String, boolean, MembershipResolutionContextPropagator)} to supply a custom propagator.
+   * #create(AuthorizationScopeRepositoryPort, MembershipPort, OrganizationPort, List, boolean,
+   * boolean, String, String, boolean, MembershipResolutionContextPropagator)} to supply a custom
+   * propagator.
    *
    * @param scopeRepository the host-supplied authorization store adapter
    * @param membershipPort the host-supplied membership resolution adapter
+   * @param organizationPort the host-supplied organization resolution adapter
    * @param propertyEvaluators list of property-based evaluators (may be empty)
    * @param authorizationEnabled whether RBAC authorization checks are globally enabled
    * @param multiTenancyChecksEnabled whether multi-tenancy checks are globally enabled
@@ -69,6 +72,7 @@ public final class AuthorizationPortsFactory {
   public static AuthorizationPorts create(
       final AuthorizationScopeRepositoryPort scopeRepository,
       final MembershipPort membershipPort,
+      final OrganizationPort organizationPort,
       final List<PropertyAuthorizationEvaluator<?>> propertyEvaluators,
       final boolean authorizationEnabled,
       final boolean multiTenancyChecksEnabled,
@@ -78,6 +82,7 @@ public final class AuthorizationPortsFactory {
     return create(
         scopeRepository,
         membershipPort,
+        organizationPort,
         propertyEvaluators,
         authorizationEnabled,
         multiTenancyChecksEnabled,
@@ -88,14 +93,15 @@ public final class AuthorizationPortsFactory {
   }
 
   /**
-   * Full-control variant of {@link #create(AuthorizationScopeRepositoryPort, MembershipPort, List,
-   * boolean, boolean, String, String, boolean)} that also accepts a {@link
+   * Full-control variant of {@link #create(AuthorizationScopeRepositoryPort, MembershipPort,
+   * OrganizationPort, List, boolean, boolean, String, String, boolean)} that also accepts a {@link
    * MembershipResolutionContextPropagator} for hosts whose membership lookups depend on
    * request-scoped state.
    */
   public static AuthorizationPorts create(
       final AuthorizationScopeRepositoryPort scopeRepository,
       final MembershipPort membershipPort,
+      final OrganizationPort organizationPort,
       final List<PropertyAuthorizationEvaluator<?>> propertyEvaluators,
       final boolean authorizationEnabled,
       final boolean multiTenancyChecksEnabled,
@@ -109,7 +115,12 @@ public final class AuthorizationPortsFactory {
     Objects.requireNonNull(contextPropagator, "contextPropagator must not be null");
     final var converter =
         new LazyTokenClaimsConverter(
-            usernameClaim, clientIdClaim, preferUsernameClaim, membershipPort, contextPropagator);
+            usernameClaim,
+            clientIdClaim,
+            preferUsernameClaim,
+            membershipPort,
+            organizationPort,
+            contextPropagator);
     final var checker = new AuthorizationChecker(scopeRepository);
     final var service =
         new AuthorizationService(
