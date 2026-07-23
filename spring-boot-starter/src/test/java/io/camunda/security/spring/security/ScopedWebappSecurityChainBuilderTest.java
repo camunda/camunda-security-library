@@ -158,10 +158,12 @@ class ScopedWebappSecurityChainBuilderTest {
   @Test
   void redirectionEndpointPathDefaultsWhenRedirectUriUnset() {
     assertThat(
-            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(null, "/sso-callback"))
+            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
+                null, "", "/sso-callback"))
         .isEqualTo("/sso-callback");
     assertThat(
-            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath("  ", "/sso-callback"))
+            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
+                "  ", "", "/sso-callback"))
         .isEqualTo("/sso-callback");
   }
 
@@ -169,7 +171,7 @@ class ScopedWebappSecurityChainBuilderTest {
   void redirectionEndpointPathStripsBaseUrlPlaceholder() {
     assertThat(
             ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
-                "{baseUrl}/api/authentication/callback", "/sso-callback"))
+                "{baseUrl}/api/authentication/callback", "", "/sso-callback"))
         .isEqualTo("/api/authentication/callback");
   }
 
@@ -177,7 +179,7 @@ class ScopedWebappSecurityChainBuilderTest {
   void redirectionEndpointPathStripsSchemeHostAndQuery() {
     assertThat(
             ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
-                "https://optimize.example.com/sso-callback?x=1", "/sso-callback"))
+                "https://optimize.example.com/sso-callback?x=1", "", "/sso-callback"))
         .isEqualTo("/sso-callback");
   }
 
@@ -185,7 +187,7 @@ class ScopedWebappSecurityChainBuilderTest {
   void redirectionEndpointPathRewritesRegistrationIdPlaceholderToWildcard() {
     assertThat(
             ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
-                "{baseUrl}/login/oauth2/code/{registrationId}", "/sso-callback"))
+                "{baseUrl}/login/oauth2/code/{registrationId}", "", "/sso-callback"))
         .isEqualTo("/login/oauth2/code/*");
   }
 
@@ -195,8 +197,64 @@ class ScopedWebappSecurityChainBuilderTest {
         .isThrownBy(
             () ->
                 ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
-                    "{baseUrl}api/callback", "/sso-callback"))
+                    "{baseUrl}api/callback", "", "/sso-callback"))
         .withMessageContaining("must resolve to a path starting with '/'")
         .withMessageContaining("api/callback");
+  }
+
+  // GH-569 regression: a redirect-uri that embeds the servlet context-path must yield a
+  // context-relative callback path, or Spring's redirection-endpoint matcher (which matches the
+  // context-path-stripped request path) never fires and the OIDC login loops indefinitely.
+
+  @Test
+  void redirectionEndpointPathStripsContextPathFromAbsoluteRedirectUri() {
+    // given an absolute redirect-uri whose path embeds the /orchestration context-path (what the
+    // Camunda 8.10 chart renders for a context-path'd webapp)
+    // when resolved with that context-path
+    // then only the context-relative callback path remains
+    assertThat(
+            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
+                "https://host.example.com/orchestration/sso-callback",
+                "/orchestration",
+                "/sso-callback"))
+        .isEqualTo("/sso-callback");
+  }
+
+  @Test
+  void redirectionEndpointPathStripsContextPathOnlyOnWholeSegments() {
+    // given a context-path that is a string prefix of a longer first segment
+    // when resolved
+    // then the partial match is not stripped
+    assertThat(
+            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
+                "https://host.example.com/orchestration-ui/sso-callback",
+                "/orchestration",
+                "/sso-callback"))
+        .isEqualTo("/orchestration-ui/sso-callback");
+  }
+
+  @Test
+  void redirectionEndpointPathKeepsPathWhenContextPathNotEmbedded() {
+    // given a root-registered redirect-uri (Optimize CCSaaS: built from the base host, no
+    // clusterId prefix) while the app runs under a context-path
+    // when resolved
+    // then the callback path is untouched (Spring strips the context-path at request time)
+    assertThat(
+            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
+                "https://host.example.com/sso-callback?uuid=cluster-1",
+                "/cluster-1",
+                "/sso-callback"))
+        .isEqualTo("/sso-callback");
+  }
+
+  @Test
+  void redirectionEndpointPathDefaultsWhenRedirectUriIsExactlyContextPath() {
+    // given a redirect-uri whose whole path is the context-path (no callback segment)
+    // when resolved
+    // then it falls back to the default rather than yielding a blank matcher
+    assertThat(
+            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
+                "https://host.example.com/orchestration", "/orchestration", "/sso-callback"))
+        .isEqualTo("/sso-callback");
   }
 }
