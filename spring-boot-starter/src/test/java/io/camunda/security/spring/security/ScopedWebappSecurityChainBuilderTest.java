@@ -259,6 +259,21 @@ class ScopedWebappSecurityChainBuilderTest {
   }
 
   @Test
+  void redirectionEndpointPathStripsContextPathWhenContextPathPropertyHasTrailingSlash() {
+    // given the servlet context-path property itself carries a trailing slash (a shape operators
+    // may set, e.g. server.servlet.context-path=/orchestration/) against a normal redirect-uri
+    // when resolved
+    // then stripContextPath normalizes the context-path and still yields the context-relative
+    // callback
+    assertThat(
+            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
+                "https://host.example.com/orchestration/sso-callback",
+                "/orchestration/",
+                "/sso-callback"))
+        .isEqualTo("/sso-callback");
+  }
+
+  @Test
   void redirectionEndpointPathDefaultsWhenRedirectUriIsContextPathWithTrailingSlash() {
     // given a redirect-uri whose whole path is the context-path with a trailing slash (a common
     // operator variant of "context root, no callback segment")
