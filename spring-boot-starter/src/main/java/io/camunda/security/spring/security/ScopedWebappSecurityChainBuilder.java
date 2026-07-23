@@ -484,8 +484,10 @@ public final class ScopedWebappSecurityChainBuilder {
    * Removes a leading servlet {@code contextPath} segment from an application-relative {@code
    * path}, matching only on whole path segments so {@code /orchestration} does not strip the prefix
    * of {@code /orchestration-ui/...}. Returns {@code path} unchanged when {@code contextPath} is
-   * blank or the root {@code "/"}, and {@code ""} when {@code path} equals the context-path
-   * exactly.
+   * blank or the root {@code "/"}, and {@code ""} when {@code path} is the context-path itself
+   * (with or without a trailing slash) — i.e. a redirect-uri carrying no callback segment, which
+   * the caller then resolves to the default callback path rather than a matcher of {@code "/"} that
+   * would never match the real callback.
    */
   private static String stripContextPath(final String path, final String contextPath) {
     if (contextPath == null || contextPath.isBlank() || "/".equals(contextPath)) {
@@ -495,10 +497,11 @@ public final class ScopedWebappSecurityChainBuilder {
         contextPath.endsWith("/")
             ? contextPath.substring(0, contextPath.length() - 1)
             : contextPath;
-    if (path.equals(normalized)) {
+    final String withTrailingSlash = normalized + "/";
+    if (path.equals(normalized) || path.equals(withTrailingSlash)) {
       return "";
     }
-    if (path.startsWith(normalized + "/")) {
+    if (path.startsWith(withTrailingSlash)) {
       return path.substring(normalized.length());
     }
     return path;

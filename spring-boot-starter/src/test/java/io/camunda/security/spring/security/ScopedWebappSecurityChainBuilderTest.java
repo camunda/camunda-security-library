@@ -257,4 +257,17 @@ class ScopedWebappSecurityChainBuilderTest {
                 "https://host.example.com/orchestration", "/orchestration", "/sso-callback"))
         .isEqualTo("/sso-callback");
   }
+
+  @Test
+  void redirectionEndpointPathDefaultsWhenRedirectUriIsContextPathWithTrailingSlash() {
+    // given a redirect-uri whose whole path is the context-path with a trailing slash (a common
+    // operator variant of "context root, no callback segment")
+    // when resolved
+    // then it falls back to the default just like the exact-match case, rather than stripping to a
+    // "/" matcher that would never match the real callback and reintroduce the login loop
+    assertThat(
+            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
+                "https://host.example.com/orchestration/", "/orchestration", "/sso-callback"))
+        .isEqualTo("/sso-callback");
+  }
 }
