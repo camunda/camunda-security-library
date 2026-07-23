@@ -35,6 +35,7 @@ import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -157,11 +158,16 @@ public final class ScopedWebappSecurityChainBuilder {
     // The OAuth2 redirection-endpoint path (where Spring listens for the authorization-code
     // callback) is derived from the configured client redirect-uri, so a host can align it with the
     // callback its IdP client already has registered (ADR-0038). Defaults to REDIRECT_URI
-    // (/sso-callback) when redirect-uri is unset, preserving existing behaviour.
+    // (/sso-callback) when redirect-uri is unset, preserving existing behaviour. The servlet
+    // context-path is stripped so the path stays context-relative: Spring's redirection-endpoint
+    // matcher matches the context-path-relative request path, so a redirect-uri that embeds the
+    // context-path (as the 8.10 chart renders for a context-path'd webapp) would otherwise never
+    // match the callback and loop the login (GH-569).
     final var authentication = properties.getAuthentication();
     final var oidc = authentication != null ? authentication.getOidc() : null;
     final var redirectUri =
-        resolveRedirectionEndpointPath(oidc != null ? oidc.getRedirectUri() : null, REDIRECT_URI);
+        resolveRedirectionEndpointPath(
+            oidc != null ? oidc.getRedirectUri() : null, servletContextPath(http), REDIRECT_URI);
 
     // Install the session filter before the security context filter.
     http.addFilterBefore(sessionRepositoryFilter, SecurityContextHolderFilter.class);
@@ -413,6 +419,17 @@ public final class ScopedWebappSecurityChainBuilder {
    * {@code /api/authentication/callback}). Falls back to {@code defaultPath} when the redirect-uri
    * is unset or yields no path, preserving the default {@code /sso-callback} behaviour.
    *
+   * <p>The returned path is <b>context-relative</b>: any leading {@code contextPath} segment is
+   * stripped. Spring's {@code redirectionEndpoint().baseUri(...)} matcher matches the
+   * context-path-relative request path (a {@code PathPatternRequestMatcher} excludes the servlet
+   * context-path), so a redirect-uri that embeds the context-path — e.g. {@code
+   * https://host/orchestration/sso-callback} under {@code
+   * server.servlet.context-path=/orchestration}, as the 8.10 chart renders — must have that prefix
+   * removed, or the callback filter never fires and the login loops indefinitely (GH-569). A {@code
+   * {baseUrl}} template already yields a context-relative path (the placeholder subsumes the
+   * context-path), so the stripping is a no-op there; it only rescues a concrete absolute
+   * redirect-uri.
+   *
    * <p>A {@code {registrationId}} placeholder (as in Spring's default template {@code
    * {baseUrl}/login/oauth2/code/{registrationId}}) is rewritten to an Ant {@code *} wildcard, since
    * {@code redirectionEndpoint().baseUri(...)} matches literally and would otherwise never match a
@@ -424,7 +441,7 @@ public final class ScopedWebappSecurityChainBuilder {
    *     clear message instead of failing obscurely at request time.
    */
   static String resolveRedirectionEndpointPath(
-      final String configuredRedirectUri, final String defaultPath) {
+      final String configuredRedirectUri, final String contextPath, final String defaultPath) {
     if (configuredRedirectUri == null || configuredRedirectUri.isBlank()) {
       return defaultPath;
     }
@@ -446,6 +463,7 @@ public final class ScopedWebappSecurityChainBuilder {
     if (fragment >= 0) {
       path = path.substring(0, fragment);
     }
+    path = stripContextPath(path, contextPath);
     // Spring's default template ends in "{registrationId}"; the redirection-endpoint matcher must
     // use an Ant wildcard for that segment so it matches the resolved id (e.g. ".../code/oidc").
     path = path.replace("{registrationId}", "*");
@@ -460,6 +478,43 @@ public final class ScopedWebappSecurityChainBuilder {
               + path);
     }
     return path;
+  }
+
+  /**
+   * Removes a leading servlet {@code contextPath} segment from an application-relative {@code
+   * path}, matching only on whole path segments so {@code /orchestration} does not strip the prefix
+   * of {@code /orchestration-ui/...}. Returns {@code path} unchanged when {@code contextPath} is
+   * blank or the root {@code "/"}, and {@code ""} when {@code path} equals the context-path
+   * exactly.
+   */
+  private static String stripContextPath(final String path, final String contextPath) {
+    if (contextPath == null || contextPath.isBlank() || "/".equals(contextPath)) {
+      return path;
+    }
+    final String normalized =
+        contextPath.endsWith("/")
+            ? contextPath.substring(0, contextPath.length() - 1)
+            : contextPath;
+    if (path.equals(normalized)) {
+      return "";
+    }
+    if (path.startsWith(normalized + "/")) {
+      return path.substring(normalized.length());
+    }
+    return path;
+  }
+
+  /**
+   * Reads {@code server.servlet.context-path} from the application {@link
+   * org.springframework.core.env.Environment} reachable through {@link HttpSecurity}'s shared
+   * {@link ApplicationContext}. Returns {@code ""} when unset or when no context is available, so
+   * the caller strips nothing.
+   */
+  private static String servletContextPath(final HttpSecurity http) {
+    final var context = http.getSharedObject(ApplicationContext.class);
+    return context != null
+        ? context.getEnvironment().getProperty("server.servlet.context-path", "")
+        : "";
   }
 
   /**
