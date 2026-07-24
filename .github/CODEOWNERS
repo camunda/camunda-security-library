@@ -1,10 +1,10 @@
 # GitHub auto-requests review from the listed owner whenever a PR touches
-# matching files. The "*" pattern matches everything, so csl-team is
+# matching files. The "*" pattern matches everything, so identity is
 # review-requested on every PR.
 #
 # The team must have at least write access to this repo, otherwise the entry
 # is ignored. By default the request goes to the whole team; if the team's
 # code review assignment is enabled, GitHub instead auto-assigns a subset of
 # members. Keep it disabled to request the full team:
-# https://github.com/orgs/camunda/teams/csl-team/settings
-*  @camunda/csl-team
+# https://github.com/orgs/camunda/teams/identity/settings
+*  @camunda/identity
