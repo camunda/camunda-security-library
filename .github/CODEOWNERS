@@ -1,5 +1,5 @@
 # GitHub auto-requests review from the listed owner whenever a PR touches
-# matching files. The "*" pattern matches everything, so identity is
+# matching files. The "*" pattern matches everything, so @camunda/identity is
 # review-requested on every PR.
 #
 # The team must have at least write access to this repo, otherwise the entry
