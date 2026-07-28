@@ -14,6 +14,7 @@ import io.camunda.security.core.port.out.BasicAuthUserDetailsPort;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
+import io.camunda.security.spring.session.WebSessionTestAccess;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import io.camunda.security.spring.user.UserConfiguration;
 import jakarta.servlet.Filter;
@@ -39,7 +40,6 @@ import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
-import org.springframework.session.MapSession;
 import org.springframework.session.MapSessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 
@@ -142,31 +142,18 @@ class UnprotectedApiSessionFilterIntegrationTest {
     return Base64.getEncoder().encodeToString(sessionId.getBytes(StandardCharsets.UTF_8));
   }
 
-  @SuppressWarnings("unchecked")
-  private static SessionRepositoryFilter<MapSession> sessionRepositoryFilter(
+  private static SessionRepositoryFilter<?> sessionRepositoryFilter(
       final SecurityFilterChain chain) {
     return chain.getFilters().stream()
         .filter(SessionRepositoryFilter.class::isInstance)
-        .map(f -> (SessionRepositoryFilter<MapSession>) f)
+        .map(f -> (SessionRepositoryFilter<?>) f)
         .findFirst()
         .orElseThrow(
             () -> new AssertionError("No SessionRepositoryFilter found on chain " + chain));
   }
 
-  private static MapSessionRepository sessionRepository(
-      final SessionRepositoryFilter<MapSession> filter) {
-    try {
-      final var field = SessionRepositoryFilter.class.getDeclaredField("sessionRepository");
-      field.setAccessible(true);
-      final Object repo = field.get(filter);
-      if (!(repo instanceof MapSessionRepository mapRepo)) {
-        throw new AssertionError(
-            "Expected MapSessionRepository backing the filter, got: " + repo.getClass());
-      }
-      return mapRepo;
-    } catch (final ReflectiveOperationException ex) {
-      throw new AssertionError("Could not access sessionRepository field on filter", ex);
-    }
+  private static MapSessionRepository sessionRepository(final SessionRepositoryFilter<?> filter) {
+    return WebSessionTestAccess.mapRepositoryOf(filter);
   }
 
   @Configuration

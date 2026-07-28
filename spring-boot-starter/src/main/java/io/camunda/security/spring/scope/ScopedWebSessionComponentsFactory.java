@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.scope;
 
+import io.camunda.security.spring.session.CamundaSessionRepositoryFilter;
 import org.springframework.session.Session;
 import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.CookieHttpSessionIdResolver;
@@ -40,7 +41,7 @@ final class ScopedWebSessionComponentsFactory {
       final String basePath, final SessionRepository<S> repository) {
     final var idResolver = new CookieHttpSessionIdResolver();
     idResolver.setCookieSerializer(cookieSerializer(basePath));
-    final var filter = new SessionRepositoryFilter<>(repository);
+    final var filter = new CamundaSessionRepositoryFilter<>(repository);
     filter.setHttpSessionIdResolver(idResolver);
     return filter;
   }

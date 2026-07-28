@@ -9,6 +9,7 @@ package io.camunda.security.spring.security;
 
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.SESSION_COOKIE;
 
+import io.camunda.security.spring.session.CamundaSessionRepositoryFilter;
 import org.springframework.core.env.Environment;
 import org.springframework.session.Session;
 import org.springframework.session.SessionRepository;
@@ -61,7 +62,7 @@ final class DefaultWebSessionComponentsFactory {
       final Environment environment, final SessionRepository<S> repository) {
     final var idResolver = new CookieHttpSessionIdResolver();
     idResolver.setCookieSerializer(cookieSerializer(environment));
-    final var filter = new SessionRepositoryFilter<>(repository);
+    final var filter = new CamundaSessionRepositoryFilter<>(repository);
     filter.setHttpSessionIdResolver(idResolver);
     return filter;
   }
