@@ -69,6 +69,7 @@ import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.session.MapSessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 /**
@@ -86,6 +87,10 @@ class ScopedApiSecurityChainBuilderTest {
   private static final String SCOPED_V2_PATH = BASE_PATH + "/v2/foo";
   private static final String OUT_OF_SCOPE_PATH = "/api/foo";
   private static final String UNRELATED_PATH = BASE_PATH + "/other";
+  // Field on CSL's own ContextPathScopedCsrfTokenRepository holding the wrapped cookie repository.
+  // That wrapper is package-private in io.camunda.security.spring.security, so this test cannot
+  // reference its type to call an accessor.
+  private static final String DELEGATE_FIELD = "delegate";
 
   private final WebApplicationContextRunner basicRunner =
       new WebApplicationContextRunner()
@@ -835,18 +840,11 @@ class ScopedApiSecurityChainBuilderTest {
                   .map(f -> (CsrfFilter) f)
                   .findFirst()
                   .orElseThrow(() -> new AssertionError("CsrfFilter not found in filter chain"));
-          try {
-            final var repoField = CsrfFilter.class.getDeclaredField("tokenRepository");
-            repoField.setAccessible(true);
-            final var repo = (CsrfTokenRepository) repoField.get(csrfFilter);
-            assertThat(repo).isNotInstanceOf(CookieCsrfTokenRepository.class);
-            final var delegateField = repo.getClass().getDeclaredField("delegate");
-            delegateField.setAccessible(true);
-            final var delegate = (CookieCsrfTokenRepository) delegateField.get(repo);
-            assertThat(delegate.getCookiePath()).isEqualTo(BASE_PATH);
-          } catch (final ReflectiveOperationException e) {
-            throw new AssertionError("Failed to inspect CSRF token repository path", e);
-          }
+          final var repo = tokenRepositoryOf(csrfFilter);
+          assertThat(repo).isNotInstanceOf(CookieCsrfTokenRepository.class);
+          final var delegate =
+              (CookieCsrfTokenRepository) ReflectionTestUtils.getField(repo, DELEGATE_FIELD);
+          assertThat(delegate.getCookiePath()).isEqualTo(BASE_PATH);
         });
   }
 
@@ -858,28 +856,27 @@ class ScopedApiSecurityChainBuilderTest {
             .map(f -> (CsrfFilter) f)
             .findFirst()
             .orElseThrow(() -> new AssertionError("CsrfFilter not found in filter chain"));
-    try {
-      final var repoField = CsrfFilter.class.getDeclaredField("tokenRepository");
-      repoField.setAccessible(true);
-      final var repo = (CsrfTokenRepository) repoField.get(csrfFilter);
-      // CookieCsrfTokenRepository has no getCookieName(); reflection is the only option.
-      // Scoped chains wrap the repo in ContextPathScopedCsrfTokenRepository, so unwrap if needed.
-      final CookieCsrfTokenRepository cookieRepo;
-      if (repo instanceof CookieCsrfTokenRepository direct) {
-        cookieRepo = direct;
-      } else {
-        final var delegateField = repo.getClass().getDeclaredField("delegate");
-        delegateField.setAccessible(true);
-        cookieRepo = (CookieCsrfTokenRepository) delegateField.get(repo);
-      }
-      final var nameField = CookieCsrfTokenRepository.class.getDeclaredField("cookieName");
-      nameField.setAccessible(true);
-      assertThat(nameField.get(cookieRepo))
-          .as("scoped API chain must use per-scope CSRF cookie name")
-          .isEqualTo(expectedName);
-    } catch (final ReflectiveOperationException e) {
-      throw new AssertionError("Failed to inspect CSRF token repository", e);
+    final var repo = tokenRepositoryOf(csrfFilter);
+    // CookieCsrfTokenRepository has no getCookieName(); reflection is the only option.
+    // Scoped chains wrap the repo in ContextPathScopedCsrfTokenRepository, so unwrap if needed.
+    final CookieCsrfTokenRepository cookieRepo;
+    if (repo instanceof final CookieCsrfTokenRepository direct) {
+      cookieRepo = direct;
+    } else {
+      cookieRepo = (CookieCsrfTokenRepository) ReflectionTestUtils.getField(repo, DELEGATE_FIELD);
     }
+    assertThat(ReflectionTestUtils.getField(cookieRepo, "cookieName"))
+        .as("scoped API chain must use per-scope CSRF cookie name")
+        .isEqualTo(expectedName);
+  }
+
+  /**
+   * The {@link CsrfTokenRepository} installed on a {@link CsrfFilter}. Spring Security exposes no
+   * accessor for it, so this reads the field via {@link ReflectionTestUtils} (see ADR-0039:
+   * CSL-owned objects get an accessor, framework-owned internals get {@code ReflectionTestUtils}).
+   */
+  private static CsrfTokenRepository tokenRepositoryOf(final CsrfFilter csrfFilter) {
+    return (CsrfTokenRepository) ReflectionTestUtils.getField(csrfFilter, "tokenRepository");
   }
 
   // -------------------------------------------------------------------------
