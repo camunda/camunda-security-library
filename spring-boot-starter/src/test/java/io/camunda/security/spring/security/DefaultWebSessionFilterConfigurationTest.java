@@ -13,7 +13,7 @@ import io.camunda.security.api.model.session.PersistentSession;
 import io.camunda.security.core.port.out.SessionStorePort;
 import io.camunda.security.spring.session.WebSessionConfiguration;
 import io.camunda.security.spring.session.WebSessionRepository;
-import java.lang.reflect.Field;
+import io.camunda.security.spring.session.WebSessionTestAccess;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
@@ -91,13 +91,7 @@ class DefaultWebSessionFilterConfigurationTest {
   }
 
   private static SessionRepository<?> sessionRepository(final SessionRepositoryFilter<?> filter) {
-    try {
-      final Field field = SessionRepositoryFilter.class.getDeclaredField("sessionRepository");
-      field.setAccessible(true);
-      return (SessionRepository<?>) field.get(filter);
-    } catch (final ReflectiveOperationException ex) {
-      throw new AssertionError("Could not access sessionRepository field on filter", ex);
-    }
+    return WebSessionTestAccess.repositoryOf(filter);
   }
 
   static final class NoopSessionStore implements SessionStorePort {

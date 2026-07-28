@@ -25,6 +25,7 @@ import io.camunda.security.spring.security.BaseSecurityConfiguration;
 import io.camunda.security.spring.security.BasicAuthApiSecurityConfiguration;
 import io.camunda.security.spring.session.WebSessionConfiguration;
 import io.camunda.security.spring.session.WebSessionRepository;
+import io.camunda.security.spring.session.WebSessionTestAccess;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import io.camunda.security.spring.user.UserConfiguration;
 import jakarta.servlet.FilterChain;
@@ -48,7 +49,6 @@ import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
-import org.springframework.session.MapSession;
 import org.springframework.session.MapSessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 
@@ -379,10 +379,10 @@ class ScopedWebappSessionIsolationTest {
               assertThat(repoA)
                   .as("each scope must get its own durable WebSessionRepository instance")
                   .isNotSameAs(repoB);
-              assertThat(storePortOf(repoA))
+              assertThat(WebSessionTestAccess.storePortOf(repoA))
                   .as("scope A's repository must be bound to scope A's store")
                   .isSameAs(storeA);
-              assertThat(storePortOf(repoB))
+              assertThat(WebSessionTestAccess.storePortOf(repoB))
                   .as("scope B's repository must be bound to scope B's store")
                   .isSameAs(storeB);
             });
@@ -461,37 +461,7 @@ class ScopedWebappSessionIsolationTest {
    * The durable {@link WebSessionRepository} backing the scope's {@link SessionRepositoryFilter}.
    */
   private static WebSessionRepository durableRepository(final SecurityFilterChain chain) {
-    final var filter =
-        chain.getFilters().stream()
-            .filter(SessionRepositoryFilter.class::isInstance)
-            .map(SessionRepositoryFilter.class::cast)
-            .findFirst()
-            .orElseThrow(
-                () -> new AssertionError("No SessionRepositoryFilter found on chain " + chain));
-    try {
-      final var field = SessionRepositoryFilter.class.getDeclaredField("sessionRepository");
-      field.setAccessible(true);
-      final Object repo = field.get(filter);
-      if (!(repo instanceof final WebSessionRepository webRepo)) {
-        throw new AssertionError(
-            "Expected a durable WebSessionRepository backing the filter, got: " + repo.getClass());
-      }
-      return webRepo;
-    } catch (final ReflectiveOperationException ex) {
-      throw new AssertionError("Could not access sessionRepository field on filter", ex);
-    }
-  }
-
-  private static SessionStorePort storePortOf(final WebSessionRepository repository) {
-    // Reflect on the sessionStorePort() accessor (package-private, different package here) rather
-    // than the backing field, so a field rename doesn't silently break the test.
-    try {
-      final var accessor = WebSessionRepository.class.getDeclaredMethod("sessionStorePort");
-      accessor.setAccessible(true);
-      return (SessionStorePort) accessor.invoke(repository);
-    } catch (final ReflectiveOperationException ex) {
-      throw new AssertionError("Could not invoke sessionStorePort() on WebSessionRepository", ex);
-    }
+    return WebSessionTestAccess.durableRepositoryOf(sessionRepositoryFilter(chain));
   }
 
   /** Resolves the {@link OrderedSecurityFilterChainWrapper} for the given scope suffix (a or b). */
@@ -513,32 +483,18 @@ class ScopedWebappSessionIsolationTest {
     return (OrderedSecurityFilterChainWrapper) ctx.getBean(name, SecurityFilterChain.class);
   }
 
-  @SuppressWarnings("unchecked")
-  private static SessionRepositoryFilter<MapSession> sessionRepositoryFilter(
+  private static SessionRepositoryFilter<?> sessionRepositoryFilter(
       final SecurityFilterChain chain) {
     return chain.getFilters().stream()
         .filter(SessionRepositoryFilter.class::isInstance)
-        .map(f -> (SessionRepositoryFilter<MapSession>) f)
+        .map(f -> (SessionRepositoryFilter<?>) f)
         .findFirst()
         .orElseThrow(
             () -> new AssertionError("No SessionRepositoryFilter found on chain " + chain));
   }
 
-  @SuppressWarnings("unchecked")
-  private static MapSessionRepository sessionRepository(
-      final SessionRepositoryFilter<MapSession> filter) {
-    try {
-      final var field = SessionRepositoryFilter.class.getDeclaredField("sessionRepository");
-      field.setAccessible(true);
-      final Object repo = field.get(filter);
-      if (!(repo instanceof MapSessionRepository mapRepo)) {
-        throw new AssertionError(
-            "Expected MapSessionRepository backing the filter, got: " + repo.getClass());
-      }
-      return mapRepo;
-    } catch (final ReflectiveOperationException ex) {
-      throw new AssertionError("Could not access sessionRepository field on filter", ex);
-    }
+  private static MapSessionRepository sessionRepository(final SessionRepositoryFilter<?> filter) {
+    return WebSessionTestAccess.mapRepositoryOf(filter);
   }
 
   /** Provides two OIDC scopes, one per OidcTestServer. */

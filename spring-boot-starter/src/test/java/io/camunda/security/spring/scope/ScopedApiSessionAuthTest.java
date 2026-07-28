@@ -20,6 +20,7 @@ import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcTestServer;
 import io.camunda.security.spring.security.BaseSecurityConfiguration;
 import io.camunda.security.spring.security.BasicAuthApiSecurityConfiguration;
+import io.camunda.security.spring.session.WebSessionTestAccess;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import io.camunda.security.spring.user.UserConfiguration;
 import java.nio.charset.StandardCharsets;
@@ -42,8 +43,6 @@ import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
-import org.springframework.session.MapSession;
-import org.springframework.session.MapSessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
@@ -119,7 +118,8 @@ class ScopedApiSessionAuthTest {
                   .isSameAs(sessionRepositoryFilter(webappChainA));
 
               // given — seed an authenticated session via the WEBAPP chain's session store
-              final var repoA = sessionRepository(sessionRepositoryFilter(webappChainA));
+              final var repoA =
+                  WebSessionTestAccess.mapRepositoryOf(sessionRepositoryFilter(webappChainA));
               final var session = repoA.createSession();
               final var principal =
                   new UsernamePasswordAuthenticationToken(
@@ -164,7 +164,7 @@ class ScopedApiSessionAuthTest {
               final var apiChainB = apiChain(ctx, "b");
 
               final var sessionFilterA = sessionRepositoryFilter(apiChainA);
-              final var repoA = sessionRepository(sessionFilterA);
+              final var repoA = WebSessionTestAccess.mapRepositoryOf(sessionFilterA);
 
               // given — seed a session in scope A's store
               final var session = repoA.createSession();
@@ -336,32 +336,14 @@ class ScopedApiSessionAuthTest {
     return (OrderedSecurityFilterChainWrapper) ctx.getBean(name, SecurityFilterChain.class);
   }
 
-  @SuppressWarnings("unchecked")
-  private static SessionRepositoryFilter<MapSession> sessionRepositoryFilter(
+  private static SessionRepositoryFilter<?> sessionRepositoryFilter(
       final SecurityFilterChain chain) {
     return chain.getFilters().stream()
         .filter(SessionRepositoryFilter.class::isInstance)
-        .map(f -> (SessionRepositoryFilter<MapSession>) f)
+        .map(f -> (SessionRepositoryFilter<?>) f)
         .findFirst()
         .orElseThrow(
             () -> new AssertionError("No SessionRepositoryFilter found on chain " + chain));
-  }
-
-  @SuppressWarnings("unchecked")
-  private static MapSessionRepository sessionRepository(
-      final SessionRepositoryFilter<MapSession> filter) {
-    try {
-      final var field = SessionRepositoryFilter.class.getDeclaredField("sessionRepository");
-      field.setAccessible(true);
-      final Object repo = field.get(filter);
-      if (!(repo instanceof MapSessionRepository mapRepo)) {
-        throw new AssertionError(
-            "Expected MapSessionRepository backing the filter, got: " + repo.getClass());
-      }
-      return mapRepo;
-    } catch (final ReflectiveOperationException ex) {
-      throw new AssertionError("Could not access sessionRepository field on filter", ex);
-    }
   }
 
   @Configuration
