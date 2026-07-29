@@ -54,7 +54,6 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0036: Per-chain JwtAuthenticationConverter hook on ScopedApiSecurityChainBuilder](../adr/0036-per-chain-jwt-authentication-converter-hook.md)
 - [ADR-0037: Security-headers customizer hook (covers CSP)](../adr/0037-csp-and-security-headers-customizer-hooks.md)
 - [ADR-0038: Optimize reuses the stateful OIDC webapp chain and the JWT-cookie chain is retired](../adr/0038-optimize-reuses-stateful-oidc-webapp-chain.md)
-- [ADR-0039: CSL-owned `SessionRepositoryFilter` subclass exposes its session repository](../adr/0039-csl-owned-session-repository-filter.md)
 
 ---
 
