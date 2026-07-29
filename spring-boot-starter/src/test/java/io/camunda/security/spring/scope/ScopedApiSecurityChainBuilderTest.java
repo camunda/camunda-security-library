@@ -842,9 +842,7 @@ class ScopedApiSecurityChainBuilderTest {
                   .orElseThrow(() -> new AssertionError("CsrfFilter not found in filter chain"));
           final var repo = tokenRepositoryOf(csrfFilter);
           assertThat(repo).isNotInstanceOf(CookieCsrfTokenRepository.class);
-          final var delegate =
-              (CookieCsrfTokenRepository) ReflectionTestUtils.getField(repo, DELEGATE_FIELD);
-          assertThat(delegate.getCookiePath()).isEqualTo(BASE_PATH);
+          assertThat(cookieRepositoryOf(repo).getCookiePath()).isEqualTo(BASE_PATH);
         });
   }
 
@@ -856,16 +854,10 @@ class ScopedApiSecurityChainBuilderTest {
             .map(f -> (CsrfFilter) f)
             .findFirst()
             .orElseThrow(() -> new AssertionError("CsrfFilter not found in filter chain"));
-    final var repo = tokenRepositoryOf(csrfFilter);
     // CookieCsrfTokenRepository has no getCookieName(); reflection is the only option.
-    // Scoped chains wrap the repo in ContextPathScopedCsrfTokenRepository, so unwrap if needed.
-    final CookieCsrfTokenRepository cookieRepo;
-    if (repo instanceof final CookieCsrfTokenRepository direct) {
-      cookieRepo = direct;
-    } else {
-      cookieRepo = (CookieCsrfTokenRepository) ReflectionTestUtils.getField(repo, DELEGATE_FIELD);
-    }
-    assertThat(ReflectionTestUtils.getField(cookieRepo, "cookieName"))
+    assertThat(
+            ReflectionTestUtils.getField(
+                cookieRepositoryOf(tokenRepositoryOf(csrfFilter)), "cookieName"))
         .as("scoped API chain must use per-scope CSRF cookie name")
         .isEqualTo(expectedName);
   }
@@ -877,6 +869,26 @@ class ScopedApiSecurityChainBuilderTest {
    */
   private static CsrfTokenRepository tokenRepositoryOf(final CsrfFilter csrfFilter) {
     return (CsrfTokenRepository) ReflectionTestUtils.getField(csrfFilter, "tokenRepository");
+  }
+
+  /**
+   * The {@link CookieCsrfTokenRepository} a chain ultimately writes the CSRF cookie through. Scoped
+   * chains wrap it in {@code ContextPathScopedCsrfTokenRepository}, so unwrap when needed. The type
+   * is asserted before the cast so a changed wrapper fails with a message naming what was expected,
+   * not a bare {@code ClassCastException}.
+   */
+  private static CookieCsrfTokenRepository cookieRepositoryOf(
+      final CsrfTokenRepository repository) {
+    if (repository instanceof final CookieCsrfTokenRepository direct) {
+      return direct;
+    }
+    final var delegate = ReflectionTestUtils.getField(repository, DELEGATE_FIELD);
+    assertThat(delegate)
+        .as(
+            "%s must wrap a CookieCsrfTokenRepository in its '%s' field",
+            repository.getClass().getSimpleName(), DELEGATE_FIELD)
+        .isInstanceOf(CookieCsrfTokenRepository.class);
+    return (CookieCsrfTokenRepository) delegate;
   }
 
   // -------------------------------------------------------------------------
