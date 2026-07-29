@@ -864,8 +864,8 @@ class ScopedApiSecurityChainBuilderTest {
 
   /**
    * The {@link CsrfTokenRepository} installed on a {@link CsrfFilter}. Spring Security exposes no
-   * accessor for it, so this reads the field via {@link ReflectionTestUtils} (see ADR-0039:
-   * CSL-owned objects get an accessor, framework-owned internals get {@code ReflectionTestUtils}).
+   * accessor for it, so this reads the field via {@link ReflectionTestUtils}. CSL-owned objects get
+   * an accessor instead; framework-owned internals like this one do not have that option.
    */
   private static CsrfTokenRepository tokenRepositoryOf(final CsrfFilter csrfFilter) {
     final var repository = ReflectionTestUtils.getField(csrfFilter, "tokenRepository");

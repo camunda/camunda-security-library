@@ -21,7 +21,7 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
  * WebSessionRepository#sessionStorePort()}) are package-private, so tests in other packages can
  * reach them here without reflecting on private fields. Reflecting on Spring Session's own {@code
  * SessionRepositoryFilter.sessionRepository} field was the previous approach and coupled CSL tests
- * to a framework implementation detail (see ADR-0039).
+ * to a framework implementation detail.
  */
 public final class WebSessionTestAccess {
 
