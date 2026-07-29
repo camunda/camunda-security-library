@@ -28,15 +28,18 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
 public final class CamundaSessionRepositoryFilter<S extends Session>
     extends SessionRepositoryFilter<S> {
 
-  private final SessionRepository<S> sessionRepository;
+  // Deliberately not named sessionRepository: the superclass holds the same reference in a private
+  // field of that name, and two identically-named fields on one object are easy to misread in a
+  // debugger.
+  private final SessionRepository<S> repository;
 
-  public CamundaSessionRepositoryFilter(final SessionRepository<S> sessionRepository) {
-    super(sessionRepository);
-    this.sessionRepository = sessionRepository;
+  public CamundaSessionRepositoryFilter(final SessionRepository<S> repository) {
+    super(repository);
+    this.repository = repository;
   }
 
   /** The repository this filter resolves and commits sessions through. */
   SessionRepository<S> sessionRepository() {
-    return sessionRepository;
+    return repository;
   }
 }
