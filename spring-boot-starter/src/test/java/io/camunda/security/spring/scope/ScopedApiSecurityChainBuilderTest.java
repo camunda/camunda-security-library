@@ -868,7 +868,11 @@ class ScopedApiSecurityChainBuilderTest {
    * CSL-owned objects get an accessor, framework-owned internals get {@code ReflectionTestUtils}).
    */
   private static CsrfTokenRepository tokenRepositoryOf(final CsrfFilter csrfFilter) {
-    return (CsrfTokenRepository) ReflectionTestUtils.getField(csrfFilter, "tokenRepository");
+    final var repository = ReflectionTestUtils.getField(csrfFilter, "tokenRepository");
+    assertThat(repository)
+        .as("the CsrfFilter on the chain must have a CsrfTokenRepository installed")
+        .isInstanceOf(CsrfTokenRepository.class);
+    return (CsrfTokenRepository) repository;
   }
 
   /**
