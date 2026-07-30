@@ -12,10 +12,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.api.model.CamundaAuthentication;
-import io.camunda.security.api.model.authz.Authorization;
-import io.camunda.security.api.model.authz.ResourceType;
+import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.core.port.out.AdminUserPresencePort;
-import io.camunda.security.core.port.out.AuthorizationRepositoryPort;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.filter.AdminUserCheckFilter;
@@ -25,6 +23,7 @@ import io.camunda.security.spring.oidc.OidcBeansConfiguration;
 import io.camunda.security.spring.oidc.OidcWebappClientBeansConfiguration;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.spi.WebAppProviderPort;
+import io.camunda.security.spring.testsupport.PermissiveAuthorizationCheckPort;
 import jakarta.servlet.Filter;
 import java.util.List;
 import java.util.Optional;
@@ -151,7 +150,7 @@ class AdminUserCheckFilterChainIntegrationTest {
     // are present, so the admin-presence redirect runs before any per-web-app permission check.
     basicRunner
         .withUserConfiguration(StubPresencePort.class)
-        .withUserConfiguration(StubAuthorizationRepository.class)
+        .withUserConfiguration(StubAuthorizationCheckPort.class)
         .withUserConfiguration(StubWebAppProvider.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .run(
@@ -225,17 +224,11 @@ class AdminUserCheckFilterChainIntegrationTest {
   }
 
   @Configuration
-  static class StubAuthorizationRepository {
+  static class StubAuthorizationCheckPort {
 
     @Bean
-    AuthorizationRepositoryPort authorizationRepository() {
-      return new AuthorizationRepositoryPort() {
-        @Override
-        public Set<Authorization> findAuthorizations(
-            final CamundaAuthentication authentication, final ResourceType resourceType) {
-          return Set.of();
-        }
-      };
+    AuthorizationCheckPort authorizationCheckPort() {
+      return new PermissiveAuthorizationCheckPort();
     }
   }
 

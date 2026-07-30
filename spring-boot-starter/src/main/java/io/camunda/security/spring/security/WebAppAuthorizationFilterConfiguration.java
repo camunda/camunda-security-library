@@ -8,8 +8,7 @@
 package io.camunda.security.spring.security;
 
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
-import io.camunda.security.core.port.in.ResourcePermissionPort;
-import io.camunda.security.core.port.out.AuthorizationRepositoryPort;
+import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
@@ -30,31 +29,16 @@ import org.springframework.context.annotation.Configuration;
  * <p>Each bean is gated on the presence of the host SPIs it depends on, and library defaults back
  * off via {@code @ConditionalOnMissingBean} so hosts can supply their own implementations.
  *
- * <p>The webapp component-access check honours {@code camunda.security.authorizations.enabled}:
- * when it is off, the default {@link ResourcePermissionService} grants all and the filter passes
- * every request through. The flag is read from {@link CamundaSecurityLibraryProperties} (not a
- * {@code @ConditionalOnProperty}) so it works regardless of whether the host sets it via a property
- * or by mutating the bound properties bean.
+ * <p>The webapp component-access decision is delegated to the host's {@link AuthorizationCheckPort}
+ * — the same unified inbound port the data plane uses (see ADR-0028). The check honours {@code
+ * camunda.security.authorizations.enabled}: when it is off, the filter passes every request through
+ * without consulting the port. The flag is read from {@link CamundaSecurityLibraryProperties} (not
+ * a {@code @ConditionalOnProperty}) so it works regardless of whether the host sets it via a
+ * property or by mutating the bound properties bean.
  */
 @Configuration
 @EnableConfigurationProperties(CamundaSecurityLibraryProperties.class)
 public class WebAppAuthorizationFilterConfiguration {
-
-  /**
-   * Default {@link ResourcePermissionPort} that consults the host's authorization records via
-   * {@link AuthorizationRepositoryPort}, or grants all when authorization is disabled. Skipped when
-   * the host provides its own {@code ResourcePermissionPort} bean or has not registered an {@code
-   * AuthorizationRepositoryPort} yet.
-   */
-  @Bean
-  @ConditionalOnBean(AuthorizationRepositoryPort.class)
-  @ConditionalOnMissingBean(ResourcePermissionPort.class)
-  public ResourcePermissionService resourcePermissionService(
-      final AuthorizationRepositoryPort authorizationRepository,
-      final CamundaSecurityLibraryProperties properties) {
-    return new ResourcePermissionService(
-        authorizationRepository, properties.getAuthorizations().isEnabled());
-  }
 
   /**
    * Default {@link WebAppAccessDeniedHandlerPort} that redirects to {@code
@@ -70,21 +54,23 @@ public class WebAppAuthorizationFilterConfiguration {
   }
 
   /**
-   * The filter itself. Requires all three host SPIs to be present — without any one of them the
-   * filter has nothing meaningful to do, so it isn't created and the chain configurations skip
-   * adding it via the {@link SecurityFilterChainSupport#addFilterAfterIfAvailable} helper.
+   * The filter itself. Requires the host SPIs it depends on to be present — without any one of them
+   * the filter has nothing meaningful to do, so it isn't created and the chain configurations skip
+   * adding it via the {@link SecurityFilterChainSupport#addFilterAfterIfAvailable} helper. The
+   * {@link AuthorizationCheckPort} is supplied either by the library default (see {@link
+   * io.camunda.security.spring.authz.AuthorizationConfiguration}) or a host override.
    */
   @Bean
   @ConditionalOnBean({
     WebAppProviderPort.class,
-    ResourcePermissionPort.class,
+    AuthorizationCheckPort.class,
     WebAppAccessDeniedHandlerPort.class,
     CamundaAuthenticationProvider.class,
     SecurityPathPort.class
   })
   public WebAppAuthorizationCheckFilter webAppAuthorizationCheckFilter(
       final WebAppProviderPort webAppProvider,
-      final ResourcePermissionPort resourcePermissionPort,
+      final AuthorizationCheckPort authorizationCheckPort,
       final WebAppAccessDeniedHandlerPort webAppAccessDeniedHandler,
       final CamundaAuthenticationProvider authenticationProvider,
       final SecurityPathPort securityPathPort,
@@ -92,7 +78,7 @@ public class WebAppAuthorizationFilterConfiguration {
     return new WebAppAuthorizationCheckFilter(
         properties.getAuthorizations().isEnabled(),
         webAppProvider,
-        resourcePermissionPort,
+        authorizationCheckPort,
         webAppAccessDeniedHandler,
         authenticationProvider,
         securityPathPort.staticResourceSuffixes());

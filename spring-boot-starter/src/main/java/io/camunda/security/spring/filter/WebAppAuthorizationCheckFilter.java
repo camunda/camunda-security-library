@@ -9,9 +9,10 @@ package io.camunda.security.spring.filter;
 
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.api.model.CamundaAuthentication;
+import io.camunda.security.api.model.authz.AuthorizationResourceType;
 import io.camunda.security.api.model.authz.PermissionType;
-import io.camunda.security.api.model.authz.ResourceType;
-import io.camunda.security.core.port.in.ResourcePermissionPort;
+import io.camunda.security.core.auth.RequiredAuthorization;
+import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.spring.spi.WebAppAccessDeniedHandlerPort;
 import io.camunda.security.spring.spi.WebAppProviderPort;
 import jakarta.servlet.FilterChain;
@@ -30,7 +31,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * <ul>
  *   <li>{@link WebAppProviderPort} — resolves the request to a web-app id (Hub: constant, OC:
  *       derived from the URL path).
- *   <li>{@link ResourcePermissionPort} — decides whether the principal has {@code ACCESS} on the
+ *   <li>{@link AuthorizationCheckPort} — decides whether the principal has {@code ACCESS} on the
  *       resolved web-app.
  *   <li>{@link WebAppAccessDeniedHandlerPort} — invoked when access is denied. Hosts decide the
  *       response shape (redirect to a forbidden page, 403 JSON, RequestDispatcher.forward, etc.).
@@ -47,8 +48,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * {@link WebAppProviderPort#webAppFor(HttpServletRequest)} returns empty.
  *
  * <p>The global-disable gate is applied here — at the enforcement choke point — rather than only in
- * the {@link ResourcePermissionPort}, because hosts may supply their own {@code
- * ResourcePermissionPort} that is unaware of the flag. Gating the filter keeps the webapp plane off
+ * the {@link AuthorizationCheckPort}, because hosts may supply their own {@code
+ * AuthorizationCheckPort} that is unaware of the flag. Gating the filter keeps the webapp plane off
  * for every host when authorization is disabled, matching the data-plane {@code
  * AuthorizationService}.
  */
@@ -60,7 +61,7 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
 
   private final boolean authorizationEnabled;
   private final WebAppProviderPort webAppProvider;
-  private final ResourcePermissionPort permissionPort;
+  private final AuthorizationCheckPort authorizationCheckPort;
   private final WebAppAccessDeniedHandlerPort accessDeniedHandler;
   private final CamundaAuthenticationProvider authenticationProvider;
   private final Set<String> staticResourceSuffixes;
@@ -68,13 +69,13 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
   public WebAppAuthorizationCheckFilter(
       final boolean authorizationEnabled,
       final WebAppProviderPort webAppProvider,
-      final ResourcePermissionPort permissionPort,
+      final AuthorizationCheckPort authorizationCheckPort,
       final WebAppAccessDeniedHandlerPort accessDeniedHandler,
       final CamundaAuthenticationProvider authenticationProvider,
       final Set<String> staticResourceSuffixes) {
     this.authorizationEnabled = authorizationEnabled;
     this.webAppProvider = webAppProvider;
-    this.permissionPort = permissionPort;
+    this.authorizationCheckPort = authorizationCheckPort;
     this.accessDeniedHandler = accessDeniedHandler;
     this.authenticationProvider = authenticationProvider;
     this.staticResourceSuffixes = Set.copyOf(staticResourceSuffixes);
@@ -110,8 +111,14 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
     }
 
     final String resolved = webApp.get();
-    if (permissionPort.hasPermission(
-        authentication, ResourceType.COMPONENT, resolved, PermissionType.ACCESS)) {
+    final RequiredAuthorization<Void> required =
+        RequiredAuthorization.of(
+            builder ->
+                builder
+                    .resourceType(AuthorizationResourceType.COMPONENT)
+                    .permissionType(PermissionType.ACCESS)
+                    .resourceId(resolved));
+    if (authorizationCheckPort.check(authentication, required).isRight()) {
       filterChain.doFilter(request, response);
       return;
     }

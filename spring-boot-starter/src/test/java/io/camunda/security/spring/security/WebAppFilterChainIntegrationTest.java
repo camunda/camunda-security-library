@@ -12,9 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.api.model.CamundaAuthentication;
-import io.camunda.security.api.model.authz.Authorization;
-import io.camunda.security.api.model.authz.ResourceType;
-import io.camunda.security.core.port.out.AuthorizationRepositoryPort;
+import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
@@ -23,10 +21,10 @@ import io.camunda.security.spring.oidc.OidcBeansConfiguration;
 import io.camunda.security.spring.oidc.OidcWebappClientBeansConfiguration;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.spi.WebAppProviderPort;
+import io.camunda.security.spring.testsupport.PermissiveAuthorizationCheckPort;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import jakarta.servlet.Filter;
 import java.util.Optional;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
@@ -92,7 +90,7 @@ class WebAppFilterChainIntegrationTest {
   @Test
   void basicChainContainsWebAppAuthorizationFilterWhenSpisAreRegistered() {
     basicRunner
-        .withUserConfiguration(StubAuthorizationRepository.class)
+        .withUserConfiguration(StubAuthorizationCheckPort.class)
         .withUserConfiguration(StubWebAppProvider.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .run(
@@ -117,7 +115,7 @@ class WebAppFilterChainIntegrationTest {
   @Test
   void oidcChainContainsWebAppAuthorizationFilterWhenSpisAreRegistered() {
     oidcRunner
-        .withUserConfiguration(StubAuthorizationRepository.class)
+        .withUserConfiguration(StubAuthorizationCheckPort.class)
         .withUserConfiguration(StubWebAppProvider.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .run(
@@ -153,17 +151,11 @@ class WebAppFilterChainIntegrationTest {
   }
 
   @Configuration
-  static class StubAuthorizationRepository {
+  static class StubAuthorizationCheckPort {
 
     @Bean
-    AuthorizationRepositoryPort authorizationRepository() {
-      return new AuthorizationRepositoryPort() {
-        @Override
-        public Set<Authorization> findAuthorizations(
-            final CamundaAuthentication authentication, final ResourceType resourceType) {
-          return Set.of();
-        }
-      };
+    AuthorizationCheckPort authorizationCheckPort() {
+      return new PermissiveAuthorizationCheckPort();
     }
   }
 
