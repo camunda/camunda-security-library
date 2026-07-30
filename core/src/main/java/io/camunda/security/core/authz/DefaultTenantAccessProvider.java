@@ -11,16 +11,18 @@ import io.camunda.security.api.model.CamundaAuthentication;
 import java.util.List;
 
 /**
- * A {@link TenantAccessProvider} that derives the verdict purely from the tenant IDs carried on the
- * {@link CamundaAuthentication} ({@link CamundaAuthentication#authenticatedTenantIds()}) — no
- * authorization store is queried. Suitable for callers such as the process engine that already hold
- * the principal's authorized tenants in the authentication context.
+ * The canonical {@link TenantAccessProvider}. It derives the verdict purely from the tenant ids
+ * carried on the {@link CamundaAuthentication} ({@link
+ * CamundaAuthentication#authenticatedTenantIds()}) — no authorization store is queried. For a
+ * resource, {@link #hasTenantAccess(CamundaAuthentication, Object)} extracts the owning tenant via
+ * {@link TenantOwnedEntity}; resources that are not tenant-owned require no tenant check and are
+ * granted.
  *
- * <p>Engine-specific skip/default policy (anonymous → wildcard, multi-tenancy disabled → default
- * tenant, no principal → denied) is intentionally out of scope here; callers that need it layer it
- * on top of this provider.
+ * <p>This provider is anonymous-agnostic: it does not special-case anonymous authentications.
+ * Callers that grant anonymous requests unconditional access (e.g. the engine write-path, or the
+ * search read-path's anonymous controller) handle that before delegating here.
  */
-public class ClaimsBasedTenantAccessProvider implements TenantAccessProvider {
+public class DefaultTenantAccessProvider implements TenantAccessProvider {
 
   @Override
   public TenantAccess resolveTenantAccess(final CamundaAuthentication authentication) {
@@ -31,19 +33,15 @@ public class ClaimsBasedTenantAccessProvider implements TenantAccessProvider {
     return TenantAccess.allowed(authenticatedTenantIds);
   }
 
-  /**
-   * Not supported by the claims-based provider: extracting a tenant from an arbitrary resource
-   * requires a resource-type-aware abstraction (e.g. the search layer's {@code TenantOwnedEntity}),
-   * which is not available in {@code core}. Callers needing per-document resolution should use a
-   * resource-aware provider such as the search module's {@code DefaultTenantAccessProvider}, or
-   * extract the tenant id themselves and call {@link #hasTenantAccessByTenantId}.
-   */
   @Override
   public <T> TenantAccess hasTenantAccess(
       final CamundaAuthentication authentication, final T resource) {
-    throw new UnsupportedOperationException(
-        "ClaimsBasedTenantAccessProvider cannot resolve the tenant of an arbitrary resource; "
-            + "use a resource-aware TenantAccessProvider or hasTenantAccessByTenantId instead.");
+    if (resource instanceof final TenantOwnedEntity tenantOwnedEntity
+        && tenantOwnedEntity.hasTenantScope()) {
+      return hasTenantAccessByTenantId(authentication, tenantOwnedEntity.tenantId());
+    }
+    // if not tenant-owned, no tenant check needed => access granted
+    return TenantAccess.allowed(List.of());
   }
 
   @Override
