@@ -1,12 +1,18 @@
 ---
-status: Accepted
+status: Superseded by ADR-0028
 ---
 
 # ADR-0007: Two-port authorization surface (`ResourcePermissionPort` and `AuthorizationRepositoryPort`)
 
 ## Status
 
-Accepted
+Superseded by [ADR-0028](0028-unified-authz-framework-in-core.md).
+
+Both ports defined here — `ResourcePermissionPort` (inbound) and
+`AuthorizationRepositoryPort` (outbound) — were removed in #399 once the webapp
+authorization filter, their last consumer, was rerouted through the unified
+`AuthorizationCheckPort`. See ADR-0028 decision 8. The historical context below is
+retained for the record.
 
 ## Context
 

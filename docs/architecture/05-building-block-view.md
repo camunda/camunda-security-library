@@ -375,7 +375,7 @@ Example snapshots (semantic contract):
 The Camunda Security Library is built on top of Spring Security but does not replace it. Spring Security provides the filter chain, `SecurityContext` management, and the `HttpSecurity` DSL. The CSL configures and extends the Spring Security infrastructure by:
 
 - Assembling Spring Security OIDC infrastructure (`ClientRegistrationRepository`, `JwtDecoder`, token validators) from configuration sourced via `OidcProviderConfigurationPort`.
-- Installing a scope-aware authorization filter (`WebAppAuthorizationCheckFilter`) backed by `ResourcePermissionPort`.
+- Installing a scope-aware authorization filter (`WebAppAuthorizationCheckFilter`) backed by `AuthorizationCheckPort`.
 - Providing a set of `SecurityFilterChain` configuration classes that consuming applications activate by explicit `@Import`.
 
 Consuming applications should not need to write Spring Security configuration from scratch. CSL ships a set of `@Configuration` classes in the `spring-boot-starter` module, each covering a specific concern (authentication method, session management, OIDC provider wiring, etc.). Nothing activates automatically from adding the Maven dependency alone — see [ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md).
@@ -399,8 +399,8 @@ In addition to core ports, the library is structured across four Maven modules:
 
 The `api` contracts are consumer-facing and do not need to be outbound host-implemented adapters.
 
-- **Inbound (driving) side:** A Spring MVC controller or security filter lives in the host application. It imports and calls an inbound port interface (e.g. `ResourcePermissionPort`) from the library. The implementation lives in `spring-boot-starter` and may delegate to outbound ports for data.
-- **Outbound (driven) side:** The implementation calls an outbound port interface (e.g. `AuthorizationRepositoryPort`) defined in the library. The host application provides the concrete adapter implementation.
+- **Inbound (driving) side:** A Spring MVC controller or security filter lives in the host application. It imports and calls an inbound port interface (e.g. `AuthorizationCheckPort`) from the library. The implementation lives in `spring-boot-starter` and may delegate to outbound ports for data.
+- **Outbound (driven) side:** The implementation calls an outbound port interface (e.g. `AuthorizationScopeRepositoryPort`) defined in the library. The host application provides the concrete adapter implementation.
 
 ```mermaid
 graph LR
@@ -413,7 +413,7 @@ graph LR
 
   subgraph CORE["Camunda Security Library"]
     subgraph IN_PORTS["Inbound ports (core/port/in/)"]
-      RPP["ResourcePermissionPort"]
+      ACP["AuthorizationCheckPort"]
       CUP["CamundaUserPort"]
       OCP["OidcProviderConfigurationPort"]
       PP["PolicyPort"]
@@ -423,7 +423,6 @@ graph LR
     end
     DL["Implementations</br>(spring-boot-starter)"]
     subgraph OUT_PORTS["Outbound ports (core/port/out/)"]
-      ARP["AuthorizationRepositoryPort"]
       ASRP["AuthorizationScopeRepositoryPort"]
       AC2["AuthorizedComponentsPort"]
       MP["MembershipPort"]
@@ -442,7 +441,6 @@ graph LR
   end
 
   subgraph EXT_OUT["Outbound adapter implementations (host application)"]
-    ARP_I["Authorization data</br>RDBMS / search adapter"]
     ASRP_I["Authorization scopes</br>RDBMS / search adapter"]
     AC2_I["Authorized components</br>RDBMS / search adapter"]
     MP_I["Membership data</br>RDBMS / search adapter"]
@@ -453,16 +451,15 @@ graph LR
     OX_I["Outbox</br>SQL adapter (same TX as policy write)"]
   end
 
-  SC -->|"calls"| RPP
+  SC -->|"calls"| ACP
   UE -->|"calls"| CUP
   PAC -->|"calls"| PAP
   AC -->|"calls"| PP
 
-  RPP & CUP & OCP & PP & PAP -->|"implemented by"| DL
+  ACP & CUP & OCP & PP & PAP -->|"implemented by"| DL
 
-  DL -->|"calls"| ARP & ASRP & AC2 & MP & BAUDP & AUPP & SSP & SECP
+  DL -->|"calls"| ASRP & AC2 & MP & BAUDP & AUPP & SSP & SECP
 
-  ARP -->|"implemented by"| ARP_I
   ASRP -->|"implemented by"| ASRP_I
   AC2 -->|"implemented by"| AC2_I
   MP -->|"implemented by"| MP_I
@@ -479,7 +476,7 @@ graph LR
 
 | Inbound port | Responsibility | Status | Deployment strategies | Typical host-side callers |
 |---|---|---|---|---|
-| `ResourcePermissionPort` | Answers whether the current principal has a given `PermissionType` on a given resource. The library ships a default implementation backed by `AuthorizationRepositoryPort`. | Active | all | `WebAppAuthorizationCheckFilter` |
+| `AuthorizationCheckPort` | Checks whether a `CamundaAuthentication` is authorized for a `RequiredAuthorization`, returning `Either<AuthorizationRejection, Void>` (right = authorized). The library ships a default implementation, `AuthorizationService`, backed by `AuthorizationScopeRepositoryPort` and `MembershipPort`. | Active | all | `WebAppAuthorizationCheckFilter` |
 | `CamundaUserPort` | Returns the currently-authenticated user view and bearer token. The library ships OIDC and basic auth defaults. | Active | all | User-info REST endpoints |
 | `OidcProviderConfigurationPort` | Returns OIDC provider configurations keyed by registration ID, supporting multi-IdP and per-tenant OIDC setup. | Active | all | OIDC decoder factory, login picker, client registration |
 | `PolicyPort` | Queries and authors the unified policy model (roles, authorizations, mapping rules) in the local source-of-truth runtime. | Stub | `hub`, `standalone` | Admin REST controller, Hub UI / OC UI backend |
@@ -491,7 +488,6 @@ graph LR
 
 | Outbound port | Responsibility | Status | Deployment strategies | Typical host-side implementations |
 |---|---|---|---|---|
-| `AuthorizationRepositoryPort` | Returns `Authorization` records for a principal on a given resource type, resolving identity transitively through groups, roles, and mapping rules. | Active | all | RDBMS / search adapter |
 | `AuthorizationScopeRepositoryPort` | Resolves resource-access grants (`AuthorizationScope` records — wildcard, specific-ID, property) the authenticated principal holds, for search pre-filtering, point-resource checks, and permission discovery on resource detail views. | Active | all | RDBMS / search adapter |
 | `AuthorizedComponentsPort` | Returns the list of webapp components the authenticated principal is allowed to access. | Active | all | RDBMS / search adapter |
 | `MembershipPort` | Resolves a principal's memberships through a chain: mapping rule IDs → group IDs → role IDs → tenant IDs. | Active | all | RDBMS / search adapter |
@@ -519,7 +515,7 @@ Mode activation is property-driven via Spring Boot conditions (`@ConditionalOnPr
 
 **Current implementation state:** authentication method selection (`camunda.security.authentication.method=basic|oidc`) is active today and governs which filter chains are assembled. The deployment strategy property (`hub` / `managed` / `standalone` — current property values use an `oc-` prefix: `oc-managed`, `oc-standalone`) is defined in the configuration model but is not yet consumed by the filter chain layer — it is planned for the policy work that wires `PolicyPort`, `PolicyApplyPort`, and the Hub/OC-specific outbound ports.
 
-Hub enforces AuthN/AuthZ for the Hub UI using the same `ResourcePermissionPort` used by OC, configured with Hub-scoped resources. `IdpClientPort` is a planned outbound port for external IdP interactions; the current OIDC integration wires `OidcProviderConfigurationPort` instead.
+Hub enforces AuthN/AuthZ for the Hub UI using the same `AuthorizationCheckPort` used by OC, configured with Hub-scoped resources. `IdpClientPort` is a planned outbound port for external IdP interactions; the current OIDC integration wires `OidcProviderConfigurationPort` instead.
 
 **Camunda Security Library responsibilities by deployment strategy:**
 
@@ -539,9 +535,9 @@ flowchart TB
 
   Core["Always-on core<br>Spring Security filter chain<br>Scope resolver + Session handling"]
 
-  Hub --> HubIn["Inbound ports enabled:<br>ResourcePermissionPort, TenantPort, PolicyPort,<br>ClusterRegistrationPort"]
-  OCM --> OCMIn["Inbound ports enabled:<br>ResourcePermissionPort, TenantPort, PolicyApplyPort"]
-  OCS --> OCSPin["Inbound ports enabled:<br>ResourcePermissionPort, TenantPort, PolicyPort"]
+  Hub --> HubIn["Inbound ports enabled:<br>AuthorizationCheckPort, TenantPort, PolicyPort,<br>ClusterRegistrationPort"]
+  OCM --> OCMIn["Inbound ports enabled:<br>AuthorizationCheckPort, TenantPort, PolicyApplyPort"]
+  OCS --> OCSPin["Inbound ports enabled:<br>AuthorizationCheckPort, TenantPort, PolicyPort"]
 
   Hub --> HubPorts["Outbound ports required:<br>PolicyRepositoryPort, OutboxPort,<br>SessionStorePort, ClusterRegistryPort"]
   OCM --> OCMPorts["Outbound ports required:<br>PolicyRepositoryPort, SessionStorePort,<br>EngineCommandPort (planned)"]
@@ -652,7 +648,7 @@ Using CSL's `core` authz framework for both layers is intentional:
 
 - **Single evaluation kernel, no drift (planned):** ADR-0028 proposes a shared `AuthorizationCheckPort` implemented by a core `AuthorizationService`. Today, CSL already provides `AuthorizationChecker` (`core/authz`) as the shared scope-evaluation component.
 - **No new port contracts:** the engine integrates against existing `MembershipPort` and `AuthorizationScopeRepositoryPort` — no new outbound ports to stabilize before the engine migration begins.
-- **Richer failure detail (planned):** ADR-0028 proposes exposing failure reasons (tenant vs. permission) via an `Either`-style result; `ResourcePermissionPort` remains the boolean surface for current search-layer callers.
+- **Richer failure detail:** `AuthorizationCheckPort` exposes failure reasons (tenant vs. permission) via an `Either`-style result (`Either<AuthorizationRejection, Void>`), per ADR-0028 — the single authorization surface for both the search layer and the engine, replacing the earlier boolean-only inbound port.
 - **Spring-free auth context (planned):** ADR-0028 proposes `ClaimsAuthenticationConverter` in `core` to convert raw claims to `CamundaAuthentication` without Spring dependencies.
 - **Primary-storage-optimized adapters:** engine-side caching remains an adapter concern; CSL core stays dependency-free and cache-agnostic.
 

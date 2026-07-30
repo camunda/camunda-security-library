@@ -19,7 +19,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0004: Identity data persistence in the Orchestration Cluster (Open)](../adr/0004-oc-identity-data-persistence-and-engine-command-scope.md)
 - [ADR-0005: Frontend integration approach for Hub and Orchestration Cluster Admin UI](../adr/0005-frontend-integration-for-hub-and-oc.md)
 - [ADR-0006: Central Spring Security filter chains](../adr/0006-central-security-filter-chains.md)
-- [ADR-0007: Two-port authorization surface (`ResourcePermissionPort` and `AuthorizationRepositoryPort`)](../adr/0007-resource-permission-port-and-authorization-repository.md)
+- [ADR-0007: Two-port authorization surface (`ResourcePermissionPort` and `AuthorizationRepositoryPort`)](../adr/0007-resource-permission-port-and-authorization-repository.md) (superseded by ADR-0028)
 - [ADR-0008: No Spring Boot auto-configuration — hosts explicitly import configurations](../adr/0008-no-spring-boot-auto-configuration.md)
 - [ADR-0009: Web-app authorization SPIs](../adr/0009-web-app-authorization-spis.md)
 - [ADR-0010: Admin-user setup SPIs](../adr/0010-admin-user-setup-spis.md)

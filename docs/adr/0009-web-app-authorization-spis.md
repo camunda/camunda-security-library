@@ -6,7 +6,12 @@ status: Accepted
 
 ## Status
 
-Accepted
+Accepted. Amended by #399 (see [ADR-0028](0028-unified-authz-framework-in-core.md)): the
+`WebAppProviderPort` and `WebAppAccessDeniedHandlerPort` SPIs introduced here are unchanged,
+but the webapp filter now delegates the access decision to `AuthorizationCheckPort.check(...)`
+instead of the (now removed) `ResourcePermissionPort` / `AuthorizationRepositoryPort` two-port
+surface from [ADR-0007](0007-resource-permission-port-and-authorization-repository.md). The
+`ResourcePermissionPort` rows and references below are historical.
 
 ## Context
 
