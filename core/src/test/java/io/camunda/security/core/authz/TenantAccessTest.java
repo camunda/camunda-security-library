@@ -113,6 +113,15 @@ class TenantAccessTest {
     }
 
     @Test
+    void shouldReturnFalseWhenRequestedTenantListIsNull() {
+      // given
+      final var access = TenantAccess.allowed(List.of("t1"));
+
+      // when - then
+      assertThat(access.isAuthorizedForTenantIds(null)).isFalse();
+    }
+
+    @Test
     void shouldReturnFalseWhenDenied() {
       // given
       final var access = TenantAccess.denied(List.of("t1"));
