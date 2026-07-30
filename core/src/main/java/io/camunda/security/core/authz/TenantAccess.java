@@ -29,25 +29,30 @@ public record TenantAccess(boolean allowed, boolean wildcard, List<String> tenan
   /**
    * Returns {@code true} when this verdict authorizes access to {@code tenantId} — either because
    * it is a wildcard grant, or because it is an allowed grant whose resolved tenant IDs contain
-   * {@code tenantId}. A {@link #denied()} verdict never authorizes, even if {@code tenantId}
-   * appears among its listed IDs.
+   * {@code tenantId}. A {@code null} {@code tenantId} and a {@link #denied()} verdict never
+   * authorize (fail-closed on malformed input), even if {@code tenantId} appears among the listed
+   * IDs.
    */
   public boolean isAuthorizedForTenantId(final String tenantId) {
-    return wildcard || (allowed && tenantIds != null && tenantIds.contains(tenantId));
+    if (tenantId == null) {
+      return false;
+    }
+    return allowed && (wildcard || (tenantIds != null && tenantIds.contains(tenantId)));
   }
 
   /**
-   * Returns {@code true} when this verdict authorizes access to every tenant in {@code tenantIds} —
-   * either because it is a wildcard grant, or because it is an allowed grant whose resolved tenant
-   * IDs contain all of them. An empty {@code tenantIds} is vacuously authorized for any allowed or
-   * wildcard grant; a {@code null} request and a {@link #denied()} verdict never authorize
-   * (fail-closed on malformed input).
+   * Returns {@code true} when this verdict authorizes access to every tenant in {@code
+   * requestedTenantIds} — either because it is a wildcard grant, or because it is an allowed grant
+   * whose resolved tenant IDs contain all of them. An empty request is vacuously authorized for any
+   * allowed or wildcard grant; a {@code null} request and a {@link #denied()} verdict never
+   * authorize (fail-closed on malformed input).
    */
-  public boolean isAuthorizedForTenantIds(final List<String> tenantIds) {
-    if (tenantIds == null) {
+  public boolean isAuthorizedForTenantIds(final List<String> requestedTenantIds) {
+    if (requestedTenantIds == null) {
       return false;
     }
-    return wildcard || (allowed && this.tenantIds != null && this.tenantIds.containsAll(tenantIds));
+    return allowed
+        && (wildcard || (tenantIds != null && tenantIds.containsAll(requestedTenantIds)));
   }
 
   /**

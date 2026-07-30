@@ -71,6 +71,24 @@ class TenantAccessTest {
       // when - then
       assertThat(access.isAuthorizedForTenantId("t1")).isFalse();
     }
+
+    @Test
+    void shouldReturnFalseWhenTenantIdIsNull() {
+      // given - a resolved list built with List.of(...) would throw on contains(null)
+      final var access = TenantAccess.allowed(List.of("t1"));
+
+      // when - then
+      assertThat(access.isAuthorizedForTenantId(null)).isFalse();
+    }
+
+    @Test
+    void shouldReturnFalseForMalformedWildcardWithoutAllowed() {
+      // given - the factories never build this, but the canonical constructor is public API
+      final var access = new TenantAccess(false, true, List.of());
+
+      // when - then
+      assertThat(access.isAuthorizedForTenantId("t1")).isFalse();
+    }
   }
 
   @Nested
@@ -134,6 +152,15 @@ class TenantAccessTest {
     void shouldReturnFalseWhenDeniedWithNullTenantIds() {
       // given
       final var access = TenantAccess.denied(null);
+
+      // when - then
+      assertThat(access.isAuthorizedForTenantIds(List.of("t1"))).isFalse();
+    }
+
+    @Test
+    void shouldReturnFalseForMalformedWildcardWithoutAllowed() {
+      // given - the factories never build this, but the canonical constructor is public API
+      final var access = new TenantAccess(false, true, List.of());
 
       // when - then
       assertThat(access.isAuthorizedForTenantIds(List.of("t1"))).isFalse();
