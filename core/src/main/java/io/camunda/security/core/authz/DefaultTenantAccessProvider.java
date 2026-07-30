@@ -22,7 +22,7 @@ import java.util.List;
  * Callers that grant anonymous requests unconditional access (e.g. the engine write-path, or the
  * search read-path's anonymous controller) handle that before delegating here.
  */
-public class DefaultTenantAccessProvider implements TenantAccessProvider {
+public final class DefaultTenantAccessProvider implements TenantAccessProvider {
 
   @Override
   public TenantAccess resolveTenantAccess(final CamundaAuthentication authentication) {
