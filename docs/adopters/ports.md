@@ -27,7 +27,7 @@ There are three categories:
 | Port | CSL default implementation | OC example override |
 |---|---|---|
 | [`OidcProviderConfigurationPort`](#oidcproviderconfigurationport) | `OidcAuthenticationConfigurationRepository` | _(none — CSL default used)_ |
-| [`ResourcePermissionPort`](#resourcepermissionport) | `ResourcePermissionService` | `IdentityToAdminComponentAliasAdapter` |
+| [`AuthorizationCheckPort`](#authorizationcheckport) | `AuthorizationService` | _(host may register a decorator)_ |
 | [`PolicyPort`](#policyport) | _(none — under development)_ | _(none)_ |
 | [`PolicyApplyPort`](#policyapplyport) | _(none — under development)_ | _(none)_ |
 | [`TenantPort`](#tenantport) | _(none — under development)_ | _(none)_ |
@@ -38,7 +38,7 @@ There are three categories:
 | Port | CSL default implementation | OC example implementation |
 |---|---|---|
 | [`AdminUserPresencePort`](#adminuserpresenceport) | _(none — host must provide)_ | `AdminUserPresenceAdapter` |
-| [`AuthorizationRepositoryPort`](#authorizationrepositoryport) | _(none — host must provide)_ | `AuthorizationRepositoryAdapter` |
+| [`AuthorizationScopeRepositoryPort`](#authorizationscoperepositoryport) | _(none — host must provide)_ | `SearchAuthorizationScopeRepository` |
 | [`MembershipPort`](#membershipport) | _(none — host must provide)_ | `NoDBMembershipService`, `DefaultMembershipService` |
 | [`SecurityPathPort`](#securitypathport) | _(none — host must provide)_ | `SecurityPathAdapter` |
 | [`BasicAuthUserDetailsPort`](#basicauthuserdetailsport) | _(none — host must provide)_ | `UserDetailsAdapter` |
@@ -94,31 +94,36 @@ Map<String, OidcConfiguration> getOidcAuthenticationConfigurations();
 
 ---
 
-### `ResourcePermissionPort`
+### `AuthorizationCheckPort`
 
 ```java
 package io.camunda.security.core.port.in;
 ```
 
-Answers permission questions: "does this principal have this permission on this resource?" The
-default implementation delegates to `AuthorizationRepositoryPort` (outbound) for data and matches
-grants by resource ID and permission type across the principal's authorizations.
+The unified authorization inbound port (ADR-0026/ADR-0028): "is this principal authorized for this
+requirement?" A `RequiredAuthorization` pairs an `AuthorizationResourceType` with a `PermissionType`
+and scopes it to resource IDs (and optionally resource property names). The port returns
+`Either.right(null)` when authorized and `Either.left(rejection)` when denied. Both the Zeebe engine
+data plane and the webapp authorization filter use this port.
 
-**Method**
+**Methods**
 
 ```java
-boolean hasPermission(
-    CamundaAuthentication authentication,
-    ResourceType resourceType,
-    String resourceId,
-    PermissionType permissionType);
+<T> Either<AuthorizationRejection, Void> check(
+    CamundaAuthentication authentication, RequiredAuthorization<T> authorization);
+<T> Either<AuthorizationRejection, Void> check(
+    Map<String, Object> claims, RequiredAuthorization<T> authorization);
+<T> Either<AuthorizationRejection, Void> check(
+    CamundaAuthentication authentication, RequiredAuthorization<T> authorization, T resource);
 ```
 
-**CSL default:** `ResourcePermissionService`
-(`spring-boot-starter/src/main/java/io/camunda/security/spring/security/`).
+**CSL default:** `AuthorizationService` (`core/`), wired by `AuthorizationConfiguration` when the
+host supplies an `AuthorizationScopeRepositoryPort` (from which the library builds an
+`AuthorizationChecker`) and a `MembershipPort` (from which the claims converter is built). Backs off
+via `@ConditionalOnMissingBean(AuthorizationCheckPort.class)`.
 
-**OC example override:** `IdentityToAdminComponentAliasAdapter` — translates Camunda resource types
-to the component aliases Camunda Identity understands before delegating the permission check.
+**OC example override:** a host may register its own `AuthorizationCheckPort` bean to decorate the
+default — for example to add legacy component-access aliasing before delegating.
 
 ---
 
@@ -198,27 +203,45 @@ admin roles exists in the primary data store.
 
 ---
 
-### `AuthorizationRepositoryPort`
+### `AuthorizationScopeRepositoryPort`
 
 ```java
 package io.camunda.security.core.port.out;
 ```
 
-Returns authorization records held for a principal on a given resource type. The library's
-`ResourcePermissionService` aggregates these records to answer permission questions. Implementations
-should resolve grants transitively — direct user/client grants plus grants reachable via groups,
-roles, and mapping rules.
+Supplies the authorization scopes a set of owners hold, so the library's `AuthorizationChecker` (and
+thus the default `AuthorizationCheckPort`) can decide access. The library resolves the principal's
+owner IDs (user/client plus groups, roles, mapping rules) via `MembershipPort` and passes them
+pre-resolved to this port; implementations own only where the scope records come from (search index,
+RDBMS, engine state, etc.).
 
-**Method**
+**Methods**
 
 ```java
-Set<Authorization> findAuthorizations(CamundaAuthentication authentication, ResourceType resourceType);
+List<AuthorizationScope> findAuthorizedScopes(
+    Map<EntityType, Set<String>> ownerIds,
+    AuthorizationResourceType resourceType,
+    PermissionType permissionType);
+boolean hasAuthorizedScope(
+    Map<EntityType, Set<String>> ownerIds,
+    AuthorizationResourceType resourceType,
+    PermissionType permissionType,
+    List<String> resourceIds);
+Set<PermissionType> findPermissionTypes(
+    Map<EntityType, Set<String>> ownerIds,
+    AuthorizationResourceType resourceType,
+    List<String> resourceIds);
 ```
+
+`findAuthorizedPropertyScopes(...)` has a default implementation that filters the result of
+`findAuthorizedScopes`; override it with a store-level filtered query when a principal may hold many
+scopes.
 
 **CSL default:** none — the host must supply this bean.
 
-**OC example:** `AuthorizationRepositoryAdapter` in `authentication/` — queries the authorization
-index (search or RDBMS) for the principal's effective grants.
+**OC example:** `SearchAuthorizationScopeRepository` (`security/security-services/` in the
+`camunda/camunda` monorepo) — queries the authorization index (search or RDBMS) for the owners'
+scopes.
 
 ---
 
@@ -536,8 +559,8 @@ camunda-security-library/
 │   └── out/  ← outbound port interfaces
 └── spring-boot-starter/src/main/java/io/camunda/security/spring/
     ├── oidc/     ← OidcAuthenticationConfigurationRepository (OidcProviderConfigurationPort default)
-    ├── security/ ← ResourcePermissionService, RedirectingAdminUserMissingAdapter,
-    │               RedirectingWebAppAccessDeniedAdapter
+    ├── authz/    ← AuthorizationConfiguration (wires the AuthorizationCheckPort default)
+    ├── security/ ← RedirectingAdminUserMissingAdapter, RedirectingWebAppAccessDeniedAdapter
     └── spi/      ← Spring SPI port interfaces
 ```
 

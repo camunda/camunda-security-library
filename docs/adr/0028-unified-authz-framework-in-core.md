@@ -136,9 +136,13 @@ per-adapter; Inc 4 must verify equivalent performance via the existing authoriza
 
 ### 8. `ResourcePermissionPort` transition
 
-Kept for backwards compatibility. Migrating search-layer callers to `AuthorizationCheckPort`
-is deferred to Inc 5; `ResourcePermissionService` may delegate to `AuthorizationService`
-internally.
+Originally kept for backwards compatibility, with the caller migration deferred. Completed in
+#399: the webapp authorization filter (`WebAppAuthorizationCheckFilter`) — the last consumer of
+`ResourcePermissionPort` — was rerouted to `AuthorizationCheckPort.check(...)`, and the
+`ResourcePermissionPort` inbound port, its `ResourcePermissionService` default, and the paired
+`AuthorizationRepositoryPort` outbound port were all removed (ADR-0007, now superseded). The
+delegation-to-`AuthorizationService` intermediate step proved unnecessary — the filter binds to
+`AuthorizationCheckPort` directly.
 
 ## Consequences
 

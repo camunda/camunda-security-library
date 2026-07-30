@@ -704,7 +704,7 @@ The CSL's `WebAppAuthorizationCheckFilter` enforces per-web-app `ACCESS` permiss
 - **Which web app does the request belong to?** A single-web-app host returns a constant; a multi-web-app host derives from the URL path. Implement `WebAppProviderPort`.
 - **What happens when access is denied?** The library default redirects to `<contextPath>/<webApp>/forbidden`. Override `WebAppAccessDeniedHandlerPort` to return JSON, forward, or anything else.
 
-The actual permission decision delegates to `ResourcePermissionPort` — see [ADR-0007](../adr/0007-resource-permission-port-and-authorization-repository.md). Hosts implement `AuthorizationRepositoryPort` for the data; the library supplies a default `ResourcePermissionService` that does an exact-id match. Hosts that need different matching semantics override `ResourcePermissionPort` directly. Activation rationale lives in [ADR-0009](../adr/0009-web-app-authorization-spis.md).
+The actual permission decision delegates to the unified `AuthorizationCheckPort` (ADR-0026/ADR-0028): the filter asks for `ACCESS` on the resolved web app as a `COMPONENT` resource and treats `Either.right(...)` as authorized. Hosts supply an `AuthorizationCheckPort` — either their own bean, or the ingredients for the library default (an `AuthorizationScopeRepositoryPort`, from which `AuthorizationConfiguration` builds `AuthorizationService`). Activation rationale lives in [ADR-0009](../adr/0009-web-app-authorization-spis.md).
 
 ### Activation
 
@@ -725,7 +725,7 @@ public class HostSecurityConfiguration {}
 
 ### Opting out
 
-If your host doesn't enforce per-web-app authorization (for example Hub, which has no resource→permission model that maps onto the `ResourceType.COMPONENT` + `PermissionType.ACCESS` shape), simply omit `WebAppAuthorizationFilterConfiguration` from your `@Import` list. The chain configurations inject the filter via `ObjectProvider`; when the bean isn't there, `addFilterAfterIfAvailable(...)` is a no-op. Nothing else in the webapp chain changes.
+If your host doesn't enforce per-web-app authorization (for example Hub, which has no resource→permission model that maps onto the `AuthorizationResourceType.COMPONENT` + `PermissionType.ACCESS` shape), simply omit `WebAppAuthorizationFilterConfiguration` from your `@Import` list. The chain configurations inject the filter via `ObjectProvider`; when the bean isn't there, `addFilterAfterIfAvailable(...)` is a no-op. Nothing else in the webapp chain changes.
 
 There is no halfway state to worry about — the filter is either fully wired (you imported the configuration and registered the SPIs) or completely absent (you didn't). It's safe to add later when the host's authorization model is ready.
 
@@ -763,24 +763,20 @@ public WebAppProviderPort pathDerivedWebAppProviderPort(final SecurityPathPort p
 
 `Optional.empty()` signals "this request doesn't belong to a web app" and the filter passes through without invoking the permission check. Filter requests for static assets, anonymous users, and `/forbidden` URLs are pre-filtered by the filter itself — the provider only has to handle the path-derivation question.
 
-### Authorization data: `AuthorizationRepositoryPort`
+### Authorization data: `AuthorizationScopeRepositoryPort`
 
-Implement the outbound port that returns the principal's authorization records for a given resource type. The library calls this per request through the default `ResourcePermissionService`:
+The webapp filter delegates the decision to an `AuthorizationCheckPort`. The simplest way to provide one is to register an `AuthorizationScopeRepositoryPort` (plus a `MembershipPort`): the library then builds an `AuthorizationChecker` and the default `AuthorizationService` (`AuthorizationCheckPort`) for you via `AuthorizationConfiguration`.
+
+`AuthorizationScopeRepositoryPort` returns the scopes a set of pre-resolved owner IDs hold for a `(resourceType, permissionType)`; the library resolves the principal's owners (user/client, groups, roles, mapping rules) through `MembershipPort` before calling it. Back it with your authorization store:
 
 ```java
 @Bean
-public AuthorizationRepositoryPort authorizationRepository(final MyAuthzStore store) {
-  return (authentication, resourceType) ->
-      store.findGrants(authentication.authenticatedUsername(), resourceType).stream()
-          .map(grant -> new Authorization(
-              grant.resourceType(),
-              grant.resourceId(),
-              Set.copyOf(grant.permissionTypes())))
-          .collect(Collectors.toSet());
+public AuthorizationScopeRepositoryPort authorizationScopeRepository(final MyAuthzStore store) {
+  return new MyAuthorizationScopeRepository(store);
 }
 ```
 
-The library's default `ResourcePermissionService` then matches by exact resource id and required permission. Hosts that need wildcard semantics, caching, or instrumentation register their own `ResourcePermissionPort` bean — the default backs off via `@ConditionalOnMissingBean`.
+See `SearchAuthorizationScopeRepository` in the `camunda/camunda` monorepo for a search-index-backed implementation. Hosts that need bespoke decision logic can instead register their own `AuthorizationCheckPort` bean directly — the library default backs off via `@ConditionalOnMissingBean(AuthorizationCheckPort.class)`.
 
 ### Custom `WebAppAccessDeniedHandlerPort` (optional)
 
@@ -813,11 +809,12 @@ Registering any `WebAppAccessDeniedHandlerPort` bean disables the library defaul
 | `WebAppProviderPort` | None — host must register | Always required |
 | `CamundaAuthenticationProvider` | None — host must register | Always required |
 | `SecurityPathPort` | None — host must register | Always required (already present for any CSL chain) |
-| `ResourcePermissionPort` | `ResourcePermissionService` (gated on `AuthorizationRepositoryPort` + `@ConditionalOnMissingBean`) | The filter requires this bean — supply it either by registering an `AuthorizationRepositoryPort` (default service materialises) or by registering a custom `ResourcePermissionPort` directly |
-| `AuthorizationRepositoryPort` | None — host must register | Required when relying on the default `ResourcePermissionService`. Not needed if the host supplies its own `ResourcePermissionPort` |
+| `AuthorizationCheckPort` | `AuthorizationService` (gated on `AuthorizationChecker` + `@ConditionalOnMissingBean`) | The filter requires this bean — supply it either by registering an `AuthorizationScopeRepositoryPort` (default service materialises) or by registering a custom `AuthorizationCheckPort` directly |
+| `AuthorizationScopeRepositoryPort` | None — host must register | Required when relying on the default `AuthorizationService`. Not needed if the host supplies its own `AuthorizationCheckPort` |
+| `MembershipPort` | None — host must register | Required for the default `AuthorizationService` — the claims converter resolves principal owners through it |
 | `WebAppAccessDeniedHandlerPort` | `RedirectingWebAppAccessDeniedAdapter` (gated on `WebAppProviderPort` + `@ConditionalOnMissingBean`) | Override for JSON 403, forwards, etc. |
 
-If any of the required beans is missing (and `ResourcePermissionPort` not satisfied either way), the filter bean isn't created. The webapp chain still works — it just doesn't enforce the per-web-app `ACCESS` check. Adopt incrementally by registering the SPIs as you build out the host's authorization data layer.
+If any of the required beans is missing (and `AuthorizationCheckPort` not satisfied either way), the filter bean isn't created. The webapp chain still works — it just doesn't enforce the per-web-app `ACCESS` check. Adopt incrementally by registering the SPIs as you build out the host's authorization data layer.
 
 ## Admin user setup
 
@@ -1034,7 +1031,7 @@ Session policy:
 A typical migration from a host-owned `WebSecurityConfig`:
 
 1. Replace your `@Bean SecurityFilterChain` methods by deleting them. Add an `@Import` list for the library's configuration classes — pick the ones that match your auth method and API protection mode (see the [Quickstart](#quickstart) snippet). Per [ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md) hosts opt in to each capability explicitly; nothing activates by simply adding the dependency.
-2. Move whatever you previously hand-rolled into `OidcResourceServerCustomizer` / `OidcTokenEndpointCustomizer` beans where applicable. For per-web-app authorization, register a `WebAppProviderPort` and `AuthorizationRepositoryPort` and `@Import(WebAppAuthorizationFilterConfiguration.class)` — see [Web app authorization](#web-app-authorization). For admin-user setup, register an `AdminUserPresencePort` and `@Import(AdminUserCheckFilterConfiguration.class)` — see [Admin user setup](#admin-user-setup).
+2. Move whatever you previously hand-rolled into `OidcResourceServerCustomizer` / `OidcTokenEndpointCustomizer` beans where applicable. For per-web-app authorization, register a `WebAppProviderPort` and an `AuthorizationCheckPort` (or an `AuthorizationScopeRepositoryPort` + `MembershipPort` so the library builds the default) and `@Import(WebAppAuthorizationFilterConfiguration.class)` — see [Web app authorization](#web-app-authorization). For admin-user setup, register an `AdminUserPresencePort` and `@Import(AdminUserCheckFilterConfiguration.class)` — see [Admin user setup](#admin-user-setup).
 3. Implement `SecurityPathPort` with the path patterns your previous chains used.
 4. Bind your existing security config to `camunda.security.*` properties (or set them explicitly).
 5. If you previously constructed `JwtDecoder` / `ClientRegistrationRepository` / `OAuth2AuthorizedClientRepository` / `OAuth2AuthorizedClientManager` by hand, either delete those beans (the library's defaults will activate) or leave them and the library's defaults back off via `@ConditionalOnMissingBean`.
