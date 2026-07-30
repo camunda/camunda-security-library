@@ -40,9 +40,13 @@ public record TenantAccess(boolean allowed, boolean wildcard, List<String> tenan
    * Returns {@code true} when this verdict authorizes access to every tenant in {@code tenantIds} —
    * either because it is a wildcard grant, or because it is an allowed grant whose resolved tenant
    * IDs contain all of them. An empty {@code tenantIds} is vacuously authorized for any allowed or
-   * wildcard grant; a {@link #denied()} verdict never authorizes.
+   * wildcard grant; a {@code null} request and a {@link #denied()} verdict never authorize
+   * (fail-closed on malformed input).
    */
   public boolean isAuthorizedForTenantIds(final List<String> tenantIds) {
+    if (tenantIds == null) {
+      return false;
+    }
     return wildcard || (allowed && this.tenantIds != null && this.tenantIds.containsAll(tenantIds));
   }
 
