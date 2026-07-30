@@ -11,15 +11,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.api.model.CamundaAuthentication;
-import io.camunda.security.api.model.authz.Authorization;
-import io.camunda.security.api.model.authz.PermissionType;
-import io.camunda.security.api.model.authz.ResourceType;
-import io.camunda.security.core.port.in.ResourcePermissionPort;
-import io.camunda.security.core.port.out.AuthorizationRepositoryPort;
+import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.spi.WebAppAccessDeniedHandlerPort;
 import io.camunda.security.spring.spi.WebAppProviderPort;
+import io.camunda.security.spring.testsupport.PermissiveAuthorizationCheckPort;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Optional;
@@ -41,68 +38,25 @@ class WebAppAuthorizationFilterConfigurationTest {
           .withConfiguration(AutoConfigurations.of(WebAppAuthorizationFilterConfiguration.class));
 
   @Test
-  void noWebAppProviderRegistersNoFilterAndNoDeniedHandlerAndNoDefaultService() {
-    // Without any host SPI registered, the configuration must not produce any beans — neither the
-    // filter, the default deny handler, nor the default ResourcePermissionService.
+  void noWebAppProviderRegistersNoFilterAndNoDeniedHandler() {
+    // Without any host SPI registered, the configuration must not produce the filter or the default
+    // deny handler.
     runner.run(
         ctx -> {
           assertThat(ctx).doesNotHaveBean(WebAppAuthorizationCheckFilter.class);
           assertThat(ctx).doesNotHaveBean(WebAppAccessDeniedHandlerPort.class);
-          assertThat(ctx).doesNotHaveBean(ResourcePermissionPort.class);
         });
   }
 
   @Test
-  void authorizationRepositoryAlonePresentWiresDefaultServiceButNoFilterOrHandler() {
-    // ResourcePermissionService is the default for ResourcePermissionPort whenever an
-    // AuthorizationRepositoryPort exists, even before WebAppProviderPort is wired.
+  void allSpisRegisteredCreatesFilterAndDefaultHandler() {
     runner
-        .withUserConfiguration(StubAuthorizationRepository.class)
-        .run(
-            ctx -> {
-              assertThat(ctx).hasSingleBean(ResourcePermissionPort.class);
-              assertThat(ctx)
-                  .getBean(ResourcePermissionPort.class)
-                  .isInstanceOf(ResourcePermissionService.class);
-              assertThat(ctx).doesNotHaveBean(WebAppAuthorizationCheckFilter.class);
-              assertThat(ctx).doesNotHaveBean(WebAppAccessDeniedHandlerPort.class);
-            });
-  }
-
-  @Test
-  void authorizationDisabledMakesDefaultServiceGrantAll() {
-    // With authorization disabled, the default ResourcePermissionService must grant every check
-    // even though the repository holds no matching grants. The flag is read from the bound
-    // properties bean enabled via @EnableConfigurationProperties on the configuration
-    // Note: the filter behavior based on the flag is tested in WebAppAuthorizationCheckFilterTest
-    runner
-        .withUserConfiguration(StubAuthorizationRepository.class)
-        .withPropertyValues("camunda.security.authorizations.enabled=false")
-        .run(
-            ctx -> {
-              final ResourcePermissionPort port = ctx.getBean(ResourcePermissionPort.class);
-              assertThat(
-                      port.hasPermission(
-                          CamundaAuthentication.anonymous(),
-                          ResourceType.COMPONENT,
-                          "operate",
-                          PermissionType.ACCESS))
-                  .isTrue();
-            });
-  }
-
-  @Test
-  void allThreeSpisRegisteredCreatesFilterAndDefaults() {
-    runner
-        .withUserConfiguration(StubAuthorizationRepository.class)
+        .withUserConfiguration(StubAuthorizationCheckPort.class)
         .withUserConfiguration(StubWebAppProvider.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .run(
             ctx -> {
               assertThat(ctx).hasSingleBean(WebAppAuthorizationCheckFilter.class);
-              assertThat(ctx)
-                  .getBean(ResourcePermissionPort.class)
-                  .isInstanceOf(ResourcePermissionService.class);
               assertThat(ctx)
                   .getBean(WebAppAccessDeniedHandlerPort.class)
                   .isInstanceOf(RedirectingWebAppAccessDeniedAdapter.class);
@@ -110,27 +64,23 @@ class WebAppAuthorizationFilterConfigurationTest {
   }
 
   @Test
-  void hostResourcePermissionPortOverridesDefaultService() {
-    // A host that registers its own ResourcePermissionPort must keep it; the default service must
-    // back off via @ConditionalOnMissingBean.
+  void absentAuthorizationCheckPortOmitsFilter() {
+    // The filter is the webapp enforcement choke point. It must not materialise unless the host
+    // supplies an AuthorizationCheckPort — otherwise webapp authorization would silently turn off.
     runner
-        .withUserConfiguration(StubAuthorizationRepository.class)
         .withUserConfiguration(StubWebAppProvider.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
-        .withUserConfiguration(CustomResourcePermissionPort.class)
         .run(
             ctx -> {
-              assertThat(ctx).hasSingleBean(ResourcePermissionPort.class);
-              assertThat(ctx)
-                  .getBean(ResourcePermissionPort.class)
-                  .isInstanceOf(CustomResourcePermissionPort.AlwaysFalse.class);
+              assertThat(ctx).doesNotHaveBean(AuthorizationCheckPort.class);
+              assertThat(ctx).doesNotHaveBean(WebAppAuthorizationCheckFilter.class);
             });
   }
 
   @Test
   void hostWebAppAccessDeniedHandlerOverridesDefault() {
     runner
-        .withUserConfiguration(StubAuthorizationRepository.class)
+        .withUserConfiguration(StubAuthorizationCheckPort.class)
         .withUserConfiguration(StubWebAppProvider.class)
         .withUserConfiguration(StubAuthenticationProvider.class)
         .withUserConfiguration(CustomDeniedHandler.class)
@@ -178,17 +128,11 @@ class WebAppAuthorizationFilterConfigurationTest {
   }
 
   @Configuration
-  static class StubAuthorizationRepository {
+  static class StubAuthorizationCheckPort {
 
     @Bean
-    AuthorizationRepositoryPort authorizationRepository() {
-      return new AuthorizationRepositoryPort() {
-        @Override
-        public Set<Authorization> findAuthorizations(
-            final CamundaAuthentication authentication, final ResourceType resourceType) {
-          return Set.of();
-        }
-      };
+    AuthorizationCheckPort authorizationCheckPort() {
+      return new PermissiveAuthorizationCheckPort();
     }
   }
 
@@ -207,26 +151,6 @@ class WebAppAuthorizationFilterConfigurationTest {
     @Bean
     CamundaAuthenticationProvider camundaAuthenticationProvider() {
       return CamundaAuthentication::anonymous;
-    }
-  }
-
-  @Configuration
-  static class CustomResourcePermissionPort {
-
-    @Bean
-    ResourcePermissionPort customResourcePermissionPort() {
-      return new AlwaysFalse();
-    }
-
-    static final class AlwaysFalse implements ResourcePermissionPort {
-      @Override
-      public boolean hasPermission(
-          final CamundaAuthentication authentication,
-          final ResourceType resourceType,
-          final String resourceId,
-          final PermissionType permissionType) {
-        return false;
-      }
     }
   }
 
