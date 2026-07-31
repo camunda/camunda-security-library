@@ -9,6 +9,7 @@ package io.camunda.security.core.authz;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -137,6 +138,16 @@ class TenantAccessTest {
 
       // when - then
       assertThat(access.isAuthorizedForTenantIds(null)).isFalse();
+    }
+
+    @Test
+    void shouldReturnFalseWhenRequestedTenantListContainsNullElement() {
+      // given - tenantIds is a List.of(...) instance, whose contains(null) throws NPE, so the
+      // implementation must never delegate a null-containing request into containsAll
+      final var access = TenantAccess.allowed(List.of("t1"));
+
+      // when - then
+      assertThat(access.isAuthorizedForTenantIds(Arrays.asList("t1", null))).isFalse();
     }
 
     @Test
