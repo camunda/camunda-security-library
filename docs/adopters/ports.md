@@ -100,7 +100,7 @@ Map<String, OidcConfiguration> getOidcAuthenticationConfigurations();
 package io.camunda.security.core.port.in;
 ```
 
-The unified authorization inbound port (ADR-0026/ADR-0028): "is this principal authorized for this
+The unified authorization inbound port (ADR-0028): "is this principal authorized for this
 requirement?" A `RequiredAuthorization` pairs an `AuthorizationResourceType` with a `PermissionType`
 and scopes it to resource IDs (and optionally resource property names). The port returns
 `Either.right(null)` when authorized and `Either.left(rejection)` when denied. Both the Zeebe engine

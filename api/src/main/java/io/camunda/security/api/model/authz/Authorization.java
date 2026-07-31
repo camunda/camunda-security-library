@@ -14,9 +14,9 @@ import java.util.Set;
  * A granted authorization record sourced from the host's authorization store: the principal has the
  * listed {@code permissionTypes} on the {@code resourceId} of {@code resourceType}.
  *
- * <p>This is the "data shape" of an authorization — what the host's data store stores. The library
- * aggregates these records across the principal's identities (user, groups, roles, mapping rules)
- * and matches them against requested permissions to produce a yes/no decision.
+ * <p>This is the "data shape" of an authorization — what the host's data store stores. It carries
+ * no behaviour of its own; the unified authorization check operates on {@code AuthorizationScope}s
+ * resolved via {@code AuthorizationScopeRepositoryPort}, not on instances of this record.
  */
 public record Authorization(
     ResourceType resourceType, String resourceId, Set<PermissionType> permissionTypes) {
