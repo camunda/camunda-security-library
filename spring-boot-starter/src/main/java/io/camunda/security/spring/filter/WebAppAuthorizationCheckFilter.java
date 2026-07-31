@@ -9,6 +9,7 @@ package io.camunda.security.spring.filter;
 
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.api.model.CamundaAuthentication;
+import io.camunda.security.api.model.authz.AuthorizationRejection;
 import io.camunda.security.api.model.authz.AuthorizationResourceType;
 import io.camunda.security.api.model.authz.PermissionType;
 import io.camunda.security.core.auth.RequiredAuthorization;
@@ -58,6 +59,13 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
   private static final Logger LOG = LoggerFactory.getLogger(WebAppAuthorizationCheckFilter.class);
 
   private static final String FORBIDDEN_PATH_SUFFIX = "/forbidden";
+
+  private static final RequiredAuthorization<Void> COMPONENT_ACCESS =
+      RequiredAuthorization.of(
+          builder ->
+              builder
+                  .resourceType(AuthorizationResourceType.COMPONENT)
+                  .permissionType(PermissionType.ACCESS));
 
   private final boolean authorizationEnabled;
   private final WebAppProviderPort webAppProvider;
@@ -111,23 +119,20 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
     }
 
     final String resolved = webApp.get();
-    final RequiredAuthorization<Void> required =
-        RequiredAuthorization.of(
-            builder ->
-                builder
-                    .resourceType(AuthorizationResourceType.COMPONENT)
-                    .permissionType(PermissionType.ACCESS)
-                    .resourceId(resolved));
-    if (authorizationCheckPort.check(authentication, required).isRight()) {
+    final var result =
+        authorizationCheckPort.check(authentication, COMPONENT_ACCESS.withResourceId(resolved));
+    if (result.isRight()) {
       filterChain.doFilter(request, response);
       return;
     }
 
+    final AuthorizationRejection rejection = result.leftValue();
     LOG.debug(
-        "Access denied for web app '{}' at {} (principal: {})",
+        "Access denied for web app '{}' at {} (principal: {}, reason: {})",
         resolved,
         request.getRequestURI(),
-        principalId(authentication));
+        principalId(authentication),
+        rejection);
     accessDeniedHandler.handle(request, response, resolved, authentication);
   }
 
