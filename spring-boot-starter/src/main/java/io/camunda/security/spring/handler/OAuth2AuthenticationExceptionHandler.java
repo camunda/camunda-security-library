@@ -25,9 +25,9 @@ import org.springframework.security.web.authentication.SimpleUrlAuthenticationFa
  * SimpleUrlAuthenticationFailureHandler}, which renders a 401).
  *
  * <p>The redirect goes through {@link DefaultRedirectStrategy} rather than {@link
- * HttpServletResponse#sendRedirect}, because the latter would send the user to the host root: it
- * does not prepend the servlet context path, so a webapp served under one (for example {@code
- * /<clusterId>} on CCSaaS) would recover to a location outside the application.
+ * HttpServletResponse#sendRedirect(String)}, because the latter would send the user to the host
+ * root: it does not prepend the servlet context path, so a webapp served under one (for example
+ * {@code /<clusterId>} on CCSaaS) would recover to a location outside the application.
  */
 public final class OAuth2AuthenticationExceptionHandler implements AuthenticationFailureHandler {
 
