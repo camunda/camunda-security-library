@@ -8,6 +8,7 @@
 package io.camunda.security.core.authz;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * The result of evaluating whether a principal has access to a specific tenant.
@@ -44,11 +45,11 @@ public record TenantAccess(boolean allowed, boolean wildcard, List<String> tenan
    * Returns {@code true} when this verdict authorizes access to every tenant in {@code
    * requestedTenantIds} — either because it is a wildcard grant, or because it is an allowed grant
    * whose resolved tenant IDs contain all of them. An empty request is vacuously authorized for any
-   * allowed or wildcard grant; a {@code null} request and a {@link #denied()} verdict never
-   * authorize (fail-closed on malformed input).
+   * allowed or wildcard grant; a {@code null} request, a request containing a {@code null} element,
+   * and a {@link #denied()} verdict never authorize (fail-closed on malformed input).
    */
   public boolean isAuthorizedForTenantIds(final List<String> requestedTenantIds) {
-    if (requestedTenantIds == null) {
+    if (requestedTenantIds == null || requestedTenantIds.stream().anyMatch(Objects::isNull)) {
       return false;
     }
     return allowed
