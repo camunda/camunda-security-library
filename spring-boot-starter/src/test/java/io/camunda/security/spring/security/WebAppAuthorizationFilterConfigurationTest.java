@@ -8,17 +8,30 @@
 package io.camunda.security.spring.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.api.model.CamundaAuthentication;
+import io.camunda.security.api.model.authz.AuthorizationResourceType;
+import io.camunda.security.api.model.authz.AuthorizationScope;
+import io.camunda.security.api.model.authz.EntityType;
+import io.camunda.security.api.model.authz.PermissionType;
+import io.camunda.security.core.authz.AuthorizationService;
+import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
+import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
 import io.camunda.security.core.port.out.SecurityPathPort;
+import io.camunda.security.spring.CamundaSecurityConfiguration;
+import io.camunda.security.spring.authz.AuthorizationCheckerConfiguration;
+import io.camunda.security.spring.authz.AuthorizationConfiguration;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.spi.WebAppAccessDeniedHandlerPort;
 import io.camunda.security.spring.spi.WebAppProviderPort;
 import io.camunda.security.spring.testsupport.PermissiveAuthorizationCheckPort;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -78,6 +91,35 @@ class WebAppAuthorizationFilterConfigurationTest {
   }
 
   @Test
+  void defaultAuthorizationCheckPortWiredFromScopeRepositoryPortCreatesFilter() {
+    // Exercises the actual production wiring chain the breaking-change note tells hosts to rely
+    // on: AuthorizationScopeRepositoryPort -> AuthorizationCheckerConfiguration
+    // (AuthorizationChecker)
+    // -> AuthorizationConfiguration (AuthorizationService as the AuthorizationCheckPort) ->
+    // WebAppAuthorizationFilterConfiguration (the filter). If that chain breaks, this must fail
+    // instead of silently leaving webapp enforcement fail-open.
+    new ApplicationContextRunner()
+        .withUserConfiguration(StubPathPort.class)
+        .withUserConfiguration(StubAuthorizationScopeRepositoryPort.class)
+        .withUserConfiguration(StubWebAppProvider.class)
+        .withUserConfiguration(StubAuthenticationProvider.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                AuthorizationCheckerConfiguration.class,
+                AuthorizationConfiguration.class,
+                WebAppAuthorizationFilterConfiguration.class))
+        .withBean(LazyTokenClaimsConverter.class, () -> mock(LazyTokenClaimsConverter.class))
+        .run(
+            ctx -> {
+              assertThat(ctx)
+                  .getBean(AuthorizationCheckPort.class)
+                  .isInstanceOf(AuthorizationService.class);
+              assertThat(ctx).hasSingleBean(WebAppAuthorizationCheckFilter.class);
+            });
+  }
+
+  @Test
   void hostWebAppAccessDeniedHandlerOverridesDefault() {
     runner
         .withUserConfiguration(StubAuthorizationCheckPort.class)
@@ -133,6 +175,43 @@ class WebAppAuthorizationFilterConfigurationTest {
     @Bean
     AuthorizationCheckPort authorizationCheckPort() {
       return new PermissiveAuthorizationCheckPort();
+    }
+  }
+
+  @Configuration
+  static class StubAuthorizationScopeRepositoryPort {
+
+    @Bean
+    AuthorizationScopeRepositoryPort authorizationScopeRepositoryPort() {
+      return new NoopPort();
+    }
+  }
+
+  private static final class NoopPort implements AuthorizationScopeRepositoryPort {
+
+    @Override
+    public List<AuthorizationScope> findAuthorizedScopes(
+        final Map<EntityType, Set<String>> ownerIds,
+        final AuthorizationResourceType resourceType,
+        final PermissionType permissionType) {
+      return List.of();
+    }
+
+    @Override
+    public boolean hasAuthorizedScope(
+        final Map<EntityType, Set<String>> ownerIds,
+        final AuthorizationResourceType resourceType,
+        final PermissionType permissionType,
+        final List<String> resourceIds) {
+      return false;
+    }
+
+    @Override
+    public Set<PermissionType> findPermissionTypes(
+        final Map<EntityType, Set<String>> ownerIds,
+        final AuthorizationResourceType resourceType,
+        final List<String> resourceIds) {
+      return Set.of();
     }
   }
 
