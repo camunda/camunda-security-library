@@ -7,6 +7,8 @@
  */
 package io.camunda.security.core.authz;
 
+import static org.mockito.Mockito.verify;
+
 import io.camunda.security.api.model.authz.AuthorizationOwnerType;
 import io.camunda.security.api.model.authz.PermissionType;
 import io.camunda.security.api.model.authz.ResourceType;
@@ -16,7 +18,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
@@ -35,7 +36,7 @@ class AuthorizationManagementServiceTest {
         "my-process",
         Set.of(PermissionType.CREATE_PROCESS_INSTANCE));
 
-    Mockito.verify(repository)
+    verify(repository)
         .assign(
             AuthorizationOwnerType.USER,
             "alice",
@@ -53,7 +54,7 @@ class AuthorizationManagementServiceTest {
         "*",
         Set.of(PermissionType.READ, PermissionType.UPDATE));
 
-    Mockito.verify(repository)
+    verify(repository)
         .revoke(
             AuthorizationOwnerType.ROLE,
             "admin-role",
