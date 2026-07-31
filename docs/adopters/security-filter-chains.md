@@ -704,7 +704,7 @@ The CSL's `WebAppAuthorizationCheckFilter` enforces per-web-app `ACCESS` permiss
 - **Which web app does the request belong to?** A single-web-app host returns a constant; a multi-web-app host derives from the URL path. Implement `WebAppProviderPort`.
 - **What happens when access is denied?** The library default redirects to `<contextPath>/<webApp>/forbidden`. Override `WebAppAccessDeniedHandlerPort` to return JSON, forward, or anything else.
 
-The actual permission decision delegates to the unified `AuthorizationCheckPort` (ADR-0026/ADR-0028): the filter asks for `ACCESS` on the resolved web app as a `COMPONENT` resource and treats `Either.right(...)` as authorized. Hosts supply an `AuthorizationCheckPort` — either their own bean, or the ingredients for the library default (an `AuthorizationScopeRepositoryPort`, from which `AuthorizationConfiguration` builds `AuthorizationService`). Activation rationale lives in [ADR-0009](../adr/0009-web-app-authorization-spis.md).
+The actual permission decision delegates to the unified `AuthorizationCheckPort` (ADR-0028): the filter asks for `ACCESS` on the resolved web app as a `COMPONENT` resource and treats `Either.right(...)` as authorized. Hosts supply an `AuthorizationCheckPort` — either their own bean, or the ingredients for the library default (an `AuthorizationScopeRepositoryPort`, from which `AuthorizationConfiguration` builds `AuthorizationService`). Activation rationale lives in [ADR-0009](../adr/0009-web-app-authorization-spis.md).
 
 ### Activation
 
@@ -815,6 +815,8 @@ Registering any `WebAppAccessDeniedHandlerPort` bean disables the library defaul
 | `WebAppAccessDeniedHandlerPort` | `RedirectingWebAppAccessDeniedAdapter` (gated on `WebAppProviderPort` + `@ConditionalOnMissingBean`) | Override for JSON 403, forwards, etc. |
 
 If any of the required beans is missing (and `AuthorizationCheckPort` not satisfied either way), the filter bean isn't created. The webapp chain still works — it just doesn't enforce the per-web-app `ACCESS` check. Adopt incrementally by registering the SPIs as you build out the host's authorization data layer.
+
+Note: `MembershipPort` behaves differently from the rows above. Once an `AuthorizationScopeRepositoryPort` is registered (so `AuthorizationChecker` is built), `AuthorizationConfiguration` requires a `LazyTokenClaimsConverter` to construct `AuthorizationService` — and that converter is only created when `MembershipPort` is present. So a missing `MembershipPort` in that situation doesn't silently omit the filter; it fails Spring context startup with an unsatisfied dependency.
 
 ## Admin user setup
 
