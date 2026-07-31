@@ -13,6 +13,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.web.DefaultRedirectStrategy;
+import org.springframework.security.web.RedirectStrategy;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler;
 
@@ -21,6 +23,11 @@ import org.springframework.security.web.authentication.SimpleUrlAuthenticationFa
  * application root, allowing the user to restart the OAuth2 login flow. Other authentication
  * failures are delegated to the wrapped failure handler (default {@link
  * SimpleUrlAuthenticationFailureHandler}, which renders a 401).
+ *
+ * <p>The redirect goes through {@link DefaultRedirectStrategy} rather than {@link
+ * HttpServletResponse#sendRedirect}, because the latter would send the user to the host root: it
+ * does not prepend the servlet context path, so a webapp served under one (for example {@code
+ * /<clusterId>} on CCSaaS) would recover to a location outside the application.
  */
 public final class OAuth2AuthenticationExceptionHandler implements AuthenticationFailureHandler {
 
@@ -28,6 +35,7 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
       "authorization_request_not_found";
 
   private final AuthenticationFailureHandler delegate;
+  private final RedirectStrategy redirectStrategy = new DefaultRedirectStrategy();
 
   public OAuth2AuthenticationExceptionHandler() {
     this(new SimpleUrlAuthenticationFailureHandler());
@@ -47,7 +55,7 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
     if (exception instanceof final OAuth2AuthenticationException e) {
       if (e.getError() != null
           && AUTHORIZATION_REQUEST_NOT_FOUND_ERROR_CODE.equals(e.getError().getErrorCode())) {
-        response.sendRedirect("/");
+        redirectStrategy.sendRedirect(request, response, "/");
         return;
       }
     }

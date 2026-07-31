@@ -109,15 +109,16 @@ class OidcWebappContextPathRedirectLoopTest {
           assertThat(chain.matches(request)).isTrue();
           proxy.doFilter(request, response, new MockFilterChain());
 
-          // then the OIDC login filter claims it (no saved authorization request -> redirect to
-          // "/")
-          // rather than falling through to a 302 back into the OIDC flow (the loop)
+          // then the OIDC login filter claims it (no saved authorization request -> recovery
+          // redirect to the application root) rather than falling through to a 302 back into the
+          // OIDC flow (the loop). The recovery target keeps the context-path, so the user lands
+          // inside the application rather than on the host root.
           assertThat(response.getStatus()).isEqualTo(302);
           assertThat(response.getRedirectedUrl())
               .as("callback under a context-path must not be redirected back into the OIDC flow")
               .doesNotStartWith("/oauth2/authorization")
               .doesNotStartWith("http://localhost/oauth2/authorization")
-              .isEqualTo("/");
+              .isEqualTo(CONTEXT_PATH + "/");
         });
   }
 
