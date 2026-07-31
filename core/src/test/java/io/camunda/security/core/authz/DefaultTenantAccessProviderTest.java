@@ -129,6 +129,22 @@ class DefaultTenantAccessProviderTest {
   }
 
   @Test
+  void shouldAllowAccessToEntityOutOfTenantScope() {
+    // given
+    final var authentication = CamundaAuthentication.of(a -> a.user("foo").tenants(List.of("bar")));
+    final var resource = new OutOfTenantScopeTestResource("id", "value", null);
+
+    // when
+    final var result = tenantAccessProvider.hasTenantAccess(authentication, resource);
+
+    // then
+    assertThat(result.denied()).isFalse();
+    assertThat(result.allowed()).isTrue();
+    assertThat(result.wildcard()).isFalse();
+    assertThat(result.tenantIds()).isEmpty();
+  }
+
+  @Test
   void shouldAllowAccessToTenantByTenantId() {
     // given
     final var authentication = CamundaAuthentication.of(a -> a.user("foo").tenants(List.of("bar")));
@@ -173,8 +189,31 @@ class DefaultTenantAccessProviderTest {
     assertThat(result.tenantIds()).containsExactlyInAnyOrder("baz");
   }
 
+  @Test
+  void shouldDenyAccessByTenantIdWhenTenantIdIsNull() {
+    // given
+    final var authentication = CamundaAuthentication.of(a -> a.user("foo").tenants(List.of("bar")));
+
+    // when
+    final var result = tenantAccessProvider.hasTenantAccessByTenantId(authentication, null);
+
+    // then
+    assertThat(result.denied()).isTrue();
+    assertThat(result.allowed()).isFalse();
+    assertThat(result.wildcard()).isFalse();
+    assertThat(result.tenantIds()).isNull();
+  }
+
   record TenantOwnedTestResource(String id, String anotherValue, String tenantId)
       implements TenantOwnedEntity {}
+
+  record OutOfTenantScopeTestResource(String id, String anotherValue, String tenantId)
+      implements TenantOwnedEntity {
+    @Override
+    public boolean hasTenantScope() {
+      return false;
+    }
+  }
 
   record NotTenantOwnedTestResource(String id, String anotherValue) {}
 }

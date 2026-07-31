@@ -47,6 +47,10 @@ public final class DefaultTenantAccessProvider implements TenantAccessProvider {
   @Override
   public TenantAccess hasTenantAccessByTenantId(
       final CamundaAuthentication authentication, final String tenantId) {
+    if (tenantId == null) {
+      return TenantAccess.denied(null);
+    }
+
     final var authenticatedTenantIds = authentication.authenticatedTenantIds();
     final var tenantIdAsList = List.of(tenantId);
 
