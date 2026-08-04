@@ -9,6 +9,7 @@ package io.camunda.security.spring.session;
 
 import io.camunda.security.core.port.out.ScopedSessionStorePortProvider;
 import io.camunda.security.core.port.out.SessionStorePort;
+import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.annotation.ConditionalOnPersistentWebSessionEnabled;
 import io.camunda.security.spring.session.WebSessionMapper.SpringBasedWebSessionAttributeConverter;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,6 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.support.GenericConversionService;
@@ -44,9 +46,17 @@ import org.springframework.core.convert.support.GenericConversionService;
  * DefaultWebSessionFilterConfiguration} for the default surface and {@code
  * ScopedSecurityChainRegistrar} for physical-tenant scopes. See ADR-0031 for why filters are
  * installed per chain rather than through a single container-wide filter.
+ *
+ * <p>Self-registers {@link CamundaSecurityLibraryProperties} via {@link
+ * EnableConfigurationProperties} so this class works when activated standalone via
+ * {@code @ImportAutoConfiguration} without also importing {@code CamundaSecurityConfiguration} —
+ * the same precedent {@code WebAppAuthorizationFilterConfiguration} sets for the same dependency.
+ * {@code @EnableConfigurationProperties} is idempotent across configuration classes, so this has no
+ * effect beyond registering the bean once when a host already imports it elsewhere.
  */
 @Configuration
 @ConditionalOnPersistentWebSessionEnabled
+@EnableConfigurationProperties(CamundaSecurityLibraryProperties.class)
 public class WebSessionConfiguration {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(WebSessionConfiguration.class);
@@ -68,8 +78,10 @@ public class WebSessionConfiguration {
   public WebSessionRepository webSessionRepository(
       final SessionStorePort sessionStorePort,
       final WebSessionMapper webSessionMapper,
-      final HttpServletRequest request) {
-    return new WebSessionRepository(sessionStorePort, webSessionMapper, request);
+      final HttpServletRequest request,
+      final CamundaSecurityLibraryProperties properties) {
+    return new WebSessionRepository(
+        sessionStorePort, webSessionMapper, request, properties.getSession());
   }
 
   /**
@@ -85,11 +97,12 @@ public class WebSessionConfiguration {
   public ScopedWebSessionRepositoryFactory scopedWebSessionRepositoryFactory(
       final ObjectProvider<ScopedSessionStorePortProvider> storePortProvider,
       final WebSessionMapper webSessionMapper,
-      final HttpServletRequest request) {
+      final HttpServletRequest request,
+      final CamundaSecurityLibraryProperties properties) {
     // getIfAvailable (not getIfUnique): null when absent (→ fall back); on multiple providers it
     // resolves a @Primary if declared, otherwise throws — unprioritized ambiguity fails fast.
     return new ScopedWebSessionRepositoryFactory(
-        storePortProvider.getIfAvailable(), webSessionMapper, request);
+        storePortProvider.getIfAvailable(), webSessionMapper, request, properties.getSession());
   }
 
   @Bean

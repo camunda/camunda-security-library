@@ -7,6 +7,8 @@
  */
 package io.camunda.security.spring.security;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 /** Shared constants for the CSL security filter chains. */
 public final class CamundaSecurityFilterChainConstants {
 
@@ -15,6 +17,15 @@ public final class CamundaSecurityFilterChainConstants {
   public static final String LOGIN_URL = "/login";
   public static final String LOGOUT_URL = "/logout";
   public static final String REDIRECT_URI = "/sso-callback";
+
+  /**
+   * The session activity-heartbeat endpoint (ADR-0042). Derived from {@code basePath} on every
+   * webapp chain exactly like {@link #LOGIN_URL}/{@link #LOGOUT_URL}. A {@code POST} here is
+   * recognized by {@code WebSessionRepository} as extending the session when {@code
+   * camunda.security.session.heartbeat.enabled=true}; with that flag off it is a harmless 204 with
+   * no special effect beyond what any other authenticated request already has.
+   */
+  public static final String HEARTBEAT_URL = "/session/heartbeat";
 
   /** Default OIDC client registration ID used by the webapp chain. */
   public static final String OIDC_REGISTRATION_ID = "oidc";
@@ -48,4 +59,19 @@ public final class CamundaSecurityFilterChainConstants {
   public static final int ORDER_UNHANDLED = 3;
 
   private CamundaSecurityFilterChainConstants() {}
+
+  /**
+   * The single matching rule for what counts as a call to {@link #HEARTBEAT_URL} — a {@code POST}
+   * whose path ends with that suffix. Shared by {@code WebSessionRepository} (decides whether to
+   * extend session activity) and {@code SessionHeartbeatFilter} (decides whether to respond {@code
+   * 204}) so the two callers can't silently drift apart on what a heartbeat request is; each wraps
+   * this with its own null/exception handling for its own calling context (a servlet filter always
+   * has a real request, a repository invoked from the background expiry sweep may not).
+   */
+  public static boolean isHeartbeatRequest(final HttpServletRequest request) {
+    return request != null
+        && "POST".equalsIgnoreCase(request.getMethod())
+        && request.getRequestURI() != null
+        && request.getRequestURI().endsWith(HEARTBEAT_URL);
+  }
 }

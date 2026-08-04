@@ -70,6 +70,62 @@ class CamundaSecurityLibraryPropertiesTest {
   }
 
   @Test
+  void shouldDefaultMaxInactiveIntervalToThirtyMinutes() {
+    runner.run(
+        context -> {
+          final var properties = context.getBean(CamundaSecurityLibraryProperties.class);
+          assertThat(properties.getSession().getMaxInactiveInterval())
+              .isEqualTo(java.time.Duration.ofMinutes(30));
+        });
+  }
+
+  @Test
+  void shouldBindMaxInactiveIntervalUsingRelaxedDurationSyntax() {
+    runner
+        .withPropertyValues("camunda.security.session.max-inactive-interval=45m")
+        .run(
+            context -> {
+              final var properties = context.getBean(CamundaSecurityLibraryProperties.class);
+              assertThat(properties.getSession().getMaxInactiveInterval())
+                  .isEqualTo(java.time.Duration.ofMinutes(45));
+            });
+  }
+
+  @Test
+  void shouldFailFastOnNonPositiveMaxInactiveInterval() {
+    runner
+        .withPropertyValues("camunda.security.session.max-inactive-interval=0s")
+        .run(
+            context -> {
+              assertThat(context).hasFailed();
+              assertThat(context.getStartupFailure())
+                  .hasRootCauseInstanceOf(IllegalArgumentException.class)
+                  .rootCause()
+                  .hasMessageContaining("must be a positive duration");
+            });
+  }
+
+  @Test
+  void shouldDefaultHeartbeatToDisabled() {
+    runner.run(
+        context -> {
+          final var properties = context.getBean(CamundaSecurityLibraryProperties.class);
+          assertThat(properties.getSession().getHeartbeat().isEnabled()).isFalse();
+        });
+  }
+
+  @Test
+  void shouldBindHeartbeatEnabled() {
+    runner
+        .withPropertyValues("camunda.security.session.heartbeat.enabled=true")
+        .run(
+            context -> {
+              final var properties = context.getBean(CamundaSecurityLibraryProperties.class);
+              assertThat(properties.getSession().getHeartbeat().isEnabled()).isTrue();
+            });
+  }
+
+  @Test
   void shouldRestoreEmptyProvidersWhenSetterCalledWithNull() {
     final var authentication = new AuthenticationConfiguration();
     authentication.setProviders(null);

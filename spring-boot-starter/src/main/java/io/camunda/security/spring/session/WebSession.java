@@ -22,11 +22,11 @@ public final class WebSession implements Session {
 
   private final MapSession delegate;
   private boolean changed;
-  private boolean polling;
+  private boolean touchSuppressed;
 
   public WebSession(final String sessionId) {
     delegate = new MapSession(sessionId);
-    polling = false;
+    touchSuppressed = false;
   }
 
   boolean isChanged() {
@@ -104,12 +104,18 @@ public final class WebSession implements Session {
         .orElse(null);
   }
 
-  public boolean isPolling() {
-    return polling;
+  /**
+   * Whether this request is allowed to extend the session's activity. {@code WebSessionRepository}
+   * computes this per access, based on the {@code camunda.security.session.heartbeat.enabled} flag
+   * and the current request: legacy touch-unless polling when the flag is off,
+   * touch-only-on-the-heartbeat-call when it's on (see ADR-0042).
+   */
+  public boolean isTouchSuppressed() {
+    return touchSuppressed;
   }
 
-  public WebSession setPolling(final boolean polling) {
-    this.polling = polling;
+  public WebSession suppressTouch(final boolean touchSuppressed) {
+    this.touchSuppressed = touchSuppressed;
     return this;
   }
 
@@ -134,7 +140,7 @@ public final class WebSession implements Session {
 
   @Override
   public void setLastAccessedTime(final Instant lastAccessedTime) {
-    if (!polling) {
+    if (!touchSuppressed) {
       delegate.setLastAccessedTime(lastAccessedTime);
       changed = true;
     }

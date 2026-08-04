@@ -61,7 +61,7 @@ public class WebSessionTest {
   }
 
   @Test
-  public void shouldNotUpdateLastAccessedTimeWhenPollingIsSetToTrue() {
+  public void shouldNotUpdateLastAccessedTimeWhenTouchIsSuppressed() {
     // given
     final var now = Instant.now();
     final var lastAccessedTime = now.plus(Duration.ofSeconds(60));
@@ -69,7 +69,7 @@ public class WebSessionTest {
     final var webSession = new WebSession(sessionId);
     webSession.setLastAccessedTime(now);
     webSession.clearChangeFlag();
-    webSession.setPolling(true);
+    webSession.suppressTouch(true);
 
     // when
     webSession.setLastAccessedTime(lastAccessedTime);

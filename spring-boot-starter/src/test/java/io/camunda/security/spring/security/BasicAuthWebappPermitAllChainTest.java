@@ -45,6 +45,11 @@ import org.springframework.security.web.SecurityFilterChain;
  * security chain — but the post-authentication filters ({@link WebAppAuthorizationCheckFilter},
  * {@link io.camunda.security.spring.filter.AdminUserCheckFilter}) must still be wired in so that
  * authenticated requests are still subject to per-web-app authorization.
+ *
+ * <p>One path is a deliberate exception to "permit-all": the session activity-heartbeat endpoint
+ * (see {@link io.camunda.security.spring.filter.SessionHeartbeatFilter}) has no downstream
+ * authorization filter of its own to fall back on, so it carries an explicit {@code
+ * .authenticated()} rule ahead of the chain's {@code permitAll()} catch-all (ADR-0042).
  */
 class BasicAuthWebappPermitAllChainTest {
 
@@ -119,6 +124,33 @@ class BasicAuthWebappPermitAllChainTest {
           // The form-login configurer terminates the chain on credential check (success or
           // failure), so the next filter is not invoked. The chain itself accepted the request.
           assertThat(nextChain.getRequest()).isNull();
+        });
+  }
+
+  @Test
+  void heartbeatEndpointRequiresAuthenticationUnlikeEveryOtherPathOnThisChain() throws Exception {
+    // Every other path on this chain is permitAll at the authorizeHttpRequests layer (see
+    // anonymousWebappRequestIsPermittedByTheChain above) — business paths are gated downstream by
+    // WebAppAuthorizationCheckFilter/AdminUserCheckFilter instead. The heartbeat endpoint has no
+    // equivalent downstream gate, so it must be the one path on this chain that is NOT permitAll.
+    runner.run(
+        ctx -> {
+          final var chain = ctx.getBean(BASIC_CHAIN_BEAN, SecurityFilterChain.class);
+          final var proxy = new FilterChainProxy(List.of(chain));
+          final var request = new MockHttpServletRequest("POST", "/session/heartbeat");
+          final var response = new MockHttpServletResponse();
+          final var nextChain = new MockFilterChain();
+
+          assertThat(chain.matches(request)).isTrue();
+
+          proxy.doFilter(request, response, nextChain);
+
+          assertThat(nextChain.getRequest())
+              .as("must not reach SessionHeartbeatFilter or any downstream filter unauthenticated")
+              .isNull();
+          assertThat(response.getStatus())
+              .as("the chain's AuthenticationEntryPoint must reject the anonymous request")
+              .isEqualTo(401);
         });
   }
 
