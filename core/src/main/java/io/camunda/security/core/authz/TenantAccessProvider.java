@@ -44,4 +44,20 @@ public interface TenantAccessProvider {
    * @param tenantId the ID of the tenant to check
    */
   TenantAccess hasTenantAccessByTenantId(CamundaAuthentication authentication, String tenantId);
+
+  /**
+   * Selects the {@link TenantAccessProvider} implementation for the given multi-tenancy setting:
+   * {@link DefaultTenantAccessProvider} when checks are enabled, {@link
+   * DisabledTenantAccessProvider} (wildcard grant for every principal) otherwise. Takes a plain
+   * {@code boolean} rather than a host's configuration/properties type so this factory stays usable
+   * from non-Spring consumers without inverting {@code core}'s dependency on {@code
+   * spring-boot-starter}.
+   *
+   * @param multiTenancyChecksEnabled whether multi-tenancy checks are enabled
+   */
+  static TenantAccessProvider of(final boolean multiTenancyChecksEnabled) {
+    return multiTenancyChecksEnabled
+        ? new DefaultTenantAccessProvider()
+        : new DisabledTenantAccessProvider();
+  }
 }
