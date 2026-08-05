@@ -62,7 +62,7 @@ module dependency direction the whole library is built on.
   blocker `TenantOwnedEntity` posed for the tenant pair, but larger in
   scope. Tracked separately; out of scope for camunda-security-library#592.
 
-## Alternatives considered
+## Alternatives Considered
 
 - **`TenantAccessProvider.of(cslProperties, checker)`** (the issue's literal
   proposal) — rejected: inverts `core`'s dependency direction onto
