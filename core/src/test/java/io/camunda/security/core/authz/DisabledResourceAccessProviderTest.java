@@ -10,6 +10,7 @@ package io.camunda.security.core.authz;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.camunda.security.api.model.CamundaAuthentication;
+import io.camunda.security.api.model.authz.AuthorizationScope;
 import io.camunda.security.core.auth.RequiredAuthorization;
 import org.junit.jupiter.api.Test;
 
@@ -32,6 +33,8 @@ class DisabledResourceAccessProviderTest {
     assertThat(result.denied()).isFalse();
     assertThat(result.allowed()).isTrue();
     assertThat(result.wildcard()).isTrue();
+    assertThat(result.authorization().resourceIds())
+        .containsExactly(AuthorizationScope.WILDCARD_CHAR);
   }
 
   @Test
@@ -50,6 +53,8 @@ class DisabledResourceAccessProviderTest {
     assertThat(result.denied()).isFalse();
     assertThat(result.allowed()).isTrue();
     assertThat(result.wildcard()).isTrue();
+    assertThat(result.authorization().resourceIds())
+        .containsExactly(AuthorizationScope.WILDCARD_CHAR);
   }
 
   @Test
@@ -67,5 +72,7 @@ class DisabledResourceAccessProviderTest {
     assertThat(result.denied()).isFalse();
     assertThat(result.allowed()).isTrue();
     assertThat(result.wildcard()).isTrue();
+    assertThat(result.authorization().resourceIds())
+        .containsExactly(AuthorizationScope.WILDCARD_CHAR);
   }
 }
