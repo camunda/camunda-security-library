@@ -106,7 +106,7 @@ public final class ScopedAuthorizationCheckPortFactory {
      *     back to another scope's port, as doing so would break scope isolation
      */
     public AuthorizationCheckPort forScope(final String scope) {
-      final var checkPort = checkPortsByScope.get(scope);
+      final var checkPort = scope == null ? null : checkPortsByScope.get(scope);
       if (checkPort == null) {
         throw new IllegalStateException(
             "No AuthorizationCheckPort assembled for scope '"
