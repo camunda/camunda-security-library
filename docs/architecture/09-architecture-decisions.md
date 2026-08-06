@@ -55,6 +55,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0037: Security-headers customizer hook (covers CSP)](../adr/0037-csp-and-security-headers-customizer-hooks.md)
 - [ADR-0038: Optimize reuses the stateful OIDC webapp chain and the JWT-cookie chain is retired](../adr/0038-optimize-reuses-stateful-oidc-webapp-chain.md)
 - [ADR-0039: Tenant access provider factory](../adr/0039-tenant-access-provider-factory.md)
+- [ADR-0040: A scoped `AuthorizationCheckPort` factory for hosts with several scope repositories](../adr/0040-scoped-authorization-check-port-factory.md)
 
 ---
 
