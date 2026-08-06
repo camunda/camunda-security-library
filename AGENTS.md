@@ -60,6 +60,13 @@ An interface is always a `Port`. Use `port/in/` for inbound ports and `port/out/
 - Outbound port implementations (external-system I/O): suffixed with `Adapter` (e.g., `GroupPersistenceAdapter`, `IdpClientAdapter`)
 - Never use `*Impl` as a naming convention for implementations
 - Existing code may still contain legacy `*PortImpl`, `*AdapterImpl`, and `adapter/` contract packages until explicitly refactored
+- **`core` has no notion of a physical tenant** — only an opaque *scope* key that a host maps to
+  its own concept (a physical tenant, a base path, etc.); `core` never learns what a scope means.
+  Host-facing types that assemble or resolve something per scope are conventionally prefixed
+  `Scoped*` (e.g. `ScopedSessionStorePortProvider`, `ScopedWebSessionRepositoryFactory`,
+  `ScopedAuthorizationCheckPortFactory`). Don't introduce tenant-flavored names (`*TenantPort`,
+  `*PhysicalTenant*`) in `core` — that's the host's vocabulary, not the library's. See ADR-0025,
+  ADR-0029, ADR-0040.
 
 ### Error Handling
 
