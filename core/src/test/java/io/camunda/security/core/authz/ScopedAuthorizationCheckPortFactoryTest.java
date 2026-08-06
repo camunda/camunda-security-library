@@ -99,6 +99,20 @@ class ScopedAuthorizationCheckPortFactoryTest {
   @Test
   void shouldShareTheGivenClaimsResolverInstanceAcrossEveryScope() {
     // given
+    final var ports = createPorts();
+
+    // when
+    final var portA = (AuthorizationService) ports.forScope("tenant-a");
+    final var portB = (AuthorizationService) ports.forScope("tenant-b");
+
+    // then — both scopes' ports were built from the one resolver instance, not a copy each
+    assertThat(portA.claimsConverter()).isSameAs(claimsResolver);
+    assertThat(portB.claimsConverter()).isSameAs(claimsResolver);
+  }
+
+  @Test
+  void shouldResolveClaimsThroughTheSharedResolver() {
+    // given
     when(claimsResolver.resolve(any())).thenReturn(alice);
     when(tenantAScopeRepository.hasAuthorizedScope(any(), any(), any(), anyList()))
         .thenReturn(true);
