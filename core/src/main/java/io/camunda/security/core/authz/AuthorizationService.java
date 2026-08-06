@@ -8,6 +8,7 @@
 package io.camunda.security.core.authz;
 
 import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
+import io.camunda.security.api.context.TokenClaimsAuthenticationResolver;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.Either;
 import io.camunda.security.api.model.authz.AuthorizationRejection;
@@ -58,14 +59,14 @@ public final class AuthorizationService implements AuthorizationCheckPort {
   private final boolean authorizationEnabled;
   private final boolean multiTenancyChecksEnabled;
 
-  private final LazyTokenClaimsConverter claimsConverter;
+  private final TokenClaimsAuthenticationResolver claimsConverter;
 
   public AuthorizationService(
       final AuthorizationChecker authorizationChecker,
       final PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry,
       final boolean authorizationEnabled,
       final boolean multiTenancyChecksEnabled,
-      final LazyTokenClaimsConverter claimsConverter) {
+      final TokenClaimsAuthenticationResolver claimsConverter) {
     this.authorizationChecker =
         Objects.requireNonNull(authorizationChecker, "authorizationChecker");
     this.propertyEvaluatorRegistry =
@@ -85,7 +86,7 @@ public final class AuthorizationService implements AuthorizationCheckPort {
   }
 
   /** Exposed package-privately so tests can assert the shared-converter wiring invariant. */
-  LazyTokenClaimsConverter claimsConverter() {
+  TokenClaimsAuthenticationResolver claimsConverter() {
     return claimsConverter;
   }
 
@@ -100,7 +101,7 @@ public final class AuthorizationService implements AuthorizationCheckPort {
       return Either.right(null);
     }
 
-    return check(claimsConverter.convert(claims), authorization);
+    return check(claimsConverter.resolve(claims), authorization);
   }
 
   /**
