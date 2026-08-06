@@ -58,6 +58,11 @@ your own resolver" expressible in decision 2 without adding a new public paramet
 and the `spring-boot-starter`'s `AuthorizationConfiguration` bean already pass a concrete
 `LazyTokenClaimsConverter`, which satisfies the widened interface parameter.
 
+This widening changes the constructor's descriptor, so it is source- but not binary-compatible: a
+host that calls this constructor directly today — OC's `TenantAwareAuthorizationCheckPort` does —
+hits `NoSuchMethodError` at runtime until it recompiles against the new CSL version; bumping the
+dependency version alone is not enough.
+
 ### 2. `ScopedAuthorizationCheckPortFactory` — a new, separate entry point
 
 A new class, `core/authz/ScopedAuthorizationCheckPortFactory`, with one static method:
