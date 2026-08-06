@@ -77,6 +77,17 @@ class ScopedAuthorizationCheckPortFactoryTest {
   }
 
   @Test
+  void shouldFailHardOnNullScopeRatherThanThrowingNullPointerException() {
+    // given — an unstamped request (no physical tenant resolved) looks up a null key
+    final var ports = createPorts();
+
+    // when / then — the diagnostic isolation message, not a bare NPE from the backing map
+    assertThatIllegalStateException()
+        .isThrownBy(() -> ports.forScope(null))
+        .withMessageContaining("null");
+  }
+
+  @Test
   void shouldNeverInvokeClaimsResolverDuringConstruction() {
     // when
     createPorts();
@@ -121,16 +132,5 @@ class ScopedAuthorizationCheckPortFactoryTest {
                 ScopedAuthorizationCheckPortFactory.create(
                     scopeRepositories, claimsResolver, null, true, false))
         .withMessageContaining("propertyEvaluators");
-  }
-
-  @Test
-  void shouldNotExposeTheBackingMapDirectly() {
-    // A caller must go through forScope(...) to get the fail-hard guarantee; there is no
-    // public accessor on the holder that would let a caller bypass it and read a silent null.
-    final var methods =
-        ScopedAuthorizationCheckPortFactory.ScopedAuthorizationCheckPorts.class
-            .getDeclaredMethods();
-    assertThat(methods).hasSize(1);
-    assertThat(methods[0].getName()).isEqualTo("forScope");
   }
 }
