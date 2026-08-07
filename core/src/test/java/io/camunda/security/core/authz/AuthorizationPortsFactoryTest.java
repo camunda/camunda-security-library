@@ -216,12 +216,12 @@ class AuthorizationPortsFactoryTest {
   }
 
   @Test
-  void shouldBackCheckPortAndClaimsResolverBySameConverterInstance() {
+  void shouldBackCheckPortAndClaimsResolverBySameResolverInstance() {
     // given
     final var ports = createGraph(true);
 
-    // then — the Javadoc-documented shared-converter invariant
-    assertThat(((AuthorizationService) ports.checkPort()).claimsConverter())
+    // then — the Javadoc-documented shared-resolver invariant
+    assertThat(((AuthorizationService) ports.checkPort()).claimsResolver())
         .isSameAs(ports.claimsResolver());
   }
 

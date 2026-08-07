@@ -59,19 +59,19 @@ public final class AuthorizationService implements AuthorizationCheckPort {
   private final boolean authorizationEnabled;
   private final boolean multiTenancyChecksEnabled;
 
-  private final TokenClaimsAuthenticationResolver claimsConverter;
+  private final TokenClaimsAuthenticationResolver claimsResolver;
 
   public AuthorizationService(
       final AuthorizationChecker authorizationChecker,
       final PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry,
       final boolean authorizationEnabled,
       final boolean multiTenancyChecksEnabled,
-      final TokenClaimsAuthenticationResolver claimsConverter) {
+      final TokenClaimsAuthenticationResolver claimsResolver) {
     this.authorizationChecker =
         Objects.requireNonNull(authorizationChecker, "authorizationChecker");
     this.propertyEvaluatorRegistry =
         Objects.requireNonNull(propertyEvaluatorRegistry, "propertyEvaluatorRegistry");
-    this.claimsConverter = Objects.requireNonNull(claimsConverter, "claimsConverter");
+    this.claimsResolver = Objects.requireNonNull(claimsResolver, "claimsResolver");
     this.authorizationEnabled = authorizationEnabled;
     this.multiTenancyChecksEnabled = multiTenancyChecksEnabled;
   }
@@ -85,9 +85,9 @@ public final class AuthorizationService implements AuthorizationCheckPort {
     return !authorizationEnabled && !multiTenancyChecksEnabled;
   }
 
-  /** Exposed package-privately so tests can assert the shared-converter wiring invariant. */
-  TokenClaimsAuthenticationResolver claimsConverter() {
-    return claimsConverter;
+  /** Exposed package-privately so tests can assert the shared-resolver wiring invariant. */
+  TokenClaimsAuthenticationResolver claimsResolver() {
+    return claimsResolver;
   }
 
   @Override
@@ -101,7 +101,7 @@ public final class AuthorizationService implements AuthorizationCheckPort {
       return Either.right(null);
     }
 
-    return check(claimsConverter.resolve(claims), authorization);
+    return check(claimsResolver.resolve(claims), authorization);
   }
 
   /**
