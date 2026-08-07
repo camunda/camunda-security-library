@@ -20,6 +20,7 @@ import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.auth.RequiredAuthorization;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -146,5 +147,31 @@ class ScopedAuthorizationCheckPortFactoryTest {
                 ScopedAuthorizationCheckPortFactory.create(
                     scopeRepositories, claimsResolver, null, true, false))
         .withMessageContaining("propertyEvaluators");
+  }
+
+  @Test
+  void shouldFailFastOnNullScopeKeyInScopeRepositories() {
+    final Map<String, AuthorizationScopeRepositoryPort> scopeRepositories = new HashMap<>();
+    scopeRepositories.put(null, tenantAScopeRepository);
+
+    assertThatNullPointerException()
+        .isThrownBy(
+            () ->
+                ScopedAuthorizationCheckPortFactory.create(
+                    scopeRepositories, claimsResolver, List.of(), true, false))
+        .withMessageContaining("null scope key");
+  }
+
+  @Test
+  void shouldFailFastOnNullRepositoryValueInScopeRepositories() {
+    final Map<String, AuthorizationScopeRepositoryPort> scopeRepositories = new HashMap<>();
+    scopeRepositories.put("tenant-a", null);
+
+    assertThatNullPointerException()
+        .isThrownBy(
+            () ->
+                ScopedAuthorizationCheckPortFactory.create(
+                    scopeRepositories, claimsResolver, List.of(), true, false))
+        .withMessageContaining("tenant-a");
   }
 }
