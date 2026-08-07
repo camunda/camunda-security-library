@@ -38,7 +38,8 @@ public final class ScopedAuthorizationCheckPortFactory {
    * @param multiTenancyChecksEnabled whether multi-tenancy checks are globally enabled
    * @return a holder exposing the fail-hard {@code forScope} lookup
    * @throws NullPointerException if {@code scopeRepositoriesByScope}, {@code claimsResolver}, or
-   *     {@code propertyEvaluators} is {@code null}
+   *     {@code propertyEvaluators} is {@code null}, or if {@code scopeRepositoriesByScope} contains
+   *     a null scope key or a null repository value
    */
   public static ScopedAuthorizationCheckPorts create(
       final Map<String, AuthorizationScopeRepositoryPort> scopeRepositoriesByScope,
@@ -52,15 +53,24 @@ public final class ScopedAuthorizationCheckPortFactory {
     final var evaluatorRegistry = new PropertyAuthorizationEvaluatorRegistry(propertyEvaluators);
     final Map<String, AuthorizationCheckPort> checkPortsByScope = new HashMap<>();
     scopeRepositoriesByScope.forEach(
-        (scope, scopeRepository) ->
-            checkPortsByScope.put(
-                scope,
-                new AuthorizationService(
-                    new AuthorizationChecker(scopeRepository),
-                    evaluatorRegistry,
-                    authorizationEnabled,
-                    multiTenancyChecksEnabled,
-                    claimsResolver)));
+        (scope, scopeRepository) -> {
+          Objects.requireNonNull(
+              scope, "scopeRepositoriesByScope must not contain a null scope key");
+          Objects.requireNonNull(
+              scopeRepository,
+              () ->
+                  "scopeRepositoriesByScope must not contain a null repository for scope '"
+                      + scope
+                      + "'");
+          checkPortsByScope.put(
+              scope,
+              new AuthorizationService(
+                  new AuthorizationChecker(scopeRepository),
+                  evaluatorRegistry,
+                  authorizationEnabled,
+                  multiTenancyChecksEnabled,
+                  claimsResolver));
+        });
     return new ScopedAuthorizationCheckPorts(Map.copyOf(checkPortsByScope));
   }
 
