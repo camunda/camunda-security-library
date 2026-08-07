@@ -10,6 +10,7 @@ package io.camunda.security.core.authz;
 import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
 import io.camunda.security.api.context.TokenClaimsAuthenticationResolver;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
+import io.camunda.security.core.port.out.AuthorizationCheckLatencyRecorder;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
 import java.util.HashMap;
 import java.util.List;
@@ -20,7 +21,7 @@ import java.util.Objects;
  * Assembles one {@link AuthorizationCheckPort} per scope for hosts that already own several {@link
  * AuthorizationScopeRepositoryPort}s and need a fail-hard, per-scope lookup instead of hand-rolling
  * the fan-out themselves. Reuses the host's existing {@link TokenClaimsAuthenticationResolver}
- * rather than building a new one. See ADR-0040.
+ * rather than building a new one. See ADR-0040 and ADR-0041.
  */
 public final class ScopedAuthorizationCheckPortFactory {
 
@@ -47,9 +48,35 @@ public final class ScopedAuthorizationCheckPortFactory {
       final List<PropertyAuthorizationEvaluator<?>> propertyEvaluators,
       final boolean authorizationEnabled,
       final boolean multiTenancyChecksEnabled) {
+    return create(
+        scopeRepositoriesByScope,
+        claimsResolver,
+        propertyEvaluators,
+        authorizationEnabled,
+        multiTenancyChecksEnabled,
+        AuthorizationCheckLatencyRecorder.noop());
+  }
+
+  /**
+   * Full-control variant that also accepts an {@link AuthorizationCheckLatencyRecorder}, shared
+   * across every scope's port, so non-Spring consumers can supply their own meter-backed
+   * implementation. See ADR-0041.
+   *
+   * @throws NullPointerException if {@code scopeRepositoriesByScope}, {@code claimsResolver},
+   *     {@code propertyEvaluators}, or {@code latencyRecorder} is {@code null}, or if {@code
+   *     scopeRepositoriesByScope} contains a null scope key or a null repository value
+   */
+  public static ScopedAuthorizationCheckPorts create(
+      final Map<String, AuthorizationScopeRepositoryPort> scopeRepositoriesByScope,
+      final TokenClaimsAuthenticationResolver claimsResolver,
+      final List<PropertyAuthorizationEvaluator<?>> propertyEvaluators,
+      final boolean authorizationEnabled,
+      final boolean multiTenancyChecksEnabled,
+      final AuthorizationCheckLatencyRecorder latencyRecorder) {
     Objects.requireNonNull(scopeRepositoriesByScope, "scopeRepositoriesByScope must not be null");
     Objects.requireNonNull(claimsResolver, "claimsResolver must not be null");
     Objects.requireNonNull(propertyEvaluators, "propertyEvaluators must not be null");
+    Objects.requireNonNull(latencyRecorder, "latencyRecorder must not be null");
     final var evaluatorRegistry = new PropertyAuthorizationEvaluatorRegistry(propertyEvaluators);
     final Map<String, AuthorizationCheckPort> checkPortsByScope = new HashMap<>();
     scopeRepositoriesByScope.forEach(
@@ -69,7 +96,8 @@ public final class ScopedAuthorizationCheckPortFactory {
                   evaluatorRegistry,
                   authorizationEnabled,
                   multiTenancyChecksEnabled,
-                  claimsResolver));
+                  claimsResolver,
+                  latencyRecorder));
         });
     return new ScopedAuthorizationCheckPorts(Map.copyOf(checkPortsByScope));
   }

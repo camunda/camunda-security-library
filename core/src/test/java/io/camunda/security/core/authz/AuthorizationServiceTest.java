@@ -14,7 +14,10 @@ import static io.camunda.security.api.model.authz.PermissionType.READ_USER_TASK;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -24,6 +27,7 @@ import io.camunda.security.api.model.authz.AuthorizationRejection;
 import io.camunda.security.api.model.authz.AuthorizationScope;
 import io.camunda.security.api.model.authz.PermissionType;
 import io.camunda.security.core.auth.RequiredAuthorization;
+import io.camunda.security.core.port.out.AuthorizationCheckLatencyRecorder;
 import io.camunda.security.core.port.out.MembershipPort;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +44,7 @@ class AuthorizationServiceTest {
   @Mock private AuthorizationChecker authorizationChecker;
   @Mock private PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry;
   @Mock private MembershipPort membershipPort;
+  @Mock private AuthorizationCheckLatencyRecorder latencyRecorder;
 
   @SuppressWarnings("unchecked")
   @Mock
@@ -60,6 +65,18 @@ class AuthorizationServiceTest {
         authorizationEnabled,
         multiTenancyChecksEnabled,
         converter);
+  }
+
+  private AuthorizationService serviceWithRecorder(
+      final boolean authorizationEnabled, final boolean multiTenancyChecksEnabled) {
+    final var converter = new LazyTokenClaimsConverter("sub", "client_id", false, membershipPort);
+    return new AuthorizationService(
+        authorizationChecker,
+        propertyEvaluatorRegistry,
+        authorizationEnabled,
+        multiTenancyChecksEnabled,
+        converter,
+        latencyRecorder);
   }
 
   // --- skipChecks ---
@@ -401,5 +418,49 @@ class AuthorizationServiceTest {
     assertThatThrownBy(() -> service(true, false).check(Map.of("x", "y"), req))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Neither username claim");
+  }
+
+  // --- latency recorder ---
+
+  @Test
+  void scopeCheckRecordsLatencyExactlyOnce() {
+    when(authorizationChecker.isAuthorized(any(), any(), any())).thenReturn(true);
+    final var req =
+        RequiredAuthorization.of(
+            b -> b.processDefinition().readProcessDefinition().resourceId("p1"));
+
+    serviceWithRecorder(true, false).check(alice, req);
+
+    verify(latencyRecorder, times(1)).record(anyLong());
+  }
+
+  @Test
+  void propertyCheckRecordsLatencyExactlyOnce() {
+    when(authorizationChecker.retrieveAuthorizedPropertyScopes(eq(alice), any(), any()))
+        .thenReturn(List.of(AuthorizationScope.property(RequiredAuthorization.PROP_ASSIGNEE)));
+    when(evaluator.isAuthorized(alice, "task-1")).thenReturn(true);
+    when(propertyEvaluatorRegistry.<String>findEvaluator(RequiredAuthorization.PROP_ASSIGNEE))
+        .thenReturn(Optional.of(evaluator));
+    final var req =
+        RequiredAuthorization.of(b -> b.userTask().readUserTask().authorizedByAssignee());
+
+    serviceWithRecorder(true, false).check(alice, req, "task-1");
+
+    verify(latencyRecorder, times(1)).record(anyLong());
+  }
+
+  @Test
+  void claimsCheckDelegatesToTimedTerminalOverloadExactlyOnce() {
+    // the claims-map overload is a pure delegation to the timed scope-based overload; it must
+    // not additionally time itself, or a single logical check would record two samples
+    when(authorizationChecker.isAuthorized(any(), any(), any())).thenReturn(true);
+    final var req =
+        RequiredAuthorization.of(
+            b -> b.processDefinition().readProcessDefinition().resourceId("p1"));
+    final var claims = Map.<String, Object>of("sub", "alice");
+
+    serviceWithRecorder(true, false).check(claims, req);
+
+    verify(latencyRecorder, times(1)).record(anyLong());
   }
 }

@@ -12,6 +12,9 @@ import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -19,6 +22,7 @@ import io.camunda.security.api.context.TokenClaimsAuthenticationResolver;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.auth.RequiredAuthorization;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
+import io.camunda.security.core.port.out.AuthorizationCheckLatencyRecorder;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
 import java.util.HashMap;
 import java.util.List;
@@ -34,6 +38,7 @@ class ScopedAuthorizationCheckPortFactoryTest {
   @Mock private AuthorizationScopeRepositoryPort tenantAScopeRepository;
   @Mock private AuthorizationScopeRepositoryPort tenantBScopeRepository;
   @Mock private TokenClaimsAuthenticationResolver claimsResolver;
+  @Mock private AuthorizationCheckLatencyRecorder latencyRecorder;
 
   private final CamundaAuthentication alice = CamundaAuthentication.of(b -> b.user("alice"));
   private final RequiredAuthorization<?> req =
@@ -173,5 +178,50 @@ class ScopedAuthorizationCheckPortFactoryTest {
                 ScopedAuthorizationCheckPortFactory.create(
                     scopeRepositories, claimsResolver, List.of(), true, false))
         .withMessageContaining("tenant-a");
+  }
+
+  @Test
+  void shouldRecordLatencyThroughTheSameSharedRecorderInstanceAcrossEveryScope() {
+    // given
+    when(tenantAScopeRepository.hasAuthorizedScope(any(), any(), any(), anyList()))
+        .thenReturn(true);
+    when(tenantBScopeRepository.hasAuthorizedScope(any(), any(), any(), anyList()))
+        .thenReturn(true);
+    final var ports =
+        ScopedAuthorizationCheckPortFactory.create(
+            Map.of("tenant-a", tenantAScopeRepository, "tenant-b", tenantBScopeRepository),
+            claimsResolver,
+            List.of(),
+            true,
+            false,
+            latencyRecorder);
+
+    // when — only tenant-a's port is exercised first
+    ports.forScope("tenant-a").check(alice, req);
+
+    // then — tenant-a's port recorded on the shared mock
+    verify(latencyRecorder, times(1)).record(anyLong());
+
+    // when — tenant-b's port is exercised next
+    ports.forScope("tenant-b").check(alice, req);
+
+    // then — the very same mock instance now shows both calls, proving it is one shared
+    // recorder passed to every scope's port, not one copy each
+    verify(latencyRecorder, times(2)).record(anyLong());
+  }
+
+  @Test
+  void shouldFailFastOnNullLatencyRecorder() {
+    assertThatNullPointerException()
+        .isThrownBy(
+            () ->
+                ScopedAuthorizationCheckPortFactory.create(
+                    Map.of("tenant-a", tenantAScopeRepository),
+                    claimsResolver,
+                    List.of(),
+                    true,
+                    false,
+                    null))
+        .withMessageContaining("latencyRecorder");
   }
 }

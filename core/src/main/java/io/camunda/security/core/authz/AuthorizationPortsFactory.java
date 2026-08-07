@@ -11,6 +11,7 @@ import io.camunda.security.api.context.MembershipResolutionContextPropagator;
 import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
 import io.camunda.security.api.context.TokenClaimsAuthenticationResolver;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
+import io.camunda.security.core.port.out.AuthorizationCheckLatencyRecorder;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
 import io.camunda.security.core.port.out.MembershipPort;
 import java.util.List;
@@ -84,14 +85,18 @@ public final class AuthorizationPortsFactory {
         usernameClaim,
         clientIdClaim,
         preferUsernameClaim,
-        MembershipResolutionContextPropagator.identity());
+        MembershipResolutionContextPropagator.identity(),
+        AuthorizationCheckLatencyRecorder.noop());
   }
 
   /**
    * Full-control variant of {@link #create(AuthorizationScopeRepositoryPort, MembershipPort, List,
    * boolean, boolean, String, String, boolean)} that also accepts a {@link
    * MembershipResolutionContextPropagator} for hosts whose membership lookups depend on
-   * request-scoped state.
+   * request-scoped state. Uses a no-op {@link AuthorizationCheckLatencyRecorder}; see {@link
+   * #create(AuthorizationScopeRepositoryPort, MembershipPort, List, boolean, boolean, String,
+   * String, boolean, MembershipResolutionContextPropagator, AuthorizationCheckLatencyRecorder)} to
+   * supply one.
    */
   public static AuthorizationPorts create(
       final AuthorizationScopeRepositoryPort scopeRepository,
@@ -103,10 +108,40 @@ public final class AuthorizationPortsFactory {
       final String clientIdClaim,
       final boolean preferUsernameClaim,
       final MembershipResolutionContextPropagator contextPropagator) {
+    return create(
+        scopeRepository,
+        membershipPort,
+        propertyEvaluators,
+        authorizationEnabled,
+        multiTenancyChecksEnabled,
+        usernameClaim,
+        clientIdClaim,
+        preferUsernameClaim,
+        contextPropagator,
+        AuthorizationCheckLatencyRecorder.noop());
+  }
+
+  /**
+   * Full-control variant that also accepts an {@link AuthorizationCheckLatencyRecorder}, so
+   * non-Spring consumers (e.g. the Zeebe engine) can supply their own meter-backed implementation.
+   * See ADR-0041.
+   */
+  public static AuthorizationPorts create(
+      final AuthorizationScopeRepositoryPort scopeRepository,
+      final MembershipPort membershipPort,
+      final List<PropertyAuthorizationEvaluator<?>> propertyEvaluators,
+      final boolean authorizationEnabled,
+      final boolean multiTenancyChecksEnabled,
+      final String usernameClaim,
+      final String clientIdClaim,
+      final boolean preferUsernameClaim,
+      final MembershipResolutionContextPropagator contextPropagator,
+      final AuthorizationCheckLatencyRecorder latencyRecorder) {
     Objects.requireNonNull(scopeRepository, "scopeRepository must not be null");
     Objects.requireNonNull(membershipPort, "membershipPort must not be null");
     Objects.requireNonNull(propertyEvaluators, "propertyEvaluators must not be null");
     Objects.requireNonNull(contextPropagator, "contextPropagator must not be null");
+    Objects.requireNonNull(latencyRecorder, "latencyRecorder must not be null");
     final var converter =
         new LazyTokenClaimsConverter(
             usernameClaim, clientIdClaim, preferUsernameClaim, membershipPort, contextPropagator);
@@ -117,7 +152,8 @@ public final class AuthorizationPortsFactory {
             new PropertyAuthorizationEvaluatorRegistry(propertyEvaluators),
             authorizationEnabled,
             multiTenancyChecksEnabled,
-            converter);
+            converter,
+            latencyRecorder);
     return new AuthorizationPorts(service, converter);
   }
 
