@@ -17,13 +17,16 @@ tracks a monorepo (OC) request: OC hand-rolls per-scope authorization fan-out ar
 internals — building a new `AuthorizationService` on every check call — instead of depending only
 on `AuthorizationCheckPort`.
 
-`AuthorizationPortsFactory` (ADR-0028) already assembles this kind of graph, but only for a single
-scope, for non-Spring consumers, and it builds its own claims converter. None of that fits: OC needs
-one port per scope with a fail-hard lookup, and must reuse its *existing* claims resolver rather
-than a second one that could diverge from it.
+`AuthorizationPortsFactory` ([ADR-0028](0028-unified-authz-framework-in-core.md)) already assembles
+this kind of graph, but only for a single scope, for non-Spring consumers, and it builds its own
+claims converter. None of that fits: OC needs one port per scope with a fail-hard lookup, and must
+reuse its *existing* claims resolver rather than a second one that could diverge from it.
 
 (A second consumer named in the issue turned out to construct a monorepo-owned class `core` cannot
 reach; its fix lives entirely in the monorepo. This ADR covers the check-port plane only.)
+
+What shape lets a host assemble a fail-hard `AuthorizationCheckPort` per scope without building a
+second claims resolver that could diverge from its own?
 
 ## Decision
 
@@ -45,12 +48,13 @@ reach; its fix lives entirely in the monorepo. This ADR covers the check-port pl
 
 - **A separate class from `AuthorizationPortsFactory`, not an overload on it** — that factory's own
   Javadoc reserves it for single-scope, non-Spring consumers.
-- **An eager `Map`, not a lazy SPI** (unlike ADR-0029's session-store case) — the host knows every
-  scope at wiring time, so there's no laziness or decoupling need to serve.
-- **Takes the host's own resolver rather than building one** — this is why decision 2 isn't ADR-0028
-  §6's rejected "route the Spring bean through a factory" alternative: that alternative risked a
-  factory silently diverging from a host's existing converter, and this factory can't, because it
-  never builds one.
+- **An eager `Map`, not a lazy SPI** (unlike [ADR-0029](0029-per-scope-session-store-ownership.md)'s
+  session-store case) — the host knows every scope at wiring time, so there's no laziness or
+  decoupling need to serve.
+- **Takes the host's own resolver rather than building one** — this is why decision 2 isn't
+  [ADR-0028](0028-unified-authz-framework-in-core.md) §6's rejected "route the Spring bean through a
+  factory" alternative: that alternative risked a factory silently diverging from a host's existing
+  converter, and this factory can't, because it never builds one.
 - **Flags and evaluators are global, not per-scope** — matches OC's existing behaviour of applying
   one configuration to every tenant; a per-scope flag would be a behaviour change, out of scope here.
 - The returned holder is a plain final class wrapping a private map, not a record — a record would
@@ -78,5 +82,5 @@ reach; its fix lives entirely in the monorepo. This ADR covers the check-port pl
   contract.
 - **Build the resolver internally, mirroring `AuthorizationPortsFactory.create`.** Rejected — risks
   a second, diverging converter instance.
-- **A `Scoped*Provider` SPI, like ADR-0029.** Rejected — that laziness serves a Spring-Session-timing
-  constraint that doesn't apply here.
+- **A `Scoped*Provider` SPI, like [ADR-0029](0029-per-scope-session-store-ownership.md).** Rejected —
+  that laziness serves a Spring-Session-timing constraint that doesn't apply here.
