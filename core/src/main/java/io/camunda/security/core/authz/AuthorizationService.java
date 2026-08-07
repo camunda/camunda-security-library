@@ -17,6 +17,7 @@ import io.camunda.security.api.model.authz.AuthorizationResourceType;
 import io.camunda.security.api.model.authz.AuthorizationScope;
 import io.camunda.security.core.auth.RequiredAuthorization;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
+import io.camunda.security.core.port.out.AuthorizationCheckLatencyRecorder;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -60,6 +61,7 @@ public final class AuthorizationService implements AuthorizationCheckPort {
   private final boolean multiTenancyChecksEnabled;
 
   private final TokenClaimsAuthenticationResolver claimsResolver;
+  private final AuthorizationCheckLatencyRecorder latencyRecorder;
 
   public AuthorizationService(
       final AuthorizationChecker authorizationChecker,
@@ -67,11 +69,33 @@ public final class AuthorizationService implements AuthorizationCheckPort {
       final boolean authorizationEnabled,
       final boolean multiTenancyChecksEnabled,
       final TokenClaimsAuthenticationResolver claimsResolver) {
+    this(
+        authorizationChecker,
+        propertyEvaluatorRegistry,
+        authorizationEnabled,
+        multiTenancyChecksEnabled,
+        claimsResolver,
+        AuthorizationCheckLatencyRecorder.noop());
+  }
+
+  /**
+   * Full-control constructor also accepting an {@link AuthorizationCheckLatencyRecorder}. Only the
+   * two terminal {@code check(...)} overloads (scope-based and property-based) are timed; see
+   * {@link AuthorizationCheckLatencyRecorder} for why the claims-map overload is left untimed.
+   */
+  public AuthorizationService(
+      final AuthorizationChecker authorizationChecker,
+      final PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry,
+      final boolean authorizationEnabled,
+      final boolean multiTenancyChecksEnabled,
+      final TokenClaimsAuthenticationResolver claimsResolver,
+      final AuthorizationCheckLatencyRecorder latencyRecorder) {
     this.authorizationChecker =
         Objects.requireNonNull(authorizationChecker, "authorizationChecker");
     this.propertyEvaluatorRegistry =
         Objects.requireNonNull(propertyEvaluatorRegistry, "propertyEvaluatorRegistry");
     this.claimsResolver = Objects.requireNonNull(claimsResolver, "claimsResolver");
+    this.latencyRecorder = Objects.requireNonNull(latencyRecorder, "latencyRecorder");
     this.authorizationEnabled = authorizationEnabled;
     this.multiTenancyChecksEnabled = multiTenancyChecksEnabled;
   }
@@ -120,36 +144,41 @@ public final class AuthorizationService implements AuthorizationCheckPort {
   @Override
   public <T> Either<AuthorizationRejection, Void> check(
       final CamundaAuthentication authentication, final RequiredAuthorization<T> authorization) {
-    if (!authorizationEnabled) {
-      return Either.right(null);
-    }
-
-    if (!authorization.hasAnyResourceIds()) {
-      return Either.right(null);
-    }
-
-    final boolean isTenantResource =
-        AuthorizationResourceType.TENANT.equals(authorization.resourceType());
-
-    for (final String resourceId : authorization.resourceIds()) {
-      final AuthorizationScope scope = AuthorizationScope.of(resourceId);
-      if (!authorizationChecker.isAuthorized(scope, authentication, authorization)) {
-        LOG.debug(
-            "Authorization denied for [{}] on resource [{}:{}:{}]",
-            principalType(authentication),
-            authorization.resourceType(),
-            authorization.permissionType(),
-            resourceId);
-        if (isTenantResource) {
-          return Either.left(new AuthorizationRejection.Tenant(resourceId));
-        }
-        return Either.left(
-            new AuthorizationRejection.Permission(
-                authorization.resourceType(), authorization.permissionType(), resourceId));
+    final long startNanos = System.nanoTime();
+    try {
+      if (!authorizationEnabled) {
+        return Either.right(null);
       }
-    }
 
-    return Either.right(null);
+      if (!authorization.hasAnyResourceIds()) {
+        return Either.right(null);
+      }
+
+      final boolean isTenantResource =
+          AuthorizationResourceType.TENANT.equals(authorization.resourceType());
+
+      for (final String resourceId : authorization.resourceIds()) {
+        final AuthorizationScope scope = AuthorizationScope.of(resourceId);
+        if (!authorizationChecker.isAuthorized(scope, authentication, authorization)) {
+          LOG.debug(
+              "Authorization denied for [{}] on resource [{}:{}:{}]",
+              principalType(authentication),
+              authorization.resourceType(),
+              authorization.permissionType(),
+              resourceId);
+          if (isTenantResource) {
+            return Either.left(new AuthorizationRejection.Tenant(resourceId));
+          }
+          return Either.left(
+              new AuthorizationRejection.Permission(
+                  authorization.resourceType(), authorization.permissionType(), resourceId));
+        }
+      }
+
+      return Either.right(null);
+    } finally {
+      latencyRecorder.record(System.nanoTime() - startNanos);
+    }
   }
 
   /**
@@ -179,42 +208,47 @@ public final class AuthorizationService implements AuthorizationCheckPort {
       final CamundaAuthentication authentication,
       final RequiredAuthorization<T> authorization,
       final T resource) {
-    if (!authorizationEnabled) {
-      return Either.right(null);
-    }
-
-    if (!authorization.hasAnyResourcePropertyNames()) {
-      return Either.right(null);
-    }
-
-    final Set<String> declaredPropertyNames = authorization.resourcePropertyNames();
-    final List<AuthorizationScope> grantedPropertyScopes =
-        authorizationChecker.retrieveAuthorizedPropertyScopes(
-            authentication, authorization, declaredPropertyNames);
-
-    for (final AuthorizationScope scope : grantedPropertyScopes) {
-      final String propertyName = scope.getResourcePropertyName();
-      final Optional<PropertyAuthorizationEvaluator<T>> maybeEvaluator =
-          propertyEvaluatorRegistry.findEvaluator(propertyName);
-      if (maybeEvaluator.isPresent()
-          && maybeEvaluator.get().isAuthorized(authentication, resource)) {
+    final long startNanos = System.nanoTime();
+    try {
+      if (!authorizationEnabled) {
         return Either.right(null);
       }
+
+      if (!authorization.hasAnyResourcePropertyNames()) {
+        return Either.right(null);
+      }
+
+      final Set<String> declaredPropertyNames = authorization.resourcePropertyNames();
+      final List<AuthorizationScope> grantedPropertyScopes =
+          authorizationChecker.retrieveAuthorizedPropertyScopes(
+              authentication, authorization, declaredPropertyNames);
+
+      for (final AuthorizationScope scope : grantedPropertyScopes) {
+        final String propertyName = scope.getResourcePropertyName();
+        final Optional<PropertyAuthorizationEvaluator<T>> maybeEvaluator =
+            propertyEvaluatorRegistry.findEvaluator(propertyName);
+        if (maybeEvaluator.isPresent()
+            && maybeEvaluator.get().isAuthorized(authentication, resource)) {
+          return Either.right(null);
+        }
+      }
+
+      final Set<String> sortedDeclaredPropertyNames = new TreeSet<>(declaredPropertyNames);
+
+      LOG.debug(
+          "Property-based authorization denied for [{}] on [{}] properties {} of resource type [{}]",
+          principalType(authentication),
+          authorization.permissionType(),
+          sortedDeclaredPropertyNames,
+          authorization.resourceType());
+      return Either.left(
+          new AuthorizationRejection.Property(
+              authorization.resourceType(),
+              authorization.permissionType(),
+              sortedDeclaredPropertyNames));
+    } finally {
+      latencyRecorder.record(System.nanoTime() - startNanos);
     }
-
-    final Set<String> sortedDeclaredPropertyNames = new TreeSet<>(declaredPropertyNames);
-
-    LOG.debug(
-        "Property-based authorization denied for [{}] on [{}] properties {} of resource type [{}]",
-        principalType(authentication),
-        authorization.permissionType(),
-        sortedDeclaredPropertyNames,
-        authorization.resourceType());
-    return Either.left(
-        new AuthorizationRejection.Property(
-            authorization.resourceType(),
-            authorization.permissionType(),
-            sortedDeclaredPropertyNames));
   }
 
   private static String principalType(final CamundaAuthentication authentication) {

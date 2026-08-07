@@ -14,7 +14,9 @@ import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.authz.PropertyAuthorizationEvaluatorRegistry;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -50,11 +52,17 @@ public class AuthorizationConfiguration {
    * off via {@link ConditionalOnMissingBean} if the host registers its own {@link
    * AuthorizationCheckPort} bean.
    *
+   * <p>Wires a Micrometer-backed {@code AuthorizationCheckLatencyRecorder} when a {@link
+   * MeterRegistry} bean is present; metrics are optional, so the recorder degrades to a no-op if
+   * none is registered. See ADR-0041.
+   *
    * @param authorizationChecker the scope evaluation kernel
    * @param evaluators all registered property-based evaluators; empty list is valid
    * @param properties CSL configuration properties for authorization and multi-tenancy flags
    * @param claimsConverter converter from raw JWT claims to {@link
    *     io.camunda.security.api.model.CamundaAuthentication}; provided by the host application
+   * @param meterRegistry the host's {@link MeterRegistry} bean, or {@code null} if metrics are not
+   *     configured
    */
   @Bean
   @ConditionalOnMissingBean(AuthorizationCheckPort.class)
@@ -62,12 +70,14 @@ public class AuthorizationConfiguration {
       final AuthorizationChecker authorizationChecker,
       final List<PropertyAuthorizationEvaluator<?>> evaluators,
       final CamundaSecurityLibraryProperties properties,
-      final LazyTokenClaimsConverter claimsConverter) {
+      final LazyTokenClaimsConverter claimsConverter,
+      @Autowired(required = false) final MeterRegistry meterRegistry) {
     return new AuthorizationService(
         authorizationChecker,
         new PropertyAuthorizationEvaluatorRegistry(evaluators),
         properties.getAuthorizations().isEnabled(),
         properties.getMultiTenancy().isChecksEnabled(),
-        claimsConverter);
+        claimsConverter,
+        new MicrometerAuthorizationCheckLatencyRecorder(meterRegistry));
   }
 }

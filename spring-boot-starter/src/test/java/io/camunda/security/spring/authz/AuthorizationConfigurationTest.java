@@ -19,8 +19,11 @@ import io.camunda.security.core.authz.AuthorizationChecker;
 import io.camunda.security.core.authz.AuthorizationService;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
+import io.camunda.security.core.port.out.AuthorizationCheckLatencyRecorder;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -123,6 +126,38 @@ class AuthorizationConfigurationTest {
                       org.mockito.ArgumentMatchers.any(),
                       org.mockito.ArgumentMatchers.eq(auth),
                       org.mockito.ArgumentMatchers.any());
+            });
+  }
+
+  @Test
+  void authorizationServiceRecordsCheckLatencyWhenMeterRegistryIsPresent() {
+    // given a host-supplied MeterRegistry and an authorized check
+    when(mockChecker.isAuthorized(
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any()))
+        .thenReturn(true);
+    final var meterRegistry = new SimpleMeterRegistry();
+    runner
+        .withPropertyValues("camunda.security.authorizations.enabled=true")
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
+        .withBean(MeterRegistry.class, () -> meterRegistry)
+        .run(
+            ctx -> {
+              // when
+              final var service = ctx.getBean(AuthorizationService.class);
+              final var auth =
+                  io.camunda.security.api.model.CamundaAuthentication.of(b -> b.user("alice"));
+              final var req =
+                  io.camunda.security.core.auth.RequiredAuthorization.of(
+                      b -> b.processDefinition().readProcessDefinition().resourceId("p1"));
+              service.check(auth, req);
+
+              // then a Timer matching the shared spec was recorded
+              final var timer =
+                  meterRegistry.find(AuthorizationCheckLatencyRecorder.METRIC_NAME).timer();
+              assertThat(timer).isNotNull();
+              assertThat(timer.count()).isEqualTo(1);
             });
   }
 

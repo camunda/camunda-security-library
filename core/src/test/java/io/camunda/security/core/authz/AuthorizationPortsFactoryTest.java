@@ -12,14 +12,19 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import io.camunda.security.api.context.MembershipResolutionContextPropagator;
 import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
 import io.camunda.security.api.context.TokenClaimsAuthenticationResolver;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.auth.RequiredAuthorization;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
+import io.camunda.security.core.port.out.AuthorizationCheckLatencyRecorder;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
 import io.camunda.security.core.port.out.MembershipPort;
 import java.util.List;
@@ -34,6 +39,7 @@ class AuthorizationPortsFactoryTest {
 
   @Mock private AuthorizationScopeRepositoryPort scopeRepository;
   @Mock private MembershipPort membershipPort;
+  @Mock private AuthorizationCheckLatencyRecorder latencyRecorder;
 
   private final CamundaAuthentication alice = CamundaAuthentication.of(b -> b.user("alice"));
 
@@ -233,5 +239,52 @@ class AuthorizationPortsFactoryTest {
     // when / then
     assertThatThrownBy(() -> resolver.resolve(Map.of("unrelated", "value")))
         .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void shouldRecordLatencyWhenRecorderIsSupplied() {
+    // given
+    when(scopeRepository.hasAuthorizedScope(any(), any(), any(), anyList())).thenReturn(true);
+    final AuthorizationCheckPort port =
+        AuthorizationPortsFactory.create(
+                scopeRepository,
+                membershipPort,
+                List.of(),
+                true,
+                false,
+                "sub",
+                "client_id",
+                false,
+                MembershipResolutionContextPropagator.identity(),
+                latencyRecorder)
+            .checkPort();
+    final var req =
+        RequiredAuthorization.of(
+            b -> b.processDefinition().readProcessDefinition().resourceId("proc-1"));
+
+    // when
+    port.check(alice, req);
+
+    // then
+    verify(latencyRecorder, times(1)).record(anyLong());
+  }
+
+  @Test
+  void shouldFailFastOnNullLatencyRecorder() {
+    assertThatNullPointerException()
+        .isThrownBy(
+            () ->
+                AuthorizationPortsFactory.create(
+                    scopeRepository,
+                    membershipPort,
+                    List.of(),
+                    true,
+                    false,
+                    "sub",
+                    "client_id",
+                    false,
+                    MembershipResolutionContextPropagator.identity(),
+                    null))
+        .withMessageContaining("latencyRecorder");
   }
 }
