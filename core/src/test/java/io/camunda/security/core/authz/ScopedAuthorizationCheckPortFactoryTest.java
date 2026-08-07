@@ -107,8 +107,8 @@ class ScopedAuthorizationCheckPortFactoryTest {
     final var portB = (AuthorizationService) ports.forScope("tenant-b");
 
     // then — both scopes' ports were built from the one resolver instance, not a copy each
-    assertThat(portA.claimsConverter()).isSameAs(claimsResolver);
-    assertThat(portB.claimsConverter()).isSameAs(claimsResolver);
+    assertThat(portA.claimsResolver()).isSameAs(claimsResolver);
+    assertThat(portB.claimsResolver()).isSameAs(claimsResolver);
   }
 
   @Test
