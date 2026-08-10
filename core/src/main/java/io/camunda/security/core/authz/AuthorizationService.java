@@ -177,7 +177,7 @@ public final class AuthorizationService implements AuthorizationCheckPort {
 
       return Either.right(null);
     } finally {
-      latencyRecorder.record(System.nanoTime() - startNanos);
+      recordLatencySafely(startNanos);
     }
   }
 
@@ -247,7 +247,15 @@ public final class AuthorizationService implements AuthorizationCheckPort {
               authorization.permissionType(),
               sortedDeclaredPropertyNames));
     } finally {
+      recordLatencySafely(startNanos);
+    }
+  }
+
+  private void recordLatencySafely(final long startNanos) {
+    try {
       latencyRecorder.record(System.nanoTime() - startNanos);
+    } catch (final RuntimeException ignored) {
+      // Metrics failures must never affect authorization decisions
     }
   }
 

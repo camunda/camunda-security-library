@@ -39,7 +39,9 @@ Timer from one identical spec, without `core` depending on Micrometer?
    two terminal `check(...)` overloads (scope-based, property-based) are wrapped in a
    `try`/`finally` around `System.nanoTime()`. The `Map<String,Object>`-claims overload is left
    untimed — it is a pure delegation to the scope-based overload, so timing it too would record two
-   samples per claims-based call.
+   samples per claims-based call. The `finally` block calls the recorder through a private helper
+   that catches and discards any `RuntimeException`, so a failing recorder implementation can never
+   affect the authorization result — see "Amendments" below.
 3. **`AuthorizationPortsFactory.create(...)` widened** with an additive overload taking the
    recorder; the existing overloads delegate to it with `noop()`.
 4. **[ADR-0040](0040-scoped-authorization-check-port-factory.md)'s `ScopedAuthorizationCheckPortFactory.create(...)`
@@ -110,3 +112,26 @@ Timer from one identical spec, without `core` depending on Micrometer?
   gap before [camunda/camunda#59594](https://github.com/camunda/camunda/pull/59594) merges rather
   than after, with no dependency on that PR's unmerged shape: the factory signature is decided
   entirely within `core`.
+
+## Amendments
+
+Found during review of the implementing PR, by diffing against the actual deleted baseline
+(`AuthorizationMetricsDoc`/`AuthorizationCheckMetrics`, pulled from `camunda/camunda` git history):
+
+- **`METRIC_DESCRIPTION` is not an exact match of the deleted baseline text.** The deleted
+  description read "...in `AuthorizationCheckBehavior`, including cache hits" — accurate then,
+  because the Guava authorization cache sat inside the timed block. This port's description drops
+  the dead class reference (correct, the class no longer exists) but initially also kept "including
+  cache hits", even though `AuthorizationService`'s timed overloads have no cache in their timed
+  region; the re-homed cache-access metrics (tracked separately, see Context) live outside this
+  window. Fixed to `"Latency of each authorization check"`. Decision 1 and the Context's "exact
+  same metric definition" claim apply to name, SLO buckets, and untagged-ness — not this field.
+- **The recorder call is now guarded against `RuntimeException`.** The deleted
+  `AuthorizationCheckMetrics.record()` swallowed exceptions with the comment "Metrics failures must
+  never affect authorization decisions"; the first cut of this port's `finally`-block call site had
+  no equivalent guard, so a failing implementation (e.g. a Micrometer registry under backpressure)
+  could propagate out of `AuthorizationService.check(...)` and mask the real authorization result.
+  Fixed by adding the same guard at the call site in `AuthorizationService`, rather than in each
+  implementation, so every current and future `AuthorizationCheckLatencyRecorder` (the Micrometer
+  adapter today, a non-Spring zeebe/engine adapter later) is protected without having to remember
+  the guard independently.

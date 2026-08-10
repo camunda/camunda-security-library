@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -462,5 +463,44 @@ class AuthorizationServiceTest {
     serviceWithRecorder(true, false).check(claims, req);
 
     verify(latencyRecorder, times(1)).record(anyLong());
+  }
+
+  @Test
+  void shouldNotPropagateExceptionThrownByLatencyRecorderOnScopeCheck() {
+    // given
+    when(authorizationChecker.isAuthorized(any(), any(), any())).thenReturn(true);
+    doThrow(new RuntimeException("metrics backend unavailable"))
+        .when(latencyRecorder)
+        .record(anyLong());
+    final var req =
+        RequiredAuthorization.of(
+            b -> b.processDefinition().readProcessDefinition().resourceId("p1"));
+
+    // when
+    final var result = serviceWithRecorder(true, false).check(alice, req);
+
+    // then the authorization result is unaffected by the recorder's failure
+    assertThat(result.isRight()).isTrue();
+  }
+
+  @Test
+  void shouldNotPropagateExceptionThrownByLatencyRecorderOnPropertyCheck() {
+    // given
+    when(authorizationChecker.retrieveAuthorizedPropertyScopes(eq(alice), any(), any()))
+        .thenReturn(List.of(AuthorizationScope.property(RequiredAuthorization.PROP_ASSIGNEE)));
+    when(evaluator.isAuthorized(alice, "task-1")).thenReturn(true);
+    when(propertyEvaluatorRegistry.<String>findEvaluator(RequiredAuthorization.PROP_ASSIGNEE))
+        .thenReturn(Optional.of(evaluator));
+    doThrow(new RuntimeException("metrics backend unavailable"))
+        .when(latencyRecorder)
+        .record(anyLong());
+    final var req =
+        RequiredAuthorization.of(b -> b.userTask().readUserTask().authorizedByAssignee());
+
+    // when
+    final var result = serviceWithRecorder(true, false).check(alice, req, "task-1");
+
+    // then the authorization result is unaffected by the recorder's failure
+    assertThat(result.isRight()).isTrue();
   }
 }
