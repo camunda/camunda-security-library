@@ -424,19 +424,23 @@ class AuthorizationServiceTest {
   // --- latency recorder ---
 
   @Test
-  void scopeCheckRecordsLatencyExactlyOnce() {
+  void shouldRecordLatencyExactlyOnceForScopeCheck() {
+    // given
     when(authorizationChecker.isAuthorized(any(), any(), any())).thenReturn(true);
     final var req =
         RequiredAuthorization.of(
             b -> b.processDefinition().readProcessDefinition().resourceId("p1"));
 
+    // when
     serviceWithRecorder(true, false).check(alice, req);
 
+    // then
     verify(latencyRecorder, times(1)).record(anyLong());
   }
 
   @Test
-  void propertyCheckRecordsLatencyExactlyOnce() {
+  void shouldRecordLatencyExactlyOnceForPropertyCheck() {
+    // given
     when(authorizationChecker.retrieveAuthorizedPropertyScopes(eq(alice), any(), any()))
         .thenReturn(List.of(AuthorizationScope.property(RequiredAuthorization.PROP_ASSIGNEE)));
     when(evaluator.isAuthorized(alice, "task-1")).thenReturn(true);
@@ -445,23 +449,27 @@ class AuthorizationServiceTest {
     final var req =
         RequiredAuthorization.of(b -> b.userTask().readUserTask().authorizedByAssignee());
 
+    // when
     serviceWithRecorder(true, false).check(alice, req, "task-1");
 
+    // then
     verify(latencyRecorder, times(1)).record(anyLong());
   }
 
   @Test
-  void claimsCheckDelegatesToTimedTerminalOverloadExactlyOnce() {
-    // the claims-map overload is a pure delegation to the timed scope-based overload; it must
-    // not additionally time itself, or a single logical check would record two samples
+  void shouldRecordLatencyExactlyOnceWhenClaimsCheckDelegatesToTimedOverload() {
+    // given — the claims-map overload is a pure delegation to the timed scope-based overload; it
+    // must not additionally time itself, or a single logical check would record two samples
     when(authorizationChecker.isAuthorized(any(), any(), any())).thenReturn(true);
     final var req =
         RequiredAuthorization.of(
             b -> b.processDefinition().readProcessDefinition().resourceId("p1"));
     final var claims = Map.<String, Object>of("sub", "alice");
 
+    // when
     serviceWithRecorder(true, false).check(claims, req);
 
+    // then
     verify(latencyRecorder, times(1)).record(anyLong());
   }
 
