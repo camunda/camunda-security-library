@@ -35,7 +35,13 @@ public interface AuthorizationCheckLatencyRecorder {
    */
   String METRIC_DESCRIPTION = "Latency of each authorization check";
 
-  /** Base unit of the recorded duration values. */
+  /**
+   * Base unit of the recorded duration values. Declares the unit convention {@link #record(long)}
+   * uses; not applied to the {@code spring-boot-starter} adapter's Micrometer {@code Timer}, which
+   * has no {@code baseUnit(...)} setter (unlike {@code Gauge}/{@code Counter}/{@code
+   * DistributionSummary}) — a Timer's reported unit is registry-defined instead. The deleted
+   * pre-migration baseline had the same gap. See ADR-0041's Amendments.
+   */
   String METRIC_BASE_UNIT = "ns";
 
   /** SLO histogram buckets, matching the pre-migration baseline this port restores. */

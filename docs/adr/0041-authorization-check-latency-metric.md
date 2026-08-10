@@ -135,3 +135,15 @@ Found during review of the implementing PR, by diffing against the actual delete
   implementation, so every current and future `AuthorizationCheckLatencyRecorder` (the Micrometer
   adapter today, a non-Spring zeebe/engine adapter later) is protected without having to remember
   the guard independently.
+- **`METRIC_BASE_UNIT` is not applied to the Micrometer adapter's `Timer`.** Verified via `javap`
+  against the `micrometer-core` jar on the classpath: `Timer.Builder` has no `baseUnit(...)`
+  setter — `Gauge.Builder`, `Counter.Builder`, and `DistributionSummary.Builder` all expose one,
+  `Timer.Builder` does not. A `Timer`'s reported unit is registry-defined (e.g. seconds for
+  Prometheus), not settable per-timer. The deleted baseline had the same gap: its
+  `AuthorizationMetricsDoc.getBaseUnit()` also returned `"ns"` but was never plumbed into the live
+  meter either — that value was documentation metadata on the enum. `METRIC_BASE_UNIT` plays the
+  same documentation role here: it declares the unit convention `record(long durationNanos)` uses,
+  for adapters (Micrometer's or a future non-Micrometer one) to apply if they can, rather than
+  something every adapter's meter is guaranteed to carry. Decision 1 and the Context's "exact same
+  metric definition" claim apply to name, SLO buckets, and untagged-ness — not this field, same
+  scoping as the `METRIC_DESCRIPTION` amendment above.
