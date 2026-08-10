@@ -24,6 +24,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -62,6 +63,7 @@ public final class AuthorizationService implements AuthorizationCheckPort {
 
   private final TokenClaimsAuthenticationResolver claimsResolver;
   private final AuthorizationCheckLatencyRecorder latencyRecorder;
+  private final AtomicBoolean latencyRecorderFailureLogged = new AtomicBoolean(false);
 
   public AuthorizationService(
       final AuthorizationChecker authorizationChecker,
@@ -254,8 +256,16 @@ public final class AuthorizationService implements AuthorizationCheckPort {
   private void recordLatencySafely(final long startNanos) {
     try {
       latencyRecorder.record(System.nanoTime() - startNanos);
-    } catch (final RuntimeException ignored) {
-      // Metrics failures must never affect authorization decisions
+    } catch (final RuntimeException e) {
+      // Metrics failures must never affect authorization decisions. Logged once (not at every
+      // call, since this runs on every authorization check) so a broken recorder isn't silently
+      // invisible at default log levels.
+      if (latencyRecorderFailureLogged.compareAndSet(false, true)) {
+        LOG.warn(
+            "Authorization-check latency recorder threw; suppressing further occurrences of this"
+                + " warning",
+            e);
+      }
     }
   }
 
