@@ -27,8 +27,13 @@ public interface AuthorizationCheckLatencyRecorder {
   /** Metric name, matching the pre-migration baseline this port restores. */
   String METRIC_NAME = "zeebe.authorization.check.latency";
 
-  /** Metric description, matching the pre-migration baseline this port restores. */
-  String METRIC_DESCRIPTION = "Latency of each authorization check, including cache hits";
+  /**
+   * Metric description. Deviates from the pre-migration baseline text by dropping "including cache
+   * hits" — {@link io.camunda.security.core.authz.AuthorizationService}'s timed overloads have no
+   * cache in their timed region; the re-homed cache-access metrics live outside this window. See
+   * ADR-0041.
+   */
+  String METRIC_DESCRIPTION = "Latency of each authorization check";
 
   /** Base unit of the recorded duration values. */
   String METRIC_BASE_UNIT = "ns";
@@ -48,6 +53,12 @@ public interface AuthorizationCheckLatencyRecorder {
   /**
    * Records the elapsed wall-clock time of one authorization check, including any short-circuit
    * taken before the check logic runs.
+   *
+   * <p>{@link io.camunda.security.core.authz.AuthorizationService} calls this from a {@code
+   * finally} block and guards against a {@link RuntimeException} escaping it, so a failing
+   * implementation can never affect an authorization decision. Implementations are not required to
+   * guard themselves, but should not rely on the caller's guard as a substitute for handling
+   * expected failure modes internally.
    *
    * @param durationNanos elapsed time in nanoseconds
    */
