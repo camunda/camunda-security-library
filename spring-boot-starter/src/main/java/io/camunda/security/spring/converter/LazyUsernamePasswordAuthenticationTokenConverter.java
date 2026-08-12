@@ -13,9 +13,11 @@ import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.core.port.out.MembershipPort.PrincipalType;
 import io.camunda.security.core.port.out.MembershipQuery;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Supplier;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 
@@ -52,19 +54,13 @@ public final class LazyUsernamePasswordAuthenticationTokenConverter
     // (Only 3 lazy suppliers here vs. LazyTokenClaimsConverter's 4 — intentional, not a missed
     // decoration.)
     final var base = new MembershipQuery(Map.of(), username, PrincipalType.USER);
-    final var lazyGroupIds =
-        CamundaAuthentication.lazyList(
-            contextPropagator.decorate(() -> membershipPort.groupIds(base)));
+    final var lazyGroupIds = decoratedLazyList(() -> membershipPort.groupIds(base));
     final var lazyRoleIds =
-        CamundaAuthentication.lazyList(
-            contextPropagator.decorate(
-                () -> membershipPort.roleIds(base.withGroupIds(lazyGroupIds))));
+        decoratedLazyList(() -> membershipPort.roleIds(base.withGroupIds(lazyGroupIds)));
     final var lazyTenantIds =
-        CamundaAuthentication.lazyList(
-            contextPropagator.decorate(
-                () ->
-                    membershipPort.tenantIds(
-                        base.withGroupIds(lazyGroupIds).withRoleIds(lazyRoleIds))));
+        decoratedLazyList(
+            () ->
+                membershipPort.tenantIds(base.withGroupIds(lazyGroupIds).withRoleIds(lazyRoleIds)));
 
     return CamundaAuthentication.of(
         a ->
@@ -72,5 +68,9 @@ public final class LazyUsernamePasswordAuthenticationTokenConverter
                 .groupIdsSupplier(() -> lazyGroupIds)
                 .roleIdsSupplier(() -> lazyRoleIds)
                 .tenantsSupplier(() -> lazyTenantIds));
+  }
+
+  private List<String> decoratedLazyList(final Supplier<List<String>> supplier) {
+    return CamundaAuthentication.lazyList(contextPropagator.decorate(supplier));
   }
 }
