@@ -14,11 +14,14 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.camunda.security.api.context.MembershipResolutionContextPropagator;
 import io.camunda.security.core.port.out.MembershipPort;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -28,7 +31,12 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 class LazyUsernamePasswordAuthenticationTokenConverterTest {
 
   @Mock private MembershipPort membershipPort;
-  @InjectMocks private LazyUsernamePasswordAuthenticationTokenConverter converter;
+  private LazyUsernamePasswordAuthenticationTokenConverter converter;
+
+  @BeforeEach
+  void setUp() {
+    converter = new LazyUsernamePasswordAuthenticationTokenConverter(membershipPort);
+  }
 
   @Test
   void supportsUsernamePasswordToken() {
@@ -75,5 +83,58 @@ class LazyUsernamePasswordAuthenticationTokenConverterTest {
   void claimsAreEmpty() {
     final var auth = converter.convert(new UsernamePasswordAuthenticationToken("alice", "pw"));
     assertThat(auth.claims()).isEmpty();
+  }
+
+  @Test
+  void capturesContextAtConstructionForEachMembershipSupplier() {
+    // given a propagator that records how many suppliers it decorates
+    final AtomicInteger decorateCalls = new AtomicInteger();
+    final MembershipResolutionContextPropagator propagator =
+        supplier -> {
+          decorateCalls.incrementAndGet();
+          return supplier;
+        };
+    final var capturingConverter =
+        new LazyUsernamePasswordAuthenticationTokenConverter(membershipPort, propagator);
+
+    // when the authentication is built (before any membership field is read)
+    capturingConverter.convert(new UsernamePasswordAuthenticationToken("alice", "pw"));
+
+    // then the propagator was applied once per membership supplier (groups, roles, tenants —
+    // no mappingRuleIds for BASIC auth)
+    assertThat(decorateCalls.get()).isEqualTo(3);
+  }
+
+  @Test
+  void bindsPropagatedContextAroundDeferredMembershipLookup() {
+    final AtomicReference<String> boundContext = new AtomicReference<>();
+    final MembershipResolutionContextPropagator propagator =
+        supplier ->
+            () -> {
+              boundContext.set("bound");
+              try {
+                return supplier.get();
+              } finally {
+                boundContext.set(null);
+              }
+            };
+    final AtomicReference<String> observedDuringLookup = new AtomicReference<>();
+    when(membershipPort.groupIds(any()))
+        .thenAnswer(
+            invocation -> {
+              observedDuringLookup.set(boundContext.get());
+              return List.of("g1");
+            });
+    final var capturingConverter =
+        new LazyUsernamePasswordAuthenticationTokenConverter(membershipPort, propagator);
+    final var auth =
+        capturingConverter.convert(new UsernamePasswordAuthenticationToken("alice", "pw"));
+
+    // when the lazy group list is materialised
+    assertThat(auth.authenticatedGroupIds()).containsExactly("g1");
+
+    // then the host context was bound while the membership lookup ran, and cleared afterwards
+    assertThat(observedDuringLookup.get()).isEqualTo("bound");
+    assertThat(boundContext.get()).isNull();
   }
 }
