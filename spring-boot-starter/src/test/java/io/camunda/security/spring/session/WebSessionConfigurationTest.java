@@ -9,6 +9,7 @@ package io.camunda.security.spring.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.camunda.security.api.model.config.SessionConfiguration;
 import io.camunda.security.api.model.session.PersistentSession;
 import io.camunda.security.core.port.out.ScopedSessionStorePortProvider;
 import io.camunda.security.core.port.out.SessionStorePort;
@@ -23,6 +24,13 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.support.GenericConversionService;
 import org.springframework.mock.web.MockHttpServletRequest;
 
+/**
+ * The runner imports only {@link WebSessionConfiguration} — deliberately not {@code
+ * CamundaSecurityConfiguration} — matching how a host activates it standalone via
+ * {@code @ImportAutoConfiguration} (see {@code docs/adopters/persistent-web-sessions.md}). This
+ * exercises {@code @EnableConfigurationProperties} on the class itself rather than routing around
+ * that requirement via a broader import.
+ */
 class WebSessionConfigurationTest {
 
   private final WebApplicationContextRunner runner =
@@ -42,6 +50,20 @@ class WebSessionConfigurationTest {
                     .hasSingleBean(WebSessionAttributeConverter.class)
                     .hasBean("persistentWebSessionDeletionTaskExecutor")
                     .hasBean("webSessionDeletionUncaughtExceptionHandler"));
+  }
+
+  @Test
+  void webSessionRepositoryAppliesConfiguredMaxInactiveInterval() {
+    runner
+        .withPropertyValues(
+            "camunda.security.session.persistent.enabled=true",
+            "camunda.security.session.max-inactive-interval=45m")
+        .run(
+            ctx -> {
+              final var repository = ctx.getBean(WebSessionRepository.class);
+              assertThat(repository.createSession().getMaxInactiveInterval())
+                  .isEqualTo(java.time.Duration.ofMinutes(45));
+            });
   }
 
   @Test
@@ -99,7 +121,8 @@ class WebSessionConfigurationTest {
         store,
         new WebSessionMapper(
             new SpringBasedWebSessionAttributeConverter(new GenericConversionService())),
-        new MockHttpServletRequest());
+        new MockHttpServletRequest(),
+        new SessionConfiguration());
   }
 
   @Test

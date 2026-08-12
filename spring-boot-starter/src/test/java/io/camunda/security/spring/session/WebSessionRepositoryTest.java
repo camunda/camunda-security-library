@@ -8,10 +8,14 @@
 package io.camunda.security.spring.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 
+import io.camunda.security.api.model.config.SessionConfiguration;
 import io.camunda.security.api.model.session.PersistentSession;
 import io.camunda.security.core.port.out.SessionStorePort;
 import io.camunda.security.spring.session.WebSessionMapper.SpringBasedWebSessionAttributeConverter;
+import jakarta.servlet.http.HttpServletRequest;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -19,23 +23,32 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.convert.support.GenericConversionService;
 import org.springframework.session.MapSession;
 
+@ExtendWith(MockitoExtension.class)
 class WebSessionRepositoryTest {
 
   private WebSessionRepository webSessionRepository;
   private SessionStorePort sessionStore;
+  private SessionConfiguration sessionConfiguration;
+
+  @Mock private HttpServletRequest request;
 
   @BeforeEach
   void setUp() {
     sessionStore = new SessionStorePortStub();
+    sessionConfiguration = new SessionConfiguration();
     webSessionRepository =
         new WebSessionRepository(
             sessionStore,
             new WebSessionMapper(
                 new SpringBasedWebSessionAttributeConverter(new GenericConversionService())),
-            null);
+            request,
+            sessionConfiguration);
   }
 
   @Test
@@ -49,6 +62,85 @@ class WebSessionRepositoryTest {
     assertThat(webSession.getLastAccessedTime()).isNotNull();
     assertThat(webSession.getCreationTime()).isNotNull();
     assertThat(webSession.getMaxInactiveInterval()).isNotNull();
+  }
+
+  @Test
+  void createSessionAppliesConfiguredMaxInactiveInterval() {
+    // given
+    sessionConfiguration.setMaxInactiveInterval(Duration.ofMinutes(45));
+
+    // when
+    final var webSession = webSessionRepository.createSession();
+
+    // then
+    assertThat(webSession.getMaxInactiveInterval()).isEqualTo(Duration.ofMinutes(45));
+  }
+
+  @Test
+  void findByIdSuppressesTouchForPollingRequestWhenHeartbeatDisabled() {
+    // given
+    when(request.getHeader("x-is-polling")).thenReturn("true");
+    final var webSession = webSessionRepository.createSession();
+    webSession.setLastAccessedTime(Instant.now());
+    webSessionRepository.save(webSession);
+
+    // when
+    final var found = webSessionRepository.findById(webSession.getId());
+
+    // then
+    assertThat(found).isNotNull();
+    assertThat(found.isTouchSuppressed()).isTrue();
+  }
+
+  @Test
+  void findByIdDoesNotSuppressTouchForOrdinaryRequestWhenHeartbeatDisabled() {
+    // given
+    final var webSession = webSessionRepository.createSession();
+    webSession.setLastAccessedTime(Instant.now());
+    webSessionRepository.save(webSession);
+
+    // when
+    final var found = webSessionRepository.findById(webSession.getId());
+
+    // then
+    assertThat(found).isNotNull();
+    assertThat(found.isTouchSuppressed()).isFalse();
+  }
+
+  @Test
+  void findByIdSuppressesTouchForOrdinaryRequestWhenHeartbeatEnabled() {
+    // given: getMethod() alone determines the outcome here — isHeartbeatRequest short-circuits on
+    // the method check before ever consulting getRequestURI().
+    sessionConfiguration.getHeartbeat().setEnabled(true);
+    when(request.getMethod()).thenReturn("GET");
+    final var webSession = webSessionRepository.createSession();
+    webSession.setLastAccessedTime(Instant.now());
+    webSessionRepository.save(webSession);
+
+    // when
+    final var found = webSessionRepository.findById(webSession.getId());
+
+    // then
+    assertThat(found).isNotNull();
+    assertThat(found.isTouchSuppressed()).isTrue();
+  }
+
+  @Test
+  void findByIdDoesNotSuppressTouchForHeartbeatRequestWhenHeartbeatEnabled() {
+    // given
+    sessionConfiguration.getHeartbeat().setEnabled(true);
+    when(request.getMethod()).thenReturn("POST");
+    when(request.getRequestURI()).thenReturn("/operate/session/heartbeat");
+    final var webSession = webSessionRepository.createSession();
+    webSession.setLastAccessedTime(Instant.now());
+    webSessionRepository.save(webSession);
+
+    // when
+    final var found = webSessionRepository.findById(webSession.getId());
+
+    // then
+    assertThat(found).isNotNull();
+    assertThat(found.isTouchSuppressed()).isFalse();
   }
 
   @Test

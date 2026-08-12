@@ -7,8 +7,10 @@
  */
 package io.camunda.security.spring.session;
 
+import io.camunda.security.api.model.config.SessionConfiguration;
 import io.camunda.security.api.model.session.PersistentSession;
 import io.camunda.security.core.port.out.SessionStorePort;
+import io.camunda.security.spring.security.CamundaSecurityFilterChainConstants;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,14 +26,17 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
   private final SessionStorePort sessionStorePort;
   private final WebSessionMapper webSessionMapper;
   private final HttpServletRequest request;
+  private final SessionConfiguration sessionConfiguration;
 
   public WebSessionRepository(
       final SessionStorePort sessionStorePort,
       final WebSessionMapper webSessionMapper,
-      final HttpServletRequest request) {
+      final HttpServletRequest request,
+      final SessionConfiguration sessionConfiguration) {
     this.sessionStorePort = sessionStorePort;
     this.webSessionMapper = webSessionMapper;
     this.request = request;
+    this.sessionConfiguration = sessionConfiguration;
   }
 
   /**
@@ -46,6 +51,7 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
   public WebSession createSession() {
     final var sessionId = UUID.randomUUID().toString().replace("-", "");
     final var session = new WebSession(sessionId);
+    session.setMaxInactiveInterval(sessionConfiguration.getMaxInactiveInterval());
     LOGGER.debug(
         "Create session {} with maxInactiveInterval {} s",
         session,
@@ -116,7 +122,7 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
   private WebSession getWebSessionIfNotExpired(final PersistentSession persistentSession) {
     final var webSession = toWebSession(persistentSession).orElse(null);
     if (webSession != null && !webSession.shouldBeDeleted()) {
-      webSession.setPolling(isPollingRequest(request));
+      webSession.suppressTouch(shouldSuppressTouch(request));
       return webSession;
     } else {
       // if session is expired (or has no valid authentication),
@@ -125,6 +131,20 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
       deleteById(persistentSession.id());
       return null;
     }
+  }
+
+  /**
+   * Whether this request must not extend the session's activity. With {@code
+   * camunda.security.session.heartbeat.enabled=false} (the default), unchanged legacy behaviour:
+   * suppress only for requests tagged {@code x-is-polling}. With it {@code true}, invert: suppress
+   * every request except the recognized heartbeat call, so ordinary application traffic stops
+   * counting as activity (ADR-0042).
+   */
+  private boolean shouldSuppressTouch(final HttpServletRequest request) {
+    if (sessionConfiguration.getHeartbeat().isEnabled()) {
+      return !isHeartbeatRequest(request);
+    }
+    return isPollingRequest(request);
   }
 
   private boolean isPollingRequest(final HttpServletRequest request) {
@@ -140,6 +160,18 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
           "Cannot access HTTP request outside of a request context; treating as non-polling", e);
     }
     return isPollingRequest;
+  }
+
+  private boolean isHeartbeatRequest(final HttpServletRequest request) {
+    boolean isHeartbeatRequest = false;
+    try {
+      isHeartbeatRequest = CamundaSecurityFilterChainConstants.isHeartbeatRequest(request);
+    } catch (final Exception e) {
+      // This can happen, if it is called outside a dispatcher servlet (e.g. the expiry sweep).
+      LOGGER.debug(
+          "Cannot access HTTP request outside of a request context; treating as non-heartbeat", e);
+    }
+    return isHeartbeatRequest;
   }
 
   private boolean isSessionIdNotEmpty(final String sessionId) {

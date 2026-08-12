@@ -57,6 +57,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0039: Tenant access provider factory](../adr/0039-tenant-access-provider-factory.md)
 - [ADR-0040: A scoped `AuthorizationCheckPort` factory for hosts with several scope repositories](../adr/0040-scoped-authorization-check-port-factory.md)
 - [ADR-0041: Native latency metric for `AuthorizationCheckPort` checks](../adr/0041-authorization-check-latency-metric.md)
+- [ADR-0042: Configurable session idle timeout driven by client activity, not request traffic](../adr/0042-configurable-activity-driven-session-idle-timeout.md)
 
 ---
 

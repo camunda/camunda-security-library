@@ -29,6 +29,11 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
  * falls back to an in-memory {@link MapSessionRepository} when persistent web sessions are
  * disabled, and uses the durable {@link WebSessionRepository} bean when they are enabled — the same
  * preference order {@code ScopedSecurityChainRegistrar} applies for scoped chains.
+ *
+ * <p>The runner imports only {@link DefaultWebSessionFilterConfiguration} — deliberately not {@code
+ * CamundaSecurityConfiguration} — matching how a host adopts it standalone per CSL's
+ * explicit-import model. This exercises {@code @EnableConfigurationProperties} on the class itself
+ * rather than routing around that requirement via a broader import.
  */
 class DefaultWebSessionFilterConfigurationTest {
 
@@ -44,6 +49,19 @@ class DefaultWebSessionFilterConfigurationTest {
           final var filter = ctx.getBean(SessionRepositoryFilter.class);
           assertThat(sessionRepository(filter)).isInstanceOf(MapSessionRepository.class);
         });
+  }
+
+  @Test
+  void appliesConfiguredMaxInactiveIntervalToInMemoryFallback() {
+    runner
+        .withPropertyValues("camunda.security.session.max-inactive-interval=45m")
+        .run(
+            ctx -> {
+              final var filter = ctx.getBean(SessionRepositoryFilter.class);
+              final var repository = (MapSessionRepository) sessionRepository(filter);
+              assertThat(repository.createSession().getMaxInactiveInterval())
+                  .isEqualTo(java.time.Duration.ofMinutes(45));
+            });
   }
 
   @Test

@@ -160,6 +160,12 @@
       "type": "io.camunda.security.api.model.config.SessionConfiguration$PersistentConfiguration",
       "sourceType": "io.camunda.security.api.model.config.SessionConfiguration",
       "sourceMethod": "getPersistent()"
+    },
+    {
+      "name": "camunda.security.session.heartbeat",
+      "type": "io.camunda.security.api.model.config.SessionConfiguration$HeartbeatConfiguration",
+      "sourceType": "io.camunda.security.api.model.config.SessionConfiguration",
+      "sourceMethod": "getHeartbeat()"
     }
   ],
   "properties": [
@@ -614,6 +620,18 @@
       "type": "java.lang.Boolean",
       "sourceType": "io.camunda.security.api.model.config.SessionConfiguration$PersistentConfiguration",
       "defaultValue": false
+    },
+    {
+      "name": "camunda.security.session.heartbeat.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.SessionConfiguration$HeartbeatConfiguration",
+      "defaultValue": false
+    },
+    {
+      "name": "camunda.security.session.max-inactive-interval",
+      "type": "java.time.Duration",
+      "sourceType": "io.camunda.security.api.model.config.SessionConfiguration",
+      "defaultValue": "PT30M"
     }
   ],
   "hints": []

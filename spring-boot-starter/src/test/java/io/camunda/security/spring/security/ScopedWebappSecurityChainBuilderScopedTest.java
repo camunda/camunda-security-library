@@ -436,6 +436,47 @@ class ScopedWebappSecurityChainBuilderScopedTest {
   }
 
   @Test
+  void scopedBasicHeartbeatEndpointRequiresAuthenticationUnlikeEveryOtherPathOnTheChain()
+      throws Exception {
+    new WebApplicationContextRunner()
+        .withUserConfiguration(
+            ObjectMapperConfig.class,
+            StubPaths.class,
+            StubUserDetailsPortConfig.class,
+            ScopedBasicConfig.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                BaseSecurityConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                io.camunda.security.spring.user.UserConfiguration.class,
+                ScopedOidcInfrastructureConfiguration.class,
+                ScopedWebappSecurityChainBuilderConfiguration.class))
+        .run(
+            ctx -> {
+              final var chain = ctx.getBean("scopedBasicTestChain", SecurityFilterChain.class);
+              final var proxy = new FilterChainProxy(List.of(chain));
+              final var request =
+                  new MockHttpServletRequest("POST", BASE_PATH + "/session/heartbeat");
+              final var response = new MockHttpServletResponse();
+              final var nextChain = new MockFilterChain();
+
+              assertThat(chain.matches(request)).isTrue();
+
+              proxy.doFilter(request, response, nextChain);
+
+              assertThat(nextChain.getRequest())
+                  .as(
+                      "must not reach SessionHeartbeatFilter or any downstream filter"
+                          + " unauthenticated")
+                  .isNull();
+              assertThat(response.getStatus())
+                  .as("the chain's AuthenticationEntryPoint must reject the anonymous request")
+                  .isEqualTo(401);
+            });
+  }
+
+  @Test
   void twoScopedChainsHaveIndependentCsrfCookiesThatDoNotCrossContaminate() throws Exception {
     new WebApplicationContextRunner()
         .withUserConfiguration(

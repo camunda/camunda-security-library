@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.security;
 
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.HEARTBEAT_URL;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.LOGIN_URL;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.LOGOUT_URL;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.OIDC_REGISTRATION_ID;
@@ -20,6 +21,7 @@ import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.filter.AdminUserCheckFilter;
 import io.camunda.security.spring.filter.OAuth2RefreshTokenFilter;
 import io.camunda.security.spring.filter.OidcRedirectDiagnosticsFilter;
+import io.camunda.security.spring.filter.SessionHeartbeatFilter;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.handler.OAuth2AuthenticationExceptionHandler;
@@ -29,7 +31,9 @@ import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
 import io.camunda.security.spring.scope.BasePaths;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import io.camunda.security.spring.spi.OidcAuthenticationEntryPoint;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -151,7 +155,7 @@ public final class ScopedWebappSecurityChainBuilder {
       throws Exception {
     Objects.requireNonNull(sessionRepositoryFilter, "sessionRepositoryFilter must not be null");
 
-    final var matchers = pathPort.webappPaths();
+    final var matchers = withHeartbeatMatcher(pathPort.webappPaths(), HEARTBEAT_URL);
     final var unauthenticatedMatchers = pathPort.unauthenticatedWebappPaths();
     final var loginUrl = LOGIN_URL;
     final var logoutUrl = LOGOUT_URL;
@@ -226,6 +230,11 @@ public final class ScopedWebappSecurityChainBuilder {
                       oidcLogoutSuccessHandler(clientRegistrationRepository, ""));
                 });
 
+    // Heartbeat is installed first among AuthorizationFilter-anchored filters (insertion order is
+    // the tie-break for filters sharing an anchor) so a heartbeat call short-circuits with 204
+    // before token refresh or webapp-authorization checks a keep-alive ping has no need to trigger.
+    filterChainBuilder.addFilterAfter(new SessionHeartbeatFilter(), AuthorizationFilter.class);
+
     // Refresh expired access tokens transparently after AuthorizationFilter; the logout handler
     // force-logs-out users whose refresh token has also expired.
     final var logoutHandler =
@@ -271,6 +280,21 @@ public final class ScopedWebappSecurityChainBuilder {
   }
 
   /**
+   * Appends {@code heartbeatPath} to the chain's securityMatcher patterns so the heartbeat endpoint
+   * is always reachable, independent of whatever the host declared in {@code
+   * SecurityPathPort#webappPaths()} (ADR-0042) — unlike {@code LOGIN_URL}/{@code LOGOUT_URL}, which
+   * rely on the host's own declared patterns already covering them.
+   */
+  // package-private for unit testing
+  static List<String> withHeartbeatMatcher(
+      final Iterable<String> basePaths, final String heartbeatPath) {
+    final var combined = new ArrayList<String>();
+    basePaths.forEach(combined::add);
+    combined.add(heartbeatPath);
+    return combined;
+  }
+
+  /**
    * Builds the HTTP-Basic form-login webapp chain for the primary (non-scoped) webapp paths.
    * Matchers, login URL, and logout URL are derived from the injected {@link SecurityPathPort} and
    * CSL constants.
@@ -283,7 +307,8 @@ public final class ScopedWebappSecurityChainBuilder {
       throws Exception {
     Objects.requireNonNull(sessionRepositoryFilter, "sessionRepositoryFilter must not be null");
 
-    final var matchers = pathPort.webappPaths();
+    final var heartbeatUrl = HEARTBEAT_URL;
+    final var matchers = withHeartbeatMatcher(pathPort.webappPaths(), heartbeatUrl);
     final var loginUrl = LOGIN_URL;
     final var logoutUrl = LOGOUT_URL;
 
@@ -292,7 +317,14 @@ public final class ScopedWebappSecurityChainBuilder {
 
     final var filterChainBuilder =
         http.securityMatcher(matchers.toArray(String[]::new))
-            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+            .authorizeHttpRequests(
+                auth ->
+                    // Unlike every other path on this chain, the heartbeat endpoint must not be
+                    // reachable without authentication — permitAll below is otherwise the norm for
+                    // Basic-auth webapp chains (business paths are gated downstream by
+                    // AdminUserCheckFilter/WebAppAuthorizationCheckFilter instead), but this
+                    // endpoint has no such downstream gate of its own.
+                    auth.requestMatchers(heartbeatUrl).authenticated().anyRequest().permitAll())
             .anonymous(AbstractHttpConfigurer::disable)
             .formLogin(
                 formLogin ->
@@ -321,6 +353,10 @@ public final class ScopedWebappSecurityChainBuilder {
                 eh ->
                     eh.authenticationEntryPoint(authFailureHandler)
                         .accessDeniedHandler(authFailureHandler));
+
+    // Installed first among AuthorizationFilter-anchored filters (see buildOidcWebappChain) so a
+    // heartbeat call short-circuits with 204 before the admin-presence/webapp-authorization checks.
+    filterChainBuilder.addFilterAfter(new SessionHeartbeatFilter(), AuthorizationFilter.class);
 
     final var adminFilter = adminUserCheckFilterProvider.getIfAvailable();
     if (adminFilter != null) {
@@ -679,7 +715,9 @@ public final class ScopedWebappSecurityChainBuilder {
       final String scopedCsrfCookieName)
       throws Exception {
 
-    final var matchers = pathPort.webappPaths().stream().map(p -> prefix + p).toList();
+    final var matchers =
+        withHeartbeatMatcher(
+            pathPort.webappPaths().stream().map(p -> prefix + p).toList(), prefix + HEARTBEAT_URL);
     final var unauthenticatedMatchers =
         pathPort.unauthenticatedWebappPaths().stream().map(p -> prefix + p).toList();
     final var loginUrl = prefix + CamundaSecurityFilterChainConstants.LOGIN_URL;
@@ -766,6 +804,10 @@ public final class ScopedWebappSecurityChainBuilder {
                       oidcLogoutSuccessHandler(clientRegistrationRepository, prefix));
                 });
 
+    // Installed first among AuthorizationFilter-anchored filters (see buildOidcWebappChain) so a
+    // heartbeat call short-circuits with 204 before token refresh or webapp-authorization checks.
+    filterChainBuilder.addFilterAfter(new SessionHeartbeatFilter(), AuthorizationFilter.class);
+
     // Refresh expired access tokens transparently after AuthorizationFilter; the logout handler
     // force-logs-out users whose refresh token has also expired.
     final var logoutHandler =
@@ -843,7 +885,10 @@ public final class ScopedWebappSecurityChainBuilder {
       final String scopedCsrfCookieName)
       throws Exception {
 
-    final var matchers = pathPort.webappPaths().stream().map(p -> prefix + p).toList();
+    final var heartbeatUrl = prefix + HEARTBEAT_URL;
+    final var matchers =
+        withHeartbeatMatcher(
+            pathPort.webappPaths().stream().map(p -> prefix + p).toList(), heartbeatUrl);
     final var loginUrl = prefix + CamundaSecurityFilterChainConstants.LOGIN_URL;
     final var logoutUrl = prefix + CamundaSecurityFilterChainConstants.LOGOUT_URL;
 
@@ -852,7 +897,10 @@ public final class ScopedWebappSecurityChainBuilder {
 
     final var filterChainBuilder =
         http.securityMatcher(matchers.toArray(String[]::new))
-            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+            .authorizeHttpRequests(
+                // See buildBasicWebappChain: the heartbeat endpoint, unlike every other path on
+                // this chain, must require authentication rather than falling through to permitAll.
+                auth -> auth.requestMatchers(heartbeatUrl).authenticated().anyRequest().permitAll())
             .anonymous(AbstractHttpConfigurer::disable)
             .formLogin(
                 formLogin ->
@@ -884,6 +932,10 @@ public final class ScopedWebappSecurityChainBuilder {
                 eh ->
                     eh.authenticationEntryPoint(authFailureHandler)
                         .accessDeniedHandler(authFailureHandler));
+
+    // Installed first among AuthorizationFilter-anchored filters (see buildOidcWebappChain) so a
+    // heartbeat call short-circuits with 204 before the admin-presence/webapp-authorization checks.
+    filterChainBuilder.addFilterAfter(new SessionHeartbeatFilter(), AuthorizationFilter.class);
 
     final var adminFilter = adminUserCheckFilterProvider.getIfAvailable();
     if (adminFilter != null) {

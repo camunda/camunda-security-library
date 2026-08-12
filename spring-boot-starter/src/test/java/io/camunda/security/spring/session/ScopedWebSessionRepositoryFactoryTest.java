@@ -10,6 +10,7 @@ package io.camunda.security.spring.session;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.camunda.security.api.model.config.SessionConfiguration;
 import io.camunda.security.api.model.session.PersistentSession;
 import io.camunda.security.core.port.out.ScopedSessionStorePortProvider;
 import io.camunda.security.core.port.out.SessionStorePort;
@@ -30,7 +31,8 @@ class ScopedWebSessionRepositoryFactoryTest {
   @Test
   void shouldReportUnavailableAndRejectBuildWhenNoProvider() {
     final var factory =
-        new ScopedWebSessionRepositoryFactory(null, mapper(), new MockHttpServletRequest());
+        new ScopedWebSessionRepositoryFactory(
+            null, mapper(), new MockHttpServletRequest(), new SessionConfiguration());
 
     assertThat(factory.isAvailable()).isFalse();
     assertThatThrownBy(() -> factory.forBasePath("/physical-tenants/a"))
@@ -47,7 +49,8 @@ class ScopedWebSessionRepositoryFactoryTest {
           return new NoopSessionStorePort();
         };
     final var factory =
-        new ScopedWebSessionRepositoryFactory(provider, mapper(), new MockHttpServletRequest());
+        new ScopedWebSessionRepositoryFactory(
+            provider, mapper(), new MockHttpServletRequest(), new SessionConfiguration());
 
     assertThat(factory.isAvailable()).isTrue();
 

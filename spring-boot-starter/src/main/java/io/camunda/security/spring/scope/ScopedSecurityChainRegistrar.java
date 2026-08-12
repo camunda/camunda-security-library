@@ -280,7 +280,9 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
     }
     final var sharedDurableRepo =
         beanFactory.getBeanProvider(WebSessionRepository.class).getIfAvailable();
-    return WebSessionRepositories.durableOrInMemory(sharedDurableRepo);
+    final var properties = beanFactory.getBean(CamundaSecurityLibraryProperties.class);
+    return WebSessionRepositories.durableOrInMemory(
+        sharedDurableRepo, properties.getSession(), basePath);
   }
 
   private OrderedSecurityFilterChainWrapper buildWebappChain(

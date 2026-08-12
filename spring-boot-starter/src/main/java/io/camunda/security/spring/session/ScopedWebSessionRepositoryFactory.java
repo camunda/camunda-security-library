@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.session;
 
+import io.camunda.security.api.model.config.SessionConfiguration;
 import io.camunda.security.core.port.out.ScopedSessionStorePortProvider;
 import io.camunda.security.core.port.out.SessionStorePort;
 import jakarta.servlet.http.HttpServletRequest;
@@ -39,16 +40,19 @@ public final class ScopedWebSessionRepositoryFactory {
   private final ScopedSessionStorePortProvider storePortProvider;
   private final WebSessionMapper webSessionMapper;
   private final HttpServletRequest request;
+  private final SessionConfiguration sessionConfiguration;
   private final Map<String, WebSessionRepository> repositoriesByBasePath =
       new ConcurrentHashMap<>();
 
   public ScopedWebSessionRepositoryFactory(
       final ScopedSessionStorePortProvider storePortProvider,
       final WebSessionMapper webSessionMapper,
-      final HttpServletRequest request) {
+      final HttpServletRequest request,
+      final SessionConfiguration sessionConfiguration) {
     this.storePortProvider = storePortProvider;
     this.webSessionMapper = webSessionMapper;
     this.request = request;
+    this.sessionConfiguration = sessionConfiguration;
   }
 
   /**
@@ -88,6 +92,6 @@ public final class ScopedWebSessionRepositoryFactory {
         Objects.requireNonNull(
             storePortProvider.forBasePath(basePath),
             () -> "ScopedSessionStorePortProvider returned null for basePath=" + basePath);
-    return new WebSessionRepository(storePort, webSessionMapper, request);
+    return new WebSessionRepository(storePort, webSessionMapper, request, sessionConfiguration);
   }
 }

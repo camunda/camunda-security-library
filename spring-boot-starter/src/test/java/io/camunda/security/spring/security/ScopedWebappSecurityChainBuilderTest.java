@@ -7,11 +7,14 @@
  */
 package io.camunda.security.spring.security;
 
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.HEARTBEAT_URL;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.LOGIN_URL;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
@@ -284,5 +287,35 @@ class ScopedWebappSecurityChainBuilderTest {
             ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
                 "https://host.example.com/orchestration/", "/orchestration", "/sso-callback"))
         .isEqualTo("/sso-callback");
+  }
+
+  @Test
+  void heartbeatMatcherIsAppendedToHostDeclaredPaths() {
+    final var hostPaths = Set.of("/operate/**", "/tasklist/**");
+
+    final var combined =
+        ScopedWebappSecurityChainBuilder.withHeartbeatMatcher(hostPaths, HEARTBEAT_URL);
+
+    assertThat(combined).contains("/operate/**", "/tasklist/**", HEARTBEAT_URL);
+  }
+
+  @Test
+  void heartbeatMatcherIsPrefixedForScopedChains() {
+    final var basePath = "/physical-tenants/t1";
+    final var scopedHostPaths = List.of(basePath + "/operate/**");
+
+    final var combined =
+        ScopedWebappSecurityChainBuilder.withHeartbeatMatcher(
+            scopedHostPaths, basePath + HEARTBEAT_URL);
+
+    assertThat(combined).containsExactly(basePath + "/operate/**", basePath + "/session/heartbeat");
+  }
+
+  @Test
+  void heartbeatMatcherIsIncludedEvenWhenHostDeclaresNoPaths() {
+    final var combined =
+        ScopedWebappSecurityChainBuilder.withHeartbeatMatcher(Set.of(), HEARTBEAT_URL);
+
+    assertThat(combined).containsExactly(HEARTBEAT_URL);
   }
 }
