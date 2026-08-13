@@ -89,7 +89,7 @@ class LazyUsernamePasswordAuthenticationTokenConverterTest {
   }
 
   @Test
-  void capturesContextAtConstructionForEachMembershipSupplier() {
+  void decoratesEachMembershipSupplierOnce() {
     // given a propagator that records how many suppliers it decorates
     final AtomicInteger decorateCalls = new AtomicInteger();
     final MembershipResolutionContextPropagator propagator =

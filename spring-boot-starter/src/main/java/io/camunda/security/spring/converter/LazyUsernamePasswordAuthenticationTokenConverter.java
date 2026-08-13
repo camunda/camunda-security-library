@@ -51,8 +51,6 @@ public final class LazyUsernamePasswordAuthenticationTokenConverter
     // BASIC auth has no token claims and never produces CLIENT principals. Empty claims means
     // mappingRuleIds() would return an empty list (no rules can match), so mappingRulesSupplier
     // is deliberately not wired — authenticatedMappingRuleIds() returns the record default.
-    // (Only 3 lazy suppliers here vs. LazyTokenClaimsConverter's 4 — intentional, not a missed
-    // decoration.)
     final var base = new MembershipQuery(Map.of(), username, PrincipalType.USER);
     final var lazyGroupIds = decoratedLazyList(() -> membershipPort.groupIds(base));
     final var lazyRoleIds =

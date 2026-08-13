@@ -34,6 +34,10 @@ public interface MembershipResolutionContextPropagator {
    * Returns a supplier that runs {@code supplier} with the host's resolution context bound. The
    * context is expected to be captured eagerly, when this method is invoked (i.e. while the
    * authentication is being built), and rebound lazily, when the returned supplier is called.
+   *
+   * <p>The returned supplier may be called re-entrantly (e.g. a lazy {@code roleIds} lookup reading
+   * a not-yet-resolved {@code groupIds}). Implementations must restore the previous binding
+   * afterwards rather than clearing it, so nested calls don't clobber the outer one.
    */
   Supplier<List<String>> decorate(Supplier<List<String>> supplier);
 
