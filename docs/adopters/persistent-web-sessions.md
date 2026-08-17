@@ -107,6 +107,22 @@ The canonical activation property is `camunda.security.session.persistent.enable
 
 OC bridges these onto the canonical property via an `EnvironmentPostProcessor` (`PersistentWebSessionPropertiesPostProcessor` in the OC dist). Other hosts that need the same compatibility window can copy that pattern; CSL itself does not bridge.
 
+## Session idle timeout and the activity heartbeat
+
+Two further properties (ADR-0042) apply to **every** session surface, regardless of whether persistent sessions are enabled:
+
+| Property | Type | Default | Effect |
+|---|---|---|---|
+| `camunda.security.session.max-inactive-interval` | `Duration` | `30m` | How long a session may go without extending activity before it's treated as expired. |
+| `camunda.security.session.heartbeat.enabled` | `boolean` | `false` | Off: any non-polling request extends a session — today's behavior, unchanged. On: only a call to the per-scope `POST {basePath}/session/heartbeat` endpoint extends it; ordinary application requests stop counting. |
+
+> [!WARNING]
+> **Never set `max-inactive-interval` shorter than your frontend's actual heartbeat cadence, and don't enable `heartbeat.enabled` before your frontend sends heartbeats at all.**
+>
+> With `heartbeat.enabled=true`, only the heartbeat call itself extends a session's activity. If `max-inactive-interval` is shorter than (or too close to) the interval your frontend actually pings at — commonly every 30–90 seconds — the session will expire on or before the first heartbeat after creation, regardless of how active the user is. This isn't graceful degradation: users get logged out almost immediately and repeatedly, indistinguishable to them from a normal idle timeout, and the feature will appear completely broken rather than misconfigured.
+>
+> CSL has no way to know your frontend's actual heartbeat cadence — that value lives entirely in client-side JS, never in any CSL config — so this can't be validated precisely. As a heuristic backstop, CSL logs a **WARN** at startup when `heartbeat.enabled=true` is paired with a `max-inactive-interval` under 2 minutes. Treat that WARN as a strong signal something is misconfigured, not proof everything is fine above the floor — set the interval comfortably larger than your frontend's real cadence, several times larger, not just "more than zero."
+
 ## OC reference example
 
 OC's wiring lives in `dist/src/main/java/io/camunda/application/commons/identity/WebSessionRepositoryConfiguration.java`. It:
@@ -124,3 +140,5 @@ OC's wiring lives in `dist/src/main/java/io/camunda/application/commons/identity
 | Host bean registers but the library's default is the one actually wired (no exception) | Same as above, for unnamed `@Bean`s of the same type. Switch to `@ImportAutoConfiguration`. |
 | `WebSessionConfiguration` never activates even though `camunda.security.session.persistent.enabled=true` | Host hasn't `@ImportAutoConfiguration`'d the class (or hasn't done so behind an active host condition). The property alone does not activate any CSL class — see ADR-0008. |
 | `UnsatisfiedDependencyException: ... 'webSessionRepository' ... 'SessionStorePort' ...` | Host hasn't registered a `SessionStorePort` bean. See [`SessionStorePort`](./ports.md#sessionstoreport). |
+| Users get logged out almost immediately after login on a heartbeat-enabled deployment, repeatedly, regardless of activity | `max-inactive-interval` is shorter than (or too close to) the frontend's real heartbeat cadence. See [Session idle timeout and the activity heartbeat](#session-idle-timeout-and-the-activity-heartbeat). Check startup logs for a WARN beginning `camunda.security.session.max-inactive-interval is set to ... with ... heartbeat.enabled=true`. |
+| `camunda.security.session.heartbeat.enabled=true has no effect on the '...' surface` at startup | That surface (default or a physical-tenant scope) is running the in-memory session fallback, which has no touch-suppression mechanism of its own — enable `camunda.security.session.persistent.enabled` for that surface, or the flag does nothing there. |
