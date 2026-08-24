@@ -704,7 +704,7 @@ The CSL's `WebAppAuthorizationCheckFilter` enforces per-web-app `ACCESS` permiss
 - **Which web app does the request belong to?** A single-web-app host returns a constant; a multi-web-app host derives from the URL path. Implement `WebAppProviderPort`.
 - **What happens when access is denied?** The library default redirects to `<contextPath>/<webApp>/forbidden`. Override `WebAppAccessDeniedHandlerPort` to return JSON, forward, or anything else.
 
-The actual permission decision delegates to the unified `AuthorizationCheckPort` (ADR-0028): the filter asks for `ACCESS` on the resolved web app as a `COMPONENT` resource and treats `Either.right(...)` as authorized. Hosts supply an `AuthorizationCheckPort` — either their own bean, or the ingredients for the library default (an `AuthorizationScopeRepositoryPort`, from which `AuthorizationConfiguration` builds `AuthorizationService`). Activation rationale lives in [ADR-0009](../adr/0009-web-app-authorization-spis.md).
+The actual permission decision delegates to the unified `AuthorizationCheckPort` (ADR-0028): the filter asks for `ACCESS` on the resolved web app as a `COMPONENT` resource and treats `Either.right(...)` as authorized. Hosts supply an `AuthorizationCheckPort` — either their own bean, or the ingredients for the library default (an `AuthorizationScopeRepositoryPort`, from which `AuthorizationConfiguration` builds `AuthorizationService`). Activation rationale lives in [ADR-0028](../adr/0028-unified-authz-framework-in-core.md).
 
 ### Activation
 

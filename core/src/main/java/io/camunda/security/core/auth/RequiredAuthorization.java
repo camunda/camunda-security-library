@@ -71,11 +71,11 @@ import java.util.function.Predicate;
  * <p>This class was previously {@code io.camunda.security.auth.Authorization<T>} in OC's {@code
  * security-core} module. Issue #351 (Increment 14a) migrated it into CSL and renamed it to {@code
  * RequiredAuthorization<T>} to avoid the collision with CSL's existing granted-record {@link
- * io.camunda.security.api.model.authz.Authorization}. See ADR-0019 for the naming rationale.
+ * io.camunda.security.api.model.authz.Authorization}. See ADR-0028 for the naming rationale.
  *
  * <h2>Serialization</h2>
  *
- * <p>The record carries no Jackson annotations — CSL's domain is Jackson-free per ADR-0019 and the
+ * <p>The record carries no Jackson annotations — CSL's domain is Jackson-free per ADR-0028 and the
  * tightened guardrail. OC serializes instances on {@code
  * BatchOperationCreationRecord.authorizationCheck} via {@code MsgPackConverter}, which registers a
  * {@code RequiredAuthorizationMixin} that supplies snake-case property names and marks the
@@ -385,8 +385,8 @@ public record RequiredAuthorization<T>(
      * conditions: {@link #condition(Predicate)} is set-only, so a subsequent {@code condition(y)}
      * call <em>overwrites</em> any prior {@code condition(x)} regardless of an {@code or()} call in
      * between. The actual OR-composition of multiple {@code RequiredAuthorization} specs lives in
-     * OC's {@code AuthorizationCondition}, which is not part of this class (and was not migrated
-     * alongside this record per ADR-0019).
+     * {@link io.camunda.security.core.auth.condition.AuthorizationCondition}, not in this class
+     * (see ADR-0028).
      */
     public Builder<T> or() {
       return this;
