@@ -12,11 +12,6 @@ IMPORTANT: Respect hexagonal architecture boundaries — domain contracts (inter
 
 IMPORTANT: ADRs in `docs/adr/` are historical records of decisions made. Do not substantively modify decided ADRs. Non-semantic editorial fixes are allowed only when they preserve the original decision, status, and rationale exactly (for example: spelling, grammar, formatting, link repair, or terminology normalization that does not change meaning). If a decision needs revisiting or an edit would change meaning, write a new ADR that supersedes the old one.
 
-> **Temporary exception — ADR consolidation (#495), 2026-08.** For the duration of this refactor only, the
-> immutability rule is suspended: existing ADRs may be merged, rewritten and deleted so that each
-> architectural area has exactly one record stating current truth. Git history preserves the originals.
-> This exception is removed when #495 lands — see the final commit of that PR. Do not cite it as precedent.
-
 YOU MUST NOT modify generated code directly — edit the source definitions instead.
 
 ## Verification Requirements

@@ -132,9 +132,4 @@ Before committing, verify:
 
 ## ADRs are immutable
 
-> **Temporary exception — ADR consolidation (#495), 2026-08.** For the duration of this refactor only, the
-> immutability rule is suspended: existing ADRs may be merged, rewritten and deleted so that each
-> architectural area has exactly one record stating current truth. Git history preserves the originals.
-> This exception is removed when #495 lands — see the final commit of that PR. Do not cite it as precedent.
-
 Decided ADRs are historical records — do not substantively modify them. If a decision needs revisiting, write a new ADR that supersedes the old one and update the old one's `Status` to `Superseded by ADR-NNNN`. Editorial fixes (typos, link repair, terminology normalization) are permitted as long as they preserve the original decision and rationale exactly.
