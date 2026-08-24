@@ -40,7 +40,7 @@ public interface AuthorizationCheckLatencyRecorder {
    * uses; not applied to the {@code spring-boot-starter} adapter's Micrometer {@code Timer}, which
    * has no {@code baseUnit(...)} setter (unlike {@code Gauge}/{@code Counter}/{@code
    * DistributionSummary}) — a Timer's reported unit is registry-defined instead. The deleted
-   * pre-migration baseline had the same gap. See ADR-0041's Amendments.
+   * pre-migration baseline had the same gap. See ADR-0041.
    */
   String METRIC_BASE_UNIT = "ns";
 

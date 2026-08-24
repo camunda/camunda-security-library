@@ -21,7 +21,7 @@ import java.util.Objects;
  * Assembles one {@link AuthorizationCheckPort} per scope for hosts that already own several {@link
  * AuthorizationScopeRepositoryPort}s and need a fail-hard, per-scope lookup instead of hand-rolling
  * the fan-out themselves. Reuses the host's existing {@link TokenClaimsAuthenticationResolver}
- * rather than building a new one. See ADR-0040 and ADR-0041.
+ * rather than building a new one. See ADR-0041.
  */
 public final class ScopedAuthorizationCheckPortFactory {
 
