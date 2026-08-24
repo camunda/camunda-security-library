@@ -559,7 +559,7 @@ no global OIDC configuration is required and no additional `@Import` is needed.
 
 **Dev-mode note.** When `camunda.security.authentication.unprotected-api=true` is set globally, all contributed scoped chains are also built as permit-all — the descriptor's `authentication.method` is ignored in this mode. This matches the global chain behaviour in dev environments, but means per-scope security is not enforced when the flag is on. Don't set this flag in production or any environment where per-scope isolation is a requirement.
 
-**Activation.** `ScopedApiSecurityConfiguration` is part of the `CamundaSecurityAutoConfiguration` umbrella — no additional `@Import` is needed when a host uses the umbrella. Hosts that `@Import` individual CSL configurations must add `ScopedApiSecurityConfiguration.class` to their `@Import` list. See [ADR-0025](../adr/0025-camunda-security-scope-provider-spi.md) for the design rationale.
+**Activation.** `ScopedSecurityChainConfiguration` is part of the `CamundaSecurityAutoConfiguration` umbrella — no additional `@Import` is needed when a host uses the umbrella. Hosts that `@Import` individual CSL configurations must add `ScopedSecurityChainConfiguration.class` to their `@Import` list. Each descriptor contributes both a scoped API chain and a scoped webapp chain. See [ADR-0025](../adr/0025-camunda-security-scope-provider-spi.md) for the design rationale.
 
 ### `OidcResourceServerCustomizer` — customise the OAuth2 resource-server DSL
 
