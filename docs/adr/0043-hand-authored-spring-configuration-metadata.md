@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0023: Hand-author spring-configuration-metadata.json for camunda.security.* properties
+# ADR-0043: Hand-author spring-configuration-metadata.json for camunda.security.* properties
 
 **Deciders**: @megglos, @joaquinfelici
 

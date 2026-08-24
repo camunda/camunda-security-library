@@ -37,7 +37,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0020b: SecurityContext and condition types migration](../adr/0020-security-context-and-condition-types-migration.md)
 - [ADR-0021: User details port](../adr/0021-user-details-port.md)
 - [ADR-0022: Resource access control framework ownership](../adr/0022-resource-access-control-framework-ownership.md)
-- [ADR-0023a: Hand-authored Spring configuration metadata](../adr/0023-hand-authored-spring-configuration-metadata.md)
+- [ADR-0043: Hand-authored Spring configuration metadata](../adr/0043-hand-authored-spring-configuration-metadata.md)
 - [ADR-0023b: OIDC bearer tokens on API chain only](../adr/0023-oidc-bearer-tokens-on-api-chain-only.md)
 - [ADR-0024: Validation module](../adr/0024-validation-module.md)
 - [ADR-0025: `CamundaSecurityScopeProvider` SPI](../adr/0025-camunda-security-scope-provider-spi.md)
