@@ -41,7 +41,7 @@ Before opening the editor, identify:
 
 ### 2. Pick the next number
 
-Check `docs/adr/` for the highest existing number and add one. ADRs are numbered sequentially and never renumbered. If two PRs both add ADR-NNNN, the second to merge bumps to NNNN+1 in a follow-up commit.
+Check `docs/adr/` for the highest existing number and add one. ADRs are numbered sequentially. If two PRs both add ADR-NNNN, the second to merge bumps to NNNN+1 in a follow-up commit.
 
 ### 3. Draft the ADR file
 
@@ -131,5 +131,10 @@ Before committing, verify:
 - [ ] No edits to existing decided ADRs except status changes and editorial fixes that preserve meaning.
 
 ## ADRs are immutable
+
+> **Temporary exception — ADR consolidation (#495), 2026-08.** For the duration of this refactor only, the
+> immutability rule is suspended: existing ADRs may be merged, rewritten and deleted so that each
+> architectural area has exactly one record stating current truth. Git history preserves the originals.
+> This exception is removed when #495 lands — see the final commit of that PR. Do not cite it as precedent.
 
 Decided ADRs are historical records — do not substantively modify them. If a decision needs revisiting, write a new ADR that supersedes the old one and update the old one's `Status` to `Superseded by ADR-NNNN`. Editorial fixes (typos, link repair, terminology normalization) are permitted as long as they preserve the original decision and rationale exactly.
