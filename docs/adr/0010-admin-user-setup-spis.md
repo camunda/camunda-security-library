@@ -87,7 +87,7 @@ This wiring was chosen over two alternatives considered at the same time: gating
 
 When both `AdminUserCheckFilter` and `WebAppAuthorizationCheckFilter` are present on the BasicAuth chain, the webapp filter is anchored on the admin filter so the relative order is structurally guaranteed — admin-presence redirect always runs before any per-web-app permission check. When the admin filter bean is absent, both chains are wired exactly as if the filter did not exist — no `BeanCreationException`, no duplicate registrations.
 
-The two webapp chains now wire a different filter set by design. This asymmetry is documented in code comments in `ScopedWebappSecurityChainBuilder` (at both the `buildOidcWebappChain` omission and the `buildBasicWebappChain` wiring) and in the class-level Javadoc on `BasicAuthWebappSecurityConfiguration`, not left implicit.
+The two webapp chains now wire a different filter set by design. This asymmetry is documented in code, not left implicit: `AdminUserCheckFilterConfiguration`'s class-level Javadoc states plainly that "the filter is wired into the BasicAuth webapp chain only; the OIDC webapp chain intentionally does not add it," and `ScopedWebappSecurityChainBuilder` carries the same rationale as an inline comment at both `buildOidcWebappChain` omission sites.
 
 A companion `FilterRegistrationBean<AdminUserCheckFilter>` with `setEnabled(false)` prevents Spring Boot from also registering the filter into the global servlet chain. The filter only ever runs as part of the relevant Spring Security chain.
 
@@ -109,7 +109,7 @@ A companion `FilterRegistrationBean<AdminUserCheckFilter>` with `setEnabled(fals
 - Bypass paths live on `SecurityPathPort` rather than a dedicated SPI. Hosts that already implement `SecurityPathPort` for other path declarations need to add `adminFilterBypassPaths()` (and the default-empty method makes this a non-breaking source-only change).
 - `AdminUserMissingHandlerPort` lives in `io.camunda.security.spring.spi` (the starter module) rather than under `io.camunda.security.core.port.out` because its signature speaks `HttpServletRequest`/`HttpServletResponse`. Same reasoning as the servlet-coupled SPIs in [ADR-0028](0028-unified-authz-framework-in-core.md).
 - A host that wants the library-default admin-setup redirect under OIDC does not get it via `@Import` alone — they must explicitly wire `addFilterAfter(adminUserCheckFilter, ...)` in their own chain configuration. Accepted because there is no live use case for it, and because re-enabling it by default would reopen the OIDC-trap scenario the narrowed wiring exists to close.
-- The two webapp chains are asymmetric in which filters they wire, by design. This is called out in code comments in `ScopedWebappSecurityChainBuilder`, where both chains are actually assembled, so the asymmetry is documented, not implicit.
+- The two webapp chains are asymmetric in which filters they wire, by design. This is called out in code — `AdminUserCheckFilterConfiguration`'s class-level Javadoc states the BasicAuth-only wiring explicitly, and `ScopedWebappSecurityChainBuilder` carries a matching comment at each `buildOidcWebappChain` omission site — so the asymmetry is documented, not implicit.
 
 ## Alternatives Considered
 
