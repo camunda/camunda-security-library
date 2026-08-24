@@ -116,4 +116,4 @@ A companion `FilterRegistrationBean<AdminUserCheckFilter>` with `setEnabled(fals
 - **Single combined `AdminUserService` SPI that does both the presence check and the missing-user response.** Rejected — couples two unrelated decisions. A host might want the OC presence behaviour with a JSON 503 response (or vice versa). Splitting them keeps each SPI minimal and recombination free.
 - **Leave the OIDC admin-setup trap unaddressed in CSL and document it as a known gotcha.** Rejected — every adopter that wires `AdminUserPresencePort` would have to re-derive the same workaround OC already paid for during its OIDC/SaaS smoke test. A library-default fix for a known footgun belongs in the library, not in adopter-side documentation.
 
-Consolidates records previously numbered 0011 (see git history).
+Consolidates records previously numbered 0011 (admin-user-check filter) (see git history).

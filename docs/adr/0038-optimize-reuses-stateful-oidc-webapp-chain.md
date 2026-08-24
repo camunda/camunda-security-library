@@ -94,8 +94,8 @@ Concretely:
   must be made suppressible so two `/**` chains do not collide at startup. A follow-up will
   investigate removing that deny chain entirely (it is tech debt, not urgent).
 - The `/**` webapp chain must sort below the bearer API chain so API paths are claimed first.
-  Today both chains share one order (`ORDER_WEBAPP_API`), which works only because their matchers
-  are disjoint (OC). CSL is changed to give them **distinct orders, API before webapp**. This is
+  Before this change, both chains shared one order (`ORDER_WEBAPP_API`), which worked only because
+  their matchers were disjoint (OC). CSL is changed to give them **distinct orders, API before webapp**. This is
   behavior-preserving for existing hosts (disjoint matchers still match one chain) and lets
   Optimize use the stock webapp chain via the umbrella without re-declaring a bean. It assumes no
   host needs a webapp path to beat an overlapping API path; bearer-API-first is the convention.

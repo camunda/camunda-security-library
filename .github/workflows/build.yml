@@ -22,7 +22,7 @@ jobs:
 
       - name: Check ADR numbering is unique
         run: |
-          dupes=$(ls docs/adr/*.md | sed 's|.*/0*\([0-9]\+\)-.*|\1|' | sort | uniq -d)
+          dupes=$(ls docs/adr/*.md | sed 's|.*/0*\([0-9][0-9]*\)-.*|\1|' | sort | uniq -d)
           if [ -n "$dupes" ]; then echo "::error::Duplicate ADR numbers: $dupes"; exit 1; fi
 
       - name: Set up Java 21
