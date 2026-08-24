@@ -607,7 +607,7 @@ authority-mapping logic** — for example, distinct chains per API version. This
 per-chain hook, not a globally-registered customizer: passing `null` (or, for the
 `buildScopedApiChain` overload, a supplier that returns `null`) preserves Spring Security's default
 `JwtAuthenticationConverter` behavior for that chain. See
-[ADR-0036](../adr/0036-per-chain-jwt-authentication-converter-hook.md) for why this is a method
+[ADR-0034](../adr/0034-cors-and-https-redirect-host-hooks.md) for why this is a method
 parameter rather than an `ObjectProvider`-discovered bean like `OidcResourceServerCustomizer` or
 `HttpsRedirectCustomizer` below.
 
@@ -697,7 +697,7 @@ public SecurityHeadersCustomizer extraHeaders() {
 }
 ```
 
-CSL applies every registered customizer, in `@Order` order, to every content-serving filter chain (the same set `HttpsRedirectCustomizer` applies to, minus the catch-all deny-all chain, which serves no content). This coexists with `camunda.security.http-headers.*` (including `content-security-policy.*`) — your custom `HeaderWriter` is additive via `addHeaderWriter`, not a replacement for CSL's static configuration, unless your writer itself overwrites the header. If you register multiple customizers with distinct concerns (e.g. one for CSP, one for other headers), use `@Order` to control their relative sequencing. See [ADR-0037](../adr/0037-csp-and-security-headers-customizer-hooks.md) for the design rationale.
+CSL applies every registered customizer, in `@Order` order, to every content-serving filter chain (the same set `HttpsRedirectCustomizer` applies to, minus the catch-all deny-all chain, which serves no content). This coexists with `camunda.security.http-headers.*` (including `content-security-policy.*`) — your custom `HeaderWriter` is additive via `addHeaderWriter`, not a replacement for CSL's static configuration, unless your writer itself overwrites the header. If you register multiple customizers with distinct concerns (e.g. one for CSP, one for other headers), use `@Order` to control their relative sequencing. See [ADR-0034](../adr/0034-cors-and-https-redirect-host-hooks.md) for the design rationale.
 
 ### Other host beans the chains pick up automatically
 
