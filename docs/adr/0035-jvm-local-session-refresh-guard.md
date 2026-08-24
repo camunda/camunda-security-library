@@ -61,14 +61,21 @@ source of truth for "has this session already been refreshed", independent of an
   was last claimed for that session id.
 - `lockAndRefresh` no longer synchronizes on the `HttpSession`. Instead it calls
   `refreshClaims.asMap().compute(sessionId, (id, lastClaimed) -> ...)`: inside the atomic `compute`,
-  it decides whether `lastClaimed` (the JVM-local claim) is still valid by comparing it against the
-  `AUTH_LAST_REFRESH` value this request read from its session snapshot — captured before the
-  `compute` remap runs, not re-read inside it, and not compared as elapsed wall-clock time against
-  `authentication-refresh-interval` (see Addendum below). Only the caller whose `compute` sees a
-  claim no newer than that value performs the refresh (`removeCamundaAuthenticationInSession` +
-  `session.setAttribute(LAST_REFRESH_ATTR, now)`) and advances the claim; every other concurrent
-  caller — regardless of which `HttpSession` object it holds — sees an already-current claim and
-  skips.
+  a claim is re-claimable once it is no newer than the `AUTH_LAST_REFRESH` value this request
+  already read from its own session snapshot — captured before the `compute` remap runs, and not
+  re-read inside it. Claim validity is judged against that captured value, deliberately **not**
+  against elapsed wall-clock time compared to `authentication-refresh-interval`: reusing the
+  elapsed-time staleness check here let a second caller's `compute` — running after the interval
+  had passed, easy to hit under scheduling jitter — see the winner's claim as "expired" and trigger
+  a redundant second refresh for the same staleness episode. Judging against the captured value
+  instead holds for any refresh interval, including ones short enough for jitter to exceed. Only
+  the caller whose `compute` sees a claim no newer than that captured value performs the refresh
+  (`removeCamundaAuthenticationInSession` + `session.setAttribute(LAST_REFRESH_ATTR, now)`) and
+  advances the claim; every other concurrent caller — regardless of which `HttpSession` object it
+  holds — sees an already-current claim and skips. The winning caller is identified by **reference
+  equality** on the `now` `Instant` it passed into `compute`, not `Instant.equals(...)`: two
+  concurrent callers can capture value-identical instants when clock resolution is coarser than the
+  race window, so value equality alone cannot tell which caller's write actually landed.
 - The cache is expiring (`expireAfterWrite`, a fixed 30-minute TTL, independent of the configured
   `authentication-refresh-interval`) so claims for sessions that are no longer active are evicted
   rather than accumulating forever. The TTL only bounds memory for dead sessions — it plays no role
@@ -80,13 +87,13 @@ source of truth for "has this session already been refreshed", independent of an
   guards against), and a longer configured interval must not inflate how long a dead session's
   entry lingers. No explicit removal on logout/invalidation is needed — a stale claim for a dead
   session is harmless (nothing reads it again) and ages out on its own.
-- The cache is also size-bounded (`maximumSize`, 10,000 entries) as a memory-safety backstop
-  against unbounded growth if a host runs far more concurrently-active sessions than expected.
-  Unlike the TTL, this bound is *not* correctness-neutral: Caffeine can evict an entry for
-  capacity reasons before its TTL elapses, including — in principle — an entry for a session that
-  is still genuinely active. An eviction at that exact moment reopens the original race for that
-  one session (a concurrent `compute` sees a miss and treats it as "never claimed"). See
-  Consequences for why this is accepted rather than sized to be unreachable.
+- `refreshClaims` carries **no `maximumSize` cap** — it is bounded by `expireAfterWrite` only. An
+  earlier design paired the TTL with `maximumSize(10_000)` as a memory-safety backstop, but a
+  capacity-driven eviction is *not* correctness-neutral the way TTL eviction is: Caffeine can evict
+  an entry for capacity reasons before its TTL elapses, including — in principle — an entry for a
+  session that is still genuinely active, which reopens the original race for that one session (a
+  concurrent `compute` sees a miss and treats it as "never claimed"). The cap was dropped for
+  exactly this reason — see Consequences for the accepted trade-off this leaves in its place.
 - `SessionStorePort`, `WebSessionRepository`, and `WebSession` are untouched. The guard lives
   entirely inside `HttpSessionBasedAuthenticationHolder`, which keeps working against the generic
   `jakarta.servlet.http.HttpSession` contract exactly as before.
@@ -143,13 +150,12 @@ source of truth for "has this session already been refreshed", independent of an
   empty while the session attribute still holds an old timestamp) — harmless, because an empty cache
   entry is treated the same as "never claimed", which correctly allows exactly one refresh to
   proceed.
-- The `maximumSize` bound is not correctness-neutral the way the TTL is: capacity-driven eviction
-  of a still-active session's entry reopens the exact race this ADR closes, for that one session,
-  until it claims again. Accepted because 10,000 concurrently-active sessions per JVM is already a
-  large working set relative to typical CSL host deployments, the reopened race is no worse than
-  the pre-fix behavior (not a regression), and sizing the cache to be practically unreachable would
-  reintroduce unbounded growth as a real host-configurable size trades off against — the same
-  problem the bound exists to prevent.
+- With no `maximumSize` cap, cache growth is bounded only by how many distinct sessions actually
+  refresh within roughly the TTL window (Caffeine reaps expired entries lazily, on subsequent
+  cache access, not the instant they go stale), not by any enforced maximum. Accepted because this
+  growth is proportional to genuine concurrent load rather than an unconditional leak, and a hard
+  cap's only benefit — a memory ceiling — came at the cost of silently reopening the exact race
+  this ADR closes, under the highest-load conditions where that matters most.
 
 ## Alternatives Considered
 
@@ -164,48 +170,3 @@ source of truth for "has this session already been refreshed", independent of an
   on its own: as explained in Context, serializing the code path without changing what's read as the
   decision input does not close the stale-snapshot gap — a second thread can still observe an
   expired attribute value copied before the first thread's `save()` committed.
-
-## Addendum: claim validity is judged by observed staleness, not elapsed time (camunda-security-library#517)
-
-The original `compute` remap decided whether an existing claim was still valid by reusing
-`isRefreshRequired(lastClaimed, now)` — the same elapsed-time check used for session-attribute
-staleness. That mixes up two different things: `authentication-refresh-interval` is how often
-authentication should be refreshed, not a limit on how long concurrent requests may take to settle
-one staleness episode.
-
-The claim is advanced *before* the refresh side effects run. So if a second caller's own `compute`
-call happened to run after the interval had passed — easy to hit under CI scheduling jitter — it
-would see the winner's claim as "expired" and trigger a redundant second refresh for the same
-staleness episode. This matches what CI showed: one early timestamp plus several requests
-converging on one later, shared timestamp.
-
-**Fix:** judge claim validity against the `AUTH_LAST_REFRESH` value the request itself read from
-its session snapshot, instead of elapsed time. A claim can only be re-claimed once it is at or
-before that value, no matter how long the current claimant takes to finish. This holds for any
-refresh interval, including ones short enough for scheduling jitter to exceed.
-
-Verified by `HttpSessionBasedAuthenticationHolderTest#shouldNotReclaimWhenWinningClaimHasNotYetWrittenBackToSession`:
-it reliably fails under the old elapsed-time predicate and passes with the fix.
-
-## Addendum: dropping the `maximumSize` bound (camunda-security-library#533)
-
-The original design paired `expireAfterWrite` with `maximumSize(10_000)` as a hard backstop against
-unbounded cache growth. Review on the originating PR flagged that this was the one part of the
-design that added a correctness caveat: unlike TTL eviction, capacity-driven eviction can remove a
-still-active session's claim, reopening the exact race this ADR closes for that one session.
-
-Revisiting the trade-off: dropping `maximumSize` means there is no longer a hard cap on cache
-size — Caffeine's `expireAfterWrite` reaps expired entries lazily (on subsequent cache access), not
-the instant they go stale, and growth is bounded only by how many distinct sessions actually
-refresh within roughly the TTL window, not by any enforced maximum. That is accepted because this
-growth is proportional to genuine concurrent load rather than an unconditional leak, and a hard
-cap's only benefit — a memory ceiling — comes at the cost of silently reopening the exact race this
-ADR closes, under the highest-load conditions where that matters most.
-
-**Decision:** drop `maximumSize`. `refreshClaims` is bounded by `expireAfterWrite` only, with no
-hard cap on size. This removes the one correctness caveat in the design in exchange for that
-ceiling.
-
-The Decision and Consequences sections above are left unchanged as the historical record of what
-was originally accepted and why; this addendum is the current state and supersedes them on this
-one point without rewriting them.
