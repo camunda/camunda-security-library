@@ -26,7 +26,7 @@ import org.springframework.context.annotation.Configuration;
  * off via {@code @ConditionalOnMissingBean} so hosts can supply their own implementations.
  *
  * <p>The filter is wired into the BasicAuth webapp chain only; the OIDC webapp chain intentionally
- * does not add it (see ADR-0011 and GH-189). Under OIDC, admin provisioning is driven by IdP claims
+ * does not add it (see ADR-0010 and GH-189). Under OIDC, admin provisioning is driven by IdP claims
  * and mapping rules rather than an in-app setup wizard, and the filter has no signal that
  * distinguishes "no admin yet" from "this user's membership has not been projected yet" — so a
  * freshly IdP-authenticated user must not be 302'd to {@code /admin/setup}. Hosts that genuinely

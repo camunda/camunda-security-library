@@ -44,7 +44,7 @@ import org.springframework.security.web.SecurityFilterChain;
  * whenever a host registers the required SPIs alongside the explicit
  * {@code @Import(AdminUserCheckFilterConfiguration.class)}, but only the Basic-auth webapp chain
  * wires it via {@code addFilterAfter(...)}. The OIDC webapp chain intentionally omits the filter
- * even when the bean is present (see ADR-0011 and GH-189). Hosts that need the check on a custom
+ * even when the bean is present (see ADR-0010 and GH-189). Hosts that need the check on a custom
  * OIDC chain are expected to compose the bean themselves.
  */
 class AdminUserCheckFilterChainIntegrationTest {
@@ -119,7 +119,7 @@ class AdminUserCheckFilterChainIntegrationTest {
 
   @Test
   void oidcChainOmitsAdminUserCheckFilterEvenWhenBeanIsPresent() {
-    // GH-189 / ADR-0011: the OIDC chain configuration does not add the admin-user check filter,
+    // GH-189 / ADR-0010: the OIDC chain configuration does not add the admin-user check filter,
     // even when the bean exists in the context. Admin provisioning under OIDC is driven by IdP
     // claims and the filter has no signal to distinguish "no admin yet" from "this user's
     // membership has not been projected yet" — so the chain must not 302 to /admin/setup. A

@@ -246,7 +246,7 @@ public final class ScopedWebappSecurityChainBuilder {
             authorizedClientRepository, authorizedClientManager, logoutHandler),
         AuthorizationFilter.class);
 
-    // AdminUserCheckFilter is intentionally NOT wired on the OIDC chain (ADR-0011, GH-189): under
+    // AdminUserCheckFilter is intentionally NOT wired on the OIDC chain (ADR-0010, GH-189): under
     // OIDC, admin provisioning is driven by IdP claims, and the filter cannot tell "no admin yet"
     // from "membership not yet projected". Only WebAppAuthorizationCheck runs here.
     final var webAppFilter = webAppAuthorizationFilterProvider.getIfAvailable();
@@ -820,7 +820,7 @@ public final class ScopedWebappSecurityChainBuilder {
             authorizedClientRepository, authorizedClientManager, logoutHandler),
         AuthorizationFilter.class);
 
-    // AdminUserCheckFilter is intentionally NOT wired on the OIDC chain (ADR-0011, GH-189): under
+    // AdminUserCheckFilter is intentionally NOT wired on the OIDC chain (ADR-0010, GH-189): under
     // OIDC, admin provisioning is driven by IdP claims, and the filter cannot tell "no admin yet"
     // from "membership not yet projected". Only WebAppAuthorizationCheck runs here.
     final var webAppFilter = webAppAuthorizationFilterProvider.getIfAvailable();
