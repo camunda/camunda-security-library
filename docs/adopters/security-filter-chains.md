@@ -169,9 +169,18 @@ operates on every authenticated API request using the bearer token.
   access token. Augmentation fetches these at request time and merges them in.
 
 > **Note:** augmentation sources the UserInfo endpoint URI from the
-> `ClientRegistration`. Setting `user-info-enabled: false` nulls that URI, so
-> augmentation silently has nothing to call. Leave `user-info-enabled` at its
-> default (`true`) when enabling augmentation.
+> `ClientRegistration`. Setting `user-info-enabled: false` nulls that URI. If
+> that leaves *every* configured provider without a UserInfo URI (a single-IdP
+> setup, or a multi-IdP setup where all providers disable it), CSL fails fast
+> at startup with an `IllegalStateException` rather than silently running
+> without augmentation — enabling augmentation with nothing it can ever
+> augment is treated as a configuration mismatch. In a multi-IdP setup where
+> only *some* providers disable `user-info-enabled`, the coupling is silent
+> instead: tokens from those providers' issuers skip augmentation at request
+> time with no error surfaced (logged at DEBUG). Leave `user-info-enabled` at
+> its default (`true`) for any provider you want augmentation to cover. See
+> [ADR-0014](../adr/0014-oidc-user-info-enabled-toggle.md) for the full
+> mechanism.
 
 **JWT-wins invariant.** UserInfo claims are merged additively: JWT claims always
 win on any conflict. The UserInfo response can never override `sub`, `iss`,
