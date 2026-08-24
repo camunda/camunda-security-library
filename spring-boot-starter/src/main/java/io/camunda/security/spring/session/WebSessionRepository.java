@@ -41,7 +41,7 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
 
   /**
    * The {@link SessionStorePort} this repository writes to. Used by the expiry sweep to deduplicate
-   * repositories that share a backing store, so each store is swept once (ADR-0029).
+   * repositories that share a backing store, so each store is swept once (ADR-0017).
    */
   SessionStorePort sessionStorePort() {
     return sessionStorePort;

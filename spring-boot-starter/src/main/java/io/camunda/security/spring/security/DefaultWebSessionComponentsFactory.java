@@ -21,7 +21,7 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
 /**
  * Builds the Spring Session components for the default (non-scoped) webapp/API chains: a cookie
  * serializer and the {@link SessionRepositoryFilter} installed on those chains. Mirrors {@code
- * ScopedWebSessionComponentsFactory}'s approach for physical-tenant scopes (see ADR-0031).
+ * ScopedWebSessionComponentsFactory}'s approach for physical-tenant scopes (see ADR-0017).
  */
 final class DefaultWebSessionComponentsFactory {
 

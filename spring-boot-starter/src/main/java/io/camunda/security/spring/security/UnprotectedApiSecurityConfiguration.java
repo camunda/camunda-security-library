@@ -34,7 +34,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
  * camunda.security.authentication.unprotected-api=true}. Never use in production.
  *
  * <p>Even though it authenticates nothing, this chain installs the shared default {@link
- * SessionRepositoryFilter} (ADR-0031) so that a web session minted on the webapp chain is resolved
+ * SessionRepositoryFilter} (ADR-0017) so that a web session minted on the webapp chain is resolved
  * here too. Without it, the {@code camunda-session} cookie is never read on unprotected API
  * requests and an endpoint like {@code /v2/authentication/me} would see an anonymous request even
  * for a logged-in browser. The filter only restores an existing session's {@code SecurityContext};

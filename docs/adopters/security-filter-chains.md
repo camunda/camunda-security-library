@@ -934,7 +934,7 @@ When a host activates both `AdminUserCheckFilterConfiguration` and `WebAppAuthor
 
 ## OIDC logout
 
-When `authentication.method=oidc` and a host activates CSL via the `CamundaSecurityAutoConfiguration` umbrella, [`OidcBeansConfiguration`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/oidc/OidcBeansConfiguration.java) registers a default `LogoutSuccessHandler` — [`CamundaOidcLogoutSuccessHandler`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/security/CamundaOidcLogoutSuccessHandler.java) — that extends Spring Security's `OidcClientInitiatedLogoutSuccessHandler` with two additions over plain RP-initiated logout. Activation rationale lives in [ADR-0012](../adr/0012-oidc-logout-success-handler.md).
+When `authentication.method=oidc`, CSL builds a [`CamundaOidcLogoutSuccessHandler`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/security/CamundaOidcLogoutSuccessHandler.java) for every OIDC webapp chain — the primary chain and each path-scoped chain — inside `ScopedWebappSecurityChainBuilder`. The handler extends Spring Security's `OidcClientInitiatedLogoutSuccessHandler` with two additions over plain RP-initiated logout. Rationale lives in [ADR-0017](../adr/0017-session-store-port-and-web-session-ownership.md).
 
 **What ships by default**
 
@@ -945,17 +945,20 @@ If the IdP's discovery document does not expose `end_session_endpoint`, the loca
 
 The handler is multi-IdP-aware — it looks up the `ClientRegistration` by the principal's `authorizedClientRegistrationId`.
 
-**Activation**
+**Activation and the post-logout route**
 
-The bean lives in `OidcBeansConfiguration` (already a member of the `CamundaSecurityAutoConfiguration` umbrella), so hosts activating CSL via the recommended opt-in path get the default `LogoutSuccessHandler` automatically:
+There is no `LogoutSuccessHandler` bean to register or override. CSL constructs one handler per OIDC webapp chain, each bound to that chain's own `ClientRegistrationRepository` and its own base-path prefix — a shared singleton cannot carry either, which is why the bean seam was removed.
+
+The one host input is the post-logout landing route, declared on `SecurityPathPort`:
 
 ```java
-@Configuration
-@ImportAutoConfiguration(CamundaSecurityAutoConfiguration.class)
-public class HostSecurityConfiguration {}
+@Override
+public Optional<String> postLogoutRedirectPath() {
+  return Optional.of("/post-logout");
+}
 ```
 
-The bean is `@ConditionalOnMissingBean(LogoutSuccessHandler.class)` — a host-registered bean wins. The umbrella is the activation path that makes `@ConditionalOnMissingBean` evaluate reliably; see [ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md) for the rationale.
+CSL sends the IdP `{baseUrl}<basePath><route>` as the `post_logout_redirect_uri`, so a scoped chain resolves it under its own prefix. The route must start with `/`. The default is `Optional.empty()`, meaning no `post_logout_redirect_uri` is sent and the IdP applies its own default — never return `null`. Every per-scope redirect URI must be allow-listed at the IdP; multi-tenant deployments need a wildcard or pattern registration. See [ADR-0017](../adr/0017-session-store-port-and-web-session-ownership.md).
 
 **Reading the post-logout redirect URL**
 

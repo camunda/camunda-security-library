@@ -66,7 +66,7 @@ An interface is always a `Port`. Use `port/in/` for inbound ports and `port/out/
   `Scoped*` (e.g. `ScopedSessionStorePortProvider`, `ScopedWebSessionRepositoryFactory`,
   `ScopedAuthorizationCheckPortFactory`). Don't introduce tenant-flavored names (`*TenantPort`,
   `*PhysicalTenant*`) in `core` — that's the host's vocabulary, not the library's. See ADR-0025,
-  ADR-0029, ADR-0040.
+  ADR-0017, ADR-0040.
 
 ### Error Handling
 

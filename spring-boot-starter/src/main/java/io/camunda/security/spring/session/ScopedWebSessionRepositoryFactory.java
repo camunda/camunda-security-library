@@ -25,14 +25,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Used by {@code ScopedSecurityChainRegistrar} to give each scoped {@code
  * SessionRepositoryFilter} a repository bound to that scope's store, so persistent session
  * reads/writes route structurally at Spring Session's commit time instead of via request/thread
- * context. See ADR-0029.
+ * context. See ADR-0017.
  *
  * <p>The provider is optional: when a host contributes no {@link ScopedSessionStorePortProvider},
  * {@link #isAvailable()} returns {@code false} and callers fall back to the shared repository or a
  * per-scope in-memory one.
  *
  * <p>Repositories are built once per {@code basePath} and cached, so the expiry sweep can iterate
- * every per-scope store via {@link #builtRepositories()} (ADR-0029) — each store is swept by its
+ * every per-scope store via {@link #builtRepositories()} (ADR-0017) — each store is swept by its
  * own single-store repository rather than through a cross-store fan-out.
  */
 public final class ScopedWebSessionRepositoryFactory {
@@ -80,7 +80,7 @@ public final class ScopedWebSessionRepositoryFactory {
 
   /**
    * The per-scope repositories built so far — one single-store repository per scope. Consumed by
-   * the expiry sweep to clean every store in turn (ADR-0029). By the time the first sweep runs, all
+   * the expiry sweep to clean every store in turn (ADR-0017). By the time the first sweep runs, all
    * scoped chains have been instantiated, so every scope's repository is present.
    */
   public Collection<WebSessionRepository> builtRepositories() {

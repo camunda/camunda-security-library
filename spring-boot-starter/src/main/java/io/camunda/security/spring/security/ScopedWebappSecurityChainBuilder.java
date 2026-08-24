@@ -144,7 +144,7 @@ public final class ScopedWebappSecurityChainBuilder {
    * constants.
    *
    * <p>The supplied {@code sessionRepositoryFilter} is installed before {@link
-   * SecurityContextHolderFilter} (see ADR-0031).
+   * SecurityContextHolderFilter} (see ADR-0017).
    */
   public SecurityFilterChain buildOidcWebappChain(
       final HttpSecurity http,
@@ -300,7 +300,7 @@ public final class ScopedWebappSecurityChainBuilder {
    * CSL constants.
    *
    * <p>The supplied {@code sessionRepositoryFilter} is installed before {@link
-   * SecurityContextHolderFilter} (see ADR-0031).
+   * SecurityContextHolderFilter} (see ADR-0017).
    */
   public SecurityFilterChain buildBasicWebappChain(
       final HttpSecurity http, final SessionRepositoryFilter<?> sessionRepositoryFilter)

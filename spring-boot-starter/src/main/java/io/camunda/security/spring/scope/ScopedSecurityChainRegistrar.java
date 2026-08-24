@@ -261,10 +261,10 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
    *
    * <ol>
    *   <li>a <b>per-scope</b> durable {@link WebSessionRepository} bound to the scope's own store,
-   *       via {@link ScopedWebSessionRepositoryFactory} (ADR-0029) — so persistent writes route
+   *       via {@link ScopedWebSessionRepositoryFactory} (ADR-0017) — so persistent writes route
    *       structurally at Spring Session's commit time, not via request/thread context;
-   *   <li>the shared durable {@link WebSessionRepository} bean (legacy, ADR-0017) when no per-scope
-   *       provider is contributed;
+   *   <li>the shared durable {@link WebSessionRepository} bean (the legacy, non-per-scope fallback)
+   *       when no per-scope provider is contributed;
    *   <li>a per-scope in-memory {@link MapSessionRepository} backed by a fresh {@link
    *       ConcurrentHashMap} (dev/test) — separate instances give store-level isolation on top of
    *       the cookie {@code Path} isolation.

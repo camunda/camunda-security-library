@@ -15,7 +15,7 @@ For the rationale behind this split — why the lifecycle lives in CSL and the s
 
 Every bean is `@ConditionalOnMissingBean`, so a host can register its own implementation of any one of them and CSL's default backs off.
 
-`WebSessionConfiguration` wires the session *lifecycle* only — it does not install any `SessionRepositoryFilter` itself. Each chain (the default surface and every physical-tenant scope) gets its own explicitly-installed filter that consumes the `WebSessionRepository` bean produced here; see [ADR-0031](../adr/0031-explicit-default-session-filter-replaces-global-filter.md) for why filters are installed per chain instead of through a single global one.
+`WebSessionConfiguration` wires the session *lifecycle* only — it does not install any `SessionRepositoryFilter` itself. Each chain (the default surface and every physical-tenant scope) gets its own explicitly-installed filter that consumes the `WebSessionRepository` bean produced here; see [ADR-0017](../adr/0017-session-store-port-and-web-session-ownership.md) for why filters are installed per chain instead of through a single global one.
 
 `WebSessionConfiguration` is **gated by `@ConditionalOnPersistentWebSessionEnabled`** — it only loads when `camunda.security.session.persistent.enabled=true`.
 
@@ -129,7 +129,7 @@ OC's wiring lives in `dist/src/main/java/io/camunda/application/commons/identity
 
 1. Gates on `@ConditionalOnRestGatewayEnabled` and `@ConditionalOnPersistentWebSessionEnabled` so persistent sessions only wire up when the REST gateway is enabled.
 2. Activates CSL via `@ImportAutoConfiguration(WebSessionConfiguration.class)`.
-3. Supplies the storage backend (Elasticsearch / OpenSearch / RDBMS) and the `SessionStorePort` adapter (`PhysicalTenantSessionStoreAdapter`, built per physical tenant via `PhysicalTenantScopedSessionStorePortProvider` — see [ADR-0029](../adr/0029-per-scope-session-store-ownership.md)).
+3. Supplies the storage backend (Elasticsearch / OpenSearch / RDBMS) and the `SessionStorePort` adapter (`PhysicalTenantSessionStoreAdapter`, built per physical tenant via `PhysicalTenantScopedSessionStorePortProvider` — see [ADR-0017](../adr/0017-session-store-port-and-web-session-ownership.md)).
 4. Overrides `webSessionDeletionUncaughtExceptionHandler` with `FatalErrorHandler.uncaughtExceptionHandler(...)` so a fatal error in the deletion thread halts the JVM instead of being swallowed.
 
 ## Troubleshooting
