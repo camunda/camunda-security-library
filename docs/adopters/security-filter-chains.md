@@ -2,7 +2,7 @@
 
 This guide is for host applications (Hub, Orchestration Cluster (OC) gateways, future Camunda services) that embed the Camunda Security Library. It explains how to wire the central filter chains, what host-side beans are required, and how to extend or override library defaults.
 
-For the rationale behind this design — why the chains live in CSL — see [ADR-0006](../adr/0006-central-security-filter-chains.md). For why hosts opt in via explicit `@Import` rather than relying on Spring Boot auto-configuration, see [ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md).
+For the rationale behind this design — why the chains live in CSL, and why hosts opt in via explicit `@Import` rather than relying on Spring Boot auto-configuration — see [ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md).
 
 ## Why a central library owns the filter chains
 
