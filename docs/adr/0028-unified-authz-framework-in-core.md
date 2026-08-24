@@ -261,7 +261,7 @@ port — they are unaffected by everything above:
 
 Both SPIs live in the starter rather than `core/port/out` because their signatures speak
 `HttpServletRequest`/`HttpServletResponse` and `core` is jakarta-servlet-free by design
-([ADR-0006](0006-central-security-filter-chains.md)). Any servlet-coupled SPI must live in the
+([ADR-0008](0008-no-spring-boot-auto-configuration.md)). Any servlet-coupled SPI must live in the
 starter for the same reason.
 
 `WebAppAuthorizationFilterConfiguration` wires the filter and is activated by explicit `@Import`

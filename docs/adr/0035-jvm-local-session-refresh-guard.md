@@ -19,7 +19,7 @@ with `synchronized (session)` — but that only serializes callers that hold the
 `HttpSession` Java object.
 
 That assumption broke once every CSL surface started resolving sessions through Spring Session
-([ADR-0031](0031-explicit-default-session-filter-replaces-global-filter.md) removed the last path
+([ADR-0017](0017-session-store-port-and-web-session-ownership.md) removed the last path
 that used the servlet container's native, per-ID-stable `HttpSession`). `request.getSession(false)`
 now always goes through `SessionRepository.findById(id)`, and every `SessionRepository`
 implementation in play returns a fresh object per call for the same underlying session id:
@@ -28,7 +28,7 @@ implementation in play returns a fresh object per call for the same underlying s
   `sessionStorePort::get`, which round-trips the host's storage and constructs a new `WebSession`
   each time ([`WebSessionRepository.java:67-74`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/session/WebSessionRepository.java#L67-L74)).
 - Spring Session's own `MapSessionRepository` — the fallback used for the default surface when
-  persistence is off (ADR-0031) — also returns `new MapSession(saved)`, a copy, on every
+  persistence is off (ADR-0017) — also returns `new MapSession(saved)`, a copy, on every
   `findById`.
 
 So two concurrent requests against the same session id can each resolve a distinct `HttpSession`
@@ -158,7 +158,7 @@ source of truth for "has this session already been refreshed", independent of an
   every host adapter implements (a breaking change requiring every adopter to update), and it would
   only cover the persistent-session path through `WebSessionRepository` — the default,
   non-persistent surface falls back to Spring Session's own `MapSessionRepository`
-  (ADR-0031), which never goes through `SessionStorePort` at all. It would fix one path and leave
+  (ADR-0017), which never goes through `SessionStorePort` at all. It would fix one path and leave
   the other exposed.
 - **Lock keyed by session id, still gated on `session.getAttribute(LAST_REFRESH_ATTR)`.** Rejected
   on its own: as explained in Context, serializing the code path without changing what's read as the

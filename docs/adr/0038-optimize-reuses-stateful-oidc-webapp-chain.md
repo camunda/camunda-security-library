@@ -42,8 +42,7 @@ CSL already has a session-based OIDC webapp chain
 ([`OidcWebappSecurityConfiguration`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/security/OidcWebappSecurityConfiguration.java),
 built by `ScopedWebappSecurityChainBuilder`). It uses Spring `oauth2Login`, keeps the user
 in a server session, and refreshes tokens transparently. It reuses the host's
-`SessionStorePort` for durable sessions ([ADR-0017](0017-session-store-port-and-web-session-ownership.md),
-[ADR-0027](0027-scoped-webapp-security-chains-and-per-scope-sessions.md)). The API bearer
+`SessionStorePort` for durable sessions ([ADR-0017](0017-session-store-port-and-web-session-ownership.md)). The API bearer
 chain ([ADR-0023](0023-oidc-bearer-tokens-on-api-chain-only.md)) stays as it is.
 
 A shared session store for multi-instance Optimize was never a blocker. Optimize already runs
@@ -155,7 +154,7 @@ lives with the spike.
 - **Reuse the existing chain instead of a new one.** OC already runs this chain in
   production. Reusing it keeps one webapp security model across all Camunda web apps and
   avoids drift, which is the whole point of centralising the chains
-  ([ADR-0006](0006-central-security-filter-chains.md)).
+  ([ADR-0008](0008-no-spring-boot-auto-configuration.md)).
 - **Server-side sessions remove the cookie debt now.** A single small session-id cookie
   replaces the split `X-Optimize-Authorization_N` cookies, so the reverse-proxy header size
   problem is gone. Logout invalidates the session in the store, so the terminated-session

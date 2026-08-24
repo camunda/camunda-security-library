@@ -38,7 +38,7 @@ Consequences of the removal, all intended:
 - The `OidcResourceServerCustomizer` SPI (RFC 9728 protected-resource metadata, custom JWT validators, bearer entry-point swaps) now applies to the **API chain only**. This is conceptually correct — those are all resource-server concerns. The change in wiring scope is documented in [security-filter-chains.md](../adopters/security-filter-chains.md).
 - The webapp chain no longer needs the resource-server `JwtDecoder` bean (`oauth2Login` validates the **ID token** via its own `OidcIdTokenDecoderFactory`, not this bean). The `JwtDecoder` bean is still produced by `OidcBeansConfiguration` and still consumed by the API chain.
 
-This refines, and does not contradict, [ADR-0006](0006-central-security-filter-chains.md), which centralised the chains but did not pin which chain owns bearer-token validation.
+This refines, and does not contradict, [ADR-0008](0008-no-spring-boot-auto-configuration.md), which centralised the chains but did not pin which chain owns bearer-token validation.
 
 ## Consequences
 
