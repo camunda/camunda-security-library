@@ -1,3 +1,7 @@
+---
+status: Accepted
+---
+
 # ADR-0003: Push vs Pull Policy Propagation (Hub ↔ Orchestration Clusters)
 
 ## Status
