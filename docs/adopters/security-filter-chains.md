@@ -138,7 +138,7 @@ For most conditional use cases the CSL ships purpose-built meta-annotations (see
 | `client-id` | string | unset | OAuth2 client id. |
 | `client-secret` | string | unset | OAuth2 client secret. |
 | `jwk-set-uri` | string | unset | Explicit JWK set URI. If unset, derived from `issuer-uri`. |
-| `additional-jwk-set-uris` | list&lt;string&gt; | empty | Secondary JWK Set URIs consulted when the primary `jwk-set-uri` does not resolve a token's signing key. See [Multiple JWK Set URIs](#multiple-jwk-set-uris) below and [ADR-0015](../adr/0015-additional-jwk-set-uris-composite-decoder.md). |
+| `additional-jwk-set-uris` | list&lt;string&gt; | empty | Secondary JWK Set URIs consulted when the primary `jwk-set-uri` does not resolve a token's signing key. See [Multiple JWK Set URIs](#multiple-jwk-set-uris) below and [ADR-0013](../adr/0013-multi-idp-oidc-configuration.md). |
 | `authorization-uri`, `token-uri`, `user-info-uri` | string | unset | Endpoint overrides for non-discovery flows. |
 | `user-info-enabled` | boolean | `true` | When `false`, the built `ClientRegistration` has its `userInfoUri` nulled so Spring Security does not call the IdP's UserInfo endpoint after token exchange. See [Disabling the UserInfo fetch](#disabling-the-userinfo-fetch) below and [ADR-0014](../adr/0014-oidc-user-info-enabled-toggle.md). |
 | `user-info-augmentation.enabled` | boolean | `false` | When `true`, enables request-time claim augmentation from the UserInfo endpoint. See [UserInfo claim augmentation](#userinfo-claim-augmentation) below. |
@@ -296,7 +296,7 @@ A host-supplied `@Bean JwtDecoder` continues to take precedence via `@Conditiona
 The library's default `JWSKeySelectorFactory`, `TokenValidatorFactory`, and
 `OidcAccessTokenDecoderFactory` beans are also overridable independently.
 
-See [ADR-0020](../adr/0020-issuer-aware-jwt-decoder.md) for the design rationale.
+See [ADR-0013](../adr/0013-multi-idp-oidc-configuration.md) for the design rationale.
 
 #### Multiple JWK Set URIs
 
@@ -318,16 +318,16 @@ camunda:
           - https://legacy-idp.example.com/.well-known/jwks.json
 ```
 
-`issuer-uri` is set alongside `jwk-set-uri` here because `ClientRegistration` construction requires either `issuer-uri` (for discovery of authorization/token endpoints) or all three of `authorization-uri`/`token-uri`/`jwk-set-uri` explicitly. The `additional-jwk-set-uris` wiring is independent of which path you choose to populate the registration; the only constraint is that the primary `jwk-set-uri` is set explicitly (the `JwtDecoder` does not consume discovered JWKS endpoints when additional URIs are configured).
+`issuer-uri` is set alongside `jwk-set-uri` here because `ClientRegistration` construction requires either `issuer-uri` (for discovery of authorization/token endpoints) or all three of `authorization-uri`/`token-uri`/`jwk-set-uri` explicitly. The `additional-jwk-set-uris` wiring is independent of which path you choose to populate the registration; the only constraint is that the registration ends up with a primary `jwk-set-uri`, whether you set it explicitly or discovery resolves it from `issuer-uri`.
 
 The default `JwtDecoder` queries the primary `jwk-set-uri` first, then each entry in `additional-jwk-set-uris` in declared order. The first source that resolves the token's `kid` wins. If an additional URI is unreachable, the failure is logged at WARN and the next source is tried — a failing additional URI does not break validation against the primary or other working URIs.
 
 Two constraints to be aware of:
 
-- **Explicit `jwk-set-uri` is required.** Discovery via `issuer-uri` alone is not supported when `additional-jwk-set-uris` is set. Set `jwk-set-uri` explicitly even if it points at the same endpoint the discovery document would resolve to. Startup fails with an actionable error otherwise.
+- **A resolvable `jwk-set-uri` is required.** Set `jwk-set-uri` explicitly, or set `issuer-uri` so OIDC discovery populates it. A provider that resolves neither fails at startup with `OIDC Provider '<id>' is missing a valid 'jwk-set-uri'`.
 - **`kid` collision precedence.** If two JWK Sets publish a key with the same `kid` (unlikely in practice), the primary `jwk-set-uri` wins because it is queried first. Reorder `additional-jwk-set-uris` to change precedence among the additional URIs.
 
-See [ADR-0015](../adr/0015-additional-jwk-set-uris-composite-decoder.md) for the design rationale, the choice of composite `JWKSource` over Spring's `JwtIssuerAuthenticationManagerResolver`, and the lazy failure model.
+See [ADR-0013](../adr/0013-multi-idp-oidc-configuration.md) for the design rationale, the choice of composite `JWKSource` over Spring's `JwtIssuerAuthenticationManagerResolver`, and the lazy failure model.
 
 #### Disabling the UserInfo fetch
 
