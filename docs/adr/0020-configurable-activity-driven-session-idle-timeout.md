@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0023: Configurable session idle timeout driven by client activity, not request traffic
+# ADR-0020: Configurable session idle timeout driven by client activity, not request traffic
 
 **Deciders**: Timothy Cline (timcline)
 
@@ -51,7 +51,7 @@ behavior for any host that hasn't opted in?
 
 **A new per-scope endpoint**, `POST {basePath}/session/heartbeat`, installed on every webapp chain — the
 primary surface and every physical-tenant scope, both OIDC and Basic-auth chains — the same way `/login`,
-`/logout`, and `/sso-callback` already derive from `basePath` ([ADR-0016](0016-camunda-security-scope-provider-spi.md)).
+`/logout`, and `/sso-callback` already derive from `basePath` ([ADR-0013](0013-camunda-security-scope-provider-spi.md)).
 Reusing that derivation gets correct per-scope cookie/session routing for free and needs no new
 scoping design.
 
@@ -75,7 +75,7 @@ entry point takes over exactly as it does for any unauthenticated request.
 
 **A shared, versioned frontend package** (e.g. a `useSessionHeartbeat()` hook) ships the throttled
 activity-listener and heartbeat-call logic, following the existing npm-package integration model
-([ADR-0005](0005-frontend-integration-for-hub-and-oc.md)), for consuming teams to import rather than each
+([ADR-0002](0002-frontend-integration-for-hub-and-oc.md)), for consuming teams to import rather than each
 independently reimplementing the same listener/throttle logic.
 
 This is an **idle timeout, not an absolute session lifetime**. `WebSession`/`PersistentSession`'s existing
@@ -91,11 +91,11 @@ activity is a separate, explicitly out-of-scope control (see Consequences).
 - **Repurposes the existing polling-exclusion lever rather than adding a parallel one.** The inspection
   point that already recognizes `x-is-polling` is the natural place to also recognize the heartbeat path —
   a change to one existing, narrow method, not new plumbing.
-- **Endpoint derived from `basePath`, not a new scoping mechanism.** Reuses ADR-0016's pattern so per-scope
+- **Endpoint derived from `basePath`, not a new scoping mechanism.** Reuses ADR-0013's pattern so per-scope
   cookie/session routing, and support for both OIDC and Basic auth, come for free.
 - **Shared frontend package over ad hoc per-app implementations.** Centralizes throttle/listener logic in
   one versioned artifact instead of every consuming team (Operate, Tasklist, Optimize, and future adopters)
-  solving — and likely drifting on — the same problem independently. Mirrors ADR-0005's chosen npm-package
+  solving — and likely drifting on — the same problem independently. Mirrors ADR-0002's chosen npm-package
   model rather than inventing a new frontend-distribution mechanism.
 
 ### Default implementations and override boundaries
@@ -140,10 +140,10 @@ activity is a separate, explicitly out-of-scope control (see Consequences).
 
 - **Reuse Spring Boot's `server.servlet.session.timeout`** instead of a new CSL property. Rejected — CSL
   deliberately does not rely on Spring Boot's own session machinery
-  ([ADR-0012](0012-session-store-port-and-web-session-ownership.md) removed
+  ([ADR-0009](0009-session-store-port-and-web-session-ownership.md) removed
   `@EnableSpringHttpSession`); repurposing a Boot-owned property whose usual meaning doesn't match what CSL
   does underneath would be a less explicit activation path than this library's opt-in-by-name convention
-  ([ADR-0006](0006-no-spring-boot-auto-configuration.md)).
+  ([ADR-0003](0003-no-spring-boot-auto-configuration.md)).
 - **Inverse header-tagging on ordinary business calls** to mark selected requests as "this counts as
   activity," instead of one dedicated endpoint. Rejected — spreads the contract across every call site in
   every frontend that wants to opt in; easy to forget on a new API call, hard to audit.

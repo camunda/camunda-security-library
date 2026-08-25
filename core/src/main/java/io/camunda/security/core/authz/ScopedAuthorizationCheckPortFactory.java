@@ -21,7 +21,7 @@ import java.util.Objects;
  * Assembles one {@link AuthorizationCheckPort} per scope for hosts that already own several {@link
  * AuthorizationScopeRepositoryPort}s and need a fail-hard, per-scope lookup instead of hand-rolling
  * the fan-out themselves. Reuses the host's existing {@link TokenClaimsAuthenticationResolver}
- * rather than building a new one. See ADR-0022.
+ * rather than building a new one. See ADR-0019.
  */
 public final class ScopedAuthorizationCheckPortFactory {
 
@@ -60,7 +60,7 @@ public final class ScopedAuthorizationCheckPortFactory {
   /**
    * Full-control variant that also accepts an {@link AuthorizationCheckLatencyRecorder}, shared
    * across every scope's port, so non-Spring consumers can supply their own meter-backed
-   * implementation. See ADR-0022.
+   * implementation. See ADR-0019.
    *
    * @throws NullPointerException if {@code scopeRepositoriesByScope}, {@code claimsResolver},
    *     {@code propertyEvaluators}, or {@code latencyRecorder} is {@code null}, or if {@code

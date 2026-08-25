@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0009: Additive multi-IdP OIDC configuration with an issuer-aware `JwtDecoder`
+# ADR-0006: Additive multi-IdP OIDC configuration with an issuer-aware `JwtDecoder`
 
 **Deciders**: Patrick Wunderlich
 
@@ -12,7 +12,7 @@ Accepted
 
 ## Context
 
-CSL owns the OIDC webapp and API filter chains ([ADR-0006](0006-no-spring-boot-auto-configuration.md)), so it also owns the `ClientRegistrationRepository` those chains route logins through and the resource-server `JwtDecoder` they validate bearer tokens with. Spring Security's `OAuth2LoginAuthenticationFilter` routes login attempts per provider via `/oauth2/authorization/{registrationId}` URLs, so multi-IdP *login* works out of the box once multiple `ClientRegistration` instances exist. Multi-IdP *token validation* does not — that is a decoder concern.
+CSL owns the OIDC webapp and API filter chains ([ADR-0003](0003-no-spring-boot-auto-configuration.md)), so it also owns the `ClientRegistrationRepository` those chains route logins through and the resource-server `JwtDecoder` they validate bearer tokens with. Spring Security's `OAuth2LoginAuthenticationFilter` routes login attempts per provider via `/oauth2/authorization/{registrationId}` URLs, so multi-IdP *login* works out of the box once multiple `ClientRegistration` instances exist. Multi-IdP *token validation* does not — that is a decoder concern.
 
 Orchestration Cluster (OC) already supports multiple IdPs. [`AuthenticationConfiguration#getProviders()`](https://github.com/camunda/camunda/blob/main/security/security-core/src/main/java/io/camunda/security/configuration/AuthenticationConfiguration.java) returns a [`ProvidersConfiguration`](https://github.com/camunda/camunda/blob/main/security/security-core/src/main/java/io/camunda/security/configuration/ProvidersConfiguration.java) carrying `Map<String, OidcAuthenticationConfiguration>`, and OC's [`OidcAuthenticationConfigurationRepository`](https://github.com/camunda/camunda/blob/main/authentication/src/main/java/io/camunda/authentication/config/OidcAuthenticationConfigurationRepository.java) merges that map with the flat `oidc.*` block: flat contributes a registration when `clientId` is non-blank, and the providers map is then applied on top via `Map#putAll`, so a colliding provider id overwrites the flat entry. Separately, OC validates tokens through `OidcAccessTokenDecoderFactory`, `JWSKeySelectorFactory`, `IssuerAwareJWSKeySelector` and a small composite JWK source. Any OC deployment running with multiple configured IdPs — or with signing keys published across more than one JWK Set endpoint — regresses on cutover to the CSL chains unless CSL ships equivalent behaviour.
 

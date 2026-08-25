@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0002: Placement of the Camunda Security Library (embedded vs standalone service)
+# ADR-0001: Placement of the Camunda Security Library (embedded vs standalone service)
 
 ## Status
 

@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0019: Host customization hooks for security filter chains
+# ADR-0016: Host customization hooks for security filter chains
 
 **Deciders**: Patrick Wunderlich
 
@@ -12,7 +12,7 @@ Accepted
 
 ## Context
 
-CSL centralises filter chain construction ([ADR-0006](0006-no-spring-boot-auto-configuration.md)),
+CSL centralises filter chain construction ([ADR-0003](0003-no-spring-boot-auto-configuration.md)),
 but several behaviours vary by host and deployment environment and cannot be decided by the
 library itself: CORS policy, HTTP→HTTPS redirect strategy, dynamic or route-varying response
 headers (including CSP nonces), and per-chain JWT authority mapping.
@@ -73,7 +73,7 @@ applied in `@Order` order; no bean present is a no-op.
 - `HttpsRedirectCustomizer` — a host registers a bean to insert an HTTP→HTTPS redirect filter into
   every CSL filter chain. No bean means no redirect: CSL's default is to leave that policy to the
   host's infrastructure layer (load balancer, ingress). This follows the established
-  `OidcResourceServerCustomizer` pattern (see [ADR-0006](0006-no-spring-boot-auto-configuration.md))
+  `OidcResourceServerCustomizer` pattern (see [ADR-0003](0003-no-spring-boot-auto-configuration.md))
   and requires no CSL changes when a host adds or removes a redirect strategy.
 - `SecurityHeadersCustomizer` closes both the CSP and general-headers gaps with a single interface:
   CSP is, mechanically, just another response header. A host implements nonce generation or

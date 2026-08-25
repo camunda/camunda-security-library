@@ -272,7 +272,7 @@ public class HttpSessionBasedAuthenticationHolderTest {
    * each concurrent request resolves its own {@link HttpSession} snapshot with its own backing
    * storage, and writes are persisted only at end-of-request {@code save()} — so one request never
    * observes another's in-flight refresh. Dedup therefore cannot lean on any shared session state;
-   * it must hold purely through the JVM-local, session-id-keyed guard (ADR-0020).
+   * it must hold purely through the JVM-local, session-id-keyed guard (ADR-0017).
    */
   @Test
   public void shouldOnlyRefreshOnceAcrossSessionsWithSeparateBackingStoresForSameSessionId()

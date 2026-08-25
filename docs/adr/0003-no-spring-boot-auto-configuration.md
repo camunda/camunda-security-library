@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0006: Security configuration: chain catalog and explicit host activation
+# ADR-0003: Security configuration: chain catalog and explicit host activation
 
 **Deciders**: Patrick Wunderlich
 
@@ -19,7 +19,7 @@ logic, hardened HTTP response headers, and OAuth2 refresh-token handling per hos
 between host configurations repeatedly produced security regressions — different CSP defaults,
 missing CSRF, divergent failure-handler behaviour, drift between OIDC API and webapp chains.
 Centralising this logic in the CSL is a prerequisite for the "always-on AuthN/AuthZ enforcement"
-guarantee in [ADR-0002](0002-placement-of-the-security-gateway-framework.md). It also means every
+guarantee in [ADR-0001](0001-placement-of-the-security-gateway-framework.md). It also means every
 host needs the same runtime beans (`JwtDecoder`, `ClientRegistrationRepository`, OAuth2 client
 beans) built from the same property surface — asking each adopter to construct them by hand would
 multiply the same code across every consumer for no benefit.

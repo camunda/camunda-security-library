@@ -30,7 +30,7 @@ public final class WebSessionRepositories {
    *     SessionConfiguration#getMaxInactiveInterval()} — applied via {@link
    *     MapSessionRepository#setDefaultMaxInactiveInterval} when the in-memory fallback is used,
    *     ignored when {@code durable} is present since that repository already stamps the same
-   *     configured value onto every session it creates (ADR-0023) — and {@link
+   *     configured value onto every session it creates (ADR-0020) — and {@link
    *     SessionConfiguration#getHeartbeat()}, consulted only to decide whether the WARN below
    *     applies.
    * @param surface a short, log-friendly label for the caller's surface (e.g. {@code "default"} or
@@ -49,7 +49,7 @@ public final class WebSessionRepositories {
       // config-aware touch guard, so heartbeat.enabled has no effect here: every request keeps
       // extending the session's activity regardless of the flag. This is a silent behavioral gap
       // without this WARN — the host believes it configured activity-driven expiry and it simply
-      // isn't happening (ADR-0023).
+      // isn't happening (ADR-0020).
       LOGGER.warn(
           "camunda.security.session.heartbeat.enabled=true has no effect on the '{}' surface: it"
               + " is running the in-memory session fallback (no durable WebSessionRepository bean"

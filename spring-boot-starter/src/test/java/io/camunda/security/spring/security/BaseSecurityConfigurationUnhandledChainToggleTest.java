@@ -21,7 +21,7 @@ import org.springframework.context.annotation.Configuration;
 /**
  * Verifies that the catch-all deny chain can be suppressed via {@code
  * camunda.security.authentication.catch-all-unhandled-paths-enabled=false}, which a host with its
- * own {@code /**} webapp chain (Optimize, ADR-0021) needs so the two catch-all matchers do not
+ * own {@code /**} webapp chain (Optimize, ADR-0018) needs so the two catch-all matchers do not
  * collide.
  */
 class BaseSecurityConfigurationUnhandledChainToggleTest {

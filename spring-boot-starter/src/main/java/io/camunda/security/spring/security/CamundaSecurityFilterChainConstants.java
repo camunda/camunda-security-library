@@ -19,7 +19,7 @@ public final class CamundaSecurityFilterChainConstants {
   public static final String REDIRECT_URI = "/sso-callback";
 
   /**
-   * The session activity-heartbeat endpoint (ADR-0023). Derived from {@code basePath} on every
+   * The session activity-heartbeat endpoint (ADR-0020). Derived from {@code basePath} on every
    * webapp chain exactly like {@link #LOGIN_URL}/{@link #LOGOUT_URL}. A {@code POST} here is
    * recognized by {@code WebSessionRepository} as extending the session when {@code
    * camunda.security.session.heartbeat.enabled=true}; with that flag off it is a harmless 204 with
@@ -49,7 +49,7 @@ public final class CamundaSecurityFilterChainConstants {
    * chain ({@link #ORDER_API} &lt; {@link #ORDER_WEBAPP}). This only matters when the two matchers
    * overlap — for hosts with disjoint API and webapp matchers (OC, Hub) the relative order has no
    * observable effect. A host whose webapp matcher is the catch-all {@code /**} (Optimize,
-   * ADR-0021) relies on API-first so the API paths are claimed before the catch-all.
+   * ADR-0018) relies on API-first so the API paths are claimed before the catch-all.
    */
   public static final int ORDER_API = 1;
 

@@ -167,7 +167,7 @@ The following constraints bound the CSL design and limit what can change without
 
 - **Embedded library, not a standalone service.** CSL runs inside host applications (Hub, OC); it has no own process, database, or network endpoint.
 - **Host-provided infrastructure.** Hosts supply all persistence, IdP clients, engine command channels, and outbox delivery via port adapter implementations. CSL `core` has zero framework or persistence dependencies (enforced by ArchUnit).
-- **No Spring Boot auto-configuration by default.** Hosts explicitly activate CSL configuration classes via `@ImportAutoConfiguration`; nothing activates from adding the Maven dependency alone (see [ADR-0006](../adr/0006-no-spring-boot-auto-configuration.md)).
+- **No Spring Boot auto-configuration by default.** Hosts explicitly activate CSL configuration classes via `@ImportAutoConfiguration`; nothing activates from adding the Maven dependency alone (see [ADR-0003](../adr/0003-no-spring-boot-auto-configuration.md)).
 - **No dedicated global identity database.** Existing host infrastructure (Hub DB, OC DB) is reused; no new shared identity cluster is introduced.
 - **Standalone OC without Hub is a first-class deployment mode.** OC-only must continue to work fully without any Hub dependency.
 

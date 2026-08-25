@@ -44,7 +44,7 @@ class WebAppAuthorizationFilterConfigurationTest {
 
   // Use AutoConfigurations.of(...) so @ConditionalOnBean evaluates after user configurations have
   // registered their beans — the same approach CamundaSecurityConfigurationTest takes for the
-  // explicitly-imported configuration classes governed by ADR-0006.
+  // explicitly-imported configuration classes governed by ADR-0003.
   private final ApplicationContextRunner runner =
       new ApplicationContextRunner()
           .withUserConfiguration(StubPathPort.class)

@@ -38,7 +38,7 @@ import org.springframework.session.MapSessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
- * Verifies ADR-0012: the default (non-scoped) webapp and API chains share one explicit {@link
+ * Verifies ADR-0009: the default (non-scoped) webapp and API chains share one explicit {@link
  * SessionRepositoryFilter} instance, installed the same way a physical-tenant scope's chains share
  * theirs — no separately registered global {@code @EnableSpringHttpSession} filter.
  */

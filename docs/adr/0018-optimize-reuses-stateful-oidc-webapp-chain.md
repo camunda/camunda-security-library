@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0021: Optimize reuses the stateful OIDC webapp chain and the JWT-cookie chain is retired
+# ADR-0018: Optimize reuses the stateful OIDC webapp chain and the JWT-cookie chain is retired
 
 **Deciders**: Sebastian Bathke (megglos), Ben Sheppard (Ben-Sheppard)
 
@@ -42,8 +42,8 @@ CSL already has a session-based OIDC webapp chain
 ([`OidcWebappSecurityConfiguration`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/security/OidcWebappSecurityConfiguration.java),
 built by `ScopedWebappSecurityChainBuilder`). It uses Spring `oauth2Login`, keeps the user
 in a server session, and refreshes tokens transparently. It reuses the host's
-`SessionStorePort` for durable sessions ([ADR-0012](0012-session-store-port-and-web-session-ownership.md)). The API bearer
-chain ([ADR-0014](0014-oidc-bearer-tokens-on-api-chain-only.md)) stays as it is.
+`SessionStorePort` for durable sessions ([ADR-0009](0009-session-store-port-and-web-session-ownership.md)). The API bearer
+chain ([ADR-0011](0011-oidc-bearer-tokens-on-api-chain-only.md)) stays as it is.
 
 A shared session store for multi-instance Optimize was never a blocker. Optimize already runs
 Elasticsearch and uses it for the terminated-session list, so no new infrastructure is added, and
@@ -86,7 +86,7 @@ Concretely:
   reimplements it and creates its own session index. Login is Spring `oauth2Login` against
   Camunda Identity (CCSM) or Auth0 (CCSaaS), configured as OIDC client registrations. This
   removes the custom Identity SDK flow.
-- The bearer API chain ([ADR-0014](0014-oidc-bearer-tokens-on-api-chain-only.md)) is
+- The bearer API chain ([ADR-0011](0011-oidc-bearer-tokens-on-api-chain-only.md)) is
   unchanged. A logged-in browser calls the API off its session; direct machine clients use a
   bearer token on `apiPaths()`.
 - Because Optimize's webapp chain uses the `/**` catch-all matcher, the always-on catch-all
@@ -154,7 +154,7 @@ lives with the spike.
 - **Reuse the existing chain instead of a new one.** OC already runs this chain in
   production. Reusing it keeps one webapp security model across all Camunda web apps and
   avoids drift, which is the whole point of centralising the chains
-  ([ADR-0006](0006-no-spring-boot-auto-configuration.md)).
+  ([ADR-0003](0003-no-spring-boot-auto-configuration.md)).
 - **Server-side sessions remove the cookie debt now.** A single small session-id cookie
   replaces the split `X-Optimize-Authorization_N` cookies, so the reverse-proxy header size
   problem is gone. Logout invalidates the session in the store, so the terminated-session

@@ -28,7 +28,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
  *
  * <p>CSL applies every registered customizer, in {@code @Order} order, to every content-serving
  * filter chain. No bean present means no additional header behavior beyond CSL's static
- * configuration. See ADR-0019 for the design rationale.
+ * configuration. See ADR-0016 for the design rationale.
  */
 @FunctionalInterface
 public interface SecurityHeadersCustomizer {

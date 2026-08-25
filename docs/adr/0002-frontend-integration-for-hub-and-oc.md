@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0005: Frontend integration approach for Hub and Orchestration Cluster Admin UI
+# ADR-0002: Frontend integration approach for Hub and Orchestration Cluster Admin UI
 
 ## Status
 

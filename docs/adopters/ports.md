@@ -100,7 +100,7 @@ Map<String, OidcConfiguration> getOidcAuthenticationConfigurations();
 package io.camunda.security.core.port.in;
 ```
 
-The unified authorization inbound port (ADR-0017): "is this principal authorized for this
+The unified authorization inbound port (ADR-0014): "is this principal authorized for this
 requirement?" A `RequiredAuthorization` pairs an `AuthorizationResourceType` with a `PermissionType`
 and scopes it to resource IDs (and optionally resource property names). The port returns
 `Either.right(null)` when authorized and `Either.left(rejection)` when denied. Both the Zeebe engine
@@ -339,7 +339,7 @@ method is `basic`, and no host `UserDetailsService` is already registered.
 **Wiring:** `UserConfiguration` (`io.camunda.security.spring.user`, in the
 `CamundaSecurityAutoConfiguration` umbrella) registers `camundaUserDetailsService` and a default
 `passwordEncoder` (`PasswordEncoderFactories.createDelegatingPasswordEncoder()`), both basic-auth
-only and both `@ConditionalOnMissingBean` so a host can override either. See ADR-0013.
+only and both `@ConditionalOnMissingBean` so a host can override either. See ADR-0010.
 
 **OC example:** `UserDetailsAdapter` in `authentication/` — looks up the user from secondary storage
 (`UserServices.getUser`) and returns `new CamundaUserDetails(username, password)`, replacing OC's
@@ -437,7 +437,9 @@ package io.camunda.security.core.port.out;
 ```
 
 Records and dispatches outbox events that carry policy changes from Hub to Orchestration Clusters
-(see ADR-0001 and ADR-0003). Under active development — no methods defined yet.
+(see the proposed, not-yet-implemented [`docs/vision/policy-version-change-sets.md`](../vision/policy-version-change-sets.md)
+and [`docs/vision/push-vs-pull-policy-propagation.md`](../vision/push-vs-pull-policy-propagation.md)).
+Under active development — no methods defined yet.
 
 ---
 

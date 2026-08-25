@@ -41,7 +41,7 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
 
   /**
    * The {@link SessionStorePort} this repository writes to. Used by the expiry sweep to deduplicate
-   * repositories that share a backing store, so each store is swept once (ADR-0012).
+   * repositories that share a backing store, so each store is swept once (ADR-0009).
    */
   SessionStorePort sessionStorePort() {
     return sessionStorePort;
@@ -138,7 +138,7 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
    * camunda.security.session.heartbeat.enabled=false} (the default), unchanged legacy behaviour:
    * suppress only for requests tagged {@code x-is-polling}. With it {@code true}, invert: suppress
    * every request except the recognized heartbeat call, so ordinary application traffic stops
-   * counting as activity (ADR-0023).
+   * counting as activity (ADR-0020).
    */
   private boolean shouldSuppressTouch(final HttpServletRequest request) {
     if (sessionConfiguration.getHeartbeat().isEnabled()) {

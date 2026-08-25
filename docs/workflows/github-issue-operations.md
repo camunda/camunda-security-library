@@ -14,7 +14,7 @@ When an issue body references a file in this repo (an ADR, a workflow doc, a sou
 
 **Examples:**
 
-- `` [ADR-0002](https://github.com/camunda/camunda-security-library/blob/main/docs/adr/0002-placement-of-the-security-gateway-framework.md) `` instead of `` `docs/adr/0002-placement-of-the-security-gateway-framework.md` ``
+- `` [ADR-0001](https://github.com/camunda/camunda-security-library/blob/main/docs/adr/0001-placement-of-the-security-gateway-framework.md) `` instead of `` `docs/adr/0001-placement-of-the-security-gateway-framework.md` ``
 - `` [architecture.md](https://github.com/camunda/camunda-security-library/blob/main/.claude/docs/architecture.md) `` instead of `` `.claude/docs/architecture.md` ``
 
 **When this applies:**

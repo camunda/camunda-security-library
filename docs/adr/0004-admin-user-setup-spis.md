@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0007: Admin-user setup SPIs (`AdminUserPresencePort`, `AdminUserMissingHandlerPort`)
+# ADR-0004: Admin-user setup SPIs (`AdminUserPresencePort`, `AdminUserMissingHandlerPort`)
 
 **Deciders**: Patrick Wunderlich
 
@@ -12,7 +12,7 @@ Accepted
 
 ## Context
 
-[ADR-0006](0006-no-spring-boot-auto-configuration.md) centralised the API and webapp filter chains in CSL but deferred host-specific filter wiring — including the admin-user setup filter — to follow-ups. [ADR-0017](0017-unified-authz-framework-in-core.md) handled the first such filter (web-app authorization). This ADR captures the second.
+[ADR-0003](0003-no-spring-boot-auto-configuration.md) centralised the API and webapp filter chains in CSL but deferred host-specific filter wiring — including the admin-user setup filter — to follow-ups. [ADR-0014](0014-unified-authz-framework-in-core.md) handled the first such filter (web-app authorization). This ADR captures the second.
 
 The admin-user setup filter ensures an admin user has been provisioned before letting requests reach the rest of the application. If no admin user exists, the filter hands off to the host so the browser can be sent to a setup wizard (or whatever the host's response shape is). Once an admin user exists, the filter passes every request through.
 
@@ -29,7 +29,7 @@ A third concern — which paths bypass the check entirely (typically the setup e
 
 A single library class can't make either of the two varying decisions above. Both are host-specific behaviours, not configuration values. Hosts that don't enforce admin-user setup at all (Hub, for example) simply don't `@Import` the configuration — the filter never activates and the rest of the webapp chain runs unchanged.
 
-Activation is governed by [ADR-0006](0006-no-spring-boot-auto-configuration.md): the library does not use Spring Boot auto-configuration while it is under development. Hosts opt-in to the admin-user setup filter by `@Import`ing the configuration class explicitly.
+Activation is governed by [ADR-0003](0003-no-spring-boot-auto-configuration.md): the library does not use Spring Boot auto-configuration while it is under development. Hosts opt-in to the admin-user setup filter by `@Import`ing the configuration class explicitly.
 
 During the OC adoption of CSL ([camunda/camunda#52770](https://github.com/camunda/camunda/pull/52770)), wiring the filter into both webapp chains surfaced a trap: a freshly IdP-authenticated OIDC/SaaS user navigating to `/operate` was 302'd to `/admin/setup`, because there was no `init.users` static seed for SaaS and the IdP-provisioned user's membership had not yet been projected into the live store. Pre-CSL, OC ran the equivalent check only on the BasicAuth chain — admin provisioning under OIDC is driven by IdP claims and mapping rules, not an in-app setup wizard. The filter's wiring was narrowed accordingly; see "Filter wiring" below for the current, standing shape.
 
@@ -48,7 +48,7 @@ Bypass paths reuse the existing `SecurityPathPort`:
 
 - **`SecurityPathPort.adminFilterBypassPaths()`** — added as a `default` method returning empty. Hosts that activate the filter override it to declare path prefixes the filter passes through without consulting `AdminUserPresencePort`. Matched against the request's path within the application (i.e. the URI with the servlet context path stripped) using exact-or-sub-path semantics — so `/admin/setup` matches the setup endpoint without also matching `/admin/setupbar`, and `/admin/assets` matches every sub-path under it.
 
-The filter and these SPIs are wired by `AdminUserCheckFilterConfiguration` — a plain `@Configuration` per [ADR-0006](0006-no-spring-boot-auto-configuration.md). Hosts adopt by adding it to their `@Import` list:
+The filter and these SPIs are wired by `AdminUserCheckFilterConfiguration` — a plain `@Configuration` per [ADR-0003](0003-no-spring-boot-auto-configuration.md). Hosts adopt by adding it to their `@Import` list:
 
 ```java
 @Configuration
@@ -67,9 +67,9 @@ Each bean inside `AdminUserCheckFilterConfiguration` is gated on the host SPIs i
 ### Why these particular SPI boundaries
 
 - **`AdminUserPresencePort` collapses the OC two-step check into a single boolean** because the library has no business encoding the OC-specific ordering between static config and live data. Each host knows which sources it has and how to combine them; the library only needs the answer. A larger interface that exposed the static/live split would couple the library to an authorization-model concept (default-roles → admin → users members) that not every host shares. The single-method shape also lets hosts answer instantly from a `@Value`-injected boolean during early bootstrap, without dragging in an entire data layer just to satisfy the contract.
-- **`AdminUserMissingHandlerPort` is a separate SPI rather than a property template** because hosts choose between substantively different transport behaviours (redirect to a host-specific URL, JSON 503, forward to a static page, custom telemetry). That's a behavioural decision, not a configuration value. Reducing it to a property string would either constrain hosts to one shape or balloon into a mini-DSL — the same reasoning as `WebAppAccessDeniedHandlerPort` in [ADR-0017](0017-unified-authz-framework-in-core.md).
+- **`AdminUserMissingHandlerPort` is a separate SPI rather than a property template** because hosts choose between substantively different transport behaviours (redirect to a host-specific URL, JSON 503, forward to a static page, custom telemetry). That's a behavioural decision, not a configuration value. Reducing it to a property string would either constrain hosts to one shape or balloon into a mini-DSL — the same reasoning as `WebAppAccessDeniedHandlerPort` in [ADR-0014](0014-unified-authz-framework-in-core.md).
 - **Bypass paths reuse `SecurityPathPort.adminFilterBypassPaths()` rather than a dedicated SPI** because they're paths, and the host already implements `SecurityPathPort` to declare every other security-path concern (api/webapp/unprotected/web-component-names). Splitting path declarations across two ports for the sake of "admin-only" semantics would force hosts to maintain two related interfaces and obscure that the filter is participating in the same path-declaration model as the rest of the chain.
-- **The two SPIs split between `core/port/out/` and `io.camunda.security.spring.spi`** because their signatures differ in framework coupling. `AdminUserPresencePort` speaks only Java types — it lives in `core/port/out/` alongside the framework-free outbound ports. `AdminUserMissingHandlerPort` speaks `HttpServletRequest`/`HttpServletResponse` — and `core` is jakarta-servlet-free by design ([ADR-0006](0006-no-spring-boot-auto-configuration.md)), so any servlet-coupled SPI must live in the starter. This mirrors the split of `WebAppProviderPort`/`WebAppAccessDeniedHandlerPort` in [ADR-0017](0017-unified-authz-framework-in-core.md).
+- **The two SPIs split between `core/port/out/` and `io.camunda.security.spring.spi`** because their signatures differ in framework coupling. `AdminUserPresencePort` speaks only Java types — it lives in `core/port/out/` alongside the framework-free outbound ports. `AdminUserMissingHandlerPort` speaks `HttpServletRequest`/`HttpServletResponse` — and `core` is jakarta-servlet-free by design ([ADR-0003](0003-no-spring-boot-auto-configuration.md)), so any servlet-coupled SPI must live in the starter. This mirrors the split of `WebAppProviderPort`/`WebAppAccessDeniedHandlerPort` in [ADR-0014](0014-unified-authz-framework-in-core.md).
 
 ### Default implementations and override boundaries
 
@@ -100,14 +100,14 @@ A companion `FilterRegistrationBean<AdminUserCheckFilter>` with `setEnabled(fals
 - The redirect-to-setup default preserves the source behaviour the filter was lifted from; hosts that want a different missing-user response register one bean.
 - The missing-user response is a behaviour, not a property — type-safe, testable, and unconstrained.
 - `AdminUserPresencePort.adminUserExists()` carries no library-imposed authorization-model concepts. Hosts answer however suits their data layer. Hosts that bootstrap admin presence from static config can implement the port as a one-line lambda; hosts that consult live storage can query asynchronously, cache, or instrument as they see fit.
-- Activation is opt-in per [ADR-0006](0006-no-spring-boot-auto-configuration.md). A host that imports neither `AdminUserCheckFilterConfiguration` nor any of its prerequisites sees no behavioural change.
+- Activation is opt-in per [ADR-0003](0003-no-spring-boot-auto-configuration.md). A host that imports neither `AdminUserCheckFilterConfiguration` nor any of its prerequisites sees no behavioural change.
 - The OIDC admin-setup trap surfaced during OC's OIDC/SaaS adoption smoke test is closed at the library layer: hosts that wire `AdminUserPresencePort` get correct behaviour for both auth methods out of the box, without a per-host workaround. OC was able to remove the `AdminUserPresenceAdapter` short-circuit it had shipped as an interim fix ([camunda/camunda#52770](https://github.com/camunda/camunda/pull/52770)).
 
 **Negative / accepted trade-offs**
 
 - Hosts must register an `AdminUserPresencePort` before the filter activates. There is no "auto-detect from `SecurityConfiguration.getInitialization().getDefaultRoles()`" fallback. This is intentional: the library doesn't model `SecurityConfiguration`, doesn't depend on `RoleServices`, and doesn't carry zeebe-protocol enums — those are OC-specific authorization-model concerns that don't belong in CSL. A host that wants the OC behaviour reproduces it in a five-line implementation of the port.
 - Bypass paths live on `SecurityPathPort` rather than a dedicated SPI. Hosts that already implement `SecurityPathPort` for other path declarations need to add `adminFilterBypassPaths()` (and the default-empty method makes this a non-breaking source-only change).
-- `AdminUserMissingHandlerPort` lives in `io.camunda.security.spring.spi` (the starter module) rather than under `io.camunda.security.core.port.out` because its signature speaks `HttpServletRequest`/`HttpServletResponse`. Same reasoning as the servlet-coupled SPIs in [ADR-0017](0017-unified-authz-framework-in-core.md).
+- `AdminUserMissingHandlerPort` lives in `io.camunda.security.spring.spi` (the starter module) rather than under `io.camunda.security.core.port.out` because its signature speaks `HttpServletRequest`/`HttpServletResponse`. Same reasoning as the servlet-coupled SPIs in [ADR-0014](0014-unified-authz-framework-in-core.md).
 - A host that wants the library-default admin-setup redirect under OIDC does not get it via `@Import` alone — they must explicitly wire `addFilterAfter(adminUserCheckFilter, ...)` in their own chain configuration. Accepted because there is no live use case for it, and because re-enabling it by default would reopen the OIDC-trap scenario the narrowed wiring exists to close.
 - The two webapp chains are asymmetric in which filters they wire, by design. This is called out in code — `AdminUserCheckFilterConfiguration`'s class-level Javadoc states the BasicAuth-only wiring explicitly, and `ScopedWebappSecurityChainBuilder` carries a matching comment at each `buildOidcWebappChain` omission site — so the asymmetry is documented, not implicit.
 

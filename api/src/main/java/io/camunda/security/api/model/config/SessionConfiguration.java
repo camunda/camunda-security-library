@@ -43,7 +43,7 @@ public class SessionConfiguration {
 
   /**
    * How long a session may go without extending activity before it is treated as expired. See
-   * ADR-0023. Whether "extending activity" means any request (default) or only a dedicated
+   * ADR-0020. Whether "extending activity" means any request (default) or only a dedicated
    * heartbeat call is controlled independently by {@link #getHeartbeat()}.
    */
   public Duration getMaxInactiveInterval() {
@@ -78,7 +78,7 @@ public class SessionConfiguration {
   }
 
   /**
-   * Binds {@code camunda.security.session.heartbeat.*}. See ADR-0023: when {@code enabled} is
+   * Binds {@code camunda.security.session.heartbeat.*}. See ADR-0020: when {@code enabled} is
    * {@code false} (the default), every non-polling request extends a session's activity, exactly as
    * before this property existed. When {@code true}, only a call to the dedicated {@code
    * {basePath}/session/heartbeat} endpoint extends it — ordinary application requests stop

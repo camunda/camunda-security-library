@@ -40,7 +40,7 @@ import org.slf4j.LoggerFactory;
  * AuthorizationRejection.Tenant}; all other resource types produce {@link
  * AuthorizationRejection.Permission}. This is <em>not</em> the tenant-membership dimension ("may
  * this principal act within tenant X"), which is handled separately by {@code TenantAccessProvider}
- * / {@code TenantCheck} and does not flow through this port. See ADR-0017 and issue #486.
+ * / {@code TenantCheck} and does not flow through this port. See ADR-0014 and issue #486.
  *
  * <p><strong>Property-based checks</strong> ({@link #check(CamundaAuthentication,
  * RequiredAuthorization, Object)}): Delegates to the registered {@link
@@ -137,7 +137,7 @@ public final class AuthorizationService implements AuthorizationCheckPort {
    * <p>This is an RBAC check gated on {@code authorizationEnabled}, for every resource type
    * including {@link AuthorizationResourceType#TENANT} (which represents RBAC on tenant entities,
    * not tenant membership). The tenant-membership dimension is handled separately by {@code
-   * TenantAccessProvider} / {@code TenantCheck} and does not flow through this port. See ADR-0017
+   * TenantAccessProvider} / {@code TenantCheck} and does not flow through this port. See ADR-0014
    * and issue #486.
    *
    * @return {@link Either#right(Object) right(null)} when authorized or when authorization is

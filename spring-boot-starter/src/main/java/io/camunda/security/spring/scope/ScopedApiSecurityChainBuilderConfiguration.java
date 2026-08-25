@@ -26,7 +26,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
  * required infrastructure for the always-active API security chains and must not be guarded by
  * {@code @ConditionalOnBean} — doing so would allow timing-sensitive back-off when the {@link
  * AuthFailureHandler} has not yet been registered, breaking the downstream API chains that require
- * this builder (see ADR-0006).
+ * this builder (see ADR-0003).
  *
  * <p>By resolving {@link AuthFailureHandler} as a constructor argument rather than a condition, the
  * dependency is satisfied at bean-creation time (after all definitions are registered), eliminating

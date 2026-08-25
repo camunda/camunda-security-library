@@ -19,7 +19,7 @@ Full term definitions are in the [Glossary (§12)](./12-glossary.md). Quick refe
 - **Tenant** = a logical Tenant (data/access partition, e.g. `default`, `retail`) unless written as **Physical Tenant**.
 - **OC** at high level = the logical Orchestration Cluster; at runtime = Gateway/Search layer + Broker/Engine layer.
 - **Hub UI** / **OC UI** = aggregated management-plane / execution-plane frontends, not per-component UIs.
-- **scope** (filter-chain SPI): In the filter-chain SPI, _scope_ refers to a path-isolated API surface with its own security-chain configuration and provider set (see `CamundaSecurityScopeProvider`, ADR-0016).
+- **scope** (filter-chain SPI): In the filter-chain SPI, _scope_ refers to a path-isolated API surface with its own security-chain configuration and provider set (see `CamundaSecurityScopeProvider`, ADR-0013).
 - **Policy receiver** — a CSL-embedded host application that receives and enforces policy published by Hub, rather than authoring policy locally. OC instances using the `managed` deployment strategy and Optimize in full-mode deployments are policy receivers. See [Glossary (§12)](./12-glossary.md) for the full definition.
 
 ---

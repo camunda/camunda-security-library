@@ -44,7 +44,7 @@ import org.springframework.core.convert.support.GenericConversionService;
  * <p>The {@link WebSessionRepository} bean produced here is consumed directly by each chain's own
  * explicitly-installed {@code SessionRepositoryFilter} — see {@code
  * DefaultWebSessionFilterConfiguration} for the default surface and {@code
- * ScopedSecurityChainRegistrar} for physical-tenant scopes. See ADR-0012 for why filters are
+ * ScopedSecurityChainRegistrar} for physical-tenant scopes. See ADR-0009 for why filters are
  * installed per chain rather than through a single container-wide filter.
  *
  * <p>Self-registers {@link CamundaSecurityLibraryProperties} via {@link
@@ -87,7 +87,7 @@ public class WebSessionConfiguration {
   /**
    * Factory for per-scope {@link WebSessionRepository}s, used by {@code
    * ScopedSecurityChainRegistrar} to give each scoped {@code SessionRepositoryFilter} a store bound
-   * to its scope (ADR-0012). The {@link ScopedSessionStorePortProvider} is optional — when a host
+   * to its scope (ADR-0009). The {@link ScopedSessionStorePortProvider} is optional — when a host
    * contributes none, the factory reports {@link ScopedWebSessionRepositoryFactory#isAvailable()
    * unavailable} and scoped chains fall back to the shared {@link #webSessionRepository} or a
    * per-scope in-memory repository.
@@ -134,7 +134,7 @@ public class WebSessionConfiguration {
 
   /**
    * Every distinct store the expiry sweep must clean: the default-surface repository plus each
-   * per-scope one (ADR-0012). Resolved per sweep so scoped repositories created after startup are
+   * per-scope one (ADR-0009). Resolved per sweep so scoped repositories created after startup are
    * included.
    */
   private static Collection<WebSessionRepository> sweepableRepositories(

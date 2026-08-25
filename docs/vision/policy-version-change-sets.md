@@ -1,12 +1,18 @@
 ---
-status: Accepted
+status: Proposed
 ---
 
-# ADR-0001: PolicyVersion commits with full-policy propagation (iteration one)
+# PolicyVersion commits with full-policy propagation (iteration one)
+
+> **Not yet implemented.** This document was originally recorded as ADR-0001 and described a
+> design for a future capability. It was moved out of `docs/adr/` because no code implements it
+> yet — planned for Camunda 8.11. When work on this topic actually begins, revisit this document
+> and promote it back into `docs/adr/` as a new, sequentially-numbered ADR (do not reuse the old
+> number).
 
 ## Status
 
-Accepted
+Proposed
 
 ## Context
 

@@ -18,7 +18,7 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
  *
  * <p>Every {@link SessionRepositoryFilter} CSL installs on a chain is one of these: the default
  * (non-scoped) filter built by {@code DefaultWebSessionComponentsFactory} and the per-scope filters
- * built by {@code ScopedWebSessionComponentsFactory} (ADR-0012).
+ * built by {@code ScopedWebSessionComponentsFactory} (ADR-0009).
  *
  * <p>Behaviour is entirely inherited. The superclass keeps its own reference to the repository and
  * performs all session resolution and commit work; this subclass only remembers what it was handed.

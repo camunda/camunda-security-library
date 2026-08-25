@@ -44,7 +44,7 @@ class CamundaSecurityAutoConfigurationTest {
 
   @Test
   void notRegisteredInAutoConfigurationImports() throws IOException {
-    // Per ADR-0006, nothing in CSL activates from adding the Maven dependency alone. The umbrella
+    // Per ADR-0003, nothing in CSL activates from adding the Maven dependency alone. The umbrella
     // @AutoConfiguration must NOT be listed in CSL's own AutoConfiguration.imports file — hosts
     // opt in explicitly.
     final var loader = getClass().getClassLoader();
@@ -55,7 +55,7 @@ class CamundaSecurityAutoConfigurationTest {
     for (final URL url : importsResources) {
       final var properties = PropertiesLoaderUtils.loadProperties(new UrlResource(url));
       assertThat(properties.stringPropertyNames())
-          .as("CSL must not auto-register %s (ADR-0006)", url)
+          .as("CSL must not auto-register %s (ADR-0003)", url)
           .doesNotContain(CamundaSecurityAutoConfiguration.class.getName());
     }
   }

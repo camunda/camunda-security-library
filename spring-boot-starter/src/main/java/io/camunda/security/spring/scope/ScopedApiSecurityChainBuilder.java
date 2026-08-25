@@ -144,7 +144,7 @@ public final class ScopedApiSecurityChainBuilder {
    * calls {@code jwtAuthenticationConverter(...)} in that case, so pre-existing callers of the
    * decoder-only overload are unaffected.
    *
-   * <p>See ADR-0019 for why this is a per-invocation parameter rather than a globally-registered
+   * <p>See ADR-0016 for why this is a per-invocation parameter rather than a globally-registered
    * customizer bean: a single application may need multiple simultaneous chains (e.g. distinct API
    * versions), each with a different converter.
    *
@@ -337,7 +337,7 @@ public final class ScopedApiSecurityChainBuilder {
    * Authentication>} supplier for the OIDC arm. A {@code null} supplier reference is rejected
    * (mirroring {@code oidcDecoderSupplier}'s mandatory-reference treatment), but the supplier is
    * allowed to <em>return</em> {@code null} to mean "no converter override for this scope" — unlike
-   * {@code oidcDecoderSupplier}, whose result must never be {@code null}. See ADR-0019.
+   * {@code oidcDecoderSupplier}, whose result must never be {@code null}. See ADR-0016.
    */
   public SecurityFilterChain buildScopedApiChain(
       final HttpSecurity http,

@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0010: OIDC UserInfo — the login-time `userInfoEnabled` toggle and request-time claim augmentation
+# ADR-0007: OIDC UserInfo — the login-time `userInfoEnabled` toggle and request-time claim augmentation
 
 **Deciders**: Patrick Wunderlich
 
@@ -12,12 +12,12 @@ Accepted
 
 ## Context
 
-[ADR-0006](0006-no-spring-boot-auto-configuration.md) centralised the OIDC webapp filter chain in CSL, which brought two independent UserInfo-endpoint concerns into the library at once:
+[ADR-0003](0003-no-spring-boot-auto-configuration.md) centralised the OIDC webapp filter chain in CSL, which brought two independent UserInfo-endpoint concerns into the library at once:
 
 1. **Login-time fetch.** By default, Spring Security's `oauth2Login` DSL fetches the IdP's UserInfo endpoint after token exchange and merges the returned claims into the `OidcUser`. The `ClientRegistration` carries the UserInfo URL — either populated by OIDC discovery when `issuer-uri` is set, or by the explicit `user-info-uri` property when discovery is not used. Some IdPs do not implement `/userinfo` at all, or return claims the host does not want surfaced; the camunda monorepo has long-standing deployments that actively disable the fetch (see [`OidcAuthenticationConfiguration.userInfoEnabled`](https://github.com/camunda/camunda/blob/main/security/security-core/src/main/java/io/camunda/security/configuration/OidcAuthenticationConfiguration.java)), and losing that toggle on OC's adoption of the CSL chain (camunda#52121) would regress those deployments. The `OidcUserService` extension hook in [`OidcWebappSecurityConfiguration`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/security/OidcWebappSecurityConfiguration.java) is the existing escape valve, but it is all-or-nothing — a host has to hand-roll an entire `OidcUserService` just to skip the fetch.
 2. **Request-time augmentation.** OIDC access tokens are size-constrained; IdPs often omit authorization-relevant claims (groups, roles, custom attributes) from the token to keep it compact. The workaround is to call the IdP's `/userinfo` endpoint at request time — independent of login — and merge the additional claims into the claims map used for authorization decisions. The camunda monorepo already ships this behaviour in `CachingOidcClaimsProvider` / `OidcUserInfoAugmentationConfiguration`; until CSL owns it, Orchestration Cluster adoption via #38 cannot replace the monorepo's auth wiring without regressing this capability. Three invariants must hold regardless of implementation: the access token's JWT claims (cryptographically signed) must never be overrideable by an unsigned UserInfo response; a degraded `/userinfo` endpoint must not block authentication (fail-open); and a failing IdP must not be hammered with retries on every request (negative caching).
 
-[ADR-0009](0009-multi-idp-oidc-configuration.md) makes OIDC configuration additive across the flat block and `providers.oidc.<id>.*`. Since each entry binds to the same `OidcConfiguration` type, both concerns above become per-provider automatically once expressed as fields on that type.
+[ADR-0006](0006-multi-idp-oidc-configuration.md) makes OIDC configuration additive across the flat block and `providers.oidc.<id>.*`. Since each entry binds to the same `OidcConfiguration` type, both concerns above become per-provider automatically once expressed as fields on that type.
 
 These two concerns interact: the augmentation path derives its per-issuer UserInfo URI from the same `ClientRegistration` the login-time toggle controls. The core question this ADR answers:
 
@@ -37,7 +37,7 @@ camunda:
       oidc:
         user-info-enabled: true   # default
 
-      # Per-provider (multi-IdP), under the additive ADR-0009 shape:
+      # Per-provider (multi-IdP), under the additive ADR-0006 shape:
       providers:
         oidc:
           keycloak:
@@ -72,7 +72,7 @@ An opt-in `CachingOidcClaimsProvider` sits in the CSL OIDC chain, independent of
 - **Fail-open.** Any exception in the fetch path (network, non-2xx HTTP status, JSON parse error, OIDC §5.3.2 `sub` mismatch) is caught, logged at ERROR with the issuer and error message, and the JWT claims are returned unchanged. A negative-cache entry is stored immediately to prevent retry storms.
 - **Negative caching.** Failed fetches store a sentinel-marked entry that expires after `negativeCacheTtl` (default 5 s); within that window subsequent requests for the same token skip the fetch entirely. (Successful fetches share the same cache under a longer default TTL — 5 minutes, capped at 10,000 entries — so this is one cache serving both outcomes, not two.)
 - **Cache key: `iss+jti`, falling back to `iss+sub+iat+exp`.** No bearer-token material is held in cache-key space. The `iss` prefix is required because RFC 7519 §4.1.7 only mandates per-issuer uniqueness for `jti`; two providers can legitimately issue tokens with identical `jti` values. When `jti` is absent, the fallback uses `sub+iat+exp`; when neither key is constructable the cache is bypassed for that request (rare — every mainstream IdP emits at least `sub+iat+exp`).
-- **Per-issuer routing.** The provider builds an `issuer → userInfoUri` map from `ClientRegistration`s at construction time. Each call's JWT `iss` claim selects the target URL. An issuer with no entry in the map is fail-open at DEBUG (not WARN, to avoid log spam on every request) — the JWT claims are returned unaugmented. This dovetails with the multi-IdP shape from [ADR-0009](0009-multi-idp-oidc-configuration.md).
+- **Per-issuer routing.** The provider builds an `issuer → userInfoUri` map from `ClientRegistration`s at construction time. Each call's JWT `iss` claim selects the target URL. An issuer with no entry in the map is fail-open at DEBUG (not WARN, to avoid log spam on every request) — the JWT claims are returned unaugmented. This dovetails with the multi-IdP shape from [ADR-0006](0006-multi-idp-oidc-configuration.md).
 - **HTTP client.** `java.net.http.HttpClient` (JDK built-in, no extra dependency), wrapped behind a package-private fetcher interface so unit tests can inject a mock without spawning a real HTTP server.
 - **Micrometer metrics (optional).** `camunda.oidc.userinfo.cache` (Counter; `issuer`, `result`: hit/miss/negative_hit) and `camunda.oidc.userinfo.fetch` (Timer; `issuer`, `outcome`: success/failure). Metric names match the monorepo reference; tag shapes intentionally diverge to carry more context than the monorepo's untagged/partially-tagged equivalents — a required Micrometer dependency, but the provider runs uninstrumented when no `MeterRegistry` bean is present (the constructor accepts a nullable one).
 - **Bean wiring.** `OidcClaimsProviderConfiguration` is a plain `@Configuration` activated when `camunda.security.authentication.method=oidc`; the caching bean carries `@ConditionalOnProperty(enabled=true)` and the noop carries the mutually exclusive `@ConditionalOnProperty(enabled=false, matchIfMissing=true)`, both additionally gated `@ConditionalOnMissingBean` so registration is deterministic regardless of declaration order and a host-supplied `OidcClaimsProvider` bean suppresses both. This global-method gating governs only the *cluster-wide* default. **`ScopedOidcClaimsProviderFactory` (`spring-boot-starter/.../oidc/ScopedOidcClaimsProviderFactory.java`) is registered separately and unconditionally** by `ScopedOidcInfrastructureConfiguration`, independent of `camunda.security.authentication.method` — it provides the same claims-provider construction for an arbitrary per-scope `AuthenticationConfiguration`, reading the augmentation flag and cache settings from that scope's own config rather than the global properties. So per-provider/per-scope augmentation configuration already exists today, not deferred to future scaffolding, and it is available even on a cluster whose global method is `basic`.
@@ -91,7 +91,7 @@ In both cases, the interaction is a consequence of one design choice — nulling
 - **Boolean, not URL, for the login-time toggle.** The URL is already first-class on `OidcConfiguration` (`userInfoUri`) and populated by discovery when `issuer-uri` is set. The decision worth surfacing to operators is "should we call it?", not "what is its address?" — mirrors the monorepo.
 - **Apply the toggle post-build by nulling `userInfoUri` on the registration, not by gating `oauth2Login`'s `userInfoEndpoint(...)`.** Gating the DSL would only cover the webapp login flow and would leave the URL visible on the registration for any other reader — notably the augmentation layer above, which derives its per-issuer map from that same field. Nulling at the source keeps every consumer honest and matches the monorepo's `ClientRegistrationFactory`.
 - **Default `true` for the toggle.** Matches Spring Security's out-of-the-box behaviour and the monorepo's default; disabling fetch is the opt-in for hosts that need it.
-- **Per-provider by construction, no global override, for both mechanisms.** Both fields live on `OidcConfiguration`, so the additive multi-IdP shape from ADR-0009 expresses per-provider toggles for free; a separate global override would add ambiguity without behavioural gain.
+- **Per-provider by construction, no global override, for both mechanisms.** Both fields live on `OidcConfiguration`, so the additive multi-IdP shape from ADR-0006 expresses per-provider toggles for free; a separate global override would add ambiguity without behavioural gain.
 - **Augmentation disabled by default, fail-open, negative-cached.** Augmentation is an opt-in capability layered on top of a potentially-unreliable external call; defaulting it off means existing deployments are unaffected until they opt in, and the fail-open/negative-cache combination means a degraded `/userinfo` degrades augmentation, not authentication.
 - **Fail fast on a provider-construction-time config mismatch, fail open on a request-time fetch failure.** These are different failure classes: an augmentation config that can never augment anything is a deployment mistake the operator needs to see immediately, while a transient `/userinfo` outage is an expected operational condition the auth chain must tolerate. Conflating them — either failing open on both, or failing the request on both — would hide the mistake in the first case or take down authentication in the second.
 
@@ -110,7 +110,7 @@ In both cases, the interaction is a consequence of one design choice — nulling
 **Positive**
 
 - OC adoption (camunda#52121, #38) preserves customer deployments that disable UserInfo fetch today and those that rely on the monorepo's claim-augmentation cache, with no code change and only a property-path migration.
-- Both mechanisms are per-provider with no new code paths, falling out of the additive ADR-0009 shape and the already-existing `ScopedOidcClaimsProviderFactory` — a multi-IdP, multi-scope deployment can mix fetch-enabled/disabled and augmentation-enabled/disabled per provider today.
+- Both mechanisms are per-provider with no new code paths, falling out of the additive ADR-0006 shape and the already-existing `ScopedOidcClaimsProviderFactory` — a multi-IdP, multi-scope deployment can mix fetch-enabled/disabled and augmentation-enabled/disabled per provider today.
 - The login-time toggle composes with the existing `OidcUserService` SPI rather than competing with it; hosts needing finer control still register their own bean, hosts that only need on/off get a property.
 - Augmentation degrades gracefully under IdP failure: the first failure adds a negative-cache entry, retries are suppressed for `negativeCacheTtl`, and authentication continues throughout.
 - The coupling between the two mechanisms is a stated, tested behaviour (config-mismatch fail-fast in one shape, silent per-issuer no-op in the other) rather than an undocumented trap a host discovers via a support ticket.

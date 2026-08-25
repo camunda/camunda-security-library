@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0012: Own the web-session lifecycle behind `SessionStorePort`, with one session filter per surface and one OIDC logout handler per chain
+# ADR-0009: Own the web-session lifecycle behind `SessionStorePort`, with one session filter per surface and one OIDC logout handler per chain
 
 **Deciders**: Patrick Wunderlich
 
@@ -23,7 +23,7 @@ session *storage* was always intended to be a CSL contract satisfied by a host-p
 
 Three further forces shaped the decision after the initial inversion landed:
 
-1. **Multiple webapp surfaces in one browser.** [ADR-0016](0016-camunda-security-scope-provider-spi.md)
+1. **Multiple webapp surfaces in one browser.** [ADR-0013](0013-camunda-security-scope-provider-spi.md)
    lets a host contribute path-scoped chains — the motivating case is an Orchestration Cluster
    running *physical tenants*, many isolated tenants behind per-tenant URL prefixes. A webapp chain
    mints a session (`oauth2Login` needs one to hold the `SecurityContext` and the
@@ -125,7 +125,7 @@ backend.
 `WebSessionMapper`, `WebSessionAttributeConverter`, the per-scope repository factory and the
 expiry-sweep scheduler — each `@ConditionalOnMissingBean`. It is deliberately **left out of the
 `CamundaSecurityAutoConfiguration` umbrella** (an intentional exception to the "add new configs to
-the umbrella" convention, see [ADR-0006](0006-no-spring-boot-auto-configuration.md)): the host must
+the umbrella" convention, see [ADR-0003](0003-no-spring-boot-auto-configuration.md)): the host must
 `@Import` it behind its own web/gateway gate, because activation is tied to the OC-only
 `@ConditionalOnRestGatewayEnabled` which CSL cannot reference. The deletion scheduler's
 `Thread.UncaughtExceptionHandler` is an overridable `@ConditionalOnMissingBean` bean so the host can
@@ -173,7 +173,7 @@ cookies first), but server-side cookie parsers resolve duplicate names inconsist
 per-scope name removes the ambiguity.
 
 To keep the `basePath → name` mapping injective without an opaque hash suffix, the registrar's
-duplicate-`basePath` rejection ([ADR-0016](0016-camunda-security-scope-provider-spi.md)) is extended
+duplicate-`basePath` rejection ([ADR-0013](0013-camunda-security-scope-provider-spi.md)) is extended
 with **startup fail-fast checks** rather than a runtime ambiguity: reject any two scopes whose
 sanitized cookie names collide, reject a scope whose sanitized suffix is empty (a `basePath` with no
 alphanumerics maps to `""`, which would yield the non-distinct `camunda-session-`), and reject a
@@ -183,7 +183,7 @@ of their own in RFC 6265; the relevant budget is the ~4096-byte per-cookie (`nam
 which a session-id value never threatens even for a long sanitized name — the 200-character cap
 simply fails fast instead of silently emitting an over-budget cookie.
 
-Isolation is therefore **structural**, the webapp analogue of ADR-0016's per-scope decoder: because
+Isolation is therefore **structural**, the webapp analogue of ADR-0013's per-scope decoder: because
 the session cookie is `Path`-scoped with a scope-distinct name, the browser only ever sends a scope's
 session cookie to that scope's prefix — never to a sibling scope, and never colliding with the
 primary chain's `camunda-session` at `Path = /`.
@@ -298,11 +298,11 @@ classes, whereas scopes are an open-ended, host-defined list discovered at runti
 
 ### 6. The scoped API chain honours the per-scope session
 
-The scoped API chain ([ADR-0016](0016-camunda-security-scope-provider-spi.md)) installs the **same**
+The scoped API chain ([ADR-0013](0013-camunda-security-scope-provider-spi.md)) installs the **same**
 per-scope session components and keeps `SessionCreationPolicy.NEVER` (read, never create). A request
 to `basePath + /v2/**` — nested under `basePath`, so the browser sends the scope's session cookie —
 is authenticated by **either** the per-scope session (SPA XHR) **or** a bearer token (machine
-client). This extends [ADR-0014](0014-oidc-bearer-tokens-on-api-chain-only.md)'s "the session is
+client). This extends [ADR-0011](0011-oidc-bearer-tokens-on-api-chain-only.md)'s "the session is
 honoured on the API chain" property to per-scope sessions without contradicting it: bearer validation
 remains API-chain-only and the webapp chain remains login/session-only. For the default surface the
 same property is now achieved *deliberately* (§5) instead of as an accidental side effect of the
@@ -383,7 +383,7 @@ additional wiring.
   removes the entire "context gone at commit" failure class rather than papering over one trigger of
   it, and it needs no extra dispatch-type registrations.
 - **Keyed by `basePath`, not by tenant.** Keeps `core` scope-agnostic; the tenant mapping stays
-  host-side, matching ADR-0016.
+  host-side, matching ADR-0013.
 - **Symmetry over reconciliation.** "Keep both filter mechanisms and make them coordinate" — have the
   global filter skip scoped paths, or reset `INVALID_SESSION_ID_ATTR` between the two filters — only
   closes one interaction, and the reset variant additionally depends on Spring Session internal field
@@ -470,8 +470,8 @@ additional wiring.
   than relying on a single fan-out adapter — a little extra wiring in exchange for every adapter
   staying single-store.
 - The scoped API chain reading a session means it is no longer purely stateless; intended
-  ([ADR-0014](0014-oidc-bearer-tokens-on-api-chain-only.md)), but a behavioural addition relative to
-  the API-only scoped chains of ADR-0016. Honouring the session there requires the API surface to be
+  ([ADR-0011](0011-oidc-bearer-tokens-on-api-chain-only.md)), but a behavioural addition relative to
+  the API-only scoped chains of ADR-0013. Honouring the session there requires the API surface to be
   nested under `basePath`.
 - A host can no longer replace the OIDC logout handler with its own `LogoutSuccessHandler`. The only
   known customisation is the route and the port now carries it; wider per-host logout behaviour is

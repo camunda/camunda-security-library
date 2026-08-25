@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0017: Unify authorization checking in CSL `core` behind `AuthorizationCheckPort`
+# ADR-0014: Unify authorization checking in CSL `core` behind `AuthorizationCheckPort`
 
 **Deciders**: Patrick Wunderlich
 
@@ -132,7 +132,7 @@ relevant principal identities is the caller's job (normally `AuthorizationChecke
 
 `MembershipPort` (`core/port/out/`) resolves a principal's mapping-rule, group, role and tenant IDs
 through a query that grows along the chain (mapping rules → groups → roles → tenants), matching the
-lazy membership resolution of [ADR-0008](0008-lazy-load-authentication-memberships.md).
+lazy membership resolution of [ADR-0005](0005-lazy-load-authentication-memberships.md).
 
 The engine supplies RocksDB-backed implementations of both; the search layer keeps its
 index-backed adapters. `MappingRuleMatcher` already bridges both layers. **Caching is an
@@ -204,7 +204,7 @@ translates `IllegalArgumentException` into `OAuth2AuthenticationException`.
 
 In the starter, `AuthorizationCheckerConfiguration` and `AuthorizationConfiguration`
 (`io.camunda.security.spring.authz`) construct the graph as individual beans, reachable through the
-`CamundaSecurityAutoConfiguration` umbrella ([ADR-0006](0006-no-spring-boot-auto-configuration.md)).
+`CamundaSecurityAutoConfiguration` umbrella ([ADR-0003](0003-no-spring-boot-auto-configuration.md)).
 Each is a plain `@Configuration` carrying a **class-level `@ConditionalOnBean`** on the ingredient it
 needs — `AuthorizationScopeRepositoryPort` and `AuthorizationChecker` respectively — with
 `@ConditionalOnMissingBean` on the `@Bean` method inside. `AuthorizationConfiguration`'s method-level
@@ -261,11 +261,11 @@ port — they are unaffected by everything above:
 
 Both SPIs live in the starter rather than `core/port/out` because their signatures speak
 `HttpServletRequest`/`HttpServletResponse` and `core` is jakarta-servlet-free by design
-([ADR-0006](0006-no-spring-boot-auto-configuration.md)). Any servlet-coupled SPI must live in the
+([ADR-0003](0003-no-spring-boot-auto-configuration.md)). Any servlet-coupled SPI must live in the
 starter for the same reason.
 
 `WebAppAuthorizationFilterConfiguration` wires the filter and is activated by explicit `@Import`
-(ADR-0006); the chain configurations inject it via `ObjectProvider`, so a host that has not
+(ADR-0003); the chain configurations inject it via `ObjectProvider`, so a host that has not
 registered the prerequisite SPIs sees the chain exactly as before. The global-disable gate
 (`camunda.security.authorizations.enabled=false`) is applied in the filter as well as in
 `AuthorizationService`, because a host may supply its own `AuthorizationCheckPort` that is unaware

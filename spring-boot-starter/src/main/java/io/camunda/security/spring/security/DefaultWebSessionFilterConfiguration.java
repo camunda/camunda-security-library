@@ -23,7 +23,7 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
  * Provides the {@link SessionRepositoryFilter} installed on the default (non-scoped) webapp and API
- * chains (ADR-0012). Always active: the primary chains always need a session filter, exactly as
+ * chains (ADR-0009). Always active: the primary chains always need a session filter, exactly as
  * every physical-tenant scope always gets one.
  *
  * <p>The backing {@link org.springframework.session.SessionRepository} follows the same preference
@@ -58,7 +58,7 @@ public class DefaultWebSessionFilterConfiguration {
    * {@code defaultSessionRepositoryFilter} is itself a servlet {@link jakarta.servlet.Filter} bean,
    * so without this Spring Boot would auto-register it as a container-wide filter — in addition to
    * its explicit per-chain installation via {@code addFilterBefore(SecurityContextHolderFilter)} —
-   * reintroducing exactly the nested-filter, shared-request-attribute interference ADR-0012
+   * reintroducing exactly the nested-filter, shared-request-attribute interference ADR-0009
    * removes. Mirrors {@code AdminUserCheckFilterConfiguration} / {@code
    * WebAppAuthorizationFilterConfiguration}.
    */

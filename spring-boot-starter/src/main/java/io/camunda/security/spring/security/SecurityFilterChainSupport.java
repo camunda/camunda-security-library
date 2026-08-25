@@ -225,7 +225,7 @@ public final class SecurityFilterChainSupport {
    * Applies every registered {@link SecurityHeadersCustomizer} bean to the given filter chain, in
    * {@link org.springframework.core.annotation.Order} order. When no bean is registered this is a
    * no-op, so CSL's static, property-driven header configuration (see {@link #setupSecureHeaders})
-   * is unaffected. See ADR-0019.
+   * is unaffected. See ADR-0016.
    */
   public static void applySecurityHeadersCustomizers(
       final HttpSecurity http,

@@ -17,7 +17,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * Terminal filter for the session activity-heartbeat endpoint ({@code POST
- * {basePath}/session/heartbeat}, ADR-0023). Responds {@code 204 No Content} and does not continue
+ * {basePath}/session/heartbeat}, ADR-0020). Responds {@code 204 No Content} and does not continue
  * the filter chain — there is no further processing a heartbeat call needs.
  *
  * <p>This filter has no knowledge of {@code camunda.security.session.heartbeat.enabled}; its only
