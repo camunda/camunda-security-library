@@ -260,9 +260,8 @@ port — they are unaffected by everything above:
   `RedirectingWebAppAccessDeniedAdapter`, which redirects to `<contextPath>/<webApp>/forbidden`.
 
 Both SPIs live in the starter rather than `core/port/out` because their signatures speak
-`HttpServletRequest`/`HttpServletResponse` and `core` is jakarta-servlet-free by design
-([ADR-0003](0003-no-spring-boot-auto-configuration.md)). Any servlet-coupled SPI must live in the
-starter for the same reason.
+`HttpServletRequest`/`HttpServletResponse` and `core` is jakarta-servlet-free by design (enforced by
+`DomainArchTest`). Any servlet-coupled SPI must live in the starter for the same reason.
 
 `WebAppAuthorizationFilterConfiguration` wires the filter and is activated by explicit `@Import`
 (ADR-0003); the chain configurations inject it via `ObjectProvider`, so a host that has not

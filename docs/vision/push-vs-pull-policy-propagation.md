@@ -4,11 +4,12 @@ status: Proposed
 
 # Push vs Pull Policy Propagation (Hub ↔ Orchestration Clusters)
 
-> **Not yet implemented.** This document was originally recorded as ADR-0003 and described a
-> design for a future capability. It was moved out of `docs/adr/` because no code implements it
-> yet — planned for Camunda 8.11. When work on this topic actually begins, revisit this document
-> and promote it back into `docs/adr/` as a new, sequentially-numbered ADR (do not reuse the old
-> number).
+> **Not yet implemented.** This document was moved out of `docs/adr/` — where it was originally
+> recorded as ADR-0003 — because no code implements it yet, planned for Camunda 8.11. As part of
+> the same consolidation, ADR-0003 was reassigned to an unrelated, currently-Accepted decision, so
+> use this file's git history, not that ADR, to trace this document's origin. When work on this
+> topic actually begins, revisit this document and promote it back into `docs/adr/` as a new,
+> sequentially-numbered ADR (do not reuse the old number).
 
 ## Status
 

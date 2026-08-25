@@ -151,9 +151,10 @@ builds **once** a set of per-scope session components (`ScopedWebSessionComponen
 injects them into *both* that scope's webapp and API chains:
 
 - a `SessionRepositoryFilter` bound to the scope, over the repository resolved in §4;
-- a `DefaultCookieSerializer` with `Path = basePath`, wrapped in `ContextPathScopedCookieSerializer`
-  so the scope prefix rather than the servlet context path determines the cookie `Path`, and a
-  cookie name **derived deterministically from `basePath`**;
+- a `DefaultCookieSerializer` wrapped in `ContextPathScopedCookieSerializer`, which sets
+  `Path = contextPath + basePath` — prepending the servlet context path onto the scope prefix
+  rather than bypassing it, so the cookie `Path` is correct under any deployment context path — and
+  a cookie name **derived deterministically from `basePath`**;
 - a session-reading `SecurityContextRepository`;
 - the CSRF cookie scoped to the same prefix, with its own derived name.
 
@@ -167,10 +168,11 @@ strip the leading `/`, collapse each run of non-alphanumeric characters (`[^A-Za
 own helper guarantees the cookie name matches what CSL derives elsewhere for the same scope.
 
 A scope-distinct **name** — not merely a distinct `Path` — is required: the primary unprefixed chain
-keeps `camunda-session` at `Path = /`, which the browser sends *alongside* a scoped cookie on a
-nested path, leaving two same-named cookies. Browsers do order them (RFC 6265 sends longer-`Path`
-cookies first), but server-side cookie parsers resolve duplicate names inconsistently, so a distinct
-per-scope name removes the ambiguity.
+keeps `camunda-session` at `Path = contextPath` (Spring Session's `DefaultCookieSerializer` scopes
+the path to the deployment's context path even without a wrapper), which the browser sends
+*alongside* a scoped cookie on a nested path, leaving two same-named cookies. Browsers do order them
+(RFC 6265 sends longer-`Path` cookies first), but server-side cookie parsers resolve duplicate names
+inconsistently, so a distinct per-scope name removes the ambiguity.
 
 To keep the `basePath → name` mapping injective without an opaque hash suffix, the registrar's
 duplicate-`basePath` rejection ([ADR-0013](0013-camunda-security-scope-provider-spi.md)) is extended
@@ -186,7 +188,7 @@ simply fails fast instead of silently emitting an over-budget cookie.
 Isolation is therefore **structural**, the webapp analogue of ADR-0013's per-scope decoder: because
 the session cookie is `Path`-scoped with a scope-distinct name, the browser only ever sends a scope's
 session cookie to that scope's prefix — never to a sibling scope, and never colliding with the
-primary chain's `camunda-session` at `Path = /`.
+primary chain's `camunda-session` at `Path = contextPath`.
 
 ### 4. Durable per-scope storage routes structurally, via `ScopedSessionStorePortProvider`
 
@@ -347,7 +349,7 @@ allow-listing. The `ScopedSecurityDescriptor` does not change — no webapp fiel
 host contract.
 
 **`CamundaOidcLogoutSuccessHandler`** (`io.camunda.security.spring.security`) is `final` and extends
-Spring Security's `OidcClientInitiatedLogoutSuccessHandler`, adding two customisations on top of
+Spring Security's `OidcClientInitiatedLogoutSuccessHandler`, adding three customisations on top of
 vanilla RP-initiated logout:
 
 - **Post-logout redirect URI from the `Referer` header.** The validated `Referer` is stored on the
@@ -362,11 +364,18 @@ vanilla RP-initiated logout:
 - **`login_hint` → `logout_hint` propagation.** When the OIDC user carries a `login_hint` claim it is
   forwarded as a `logout_hint` query parameter to the IdP's end-session endpoint, so the IdP
   terminates the right session for users with several active identities at the same provider.
+- **2xx JSON response instead of a redirect for fetch/XHR callers.** Full-page navigations still get
+  the standard 302 redirect to the IdP's `end_session_endpoint`. Fetch/XHR calls — detected via
+  `Sec-Fetch-Dest: empty`, with an `Accept: application/json` fallback when that header is absent —
+  instead receive 200 with a JSON body `{"url": "<end-session-url>"}` when an end-session URL is
+  available, or 204 with no body when it is not, since a 302 cannot drive a cross-origin top-level
+  navigation from a fetch call and the frontend needs the URL back to navigate itself.
 
 Two public constants, `POST_LOGOUT_REDIRECT_ATTRIBUTE` and `REDIRECT_MESSAGE_ATTRIBUTE`, are the
 host-facing contract for reading those values. Both attributes are written to the HTTP session — not
-the request — so they survive the redirect the handler issues and are readable by the post-logout
-page on the subsequent request. Hosts reference the constants instead of hard-coding the strings.
+the request — so they survive past the response the handler issues (a redirect for full-page
+navigations, a JSON body for fetch/XHR callers) and are readable by the post-logout page on the
+subsequent request. Hosts reference the constants instead of hard-coding the strings.
 Auth-context validation runs *before* the end-session diagnostic: Spring's `super.determineTargetUrl`
 returns `getDefaultTargetUrl()` for *any* non-OIDC authentication context (non-`OAuth2AuthenticationToken`,
 non-`OidcUser` principal, unknown `registrationId`), not only when the IdP publishes no
