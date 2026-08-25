@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0011: Lazy-load membership fields on `CamundaAuthentication`
+# ADR-0008: Lazy-load membership fields on `CamundaAuthentication`
 
 **Deciders**: timcline
 

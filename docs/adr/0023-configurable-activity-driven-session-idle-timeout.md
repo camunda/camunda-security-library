@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0042: Configurable session idle timeout driven by client activity, not request traffic
+# ADR-0023: Configurable session idle timeout driven by client activity, not request traffic
 
 **Deciders**: Timothy Cline (timcline)
 
@@ -51,7 +51,7 @@ behavior for any host that hasn't opted in?
 
 **A new per-scope endpoint**, `POST {basePath}/session/heartbeat`, installed on every webapp chain — the
 primary surface and every physical-tenant scope, both OIDC and Basic-auth chains — the same way `/login`,
-`/logout`, and `/sso-callback` already derive from `basePath` ([ADR-0025](0025-camunda-security-scope-provider-spi.md)).
+`/logout`, and `/sso-callback` already derive from `basePath` ([ADR-0016](0016-camunda-security-scope-provider-spi.md)).
 Reusing that derivation gets correct per-scope cookie/session routing for free and needs no new
 scoping design.
 
@@ -91,7 +91,7 @@ activity is a separate, explicitly out-of-scope control (see Consequences).
 - **Repurposes the existing polling-exclusion lever rather than adding a parallel one.** The inspection
   point that already recognizes `x-is-polling` is the natural place to also recognize the heartbeat path —
   a change to one existing, narrow method, not new plumbing.
-- **Endpoint derived from `basePath`, not a new scoping mechanism.** Reuses ADR-0025's pattern so per-scope
+- **Endpoint derived from `basePath`, not a new scoping mechanism.** Reuses ADR-0016's pattern so per-scope
   cookie/session routing, and support for both OIDC and Basic auth, come for free.
 - **Shared frontend package over ad hoc per-app implementations.** Centralizes throttle/listener logic in
   one versioned artifact instead of every consuming team (Operate, Tasklist, Optimize, and future adopters)
@@ -140,10 +140,10 @@ activity is a separate, explicitly out-of-scope control (see Consequences).
 
 - **Reuse Spring Boot's `server.servlet.session.timeout`** instead of a new CSL property. Rejected — CSL
   deliberately does not rely on Spring Boot's own session machinery
-  ([ADR-0017](0017-session-store-port-and-web-session-ownership.md) removed
+  ([ADR-0012](0012-session-store-port-and-web-session-ownership.md) removed
   `@EnableSpringHttpSession`); repurposing a Boot-owned property whose usual meaning doesn't match what CSL
   does underneath would be a less explicit activation path than this library's opt-in-by-name convention
-  ([ADR-0008](0008-no-spring-boot-auto-configuration.md)).
+  ([ADR-0006](0006-no-spring-boot-auto-configuration.md)).
 - **Inverse header-tagging on ordinary business calls** to mark selected requests as "this counts as
   activity," instead of one dedicated endpoint. Rejected — spreads the contract across every call site in
   every frontend that wants to opt in; easy to forget on a new API call, hard to audit.

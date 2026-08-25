@@ -22,7 +22,7 @@ YOU MUST write tests where there are logic branches — not blanket coverage for
 
 YOU MUST run `mvn verify` before presenting work as complete. A clean run means no test failures and `BUILD SUCCESS`.
 
-IMPORTANT: Do NOT create or modify `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` in CSL itself — nothing must activate from adding the Maven dependency alone (ADR-0008). The single permitted use of `@AutoConfiguration` in the library is the opt-in umbrella `io.camunda.security.spring.CamundaSecurityAutoConfiguration`, which is deliberately left out of `AutoConfiguration.imports` so hosts activate it explicitly (via `@ImportAutoConfiguration` or their own imports file). If you find yourself writing `@AutoConfiguration` on any other class, or registering anything in CSL's `AutoConfiguration.imports`, stop — see ADR-0008 and the conventions doc instead.
+IMPORTANT: Do NOT create or modify `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` in CSL itself — nothing must activate from adding the Maven dependency alone (ADR-0006). The single permitted use of `@AutoConfiguration` in the library is the opt-in umbrella `io.camunda.security.spring.CamundaSecurityAutoConfiguration`, which is deliberately left out of `AutoConfiguration.imports` so hosts activate it explicitly (via `@ImportAutoConfiguration` or their own imports file). If you find yourself writing `@AutoConfiguration` on any other class, or registering anything in CSL's `AutoConfiguration.imports`, stop — see ADR-0006 and the conventions doc instead.
 
 ## Hard Rules
 
@@ -35,5 +35,5 @@ IMPORTANT: Do NOT create or modify `META-INF/spring/org.springframework.boot.aut
 - YOU MUST NOT log secrets, tokens, passwords, or PII at any log level.
 - IMPORTANT: All production classes must be `final` unless they are intentional extension points
 - IMPORTANT: All domain model classes must be records — no mutable model classes
-- YOU MUST NOT introduce Spring, Jakarta Servlet, or Jackson dependencies into the domain module — neither runtime (`jackson-databind`, `jackson-core`) nor annotations (`jackson-annotations`). Domain records stay free of serialization concerns; if a host needs custom JSON shape for a CSL type, it registers a Jackson mixin on its own `ObjectMapper` (see ADR-0028 and OC's `MsgPackConverter.CamundaAuthenticationMixin` for the precedent).
+- YOU MUST NOT introduce Spring, Jakarta Servlet, or Jackson dependencies into the domain module — neither runtime (`jackson-databind`, `jackson-core`) nor annotations (`jackson-annotations`). Domain records stay free of serialization concerns; if a host needs custom JSON shape for a CSL type, it registers a Jackson mixin on its own `ObjectMapper` (see ADR-0017 and OC's `MsgPackConverter.CamundaAuthenticationMixin` for the precedent).
 - **Configuration classes:** Public config data models (non-record classes with getters/setters) must be placed in `api/model/config/` to expose them in the public contract. Spring `@ConfigurationProperties` binding logic stays in `spring-boot-starter/`. This keeps the config model framework-agnostic and available to all adopters.

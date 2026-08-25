@@ -49,7 +49,7 @@ import org.springframework.security.web.SecurityFilterChain;
  * <p>One path is a deliberate exception to "permit-all": the session activity-heartbeat endpoint
  * (see {@link io.camunda.security.spring.filter.SessionHeartbeatFilter}) has no downstream
  * authorization filter of its own to fall back on, so it carries an explicit {@code
- * .authenticated()} rule ahead of the chain's {@code permitAll()} catch-all (ADR-0042).
+ * .authenticated()} rule ahead of the chain's {@code permitAll()} catch-all (ADR-0023).
  */
 class BasicAuthWebappPermitAllChainTest {
 

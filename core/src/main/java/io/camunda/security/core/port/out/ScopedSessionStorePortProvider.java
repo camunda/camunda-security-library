@@ -17,7 +17,7 @@ package io.camunda.security.core.port.out;
  * the request scope is torn down) — the library binds each scope's {@code SessionRepositoryFilter}
  * to its own {@code WebSessionRepository} backed by the port returned here. Routing is then
  * structural: the store is decided by which scoped filter handles the request, not by ambient
- * context. See ADR-0017.
+ * context. See ADR-0012.
  *
  * <p>Keyed by {@code basePath} — the scope identity the library owns — so the library stays
  * scope-agnostic; the host maps {@code basePath} to its own notion of a scope (for example a

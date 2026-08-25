@@ -45,7 +45,7 @@ In CSL, a policy is the effective access configuration derived from those buildi
 - **Models:** always Java records (never mutable classes)
 - **Config classes:** cannot be records (Spring `@ConfigurationProperties` needs mutability)
 - **Sealed by default:** all production classes must be `final` unless they are intentional extension points
-- **No auto-configuration by default:** Configuration classes in `spring-boot-starter/` are plain `@Configuration` classes that host applications activate by explicit `@Import`. Do NOT register classes in CSL's own `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` — nothing must activate automatically from adding the dependency. The single exception is the opt-in umbrella `CamundaSecurityAutoConfiguration`, which is annotated `@AutoConfiguration` but deliberately left out of `AutoConfiguration.imports`; hosts activate it explicitly via `@ImportAutoConfiguration(CamundaSecurityAutoConfiguration.class)` or by listing it in their own imports file. See ADR-0008.
+- **No auto-configuration by default:** Configuration classes in `spring-boot-starter/` are plain `@Configuration` classes that host applications activate by explicit `@Import`. Do NOT register classes in CSL's own `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` — nothing must activate automatically from adding the dependency. The single exception is the opt-in umbrella `CamundaSecurityAutoConfiguration`, which is annotated `@AutoConfiguration` but deliberately left out of `AutoConfiguration.imports`; hosts activate it explicitly via `@ImportAutoConfiguration(CamundaSecurityAutoConfiguration.class)` or by listing it in their own imports file. See ADR-0006.
 - **`@ConditionalOnMissingBean`:** every library-supplied default bean must have `@ConditionalOnMissingBean` so a host that imports the configuration can still override individual beans.
 - **No `System.out.print`:** use SLF4J (`LOG.debug/info/warn/error`)
 - **All new classes must have tests**
@@ -65,8 +65,8 @@ An interface is always a `Port`. Use `port/in/` for inbound ports and `port/out/
   Host-facing types that assemble or resolve something per scope are conventionally prefixed
   `Scoped*` (e.g. `ScopedSessionStorePortProvider`, `ScopedWebSessionRepositoryFactory`,
   `ScopedAuthorizationCheckPortFactory`). Don't introduce tenant-flavored names (`*TenantPort`,
-  `*PhysicalTenant*`) in `core` — that's the host's vocabulary, not the library's. See ADR-0025,
-  ADR-0017, ADR-0041.
+  `*PhysicalTenant*`) in `core` — that's the host's vocabulary, not the library's. See ADR-0016,
+  ADR-0012, ADR-0022.
 
 ### Error Handling
 

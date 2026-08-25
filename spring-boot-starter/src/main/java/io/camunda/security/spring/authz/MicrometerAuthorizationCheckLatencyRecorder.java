@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit;
  * port's name, description, and SLO-bucket constants, so this adapter and any other host's adapter
  * (e.g. zeebe/engine's non-Spring recorder) publish the same metric definition for those fields.
  * {@code METRIC_BASE_UNIT} is excepted — {@code Timer.Builder} has no {@code baseUnit(...)} setter,
- * so this adapter's meter does not carry it. See ADR-0041.
+ * so this adapter's meter does not carry it. See ADR-0022.
  */
 final class MicrometerAuthorizationCheckLatencyRecorder
     implements AuthorizationCheckLatencyRecorder {

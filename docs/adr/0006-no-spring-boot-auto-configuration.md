@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0008: Security configuration: chain catalog and explicit host activation
+# ADR-0006: Security configuration: chain catalog and explicit host activation
 
 **Deciders**: Patrick Wunderlich
 

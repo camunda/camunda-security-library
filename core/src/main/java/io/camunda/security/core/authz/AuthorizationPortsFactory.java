@@ -22,7 +22,7 @@ import java.util.Objects;
  *
  * <p>The full assembly ({@link AuthorizationChecker} + {@link LazyTokenClaimsConverter} + {@link
  * AuthorizationService}) previously existed only as Spring {@code @Configuration} in the {@code
- * spring-boot-starter}. Per ADR-0008 (no auto-configuration), non-Spring consumers such as the
+ * spring-boot-starter}. Per ADR-0006 (no auto-configuration), non-Spring consumers such as the
  * Zeebe engine cannot use those starter beans and had to hand-assemble the graph, naming the {@code
  * core}-internal {@link AuthorizationChecker} and {@link LazyTokenClaimsConverter} types directly.
  * This factory captures the same assembly in {@code core} so those consumers can depend only on
@@ -30,7 +30,7 @@ import java.util.Objects;
  * String, String, boolean) create} returns an {@link AuthorizationPorts} holder exposing the {@link
  * AuthorizationCheckPort} and the {@link TokenClaimsAuthenticationResolver} — both backed by the
  * <em>same</em> converter instance, matching the Spring wiring where a single converter bean is
- * shared. See ADR-0028.
+ * shared. See ADR-0017.
  *
  * <p>This is the entry point for non-Spring consumers only; its sole public method is {@code
  * create(...)} (two overloads differing only in the optional {@link
@@ -124,7 +124,7 @@ public final class AuthorizationPortsFactory {
   /**
    * Full-control variant that also accepts an {@link AuthorizationCheckLatencyRecorder}, so
    * non-Spring consumers (e.g. the Zeebe engine) can supply their own meter-backed implementation.
-   * See ADR-0041.
+   * See ADR-0022.
    */
   public static AuthorizationPorts create(
       final AuthorizationScopeRepositoryPort scopeRepository,

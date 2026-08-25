@@ -15,7 +15,7 @@ import java.util.List;
  * Micrometer dependency, so this port takes a plain elapsed duration and each host wires its own
  * meter-backed implementation (see {@code spring-boot-starter}'s Spring adapter and zeebe/engine's
  * non-Spring adapter) against the shared spec constants declared here, so both hosts publish the
- * exact same metric definition. See ADR-0041.
+ * exact same metric definition. See ADR-0022.
  *
  * <p>{@link io.camunda.security.core.authz.AuthorizationService} times only its two terminal {@code
  * check(...)} overloads (scope-based and property-based); the claims-map overload is a pure
@@ -31,7 +31,7 @@ public interface AuthorizationCheckLatencyRecorder {
    * Metric description. Deviates from the pre-migration baseline text by dropping "including cache
    * hits" — {@link io.camunda.security.core.authz.AuthorizationService}'s timed overloads have no
    * cache in their timed region; the re-homed cache-access metrics live outside this window. See
-   * ADR-0041.
+   * ADR-0022.
    */
   String METRIC_DESCRIPTION = "Latency of each authorization check";
 
@@ -40,7 +40,7 @@ public interface AuthorizationCheckLatencyRecorder {
    * uses; not applied to the {@code spring-boot-starter} adapter's Micrometer {@code Timer}, which
    * has no {@code baseUnit(...)} setter (unlike {@code Gauge}/{@code Counter}/{@code
    * DistributionSummary}) — a Timer's reported unit is registry-defined instead. The deleted
-   * pre-migration baseline had the same gap. See ADR-0041.
+   * pre-migration baseline had the same gap. See ADR-0022.
    */
   String METRIC_BASE_UNIT = "ns";
 

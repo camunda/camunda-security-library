@@ -64,7 +64,7 @@ public class BaseSecurityConfiguration {
   /**
    * Catch-all deny chain (lowest priority). A host that installs its own {@code /**} catch-all
    * webapp chain (e.g. Optimize, which reuses the OIDC webapp chain with a {@code /**} matcher, see
-   * ADR-0038) must suppress this bean, otherwise Spring Security rejects the two duplicate {@code
+   * ADR-0021) must suppress this bean, otherwise Spring Security rejects the two duplicate {@code
    * /**} matchers at startup. Set {@code
    * camunda.security.authentication.catch-all-unhandled-paths-enabled=false} to suppress it.
    * Enabled by default so existing hosts are unaffected.

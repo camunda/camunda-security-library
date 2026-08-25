@@ -26,7 +26,7 @@ import com.tngtech.archunit.lang.ArchRule;
  *
  * <p>Domain records stay Jackson-free; hosts that need custom JSON shape for a CSL type register a
  * Jackson mixin on their own {@code ObjectMapper} (see {@code .claude/docs/guardrails.md} and
- * ADR-0028).
+ * ADR-0017).
  *
  * <p>The import option excludes test classes so this rule only applies to production code in {@code
  * core}.

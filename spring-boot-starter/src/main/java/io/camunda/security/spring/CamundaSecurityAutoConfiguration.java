@@ -43,12 +43,12 @@ import org.springframework.context.annotation.Import;
  *       META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports} file.
  * </ul>
  *
- * <p>Per ADR-0008, this class is NOT registered in CSL's own {@code AutoConfiguration.imports} —
+ * <p>Per ADR-0006, this class is NOT registered in CSL's own {@code AutoConfiguration.imports} —
  * nothing in CSL activates from adding the Maven dependency alone. The host's explicit opt-in is
  * what enables it. Hosts that prefer fine-grained control over which CSL configurations are active
  * can still {@code @Import} individual classes directly instead of going through the umbrella; in
  * that path the host is responsible for working around the conditional-bean evaluation timing
- * described in ADR-0008.
+ * described in ADR-0006.
  *
  * <p>Loading CSL configurations through this {@code @AutoConfiguration} causes Spring to evaluate
  * their {@code @ConditionalOnBean} / {@code @ConditionalOnMissingBean} gates in the deferred

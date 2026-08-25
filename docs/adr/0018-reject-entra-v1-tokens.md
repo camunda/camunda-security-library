@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0033: Reject Microsoft Entra v1 tokens at the token-claims conversion layer
+# ADR-0018: Reject Microsoft Entra v1 tokens at the token-claims conversion layer
 
 **Deciders**: Timothy Cline (timcline)
 

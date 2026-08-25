@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0024: Dedicated `validation` module for entity validators
+# ADR-0015: Dedicated `validation` module for entity validators
 
 **Deciders**: Patrick Wunderlich (p-wunderlich)
 

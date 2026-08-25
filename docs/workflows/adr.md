@@ -45,7 +45,7 @@ Check `docs/adr/` for the highest existing number and add one. ADRs are numbered
 
 ### 3. Draft the ADR file
 
-Create `docs/adr/NNNN-kebab-case-title.md`. Look at [`0010-admin-user-setup-spis.md`](../adr/0010-admin-user-setup-spis.md) as a reference shape.
+Create `docs/adr/NNNN-kebab-case-title.md`. Look at [`0007-admin-user-setup-spis.md`](../adr/0007-admin-user-setup-spis.md) as a reference shape.
 
 Use the structure below. Match it exactly — readers and tooling rely on the shape.
 
@@ -127,7 +127,7 @@ Before committing, verify:
 - [ ] Context ends with the question this ADR answers.
 - [ ] At least one alternative is documented and rejected.
 - [ ] Consequences include at least one accepted trade-off.
-- [ ] Cross-references to related ADRs use clickable relative links (e.g. `[ADR-0028](0028-unified-authz-framework-in-core.md)`).
+- [ ] Cross-references to related ADRs use clickable relative links (e.g. `[ADR-0017](0017-unified-authz-framework-in-core.md)`).
 - [ ] No edits to existing decided ADRs except status changes and editorial fixes that preserve meaning.
 
 ## ADRs are immutable

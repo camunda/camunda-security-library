@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0021: User-resolution ports — `CamundaUserPort` (user view) and `BasicAuthUserDetailsPort` (basic-auth credentials)
+# ADR-0013: User-resolution ports — `CamundaUserPort` (user view) and `BasicAuthUserDetailsPort` (basic-auth credentials)
 
 **Deciders**: Patrick Wunderlich
 

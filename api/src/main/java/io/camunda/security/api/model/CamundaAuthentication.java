@@ -33,7 +33,7 @@ import java.util.function.Supplier;
  * <p>Membership fields ({@code authenticatedGroupIds}, {@code authenticatedRoleIds}, {@code
  * authenticatedTenantIds}, {@code authenticatedMappingRuleIds}) may be supplied eagerly via the
  * corresponding builder methods, or lazily via the {@code *Supplier} builder methods — see
- * ADR-0011. Lazy fields are resolved at most once on the first read operation against the returned
+ * ADR-0008. Lazy fields are resolved at most once on the first read operation against the returned
  * list; the public accessor signature is unchanged in both cases.
  */
 public record CamundaAuthentication(

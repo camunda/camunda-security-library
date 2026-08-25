@@ -144,7 +144,7 @@ public final class ScopedWebappSecurityChainBuilder {
    * constants.
    *
    * <p>The supplied {@code sessionRepositoryFilter} is installed before {@link
-   * SecurityContextHolderFilter} (see ADR-0017).
+   * SecurityContextHolderFilter} (see ADR-0012).
    */
   public SecurityFilterChain buildOidcWebappChain(
       final HttpSecurity http,
@@ -161,7 +161,7 @@ public final class ScopedWebappSecurityChainBuilder {
     final var logoutUrl = LOGOUT_URL;
     // The OAuth2 redirection-endpoint path (where Spring listens for the authorization-code
     // callback) is derived from the configured client redirect-uri, so a host can align it with the
-    // callback its IdP client already has registered (ADR-0038). Defaults to REDIRECT_URI
+    // callback its IdP client already has registered (ADR-0021). Defaults to REDIRECT_URI
     // (/sso-callback) when redirect-uri is unset, preserving existing behaviour. The servlet
     // context-path is stripped so the path stays context-relative: Spring's redirection-endpoint
     // matcher matches the context-path-relative request path, so a redirect-uri that embeds the
@@ -200,7 +200,7 @@ public final class ScopedWebappSecurityChainBuilder {
             .anonymous(AbstractHttpConfigurer::disable)
             // No oauth2ResourceServer on the webapp chain: it authenticates users interactively via
             // oauth2Login and serves them from the session. Bearer/JWT (client-credentials, direct
-            // API access) is the API chain's responsibility (ADR-0023); a bearer token presented to
+            // API access) is the API chain's responsibility (ADR-0014); a bearer token presented to
             // a webapp path falls through to the delegating entry point below, which returns 401.
             .oauth2Login(
                 oauthLogin -> {
@@ -246,7 +246,7 @@ public final class ScopedWebappSecurityChainBuilder {
             authorizedClientRepository, authorizedClientManager, logoutHandler),
         AuthorizationFilter.class);
 
-    // AdminUserCheckFilter is intentionally NOT wired on the OIDC chain (ADR-0010, GH-189): under
+    // AdminUserCheckFilter is intentionally NOT wired on the OIDC chain (ADR-0007, GH-189): under
     // OIDC, admin provisioning is driven by IdP claims, and the filter cannot tell "no admin yet"
     // from "membership not yet projected". Only WebAppAuthorizationCheck runs here.
     final var webAppFilter = webAppAuthorizationFilterProvider.getIfAvailable();
@@ -282,7 +282,7 @@ public final class ScopedWebappSecurityChainBuilder {
   /**
    * Appends {@code heartbeatPath} to the chain's securityMatcher patterns so the heartbeat endpoint
    * is always reachable, independent of whatever the host declared in {@code
-   * SecurityPathPort#webappPaths()} (ADR-0042) — unlike {@code LOGIN_URL}/{@code LOGOUT_URL}, which
+   * SecurityPathPort#webappPaths()} (ADR-0023) — unlike {@code LOGIN_URL}/{@code LOGOUT_URL}, which
    * rely on the host's own declared patterns already covering them.
    */
   // package-private for unit testing
@@ -300,7 +300,7 @@ public final class ScopedWebappSecurityChainBuilder {
    * CSL constants.
    *
    * <p>The supplied {@code sessionRepositoryFilter} is installed before {@link
-   * SecurityContextHolderFilter} (see ADR-0017).
+   * SecurityContextHolderFilter} (see ADR-0012).
    */
   public SecurityFilterChain buildBasicWebappChain(
       final HttpSecurity http, final SessionRepositoryFilter<?> sessionRepositoryFilter)
@@ -451,7 +451,7 @@ public final class ScopedWebappSecurityChainBuilder {
    * Resolves the OAuth2 redirection-endpoint path (where Spring listens for the authorization-code
    * callback) from the configured client {@code redirect-uri}. Strips a leading {@code {baseUrl}}
    * placeholder or a {@code scheme://host} prefix and any query/fragment, so a host can point the
-   * callback at whatever path its IdP client already has registered (ADR-0038, Optimize reuses
+   * callback at whatever path its IdP client already has registered (ADR-0021, Optimize reuses
    * {@code /api/authentication/callback}). Falls back to {@code defaultPath} when the redirect-uri
    * is unset or yields no path, preserving the default {@code /sso-callback} behaviour.
    *
@@ -774,7 +774,7 @@ public final class ScopedWebappSecurityChainBuilder {
             .anonymous(AbstractHttpConfigurer::disable)
             // No oauth2ResourceServer on the webapp chain: it authenticates users interactively via
             // oauth2Login and serves them from the session. Bearer/JWT (client-credentials, direct
-            // API access) is the API chain's responsibility (ADR-0023); a bearer token presented to
+            // API access) is the API chain's responsibility (ADR-0014); a bearer token presented to
             // a webapp path falls through to the delegating entry point below, which returns 401.
             .oauth2Login(
                 oauthLogin -> {
@@ -820,7 +820,7 @@ public final class ScopedWebappSecurityChainBuilder {
             authorizedClientRepository, authorizedClientManager, logoutHandler),
         AuthorizationFilter.class);
 
-    // AdminUserCheckFilter is intentionally NOT wired on the OIDC chain (ADR-0010, GH-189): under
+    // AdminUserCheckFilter is intentionally NOT wired on the OIDC chain (ADR-0007, GH-189): under
     // OIDC, admin provisioning is driven by IdP claims, and the filter cannot tell "no admin yet"
     // from "membership not yet projected". Only WebAppAuthorizationCheck runs here.
     final var webAppFilter = webAppAuthorizationFilterProvider.getIfAvailable();

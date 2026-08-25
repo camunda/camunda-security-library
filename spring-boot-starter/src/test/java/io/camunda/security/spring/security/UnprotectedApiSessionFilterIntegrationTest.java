@@ -48,7 +48,7 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
  * chain must be resolvable on the unprotected API chain, so an unprotected endpoint such as {@code
  * /v2/authentication/me} still recognises the logged-in user.
  *
- * <p>ADR-0017 replaced the container-wide {@code @EnableSpringHttpSession} filter with an explicit
+ * <p>ADR-0012 replaced the container-wide {@code @EnableSpringHttpSession} filter with an explicit
  * per-chain {@link SessionRepositoryFilter}. The unprotected API chain must therefore install the
  * shared default session filter just like the protected webapp/API chains; without it the {@code
  * camunda-session} cookie is never resolved and the request is seen as anonymous.

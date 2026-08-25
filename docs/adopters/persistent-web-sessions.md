@@ -2,7 +2,7 @@
 
 This guide is for host applications (Hub, Orchestration Cluster gateways, future Camunda services) that need server-side persistent HTTP sessions backed by a storage layer the host controls (search index, RDBMS, …). CSL owns the session lifecycle; the host owns the storage adapter.
 
-For the rationale behind this split — why the lifecycle lives in CSL and the storage stays in the host — see [ADR-0017](../adr/0017-session-store-port-and-web-session-ownership.md). For why CSL configuration classes are opt-in rather than auto-configured, see [ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md).
+For the rationale behind this split — why the lifecycle lives in CSL and the storage stays in the host — see [ADR-0012](../adr/0012-session-store-port-and-web-session-ownership.md). For why CSL configuration classes are opt-in rather than auto-configured, see [ADR-0006](../adr/0006-no-spring-boot-auto-configuration.md).
 
 ## What CSL provides
 
@@ -15,7 +15,7 @@ For the rationale behind this split — why the lifecycle lives in CSL and the s
 
 Every bean is `@ConditionalOnMissingBean`, so a host can register its own implementation of any one of them and CSL's default backs off.
 
-`WebSessionConfiguration` wires the session *lifecycle* only — it does not install any `SessionRepositoryFilter` itself. Each chain (the default surface and every physical-tenant scope) gets its own explicitly-installed filter that consumes the `WebSessionRepository` bean produced here; see [ADR-0017](../adr/0017-session-store-port-and-web-session-ownership.md) for why filters are installed per chain instead of through a single global one.
+`WebSessionConfiguration` wires the session *lifecycle* only — it does not install any `SessionRepositoryFilter` itself. Each chain (the default surface and every physical-tenant scope) gets its own explicitly-installed filter that consumes the `WebSessionRepository` bean produced here; see [ADR-0012](../adr/0012-session-store-port-and-web-session-ownership.md) for why filters are installed per chain instead of through a single global one.
 
 `WebSessionConfiguration` is **gated by `@ConditionalOnPersistentWebSessionEnabled`** — it only loads when `camunda.security.session.persistent.enabled=true`.
 
@@ -93,7 +93,7 @@ The default `SpringBasedWebSessionAttributeConverter` uses Java native serializa
 1. Deserializing attacker-controllable session bytes can be exploited via gadget chains (the threat model is storage tampering, not casual reads).
 2. Persisted sessions are brittle to class/package renames and `serialVersionUID` changes.
 
-Hardened production deployments should register their own `WebSessionAttributeConverter` — for example a JSON converter with explicit DTOs, or a `DeserializingConverter` configured with an `ObjectInputFilter` allowlist. See [ADR-0017 §Risks and follow-ups](../adr/0017-session-store-port-and-web-session-ownership.md#risks-and-follow-ups) for the threat-model discussion.
+Hardened production deployments should register their own `WebSessionAttributeConverter` — for example a JSON converter with explicit DTOs, or a `DeserializingConverter` configured with an `ObjectInputFilter` allowlist. See [ADR-0012 §Risks and follow-ups](../adr/0012-session-store-port-and-web-session-ownership.md#risks-and-follow-ups) for the threat-model discussion.
 
 ## Property bridge for legacy keys
 
@@ -109,7 +109,7 @@ OC bridges these onto the canonical property via an `EnvironmentPostProcessor` (
 
 ## Session idle timeout and the activity heartbeat
 
-Two further properties (ADR-0042) apply to **every** session surface, regardless of whether persistent sessions are enabled:
+Two further properties (ADR-0023) apply to **every** session surface, regardless of whether persistent sessions are enabled:
 
 | Property | Type | Default | Effect |
 |---|---|---|---|
@@ -129,7 +129,7 @@ OC's wiring lives in `dist/src/main/java/io/camunda/application/commons/identity
 
 1. Gates on `@ConditionalOnRestGatewayEnabled` and `@ConditionalOnPersistentWebSessionEnabled` so persistent sessions only wire up when the REST gateway is enabled.
 2. Activates CSL via `@ImportAutoConfiguration(WebSessionConfiguration.class)`.
-3. Supplies the storage backend (Elasticsearch / OpenSearch / RDBMS) and the `SessionStorePort` adapter (`PhysicalTenantSessionStoreAdapter`, built per physical tenant via `PhysicalTenantScopedSessionStorePortProvider` — see [ADR-0017](../adr/0017-session-store-port-and-web-session-ownership.md)).
+3. Supplies the storage backend (Elasticsearch / OpenSearch / RDBMS) and the `SessionStorePort` adapter (`PhysicalTenantSessionStoreAdapter`, built per physical tenant via `PhysicalTenantScopedSessionStorePortProvider` — see [ADR-0012](../adr/0012-session-store-port-and-web-session-ownership.md)).
 4. Overrides `webSessionDeletionUncaughtExceptionHandler` with `FatalErrorHandler.uncaughtExceptionHandler(...)` so a fatal error in the deletion thread halts the JVM instead of being swallowed.
 
 ## Troubleshooting
@@ -138,7 +138,7 @@ OC's wiring lives in `dist/src/main/java/io/camunda/application/commons/identity
 |---|---|
 | `BeanDefinitionOverrideException: ... 'webSessionDeletionUncaughtExceptionHandler' ... already ... WebSessionConfiguration ... bound` at startup | Host used `@Import` instead of `@ImportAutoConfiguration`. See [Activating the wiring](#activating-the-wiring). |
 | Host bean registers but the library's default is the one actually wired (no exception) | Same as above, for unnamed `@Bean`s of the same type. Switch to `@ImportAutoConfiguration`. |
-| `WebSessionConfiguration` never activates even though `camunda.security.session.persistent.enabled=true` | Host hasn't `@ImportAutoConfiguration`'d the class (or hasn't done so behind an active host condition). The property alone does not activate any CSL class — see ADR-0008. |
+| `WebSessionConfiguration` never activates even though `camunda.security.session.persistent.enabled=true` | Host hasn't `@ImportAutoConfiguration`'d the class (or hasn't done so behind an active host condition). The property alone does not activate any CSL class — see ADR-0006. |
 | `UnsatisfiedDependencyException: ... 'webSessionRepository' ... 'SessionStorePort' ...` | Host hasn't registered a `SessionStorePort` bean. See [`SessionStorePort`](./ports.md#sessionstoreport). |
 | Users get logged out almost immediately after login on a heartbeat-enabled deployment, repeatedly, regardless of activity | `max-inactive-interval` is shorter than (or too close to) the frontend's real heartbeat cadence. See [Session idle timeout and the activity heartbeat](#session-idle-timeout-and-the-activity-heartbeat). Check startup logs for a WARN beginning `camunda.security.session.max-inactive-interval is set to ... with ... heartbeat.enabled=true`. |
 | `camunda.security.session.heartbeat.enabled=true has no effect on the '...' surface` at startup | That surface (default or a physical-tenant scope) is running the in-memory session fallback, which has no touch-suppression mechanism of its own — enable `camunda.security.session.persistent.enabled` for that surface, or the flag does nothing there. |

@@ -134,7 +134,7 @@ class AuthorizationServiceTest {
   // --- TENANT resource type: RBAC on tenant entities, gated on authorizationEnabled (#486) ---
   // The {authz on/off} x {multi-tenancy on/off} matrix. resourceType==TENANT is RBAC on tenant
   // entities (not the membership dimension), so it is gated on authorizationEnabled regardless of
-  // multi-tenancy. See ADR-0028.
+  // multi-tenancy. See ADR-0017.
 
   @Test
   void tenantCheckReturnsTenantRejectionWhenAuthzAndMultiTenancyEnabledAndCheckerDenies() {

@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0041: `core`-owned assembly factories and native latency instrumentation for `AuthorizationCheckPort`
+# ADR-0022: `core`-owned assembly factories and native latency instrumentation for `AuthorizationCheckPort`
 
 **Deciders**: Patrick Wunderlich
 
@@ -12,7 +12,7 @@ Accepted
 
 ## Context
 
-[ADR-0028](0028-unified-authz-framework-in-core.md) put the authorization graph in `core` and gave
+[ADR-0017](0017-unified-authz-framework-in-core.md) put the authorization graph in `core` and gave
 non-Spring consumers a plain-Java entry point, `AuthorizationPortsFactory`. Three follow-on requests
 all land on that same surface — the code a host writes when it assembles an
 `AuthorizationCheckPort`/`AuthorizationChecker` graph itself, with or without a Spring container:
@@ -169,11 +169,11 @@ a no-op — the same optional-metrics pattern `CachingOidcClaimsProvider` alread
 - **A separate class from `AuthorizationPortsFactory`, not an overload on it** — that factory's own
   Javadoc reserves it for single-scope, non-Spring consumers.
 - **An eager `Map`, not a provider SPI** (unlike the per-scope session-store contract in
-  [ADR-0017](0017-session-store-port-and-web-session-ownership.md) §4, where the host is called back
+  [ADR-0012](0012-session-store-port-and-web-session-ownership.md) §4, where the host is called back
   per scope as chains are registered) — the host knows every scope at wiring time here, so there is
   no laziness or decoupling need a callback would serve.
 - **The scoped factory takes the host's own resolver rather than building one** — this is why
-  decision 3 is not the shape [ADR-0028](0028-unified-authz-framework-in-core.md) rejected under
+  decision 3 is not the shape [ADR-0017](0017-unified-authz-framework-in-core.md) rejected under
   "duplicated assembly between `AuthorizationPortsFactory` and the starter beans": routing a host's
   existing wiring through a factory that builds its own checker and converter would silently discard
   the host's own instances. This factory cannot, because it never builds one.

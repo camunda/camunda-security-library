@@ -108,7 +108,7 @@ public final class WebSession implements Session {
    * Whether this request is allowed to extend the session's activity. {@code WebSessionRepository}
    * computes this per access, based on the {@code camunda.security.session.heartbeat.enabled} flag
    * and the current request: legacy touch-unless polling when the flag is off,
-   * touch-only-on-the-heartbeat-call when it's on (see ADR-0042).
+   * touch-only-on-the-heartbeat-call when it's on (see ADR-0023).
    */
   public boolean isTouchSuppressed() {
     return touchSuppressed;

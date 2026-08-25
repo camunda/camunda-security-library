@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0016: CSL authz enums as the canonical source for Service, Search, Exporter, and Persistence layers
+# ADR-0011: CSL authz enums as the canonical source for Service, Search, Exporter, and Persistence layers
 
 **Deciders**: @p-wunderlich, @Ben-Sheppard, @megglos
 

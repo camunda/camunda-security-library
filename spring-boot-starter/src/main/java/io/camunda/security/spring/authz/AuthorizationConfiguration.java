@@ -54,7 +54,7 @@ public class AuthorizationConfiguration {
    *
    * <p>Wires a Micrometer-backed {@code AuthorizationCheckLatencyRecorder} when a {@link
    * MeterRegistry} bean is present; metrics are optional, so the recorder degrades to a no-op if
-   * none is registered. See ADR-0041.
+   * none is registered. See ADR-0022.
    *
    * @param authorizationChecker the scope evaluation kernel
    * @param evaluators all registered property-based evaluators; empty list is valid

@@ -24,13 +24,13 @@ import org.springframework.context.annotation.Configuration;
 /**
  * Registers the per-web-app authorization filter and its supporting beans. Hosts adopt by adding
  * {@code @Import(WebAppAuthorizationFilterConfiguration.class)} to their security configuration —
- * see ADR-0008 for why CSL configurations are explicitly imported rather than auto-registered.
+ * see ADR-0006 for why CSL configurations are explicitly imported rather than auto-registered.
  *
  * <p>Each bean is gated on the presence of the host SPIs it depends on, and library defaults back
  * off via {@code @ConditionalOnMissingBean} so hosts can supply their own implementations.
  *
  * <p>The webapp component-access decision is delegated to the host's {@link AuthorizationCheckPort}
- * — the same unified inbound port the data plane uses (see ADR-0028). The check honours {@code
+ * — the same unified inbound port the data plane uses (see ADR-0017). The check honours {@code
  * camunda.security.authorizations.enabled}: when it is off, the filter passes every request through
  * without consulting the port. The flag is read from {@link CamundaSecurityLibraryProperties} (not
  * a {@code @ConditionalOnProperty}) so it works regardless of whether the host sets it via a

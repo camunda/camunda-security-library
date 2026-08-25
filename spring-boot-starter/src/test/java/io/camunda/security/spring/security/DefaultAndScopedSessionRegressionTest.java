@@ -136,7 +136,7 @@ class DefaultAndScopedSessionRegressionTest {
   /**
    * The actual regression: with the default chains AND a physical-tenant scope's chains registered
    * together (as a real application does), a session committed via a real login under the scope's
-   * prefix must survive a second request. Before ADR-0017, the coexisting default (global) filter
+   * prefix must survive a second request. Before ADR-0012, the coexisting default (global) filter
    * would poison {@code INVALID_SESSION_ID_ATTR} for this exact sequence, making the scope's own
    * correct lookup on request 2 invisible.
    */

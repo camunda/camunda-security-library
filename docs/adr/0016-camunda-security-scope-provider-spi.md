@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0025: `CamundaSecurityScopeProvider` SPI for host-contributed path-scoped API and webapp chains
+# ADR-0016: `CamundaSecurityScopeProvider` SPI for host-contributed path-scoped API and webapp chains
 
 **Deciders**: Patrick Wunderlich
 
@@ -13,7 +13,7 @@ Accepted
 ## Context
 
 CSL owns the standard API and webapp security filter chains for every Camunda host application (see
-[ADR-0008](0008-no-spring-boot-auto-configuration.md) for how a host activates them). Those chains
+[ADR-0006](0006-no-spring-boot-auto-configuration.md) for how a host activates them). Those chains
 cover the host's primary surfaces (e.g. `/v2/**` for the API) with a single shared `JwtDecoder` and
 `ClientRegistration` set.
 
@@ -84,12 +84,12 @@ null `authentication` at construction time. CSL derives every matcher and every 
 - Webapp endpoints: login at `basePath + /login`, logout at `basePath + /logout`, the OAuth2
   authorization base URI at `basePath + /oauth2/authorization`, and the redirection endpoint derived
   from the configured client `redirect-uri` (defaulting to `/sso-callback`, see
-  [ADR-0038](0038-optimize-reuses-stateful-oidc-webapp-chain.md)).
+  [ADR-0021](0021-optimize-reuses-stateful-oidc-webapp-chain.md)).
 
 **No surface-specific field is ever added to the descriptor.** That is what keeps the same descriptor
 usable for both chain types, and it is why the per-scope session cookie name and the post-logout
 route are derived or declared elsewhere rather than carried on the descriptor
-([ADR-0017](0017-session-store-port-and-web-session-ownership.md)).
+([ADR-0012](0012-session-store-port-and-web-session-ownership.md)).
 
 ### 2. Reusable builders — one source of truth per chain shape
 
@@ -104,7 +104,7 @@ primary chains are also built from, so no shape exists in two places:
 - **`ScopedJwtDecoderFactory`** — builds a `JwtDecoder` from an `AuthenticationConfiguration` by
   delegating to `ScopedClientRegistrationFactory` and `OidcAccessTokenDecoderFactory`. A single
   configured provider yields a single-issuer decoder; several providers select the issuer-aware
-  decoder of [ADR-0013](0013-multi-idp-oidc-configuration.md). A scope-specific
+  decoder of [ADR-0009](0009-multi-idp-oidc-configuration.md). A scope-specific
   `TokenValidatorFactory` is built from the scope's merged provider map and threaded into the
   decoder, so both issuer and audience validation use the scope's own configuration. Structural
   isolation is the result: a token whose `iss` claim matches no provider in the scope fails with a
@@ -127,9 +127,9 @@ primary chains are also built from, so no shape exists in two places:
     configuration via `ScopedClientRegistrationFactory`, i.e. the scope's assigned providers only);
     the multi-IdP login picker at `basePath + /login`; the redirection endpoint; logout at
     `basePath + /logout`; and the delegating `AuthenticationEntryPoint` (bearer → 401, browser →
-    IdP/login) retained per [ADR-0023](0023-oidc-bearer-tokens-on-api-chain-only.md);
+    IdP/login) retained per [ADR-0014](0014-oidc-bearer-tokens-on-api-chain-only.md);
   - **BASIC** — form login at `basePath + /login` backed by the host's `BasicAuthUserDetailsPort`
-    ([ADR-0021](0021-user-details-port.md)), whose adapter resolves the scope from request context.
+    ([ADR-0013](0013-user-details-port.md)), whose adapter resolves the scope from request context.
 
   CSL's own `OidcWebappSecurityConfiguration` and `BasicAuthWebappSecurityConfiguration` are built on
   this builder, so the webapp surface has the same single-source-of-truth property the API surface
@@ -138,7 +138,7 @@ primary chains are also built from, so no shape exists in two places:
 
 Session components (per-scope `SessionRepositoryFilter`, cookie serializers, the post-logout
 handler) are handed to these builders rather than created by them; their ownership and isolation
-rules are [ADR-0017](0017-session-store-port-and-web-session-ownership.md)'s.
+rules are [ADR-0012](0012-session-store-port-and-web-session-ownership.md)'s.
 
 ### 3. Prefix-aware authorization-request resolver
 
@@ -160,7 +160,7 @@ working scope subsystem, and it declares `ScopedSecurityChainRegistrar` — a
 The registrar collects all `CamundaSecurityScopeProvider` beans and registers, **per descriptor, both
 an API and a webapp chain** (method-driven; a descriptor is single-mode, so each chain is OIDC or
 Basic, never both). It also enforces the startup fail-fast checks: duplicate `basePath` rejection and
-the derived-cookie-name checks described in ADR-0017.
+the derived-cookie-name checks described in ADR-0012.
 
 The `static` declaration is required: it makes Spring instantiate the post-processor before the
 enclosing `@Configuration` class is constructed, avoiding the "configuration class created too early"
@@ -237,7 +237,7 @@ never serves the SPA and never learns the prefix scheme.**
 
 `ScopedSecurityChainConfiguration` and `ScopedOidcInfrastructureConfiguration` are members of the
 umbrella `CamundaSecurityAutoConfiguration`'s `@Import` list (see
-[ADR-0008](0008-no-spring-boot-auto-configuration.md)), alongside the two builder configurations. No
+[ADR-0006](0006-no-spring-boot-auto-configuration.md)), alongside the two builder configurations. No
 action is required when no `CamundaSecurityScopeProvider` bean is present — the registrar finds zero
 providers and registers nothing, so primary-only hosts (Hub, single-scope OC) are unaffected. Hosts
 that import CSL configurations individually add `ScopedSecurityChainConfiguration.class` and
@@ -284,9 +284,9 @@ chains.
   configure different audiences.
 - Additive and backward-compatible. Hosts without a `CamundaSecurityScopeProvider` bean are
   unaffected; the registrar is a no-op. No renaming or configuration changes to existing deployments.
-- Aligns with [ADR-0008](0008-no-spring-boot-auto-configuration.md): the collector activates only
+- Aligns with [ADR-0006](0006-no-spring-boot-auto-configuration.md): the collector activates only
   through the umbrella or an explicit `@Import` — nothing activates from the Maven dependency alone.
-- Reuses the issuer-aware decoder of [ADR-0013](0013-multi-idp-oidc-configuration.md) for per-scope
+- Reuses the issuer-aware decoder of [ADR-0009](0009-multi-idp-oidc-configuration.md) for per-scope
   multi-provider validation without duplicating the selection logic.
 
 **Negative / accepted trade-offs**
@@ -304,7 +304,7 @@ chains.
   N is not a known use case.
 - Honouring a browser session on a scoped API chain requires the scope's API surface to be nested
   inside `basePath`; a host that routes it outside the prefix gets bearer-only on that surface (see
-  [ADR-0017](0017-session-store-port-and-web-session-ownership.md)).
+  [ADR-0012](0012-session-store-port-and-web-session-ownership.md)).
 
 ## Alternatives Considered
 

@@ -100,7 +100,7 @@ Map<String, OidcConfiguration> getOidcAuthenticationConfigurations();
 package io.camunda.security.core.port.in;
 ```
 
-The unified authorization inbound port (ADR-0028): "is this principal authorized for this
+The unified authorization inbound port (ADR-0017): "is this principal authorized for this
 requirement?" A `RequiredAuthorization` pairs an `AuthorizationResourceType` with a `PermissionType`
 and scopes it to resource IDs (and optionally resource property names). The port returns
 `Either.right(null)` when authorized and `Either.left(rejection)` when denied. Both the Zeebe engine
@@ -339,7 +339,7 @@ method is `basic`, and no host `UserDetailsService` is already registered.
 **Wiring:** `UserConfiguration` (`io.camunda.security.spring.user`, in the
 `CamundaSecurityAutoConfiguration` umbrella) registers `camundaUserDetailsService` and a default
 `passwordEncoder` (`PasswordEncoderFactories.createDelegatingPasswordEncoder()`), both basic-auth
-only and both `@ConditionalOnMissingBean` so a host can override either. See ADR-0021.
+only and both `@ConditionalOnMissingBean` so a host can override either. See ADR-0013.
 
 **OC example:** `UserDetailsAdapter` in `authentication/` — looks up the user from secondary storage
 (`UserServices.getUser`) and returns `new CamundaUserDetails(username, password)`, replacing OC's
