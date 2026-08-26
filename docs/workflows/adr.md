@@ -133,3 +133,5 @@ Before committing, verify:
 ## ADRs are immutable
 
 Decided ADRs are historical records — do not substantively modify them. If a decision needs revisiting, write a new ADR that supersedes the old one and update the old one's `Status` to `Superseded by ADR-NNNN`. Editorial fixes (typos, link repair, terminology normalization) are permitted as long as they preserve the original decision and rationale exactly.
+
+ADR numbers can still change as an exception to this rule: a periodic **consolidation** pass may merge superseded/amended ADRs into a single current-truth record and renumber the survivors to close the resulting gaps (see [#622](https://github.com/camunda/camunda-security-library/pull/622), which first did this). A consolidation is expected to be rare — most repos should go a long time between them — and must explicitly suspend and then restore this immutability rule for its own duration, as #622 did. Renumbering outside of a declared consolidation is not permitted.

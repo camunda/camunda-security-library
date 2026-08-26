@@ -22,6 +22,19 @@ jobs:
 
       - name: Check ADR numbering is unique
         run: |
+          # Self-test first: an earlier version of this check used a GNU-sed-only
+          # regex that was silently vacuous on BSD sed (matched nothing, never
+          # failed). Prove the check can actually detect a duplicate before
+          # trusting it against the real docs/adr/ tree.
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          touch "$tmp/0001-a.md" "$tmp/0001-b.md"
+          selftest_dupes=$(ls "$tmp"/*.md | sed 's|.*/0*\([0-9][0-9]*\)-.*|\1|' | sort | uniq -d)
+          if [ -z "$selftest_dupes" ]; then
+            echo "::error::ADR duplicate-number self-test failed to detect a synthetic duplicate — the check itself is broken (silently vacuous), fix it before relying on the result below"
+            exit 1
+          fi
+
           dupes=$(ls docs/adr/*.md | sed 's|.*/0*\([0-9][0-9]*\)-.*|\1|' | sort | uniq -d)
           if [ -n "$dupes" ]; then echo "::error::Duplicate ADR numbers: $dupes"; exit 1; fi
 
