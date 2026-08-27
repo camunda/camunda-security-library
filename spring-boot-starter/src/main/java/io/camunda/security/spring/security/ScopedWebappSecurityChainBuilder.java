@@ -32,7 +32,6 @@ import io.camunda.security.spring.scope.BasePaths;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import io.camunda.security.spring.spi.OidcAuthenticationEntryPoint;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -63,12 +62,11 @@ import org.springframework.security.web.authentication.logout.CookieClearingLogo
 import org.springframework.security.web.authentication.logout.LogoutHandler;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
-import org.springframework.security.web.authentication.ui.DefaultLoginPageGeneratingFilter;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.util.matcher.RequestHeaderRequestMatcher;
-import org.springframework.security.web.util.matcher.RequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcherEntry;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 import org.springframework.web.cors.CorsConfigurationSource;
 
@@ -95,7 +93,7 @@ public final class ScopedWebappSecurityChainBuilder {
   private final ObjectProvider<OAuth2AuthorizationRequestResolver>
       authorizationRequestResolverProvider;
   private final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider;
-  private final ObjectProvider<DefaultLoginPageGeneratingFilter> oidcLoginPickerProvider;
+  private final ObjectProvider<CamundaLoginPickerFilter> oidcLoginPickerProvider;
   private final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider;
   private final OAuth2AuthorizedClientManagerFactory authorizedClientManagerFactory;
   private final ScopedClientRegistrationFactory scopedClientRegistrationFactory;
@@ -112,7 +110,7 @@ public final class ScopedWebappSecurityChainBuilder {
       final ObjectProvider<OidcUserService> oidcUserServiceProvider,
       final ObjectProvider<OAuth2AuthorizationRequestResolver> authorizationRequestResolverProvider,
       final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
-      final ObjectProvider<DefaultLoginPageGeneratingFilter> oidcLoginPickerProvider,
+      final ObjectProvider<CamundaLoginPickerFilter> oidcLoginPickerProvider,
       final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider,
       final OAuth2AuthorizedClientManagerFactory authorizedClientManagerFactory,
       final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
@@ -269,9 +267,7 @@ public final class ScopedWebappSecurityChainBuilder {
     // writes before the picker commits the response.
     final var loginPickerFilter =
         oidcLoginPickerProvider.getIfAvailable(
-            () ->
-                LoginLinksBuilder.defaultOauth2LoginPickerFilter(
-                    clientRegistrationRepository, loginUrl));
+            () -> new CamundaLoginPickerFilter(clientRegistrationRepository, loginUrl));
     filterChainBuilder.addFilterAfter(loginPickerFilter, CsrfFilter.class);
 
     applyOidcRedirectDiagnosticsFilter(filterChainBuilder, redirectUri);
@@ -625,11 +621,12 @@ public final class ScopedWebappSecurityChainBuilder {
         new LoginUrlAuthenticationEntryPoint(
             resolveOauthRedirectTarget(
                 clientRegistrationRepository, loginUrl, authorizationBaseUri));
-    final var entryPoints = new LinkedHashMap<RequestMatcher, AuthenticationEntryPoint>();
-    entryPoints.put(new RequestHeaderRequestMatcher("Authorization"), bearerEntryPoint);
-    final var delegatingEntryPoint = new DelegatingAuthenticationEntryPoint(entryPoints);
-    delegatingEntryPoint.setDefaultEntryPoint(oauthRedirectEntryPoint);
-    return delegatingEntryPoint;
+    // The LinkedHashMap constructor and setDefaultEntryPoint(...) are both @Deprecated in favor of
+    // this constructor, which takes the default entry point and matcher entries together.
+    return new DelegatingAuthenticationEntryPoint(
+        oauthRedirectEntryPoint,
+        new RequestMatcherEntry<>(
+            new RequestHeaderRequestMatcher("Authorization"), bearerEntryPoint));
   }
 
   /**
@@ -743,8 +740,7 @@ public final class ScopedWebappSecurityChainBuilder {
         new CamundaOidcAuthorizationRequestResolver(
             clientRegistrationRepository, providerMap, authorizationBaseUri);
     final var scopedPicker =
-        LoginLinksBuilder.defaultOauth2LoginPickerFilter(
-            clientRegistrationRepository, loginUrl, prefix);
+        new CamundaLoginPickerFilter(clientRegistrationRepository, loginUrl, prefix);
 
     // Install the per-scope session filter before the security context filter so the Spring-Session
     // backed, Path-scoped session is available throughout the chain.

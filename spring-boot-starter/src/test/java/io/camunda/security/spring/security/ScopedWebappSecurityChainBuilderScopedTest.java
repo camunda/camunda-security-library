@@ -389,6 +389,29 @@ class ScopedWebappSecurityChainBuilderScopedTest {
   }
 
   @Test
+  void scopedLoginRedirectsStraightToSoleProviderInsteadOfRenderingPicker() throws Exception {
+    // Mirrors the primary-chain assertion in
+    // OidcWebappLoginPickerTest#anonymousLoginRedirectsStraightToSoleProviderInsteadOfRenderingPicker
+    // for the per-scope chain: with only one provider configured for the scope there is nothing to
+    // pick between, so a direct GET to the scoped login URL redirects on to that provider's
+    // (prefixed) authorization endpoint instead of rendering a picker (ADR-0022).
+    runner.run(
+        ctx -> {
+          final var chain = ctx.getBean("scopedOidcTestChain", SecurityFilterChain.class);
+          final var proxy = new FilterChainProxy(List.of(chain));
+          final var request = new MockHttpServletRequest("GET", BASE_PATH + "/login");
+          final var response = new MockHttpServletResponse();
+
+          proxy.doFilter(request, response, new MockFilterChain());
+
+          assertThat(response.getStatus()).isEqualTo(302);
+          assertThat(response.getRedirectedUrl())
+              .as("must redirect straight to the sole scoped registration, not render a picker")
+              .isEqualTo(BASE_PATH + "/oauth2/authorization/oidc");
+        });
+  }
+
+  @Test
   void scopedBasicChainLogoutClearsScopedCookiesAtBasePath() throws Exception {
     new WebApplicationContextRunner()
         .withUserConfiguration(

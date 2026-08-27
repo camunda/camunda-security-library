@@ -33,18 +33,17 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.DefaultSecurityFilterChain;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.ui.DefaultLoginPageGeneratingFilter;
 import org.springframework.security.web.csrf.CsrfFilter;
 
 /**
  * Regression coverage for GH-269: under multi-IdP OIDC, anonymous {@code GET /login} must reach a
- * provider-selection page rendered by Spring Security's {@code DefaultLoginPageGeneratingFilter}.
+ * Camunda-branded provider-selection page rendered by {@link CamundaLoginPickerFilter} (ADR-0022).
  *
  * <p>Because {@link OidcWebappSecurityConfiguration} installs a custom {@code
- * AuthenticationEntryPoint}, Spring Security's {@code DefaultLoginPageConfigurer} skips adding the
- * picker filter; {@link OidcWebappSecurityConfiguration} therefore registers it explicitly. Without
- * that explicit registration the entry point 302s users to {@code /login} and the request is then
- * handled by no filter, producing a 404.
+ * AuthenticationEntryPoint}, Spring Security's {@code DefaultLoginPageConfigurer} skips adding a
+ * picker filter of its own; {@link ScopedWebappSecurityChainBuilder} therefore registers {@link
+ * CamundaLoginPickerFilter} explicitly. Without that explicit registration the entry point 302s
+ * users to {@code /login} and the request is then handled by no filter, producing a 404.
  */
 class OidcWebappLoginPickerTest {
 
@@ -98,12 +97,12 @@ class OidcWebappLoginPickerTest {
   }
 
   @Test
-  void anonymousLoginRendersPickerEvenWithSingleRegistration() throws Exception {
+  void anonymousLoginRedirectsStraightToSoleProviderInsteadOfRenderingPicker() throws Exception {
     // Single-registration deployments normally redirect straight to /oauth2/authorization/{id}
     // via the entry point — users never reach /login through the normal flow. But if a user
-    // navigates to /login manually (e.g. after logout, or via a bookmark), the picker filter
-    // must still render the page with the single available IdP link rather than letting the
-    // request fall through to a 404.
+    // navigates to /login manually (e.g. after logout, or via a bookmark), there is still only one
+    // provider to choose from, so CamundaLoginPickerFilter redirects on to that provider rather
+    // than rendering a picker page that offers no real choice (ADR-0022).
     new WebApplicationContextRunner()
         .withUserConfiguration(ObjectMapperConfig.class, StubPaths.class)
         .withConfiguration(
@@ -126,22 +125,21 @@ class OidcWebappLoginPickerTest {
 
               proxy.doFilter(request, response, new MockFilterChain());
 
-              assertThat(response.getStatus()).isEqualTo(200);
-              assertThat(response.getContentAsString())
-                  .as("picker must list the single OIDC registration")
-                  .contains("/oauth2/authorization/oidc");
+              assertThat(response.getStatus()).isEqualTo(302);
+              assertThat(response.getRedirectedUrl())
+                  .as("must redirect straight to the sole OIDC registration, not render a picker")
+                  .isEqualTo("/oauth2/authorization/oidc");
             });
   }
 
   @Test
   void hostProvidedLoginPickerFilterOverridesLibraryDefault() {
-    // Hosts that ship a branded /login UI (custom client-name map, or all login types disabled
-    // to fall through to a Spring MVC controller) register their own
-    // DefaultLoginPageGeneratingFilter
-    // bean. The library installs that bean instead of building one from the standard
-    // ClientRegistrationRepository — same pattern as the other ObjectProvider hooks on this
-    // chain. This test pins the override by giving the host filter a recognisable login URL
-    // ("/host-login") and asserting that instance is what lands on the chain.
+    // Hosts that want different picker branding subclass CamundaLoginPickerFilter (it is an
+    // intentional, non-final extension point, see its Javadoc) and register their own instance as
+    // a bean. The library installs that bean instead of building the default one — same pattern
+    // as the other ObjectProvider hooks on this chain. This test pins the override by giving the
+    // host filter a recognisable login URL ("/host-login") and asserting that instance is what
+    // lands on the chain.
     runner
         .withUserConfiguration(HostLoginPickerOverride.class)
         .run(
@@ -151,8 +149,8 @@ class OidcWebappLoginPickerTest {
                       ctx.getBean(OIDC_CHAIN_BEAN, SecurityFilterChain.class);
               final var picker =
                   chain.getFilters().stream()
-                      .filter(DefaultLoginPageGeneratingFilter.class::isInstance)
-                      .map(DefaultLoginPageGeneratingFilter.class::cast)
+                      .filter(CamundaLoginPickerFilter.class::isInstance)
+                      .map(CamundaLoginPickerFilter.class::cast)
                       .findFirst()
                       .orElseThrow();
               assertThat(picker.getLoginPageUrl())
@@ -178,7 +176,7 @@ class OidcWebappLoginPickerTest {
           final var filters = chain.getFilters();
 
           final int csrfIndex = indexOf(filters, CsrfFilter.class);
-          final int pickerIndex = indexOf(filters, DefaultLoginPageGeneratingFilter.class);
+          final int pickerIndex = indexOf(filters, CamundaLoginPickerFilter.class);
           // The CSRF response-header filter is an anonymous OncePerRequestFilter, so we identify
           // it positionally: it sits between CsrfFilter and the picker. Asserting that the
           // picker is at least two positions after CsrfFilter ensures there is room for the
@@ -226,11 +224,9 @@ class OidcWebappLoginPickerTest {
   static class HostLoginPickerOverride {
 
     @Bean
-    DefaultLoginPageGeneratingFilter hostLoginPickerFilter() {
-      final var picker = new DefaultLoginPageGeneratingFilter();
-      picker.setLoginPageUrl("/host-login");
-      picker.setOauth2LoginEnabled(true);
-      return picker;
+    CamundaLoginPickerFilter hostLoginPickerFilter(
+        final ClientRegistrationRepository clientRegistrationRepository) {
+      return new CamundaLoginPickerFilter(clientRegistrationRepository, "/host-login");
     }
   }
 

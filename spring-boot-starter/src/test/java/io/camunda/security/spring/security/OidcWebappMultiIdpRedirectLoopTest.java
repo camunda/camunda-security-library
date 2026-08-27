@@ -40,10 +40,10 @@ import org.springframework.security.web.SecurityFilterChain;
  * <p>The single-IdP variants in {@link OidcWebappAuthorizationRequestResolverHookTest} cannot
  * actually exercise the redirect-loop scenario: with one client registration the delegating
  * authentication entry point resolves to {@code /oauth2/authorization/{id}} instead of {@code
- * /login}, and Spring Security's {@code DefaultLoginPageGeneratingFilter} additionally short-
- * circuits anonymous {@code GET /login} for single-IdP setups by redirecting straight to that
- * authorization URL. So those assertions hold regardless of whether {@code LOGIN_URL} is on the
- * permit-all list.
+ * /login}, and {@link CamundaLoginPickerFilter} additionally redirects anonymous {@code GET /login}
+ * straight to that same authorization URL for single-IdP setups rather than rendering a picker
+ * (ADR-0022). So those assertions hold regardless of whether {@code LOGIN_URL} is on the permit-all
+ * list.
  *
  * <p>This class registers <em>two</em> client registrations so the entry-point fallback in {@link
  * OidcWebappSecurityConfiguration#oidcWebappAuthenticationEntryPoint} actually targets {@link
@@ -91,8 +91,8 @@ class OidcWebappMultiIdpRedirectLoopTest {
     // With two client registrations the delegating entry point resolves to LOGIN_URL. If LOGIN_URL
     // is not on the chain's permit-all list, anonymous GET /login fails authorization, the entry
     // point fires, and the response is 302 -> /login (the loop). Permit-all on LOGIN_URL stops the
-    // chain at AuthorizationFilter so the request reaches DefaultLoginPageGeneratingFilter, which
-    // renders the auto-generated provider-selection page (200) instead.
+    // chain at AuthorizationFilter so the request reaches CamundaLoginPickerFilter, which renders
+    // the Camunda-branded provider-selection page (200) instead.
     runner.run(
         ctx -> {
           final var chain = ctx.getBean(OIDC_CHAIN_BEAN, SecurityFilterChain.class);
@@ -109,8 +109,8 @@ class OidcWebappMultiIdpRedirectLoopTest {
           proxy.doFilter(request, response, new MockFilterChain());
 
           // The chain MUST NOT respond with the loop signature: 302 redirect to /login. Either
-          // 200 (DefaultLoginPageGeneratingFilter renders the picker) or any other non-/login
-          // outcome is acceptable.
+          // 200 (CamundaLoginPickerFilter renders the picker) or any other non-/login outcome is
+          // acceptable.
           if (response.getStatus() == 302) {
             assertThat(response.getRedirectedUrl())
                 .as("anonymous /login under multi-IdP must not be redirected back to /login")
