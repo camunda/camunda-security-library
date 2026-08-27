@@ -37,7 +37,7 @@ import org.springframework.security.web.csrf.CsrfFilter;
 
 /**
  * Regression coverage for GH-269: under multi-IdP OIDC, anonymous {@code GET /login} must reach a
- * Camunda-branded provider-selection page rendered by {@link CamundaLoginPickerFilter} (ADR-0043).
+ * Camunda-branded provider-selection page rendered by {@link CamundaLoginPickerFilter} (ADR-0022).
  *
  * <p>Because {@link OidcWebappSecurityConfiguration} installs a custom {@code
  * AuthenticationEntryPoint}, Spring Security's {@code DefaultLoginPageConfigurer} skips adding a
@@ -102,7 +102,7 @@ class OidcWebappLoginPickerTest {
     // via the entry point — users never reach /login through the normal flow. But if a user
     // navigates to /login manually (e.g. after logout, or via a bookmark), there is still only one
     // provider to choose from, so CamundaLoginPickerFilter redirects on to that provider rather
-    // than rendering a picker page that offers no real choice (ADR-0043).
+    // than rendering a picker page that offers no real choice (ADR-0022).
     new WebApplicationContextRunner()
         .withUserConfiguration(ObjectMapperConfig.class, StubPaths.class)
         .withConfiguration(

@@ -394,7 +394,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
     // OidcWebappLoginPickerTest#anonymousLoginRedirectsStraightToSoleProviderInsteadOfRenderingPicker
     // for the per-scope chain: with only one provider configured for the scope there is nothing to
     // pick between, so a direct GET to the scoped login URL redirects on to that provider's
-    // (prefixed) authorization endpoint instead of rendering a picker (ADR-0043).
+    // (prefixed) authorization endpoint instead of rendering a picker (ADR-0022).
     runner.run(
         ctx -> {
           final var chain = ctx.getBean("scopedOidcTestChain", SecurityFilterChain.class);

@@ -73,7 +73,7 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
  *       an authorization endpoint under {@code /physical-tenants/a/oauth2/authorization/…}, never
  *       under {@code /physical-tenants/b/…} (each scope has exactly one provider configured, so
  *       {@link io.camunda.security.spring.security.CamundaLoginPickerFilter} redirects straight to
- *       it rather than rendering a picker — ADR-0043).
+ *       it rather than rendering a picker — ADR-0022).
  * </ol>
  */
 class ScopedWebappSessionIsolationTest {
@@ -291,7 +291,7 @@ class ScopedWebappSessionIsolationTest {
   }
 
   // Per-scope login redirect — each scope has exactly one provider configured, so
-  // CamundaLoginPickerFilter redirects straight to it (ADR-0043) rather than rendering a picker;
+  // CamundaLoginPickerFilter redirects straight to it (ADR-0022) rather than rendering a picker;
   // the redirect target must stay scoped to that scope's own prefix and never leak the other
   // scope's.
   @Test

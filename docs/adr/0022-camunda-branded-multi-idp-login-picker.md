@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0043: Camunda-branded multi-IdP login picker, shown only when there is a real choice
+# ADR-0022: Camunda-branded multi-IdP login picker, shown only when there is a real choice
 
 **Deciders**: Ben Sheppard
 

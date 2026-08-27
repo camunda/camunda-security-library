@@ -32,7 +32,6 @@ import io.camunda.security.spring.scope.BasePaths;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import io.camunda.security.spring.spi.OidcAuthenticationEntryPoint;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -67,7 +66,7 @@ import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.util.matcher.RequestHeaderRequestMatcher;
-import org.springframework.security.web.util.matcher.RequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcherEntry;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 import org.springframework.web.cors.CorsConfigurationSource;
 
@@ -622,11 +621,12 @@ public final class ScopedWebappSecurityChainBuilder {
         new LoginUrlAuthenticationEntryPoint(
             resolveOauthRedirectTarget(
                 clientRegistrationRepository, loginUrl, authorizationBaseUri));
-    final var entryPoints = new LinkedHashMap<RequestMatcher, AuthenticationEntryPoint>();
-    entryPoints.put(new RequestHeaderRequestMatcher("Authorization"), bearerEntryPoint);
-    final var delegatingEntryPoint = new DelegatingAuthenticationEntryPoint(entryPoints);
-    delegatingEntryPoint.setDefaultEntryPoint(oauthRedirectEntryPoint);
-    return delegatingEntryPoint;
+    // The LinkedHashMap constructor and setDefaultEntryPoint(...) are both @Deprecated in favor of
+    // this constructor, which takes the default entry point and matcher entries together.
+    return new DelegatingAuthenticationEntryPoint(
+        oauthRedirectEntryPoint,
+        new RequestMatcherEntry<>(
+            new RequestHeaderRequestMatcher("Authorization"), bearerEntryPoint));
   }
 
   /**

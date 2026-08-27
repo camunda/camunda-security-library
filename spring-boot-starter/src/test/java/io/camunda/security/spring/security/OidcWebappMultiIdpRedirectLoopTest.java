@@ -42,7 +42,7 @@ import org.springframework.security.web.SecurityFilterChain;
  * authentication entry point resolves to {@code /oauth2/authorization/{id}} instead of {@code
  * /login}, and {@link CamundaLoginPickerFilter} additionally redirects anonymous {@code GET /login}
  * straight to that same authorization URL for single-IdP setups rather than rendering a picker
- * (ADR-0043). So those assertions hold regardless of whether {@code LOGIN_URL} is on the permit-all
+ * (ADR-0022). So those assertions hold regardless of whether {@code LOGIN_URL} is on the permit-all
  * list.
  *
  * <p>This class registers <em>two</em> client registrations so the entry-point fallback in {@link

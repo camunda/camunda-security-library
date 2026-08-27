@@ -28,7 +28,7 @@ import org.springframework.web.util.HtmlUtils;
  * Renders a Camunda-branded identity-provider picker for {@code GET} requests to the configured
  * login page URL, replacing Spring Security's {@link
  * org.springframework.security.web.authentication.ui.DefaultLoginPageGeneratingFilter} as the
- * library default (ADR-0043).
+ * library default (ADR-0022).
  *
  * <p>The picker is rendered only when there is an actual choice to make: two or more OIDC client
  * registrations. With exactly one registration there is nothing to pick between, so the filter
