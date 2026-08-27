@@ -28,10 +28,10 @@ import org.slf4j.LoggerFactory;
  * Throws {@link IllegalArgumentException} (not a Spring type) when neither the username claim nor
  * the client-id claim resolves to a non-null string.
  *
- * <p>See ADR-0028 for why the constructor accepts primitive claim strings rather than {@code
+ * <p>See ADR-0014 for why the constructor accepts primitive claim strings rather than {@code
  * OidcConfiguration}: it keeps {@code core} free of config-object coupling.
  *
- * <p>Implements the {@link TokenClaimsAuthenticationResolver} {@code api} port (see ADR-0028) so
+ * <p>Implements the {@link TokenClaimsAuthenticationResolver} {@code api} port (see ADR-0014) so
  * non-Spring consumers can depend on the public port rather than this concrete {@code core} type.
  * The port method {@link #resolve(Map)} delegates to the pre-existing {@link #convert(Map)}.
  */

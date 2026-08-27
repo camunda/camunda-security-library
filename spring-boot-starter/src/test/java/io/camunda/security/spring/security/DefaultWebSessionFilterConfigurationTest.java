@@ -25,7 +25,7 @@ import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
- * Verifies the {@code defaultSessionRepositoryFilter} bean's repository resolution (ADR-0031):
+ * Verifies the {@code defaultSessionRepositoryFilter} bean's repository resolution (ADR-0009):
  * falls back to an in-memory {@link MapSessionRepository} when persistent web sessions are
  * disabled, and uses the durable {@link WebSessionRepository} bean when they are enabled — the same
  * preference order {@code ScopedSecurityChainRegistrar} applies for scoped chains.
@@ -103,7 +103,7 @@ class DefaultWebSessionFilterConfigurationTest {
           assertThat(registration.isEnabled())
               .as(
                   "must be disabled — otherwise Spring Boot auto-registers the filter as a"
-                      + " container-wide filter, reintroducing ADR-0031's nested-filter bug")
+                      + " container-wide filter, reintroducing ADR-0009's nested-filter bug")
               .isFalse();
         });
   }

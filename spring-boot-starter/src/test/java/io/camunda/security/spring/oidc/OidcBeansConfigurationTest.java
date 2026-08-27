@@ -40,7 +40,7 @@ class OidcBeansConfigurationTest {
   // Wrap the configuration under test in AutoConfigurations.of(...) so its
   // @ConditionalOnMissingBean evaluates after user configurations have registered their beans —
   // the same approach WebAppAuthorizationFilterConfigurationTest takes for explicitly-imported
-  // configuration classes governed by ADR-0008.
+  // configuration classes governed by ADR-0003.
   //
   // OidcBeansConfiguration's other @Bean methods (JwtDecoder, ClientRegistrationRepository,
   // OAuth2AuthorizedClientRepository, OAuth2AuthorizedClientManager) would otherwise need a valid

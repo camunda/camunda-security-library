@@ -34,7 +34,7 @@ public class CamundaSecurityLibraryProperties {
 
   /**
    * Heuristic floor for {@code camunda.security.session.max-inactive-interval} when {@code
-   * camunda.security.session.heartbeat.enabled=true} (ADR-0042). CSL has no visibility into the
+   * camunda.security.session.heartbeat.enabled=true} (ADR-0020). CSL has no visibility into the
    * heartbeat cadence a host's frontend actually uses — that value lives entirely in client-side
    * JS, not in any CSL config — so this is not a precise cross-check, just a floor below which a
    * heartbeat-only activity source is very unlikely to keep up with realistic cadences (commonly on
@@ -184,7 +184,7 @@ public class CamundaSecurityLibraryProperties {
    * Warns (does not fail startup — a host may have deliberate reasons, and CSL can't be certain
    * without knowing the frontend's actual cadence) when {@code
    * camunda.security.session.heartbeat.enabled=true} is paired with a {@code max-inactive-interval}
-   * shorter than {@link #MIN_RECOMMENDED_HEARTBEAT_INTERVAL}. See ADR-0042.
+   * shorter than {@link #MIN_RECOMMENDED_HEARTBEAT_INTERVAL}. See ADR-0020.
    */
   private void warnIfHeartbeatIntervalLooksMisconfigured() {
     if (session == null) {

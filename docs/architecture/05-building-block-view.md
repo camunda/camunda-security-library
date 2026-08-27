@@ -378,7 +378,7 @@ The Camunda Security Library is built on top of Spring Security but does not rep
 - Installing a scope-aware authorization filter (`WebAppAuthorizationCheckFilter`) backed by `AuthorizationCheckPort`.
 - Providing a set of `SecurityFilterChain` configuration classes that consuming applications activate by explicit `@Import`.
 
-Consuming applications should not need to write Spring Security configuration from scratch. CSL ships a set of `@Configuration` classes in the `spring-boot-starter` module, each covering a specific concern (authentication method, session management, OIDC provider wiring, etc.). Nothing activates automatically from adding the Maven dependency alone — see [ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md).
+Consuming applications should not need to write Spring Security configuration from scratch. CSL ships a set of `@Configuration` classes in the `spring-boot-starter` module, each covering a specific concern (authentication method, session management, OIDC provider wiring, etc.). Nothing activates automatically from adding the Maven dependency alone — see [ADR-0003](../adr/0003-no-spring-boot-auto-configuration.md).
 
 The preferred integration path is via `@ImportAutoConfiguration` — either with the umbrella `CamundaSecurityAutoConfiguration` or with individual CSL configuration classes. Spring Boot's auto-configuration phase runs after all regular `@Configuration` classes, so host-registered override beans are already present when CSL's `@ConditionalOnMissingBean` conditions are evaluated. Directly `@Import`-ing individual CSL configuration classes is also supported but requires care: if a CSL class is processed before the host's override bean is registered, `@ConditionalOnMissingBean` may not see the override and will create the CSL default instead.
 
@@ -395,7 +395,7 @@ In addition to core ports, the library is structured across four Maven modules:
 - `core/` — framework-free domain logic and all port interface definitions (`port/in/`, `port/out/`). Zero Spring or persistence dependencies.
 - `api/` — public, host-facing surface: model records (`api/model/`), context/helper contracts (`api/context/`), and configuration classes bound by Spring in the starter (`api/model/config/`). No dependency on `core/`.
 - `validation/` — centralized validators for identity initialization data (users, groups, tenants, roles, mapping rules, authorizations). Used by the starter to validate initialization configuration.
-- `spring-boot-starter/` — Spring configuration classes, filter chain assembly, and default port implementations. Hosts activate these via explicit `@Import` (see [ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md)).
+- `spring-boot-starter/` — Spring configuration classes, filter chain assembly, and default port implementations. Hosts activate these via explicit `@Import` (see [ADR-0003](../adr/0003-no-spring-boot-auto-configuration.md)).
 
 The `api` contracts are consumer-facing and do not need to be outbound host-implemented adapters.
 
@@ -593,13 +593,13 @@ The extra layer between UIs/clients and engines is intentional:
 
 #### 5.5 Engine authorization integration
 
-Rather than a separate authorization sub-framework embedded in the engine, the zeebe engine uses CSL's `core` authorization model directly — see [ADR-0028](../adr/0028-unified-authz-framework-in-core.md). Implementation is tracked in [#388](https://github.com/camunda/camunda-security-library/issues/388).
+Rather than a separate authorization sub-framework embedded in the engine, the zeebe engine uses CSL's `core` authorization model directly — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md). Implementation is tracked in [#388](https://github.com/camunda/camunda-security-library/issues/388).
 
-**Authorization checks (command-time, planned per ADR-0028 / [#388](https://github.com/camunda/camunda-security-library/issues/388)):** The target design introduces `AuthorizationCheckPort` as a unified inbound port in `core/port/in/`, with `AuthorizationService` as its default implementation wired in `spring-boot-starter`. Today, CSL provides `AuthorizationChecker` (`core/authz/`) as the shared scope-evaluation component used by the search layer. The full port-based engine integration — including RocksDB-backed adapter implementations of `MembershipPort` and `AuthorizationScopeRepositoryPort` — is tracked in [#388](https://github.com/camunda/camunda-security-library/issues/388).
+**Authorization checks (command-time, planned per ADR-0014 / [#388](https://github.com/camunda/camunda-security-library/issues/388)):** The target design introduces `AuthorizationCheckPort` as a unified inbound port in `core/port/in/`, with `AuthorizationService` as its default implementation wired in `spring-boot-starter`. Today, CSL provides `AuthorizationChecker` (`core/authz/`) as the shared scope-evaluation component used by the search layer. The full port-based engine integration — including RocksDB-backed adapter implementations of `MembershipPort` and `AuthorizationScopeRepositoryPort` — is tracked in [#388](https://github.com/camunda/camunda-security-library/issues/388).
 
 **Policy state propagation (planned):** OC CSL will propagate identity state changes (tenants, roles, authorizations) to each engine through `EngineCommandPort` (planned outbound port). See section 5.5.2.
 
-**Key rule:** engines never talk to IdPs directly, never hold policy versions, and never interpret scope metadata beyond what is needed for their own authorization decisions. The Camunda Security Library on the OC side is responsible for deciding what to forward and how to scope it; see [ADR-0004](../adr/0004-oc-identity-data-persistence-and-engine-command-scope.md) for the open decision on how scope metadata flows into the engine.
+**Key rule:** engines never talk to IdPs directly, never hold policy versions, and never interpret scope metadata beyond what is needed for their own authorization decisions. The Camunda Security Library on the OC side is responsible for deciding what to forward and how to scope it; see the proposed, not-yet-implemented [Identity data persistence in the Orchestration Cluster](../vision/oc-identity-data-persistence-and-engine-command-scope.md) vision document for the open decision on how scope metadata flows into the engine.
 
 ```mermaid
 graph LR
@@ -646,10 +646,10 @@ graph LR
 
 Using CSL's `core` authz framework for both layers is intentional:
 
-- **Single evaluation kernel, no drift (planned):** ADR-0028 proposes a shared `AuthorizationCheckPort` implemented by a core `AuthorizationService`. Today, CSL already provides `AuthorizationChecker` (`core/authz`) as the shared scope-evaluation component.
+- **Single evaluation kernel, no drift (planned):** ADR-0014 proposes a shared `AuthorizationCheckPort` implemented by a core `AuthorizationService`. Today, CSL already provides `AuthorizationChecker` (`core/authz`) as the shared scope-evaluation component.
 - **No new port contracts:** the engine integrates against existing `MembershipPort` and `AuthorizationScopeRepositoryPort` — no new outbound ports to stabilize before the engine migration begins.
-- **Richer failure detail:** `AuthorizationCheckPort` exposes failure reasons (tenant vs. permission) via an `Either`-style result (`Either<AuthorizationRejection, Void>`), per ADR-0028 — the single authorization surface for both the search layer and the engine, replacing the earlier boolean-only inbound port.
-- **Spring-free auth context (planned):** ADR-0028 proposes `ClaimsAuthenticationConverter` in `core` to convert raw claims to `CamundaAuthentication` without Spring dependencies.
+- **Richer failure detail:** `AuthorizationCheckPort` exposes failure reasons (tenant vs. permission) via an `Either`-style result (`Either<AuthorizationRejection, Void>`), per ADR-0014 — the single authorization surface for both the search layer and the engine, replacing the earlier boolean-only inbound port.
+- **Spring-free auth context (planned):** ADR-0014 proposes `ClaimsAuthenticationConverter` in `core` to convert raw claims to `CamundaAuthentication` without Spring dependencies.
 - **Primary-storage-optimized adapters:** engine-side caching remains an adapter concern; CSL core stays dependency-free and cache-agnostic.
 
 #### 5.5.2 Config propagation to the engine via batch operations
@@ -689,7 +689,7 @@ Persistent sessions are required for the OC authentication UX and remain part of
 
 ### 5.7 Frontend integration (Hub and OC)
 
-For frontend composition, the target approach is **Option 2 from ADR-0005**: integrate the identity Admin UI as a **versioned npm package** in both Hub and OC.
+For frontend composition, the target approach is **Option 2 from ADR-0002**: integrate the identity Admin UI as a **versioned npm package** in both Hub and OC.
 
 This aligns with current Camunda frontend practices in this monorepo, where shared UI capabilities are consumed as packages in React-based applications.
 
@@ -715,7 +715,7 @@ This aligns with current Camunda frontend practices in this monorepo, where shar
 
 If a future host cannot consume React packages directly, add a thin web-component adapter on top of the npm package instead of changing the primary delivery model.
 
-Reference: [ADR-0005: Frontend integration approach for Hub and Orchestration Cluster Admin UI](../adr/0005-frontend-integration-for-hub-and-oc.md).
+Reference: [ADR-0002: Frontend integration approach for Hub and Orchestration Cluster Admin UI](../adr/0002-frontend-integration-for-hub-and-oc.md).
 
 ### 5.8 Scoped Policies
 

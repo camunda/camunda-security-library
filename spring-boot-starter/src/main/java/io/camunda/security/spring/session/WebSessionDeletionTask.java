@@ -15,7 +15,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Periodic task that evicts expired web sessions from <em>every</em> session store. Each store is a
  * single-store {@link WebSessionRepository}; the sweep iterates them all rather than relying on a
- * cross-store fan-out, keeping every store isolated to one repository (ADR-0029). The set of
+ * cross-store fan-out, keeping every store isolated to one repository (ADR-0009). The set of
  * repositories is resolved per run so per-scope stores created after startup are picked up.
  */
 public final class WebSessionDeletionTask implements Runnable {

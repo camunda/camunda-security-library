@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
  * endpoint. Claims are cached by token identity ({@code iss+jti}, falling back to {@code
  * iss+sub+iat+exp}) so no bearer-token material is held in cache key space. A negative cache entry
  * is stored on any fetch failure so a degraded IdP does not hammer retries. JWT claims always win
- * on conflict (JWT-wins invariant, see ADR-0026).
+ * on conflict (JWT-wins invariant, see ADR-0007).
  */
 public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
 

@@ -2,7 +2,7 @@
 
 This guide is for host applications (Hub, Orchestration Cluster (OC) gateways, future Camunda services) that embed the Camunda Security Library. It explains how to wire the central filter chains, what host-side beans are required, and how to extend or override library defaults.
 
-For the rationale behind this design — why the chains live in CSL — see [ADR-0006](../adr/0006-central-security-filter-chains.md). For why hosts opt in via explicit `@Import` rather than relying on Spring Boot auto-configuration, see [ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md).
+For the rationale behind this design — why the chains live in CSL, and why hosts opt in via explicit `@Import` rather than relying on Spring Boot auto-configuration — see [ADR-0003](../adr/0003-no-spring-boot-auto-configuration.md).
 
 ## Why a central library owns the filter chains
 
@@ -45,7 +45,7 @@ Hosts retain control of *which* paths to protect (`SecurityPathPort`), the value
    }
    ```
 
-3. `@Import` the configuration classes you want active. The CSL does not use Spring Boot auto-configuration ([ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md)) — nothing activates by simply adding the dependency. Hosts opt in to each capability explicitly:
+3. `@Import` the configuration classes you want active. The CSL does not use Spring Boot auto-configuration ([ADR-0003](../adr/0003-no-spring-boot-auto-configuration.md)) — nothing activates by simply adding the dependency. Hosts opt in to each capability explicitly:
 
    ```java
    @Configuration
@@ -86,7 +86,7 @@ camunda:
       method: basic
 ```
 
-Under basic auth the library resolves users through the outbound [`BasicAuthUserDetailsPort`](./ports.md#basicauthuserdetailsport): the host provides a `BasicAuthUserDetailsPort` adapter (a scope-agnostic username lookup), and CSL supplies the `UserDetailsService` (`CamundaUserDetailsService`) plus a default delegating `PasswordEncoder`. Spring Boot assembles the global `AuthenticationManager` from those two beans, so the `BasicAuthApiSecurityConfiguration` / `BasicAuthWebappSecurityConfiguration` chains need no extra wiring. Both library beans are `@ConditionalOnMissingBean`, so a host can register its own `UserDetailsService` or `PasswordEncoder` to override the default; without a `BasicAuthUserDetailsPort` bean the CSL `UserDetailsService` does not activate. See [ADR-0021](../adr/0021-user-details-port.md).
+Under basic auth the library resolves users through the outbound [`BasicAuthUserDetailsPort`](./ports.md#basicauthuserdetailsport): the host provides a `BasicAuthUserDetailsPort` adapter (a scope-agnostic username lookup), and CSL supplies the `UserDetailsService` (`CamundaUserDetailsService`) plus a default delegating `PasswordEncoder`. Spring Boot assembles the global `AuthenticationManager` from those two beans, so the `BasicAuthApiSecurityConfiguration` / `BasicAuthWebappSecurityConfiguration` chains need no extra wiring. Both library beans are `@ConditionalOnMissingBean`, so a host can register its own `UserDetailsService` or `PasswordEncoder` to override the default; without a `BasicAuthUserDetailsPort` bean the CSL `UserDetailsService` does not activate. See [ADR-0010](../adr/0010-user-details-port.md).
 
 For local development without authentication, set:
 
@@ -138,9 +138,9 @@ For most conditional use cases the CSL ships purpose-built meta-annotations (see
 | `client-id` | string | unset | OAuth2 client id. |
 | `client-secret` | string | unset | OAuth2 client secret. |
 | `jwk-set-uri` | string | unset | Explicit JWK set URI. If unset, derived from `issuer-uri`. |
-| `additional-jwk-set-uris` | list&lt;string&gt; | empty | Secondary JWK Set URIs consulted when the primary `jwk-set-uri` does not resolve a token's signing key. See [Multiple JWK Set URIs](#multiple-jwk-set-uris) below and [ADR-0015](../adr/0015-additional-jwk-set-uris-composite-decoder.md). |
+| `additional-jwk-set-uris` | list&lt;string&gt; | empty | Secondary JWK Set URIs consulted when the primary `jwk-set-uri` does not resolve a token's signing key. See [Multiple JWK Set URIs](#multiple-jwk-set-uris) below and [ADR-0006](../adr/0006-multi-idp-oidc-configuration.md). |
 | `authorization-uri`, `token-uri`, `user-info-uri` | string | unset | Endpoint overrides for non-discovery flows. |
-| `user-info-enabled` | boolean | `true` | When `false`, the built `ClientRegistration` has its `userInfoUri` nulled so Spring Security does not call the IdP's UserInfo endpoint after token exchange. See [Disabling the UserInfo fetch](#disabling-the-userinfo-fetch) below and [ADR-0014](../adr/0014-oidc-user-info-enabled-toggle.md). |
+| `user-info-enabled` | boolean | `true` | When `false`, the built `ClientRegistration` has its `userInfoUri` nulled so Spring Security does not call the IdP's UserInfo endpoint after token exchange. See [Disabling the UserInfo fetch](#disabling-the-userinfo-fetch) below and [ADR-0007](../adr/0007-oidc-user-info-enabled-toggle.md). |
 | `user-info-augmentation.enabled` | boolean | `false` | When `true`, enables request-time claim augmentation from the UserInfo endpoint. See [UserInfo claim augmentation](#userinfo-claim-augmentation) below. |
 | `user-info-augmentation.cache-ttl` | duration | `5m` | How long a successful UserInfo response is cached per token identity (`iss+jti`, or `iss+sub+iat+exp` when `jti` is absent). |
 | `user-info-augmentation.cache-max-size` | int | `10000` | Maximum number of entries in the UserInfo claims cache. |
@@ -169,9 +169,18 @@ operates on every authenticated API request using the bearer token.
   access token. Augmentation fetches these at request time and merges them in.
 
 > **Note:** augmentation sources the UserInfo endpoint URI from the
-> `ClientRegistration`. Setting `user-info-enabled: false` nulls that URI, so
-> augmentation silently has nothing to call. Leave `user-info-enabled` at its
-> default (`true`) when enabling augmentation.
+> `ClientRegistration`. Setting `user-info-enabled: false` nulls that URI. If
+> that leaves *every* configured provider without a UserInfo URI (a single-IdP
+> setup, or a multi-IdP setup where all providers disable it), CSL fails fast
+> at startup with an `IllegalStateException` rather than silently running
+> without augmentation — enabling augmentation with nothing it can ever
+> augment is treated as a configuration mismatch. In a multi-IdP setup where
+> only *some* providers disable `user-info-enabled`, the coupling is silent
+> instead: tokens from those providers' issuers skip augmentation at request
+> time with no error surfaced (logged at DEBUG). Leave `user-info-enabled` at
+> its default (`true`) for any provider you want augmentation to cover. See
+> [ADR-0007](../adr/0007-oidc-user-info-enabled-toggle.md) for the full
+> mechanism.
 
 **JWT-wins invariant.** UserInfo claims are merged additively: JWT claims always
 win on any conflict. The UserInfo response can never override `sub`, `iss`,
@@ -209,7 +218,7 @@ frequent short outages that generate high retry traffic.
 
 ### Multi-IdP OIDC (`camunda.security.authentication.providers.oidc.<id>.*`)
 
-The library supports multiple OIDC providers by binding a map of `OidcConfiguration` instances under `camunda.security.authentication.providers.oidc.<id>.*`. Each map key becomes the Spring Security `registrationId`, so login routing works through Spring's standard `/oauth2/authorization/<id>` URL — no chain customisation is required. The shape mirrors OC's [`ProvidersConfiguration`](https://github.com/camunda/camunda/blob/main/security/security-core/src/main/java/io/camunda/security/configuration/ProvidersConfiguration.java) so hosts migrating from OC keep their existing configuration. See [ADR-0013](../adr/0013-multi-idp-oidc-configuration.md) for the design rationale.
+The library supports multiple OIDC providers by binding a map of `OidcConfiguration` instances under `camunda.security.authentication.providers.oidc.<id>.*`. Each map key becomes the Spring Security `registrationId`, so login routing works through Spring's standard `/oauth2/authorization/<id>` URL — no chain customisation is required. The shape mirrors OC's [`ProvidersConfiguration`](https://github.com/camunda/camunda/blob/main/security/security-core/src/main/java/io/camunda/security/configuration/ProvidersConfiguration.java) so hosts migrating from OC keep their existing configuration. See [ADR-0006](../adr/0006-multi-idp-oidc-configuration.md) for the design rationale.
 
 Each entry under `providers.oidc.<id>` accepts the same properties as the flat `oidc.*` block, with one exception: `registration-id` is ignored — the map key is always used as the Spring Security registration id. Configuring `providers.oidc.keycloak.registration-id: something-else` does not change the registration id; the value is silently overwritten by `keycloak`.
 
@@ -296,7 +305,7 @@ A host-supplied `@Bean JwtDecoder` continues to take precedence via `@Conditiona
 The library's default `JWSKeySelectorFactory`, `TokenValidatorFactory`, and
 `OidcAccessTokenDecoderFactory` beans are also overridable independently.
 
-See [ADR-0020](../adr/0020-issuer-aware-jwt-decoder.md) for the design rationale.
+See [ADR-0006](../adr/0006-multi-idp-oidc-configuration.md) for the design rationale.
 
 #### Multiple JWK Set URIs
 
@@ -318,16 +327,16 @@ camunda:
           - https://legacy-idp.example.com/.well-known/jwks.json
 ```
 
-`issuer-uri` is set alongside `jwk-set-uri` here because `ClientRegistration` construction requires either `issuer-uri` (for discovery of authorization/token endpoints) or all three of `authorization-uri`/`token-uri`/`jwk-set-uri` explicitly. The `additional-jwk-set-uris` wiring is independent of which path you choose to populate the registration; the only constraint is that the primary `jwk-set-uri` is set explicitly (the `JwtDecoder` does not consume discovered JWKS endpoints when additional URIs are configured).
+`issuer-uri` is set alongside `jwk-set-uri` here because `ClientRegistration` construction requires either `issuer-uri` (for discovery of authorization/token endpoints) or all three of `authorization-uri`/`token-uri`/`jwk-set-uri` explicitly. The `additional-jwk-set-uris` wiring is independent of which path you choose to populate the registration; the only constraint is that the registration ends up with a primary `jwk-set-uri`, whether you set it explicitly or discovery resolves it from `issuer-uri`.
 
 The default `JwtDecoder` queries the primary `jwk-set-uri` first, then each entry in `additional-jwk-set-uris` in declared order. The first source that resolves the token's `kid` wins. If an additional URI is unreachable, the failure is logged at WARN and the next source is tried — a failing additional URI does not break validation against the primary or other working URIs.
 
 Two constraints to be aware of:
 
-- **Explicit `jwk-set-uri` is required.** Discovery via `issuer-uri` alone is not supported when `additional-jwk-set-uris` is set. Set `jwk-set-uri` explicitly even if it points at the same endpoint the discovery document would resolve to. Startup fails with an actionable error otherwise.
+- **A resolvable `jwk-set-uri` is required.** Set `jwk-set-uri` explicitly, or set `issuer-uri` so OIDC discovery populates it. A provider that resolves neither fails at startup with `OIDC Provider '<id>' is missing a valid 'jwk-set-uri'`.
 - **`kid` collision precedence.** If two JWK Sets publish a key with the same `kid` (unlikely in practice), the primary `jwk-set-uri` wins because it is queried first. Reorder `additional-jwk-set-uris` to change precedence among the additional URIs.
 
-See [ADR-0015](../adr/0015-additional-jwk-set-uris-composite-decoder.md) for the design rationale, the choice of composite `JWKSource` over Spring's `JwtIssuerAuthenticationManagerResolver`, and the lazy failure model.
+See [ADR-0006](../adr/0006-multi-idp-oidc-configuration.md) for the design rationale, the choice of composite `JWKSource` over Spring's `JwtIssuerAuthenticationManagerResolver`, and the lazy failure model.
 
 #### Disabling the UserInfo fetch
 
@@ -356,7 +365,7 @@ camunda:
             user-info-enabled: false   # skip the /userinfo call for Azure
 ```
 
-A host-supplied `OidcUserService` bean still takes precedence in both modes (see [ADR-0014](../adr/0014-oidc-user-info-enabled-toggle.md)) — `user-info-enabled` only governs the library's default wiring.
+A host-supplied `OidcUserService` bean still takes precedence in both modes (see [ADR-0007](../adr/0007-oidc-user-info-enabled-toggle.md)) — `user-info-enabled` only governs the library's default wiring.
 
 ### Customizing the authorization request (`resource`, `additional-parameters`)
 
@@ -461,7 +470,7 @@ Defaults are the hardened production set (CSP locked down, HSTS at one year, COO
 
 ### Supplied by the library (overridable)
 
-Many library-supplied infrastructure beans intended to be overridden (including those listed below) have `@ConditionalOnMissingBean`. Define your own bean of the same type and the library's default backs off — **provided the CSL configuration class is loaded via `@ImportAutoConfiguration` (either the umbrella `CamundaSecurityAutoConfiguration` or the individual class).** A direct `@Import` parses CSL's `@Configuration` class before the host's own `@Bean` methods, so the CSL default registers first and either fails the host's override with `BeanDefinitionOverrideException` (named beans) or silently wins over it (unnamed beans of the same type). When you intend to override one of the beans below, replace the `@Import({…})` in the [Quickstart](#quickstart) with `@ImportAutoConfiguration({…})` for the relevant configuration classes — see [ADR-0008 §Fine-grained `@Import`](../adr/0008-no-spring-boot-auto-configuration.md#what-this-means-for-adopters).
+Many library-supplied infrastructure beans intended to be overridden (including those listed below) have `@ConditionalOnMissingBean`. Define your own bean of the same type and the library's default backs off — **provided the CSL configuration class is loaded via `@ImportAutoConfiguration` (either the umbrella `CamundaSecurityAutoConfiguration` or the individual class).** A direct `@Import` parses CSL's `@Configuration` class before the host's own `@Bean` methods, so the CSL default registers first and either fails the host's override with `BeanDefinitionOverrideException` (named beans) or silently wins over it (unnamed beans of the same type). When you intend to override one of the beans below, replace the `@Import({…})` in the [Quickstart](#quickstart) with `@ImportAutoConfiguration({…})` for the relevant configuration classes — see [ADR-0003 §Fine-grained `@Import`](../adr/0003-no-spring-boot-auto-configuration.md#what-this-means-for-adopters).
 
 | Bean | When | Override use case |
 |---|---|---|
@@ -559,7 +568,7 @@ no global OIDC configuration is required and no additional `@Import` is needed.
 
 **Dev-mode note.** When `camunda.security.authentication.unprotected-api=true` is set globally, all contributed scoped chains are also built as permit-all — the descriptor's `authentication.method` is ignored in this mode. This matches the global chain behaviour in dev environments, but means per-scope security is not enforced when the flag is on. Don't set this flag in production or any environment where per-scope isolation is a requirement.
 
-**Activation.** `ScopedApiSecurityConfiguration` is part of the `CamundaSecurityAutoConfiguration` umbrella — no additional `@Import` is needed when a host uses the umbrella. Hosts that `@Import` individual CSL configurations must add `ScopedApiSecurityConfiguration.class` to their `@Import` list. See [ADR-0025](../adr/0025-camunda-security-scope-provider-spi.md) for the design rationale.
+**Activation.** `ScopedSecurityChainConfiguration` is part of the `CamundaSecurityAutoConfiguration` umbrella — no additional `@Import` is needed when a host uses the umbrella. Hosts that `@Import` individual CSL configurations must add `ScopedSecurityChainConfiguration.class` to their `@Import` list. Each descriptor contributes both a scoped API chain and a scoped webapp chain. See [ADR-0013](../adr/0013-camunda-security-scope-provider-spi.md) for the design rationale.
 
 ### `OidcResourceServerCustomizer` — customise the OAuth2 resource-server DSL
 
@@ -598,7 +607,7 @@ authority-mapping logic** — for example, distinct chains per API version. This
 per-chain hook, not a globally-registered customizer: passing `null` (or, for the
 `buildScopedApiChain` overload, a supplier that returns `null`) preserves Spring Security's default
 `JwtAuthenticationConverter` behavior for that chain. See
-[ADR-0036](../adr/0036-per-chain-jwt-authentication-converter-hook.md) for why this is a method
+[ADR-0016](../adr/0016-cors-and-https-redirect-host-hooks.md) for why this is a method
 parameter rather than an `ObjectProvider`-discovered bean like `OidcResourceServerCustomizer` or
 `HttpsRedirectCustomizer` below.
 
@@ -648,7 +657,7 @@ CSL picks up the bean automatically via `@ConditionalOnMissingBean` and applies 
 
 > **Do not register mappings on `NoOpCorsConfigurationSource`.** If you inject the default `CorsConfigurationSource` bean and call `registerCorsConfiguration(...)` on it, the registrations are silently ignored because CSL keys off the marker type, not the registered mappings. Always register your own `CorsConfigurationSource` bean to enable CORS.
 
-See [ADR-0034](../adr/0034-cors-and-https-redirect-host-hooks.md) for the design rationale.
+See [ADR-0016](../adr/0016-cors-and-https-redirect-host-hooks.md) for the design rationale.
 
 ### `HttpsRedirectCustomizer` — enforce HTTPS
 
@@ -667,7 +676,7 @@ The customizer receives full `HttpSecurity` access, so the redirect strategy, ex
 
 The anchor passed to `addFilterBefore` must exist in the target chain. `SecurityContextHolderFilter` is always present in CSL's chains and is the safe choice.
 
-See [ADR-0034](../adr/0034-cors-and-https-redirect-host-hooks.md) for the design rationale.
+See [ADR-0016](../adr/0016-cors-and-https-redirect-host-hooks.md) for the design rationale.
 
 ### `SecurityHeadersCustomizer` — dynamic CSP, additional, or route-varying response headers
 
@@ -688,7 +697,7 @@ public SecurityHeadersCustomizer extraHeaders() {
 }
 ```
 
-CSL applies every registered customizer, in `@Order` order, to every content-serving filter chain (the same set `HttpsRedirectCustomizer` applies to, minus the catch-all deny-all chain, which serves no content). This coexists with `camunda.security.http-headers.*` (including `content-security-policy.*`) — your custom `HeaderWriter` is additive via `addHeaderWriter`, not a replacement for CSL's static configuration, unless your writer itself overwrites the header. If you register multiple customizers with distinct concerns (e.g. one for CSP, one for other headers), use `@Order` to control their relative sequencing. See [ADR-0037](../adr/0037-csp-and-security-headers-customizer-hooks.md) for the design rationale.
+CSL applies every registered customizer, in `@Order` order, to every content-serving filter chain (the same set `HttpsRedirectCustomizer` applies to, minus the catch-all deny-all chain, which serves no content). This coexists with `camunda.security.http-headers.*` (including `content-security-policy.*`) — your custom `HeaderWriter` is additive via `addHeaderWriter`, not a replacement for CSL's static configuration, unless your writer itself overwrites the header. If you register multiple customizers with distinct concerns (e.g. one for CSP, one for other headers), use `@Order` to control their relative sequencing. See [ADR-0016](../adr/0016-cors-and-https-redirect-host-hooks.md) for the design rationale.
 
 ### Other host beans the chains pick up automatically
 
@@ -704,7 +713,7 @@ The CSL's `WebAppAuthorizationCheckFilter` enforces per-web-app `ACCESS` permiss
 - **Which web app does the request belong to?** A single-web-app host returns a constant; a multi-web-app host derives from the URL path. Implement `WebAppProviderPort`.
 - **What happens when access is denied?** The library default redirects to `<contextPath>/<webApp>/forbidden`. Override `WebAppAccessDeniedHandlerPort` to return JSON, forward, or anything else.
 
-The actual permission decision delegates to the unified `AuthorizationCheckPort` (ADR-0028): the filter asks for `ACCESS` on the resolved web app as a `COMPONENT` resource and treats `Either.right(...)` as authorized. Hosts supply an `AuthorizationCheckPort` — either their own bean, or the ingredients for the library default (an `AuthorizationScopeRepositoryPort`, from which `AuthorizationConfiguration` builds `AuthorizationService`). Activation rationale lives in [ADR-0009](../adr/0009-web-app-authorization-spis.md).
+The actual permission decision delegates to the unified `AuthorizationCheckPort` (ADR-0014): the filter asks for `ACCESS` on the resolved web app as a `COMPONENT` resource and treats `Either.right(...)` as authorized. Hosts supply an `AuthorizationCheckPort` — either their own bean, or the ingredients for the library default (an `AuthorizationScopeRepositoryPort`, from which `AuthorizationConfiguration` builds `AuthorizationService`). Activation rationale lives in [ADR-0014](../adr/0014-unified-authz-framework-in-core.md).
 
 ### Activation
 
@@ -825,7 +834,7 @@ The CSL's `AdminUserCheckFilter` ensures an admin user has been provisioned befo
 - **Has an admin user been provisioned?** Implement `AdminUserPresencePort.adminUserExists()`. Hosts answer from any combination of static configuration and live storage — the library has no opinion on the data layer.
 - **What happens when no admin user exists?** The library default redirects to `<contextPath>/admin/setup`. Override `AdminUserMissingHandlerPort` to return JSON, forward, or anything else.
 
-A third concern — which paths bypass the check entirely (typically the setup endpoint plus its static assets) — is declared on the existing `SecurityPathPort` via `adminFilterBypassPaths()`, alongside the host's other path declarations. Activation rationale lives in [ADR-0010](../adr/0010-admin-user-setup-spis.md).
+A third concern — which paths bypass the check entirely (typically the setup endpoint plus its static assets) — is declared on the existing `SecurityPathPort` via `adminFilterBypassPaths()`, alongside the host's other path declarations. Activation rationale lives in [ADR-0004](../adr/0004-admin-user-setup-spis.md).
 
 ### Activation
 
@@ -934,7 +943,7 @@ When a host activates both `AdminUserCheckFilterConfiguration` and `WebAppAuthor
 
 ## OIDC logout
 
-When `authentication.method=oidc` and a host activates CSL via the `CamundaSecurityAutoConfiguration` umbrella, [`OidcBeansConfiguration`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/oidc/OidcBeansConfiguration.java) registers a default `LogoutSuccessHandler` — [`CamundaOidcLogoutSuccessHandler`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/security/CamundaOidcLogoutSuccessHandler.java) — that extends Spring Security's `OidcClientInitiatedLogoutSuccessHandler` with two additions over plain RP-initiated logout. Activation rationale lives in [ADR-0012](../adr/0012-oidc-logout-success-handler.md).
+When `authentication.method=oidc`, CSL builds a [`CamundaOidcLogoutSuccessHandler`](../../spring-boot-starter/src/main/java/io/camunda/security/spring/security/CamundaOidcLogoutSuccessHandler.java) for every OIDC webapp chain — the primary chain and each path-scoped chain — inside `ScopedWebappSecurityChainBuilder`. The handler extends Spring Security's `OidcClientInitiatedLogoutSuccessHandler` with two additions over plain RP-initiated logout. Rationale lives in [ADR-0009](../adr/0009-session-store-port-and-web-session-ownership.md).
 
 **What ships by default**
 
@@ -945,17 +954,20 @@ If the IdP's discovery document does not expose `end_session_endpoint`, the loca
 
 The handler is multi-IdP-aware — it looks up the `ClientRegistration` by the principal's `authorizedClientRegistrationId`.
 
-**Activation**
+**Activation and the post-logout route**
 
-The bean lives in `OidcBeansConfiguration` (already a member of the `CamundaSecurityAutoConfiguration` umbrella), so hosts activating CSL via the recommended opt-in path get the default `LogoutSuccessHandler` automatically:
+There is no `LogoutSuccessHandler` bean to register or override. CSL constructs one handler per OIDC webapp chain, each bound to that chain's own `ClientRegistrationRepository` and its own base-path prefix — a shared singleton cannot carry either, which is why the bean seam was removed.
+
+The one host input is the post-logout landing route, declared on `SecurityPathPort`:
 
 ```java
-@Configuration
-@ImportAutoConfiguration(CamundaSecurityAutoConfiguration.class)
-public class HostSecurityConfiguration {}
+@Override
+public Optional<String> postLogoutRedirectPath() {
+  return Optional.of("/post-logout");
+}
 ```
 
-The bean is `@ConditionalOnMissingBean(LogoutSuccessHandler.class)` — a host-registered bean wins. The umbrella is the activation path that makes `@ConditionalOnMissingBean` evaluate reliably; see [ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md) for the rationale.
+CSL sends the IdP `{baseUrl}<basePath><route>` as the `post_logout_redirect_uri`, so a scoped chain resolves it under its own prefix. The route must start with `/`. The default is `Optional.empty()`, meaning no `post_logout_redirect_uri` is sent and the IdP applies its own default — never return `null`. Every per-scope redirect URI must be allow-listed at the IdP; multi-tenant deployments need a wildcard or pattern registration. See [ADR-0009](../adr/0009-session-store-port-and-web-session-ownership.md).
 
 **Reading the post-logout redirect URL**
 
@@ -1032,7 +1044,7 @@ Session policy:
 
 A typical migration from a host-owned `WebSecurityConfig`:
 
-1. Replace your `@Bean SecurityFilterChain` methods by deleting them. Add an `@Import` list for the library's configuration classes — pick the ones that match your auth method and API protection mode (see the [Quickstart](#quickstart) snippet). Per [ADR-0008](../adr/0008-no-spring-boot-auto-configuration.md) hosts opt in to each capability explicitly; nothing activates by simply adding the dependency.
+1. Replace your `@Bean SecurityFilterChain` methods by deleting them. Add an `@Import` list for the library's configuration classes — pick the ones that match your auth method and API protection mode (see the [Quickstart](#quickstart) snippet). Per [ADR-0003](../adr/0003-no-spring-boot-auto-configuration.md) hosts opt in to each capability explicitly; nothing activates by simply adding the dependency.
 2. Move whatever you previously hand-rolled into `OidcResourceServerCustomizer` / `OidcTokenEndpointCustomizer` beans where applicable. For per-web-app authorization, register a `WebAppProviderPort` and an `AuthorizationCheckPort` (or an `AuthorizationScopeRepositoryPort` + `MembershipPort` so the library builds the default) and `@Import(WebAppAuthorizationFilterConfiguration.class)` — see [Web app authorization](#web-app-authorization). For admin-user setup, register an `AdminUserPresencePort` and `@Import(AdminUserCheckFilterConfiguration.class)` — see [Admin user setup](#admin-user-setup).
 3. Implement `SecurityPathPort` with the path patterns your previous chains used.
 4. Bind your existing security config to `camunda.security.*` properties (or set them explicitly).

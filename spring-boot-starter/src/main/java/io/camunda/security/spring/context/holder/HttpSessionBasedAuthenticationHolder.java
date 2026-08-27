@@ -29,7 +29,7 @@ import java.util.Optional;
  * session, so a lock on the {@link HttpSession} instance would not serialize concurrent requests
  * against the same session id. Instead, {@link #refreshClaims} is a JVM-local, session-id-keyed
  * guard that is the authority for "has this session already been refreshed", independent of any
- * single request's {@link HttpSession} snapshot (see ADR-0035).
+ * single request's {@link HttpSession} snapshot (see ADR-0017).
  *
  * <p>This holder must be registered as a singleton bean. {@link #refreshClaims} is a per-instance
  * cache, so the dedup only holds when every request shares one holder instance; a prototype- or
