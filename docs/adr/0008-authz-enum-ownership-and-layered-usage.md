@@ -41,7 +41,7 @@ The decision applies to the **Persistence, Exporter, Search, and Service** layer
 
 **The Zeebe engine layer keeps its existing enums.** `io.camunda.zeebe.protocol.record.value.AuthorizationResourceType` and the protocol-level `PermissionType` remain unchanged. This preserves RocksDB serialization stability and log-stream schema compatibility without requiring a revapi exception entry.
 
-**Hosts map to their own implementations.** OC implements `AuthorizationRepositoryPort` with adapters that read from their data store (RDBMS, Elasticsearch, etc.) and return CSL `Authorization` records carrying CSL enum values. The `AuthzModelMapper` is the single translation point between Zeebe protocol values and CSL values.
+**Hosts map to their own implementations.** OC implements `AuthorizationScopeRepositoryPort` with adapters that read from their data store (RDBMS, Elasticsearch, etc.) and return CSL `Authorization` records carrying CSL enum values. The `AuthzModelMapper` is the single translation point between Zeebe protocol values and CSL values.
 
 ## Options Considered
 
