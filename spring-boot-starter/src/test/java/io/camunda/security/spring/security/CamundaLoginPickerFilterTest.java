@@ -61,17 +61,20 @@ class CamundaLoginPickerFilterTest {
   }
 
   @Test
-  void fallsThroughWhenNoRegistrationsArePresent() throws Exception {
-    // InMemoryClientRegistrationRepository rejects an empty collection, so an empty-but-iterable
-    // repository is simulated directly — the same shape LoginLinksBuilder.buildLoginLinks handles.
-    final ClientRegistrationRepository empty =
+  void fallsThroughForANonIterableClientRegistrationRepository() throws Exception {
+    // A host-supplied ClientRegistrationRepository that does not implement Iterable cannot be
+    // enumerated by LoginLinksBuilder.buildLoginLinks, which then returns an empty map — the same
+    // "no links" outcome as zero registrations, exercised via the one repository shape that's
+    // actually constructible with no registrations (InMemoryClientRegistrationRepository rejects
+    // an empty collection).
+    final ClientRegistrationRepository nonIterable =
         new ClientRegistrationRepository() {
           @Override
           public ClientRegistration findByRegistrationId(final String registrationId) {
             return null;
           }
         };
-    final var filter = new CamundaLoginPickerFilter(empty, "/login");
+    final var filter = new CamundaLoginPickerFilter(nonIterable, "/login");
     final var request = new MockHttpServletRequest("GET", "/login");
     final var response = new MockHttpServletResponse();
 

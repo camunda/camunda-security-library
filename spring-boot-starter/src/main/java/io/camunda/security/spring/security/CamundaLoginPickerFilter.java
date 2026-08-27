@@ -36,8 +36,11 @@ import org.springframework.web.util.HtmlUtils;
  * {@link ScopedWebappSecurityChainBuilder#resolveOauthRedirectTarget} already sends unauthenticated
  * users to when a protected resource triggers the entry point. This keeps a direct {@code GET} to
  * the login URL consistent with that flow rather than presenting a one-link "choice" (GH-269
- * follow-up). With zero registrations — unreachable in practice, since every OIDC chain requires at
- * least one provider — the request simply falls through the filter chain.
+ * follow-up). The request falls through the filter chain in the two cases where {@link
+ * LoginLinksBuilder#buildLoginLinks} yields no links: zero registrations — unreachable in practice,
+ * since every OIDC chain requires at least one provider — and a host-supplied {@link
+ * ClientRegistrationRepository} that does not implement {@link Iterable}, which {@code
+ * buildLoginLinks} cannot enumerate.
  *
  * <p>This class is an intentional extension point: it is not {@code final}, and {@link
  * #renderPickerHtml(Map)} is {@code protected} so a host that wants different branding can subclass

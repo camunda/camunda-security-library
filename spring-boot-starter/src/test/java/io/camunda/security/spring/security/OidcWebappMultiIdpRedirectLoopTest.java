@@ -109,8 +109,8 @@ class OidcWebappMultiIdpRedirectLoopTest {
           proxy.doFilter(request, response, new MockFilterChain());
 
           // The chain MUST NOT respond with the loop signature: 302 redirect to /login. Either
-          // 200 (DefaultLoginPageGeneratingFilter renders the picker) or any other non-/login
-          // outcome is acceptable.
+          // 200 (CamundaLoginPickerFilter renders the picker) or any other non-/login outcome is
+          // acceptable.
           if (response.getStatus() == 302) {
             assertThat(response.getRedirectedUrl())
                 .as("anonymous /login under multi-IdP must not be redirected back to /login")
