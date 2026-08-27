@@ -63,7 +63,6 @@ import org.springframework.security.web.authentication.logout.CookieClearingLogo
 import org.springframework.security.web.authentication.logout.LogoutHandler;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
-import org.springframework.security.web.authentication.ui.DefaultLoginPageGeneratingFilter;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfToken;
@@ -95,7 +94,7 @@ public final class ScopedWebappSecurityChainBuilder {
   private final ObjectProvider<OAuth2AuthorizationRequestResolver>
       authorizationRequestResolverProvider;
   private final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider;
-  private final ObjectProvider<DefaultLoginPageGeneratingFilter> oidcLoginPickerProvider;
+  private final ObjectProvider<CamundaLoginPickerFilter> oidcLoginPickerProvider;
   private final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider;
   private final OAuth2AuthorizedClientManagerFactory authorizedClientManagerFactory;
   private final ScopedClientRegistrationFactory scopedClientRegistrationFactory;
@@ -112,7 +111,7 @@ public final class ScopedWebappSecurityChainBuilder {
       final ObjectProvider<OidcUserService> oidcUserServiceProvider,
       final ObjectProvider<OAuth2AuthorizationRequestResolver> authorizationRequestResolverProvider,
       final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
-      final ObjectProvider<DefaultLoginPageGeneratingFilter> oidcLoginPickerProvider,
+      final ObjectProvider<CamundaLoginPickerFilter> oidcLoginPickerProvider,
       final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider,
       final OAuth2AuthorizedClientManagerFactory authorizedClientManagerFactory,
       final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
@@ -269,9 +268,7 @@ public final class ScopedWebappSecurityChainBuilder {
     // writes before the picker commits the response.
     final var loginPickerFilter =
         oidcLoginPickerProvider.getIfAvailable(
-            () ->
-                LoginLinksBuilder.defaultOauth2LoginPickerFilter(
-                    clientRegistrationRepository, loginUrl));
+            () -> new CamundaLoginPickerFilter(clientRegistrationRepository, loginUrl));
     filterChainBuilder.addFilterAfter(loginPickerFilter, CsrfFilter.class);
 
     applyOidcRedirectDiagnosticsFilter(filterChainBuilder, redirectUri);
@@ -743,8 +740,7 @@ public final class ScopedWebappSecurityChainBuilder {
         new CamundaOidcAuthorizationRequestResolver(
             clientRegistrationRepository, providerMap, authorizationBaseUri);
     final var scopedPicker =
-        LoginLinksBuilder.defaultOauth2LoginPickerFilter(
-            clientRegistrationRepository, loginUrl, prefix);
+        new CamundaLoginPickerFilter(clientRegistrationRepository, loginUrl, prefix);
 
     // Install the per-scope session filter before the security context filter so the Spring-Session
     // backed, Path-scoped session is available throughout the chain.

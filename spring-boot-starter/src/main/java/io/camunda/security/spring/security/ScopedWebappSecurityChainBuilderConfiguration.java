@@ -25,7 +25,6 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProvider
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
-import org.springframework.security.web.authentication.ui.DefaultLoginPageGeneratingFilter;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 /**
@@ -52,7 +51,7 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
       final ObjectProvider<OidcUserService> oidcUserServiceProvider,
       final ObjectProvider<OAuth2AuthorizationRequestResolver> authorizationRequestResolverProvider,
       final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
-      final ObjectProvider<DefaultLoginPageGeneratingFilter> oidcLoginPickerProvider,
+      final ObjectProvider<CamundaLoginPickerFilter> oidcLoginPickerProvider,
       final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider,
       final OAuth2AuthorizedClientManagerFactory authorizedClientManagerFactory,
       final ScopedClientRegistrationFactory scopedClientRegistrationFactory,

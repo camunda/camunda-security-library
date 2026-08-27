@@ -69,9 +69,11 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
  *       MapSessionRepository} is found by scope A's chain but is invisible to scope B's chain
  *       (because B's filter looks for a differently-named cookie). A protected request to scope B
  *       carrying only scope A's session cookie produces a 302 redirect to scope B's login.
- *   <li><b>Per-scope picker:</b> {@code GET /physical-tenants/a/login} renders a 200 whose body
- *       contains links under {@code /physical-tenants/a/oauth2/authorization/…} but not under
- *       {@code /physical-tenants/b/…}.
+ *   <li><b>Per-scope login redirect:</b> {@code GET /physical-tenants/a/login} redirects (302) to
+ *       an authorization endpoint under {@code /physical-tenants/a/oauth2/authorization/…}, never
+ *       under {@code /physical-tenants/b/…} (each scope has exactly one provider configured, so
+ *       {@link io.camunda.security.spring.security.CamundaLoginPickerFilter} redirects straight to
+ *       it rather than rendering a picker — ADR-0043).
  * </ol>
  */
 class ScopedWebappSessionIsolationTest {
@@ -288,9 +290,12 @@ class ScopedWebappSessionIsolationTest {
             });
   }
 
-  // Per-scope picker — only scope A's links appear on scope A's login page
+  // Per-scope login redirect — each scope has exactly one provider configured, so
+  // CamundaLoginPickerFilter redirects straight to it (ADR-0043) rather than rendering a picker;
+  // the redirect target must stay scoped to that scope's own prefix and never leak the other
+  // scope's.
   @Test
-  void scopeALoginPickerListsOnlyScopeAProviderLinks() throws Exception {
+  void scopeALoginRedirectsToScopeAProviderOnly() throws Exception {
     runner()
         .run(
             ctx -> {
@@ -303,23 +308,23 @@ class ScopedWebappSessionIsolationTest {
               proxyA.doFilter(request, response, new MockFilterChain());
 
               assertThat(response.getStatus())
-                  .as("GET /physical-tenants/a/login must return 200 from the picker")
-                  .isEqualTo(200);
+                  .as("GET /physical-tenants/a/login must redirect straight to scope A's provider")
+                  .isEqualTo(302);
 
-              final var body = response.getContentAsString();
+              final var redirectedUrl = response.getRedirectedUrl();
 
-              assertThat(body)
-                  .as("picker must contain scope A's OAuth2 authorization link")
-                  .contains(BASE_A + "/oauth2/authorization/");
+              assertThat(redirectedUrl)
+                  .as("redirect must target scope A's OAuth2 authorization endpoint")
+                  .startsWith(BASE_A + "/oauth2/authorization/");
 
-              assertThat(body)
-                  .as("picker must NOT contain scope B's OAuth2 authorization link")
+              assertThat(redirectedUrl)
+                  .as("redirect must NOT target scope B's OAuth2 authorization endpoint")
                   .doesNotContain(BASE_B + "/oauth2/authorization/");
             });
   }
 
   @Test
-  void scopeBLoginPickerListsOnlyScopeBProviderLinks() throws Exception {
+  void scopeBLoginRedirectsToScopeBProviderOnly() throws Exception {
     runner()
         .run(
             ctx -> {
@@ -332,17 +337,17 @@ class ScopedWebappSessionIsolationTest {
               proxyB.doFilter(request, response, new MockFilterChain());
 
               assertThat(response.getStatus())
-                  .as("GET /physical-tenants/b/login must return 200 from the picker")
-                  .isEqualTo(200);
+                  .as("GET /physical-tenants/b/login must redirect straight to scope B's provider")
+                  .isEqualTo(302);
 
-              final var body = response.getContentAsString();
+              final var redirectedUrl = response.getRedirectedUrl();
 
-              assertThat(body)
-                  .as("picker must contain scope B's OAuth2 authorization link")
-                  .contains(BASE_B + "/oauth2/authorization/");
+              assertThat(redirectedUrl)
+                  .as("redirect must target scope B's OAuth2 authorization endpoint")
+                  .startsWith(BASE_B + "/oauth2/authorization/");
 
-              assertThat(body)
-                  .as("picker must NOT contain scope A's OAuth2 authorization link")
+              assertThat(redirectedUrl)
+                  .as("redirect must NOT target scope A's OAuth2 authorization endpoint")
                   .doesNotContain(BASE_A + "/oauth2/authorization/");
             });
   }
