@@ -331,8 +331,10 @@ class ScopedWebappSecurityChainBuilderScopedTest {
 
   /**
    * Control for {@link #scopedOidcChainOmitsPostLogoutRedirectUriWhenDisabled()}: with the host
-   * declaring a post-logout route and {@code post-logout-redirect-enabled} left at its default, the
-   * scoped chain does send {@code post_logout_redirect_uri}, resolved under the scope's base path.
+   * declaring a post-logout route and the scope never setting {@code post-logout-redirect-enabled},
+   * the scoped chain does send {@code post_logout_redirect_uri}, resolved under the scope's base
+   * path. Leaving the flag unset rather than passing an explicit {@code true} also pins the default
+   * as enabled, so an accidental flip of {@code DEFAULT_POST_LOGOUT_REDIRECT_ENABLED} fails here.
    */
   @Test
   void scopedOidcChainSendsPostLogoutRedirectUriByDefault() {
@@ -395,23 +397,34 @@ class ScopedWebappSecurityChainBuilderScopedTest {
     return new SessionRepositoryFilter<>(new MapSessionRepository(new ConcurrentHashMap<>()));
   }
 
+  /** A scoped OIDC configuration that never touches {@code postLogoutRedirectEnabled}. */
+  private static AuthenticationConfiguration scopedOidcAuthentication() {
+    return scopedOidcAuthentication(OidcConfiguration.builder());
+  }
+
+  /** A scoped OIDC configuration that sets {@code postLogoutRedirectEnabled} explicitly. */
+  private static AuthenticationConfiguration scopedOidcAuthentication(
+      final boolean postLogoutRedirectEnabled) {
+    return scopedOidcAuthentication(
+        OidcConfiguration.builder().postLogoutRedirectEnabled(postLogoutRedirectEnabled));
+  }
+
   /**
-   * A scoped OIDC {@link AuthenticationConfiguration} carrying its own {@code
-   * postLogoutRedirectEnabled}. Sets {@code oidc} (not only {@code providers}) because that is the
+   * Completes a scoped OIDC {@link AuthenticationConfiguration} from a partially built {@code
+   * OidcConfiguration}. Sets {@code oidc} (not only {@code providers}) because that is the
    * per-scope object the chain builder reads the flag from.
    */
   private static AuthenticationConfiguration scopedOidcAuthentication(
-      final boolean postLogoutRedirectEnabled) {
+      final OidcConfiguration.Builder oidcBuilder) {
     final var auth = new AuthenticationConfiguration();
     auth.setMethod(AuthenticationMethod.OIDC);
     final var oidc =
-        OidcConfiguration.builder()
+        oidcBuilder
             .clientId("client-oidc")
             .redirectUri("{baseUrl}" + BASE_PATH + "/sso-callback")
             .authorizationUri("http://localhost/oidc/auth")
             .tokenUri("http://localhost/oidc/token")
             .jwkSetUri("http://localhost/oidc/jwks")
-            .postLogoutRedirectEnabled(postLogoutRedirectEnabled)
             .build();
     auth.setOidc(oidc);
     final var providers = new OidcProvidersConfiguration();
@@ -957,7 +970,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
     }
   }
 
-  /** Scoped OIDC chain whose scope leaves {@code postLogoutRedirectEnabled} at its default. */
+  /** Scoped OIDC chain whose scope never sets {@code postLogoutRedirectEnabled}. */
   @Configuration
   static class PostLogoutRouteScopedConfig {
 
@@ -974,7 +987,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
       return builder.buildScopedWebappChain(
           http,
           BASE_PATH,
-          scopedOidcAuthentication(true),
+          scopedOidcAuthentication(),
           scopedSessionFilter(),
           "camunda-session-physical-tenants-t1",
           "X-CSRF-TOKEN-physical-tenants-t1");
