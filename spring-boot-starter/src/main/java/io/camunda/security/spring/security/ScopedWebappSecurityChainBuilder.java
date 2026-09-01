@@ -16,6 +16,7 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.filter.AdminUserCheckFilter;
@@ -227,7 +228,10 @@ public final class ScopedWebappSecurityChainBuilder {
                       .deleteCookies(SESSION_COOKIE, X_CSRF_TOKEN)
                       .invalidateHttpSession(true);
                   logout.logoutSuccessHandler(
-                      oidcLogoutSuccessHandler(clientRegistrationRepository, ""));
+                      oidcLogoutSuccessHandler(
+                          clientRegistrationRepository,
+                          "",
+                          properties.getAuthentication().getOidc()));
                 });
 
     // Heartbeat is installed first among AuthorizationFilter-anchored filters (insertion order is
@@ -593,9 +597,25 @@ public final class ScopedWebappSecurityChainBuilder {
     return "{baseUrl}" + prefix + path;
   }
 
+  /**
+   * Builds the chain's logout success handler.
+   *
+   * <p>{@code oidc} is the configuration of the scope the chain belongs to — the cluster's for the
+   * primary chain, the tenant's for a scoped one — so a scoped chain pointing at its own IdP reads
+   * that IdP's post-logout capability, matching how its registration and end-session endpoint are
+   * already resolved per scope.
+   */
   private LogoutSuccessHandler oidcLogoutSuccessHandler(
-      final ClientRegistrationRepository repo, final String prefix) {
+      final ClientRegistrationRepository repo, final String prefix, final OidcConfiguration oidc) {
     final var handler = new CamundaOidcLogoutSuccessHandler(repo);
+    // A deployment whose IdP cannot register the resulting URL turns this off, and the end-session
+    // request goes out with no post_logout_redirect_uri at all. Checked before the route is read
+    // so the host's declaration is simply unused, rather than having to be blanked to suppress it.
+    if (!oidc.isPostLogoutRedirectEnabled()) {
+      LOG.debug(
+          "post_logout_redirect_uri is disabled; the IdP will apply its own post-logout default.");
+      return handler;
+    }
     final var route =
         Objects.requireNonNull(
             pathPort.postLogoutRedirectPath(),
@@ -801,7 +821,8 @@ public final class ScopedWebappSecurityChainBuilder {
                       .addLogoutHandler(
                           pathScopedCookieClearingLogoutHandler(scopedCsrfCookieName, prefix));
                   logout.logoutSuccessHandler(
-                      oidcLogoutSuccessHandler(clientRegistrationRepository, prefix));
+                      oidcLogoutSuccessHandler(
+                          clientRegistrationRepository, prefix, authentication.getOidc()));
                 });
 
     // Installed first among AuthorizationFilter-anchored filters (see buildOidcWebappChain) so a

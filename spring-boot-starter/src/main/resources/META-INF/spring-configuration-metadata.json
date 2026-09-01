@@ -326,6 +326,12 @@
       "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
     },
     {
+      "name": "camunda.security.authentication.oidc.post-logout-redirect-enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "defaultValue": true
+    },
+    {
       "name": "camunda.security.authentication.oidc.prefer-id-token-claims",
       "type": "java.lang.Boolean",
       "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",

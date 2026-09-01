@@ -36,6 +36,7 @@ public class OidcConfiguration {
   public static final String DEFAULT_REGISTRATION_ID = "oidc";
   public static final List<String> DEFAULT_SCOPE = Arrays.asList("openid", "profile");
   public static final boolean DEFAULT_IDP_LOGOUT_ENABLED = true;
+  public static final boolean DEFAULT_POST_LOGOUT_REDIRECT_ENABLED = true;
   public static final boolean DEFAULT_USER_INFO_ENABLED = true;
 
   private String issuerUri;
@@ -67,6 +68,7 @@ public class OidcConfiguration {
   private AssertionConfiguration assertionConfiguration = new AssertionConfiguration();
   private Duration clockSkew = DEFAULT_CLOCK_SKEW;
   private boolean idpLogoutEnabled = DEFAULT_IDP_LOGOUT_ENABLED;
+  private boolean postLogoutRedirectEnabled = DEFAULT_POST_LOGOUT_REDIRECT_ENABLED;
   private boolean userInfoEnabled = DEFAULT_USER_INFO_ENABLED;
   private OidcUserInfoAugmentationConfiguration userInfoAugmentation =
       new OidcUserInfoAugmentationConfiguration();
@@ -317,6 +319,30 @@ public class OidcConfiguration {
     this.idpLogoutEnabled = idpLogoutEnabled;
   }
 
+  /**
+   * Whether RP-initiated logout asks the IdP to send the browser back to the host afterwards, by
+   * submitting the host's post-logout route (see {@code SecurityPathPort#postLogoutRedirectPath()})
+   * as {@code post_logout_redirect_uri}. Enabled by default.
+   *
+   * <p>Disable it for an IdP that cannot have the resulting URL registered as an allowed
+   * post-logout redirect. Auth0 matches {@code post_logout_redirect_uri} against its "Allowed
+   * Logout URLs" exactly and accepts wildcards only in the subdomain position, never in the path —
+   * so a deployment served under a per-tenant or per-cluster path prefix produces a URL no entry
+   * can ever match, and Auth0 rejects the whole end-session request with {@code invalid_request}
+   * rather than logging the user out.
+   *
+   * <p>Orthogonal to {@link #isIdpLogoutEnabled()}: that decides whether to contact the IdP at all,
+   * this decides only whether to ask it for a redirect back. Disabling this still terminates the
+   * IdP session; the IdP renders its own logged-out page instead of returning to the host.
+   */
+  public boolean isPostLogoutRedirectEnabled() {
+    return postLogoutRedirectEnabled;
+  }
+
+  public void setPostLogoutRedirectEnabled(final boolean postLogoutRedirectEnabled) {
+    this.postLogoutRedirectEnabled = postLogoutRedirectEnabled;
+  }
+
   public boolean isUserInfoEnabled() {
     return userInfoEnabled;
   }
@@ -426,6 +452,7 @@ public class OidcConfiguration {
     private AssertionConfiguration assertionConfiguration = new AssertionConfiguration();
     private Duration clockSkew = DEFAULT_CLOCK_SKEW;
     private boolean idpLogoutEnabled = DEFAULT_IDP_LOGOUT_ENABLED;
+    private boolean postLogoutRedirectEnabled = DEFAULT_POST_LOGOUT_REDIRECT_ENABLED;
     private boolean userInfoEnabled = DEFAULT_USER_INFO_ENABLED;
     private OidcUserInfoAugmentationConfiguration userInfoAugmentation =
         new OidcUserInfoAugmentationConfiguration();
@@ -568,6 +595,11 @@ public class OidcConfiguration {
       return this;
     }
 
+    public Builder postLogoutRedirectEnabled(final boolean postLogoutRedirectEnabled) {
+      this.postLogoutRedirectEnabled = postLogoutRedirectEnabled;
+      return this;
+    }
+
     public Builder userInfoEnabled(final boolean userInfoEnabled) {
       this.userInfoEnabled = userInfoEnabled;
       return this;
@@ -608,6 +640,7 @@ public class OidcConfiguration {
       config.setAssertion(assertionConfiguration);
       config.setClockSkew(clockSkew);
       config.setIdpLogoutEnabled(idpLogoutEnabled);
+      config.setPostLogoutRedirectEnabled(postLogoutRedirectEnabled);
       config.setUserInfoEnabled(userInfoEnabled);
       config.setUserInfoAugmentation(userInfoAugmentation);
       config.setDiagnostics(diagnostics);
