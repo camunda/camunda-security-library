@@ -228,10 +228,7 @@ public final class ScopedWebappSecurityChainBuilder {
                       .deleteCookies(SESSION_COOKIE, X_CSRF_TOKEN)
                       .invalidateHttpSession(true);
                   logout.logoutSuccessHandler(
-                      oidcLogoutSuccessHandler(
-                          clientRegistrationRepository,
-                          "",
-                          properties.getAuthentication().getOidc()));
+                      oidcLogoutSuccessHandler(clientRegistrationRepository, "", clusterOidc()));
                 });
 
     // Heartbeat is installed first among AuthorizationFilter-anchored filters (insertion order is
@@ -598,12 +595,27 @@ public final class ScopedWebappSecurityChainBuilder {
   }
 
   /**
+   * The cluster's OIDC configuration, never null.
+   *
+   * <p>{@link CamundaSecurityLibraryProperties#setAuthentication} does not null-guard, and the
+   * class treats an absent authentication section as valid elsewhere (see its {@code
+   * isApiProtected()} and {@code validate()}), so the primary chain must not dereference it
+   * blindly. Scoped chains need no equivalent: their {@code AuthenticationConfiguration} is
+   * null-checked on entry and its {@code getOidc()} is itself null-safe.
+   */
+  private OidcConfiguration clusterOidc() {
+    final var authentication = properties.getAuthentication();
+    return authentication == null ? new OidcConfiguration() : authentication.getOidc();
+  }
+
+  /**
    * Builds the chain's logout success handler.
    *
    * <p>{@code oidc} is the configuration of the scope the chain belongs to — the cluster's for the
    * primary chain, the tenant's for a scoped one — so a scoped chain pointing at its own IdP reads
    * that IdP's post-logout capability, matching how its registration and end-session endpoint are
-   * already resolved per scope.
+   * already resolved per scope. It must not be null; both call sites resolve a non-null value, and
+   * a silent default here would mask a wiring mistake rather than surface it.
    */
   private LogoutSuccessHandler oidcLogoutSuccessHandler(
       final ClientRegistrationRepository repo, final String prefix, final OidcConfiguration oidc) {
