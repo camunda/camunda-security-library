@@ -334,6 +334,8 @@ public class OidcConfiguration {
    * <p>Orthogonal to {@link #isIdpLogoutEnabled()}: that decides whether to contact the IdP at all,
    * this decides only whether to ask it for a redirect back. Disabling this still terminates the
    * IdP session; the IdP renders its own logged-out page instead of returning to the host.
+   *
+   * <p>See ADR-0043 for why this is configuration rather than a {@code SecurityPathPort} method.
    */
   public boolean isPostLogoutRedirectEnabled() {
     return postLogoutRedirectEnabled;
