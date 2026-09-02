@@ -31,7 +31,8 @@ import org.springframework.util.StringUtils;
  * <p><b>Discovery cache.</b> The first registration for an {@code issuer-uri} fetches that IdP's
  * discovery document over HTTP and the rest reuse it, so ten providers on one issuer cost one
  * fetch, not ten. A document is kept only if {@link ClientRegistrations#fromOidcConfiguration} can
- * read it back (see {@link #cacheDiscoveryDocument})
+ * read it back (see {@link #cacheDiscoveryDocument}); if it cannot, that issuer goes on fetching
+ * once per registration.
  */
 public final class ScopedClientRegistrationFactory {
 
@@ -305,29 +306,20 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * A builder pre-populated from the issuer's discovery document, re-derived from the cached
-   * document when we already have one — so N registrations sharing an issuer cost one HTTP fetch
-   * instead of N.
+   * A builder filled in from the issuer's discovery document, rebuilt from the cached copy when we
+   * already have one.
    *
-   * <p>Deliberately {@code get} then {@code putIfAbsent} at the call site rather than {@code
-   * computeIfAbsent}: the latter would hold the map's bin lock across a blocking 30-second HTTP
-   * call, stalling threads resolving unrelated issuers that hash to the same bin. A race costs at
-   * most one redundant fetch, never worse than the per-registration fetch this replaces.
+   * <p>{@code get} then {@code putIfAbsent}, not {@code computeIfAbsent}: the latter locks part of
+   * the map while a 30-second HTTP call runs, which blocks threads looking up other issuers. The
+   * worst a race costs here is one extra fetch.
    *
-   * <p>The cached unit is the <em>document</em>, and that boundary cannot move outward. Caching the
-   * {@link ClientRegistration.Builder} would share whatever the per-registration code sets only
-   * conditionally: one provider's explicit {@code jwk-set-uri} would silently become every
-   * co-issuer provider's, pointing their login at the wrong key set. Caching a built {@link
-   * ClientRegistration} would additionally share client credentials, scopes and audiences — and
-   * audiences are authoritative by presence under {@link
-   * TokenValidatorFactory#AUDIENCES_METADATA_KEY}, so that one is an auth bypass, not a
-   * misconfiguration. What keeps audiences safe is {@link #mergeProviderMetadata} building a fresh
-   * map per registration; nothing about the cache itself. A built template would also invert the
-   * override order that camunda/camunda-security-library#233 depends on, since discovery sets
-   * {@code authorizationUri} only conditionally while {@code build()} asserts it is present.
-   *
-   * <p>Both leaks are covered by tests that run each provider order both ways: a shared builder
-   * corrupts only the registration built second, so a single order passes.
+   * <p>Cache the document, not a builder and not a finished registration. Two registrations that
+   * shared a builder would also share the fields set only when configured, so one provider's
+   * explicit {@code jwk-set-uri} would become the other's. Sharing a finished registration would
+   * also share client credentials, scopes and audiences — and a registration's audiences count as
+   * set simply by being present under {@link TokenValidatorFactory#AUDIENCES_METADATA_KEY}, so one
+   * scope's tokens would pass another scope's checks. Audiences stay separate only because {@link
+   * #mergeProviderMetadata} builds a new map for each registration.
    */
   private ClientRegistration.Builder discoveredBuilder(final String issuerUri) {
     final var cached = discoveryByIssuer.get(issuerUri);
