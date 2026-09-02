@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrations;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
@@ -26,8 +27,22 @@ import org.springframework.util.StringUtils;
  * Spring bean context. "Scoped" reflects that the factory builds registrations for an arbitrary
  * authentication scope (any per-scope security chain), not only the global configuration — future
  * per-scope chain building reuses this class without modification.
+ *
+ * <p><b>Discovery cache.</b> The first registration for an {@code issuer-uri} fetches that IdP's
+ * discovery document over HTTP and the rest reuse it, so ten providers on one issuer cost one
+ * fetch, not ten. A document is kept only if {@link ClientRegistrations#fromOidcConfiguration} can
+ * read it back (see {@link #cacheDiscoveryDocument})
  */
 public final class ScopedClientRegistrationFactory {
+
+  /**
+   * Discovery documents already fetched, keyed by the raw {@code issuer-uri}. Never normalized:
+   * {@code fromIssuerLocation} builds the well-known path from the exact string and checks the
+   * document's own {@code issuer} against it, so trimming a trailing slash could serve one issuer's
+   * document under another's key. Per instance, not static, and successes only — a failed fetch is
+   * never cached.
+   */
+  private final Map<String, Map<String, Object>> discoveryByIssuer = new ConcurrentHashMap<>();
 
   /**
    * Creates one {@link ClientRegistration} per entry in the given provider map. The map key is used
@@ -128,7 +143,7 @@ public final class ScopedClientRegistrationFactory {
    * Spring expands the {@code {baseUrl}} placeholder to the application's base URL — {@code
    * scheme://host:port} plus the servlet context path, if any — at request time.
    */
-  private static ClientRegistration buildClientRegistration(
+  private ClientRegistration buildClientRegistration(
       final String registrationId,
       final OidcConfiguration oidc,
       final String scopedRedirectUriPath) {
@@ -156,11 +171,51 @@ public final class ScopedClientRegistrationFactory {
     if (!oidc.isUserInfoEnabled()) {
       builder.userInfoUri(null);
     }
-    // Merge into the discovered metadata via build-then-rebuild: providerConfigurationMetadata
-    // replaces, which would drop a discovered end_session_endpoint. Always stash the audiences key
-    // (even empty) so the registration carries its own audiences, authoritative by presence; an
-    // explicit end-session endpoint wins.
     final var built = builder.build();
+    if (StringUtils.hasText(oidc.getIssuerUri())) {
+      cacheDiscoveryDocument(oidc.getIssuerUri(), built);
+    }
+    return mergeProviderMetadata(built, oidc);
+  }
+
+  /**
+   * Stores the issuer's discovery document, but only if {@link
+   * ClientRegistrations#fromOidcConfiguration} can turn it back into a builder. The document is
+   * taken from the finished registration, so the first fetch behaves exactly as before, and the
+   * explicit endpoint overrides change builder fields rather than the document itself.
+   *
+   * <p>The check is needed because Spring looks for the document in more than one place. When it
+   * falls back to the RFC 8414 location it accepts a document that can leave out {@code jwks_uri}
+   * and other fields {@code fromOidcConfiguration} requires; storing one of those would let the
+   * first registration succeed and break every later one. Checking on the way in means everything
+   * in the cache can be used, and an issuer that fails the check simply fetches once per
+   * registration, as it did before.
+   */
+  private void cacheDiscoveryDocument(final String issuerUri, final ClientRegistration built) {
+    if (discoveryByIssuer.containsKey(issuerUri)) {
+      return;
+    }
+    final Map<String, Object> document =
+        new LinkedHashMap<>(built.getProviderDetails().getConfigurationMetadata());
+    try {
+      ClientRegistrations.fromOidcConfiguration(document);
+    } catch (final RuntimeException notReConsumable) {
+      return;
+    }
+    discoveryByIssuer.putIfAbsent(issuerUri, document);
+  }
+
+  /**
+   * Adds this registration's own entries to the discovered metadata by build-then-rebuild, since
+   * {@code providerConfigurationMetadata} replaces the map and would drop a discovered {@code
+   * end_session_endpoint}. The audiences key is always set, even when empty, because it is
+   * authoritative by presence; an explicit end-session endpoint wins.
+   *
+   * <p>The map is fresh per registration — the only reason registrations sharing an issuer cannot
+   * see each other's audiences.
+   */
+  private static ClientRegistration mergeProviderMetadata(
+      final ClientRegistration built, final OidcConfiguration oidc) {
     final Map<String, Object> merged =
         new LinkedHashMap<>(built.getProviderDetails().getConfigurationMetadata());
     merged.put(
@@ -224,13 +279,12 @@ public final class ScopedClientRegistrationFactory {
    * custom STS endpoints, proxies that rewrite discovery documents). See
    * camunda/camunda-security-library#233.
    */
-  private static ClientRegistration.Builder clientRegistrationBuilder(
+  private ClientRegistration.Builder clientRegistrationBuilder(
       final String registrationId, final OidcConfiguration oidc) {
     final boolean hasIssuer = StringUtils.hasText(oidc.getIssuerUri());
     final ClientRegistration.Builder builder =
         hasIssuer
-            ? ClientRegistrations.fromIssuerLocation(oidc.getIssuerUri())
-                .registrationId(registrationId)
+            ? discoveredBuilder(oidc.getIssuerUri()).registrationId(registrationId)
             : ClientRegistration.withRegistrationId(registrationId);
 
     if (!hasIssuer
@@ -247,6 +301,51 @@ public final class ScopedClientRegistrationFactory {
               + ".*");
     }
 
+    return applyExplicitEndpointOverrides(builder, oidc);
+  }
+
+  /**
+   * A builder pre-populated from the issuer's discovery document, re-derived from the cached
+   * document when we already have one — so N registrations sharing an issuer cost one HTTP fetch
+   * instead of N.
+   *
+   * <p>Deliberately {@code get} then {@code putIfAbsent} at the call site rather than {@code
+   * computeIfAbsent}: the latter would hold the map's bin lock across a blocking 30-second HTTP
+   * call, stalling threads resolving unrelated issuers that hash to the same bin. A race costs at
+   * most one redundant fetch, never worse than the per-registration fetch this replaces.
+   *
+   * <p>The cached unit is the <em>document</em>, and that boundary cannot move outward. Caching the
+   * {@link ClientRegistration.Builder} would share whatever the per-registration code sets only
+   * conditionally: one provider's explicit {@code jwk-set-uri} would silently become every
+   * co-issuer provider's, pointing their login at the wrong key set. Caching a built {@link
+   * ClientRegistration} would additionally share client credentials, scopes and audiences — and
+   * audiences are authoritative by presence under {@link
+   * TokenValidatorFactory#AUDIENCES_METADATA_KEY}, so that one is an auth bypass, not a
+   * misconfiguration. What keeps audiences safe is {@link #mergeProviderMetadata} building a fresh
+   * map per registration; nothing about the cache itself. A built template would also invert the
+   * override order that camunda/camunda-security-library#233 depends on, since discovery sets
+   * {@code authorizationUri} only conditionally while {@code build()} asserts it is present.
+   *
+   * <p>Both leaks are covered by tests that run each provider order both ways: a shared builder
+   * corrupts only the registration built second, so a single order passes.
+   */
+  private ClientRegistration.Builder discoveredBuilder(final String issuerUri) {
+    final var cached = discoveryByIssuer.get(issuerUri);
+    return cached != null
+        ? ClientRegistrations.fromOidcConfiguration(cached)
+        : ClientRegistrations.fromIssuerLocation(issuerUri);
+  }
+
+  /**
+   * Applies any explicitly-configured endpoint URI on top of the builder, so a non-blank value on
+   * the configuration always wins and a null/blank one leaves the discovered value untouched.
+   *
+   * <p>Must run before the registration is built: on the {@code issuer-uri} path these overrides
+   * are what plug gaps in an incomplete discovery document, and {@code build()} asserts that {@code
+   * authorizationUri} and {@code tokenUri} are present.
+   */
+  private static ClientRegistration.Builder applyExplicitEndpointOverrides(
+      final ClientRegistration.Builder builder, final OidcConfiguration oidc) {
     if (StringUtils.hasText(oidc.getAuthorizationUri())) {
       builder.authorizationUri(oidc.getAuthorizationUri());
     }
