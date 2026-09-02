@@ -59,14 +59,17 @@ pair:
 pairs the two into what a caller must have for an operation to be allowed, and can scope that
 requirement three ways:
 
-- statically, via `resourceIds()` (a fixed list of IDs known up front) — this is the only scoping
-  mechanism the default checker (below) currently evaluates.
+- statically, via `resourceIds()` (a fixed list of IDs known up front) — the only scoping
+  mechanism the scope-based `AuthorizationCheckPort#check(authentication, requiredAuthorization)`
+  overload (below) evaluates.
 - dynamically, via `resourceIdSupplier()` (a `Function<T, String>` that would derive the ID from
   the runtime document) — settable via the builder and readable through its own accessor (which is
-  all the existing `RequiredAuthorizationTest` assertions exercise), but not read by either check
-  path in `AuthorizationService`/`AuthorizationChecker` below.
-- by property, via `resourcePropertyNames()` (e.g. `"assignee"`) — evaluated through a separate
-  property-based check path, not the resource-ID path (see below).
+  all the existing `RequiredAuthorizationTest` assertions exercise, along with the `with*` copy
+  methods that carry it forward), but not read by either `AuthorizationService` check path below.
+- by property, via `resourcePropertyNames()` (e.g. `"assignee"`) — evaluated by
+  `AuthorizationService`, but through its separate property-based
+  `check(authentication, requiredAuthorization, resource)` overload, not the resource-ID path
+  above (see below).
 
 `RequiredAuthorization` only *describes* what is required — it carries no logic to grant or deny
 anything. Evaluating it against what a principal actually has is
@@ -127,14 +130,14 @@ live check path works over `AuthorizationScope` records returned by
 3. `BATCH -> CREATE_BATCH_OPERATION_CANCEL_PROCESS_INSTANCE`, with a resource ID supplied via
    `resourceIdSupplier` — illustrates the builder's per-document scoping API, though as noted
    above neither check path currently reads `resourceIdSupplier()`; a real access check still needs
-   `resourceIds()` populated to be enforced. `BatchOperationRequest` here is an illustrative
+   `resourceIds()` populated to be enforced. `ExampleBatchOperationRequest` here is an illustrative
    caller-defined document type (the generic `T`), not a class that exists in this repository:
 
    ```java
-   RequiredAuthorization.<BatchOperationRequest>of(
+   RequiredAuthorization.<ExampleBatchOperationRequest>of(
        b -> b.batchOperation()
            .permissionType(PermissionType.CREATE_BATCH_OPERATION_CANCEL_PROCESS_INSTANCE)
-           .resourceIdSupplier(BatchOperationRequest::processDefinitionId));
+           .resourceIdSupplier(ExampleBatchOperationRequest::processDefinitionId));
    ```
 
 **Authorization levels.** `ALL`, `TENANT`, and `PHYSICAL_TENANT` (introduced above under "Unified
