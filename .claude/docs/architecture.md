@@ -132,15 +132,18 @@ live check path works over `AuthorizationScope` records returned by
    ```
 
 **Authorization levels.** `ALL`, `TENANT`, and `PHYSICAL_TENANT` (introduced above under "Unified
-Policy Model") are policy-model concepts describing a granted authorization's scope — there is no
-`AuthorizationLevel` field on any CSL type today; the levels are propagated and enforced further
-up the Hub/OC stack. Conceptually they map onto the wildcard/ID distinction the current check path
-already uses: an `ALL`-level grant corresponds to the wildcard resource ID
-(`AuthorizationScope.WILDCARD`), which `AuthorizationChecker#isAuthorized` always includes in its
-lookup; `TENANT`- and `PHYSICAL_TENANT`-level grants correspond to an `AuthorizationScope` whose
-resource ID is a specific tenant or physical-tenant identifier. A `RequiredAuthorization` scoped to
-a specific ID (via `resourceIds()`) is satisfied by either kind of grant — a matching specific ID,
-or a wildcard.
+Policy Model") are part of the wider Hub/OC policy-propagation model — they appear as the
+`authorization_level` field on the `PolicyVersion`/`OcSyncState` propagation records described in
+[05-building-block-view.md](../../docs/architecture/05-building-block-view.md), not as a field on
+any type in this repository. Grepping this codebase for `AuthorizationLevel` or `PHYSICAL_TENANT`
+turns up nothing outside documentation: `RequiredAuthorization`, `Authorization`, and
+`AuthorizationScope` have no notion of a level today, and the resource-ID check path described
+above only ever distinguishes a wildcard resource ID from a specific one — it does not know
+whether a specific ID happens to name a logical tenant, a physical tenant, or something else. How
+(or whether) an incoming `authorization_level` gets projected into a specific resource ID on the
+`AuthorizationScope`s a host's `AuthorizationScopeRepositoryPort` returns is a decision for that
+projection step, outside CSL's own check logic — CSL's `RequiredAuthorization` → `AuthorizationScope`
+check only ever sees the resulting resource ID, not the level it came from.
 
 ## Data Flow
 
