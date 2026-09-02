@@ -56,28 +56,52 @@ pair:
   `CREATE_BATCH_OPERATION_CANCEL_PROCESS_INSTANCE`).
 
 [`RequiredAuthorization<T>`](../../core/src/main/java/io/camunda/security/core/auth/RequiredAuthorization.java)
-pairs the two into what a caller must have for an operation to be allowed, and optionally scopes
-that requirement to specific resource instances:
+pairs the two into what a caller must have for an operation to be allowed, and can scope that
+requirement three ways:
 
-- statically, via `resourceIds()` (a fixed list of IDs known up front)
-- dynamically, via `resourceIdSupplier()` (a `Function<T, String>` that derives the ID from the
-  runtime document, e.g. from a batch operation payload)
-- by property, via `resourcePropertyNames()` (e.g. "does the caller's ID match the document's
-  `assignee` field")
+- statically, via `resourceIds()` (a fixed list of IDs known up front) — this is the only scoping
+  mechanism the default checker (below) currently evaluates.
+- dynamically, via `resourceIdSupplier()` (a `Function<T, String>` that would derive the ID from
+  the runtime document) — declared on the type and settable via the builder, but not yet consumed
+  by any check path in this codebase; nothing currently reads it back.
+- by property, via `resourcePropertyNames()` (e.g. `"assignee"`) — evaluated through a separate
+  property-based check path, not the resource-ID path (see below).
 
 `RequiredAuthorization` only *describes* what is required — it carries no logic to grant or deny
-anything. Evaluating a required authorization against what a principal actually has is the
-checker's job, working against
-[`Authorization`](../../api/src/main/java/io/camunda/security/api/model/authz/Authorization.java):
-a granted record read from the host's authorization store, naming a resource type, a resource ID,
-and the set of permission types the principal holds on it. A check passes when a granted
-`Authorization` exists whose `resourceType` and `resourceId` match the `RequiredAuthorization`'s
-target and whose `permissionTypes` contains the required `PermissionType`.
+anything. Evaluating it against what a principal actually has is
+[`AuthorizationService`](../../core/src/main/java/io/camunda/security/core/authz/AuthorizationService.java)'s
+job, the default `AuthorizationCheckPort` implementation:
+
+- If authorization is disabled globally, every check passes.
+- If the `RequiredAuthorization` has no `resourceIds()` at all (`hasAnyResourceIds()` is `false`),
+  the check passes **without consulting the store** — there is no implicit "matches an `ALL`-level
+  grant" lookup; it is a short-circuit.
+- Otherwise, for every ID in `resourceIds()`, [`AuthorizationChecker`](../../core/src/main/java/io/camunda/security/core/authz/AuthorizationChecker.java)
+  asks the host-implemented
+  [`AuthorizationScopeRepositoryPort`](../../core/src/main/java/io/camunda/security/core/port/out/AuthorizationScopeRepositoryPort.java)
+  whether the principal (resolved to its user/client/group/role/mapping-rule IDs) holds a granted
+  `AuthorizationScope` covering that ID *or* the wildcard resource ID, for the required
+  `resourceType` + `permissionType`. Every ID must be covered; the first uncovered one denies the
+  whole check.
+- The property-based path (`AuthorizationCheckPort#check(authentication, requiredAuthorization,
+  resource)`) is a separate check: it passes only when the principal holds a stored
+  `PROPERTY`-matcher `AuthorizationScope` for one of the `RequiredAuthorization`'s declared
+  `resourcePropertyNames()`, *and* a registered
+  [`PropertyAuthorizationEvaluator`](../../api/src/main/java/io/camunda/security/api/context/PropertyAuthorizationEvaluator.java)
+  for that property name confirms the concrete resource matches (e.g. the caller is the resource's
+  `assignee`). Neither condition alone is sufficient.
+
+Note: [`Authorization`](../../api/src/main/java/io/camunda/security/api/model/authz/Authorization.java)
+is a separate record describing the "data shape" a host's authorization store holds (it even uses
+a distinct, if currently identical, `ResourceType` enum rather than `AuthorizationResourceType`).
+Per its own Javadoc, it carries no behaviour and is not what the checker above operates on — the
+live check path works over `AuthorizationScope` records returned by
+`AuthorizationScopeRepositoryPort`, not over `Authorization` instances.
 
 **Worked examples**, each built via `RequiredAuthorization.Builder`:
 
 1. `PROCESS_DEFINITION -> READ_PROCESS_INSTANCE`, scoped to specific process definition IDs known
-   up front:
+   up front — evaluated by the resource-ID path above:
 
    ```java
    RequiredAuthorization.of(b -> b.processDefinition().readProcessInstance().resourceIds(ids));
@@ -86,15 +110,19 @@ target and whose `permissionTypes` contains the required `PermissionType`.
 2. `USER_TASK -> UPDATE_USER_TASK`, with no static resource ID — the resource type shortcut
    (`userTask()`) and the permission type shortcut (`updateUserTask()`) are independent builder
    methods, so nothing stops pairing a permission with a resource type that doesn't declare it in
-   its own `getSupportedPermissionTypes()` set; the builder does not validate the pairing:
+   its own `getSupportedPermissionTypes()` set; the builder does not validate the pairing. With no
+   `resourceIds()` populated, this particular instance would pass the resource-ID check
+   unconditionally (see the short-circuit above) unless further scoped, e.g. via
+   `authorizedByAssignee()`, which routes it through the property-based path instead:
 
    ```java
    RequiredAuthorization.of(b -> b.userTask().updateUserTask());
    ```
 
-3. `BATCH -> CREATE_BATCH_OPERATION_CANCEL_PROCESS_INSTANCE`, scoped dynamically per document via
-   `resourceIdSupplier` — the resource ID isn't known until the runtime document (`T`) is
-   available:
+3. `BATCH -> CREATE_BATCH_OPERATION_CANCEL_PROCESS_INSTANCE`, with a resource ID supplied via
+   `resourceIdSupplier` — illustrates the builder's per-document scoping API, though as noted
+   above nothing in this codebase currently evaluates `resourceIdSupplier()`; a real access check
+   still needs `resourceIds()` populated to be enforced:
 
    ```java
    RequiredAuthorization.<BatchOperationRequest>of(
@@ -103,23 +131,16 @@ target and whose `permissionTypes` contains the required `PermissionType`.
            .resourceIdSupplier(BatchOperationRequest::processDefinitionId));
    ```
 
-**Authorization levels and scoping.** A granted `Authorization`'s effective scope corresponds to
-one of the three authorization levels:
-
-- `ALL` — the grant applies cluster-wide, with no resource ID restriction (matched against the
-  wildcard `resourceId`, `AuthorizationScope.WILDCARD`).
-- `TENANT` — the grant is restricted to a specific logical tenant; the `resourceId` on the granted
-  `Authorization` is that tenant's ID.
-- `PHYSICAL_TENANT` — the grant is restricted to a specific physical tenant (engine); the
-  `resourceId` is that engine's ID.
-
-A `RequiredAuthorization` narrows a check the same way, on the *required* side: an empty/absent
-`resourceIds()` accepts any granted scope (an `ALL`-level grant, or a wildcard), while populating
-`resourceIds()` or `resourceIdSupplier()` demands a granted `Authorization` whose `resourceId`
-actually matches — i.e. a `TENANT`- or `PHYSICAL_TENANT`-level grant for that specific ID. The two
-sides — what's required and what's granted — meet at the resource ID: a required check with no ID
-restriction is satisfied by any matching grant regardless of level, while a required check scoped
-to a specific ID is only satisfied by a grant at `ALL` or one whose own `resourceId` matches.
+**Authorization levels.** `ALL`, `TENANT`, and `PHYSICAL_TENANT` (introduced above under "Unified
+Policy Model") are policy-model concepts describing a granted authorization's scope — there is no
+`AuthorizationLevel` field on any CSL type today; the levels are propagated and enforced further
+up the Hub/OC stack. Conceptually they map onto the wildcard/ID distinction the current check path
+already uses: an `ALL`-level grant corresponds to the wildcard resource ID
+(`AuthorizationScope.WILDCARD`), which `AuthorizationChecker#isAuthorized` always includes in its
+lookup; `TENANT`- and `PHYSICAL_TENANT`-level grants correspond to an `AuthorizationScope` whose
+resource ID is a specific tenant or physical-tenant identifier. A `RequiredAuthorization` scoped to
+a specific ID (via `resourceIds()`) is satisfied by either kind of grant — a matching specific ID,
+or a wildcard.
 
 ## Data Flow
 
