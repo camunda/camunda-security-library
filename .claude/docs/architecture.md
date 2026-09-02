@@ -62,8 +62,9 @@ requirement three ways:
 - statically, via `resourceIds()` (a fixed list of IDs known up front) — this is the only scoping
   mechanism the default checker (below) currently evaluates.
 - dynamically, via `resourceIdSupplier()` (a `Function<T, String>` that would derive the ID from
-  the runtime document) — declared on the type and settable via the builder, but not yet consumed
-  by any check path in this codebase; nothing currently reads it back.
+  the runtime document) — settable via the builder and readable through its own accessor (which is
+  all the existing `RequiredAuthorizationTest` assertions exercise), but not read by either check
+  path in `AuthorizationService`/`AuthorizationChecker` below.
 - by property, via `resourcePropertyNames()` (e.g. `"assignee"`) — evaluated through a separate
   property-based check path, not the resource-ID path (see below).
 
@@ -84,9 +85,10 @@ job, the default `AuthorizationCheckPort` implementation:
   `resourceType` + `permissionType`. Every ID must be covered; the first uncovered one denies the
   whole check.
 - The property-based path (`AuthorizationCheckPort#check(authentication, requiredAuthorization,
-  resource)`) is a separate check: it passes only when the principal holds a stored
-  `PROPERTY`-matcher `AuthorizationScope` for one of the `RequiredAuthorization`'s declared
-  `resourcePropertyNames()`, *and* a registered
+  resource)`) is a separate check with its own short-circuit: it passes immediately, without
+  consulting the store, when the `RequiredAuthorization` has no `resourcePropertyNames()` at all.
+  When it does have declared property names, the check passes only when the principal holds a
+  stored `PROPERTY`-matcher `AuthorizationScope` for one of them, *and* a registered
   [`PropertyAuthorizationEvaluator`](../../api/src/main/java/io/camunda/security/api/context/PropertyAuthorizationEvaluator.java)
   for that property name confirms the concrete resource matches (e.g. the caller is the resource's
   `assignee`). Neither condition alone is sufficient.
@@ -111,9 +113,12 @@ live check path works over `AuthorizationScope` records returned by
    (`userTask()`) and the permission type shortcut (`updateUserTask()`) are independent builder
    methods, so nothing stops pairing a permission with a resource type that doesn't declare it in
    its own `getSupportedPermissionTypes()` set; the builder does not validate the pairing. With no
-   `resourceIds()` populated, this particular instance would pass the resource-ID check
-   unconditionally (see the short-circuit above) unless further scoped, e.g. via
-   `authorizedByAssignee()`, which routes it through the property-based path instead:
+   `resourceIds()` populated, a caller using the scope-based `check(authentication,
+   requiredAuthorization)` overload gets the unconditional pass described above (see the
+   short-circuit above); reaching the property-based path instead (e.g. after also calling
+   `authorizedByAssignee()`) is the caller's choice, made by invoking the property-based `check(...,
+   resource)` overload — nothing on `RequiredAuthorization` routes to one path or the other on its
+   own:
 
    ```java
    RequiredAuthorization.of(b -> b.userTask().updateUserTask());
@@ -121,8 +126,9 @@ live check path works over `AuthorizationScope` records returned by
 
 3. `BATCH -> CREATE_BATCH_OPERATION_CANCEL_PROCESS_INSTANCE`, with a resource ID supplied via
    `resourceIdSupplier` — illustrates the builder's per-document scoping API, though as noted
-   above nothing in this codebase currently evaluates `resourceIdSupplier()`; a real access check
-   still needs `resourceIds()` populated to be enforced:
+   above neither check path currently reads `resourceIdSupplier()`; a real access check still needs
+   `resourceIds()` populated to be enforced. `BatchOperationRequest` here is an illustrative
+   caller-defined document type (the generic `T`), not a class that exists in this repository:
 
    ```java
    RequiredAuthorization.<BatchOperationRequest>of(
@@ -133,11 +139,12 @@ live check path works over `AuthorizationScope` records returned by
 
 **Authorization levels.** `ALL`, `TENANT`, and `PHYSICAL_TENANT` (introduced above under "Unified
 Policy Model") are part of the wider Hub/OC policy-propagation model — they appear as the
-`authorization_level` field on the `PolicyVersion`/`OcSyncState` propagation records described in
-[05-building-block-view.md](../../docs/architecture/05-building-block-view.md), not as a field on
-any type in this repository. Grepping this codebase for `AuthorizationLevel` or `PHYSICAL_TENANT`
-turns up nothing outside documentation: `RequiredAuthorization`, `Authorization`, and
-`AuthorizationScope` have no notion of a level today, and the resource-ID check path described
+`authorization_level` field on the `EntityRevision` and `PolicyVersionChange` propagation records
+in the conceptual schema at
+[05-building-block-view.md §5.3.4](../../docs/architecture/05-building-block-view.md), not as a
+field on any type in this repository. Grepping this codebase for `AuthorizationLevel` or
+`PHYSICAL_TENANT` turns up nothing outside documentation: `RequiredAuthorization`, `Authorization`,
+and `AuthorizationScope` have no notion of a level today, and the resource-ID check path described
 above only ever distinguishes a wildcard resource ID from a specific one — it does not know
 whether a specific ID happens to name a logical tenant, a physical tenant, or something else. How
 (or whether) an incoming `authorization_level` gets projected into a specific resource ID on the
