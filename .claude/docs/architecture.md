@@ -41,6 +41,86 @@ Shared across Hub and all OCs:
 
 Authorization levels: `ALL`, `TENANT`, `PHYSICAL_TENANT`.
 
+### Permission Model: Resource -> Action
+
+Every permission in CSL is expressed as a `Resource -> Action` pair — a resource type paired with
+the operation a principal wants to perform on it. Two building blocks make up each side of the
+pair:
+
+- [`AuthorizationResourceType`](../../api/src/main/java/io/camunda/security/api/model/authz/AuthorizationResourceType.java)
+  — the resource being acted on (e.g. `PROCESS_DEFINITION`, `USER_TASK`, `BATCH`). Each constant
+  declares the set of `PermissionType`s that are meaningful for it via
+  `getSupportedPermissionTypes()`.
+- [`PermissionType`](../../api/src/main/java/io/camunda/security/api/model/authz/PermissionType.java)
+  — the action being requested (e.g. `READ_PROCESS_INSTANCE`, `UPDATE_USER_TASK`,
+  `CREATE_BATCH_OPERATION_CANCEL_PROCESS_INSTANCE`).
+
+[`RequiredAuthorization<T>`](../../core/src/main/java/io/camunda/security/core/auth/RequiredAuthorization.java)
+pairs the two into what a caller must have for an operation to be allowed, and optionally scopes
+that requirement to specific resource instances:
+
+- statically, via `resourceIds()` (a fixed list of IDs known up front)
+- dynamically, via `resourceIdSupplier()` (a `Function<T, String>` that derives the ID from the
+  runtime document, e.g. from a batch operation payload)
+- by property, via `resourcePropertyNames()` (e.g. "does the caller's ID match the document's
+  `assignee` field")
+
+`RequiredAuthorization` only *describes* what is required — it carries no logic to grant or deny
+anything. Evaluating a required authorization against what a principal actually has is the
+checker's job, working against
+[`Authorization`](../../api/src/main/java/io/camunda/security/api/model/authz/Authorization.java):
+a granted record read from the host's authorization store, naming a resource type, a resource ID,
+and the set of permission types the principal holds on it. A check passes when a granted
+`Authorization` exists whose `resourceType` and `resourceId` match the `RequiredAuthorization`'s
+target and whose `permissionTypes` contains the required `PermissionType`.
+
+**Worked examples**, each built via `RequiredAuthorization.Builder`:
+
+1. `PROCESS_DEFINITION -> READ_PROCESS_INSTANCE`, scoped to specific process definition IDs known
+   up front:
+
+   ```java
+   RequiredAuthorization.of(b -> b.processDefinition().readProcessInstance().resourceIds(ids));
+   ```
+
+2. `USER_TASK -> UPDATE_USER_TASK`, with no static resource ID — the resource type shortcut
+   (`userTask()`) and the permission type shortcut (`updateUserTask()`) are independent builder
+   methods, so nothing stops pairing a permission with a resource type that doesn't declare it in
+   its own `getSupportedPermissionTypes()` set; the builder does not validate the pairing:
+
+   ```java
+   RequiredAuthorization.of(b -> b.userTask().updateUserTask());
+   ```
+
+3. `BATCH -> CREATE_BATCH_OPERATION_CANCEL_PROCESS_INSTANCE`, scoped dynamically per document via
+   `resourceIdSupplier` — the resource ID isn't known until the runtime document (`T`) is
+   available:
+
+   ```java
+   RequiredAuthorization.<BatchOperationRequest>of(
+       b -> b.batchOperation()
+           .permissionType(PermissionType.CREATE_BATCH_OPERATION_CANCEL_PROCESS_INSTANCE)
+           .resourceIdSupplier(BatchOperationRequest::processDefinitionId));
+   ```
+
+**Authorization levels and scoping.** A granted `Authorization`'s effective scope corresponds to
+one of the three authorization levels:
+
+- `ALL` — the grant applies cluster-wide, with no resource ID restriction (matched against the
+  wildcard `resourceId`, `AuthorizationScope.WILDCARD`).
+- `TENANT` — the grant is restricted to a specific logical tenant; the `resourceId` on the granted
+  `Authorization` is that tenant's ID.
+- `PHYSICAL_TENANT` — the grant is restricted to a specific physical tenant (engine); the
+  `resourceId` is that engine's ID.
+
+A `RequiredAuthorization` narrows a check the same way, on the *required* side: an empty/absent
+`resourceIds()` accepts any granted scope (an `ALL`-level grant, or a wildcard), while populating
+`resourceIds()` or `resourceIdSupplier()` demands a granted `Authorization` whose `resourceId`
+actually matches — i.e. a `TENANT`- or `PHYSICAL_TENANT`-level grant for that specific ID. The two
+sides — what's required and what's granted — meet at the resource ID: a required check with no ID
+restriction is satisfied by any matching grant regardless of level, while a required check scoped
+to a specific ID is only satisfied by a grant at `ALL` or one whose own `resourceId` matches.
+
 ## Data Flow
 
 ### Policy propagation (Hub → OC)
