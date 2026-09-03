@@ -41,6 +41,117 @@ Shared across Hub and all OCs:
 
 Authorization levels: `ALL`, `TENANT`, `PHYSICAL_TENANT`.
 
+### Permission Model: Resource -> Action
+
+Every permission in CSL is expressed as a `Resource -> Action` pair — a resource type paired with
+the operation a principal wants to perform on it. Two building blocks make up each side of the
+pair:
+
+- [`AuthorizationResourceType`](../../api/src/main/java/io/camunda/security/api/model/authz/AuthorizationResourceType.java)
+  — the resource being acted on (e.g. `PROCESS_DEFINITION`, `USER_TASK`, `BATCH`). Each constant
+  declares the set of `PermissionType`s that are meaningful for it via
+  `getSupportedPermissionTypes()`.
+- [`PermissionType`](../../api/src/main/java/io/camunda/security/api/model/authz/PermissionType.java)
+  — the action being requested (e.g. `READ_PROCESS_INSTANCE`, `UPDATE_USER_TASK`,
+  `CREATE_BATCH_OPERATION_CANCEL_PROCESS_INSTANCE`).
+
+[`RequiredAuthorization<T>`](../../core/src/main/java/io/camunda/security/core/auth/RequiredAuthorization.java)
+pairs the two into what a caller must have for an operation to be allowed, and can scope that
+requirement three ways:
+
+- statically, via `resourceIds()` (a fixed list of IDs known up front) — the only scoping
+  mechanism the scope-based `AuthorizationCheckPort#check(authentication, requiredAuthorization)`
+  overload (below) evaluates.
+- dynamically, via `resourceIdSupplier()` (a `Function<T, String>` that would derive the ID from
+  the runtime document) — settable via the builder and readable through its own accessor (which is
+  all the existing `RequiredAuthorizationTest` assertions exercise, along with the `with*` copy
+  methods that carry it forward), but not read by either `AuthorizationService` check path below.
+- by property, via `resourcePropertyNames()` (e.g. `"assignee"`) — evaluated by
+  `AuthorizationService`, but through its separate property-based
+  `check(authentication, requiredAuthorization, resource)` overload, not the resource-ID path
+  above (see below).
+
+`RequiredAuthorization` only *describes* what is required — it carries no logic to grant or deny
+anything. Evaluating it against what a principal actually has is
+[`AuthorizationService`](../../core/src/main/java/io/camunda/security/core/authz/AuthorizationService.java)'s
+job, the default `AuthorizationCheckPort` implementation:
+
+- If authorization is disabled globally, every check passes.
+- If the `RequiredAuthorization` has no `resourceIds()` at all (`hasAnyResourceIds()` is `false`),
+  the check passes **without consulting the store** — there is no implicit "matches an `ALL`-level
+  grant" lookup; it is a short-circuit.
+- Otherwise, for every ID in `resourceIds()`, [`AuthorizationChecker`](../../core/src/main/java/io/camunda/security/core/authz/AuthorizationChecker.java)
+  asks the host-implemented
+  [`AuthorizationScopeRepositoryPort`](../../core/src/main/java/io/camunda/security/core/port/out/AuthorizationScopeRepositoryPort.java)
+  whether the principal (resolved to its user/client/group/role/mapping-rule IDs) holds a granted
+  `AuthorizationScope` covering that ID *or* the wildcard resource ID, for the required
+  `resourceType` + `permissionType`. Every ID must be covered; the first uncovered one denies the
+  whole check.
+- The property-based path (`AuthorizationCheckPort#check(authentication, requiredAuthorization,
+  resource)`) is a separate check with its own short-circuit: it passes immediately, without
+  consulting the store, when the `RequiredAuthorization` has no `resourcePropertyNames()` at all.
+  When it does have declared property names, the check passes only when the principal holds a
+  stored `PROPERTY`-matcher `AuthorizationScope` for one of them, *and* a registered
+  [`PropertyAuthorizationEvaluator`](../../api/src/main/java/io/camunda/security/api/context/PropertyAuthorizationEvaluator.java)
+  for that property name confirms the concrete resource matches (e.g. the caller is the resource's
+  `assignee`). Neither condition alone is sufficient.
+
+Note: [`Authorization`](../../api/src/main/java/io/camunda/security/api/model/authz/Authorization.java)
+is a separate record describing the "data shape" a host's authorization store holds (it even uses
+a distinct, if currently identical, `ResourceType` enum rather than `AuthorizationResourceType`).
+Per its own Javadoc, it carries no behaviour and is not what the checker above operates on — the
+live check path works over `AuthorizationScope` records returned by
+`AuthorizationScopeRepositoryPort`, not over `Authorization` instances.
+
+**Worked examples**, each built via `RequiredAuthorization.Builder`:
+
+1. `PROCESS_DEFINITION -> READ_PROCESS_INSTANCE`, scoped to specific process definition IDs known
+   up front — evaluated by the resource-ID path above:
+
+   ```java
+   RequiredAuthorization.of(b -> b.processDefinition().readProcessInstance().resourceIds(ids));
+   ```
+
+2. `USER_TASK -> READ`, scoped by property rather than by resource ID — `authorizedByAssignee()`
+   declares that a stored `PROPERTY`-matcher grant for `"assignee"` satisfies this requirement (see
+   `RequiredAuthorizationTest`/`ResourceAccessChecksTest` for the same pattern). With no
+   `resourceIds()` populated, only a caller that invokes the property-based `check(authentication,
+   requiredAuthorization, resource)` overload evaluates the property scoping; the scope-based
+   `check(authentication, requiredAuthorization)` overload would still short-circuit this instance
+   as allowed, since it carries no `resourceIds()`:
+
+   ```java
+   RequiredAuthorization.of(b -> b.userTask().read().authorizedByAssignee());
+   ```
+
+3. `BATCH -> CREATE_BATCH_OPERATION_CANCEL_PROCESS_INSTANCE`, with a resource ID supplied via
+   `resourceIdSupplier` — illustrates the builder's per-document scoping API, though as noted
+   above neither check path currently reads `resourceIdSupplier()`; a real access check still needs
+   `resourceIds()` populated to be enforced. `ExampleBatchOperationRequest` here is an illustrative
+   caller-defined document type (the generic `T`), not a class that exists in this repository:
+
+   ```java
+   RequiredAuthorization.<ExampleBatchOperationRequest>of(
+       b -> b.batchOperation()
+           .permissionType(PermissionType.CREATE_BATCH_OPERATION_CANCEL_PROCESS_INSTANCE)
+           .resourceIdSupplier(ExampleBatchOperationRequest::processDefinitionId));
+   ```
+
+**Authorization levels.** `ALL`, `TENANT`, and `PHYSICAL_TENANT` (introduced above under "Unified
+Policy Model") are part of the wider Hub/OC policy-propagation model — they appear as the
+`authorization_level` field on the `EntityRevision` and `PolicyVersionChange` propagation records
+in the conceptual schema at
+[05-building-block-view.md §5.3.4](../../docs/architecture/05-building-block-view.md), not as a
+field on any type in this repository. Grepping this codebase for `AuthorizationLevel` or
+`PHYSICAL_TENANT` turns up nothing outside documentation: `RequiredAuthorization`, `Authorization`,
+and `AuthorizationScope` have no notion of a level today, and the resource-ID check path described
+above only ever distinguishes a wildcard resource ID from a specific one — it does not know
+whether a specific ID happens to name a logical tenant, a physical tenant, or something else. How
+(or whether) an incoming `authorization_level` gets projected into a specific resource ID on the
+`AuthorizationScope`s a host's `AuthorizationScopeRepositoryPort` returns is a decision for that
+projection step, outside CSL's own check logic — CSL's `RequiredAuthorization` → `AuthorizationScope`
+check only ever sees the resulting resource ID, not the level it came from.
+
 ## Data Flow
 
 ### Policy propagation (Hub → OC)
