@@ -112,19 +112,16 @@ live check path works over `AuthorizationScope` records returned by
    RequiredAuthorization.of(b -> b.processDefinition().readProcessInstance().resourceIds(ids));
    ```
 
-2. `USER_TASK -> UPDATE_USER_TASK`, with no static resource ID — the resource type shortcut
-   (`userTask()`) and the permission type shortcut (`updateUserTask()`) are independent builder
-   methods, so nothing stops pairing a permission with a resource type that doesn't declare it in
-   its own `getSupportedPermissionTypes()` set; the builder does not validate the pairing. With no
-   `resourceIds()` populated, a caller using the scope-based `check(authentication,
-   requiredAuthorization)` overload gets the unconditional pass described above (see the
-   short-circuit above); reaching the property-based path instead (e.g. after also calling
-   `authorizedByAssignee()`) is the caller's choice, made by invoking the property-based `check(...,
-   resource)` overload — nothing on `RequiredAuthorization` routes to one path or the other on its
-   own:
+2. `USER_TASK -> READ`, scoped by property rather than by resource ID — `authorizedByAssignee()`
+   declares that a stored `PROPERTY`-matcher grant for `"assignee"` satisfies this requirement (see
+   `RequiredAuthorizationTest`/`ResourceAccessChecksTest` for the same pattern). With no
+   `resourceIds()` populated, only a caller that invokes the property-based `check(authentication,
+   requiredAuthorization, resource)` overload evaluates the property scoping; the scope-based
+   `check(authentication, requiredAuthorization)` overload would still short-circuit this instance
+   as allowed, since it carries no `resourceIds()`:
 
    ```java
-   RequiredAuthorization.of(b -> b.userTask().updateUserTask());
+   RequiredAuthorization.of(b -> b.userTask().read().authorizedByAssignee());
    ```
 
 3. `BATCH -> CREATE_BATCH_OPERATION_CANCEL_PROCESS_INSTANCE`, with a resource ID supplied via
