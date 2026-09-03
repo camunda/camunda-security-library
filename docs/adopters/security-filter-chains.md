@@ -493,14 +493,16 @@ CSL ships two `CamundaAuthenticationConverter<Authentication>` implementations f
 | Converter | When to use |
 |---|---|
 | `OidcTokenAuthenticationConverter` | Standard OIDC deployments where memberships (roles, groups, tenants) are resolved from a database via `MembershipPort`. Reads `sub` or a client-id claim and delegates resolution to `LazyTokenClaimsConverter`. |
-| `JwtGrantedAuthoritiesAuthenticationConverter` | Deployments where the JWT itself is the authoritative source of roles — for example, SaaS tokens where an upstream `JwtAuthenticationConverter` has already extracted role authorities from a fixed claim before CSL runs. No `MembershipPort` call is made. Only suitable for user tokens where `sub` identifies the principal; M2M/client-credentials tokens must be handled separately. |
+| `JwtGrantedAuthoritiesAuthenticationConverter` | Deployments where the JWT itself is the authoritative source of roles — for example, SaaS tokens where an upstream `JwtAuthenticationConverter` has already extracted role authorities from a fixed claim before CSL runs. No `MembershipPort` call is made. Only suitable for user tokens where the configured claim (`sub` by default) identifies the principal; M2M/client-credentials tokens must be handled separately. |
 
-**Registering the converter.**
+**Registering the converter.** Pass the same `usernameClaim` used by `OidcConfiguration` so both converters resolve the principal identically; falls back to `sub` when unset, blank, or absent from the token.
 
 ```java
 @Bean
-public CamundaAuthenticationConverter<Authentication> authenticationConverter() {
-  return new JwtGrantedAuthoritiesAuthenticationConverter();
+public CamundaAuthenticationConverter<Authentication> authenticationConverter(
+    CamundaSecurityLibraryProperties properties) {
+  return new JwtGrantedAuthoritiesAuthenticationConverter(
+      properties.getAuthentication().getOidc().getUsernameClaim());
 }
 ```
 

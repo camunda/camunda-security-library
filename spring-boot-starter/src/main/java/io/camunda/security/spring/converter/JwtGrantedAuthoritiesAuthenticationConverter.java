@@ -15,6 +15,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 /**
@@ -35,6 +36,23 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 public final class JwtGrantedAuthoritiesAuthenticationConverter
     implements CamundaAuthenticationConverter<Authentication> {
 
+  private final String usernameClaim;
+
+  /** Resolves the principal from the JWT's {@code sub} claim. */
+  public JwtGrantedAuthoritiesAuthenticationConverter() {
+    this(null);
+  }
+
+  /**
+   * @param usernameClaim the claim to resolve the principal from; falls back to the JWT's {@code
+   *     sub} claim when {@code null}, blank, or absent from the token. Pass {@code
+   *     OidcConfiguration#getUsernameClaim()} to stay consistent with {@link
+   *     OidcTokenAuthenticationConverter}'s principal resolution.
+   */
+  public JwtGrantedAuthoritiesAuthenticationConverter(final String usernameClaim) {
+    this.usernameClaim = usernameClaim;
+  }
+
   @Override
   public boolean supports(final Authentication authentication) {
     return authentication instanceof JwtAuthenticationToken;
@@ -44,14 +62,31 @@ public final class JwtGrantedAuthoritiesAuthenticationConverter
   public CamundaAuthentication convert(final Authentication authentication) {
     final var token = (JwtAuthenticationToken) authentication;
     final var jwt = token.getToken();
-    final var subject = jwt.getSubject();
-    if (subject == null || subject.isBlank()) {
+    final var principal = resolvePrincipal(jwt);
+    if (principal == null || principal.isBlank()) {
       throw new OAuth2AuthenticationException(
           new OAuth2Error(
-              OAuth2ErrorCodes.INVALID_TOKEN, "JWT 'sub' claim is missing or blank", null));
+              OAuth2ErrorCodes.INVALID_TOKEN,
+              "JWT '%s' claim is missing or blank".formatted(effectiveClaimName()),
+              null));
     }
     final List<String> roleIds =
         token.getAuthorities().stream().map(GrantedAuthority::getAuthority).toList();
-    return CamundaAuthentication.of(b -> b.user(subject).roleIds(roleIds).claims(jwt.getClaims()));
+    return CamundaAuthentication.of(
+        b -> b.user(principal).roleIds(roleIds).claims(jwt.getClaims()));
+  }
+
+  private String resolvePrincipal(final Jwt jwt) {
+    if (usernameClaim != null && !usernameClaim.isBlank()) {
+      final var claimValue = jwt.getClaimAsString(usernameClaim);
+      if (claimValue != null && !claimValue.isBlank()) {
+        return claimValue;
+      }
+    }
+    return jwt.getSubject();
+  }
+
+  private String effectiveClaimName() {
+    return usernameClaim != null && !usernameClaim.isBlank() ? usernameClaim : "sub";
   }
 }
