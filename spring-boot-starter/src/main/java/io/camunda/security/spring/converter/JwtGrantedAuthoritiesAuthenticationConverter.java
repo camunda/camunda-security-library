@@ -9,13 +9,14 @@ package io.camunda.security.spring.converter;
 
 import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.model.CamundaAuthentication;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.camunda.security.core.oidc.OidcPrincipalLoader;
 import java.util.List;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 /**
@@ -37,20 +38,35 @@ public final class JwtGrantedAuthoritiesAuthenticationConverter
     implements CamundaAuthenticationConverter<Authentication> {
 
   private final String usernameClaim;
+  private final OidcPrincipalLoader principalLoader;
 
   /** Resolves the principal from the JWT's {@code sub} claim. */
   public JwtGrantedAuthoritiesAuthenticationConverter() {
-    this(null);
+    this((String) null);
   }
 
   /**
-   * @param usernameClaim the claim to resolve the principal from; falls back to the JWT's {@code
-   *     sub} claim when {@code null}, blank, or absent from the token. Pass {@code
-   *     OidcConfiguration#getUsernameClaim()} to stay consistent with {@link
-   *     OidcTokenAuthenticationConverter}'s principal resolution.
+   * @param oidcConfiguration supplies the {@code usernameClaim} to resolve the principal from,
+   *     keeping this converter's principal resolution consistent with {@link
+   *     OidcTokenAuthenticationConverter}'s without the host having to extract the property itself.
+   */
+  public JwtGrantedAuthoritiesAuthenticationConverter(final OidcConfiguration oidcConfiguration) {
+    this(oidcConfiguration.getUsernameClaim());
+  }
+
+  /**
+   * @param usernameClaim the claim to resolve the principal from — a plain claim name or a JSONPath
+   *     expression (see {@link OidcPrincipalLoader}); defaults to the JWT's {@code sub} claim when
+   *     {@code null} or blank. Unlike {@code sub}, a claim that is configured but absent, blank, or
+   *     not a string fails the token rather than silently falling back to {@code sub} — matching
+   *     {@code LazyTokenClaimsConverter}'s behaviour for the same misconfiguration.
    */
   public JwtGrantedAuthoritiesAuthenticationConverter(final String usernameClaim) {
-    this.usernameClaim = usernameClaim;
+    this.usernameClaim =
+        usernameClaim == null || usernameClaim.isBlank()
+            ? OidcConfiguration.DEFAULT_USERNAME_CLAIM
+            : usernameClaim;
+    principalLoader = new OidcPrincipalLoader(this.usernameClaim, null);
   }
 
   @Override
@@ -62,31 +78,23 @@ public final class JwtGrantedAuthoritiesAuthenticationConverter
   public CamundaAuthentication convert(final Authentication authentication) {
     final var token = (JwtAuthenticationToken) authentication;
     final var jwt = token.getToken();
-    final var principal = resolvePrincipal(jwt);
+    final String principal;
+    try {
+      principal = principalLoader.load(jwt.getClaims()).username();
+    } catch (final IllegalArgumentException e) {
+      throw new OAuth2AuthenticationException(
+          new OAuth2Error(OAuth2ErrorCodes.INVALID_TOKEN, e.getMessage(), null), e);
+    }
     if (principal == null || principal.isBlank()) {
       throw new OAuth2AuthenticationException(
           new OAuth2Error(
               OAuth2ErrorCodes.INVALID_TOKEN,
-              "JWT '%s' claim is missing or blank".formatted(effectiveClaimName()),
+              "JWT '%s' claim is missing or blank".formatted(usernameClaim),
               null));
     }
     final List<String> roleIds =
         token.getAuthorities().stream().map(GrantedAuthority::getAuthority).toList();
     return CamundaAuthentication.of(
         b -> b.user(principal).roleIds(roleIds).claims(jwt.getClaims()));
-  }
-
-  private String resolvePrincipal(final Jwt jwt) {
-    if (usernameClaim != null && !usernameClaim.isBlank()) {
-      final var claimValue = jwt.getClaimAsString(usernameClaim);
-      if (claimValue != null && !claimValue.isBlank()) {
-        return claimValue;
-      }
-    }
-    return jwt.getSubject();
-  }
-
-  private String effectiveClaimName() {
-    return usernameClaim != null && !usernameClaim.isBlank() ? usernameClaim : "sub";
   }
 }
