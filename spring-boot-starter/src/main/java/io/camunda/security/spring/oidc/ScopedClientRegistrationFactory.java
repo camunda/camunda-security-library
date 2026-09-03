@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrations;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
@@ -35,6 +37,8 @@ import org.springframework.util.StringUtils;
  * once per registration.
  */
 public final class ScopedClientRegistrationFactory {
+
+  private static final Logger LOG = LoggerFactory.getLogger(ScopedClientRegistrationFactory.class);
 
   /**
    * Discovery documents already fetched, keyed by the raw {@code issuer-uri}. Never normalized:
@@ -201,6 +205,11 @@ public final class ScopedClientRegistrationFactory {
     try {
       ClientRegistrations.fromOidcConfiguration(document);
     } catch (final RuntimeException notReConsumable) {
+      LOG.debug(
+          "Not caching the discovery document for issuer {}: it cannot be read back into a builder"
+              + " ({}). This issuer keeps resolving once per client registration.",
+          issuerUri,
+          notReConsumable.getMessage());
       return;
     }
     discoveryByIssuer.putIfAbsent(issuerUri, document);

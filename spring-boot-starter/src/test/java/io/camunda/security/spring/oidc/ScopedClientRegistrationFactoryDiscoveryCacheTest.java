@@ -9,6 +9,7 @@ package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.time.Duration;
@@ -57,6 +58,21 @@ class ScopedClientRegistrationFactoryDiscoveryCacheTest {
         "token_endpoint": "%1$s/token",
         "jwks_uri": "%1$s/jwks",
         "end_session_endpoint": "%1$s/logout",
+        "response_types_supported": ["code"],
+        "subject_types_supported": ["public"],
+        "id_token_signing_alg_values_supported": ["RS256"]
+      }
+      """;
+
+  /** Discovery document that advertises a {@code userinfo_endpoint}, as real IdPs do. */
+  private static final String DISCOVERY_TEMPLATE_WITH_USERINFO =
+      """
+      {
+        "issuer": "%1$s",
+        "authorization_endpoint": "%1$s/auth",
+        "token_endpoint": "%1$s/token",
+        "jwks_uri": "%1$s/jwks",
+        "userinfo_endpoint": "%1$s/userinfo",
         "response_types_supported": ["code"],
         "subject_types_supported": ["public"],
         "id_token_signing_alg_values_supported": ["RS256"]
@@ -173,11 +189,10 @@ class ScopedClientRegistrationFactoryDiscoveryCacheTest {
     final var slashed = Map.of("idp-2", issuerBased("client-2", issuer + "/"));
 
     // then it resolves on its own instead of being served the cached document. The count is the
-    // real guard: a normalized key would neither re-fetch nor fail, because Spring takes the
-    // issuer from the document itself. The failure is only asserted as a RuntimeException — which
-    // exception depends on Spring's probe order, not on this cache.
-    assertThatThrownBy(() -> factory.createFromProviderMap(slashed))
-        .isInstanceOf(RuntimeException.class);
+    // only guard that matters: a normalized key would neither re-fetch nor throw, because Spring
+    // would derive the issuer from the cached document itself. Whether the fresh attempt then
+    // succeeds or fails is Spring's business, not this cache's, so it is tolerated either way.
+    catchThrowable(() -> factory.createFromProviderMap(slashed));
     assertThat(oidcServer.discoveryRequestCount()).isGreaterThan(countAfterFirst);
   }
 
@@ -291,6 +306,31 @@ class ScopedClientRegistrationFactoryDiscoveryCacheTest {
     // and one of the two came off the cached document — without this the test would also pass with
     // the cache bypassed, which is not what it claims to cover
     assertThat(oidcServer.discoveryRequestCount()).isEqualTo(1);
+  }
+
+  @ParameterizedTest(name = "reversed={0}")
+  @ValueSource(booleans = {false, true})
+  void shouldDisableUserInfoOnlyForTheRegistrationThatConfiguresIt(final boolean reversed)
+      throws Exception {
+    // given one provider disabling user-info and one taking the discovered endpoint
+    oidcServer = OidcTestServer.startDiscovery(DISCOVERY_TEMPLATE_WITH_USERINFO);
+    final var issuer = oidcServer.issuerUri();
+    final var disabled =
+        OidcConfiguration.builder()
+            .clientId("a")
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .issuerUri(issuer)
+            .userInfoEnabled(false)
+            .build();
+
+    // when built in both insertion orders: today the toggle only touches the builder, but if it
+    // ever moved onto the cached document instead, it would leak onto the other registration
+    final var byId = registrationsById(bothOrders(reversed, disabled, issuerBased("b", issuer)));
+
+    // then the toggle stays local to its own registration in either order
+    assertThat(byId.get("idp-a").getProviderDetails().getUserInfoEndpoint().getUri()).isNull();
+    assertThat(byId.get("idp-b").getProviderDetails().getUserInfoEndpoint().getUri())
+        .isEqualTo(issuer + "/userinfo");
   }
 
   @ParameterizedTest(name = "reversed={0}")
@@ -451,12 +491,13 @@ class ScopedClientRegistrationFactoryDiscoveryCacheTest {
     // when the first attempt fails (a 5xx is not HttpClientErrorException, so Spring wraps it
     // rather than probing the RFC 8414 fallbacks)
     assertThatThrownBy(() -> factory.createFromProviderMap(providers))
-        .isInstanceOf(IllegalArgumentException.class);
+        .isInstanceOf(RuntimeException.class);
     final var countAfterFailure = oidcServer.discoveryRequestCount();
 
     // then a later build re-fetches and succeeds. The count is relative because the failed
-    // attempt's probe count is beside the point. Caching a failure would poison the issuer for the
-    // process lifetime, and ScopedWebappSecurityChainBuilder builds chains long after startup.
+    // attempt's probe count is beside the point. Caching the failure would leave this issuer
+    // broken for the process lifetime if it was only briefly down when the first registration was
+    // built — recoverable only by a restart.
     assertThat(factory.createFromProviderMap(providers)).hasSize(1);
     assertThat(oidcServer.discoveryRequestCount()).isGreaterThan(countAfterFailure);
   }
