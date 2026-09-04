@@ -11,7 +11,6 @@ import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.exception.CamundaAuthenticationException;
 import java.util.List;
-import java.util.Optional;
 import org.springframework.security.core.Authentication;
 
 /**
@@ -24,7 +23,13 @@ import org.springframework.security.core.Authentication;
  * the configured list whose {@code supports} method returns {@code true} for the given
  * authentication.
  *
- * <p>If no matching converter is found, a {@link CamundaAuthenticationException} is thrown.
+ * <p>If no matching converter is found for a non-{@code null} authentication, a {@link
+ * CamundaAuthenticationException} is thrown. If the input is {@code null} and no converter declares
+ * support for {@code null} (e.g. an {@code UnprotectedCamundaAuthenticationConverter} is not
+ * active), {@code null} is returned instead — this is not a configuration error: it is the normal
+ * shape of an unauthenticated request on a permit-all path, and {@link
+ * io.camunda.security.spring.context.DefaultCamundaAuthenticationProvider} already treats a {@code
+ * null} converter result as "no authentication".
  */
 public class CamundaSpringAuthenticationDelegatingConverter
     implements CamundaAuthenticationConverter<Authentication> {
@@ -52,38 +57,40 @@ public class CamundaSpringAuthenticationDelegatingConverter
    * Converts the given Spring Security {@link Authentication} to a {@link CamundaAuthentication} by
    * delegating to the first matching converter.
    *
-   * @param authentication the Spring Security authentication object to convert
-   * @return the resulting {@link CamundaAuthentication}
-   * @throws CamundaAuthenticationException if no converter supports the given authentication type
+   * @param authentication the Spring Security authentication object to convert, may be {@code null}
+   * @return the resulting {@link CamundaAuthentication}, or {@code null} if {@code authentication}
+   *     is {@code null} and no converter declares support for {@code null}
+   * @throws CamundaAuthenticationException if {@code authentication} is non-{@code null} and no
+   *     converter supports its type
    */
   @Override
   public CamundaAuthentication convert(final Authentication authentication) {
-    return getConverter(authentication).convert(authentication);
+    final var converter = getConverter(authentication);
+    return converter == null ? null : converter.convert(authentication);
   }
 
   /**
    * Finds the first converter in the delegate list that supports the given authentication.
    *
-   * @param authentication the Spring Security authentication object
-   * @return the first matching {@link CamundaAuthenticationConverter}
-   * @throws CamundaAuthenticationException if no converter in the list supports the given
-   *     authentication type
+   * @param authentication the Spring Security authentication object, may be {@code null}
+   * @return the first matching {@link CamundaAuthenticationConverter}, or {@code null} if {@code
+   *     authentication} is {@code null} and no converter in the list supports {@code null}
+   * @throws CamundaAuthenticationException if {@code authentication} is non-{@code null} and no
+   *     converter in the list supports its type
    */
   protected CamundaAuthenticationConverter<Authentication> getConverter(
       final Authentication authentication) {
-    return converters.stream()
-        .filter(c -> c != this && c.supports(authentication))
-        .findFirst()
-        .orElseThrow(
-            () -> {
-              final var message =
-                  "Did not find a matching converter to convert a Spring Authentication '%s' to a Camunda Authentication"
-                      .formatted(
-                          Optional.ofNullable(authentication)
-                              .map(Authentication::getClass)
-                              .map(Class::getName)
-                              .orElse("null"));
-              return new CamundaAuthenticationException(message);
-            });
+    final var match =
+        converters.stream().filter(c -> c != this && c.supports(authentication)).findFirst();
+    if (match.isPresent()) {
+      return match.get();
+    }
+    if (authentication == null) {
+      return null;
+    }
+    final var message =
+        "Did not find a matching converter to convert a Spring Authentication '%s' to a Camunda Authentication"
+            .formatted(authentication.getClass().getName());
+    throw new CamundaAuthenticationException(message);
   }
 }
