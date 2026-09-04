@@ -641,13 +641,11 @@ public final class ScopedWebappSecurityChainBuilder {
    *
    * <p><b>Note:</b> this adopts <em>any</em> {@link OidcAuthenticationEntryPoint} bean in context —
    * a host-registered override or {@link OidcAuthenticationEntryPointConfiguration}'s own
-   * library-supplied default (used today only by {@code JwtCookieAuthenticationFilter}, and not
-   * currently imported by any active chain — see that class's Javadoc) are indistinguishable here.
-   * That default is a plain redirect with no bearer-vs-browser distinction; co-importing {@link
-   * OidcAuthenticationEntryPointConfiguration} alongside this builder replaces the bearer-aware
-   * {@code DelegatingAuthenticationEntryPoint} fallback below and changes bearer-token requests
-   * from 401 to a redirect. This is a known, intentional consequence of adopting the SPI wholesale
-   * (matching how {@code JwtCookieAuthenticationFilter} already treats the same bean) — see {@code
+   * library-supplied default are indistinguishable here. That default is a plain redirect with no
+   * bearer-vs-browser distinction; co-importing {@link OidcAuthenticationEntryPointConfiguration}
+   * alongside this builder replaces the bearer-aware {@code DelegatingAuthenticationEntryPoint}
+   * fallback below and changes bearer-token requests from 401 to a redirect. This is a known,
+   * intentional consequence of adopting the SPI wholesale — see {@code
    * scopedChainAdoptsLibraryDefaultOidcEntryPointWhenBothConfigurationsArePresent} for the
    * characterization test pinning this behavior so a future change to precedence is made
    * deliberately, not accidentally.
