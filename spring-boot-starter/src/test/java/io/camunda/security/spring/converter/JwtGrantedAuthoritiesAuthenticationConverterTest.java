@@ -10,7 +10,6 @@ package io.camunda.security.spring.converter;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -233,37 +232,5 @@ class JwtGrantedAuthoritiesAuthenticationConverterTest {
         .isInstanceOfSatisfying(
             OAuth2AuthenticationException.class,
             ex -> assertThat(ex.getError().getDescription()).contains("employee_id"));
-  }
-
-  @Test
-  void constructsFromOidcConfigurationUsernameClaim() {
-    final var oidcConfiguration = new OidcConfiguration();
-    oidcConfiguration.setUsernameClaim("employee_id");
-    final var configuredConverter =
-        new JwtGrantedAuthoritiesAuthenticationConverter(oidcConfiguration);
-    final var jwt =
-        Jwt.withTokenValue("token")
-            .header("alg", "RS256")
-            .claim("sub", "0607abf4-e5c6-430d-8624-32b205dad6c1")
-            .claim("employee_id", "alice")
-            .build();
-    final var authentication = new JwtAuthenticationToken(jwt, List.of());
-
-    final var result = configuredConverter.convert(authentication);
-
-    assertThat(result.authenticatedUsername()).isEqualTo("alice");
-  }
-
-  @Test
-  void constructsFromDefaultOidcConfigurationUsingSub() {
-    final var configuredConverter =
-        new JwtGrantedAuthoritiesAuthenticationConverter(new OidcConfiguration());
-    final var jwt =
-        Jwt.withTokenValue("token").header("alg", "RS256").claim("sub", "alice").build();
-    final var authentication = new JwtAuthenticationToken(jwt, List.of());
-
-    final var result = configuredConverter.convert(authentication);
-
-    assertThat(result.authenticatedUsername()).isEqualTo("alice");
   }
 }

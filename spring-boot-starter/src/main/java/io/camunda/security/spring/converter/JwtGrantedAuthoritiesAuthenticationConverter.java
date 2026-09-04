@@ -42,16 +42,7 @@ public final class JwtGrantedAuthoritiesAuthenticationConverter
 
   /** Resolves the principal from the JWT's {@code sub} claim. */
   public JwtGrantedAuthoritiesAuthenticationConverter() {
-    this((String) null);
-  }
-
-  /**
-   * @param oidcConfiguration supplies the {@code usernameClaim} to resolve the principal from,
-   *     keeping this converter's principal resolution consistent with {@link
-   *     OidcTokenAuthenticationConverter}'s without the host having to extract the property itself.
-   */
-  public JwtGrantedAuthoritiesAuthenticationConverter(final OidcConfiguration oidcConfiguration) {
-    this(oidcConfiguration.getUsernameClaim());
+    this(null);
   }
 
   /**
