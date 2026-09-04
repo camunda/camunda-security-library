@@ -29,6 +29,10 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 @ExtendWith(MockitoExtension.class)
 class CamundaAuthenticationBeansConfigurationTest {
@@ -92,6 +96,27 @@ class CamundaAuthenticationBeansConfigurationTest {
         .run(
             ctx ->
                 assertThat(ctx).doesNotHaveBean(UnprotectedCamundaAuthenticationConverter.class));
+  }
+
+  @Test
+  void authenticationProviderReturnsNullForNullSpringAuthenticationWhenApiIsProtected() {
+    // regression test for #175: a permit-all webapp path leaves SecurityContextHolder's
+    // Authentication null; with no converter registered to handle null (unprotected-api=false,
+    // the default), resolution must return null rather than throw CamundaAuthenticationException.
+    final var mockRequest = new MockHttpServletRequest();
+    RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(mockRequest));
+    try {
+      runner
+          .withPropertyValues("camunda.security.authentication.unprotected-api=false")
+          .run(
+              ctx -> {
+                SecurityContextHolder.clearContext();
+                final var provider = ctx.getBean(CamundaAuthenticationProvider.class);
+                assertThat(provider.getCamundaAuthentication()).isNull();
+              });
+    } finally {
+      RequestContextHolder.resetRequestAttributes();
+    }
   }
 
   @Test

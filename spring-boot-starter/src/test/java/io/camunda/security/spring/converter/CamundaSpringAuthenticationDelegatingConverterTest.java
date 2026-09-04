@@ -79,6 +79,22 @@ public class CamundaSpringAuthenticationDelegatingConverterTest {
   }
 
   @Test
+  void shouldReturnNullWhenAuthenticationIsNullAndNoConverterSupportsNull() {
+    // given — e.g. a permit-all webapp path with no UnprotectedCamundaAuthenticationConverter
+    // active: nothing declares support for a null Spring Authentication.
+    final CamundaAuthenticationConverter<Authentication> unsupported = mock();
+    when(unsupported.supports(null)).thenReturn(false);
+
+    final var converter = new CamundaSpringAuthenticationDelegatingConverter(List.of(unsupported));
+
+    // when
+    final var result = converter.convert(null);
+
+    // then
+    assertThat(result).isNull();
+  }
+
+  @Test
   void shouldNotRecurseWhenSelfIsIncludedInConvertersList() {
     // given
     final var authentication = mock(Authentication.class);
