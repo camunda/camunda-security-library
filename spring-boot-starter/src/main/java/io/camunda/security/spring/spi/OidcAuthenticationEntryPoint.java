@@ -10,8 +10,9 @@ package io.camunda.security.spring.spi;
 import org.springframework.security.web.AuthenticationEntryPoint;
 
 /**
- * Handles redirect-to-IdP for unauthenticated browser navigations on the OIDC cookie-based webapp
- * chain. The library-supplied default delegates to Spring's standard OAuth2 login redirect; hosts
- * override this bean to redirect to a custom Identity authorize URL instead.
+ * Handles redirect-to-IdP for unauthenticated browser navigations on the stateful OIDC webapp chain
+ * built by {@link io.camunda.security.spring.security.ScopedWebappSecurityChainBuilder}. The
+ * library-supplied default delegates to Spring's standard OAuth2 login redirect; hosts override
+ * this bean to redirect to a custom Identity authorize URL instead.
  */
 public interface OidcAuthenticationEntryPoint extends AuthenticationEntryPoint {}
