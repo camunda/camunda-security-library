@@ -116,6 +116,7 @@ class CamundaAuthenticationBeansConfigurationTest {
               });
     } finally {
       RequestContextHolder.resetRequestAttributes();
+      SecurityContextHolder.clearContext();
     }
   }
 
