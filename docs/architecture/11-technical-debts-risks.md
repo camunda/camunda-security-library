@@ -7,7 +7,7 @@ These are unresolved design questions that require a dedicated ADR before implem
 - **SPI boundaries for OC/engine command creation** (`EngineCommandPort`): still open. Webapp, session, user, and scope provider SPI boundaries have been defined (ADRs 0004, 0009, 0010, 0013, 0014); the engine-command interface is the remaining open design question.
 - **Migration path** from current Auth0-based SaaS setup to "Enterprise IdP as SoT" while keeping Auth0 as a private implementation detail — not yet addressed in an ADR.
 - **Policy endpoint ownership:** If the endpoints to apply policy changes are public, Hub will not be aware of what a customer applies to OC and will run out of sync. The right ownership boundary is unresolved.
-- **Snapshot idempotency:** How can we apply a snapshot multiple times? How could we reset the projections in primary and secondary storage?
+- **Snapshot idempotency:** How can we apply a snapshot multiple times? How could we reset the projections in primary and secondary storage? This is no longer a speculative future concern — the Hub → OC/Optimize distribution work targeted for the policy write path makes it a blocking question (see "Known debts" below).
 
 ### Open issues
 
@@ -19,8 +19,54 @@ These are unresolved design questions that require a dedicated ADR before implem
 
 ### Known debts
 
-- `EngineCommandPort` SPI boundary for OC → engine policy propagation is still undefined (see Open design questions above).
-- The deployment strategy property values currently use an `oc-` prefix (`oc-standalone`, `oc-managed`); a rename to `standalone` / `managed` is planned (docs already use the shorter names).
+**Authorization write path — two separate gaps, not one.** Docs have historically merged these;
+they have different owners and different evidence trails:
+
+| Gap | Where it lives today | Evidence |
+|---|---|---|
+| **Engine-side identity authoring** — identity CRUD processors (`GroupCreateProcessor`, `RoleCreateProcessor`, …), `IdentitySetupInitializer`, `PermissionsBehavior`, `AuthorizationEntityValidator` | Still in `zeebe/engine`; deliberately deferred, not overlooked | Epic [#388](https://github.com/camunda/camunda-security-library/issues/388), "Out of scope (deferred)" list |
+| **Hub → OC/Optimize policy distribution** | Nowhere yet — nine empty marker ports (below) plus an undefined `EngineCommandPort` | This repo |
+
+The same epic is also the source of a related ownership boundary worth stating precisely: the
+`PropertyAuthorizationEvaluator` interface and its registry live in CSL `core` (see
+[ADR-0014](../adr/0014-unified-authz-framework-in-core.md)), but `UserTaskPropertyAuthorizationEvaluator`
+itself stays in `zeebe/engine` — #388 calls it "engine-internal … not a CSL concern." CSL owns the
+evaluation *contract*, not every property-specific evaluator that plugs into it.
+
+- **`EngineCommandPort`** is still undefined — zero occurrences in `core/`, `api/`,
+  `spring-boot-starter/`, or `validation/`. This is only the remaining **distribution** gap
+  (OC → engine policy propagation); the authorization *read* path is delivered — one evaluator
+  behind `AuthorizationCheckPort` serves both the gateway/search layer and the zeebe engine (see
+  [ADR-0014](../adr/0014-unified-authz-framework-in-core.md), #388).
+- **The deployment strategy property still uses an `oc-` prefix** (`oc-standalone`, `oc-managed`)
+  and is not consumed anywhere yet — `oc-standalone`/`oc-managed`, `DeploymentStrategy`, and
+  `camunda.security.strategy` return no hits across all four modules, and the property is absent
+  from the hand-authored `spring-configuration-metadata.json`. `ADR-0003` already records this as
+  "Deferred: deployment-strategy activation" — see
+  [ADR-0003:189-194](../adr/0003-no-spring-boot-auto-configuration.md).
+- **OC authorization write path missing:** the admin section of the OC UI can only read the
+  applied policy; there is no authoring path for tenants, roles, groups, mapping rules, or
+  authorizations on CSL yet, in either `standalone` or `managed` mode — see
+  [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
+- **Hub and Optimize authorization still run through Management Identity:** neither host has cut
+  over to CSL's `AuthorizationCheckPort` for authorization decisions — only authentication has
+  moved to CSL for these hosts so far — see
+  [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
+- **Optimize's policy-receipt path is undefined:** no mechanism exists yet for Optimize to receive
+  a policy snapshot from Hub (whether that reuses the same channel a `managed` OC would use, or a
+  separate one, is still open) — see
+  [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
+- **Snapshot idempotency now blocks the policy write path**, rather than being a speculative
+  future concern — see the "Open design questions" entry above.
+- **Nine outbound/inbound ports exist only as empty marker interfaces** — bodies are literally
+  `{}`, javadoc only, no methods: `PolicyPort`, `PolicyApplyPort`, `TenantPort`,
+  `ClusterRegistrationPort`, `ClusterRegistryPort`, `OutboxPort`, `PolicyRepositoryPort`,
+  `FeatureTogglePort`, `IdpClientPort`. This is more precise than "missing" — the contracts exist
+  as placeholders but define no behaviour yet. See
+  [`docs/adopters/ports.md`](../adopters/ports.md#quick-reference) for the authoritative port
+  inventory, which already marks each of these "under development."
+- **`InitializationConfiguration`** (`api/model/config/initialization/`) is a bound, documented
+  configuration surface — nothing in the repo reads or acts on the users, mapping rules, roles,
+  groups, tenants, or authorizations it carries.
 
 ---
-
