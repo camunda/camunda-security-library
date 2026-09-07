@@ -515,7 +515,7 @@ Mode activation is property-driven via Spring Boot conditions (`@ConditionalOnPr
 
 **Current implementation state:** authentication method selection (`camunda.security.authentication.method=basic|oidc`) is active today and governs which filter chains are assembled. The deployment strategy property (`hub` / `managed` / `standalone` — current property values use an `oc-` prefix: `oc-managed`, `oc-standalone`) is defined in the configuration model but is not yet consumed by the filter chain layer — it is planned for the policy work that wires `PolicyPort`, `PolicyApplyPort`, and the Hub/OC-specific outbound ports.
 
-Hub enforces AuthN/AuthZ for the Hub UI using the same `AuthorizationCheckPort` used by OC, configured with Hub-scoped resources. `IdpClientPort` is a planned outbound port for external IdP interactions; the current OIDC integration wires `OidcProviderConfigurationPort` instead.
+`AuthorizationCheckPort` is generic enough to serve Hub-scoped resources with the same evaluator OC already uses, but Hub has not cut over to it — Hub authorization still runs through Management Identity today (see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance)). `IdpClientPort` is a planned outbound port for external IdP interactions; the current OIDC integration wires `OidcProviderConfigurationPort` instead.
 
 **Camunda Security Library responsibilities by deployment strategy:**
 

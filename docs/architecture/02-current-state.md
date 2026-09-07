@@ -29,10 +29,10 @@ defined in `core/port/out/`. Both remain targeted for 8.11 as shown above.
 ### 2.2 What CSL owns today
 
 - **Authentication**, across all three CSL hosts — Hub, Optimize, and OC (OIDC and basic auth,
-  session handling) — shipped in Camunda 8.10. Enforcement is always active, in every deployment
+  session handling) — shipped, see §2.1. Enforcement is always active, in every deployment
   strategy (see [§7 Deployment View](./07-deployment-view.md) and
   [ADR-0003](../adr/0003-no-spring-boot-auto-configuration.md)).
-- **OC authorization — the read/check path**, shipped in Camunda 8.10 alongside authentication.
+- **OC authorization — the read/check path**, shipped alongside authentication — see §2.1.
   One evaluator, behind `AuthorizationCheckPort` in CSL `core`, serves both the OC gateway/search
   layer and the zeebe engine — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md) and
   epic [#388](https://github.com/camunda/camunda-security-library/issues/388) (closed 2026-08-13,
@@ -42,13 +42,13 @@ defined in `core/port/out/`. Both remain targeted for 8.11 as shown above.
 ### 2.3 What Management Identity still owns
 
 - **Hub and Optimize authorization**, both the read/check and write/authoring paths, still run
-  through Management Identity. Moving them onto CSL is targeted for 8.11 — see §2.1.
+  through Management Identity. Moving them onto CSL — see §2.1.
 - **OC authorization — the write/authoring path** is not yet implemented anywhere (neither
-  Management Identity nor CSL); also targeted for 8.11 — see §2.1.
+  Management Identity nor CSL) — see §2.1.
 - Since 8.8, Management Identity is no longer used in SaaS to serve the web applications. It is,
   however, still deployed **headlessly** in SaaS for two specific purposes: handling Optimize
   permissions, and providing RBAC for clusters on versions prior to 8.8.
-- Once Optimize authorization moves to CSL (targeted for 8.11 — see §2.1), Optimize persists the
+- Once Optimize authorization moves to CSL (see §2.1), Optimize persists the
   received policy projection in its own Elasticsearch store. That store is a host-side concern,
   not a CSL one: CSL is agnostic to the projection store and leaves persistence to a
   host-supplied outbound adapter — the same port model used everywhere else in this document.
@@ -58,10 +58,10 @@ defined in `core/port/out/`. Both remain targeted for 8.11 as shown above.
 ### 2.4 Pre-CSL baseline (historical)
 
 > The material in this subsection describes the identity architecture as it stood **before**
-> CSL's Camunda 8.10 authentication rollout. It is retained as historical and motivational
+> CSL's authentication rollout (see §2.1). It is retained as historical and motivational
 > context for the limitations in §2.5 — see §2.1–§2.3 for what has shipped since. Parts of it
-> (Hub and Optimize authorization) are still an accurate description of today's system, pending
-> the 8.11 work tracked in §2.1.
+> (Hub and Optimize authorization) are still an accurate description of today's system — see
+> §2.1 for what remains outstanding.
 
 #### 2.4.1 Identity components (historical)
 

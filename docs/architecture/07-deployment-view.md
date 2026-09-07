@@ -49,13 +49,13 @@ flowchart TB
 
 #### 7.1.2 Full mode (Hub + Orchestration Cluster + Optimize, self-managed)
 
-An advanced Self-Managed topology where the customer also operates Hub. Hub becomes the central policy SoT, and policy is propagated to each OC and Optimize via the platform-owned channel. The Admin UI on OC runs in read-only mode; all policy authoring happens in Hub. Optimize uses the same Camunda Security Library and receives policy from Hub.
+An advanced Self-Managed topology where the customer also operates Hub. Hub is designed to become the central policy SoT, propagating policy to each OC and Optimize via the platform-owned channel — not yet implemented, see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance). Optimize uses the same Camunda Security Library for authentication (shipped) and is designed to receive policy from Hub (not yet implemented).
 
 - Hub and all OC and Optimize instances are deployed and operated by the customer on their own infrastructure.
 - The Enterprise IdP is integrated at both Hub (management plane auth) and OC/Optimize (execution/analytics plane auth) levels.
 - Cluster discovery and registration are handled via the `ClusterRegistryPort` (outbound) and `ClusterRegistrationPort` (inbound) ports; the host application's adapter determines how new OCs are discovered and registered.
 - OC is configured with an embedded gateway/search layer and broker/engine layer; Camunda Security Library runs in both, as CSL `core` (embedded) in the broker/engine layer (see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md)).
-- Policy flows top-down: Hub -> Gateway -> Broker(Engine), same as in SaaS, but without a Camunda-operated broker.
+- Policy is designed to flow top-down: Hub -> Gateway -> Broker(Engine), same as in SaaS, but without a Camunda-operated broker. The Hub -> Gateway leg is not yet implemented — see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
 - Suitable for large-scale or multi-cluster Self-Managed environments requiring centralized policy governance.
 
 ```mermaid
@@ -109,7 +109,7 @@ flowchart TB
     OptDB[("Optimize DB")]
 
     Hub --> OC
-    Hub -->|"policy propagation"| OptimizeApp
+    Hub -->|"policy propagation (planned)"| OptimizeApp
     Hub --> HubDB
     OC --> OCDB
     OptimizeApp --> OptDB
@@ -125,7 +125,9 @@ flowchart TB
 Standalone OC topology for higher throughput and availability. Hub is not present; OC remains the local policy source of truth. This diagram shows 2 gateways and 3 brokers as an illustrative example. The same topology scales to any N gateways and M brokers; each gateway and each broker runs CSL — the broker runs CSL `core` (embedded), with no separate engine-side framework.
 
 - Each gateway runs the Camunda Security Library and connects clients (Operate, Tasklist, Admin UI, workers) to the cluster.
-- Each broker runs CSL `core` (embedded) and receives policy snapshots from the gateway layer.
+- Each broker runs CSL `core` (embedded). It is designed to receive policy snapshots from the
+  gateway layer via `EngineCommandPort`, which is not yet defined in `core/port/out/` — see
+  [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
 - Each broker hosts multiple engines (Physical Tenants); logical tenants are assigned to engines using authorization levels `ALL`, `TENANT` and `PHYSICAL_TENANT`.
 - Suitable for larger standalone Self-Managed deployments that need horizontal scale without Hub.
 
@@ -187,7 +189,7 @@ In SaaS, Camunda operates one shared Hub instance for many customer organization
 - In the first iterations, this partitioning is logical only: shared Hub infrastructure and databases are reused, while policy tables and queries are keyed by `organization_id`.
 - Each OC remains associated with exactly one organization boundary for policy propagation.
 - Cluster discovery and registration in Hub are handled via `ClusterRegistryPort` (outbound) and `ClusterRegistrationPort` (inbound) ports. How Hub's adapter implementation populates the cluster registry is a host-application integration concern, not a library concern.
-- During migration, SaaS may still keep Auth0 or another broker as an internal implementation detail; this does not change the target policy model.
+- Hub authentication now runs on CSL (shipped, see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance)); SaaS may still keep Auth0 or another broker deployed as an internal implementation detail for other purposes (compare the Management Identity headless-SaaS note in §2.3), but it is no longer in the Hub authentication path.
 
 ```mermaid
 ---
@@ -219,8 +221,8 @@ flowchart TB
 
     Hub --> OCA
     Hub --> OCB
-    Hub -->|"policy propagation"| OptA
-    Hub -->|"policy propagation"| OptB
+    Hub -->|"policy propagation (planned)"| OptA
+    Hub -->|"policy propagation (planned)"| OptB
     OCA -->|"Process data"| OptA
     OCB -->|"Process data"| OptB
   end
