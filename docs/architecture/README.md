@@ -7,7 +7,7 @@ SCIM provisioning is part of the planned end-state target architecture, but it i
 ## Table of Contents
 
 1. [Introduction and Goals](./01-introduction.md)
-2. [Current Identity Architecture (as-is context)](./02-current-state.md)
+2. [Current Identity Architecture (rollout status and history)](./02-current-state.md)
 3. [Solution Strategy](./03-solution-strategy.md)
 4. [Target System Context](./04-system-context.md)
 5. [Building Block View (target)](./05-building-block-view.md)
