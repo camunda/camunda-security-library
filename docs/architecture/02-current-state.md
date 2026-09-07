@@ -8,8 +8,8 @@
 
 ### 2.1 Rollout status at a glance
 
-> Release targets and rollout status live in §2.1 only. Other sections link here rather than
-> restating them.
+> Release version numbers appear only in §2.1. Other sections hedge and link here rather
+> than restating rollout status.
 
 | Capability | Hub | Optimize | OC gateway/search | OC engine | State |
 |---|---|---|---|---|---|
@@ -18,13 +18,13 @@
 | Authorization — read/check — Hub, Optimize | Management Identity | Management Identity | — | — | Targeted for 8.11 |
 | Authorization — write/authoring | Management Identity | Management Identity | missing | missing | Targeted for 8.11 |
 | Policy distribution Hub → OC / Optimize | — | — | not implemented | — | Targeted for 8.11 |
-| Engine integration artifact — CSL `core`, no separate framework | — | — | — | CSL `core`, no separate framework | Shipped 8.10 (ADR-0014, #388) |
+| Engine integration artifact | — | — | — | CSL `core`, no separate framework | Shipped 8.10 (ADR-0014, #388) |
 
 **Design confirmed, not yet implemented:** Optimize receives policy over the same Hub → OC
 snapshot/outbox distribution channel a `managed` OC uses — not a separate mechanism (see
 [§4 System Context](./04-system-context.md)). The write path (OC authoring, and eventually
 Hub/Optimize authoring) is designed to route through `EngineCommandPort`, which is not yet
-defined in `core/port/out/`. Both remain targeted for 8.11 as shown above.
+defined in `core/port/out/`. Both remain outstanding, as shown above.
 
 ### 2.2 What CSL owns today
 
@@ -37,14 +37,15 @@ defined in `core/port/out/`. Both remain targeted for 8.11 as shown above.
   layer and the zeebe engine — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md) and
   epic [#388](https://github.com/camunda/camunda-security-library/issues/388) (closed 2026-08-13,
   alongside #400, #393, #401, #402, #399). Details in
-  [§5.5 Engine authorization integration](./05-building-block-view.md).
+  [§5.5 Engine authorization integration](./05-building-block-view.md#55-engine-authorization-integration).
 
 ### 2.3 What Management Identity still owns
 
 - **Hub and Optimize authorization**, both the read/check and write/authoring paths, still run
-  through Management Identity. Moving them onto CSL — see §2.1.
-- **OC authorization — the write/authoring path** is not yet implemented anywhere (neither
-  Management Identity nor CSL) — see §2.1.
+  through Management Identity. Moving them onto CSL is targeted work — see §2.1.
+- **OC authorization — the write/authoring path** is not yet implemented on CSL; Management
+  Identity never owned it either, though engine-side identity CRUD processors do still live in
+  `zeebe/engine` (see [technical debts](./11-technical-debts-risks.md)) — see §2.1.
 - Since 8.8, Management Identity is no longer used in SaaS to serve the web applications. It is,
   however, still deployed **headlessly** in SaaS for two specific purposes: handling Optimize
   permissions, and providing RBAC for clusters on versions prior to 8.8.
@@ -58,12 +59,11 @@ defined in `core/port/out/`. Both remain targeted for 8.11 as shown above.
 ### 2.4 Pre-CSL baseline (historical)
 
 > The material in this subsection describes the identity architecture as it stood **before**
-> CSL's authentication rollout (see §2.1). It is retained as historical and motivational
-> context for the limitations in §2.5 — see §2.1–§2.3 for what has shipped since. Parts of it
-> (Hub and Optimize authorization) are still an accurate description of today's system — see
-> §2.1 for what remains outstanding.
+> CSL's authentication rollout. It is retained as historical and motivational context for the
+> limitations in §2.5. Parts of it — Hub and Optimize authorization — still describe today's
+> system accurately; see §2.1–§2.3 for what has shipped and what remains outstanding.
 
-#### 2.4.1 Identity components (historical)
+#### 2.4.1 Identity components
 
 Before CSL, identity responsibilities were split across several components:
 
@@ -85,7 +85,7 @@ Before CSL, identity responsibilities were split across several components:
   - In self-managed and in the target state, the Enterprise IdP is always the customer's IdP (Entra, Okta, Keycloak, etc.), integrated via standard OIDC.
   - SAML is supported via Keycloak.
 
-#### 2.4.2 SaaS (historical)
+#### 2.4.2 SaaS
 
 ```mermaid
 flowchart TB
@@ -129,10 +129,7 @@ Before CSL, in SaaS:
 - Auth0 either federated to the customer Enterprise IdP or managed user accounts directly, depending on tenant configuration. The concrete integration code lived in the respective SaaS backends (Console/Hub services and OC Identity OIDC client configuration), which used standard OAuth2/OIDC client libraries to communicate with Auth0.
 - Auth0 org membership: membership of users in organizations is stored in Auth0 user metadata and surfaced as JWT claims. These claims are consumed by Hub/OC (in scope of this document) as well as by components outside this document's scope (e.g. Accounts). As Auth0 becomes an IdP like any other in the target architecture, this dependency on Auth0-specific metadata must be resolved — likely as part of [product-hub#3190](https://github.com/camunda/product-hub/issues/3190) or when multi-org Self-Managed support is introduced. Until then, CSL cannot fully treat Auth0 as a standard OIDC IdP and must accommodate the existing Auth0 JWT claim structure for org membership.
 
-(The Management Identity headless-SaaS note that used to live here now lives in §2.3, to avoid
-restating it.)
-
-#### 2.4.3 Self-managed (historical)
+#### 2.4.3 Self-managed
 
 ```mermaid
 flowchart TB

@@ -34,7 +34,7 @@ flowchart TB
 
       subgraph Broker["Broker"]
         Engine["Engine</br>(Physical Tenant)"]
-        SecEngFrame["CSL core (embedded)"]
+        CslCore["CSL core (embedded)"]
       end
 
       SecGatOC -->|"config propagation</br>(batch operation)"| Broker
@@ -88,7 +88,7 @@ flowchart TB
 
       subgraph Broker["Broker"]
         Engine["Engine</br>(Physical Tenant)"]
-        EngLib["CSL core (embedded)"]
+        CslCore["CSL core (embedded)"]
       end
 
       OCLib -->|"config propagation</br>(batch operation)"| Broker
@@ -513,7 +513,7 @@ The same library core is reused in all deployments. **In every runtime mode, Aut
 
 Mode activation is property-driven via Spring Boot conditions (`@ConditionalOnProperty`, or a small custom `@Conditional` when multiple properties contribute to the decision), not via Spring profiles.
 
-**Current implementation state:** authentication method selection (`camunda.security.authentication.method=basic|oidc`) is active today and governs which filter chains are assembled. The deployment strategy property (`hub` / `managed` / `standalone` — current property values use an `oc-` prefix: `oc-managed`, `oc-standalone`) is defined in the configuration model but is not yet consumed by the filter chain layer — it is planned for the policy work that wires `PolicyPort`, `PolicyApplyPort`, and the Hub/OC-specific outbound ports.
+**Current implementation state:** authentication method selection (`camunda.security.authentication.method=basic|oidc`) is active today and governs which filter chains are assembled. The deployment strategy property (`hub` / `managed` / `standalone` — current property values use an `oc-` prefix: `oc-managed`, `oc-standalone`) does not exist in the codebase yet — neither the property nor a binding type is present — it is planned for the policy work that wires `PolicyPort`, `PolicyApplyPort`, and the Hub/OC-specific outbound ports.
 
 `AuthorizationCheckPort` is generic enough to serve Hub-scoped resources with the same evaluator OC already uses, but Hub has not cut over to it — Hub authorization still runs through Management Identity today (see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance)). `IdpClientPort` is a planned outbound port for external IdP interactions; the current OIDC integration wires `OidcProviderConfigurationPort` instead.
 
@@ -663,7 +663,7 @@ When the OC Camunda Security Library needs to propagate a policy change to a Phy
 - **Observability:** batch operation progress and failure are visible through existing batch operation monitoring.
 - **Consistency with the engine's design:** no new ad-hoc bulk command mechanism is introduced; we reuse an already-solved problem.
 
-This is the primary mechanism by which the OC Gateway/Search Layer propagates Physical Tenant configuration to Brokers and their engines.
+This is intended to be the primary mechanism by which the OC Gateway/Search Layer propagates Physical Tenant configuration to Brokers and their engines.
 
 Open Topic: Currently, in batch operation we just handover lists of numbers to the engine. For this feature, we need to push a list of objects ...
 

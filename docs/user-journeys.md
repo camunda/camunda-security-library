@@ -17,9 +17,9 @@ Short- to midterm target: Admins configure cluster policies (including Physical 
      - Cluster-wide permissions (for example cluster admins).
      - Tenant-level permissions (for example `retail` vs `wholesale`).
      - Physical Tenant-level (`PHYSICAL_TENANT`).
-  4. Hub Camunda Security Library validates and persists the changes in the selected organization scope, producing a new `PolicyVersion` for the target cluster. (Hub policy authoring on CSL is not yet implemented — today this still runs through Management Identity, see [rollout status](./architecture/02-current-state.md#21-rollout-status-at-a-glance).)
-  5. Hub propagates the updated policy to the target OC through a platform-owned transport channel; OC Camunda Security Library applies it and updates the Physical Tenant-level (`PHYSICAL_TENANT`) projections. (This distribution channel is not yet implemented — see the same table.)
-  6. The admin section of the OC UI, in read-only mode, allows cluster operators to view the effective policies per engine and tenant, including the applied policy version. (Depends on step 5's distribution channel, so also not yet implemented.)
+  4. Hub Camunda Security Library validates and persists the changes in the selected organization scope, producing a new `PolicyVersion` for the target cluster.
+  5. Hub propagates the updated policy to the target OC through a platform-owned transport channel; OC Camunda Security Library applies it and updates the Physical Tenant-level (`PHYSICAL_TENANT`) projections.
+  6. The admin section of the OC UI, in read-only mode, allows cluster operators to view the effective policies per engine and tenant, including the applied policy version.
 
 Outcome: Cluster policies, including Physical Tenant- and Tenant-specific permissions, are authored once in Hub and enforced consistently in the target OC. Cluster operators can inspect, but not change, these policies via the admin section of the OC UI.
 
@@ -69,9 +69,9 @@ Long-term target: Bring the same policy model, including Physical Tenant- and Te
 - Main steps:
   1. Cluster admin opens the admin section of the OC UI.
   2. Cluster admin configures the Enterprise IdP connection directly on the OC (OIDC/SAML client settings for the deployment).
-  3. Cluster admin creates tenants, roles, groups, and mapping rules in the admin section of the OC UI. (Authoring UI/path not yet implemented.)
-  4. Cluster admin defines authorizations for cluster resources (definitions, instances, tasks, cluster APIs) and, if needed, Physical Tenant- and Tenant-level authorization levels. (Not yet implemented.)
-  5. OC Camunda Security Library is designed to persist the policy locally and propagate Physical Tenant-level (`PHYSICAL_TENANT`) projections to the engines via `EngineCommandPort`, which is not yet defined in `core/port/out/` — see [rollout status](./architecture/02-current-state.md#21-rollout-status-at-a-glance).
+  3. Cluster admin creates tenants, roles, groups, and mapping rules in the admin section of the OC UI.
+  4. Cluster admin defines authorizations for cluster resources (definitions, instances, tasks, cluster APIs) and, if needed, Physical Tenant- and Tenant-level authorization levels.
+  5. OC Camunda Security Library persists the policy locally and propagates Physical Tenant-level (`PHYSICAL_TENANT`) projections to the engines via `EngineCommandPort` (not yet defined in `core/port/out/`).
 
 Outcome: The OC acts as local SoT for identity and policy. Users and workers can authenticate via the Enterprise IdP, and permissions are enforced consistently across the OC UI and APIs within that cluster, including Physical Tenant- and Tenant-level rules.
 

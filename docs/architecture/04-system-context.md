@@ -2,15 +2,15 @@
 
 This section describes the unified identity system at a high level, showing how the new library integrates into the platform across three supported deployment modes. The diagrams illustrate key components (Hub, Orchestration Clusters, Optimize, identity UIs, infrastructure) and their relationships.
 
-> **Status:** Authentication, across all three hosts (Hub, Optimize, OC), is shipped — see
-> [rollout status](./02-current-state.md#21-rollout-status-at-a-glance). The Hub → OC/Optimize
-> policy distribution channel described below, and Hub/Optimize authorization enforcement on
-> CSL, are not yet implemented — see the same table. Where this section describes them, it is
-> describing the design target, not current behaviour.
+> **Status:** Authentication across all three hosts (Hub, Optimize, OC) is shipped — see
+> [rollout status](./02-current-state.md#21-rollout-status-at-a-glance). Policy authoring on
+> CSL, the Hub → OC/Optimize distribution channel, the OC → engine propagation step, and
+> Hub/Optimize authorization enforcement on CSL are all still outstanding. Where this section
+> describes them it describes the design target, not current behaviour.
 
 ### 4.1 Full mode (Hub + OC + Optimize)
 
-In full mode, the platform runs with Hub (management/control plane), Orchestration Cluster (execution plane), and Optimize (analytics plane). All three authenticate through the same identity model and the same Camunda Security Library. Policy authorship and distribution described in this section are the design target — not yet implemented, see the status note above.
+In full mode, the platform runs with Hub (management/control plane), Orchestration Cluster (execution plane), and Optimize (analytics plane). All three authenticate through the same identity model and the same Camunda Security Library.
 
 Configuration flows top-down: Hub is the central source of truth for all policy. Configuration is authored once in Hub and propagated to both OC and Optimize through a platform-owned transport channel, while OC and Optimize maintain local projections and enforce policy for their respective domains. OC receives process data from engines; Optimize consumes both policy and process data from OC for analytics. The Admin UI in OC runs in read-only mode, showing the local projection of Hub policy.
 
@@ -49,23 +49,19 @@ flowchart TB
 
 - Hub and each OC use the same Camunda Security Library for authentication; each also runs its
   own authorization enforcement (OC's read/check path is on CSL, Hub's is still on Management
-  Identity — see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance)).
+  Identity).
 - Hub and Optimize use the same Camunda Security Library for authentication. Optimize's
-  authorization enforcement for analytics and reporting is still on Management Identity — not
-  yet implemented on CSL, see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
-- Hub is intended to be the single source of truth for all policy and configuration — not yet
-  implemented, see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
-- Hub is designed to propagate policy changes to OC through a platform-owned propagation
+  authorization enforcement for analytics and reporting is still on Management Identity.
+- Hub is the single source of truth for all policy and configuration.
+- Hub propagates policy changes to OC through a platform-owned propagation
   channel, with OC maintaining a local projection and handling runtime enforcement per
-  engine/tenant — not yet implemented, see
-  [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
-- Hub is likewise designed to propagate policy changes to Optimize through the same
-  platform-owned channel — not yet implemented, see
-  [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
+  engine/tenant.
+- Hub likewise propagates policy changes to Optimize through the same
+  platform-owned channel.
 - Existing infrastructure is reused, no new databases or services are introduced.
 - Hub and OC gateway-layer instances of CSL integrate with one or more IdPs (per organization/cluster and mapped to logical Tenants and Physical Tenants) via standard OIDC/SAML clients; engines never integrate with IdPs directly.
-- Optimize integrates with the same Enterprise IdP to authenticate users/machines accessing analytics. Enforcing the same policy model for analytics access control is not yet implemented on CSL (still Management Identity) — see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
-- Optimize is designed to consume both policy state (via propagation channel or API) and process execution data (events, process instances, tasks) from OC for analysis and reporting; the policy-state side is not yet implemented — see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
+- Optimize integrates with the same Enterprise IdP to authenticate users/machines accessing analytics. Enforcing the same policy model for analytics access control remains on Management Identity.
+- Optimize consumes both policy state (via propagation channel or API) and process execution data (events, process instances, tasks) from OC for analysis and reporting.
 
 ### 4.2 OC-only mode (standalone OC without Hub or Optimize)
 
@@ -143,9 +139,8 @@ Propagation architecture and operational details are documented in **[docs/hub-o
 
 Optimize requires dedicated storage for policy and session state, with different characteristics depending on mode:
 
-- In full-mode deployments, Hub is designed to distribute policy to both OC and Optimize through
-  the platform-owned propagation mechanism — not yet implemented, see
-  [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
+- In full-mode deployments, Hub distributes policy to both OC and Optimize through
+  the platform-owned propagation mechanism.
   - Optimize maintains a local database for:
     - Policy projections (tenants, roles, groups, mapping rules, authorizations)
     - Session and authentication state
@@ -163,10 +158,9 @@ Optimize requires dedicated storage for policy and session state, with different
 
 **Policy enforcement across planes:**
 
-Optimize authenticates users and machines via the Enterprise IdP (same as OC) using CSL — shipped,
-see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance). Optimize's
-authorization enforcement is designed to mirror OC's policy model, but is not yet implemented on
-CSL (still Management Identity — see the same table):
+Optimize authenticates users and machines via the Enterprise IdP (same as OC) using CSL. Its
+authorization enforcement is designed to mirror OC's policy model, but still runs on
+Management Identity:
 - Derive roles, groups, and tenant assignments from mapping rules
 - Enforce per-tenant and per-role access controls on analytics and reports
 - Ensure that users can only view reports and data they are authorized to access within their tenant scope

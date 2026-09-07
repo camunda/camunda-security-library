@@ -32,7 +32,7 @@ flowchart TB
         end
 
         subgraph Broker1["Broker"]
-          SecEngFrame1["CSL core (embedded)"]
+          CslCore1["CSL core (embedded)"]
         end
       end
 
@@ -87,7 +87,7 @@ flowchart TB
         end
 
         subgraph Broker1["Broker"]
-          SecEngFrame1["CSL core (embedded)"]
+          CslCore1["CSL core (embedded)"]
         end
       end
 
@@ -148,19 +148,19 @@ flowchart TB
       subgraph Broker1["Broker 1"]
         B1E1["Engine A</br>(Physical Tenant)"]
         B1E2["Engine B</br>(Physical Tenant)"]
-        B1SEF["CSL core (embedded)"]
+        B1Core["CSL core (embedded)"]
       end
 
       subgraph Broker2["Broker 2"]
         B2E1["Engine C</br>(Physical Tenant)"]
         B2E2["Engine D</br>(Physical Tenant)"]
-        B2SEF["CSL core (embedded)"]
+        B2Core["CSL core (embedded)"]
       end
 
       subgraph Broker3["Broker 3"]
         B3E1["Engine E</br>(Physical Tenant)"]
         B3E2["Engine F</br>(Physical Tenant)"]
-        B3SEF["CSL core (embedded)"]
+        B3Core["CSL core (embedded)"]
       end
 
       GW1 --> Broker1
@@ -189,7 +189,7 @@ In SaaS, Camunda operates one shared Hub instance for many customer organization
 - In the first iterations, this partitioning is logical only: shared Hub infrastructure and databases are reused, while policy tables and queries are keyed by `organization_id`.
 - Each OC remains associated with exactly one organization boundary for policy propagation.
 - Cluster discovery and registration in Hub are handled via `ClusterRegistryPort` (outbound) and `ClusterRegistrationPort` (inbound) ports. How Hub's adapter implementation populates the cluster registry is a host-application integration concern, not a library concern.
-- Hub authentication now runs on CSL (shipped, see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance)); SaaS may still keep Auth0 or another broker deployed as an internal implementation detail for other purposes (compare the Management Identity headless-SaaS note in §2.3), but it is no longer in the Hub authentication path.
+- Hub authentication now runs on CSL (shipped, see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance)); in SaaS, CSL fronts Auth0 as the OIDC provider — the pre-registered Auth0 callback, the `audience` authorize-request parameter, and the org-membership claim mapping all stay in the path (see [ADR-0018](../adr/0018-optimize-reuses-stateful-oidc-webapp-chain.md)). What left the Hub authentication path is Management Identity, not Auth0 (compare the headless-SaaS note in §2.3).
 
 ```mermaid
 ---

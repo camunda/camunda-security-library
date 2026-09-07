@@ -7,7 +7,7 @@ These are unresolved design questions that require a dedicated ADR before implem
 - **SPI boundaries for OC/engine command creation** (`EngineCommandPort`): still open. Webapp, session, user, and scope provider SPI boundaries have been defined (ADRs 0004, 0009, 0010, 0013, 0014); the engine-command interface is the remaining open design question.
 - **Migration path** from current Auth0-based SaaS setup to "Enterprise IdP as SoT" while keeping Auth0 as a private implementation detail — not yet addressed in an ADR.
 - **Policy endpoint ownership:** If the endpoints to apply policy changes are public, Hub will not be aware of what a customer applies to OC and will run out of sync. The right ownership boundary is unresolved.
-- **Snapshot idempotency:** How can we apply a snapshot multiple times? How could we reset the projections in primary and secondary storage? This is no longer a speculative future concern — the Hub → OC/Optimize distribution work targeted for the policy write path makes it a blocking question (see "Known debts" below).
+- **Snapshot idempotency:** How can we apply a snapshot multiple times? How could we reset the projections in primary and secondary storage? The Hub → OC/Optimize distribution work for the policy write path makes this a blocking question, not a speculative one.
 
 ### Open issues
 
@@ -19,13 +19,13 @@ These are unresolved design questions that require a dedicated ADR before implem
 
 ### Known debts
 
-**Authorization write path — two separate gaps, not one.** Docs have historically merged these;
-they have different owners and different evidence trails:
+**Authorization write path — two separate gaps, not one.** They have different owners and
+different evidence trails:
 
 | Gap | Where it lives today | Evidence |
 |---|---|---|
 | **Engine-side identity authoring** — identity CRUD processors (`GroupCreateProcessor`, `RoleCreateProcessor`, …), `IdentitySetupInitializer`, `PermissionsBehavior`, `AuthorizationEntityValidator` | Still in `zeebe/engine`; deliberately deferred, not overlooked | Epic [#388](https://github.com/camunda/camunda-security-library/issues/388), "Out of scope (deferred)" list |
-| **Hub → OC/Optimize policy distribution** | Nowhere yet — nine empty marker ports (below) plus an undefined `EngineCommandPort` | This repo |
+| **Hub → OC/Optimize policy distribution** | Nowhere yet — nine empty marker ports (below) plus an undefined `EngineCommandPort` | `core/port/in/` + `core/port/out/` — bodies are `{}` |
 
 The same epic is also the source of a related ownership boundary worth stating precisely: the
 `PropertyAuthorizationEvaluator` interface and its registry live in CSL `core` (see
@@ -57,13 +57,12 @@ evaluation *contract*, not every property-specific evaluator that plugs into it.
   mechanism — but no mechanism exists yet on either side of it. Optimize's own projection store
   (its Elasticsearch store) is a host-side outbound-adapter concern, not a CSL one. See
   [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
-- **Snapshot idempotency now blocks the policy write path**, rather than being a speculative
-  future concern — see the "Open design questions" entry above.
+
 - **Nine outbound/inbound ports exist only as empty marker interfaces** — bodies are literally
   `{}`, javadoc only, no methods: `PolicyPort`, `PolicyApplyPort`, `TenantPort`,
   `ClusterRegistrationPort`, `ClusterRegistryPort`, `OutboxPort`, `PolicyRepositoryPort`,
-  `FeatureTogglePort`, `IdpClientPort`. This is more precise than "missing" — the contracts exist
-  as placeholders but define no behaviour yet. See
+  `FeatureTogglePort`, `IdpClientPort`. The contracts exist as placeholders but define no
+  behaviour yet. See
   [`docs/adopters/ports.md`](../adopters/ports.md#quick-reference) for the authoritative port
   inventory, which already marks each of these "under development."
 - **`InitializationConfiguration`** (`api/model/config/initialization/`) is a bound, documented

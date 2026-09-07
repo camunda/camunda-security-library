@@ -7,8 +7,8 @@ This section illustrates selected runtime flows as concrete user journeys, focus
 > **Not yet implemented.** This scenario describes the design target for Hub-authored policy and
 > Hub → OC distribution — neither Hub policy authoring on CSL (still Management Identity) nor the
 > `PolicyVersion`/outbox/`POLICY_SNAPSHOT` distribution path exists today. See
-> [rollout status](./02-current-state.md#21-rollout-status-at-a-glance). Only step 1 (Hub login)
-> reflects shipped behaviour.
+> [rollout status](./02-current-state.md#21-rollout-status-at-a-glance). Steps 1–2 are shipped, except for
+> the mapping-rule role/tenant derivation inside step 2; step 3 onwards is design target.
 
 1. Admin logs into the Hub UI.
 2. Hub Camunda Security Library authenticates the user against the configured IdP for the Hub organization and derives roles/tenants via mapping rules.
@@ -23,7 +23,7 @@ This section illustrates selected runtime flows as concrete user journeys, focus
 - Applies the full policy snapshot to its local projection and updates `last_applied_version`.
 - Propagates engine-scoped changes to engines via the engine command path, backed by CSL `core` (embedded in the broker/engine layer) rather than a separate framework — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md).
 
-Once implemented, this is the intended experience: from the admin’s perspective, all policy changes are made centrally in Hub; the OC and engines converge asynchronously.
+From the admin’s perspective, all policy changes are made centrally in Hub; the OC and engines converge asynchronously.
 
 ```mermaid
 sequenceDiagram
@@ -70,7 +70,9 @@ sequenceDiagram
 - OC forwards or executes the corresponding operation against the engine(s).
 - Engines apply the same `AuthorizationCheckPort` evaluation as the gateway/search layer — one
   evaluator behind CSL `core`, not a separate engine-side check — see
-  [ADR-0014](../adr/0014-unified-authz-framework-in-core.md).
+  [ADR-0014](../adr/0014-unified-authz-framework-in-core.md). They evaluate against a
+  projection the OC delivers in the design target only: `EngineCommandPort` is undefined, and
+  the engine's identity state today comes from processors still in `zeebe/engine`.
 6. If the check fails:
 - OC denies the request and returns an appropriate error to the OC UI.
 
@@ -145,17 +147,13 @@ sequenceDiagram
 
 1. User opens the Optimize UI in the browser.
 2. Optimize delegates authentication to Optimize's Camunda Security Library instance against the
-   same Enterprise IdP as OC — shipped, see
-   [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
+   same Enterprise IdP as OC — shipped.
 3. For each incoming request, Optimize is designed to load its local policy projection (received
    from Hub over the same distribution channel as OC, per §6.1) and evaluate the user's
    permissions on the requested analytics/reporting resource. This authorization step is not yet
    implemented on CSL — Optimize authorization still runs through Management Identity, see
    [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
 4. If authorized, Optimize serves the requested report or dashboard data.
-
-Optimize's authentication is shipped today; its policy receipt and authorization enforcement on
-CSL are targeted work — see §2.1 for the current split.
 
 ---
 

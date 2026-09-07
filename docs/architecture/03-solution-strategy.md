@@ -38,7 +38,7 @@ The Camunda Security Library and unified identity plane must meet the following 
 
 1. **Security and correctness**
    - Authorization decisions are deterministic: given the same token, policy, and resource, all
-     instances of a given host (Hub, OC, Optimize) reach the same result. Today this is realized
+     instances across every host (Hub, OC, Optimize) reach the same result. Today this is realized
      for OC's gateway/search and engine layers (one evaluator, see
      [ADR-0014](../adr/0014-unified-authz-framework-in-core.md)); Hub and Optimize still evaluate
      authorization via Management Identity — see

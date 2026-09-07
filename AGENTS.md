@@ -22,22 +22,19 @@ Public consumer-facing types are exposed from the `api` module:
 
 ### Deployment Strategies
 
-Active capabilities are selected via a deployment strategy configuration property (not Spring profiles). **Not yet implemented:** the property is defined in the configuration model but is not yet consumed by the filter chain layer, and Authoring/Outbox Dispatch/Engine Projection are all still under development — see [rollout status](docs/architecture/02-current-state.md#21-rollout-status-at-a-glance).
+Active capabilities are selected via a deployment strategy configuration property (not Spring profiles). **Not yet implemented:** no such property exists in the codebase yet — the strategy names below are design intent, and Authoring/Outbox Dispatch/Engine Projection are all still under development — see [rollout status](docs/architecture/02-current-state.md#21-rollout-status-at-a-glance).
 
 | Strategy | Policy Authority | Authoring | Outbox Dispatch | Engine Projection |
 |---|---|---|---|---|
-| `standalone` | OC (local SoT) | Yes | No | Yes |
-| `managed` | Receives from Hub | No (read-only) | No | Yes |
+| `oc-standalone` | OC (local SoT) | Yes | No | Yes |
+| `oc-managed` | Receives from Hub | No (read-only) | No | Yes |
 | `hub` | Hub (central SoT) | Yes | Yes | No |
-
-The table above describes the target design once the deployment strategy property is consumed by
-the filter chain layer; none of these capabilities are wired up yet — see the note above.
 
 Authentication is always active in every strategy. Authorization enforcement is always active for
 OC's read/check path; Hub and Optimize authorization still runs through Management Identity — see
 [rollout status](docs/architecture/02-current-state.md#21-rollout-status-at-a-glance).
 
-> **Note:** Current property values use an `oc-` prefix (`oc-standalone`, `oc-managed`). A rename to the shorter names used above (`standalone`, `managed`) is planned.
+> **Note:** The property values above carry an `oc-` prefix; a rename to the shorter names (`standalone`, `managed`) is planned.
 
 ### Unified Policy Model
 

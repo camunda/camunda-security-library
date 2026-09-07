@@ -178,7 +178,7 @@ Scope mapping:
 
 - Transport delivery state is described here.
 - CSL semantic apply-state and policy-version ownership are described in
-  [`docs/architecture/05-building-block-view.md`](./architecture/05-building-block-view.md) section `5.3`.
+  [`docs/architecture/05-building-block-view.md` §5.3](./architecture/05-building-block-view.md#53-policy-propagation-boundary-and-semantic-versioning-hub--oc--optimize).
 
 
 

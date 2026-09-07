@@ -41,14 +41,13 @@ In the SaaS legacy context, Auth0 acts as an identity federation layer (broker):
 
 ### Policy receiver
 
-> This term describes a design concept for the `managed` deployment strategy. Hub → OC/Optimize
-> policy distribution is not yet implemented — see
-> [rollout status](./02-current-state.md#21-rollout-status-at-a-glance). The definitions below
-> describe the intended behaviour once it ships.
+> Design concept. Hub → OC/Optimize policy distribution is not yet implemented — see
+> [rollout status](./02-current-state.md#21-rollout-status-at-a-glance); the definitions
+> below describe the intended behaviour once it ships.
 
-A CSL-embedded host application designed to receive and enforce policy published by Hub, rather than authoring policy locally. OC instances using the `managed` deployment strategy and Optimize in full-mode deployments are intended to be policy receivers.
+A CSL-embedded host application that receives and enforces policy published by Hub, rather than authoring policy locally. OC instances using the `managed` deployment strategy and Optimize in full-mode deployments are policy receivers.
 
-Policy receivers are designed to maintain a local projection of the Hub-authored policy, updated via `POLICY_SNAPSHOT` messages whenever Hub commits a new `PolicyVersion`. They are not intended to own policy authoring, tenant creation, or outbox dispatch — those capabilities are meant to be active only in the `hub` deployment strategy. Contrast with:
+Policy receivers maintain a local projection of the Hub-authored policy, updated via `POLICY_SNAPSHOT` messages whenever Hub commits a new `PolicyVersion`. They do not own policy authoring, tenant creation, or outbox dispatch — those capabilities are active only in the `hub` deployment strategy. Contrast with:
 
 - **Hub** (`hub` strategy) — the policy source of truth; authors policy and propagates it to policy receivers.
 - **OC in `standalone` mode** — its own local policy source of truth; not a policy receiver.

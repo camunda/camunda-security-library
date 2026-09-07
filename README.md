@@ -28,26 +28,22 @@ No host-specific code leaks into the library domain. Swapping a database, replac
 - `api`: public consumer-facing types intended to be imported by host applications.
   - Put shared public models in `api/model` (for example `CamundaAuthentication`).
   - Put shared public context/helper contracts in `api/context` (for example holders, providers, converters).
-- `spring-boot-starter`: Spring-specific auto-configuration and authentication filter chain wiring.
+- `spring-boot-starter`: Spring configuration classes for authentication filter chains, activated by explicit `@Import` — no auto-configuration, see [ADR-0003](docs/adr/0003-no-spring-boot-auto-configuration.md).
 - `adapters` *(planned)*: non-Spring infrastructure adapter code for environments that do not use Spring Boot.
 
 Rule of thumb: if a type is a hexagonal inbound or outbound port, keep it in `core`. Use `api` for public adopter-facing models and helper/context contracts that are not hexagonal ports.
 
 ### Deployment Strategies
 
-Active capabilities are selected via a **deployment strategy configuration property** (not Spring profiles). **Not yet implemented:** the property is defined in the configuration model but is not yet consumed by the filter chain layer, and Authoring/Outbox Dispatch/Engine Projection are all still under development — see the [rollout status table](docs/architecture/02-current-state.md#21-rollout-status-at-a-glance).
+Active capabilities are selected via a **deployment strategy configuration property** (not Spring profiles). **Not yet implemented:** no such property exists in the codebase yet — the strategy names below are design intent, and Authoring/Outbox Dispatch/Engine Projection are all still under development — see the [rollout status table](docs/architecture/02-current-state.md#21-rollout-status-at-a-glance).
 
 | Strategy | Policy Authority | Authoring | Outbox Dispatch | Engine Projection |
 |---|---|---|---|---|
-| `standalone` | OC (local source of truth) | Yes | No | Yes |
-| `managed` | Receives from Hub | No (read-only) | No | Yes |
+| `oc-standalone` | OC (local source of truth) | Yes | No | Yes |
+| `oc-managed` | Receives from Hub | No (read-only) | No | Yes |
 | `hub` | Hub (central source of truth) | Yes | Yes | No |
 
-The table above describes the target design once the deployment strategy property is consumed by
-the filter chain layer; none of these capabilities are wired up yet — see the note above and the
-[rollout status table](docs/architecture/02-current-state.md#21-rollout-status-at-a-glance).
-
-> **Note:** Current property values use an `oc-` prefix (`oc-standalone`, `oc-managed`). A rename to the shorter names used above (`standalone`, `managed`) is planned.
+> **Note:** The property values above carry an `oc-` prefix; a rename to the shorter names (`standalone`, `managed`) is planned.
 
 Authentication is **always active** in every strategy. Authorization enforcement is always active for
 OC's read/check path; Hub and Optimize authorization still runs through Management Identity — see
@@ -73,7 +69,7 @@ Authorizations have three authorization levels: `ALL`, `TENANT`, or `PHYSICAL_TE
 
 ## Getting Started
 
-The library ships as a Spring Boot starter. Hosts include the artefact, set a few properties, and the central security filter chains plus their dependencies (JWT decoder, OAuth2 client beans, default failure handler) wire automatically.
+The library ships as a Spring Boot starter. Hosts include the artefact, import the configuration they want, and set a few properties; the central security filter chains plus their dependencies (JWT decoder, OAuth2 client beans, default failure handler) are then wired for them. Nothing activates from adding the dependency alone.
 
 ```xml
 <dependency>

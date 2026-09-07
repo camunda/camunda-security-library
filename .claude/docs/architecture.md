@@ -22,7 +22,7 @@ The CSL is embedded into host applications. Active capabilities are selected via
 
 - **Authentication method**: `camunda.security.authentication.method=basic|oidc` selects the auth-mode chains.
 - **API protection**: `camunda.security.authentication.unprotected-api=true|false` swaps the API protection chain for the dev-mode permit-all variant.
-- **Deployment strategy** (`oc-standalone` / `oc-managed` / `hub`): planned for the policy work; **not currently consumed by the filter chain layer.** AuthN/AuthZ enforcement is always active regardless of strategy.
+- **Deployment strategy** (`oc-standalone` / `oc-managed` / `hub`): design intent for the policy work; **no such property exists in the codebase yet** — neither the strategy names nor a binding type. Authentication is always active in every strategy. Authorization enforcement is always active for OC's read/check path; Hub and Optimize authorization still runs through Management Identity — see [rollout status](../../docs/architecture/02-current-state.md#21-rollout-status-at-a-glance).
 
 **Important:** The CSL does not use Spring Boot auto-configuration (see [ADR-0003](../../docs/adr/0003-no-spring-boot-auto-configuration.md)). `@ConditionalOnProperty` annotations on configuration classes are present for future use but have no effect until the host explicitly `@Import`s the class. Nothing activates by simply adding the Maven dependency.
 
