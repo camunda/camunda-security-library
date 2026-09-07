@@ -133,7 +133,7 @@ For concrete diagrams:
 
 ---
 
-## 5.2 Unified policy model
+### 5.2 Unified policy model
 
 The unified identity architecture is built around a single policy model that is shared between Hub Identity & Policy and OC Identity. Hub is the source of truth for this model per cluster; in shared-Hub deployments, Hub stores it per organization and cluster. Each OC hosts a cluster-local projection of the same concepts for enforcement.
 
@@ -591,7 +591,7 @@ The extra layer between UIs/clients and engines is intentional:
 - Pluggable backends
   - Concrete persistence (SQL, search), propagation transport, and IdP clients can be swapped or customized by providing alternative adapters, without changing the domain model.
 
-#### 5.5 Engine authorization integration
+### 5.5 Engine authorization integration
 
 Rather than a separate authorization sub-framework embedded in the engine, the zeebe engine uses CSL's `core` authorization model directly — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md). Implementation is tracked in [#388](https://github.com/camunda/camunda-security-library/issues/388).
 

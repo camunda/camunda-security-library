@@ -18,7 +18,7 @@ For the platform team: one codebase to maintain, one security surface to audit, 
 
 ## Architecture
 
-The CSL is a **hexagonal (ports and adapters) Spring Boot library** embedded into host applications (Hub, Orchestration Clusters, Optimize). For new code, interfaces in the core should be modeled as ports: inbound ports model use cases, and outbound ports model dependencies on persistence, IdP clients, engine commands, and outbox delivery. Host applications provide adapters that implement those outbound ports. Some legacy outbound contracts still exist in `core` under `io.camunda.security.core.adapter` and will remain until they are refactored to follow this convention consistently.
+The CSL is a **hexagonal (ports and adapters) Spring Boot library** embedded into host applications (Hub, Orchestration Clusters, Optimize). For new code, interfaces in the core should be modeled as ports: inbound ports model use cases, and outbound ports model dependencies on persistence, IdP clients, engine commands, and outbox delivery. Host applications provide adapters that implement those outbound ports.
 
 No host-specific code leaks into the library domain. Swapping a database, replacing an IdP client, or adding a new deployment topology requires only a new adapter.
 
@@ -35,15 +35,17 @@ Rule of thumb: if a type is a hexagonal inbound or outbound port, keep it in `co
 
 ### Deployment Strategies
 
-Active capabilities are selected via a **deployment strategy configuration property** (not Spring profiles):
+Active capabilities are selected via a **deployment strategy configuration property** (not Spring profiles). **Not yet implemented:** the property is defined in the configuration model but is not yet consumed by the filter chain layer, and Authoring/Outbox Dispatch/Engine Projection are all still under development — see the [rollout status table](docs/architecture/02-current-state.md#21-rollout-status-at-a-glance).
 
 | Strategy | Policy Authority | Authoring | Outbox Dispatch | Engine Projection |
 |---|---|---|---|---|
-| `oc-standalone` | OC (local source of truth) | Yes | No | Yes |
-| `oc-managed` | Receives from Hub | No (read-only) | No | Yes |
-| `hub` | Hub (central source of truth) | Yes | Yes | No |
+| `standalone` | OC (local source of truth) | Not yet implemented | Not yet implemented | Not yet implemented |
+| `managed` | Receives from Hub | No (read-only, once implemented) | Not yet implemented | Not yet implemented |
+| `hub` | Hub (central source of truth) | Not yet implemented | Not yet implemented | No |
 
-Authentication and authorization enforcement is **always active** in every strategy.
+Authentication is **always active** in every strategy. Authorization enforcement is always active for
+OC's read/check path; Hub and Optimize authorization still runs through Management Identity — see
+[rollout status](docs/architecture/02-current-state.md#21-rollout-status-at-a-glance).
 
 ### Unified Policy Model
 

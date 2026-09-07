@@ -1,19 +1,22 @@
 # Unified Identity Architecture – Migration Path
 
 This document describes the incremental migration path from the current split identity systems
-to the unified Camunda Security Library described in the
-[Unified Identity Architecture](unified_identity_architecture.md).
+to the unified Camunda Security Library described in
+[`docs/architecture/`](architecture/README.md).
 
 ## 1. Current state summary
 
-Before describing the migration, the following table summarizes the components being replaced per deployment context.
+Before describing the migration, the following table summarizes the components being replaced per
+deployment context — split by authentication and authorization, since the two migrate on different
+timelines; see [rollout status](architecture/02-current-state.md#21-rollout-status-at-a-glance) for
+what has shipped and what remains outstanding.
 
-| Deployment | Component | Responsible for | Storage |
-|---|---|---|---|
-| SaaS | Auth0 (Camunda-managed) | Management plane AuthN (Console, Web Modeler) | Auth0 tenant |
-| SaaS | OC Identity ([identity_architecture_docs.md](../../components/identity/identity_architecture_docs.md)) | Runtime AuthN/AuthZ (Operate, Tasklist, OC APIs) | Zeebe primary (RocksDB) + secondary (ES/OS/RDBMS) |
-| Self-Managed | Management Identity ([management_identity_architecture_docs.md](../../components/identity/management_identity_architecture_docs.md)) | Platform app AuthN/AuthZ (Console, Web Modeler, Optimize) | Keycloak DB + Management Identity PostgreSQL |
-| Self-Managed | OC Identity ([identity_architecture_docs.md](../../components/identity/identity_architecture_docs.md)) | Runtime AuthN/AuthZ (Operate, Tasklist, OC APIs) | Zeebe primary (RocksDB) + secondary (ES/OS/RDBMS) |
+| Deployment | Component | AuthN | AuthZ | Storage |
+|---|---|---|---|---|
+| SaaS | Auth0 (Camunda-managed) | Migrated to CSL — Hub authentication for Console and Web Modeler | N/A — Auth0 never enforced authorization | Auth0 tenant |
+| SaaS | OC Identity | Migrated to CSL — Operate, Tasklist, OC APIs | Read/check path migrated to CSL (one evaluator via `AuthorizationCheckPort`); write/authoring path not yet implemented anywhere | Zeebe primary (RocksDB) + secondary (ES/OS/RDBMS) |
+| Self-Managed | Management Identity | Migrated to CSL — Console, Web Modeler, and Optimize authentication | Still Management Identity — not yet migrated | Keycloak DB + Management Identity PostgreSQL |
+| Self-Managed | OC Identity | Migrated to CSL — Operate, Tasklist, OC APIs | Read/check path migrated to CSL (one evaluator via `AuthorizationCheckPort`); write/authoring path not yet implemented anywhere | Zeebe primary (RocksDB) + secondary (ES/OS/RDBMS) |
 
 **What does not change:** all enterprise IdP integrations remain standard OIDC/SAML. The customer's
 IdP (Keycloak, Entra, Okta, etc.) is never replaced — only the components consuming and enforcing

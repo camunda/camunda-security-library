@@ -177,7 +177,8 @@ CSL semantic ownership, once the distribution path below is implemented (not yet
 Scope mapping:
 
 - Transport delivery state is described here.
-- CSL semantic apply-state and policy-version ownership are described in `docs/architecture_docs.md` section `5.3`.
+- CSL semantic apply-state and policy-version ownership are described in
+  [`docs/architecture/05-building-block-view.md`](./architecture/05-building-block-view.md) section `5.3`.
 
 
 
