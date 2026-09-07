@@ -38,7 +38,9 @@ OC's read/check path; Hub and Optimize authorization still runs through Manageme
 
 ### Unified Policy Model
 
-Shared across Hub and all OCs: `Organization`, `Tenant`, `Role`, `Group`, `MappingRule`, `Principal` (User + Machine), `Authorization`. Authorization levels: `ALL`, `TENANT`, `PHYSICAL_TENANT`.
+Shared across Hub and all OCs: `Organization`, `Tenant`, `Role`, `Group`, `MappingRule`, `Principal` (User + Machine), `Authorization`.
+
+**Not yet implemented:** the unified policy model is in planning/refinement — see [the vision document](docs/vision/unified-policy-model.md) and [rollout status](docs/architecture/02-current-state.md#21-rollout-status-at-a-glance). The authorization levels `ALL` / `TENANT` / `PHYSICAL_TENANT` that older revisions of this section asserted are documentation-only; no type in this repo carries an authorization level.
 
 In CSL, a policy is the effective access configuration derived from those building blocks. Iteration one models roles/groups/mapping rules/principals/authorizations directly; introduce a first-class `Policy` aggregate only if future requirements require it.
 

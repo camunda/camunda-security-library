@@ -38,7 +38,9 @@ Shared across Hub and all OCs:
 - `Principal` — user or machine identity
 - `Authorization` — granted permission scoped to a resource
 
-Authorization levels: `ALL`, `TENANT`, `PHYSICAL_TENANT`.
+Authorization levels: `ALL`, `TENANT`, `PHYSICAL_TENANT` — documentation-only; no type in
+this repo carries an authorization level. See the **Authorization levels** note at the end of
+the next section.
 
 ### Permission Model: Resource -> Action
 
