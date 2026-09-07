@@ -39,9 +39,15 @@ Active capabilities are selected via a **deployment strategy configuration prope
 
 | Strategy | Policy Authority | Authoring | Outbox Dispatch | Engine Projection |
 |---|---|---|---|---|
-| `standalone` | OC (local source of truth) | Not yet implemented | Not yet implemented | Not yet implemented |
-| `managed` | Receives from Hub | No (read-only, once implemented) | Not yet implemented | Not yet implemented |
-| `hub` | Hub (central source of truth) | Not yet implemented | Not yet implemented | No |
+| `standalone` | OC (local source of truth) | Yes | No | Yes |
+| `managed` | Receives from Hub | No (read-only) | No | Yes |
+| `hub` | Hub (central source of truth) | Yes | Yes | No |
+
+The table above describes the target design once the deployment strategy property is consumed by
+the filter chain layer; none of these capabilities are wired up yet — see the note above and the
+[rollout status table](docs/architecture/02-current-state.md#21-rollout-status-at-a-glance).
+
+> **Note:** Current property values use an `oc-` prefix (`oc-standalone`, `oc-managed`). A rename to the shorter names used above (`standalone`, `managed`) is planned.
 
 Authentication is **always active** in every strategy. Authorization enforcement is always active for
 OC's read/check path; Hub and Optimize authorization still runs through Management Identity — see
