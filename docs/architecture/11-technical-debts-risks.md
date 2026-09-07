@@ -52,9 +52,10 @@ evaluation *contract*, not every property-specific evaluator that plugs into it.
   over to CSL's `AuthorizationCheckPort` for authorization decisions — only authentication has
   moved to CSL for these hosts so far — see
   [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
-- **Optimize's policy-receipt path is undefined:** no mechanism exists yet for Optimize to receive
-  a policy snapshot from Hub (whether that reuses the same channel a `managed` OC would use, or a
-  separate one, is still open) — see
+- **Optimize's policy-receipt path is not implemented:** the design is settled — Optimize receives
+  policy over the same Hub → OC snapshot/outbox channel a `managed` OC uses, not a separate
+  mechanism — but no mechanism exists yet on either side of it. Optimize's own projection store
+  (its Elasticsearch store) is a host-side outbound-adapter concern, not a CSL one. See
   [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
 - **Snapshot idempotency now blocks the policy write path**, rather than being a speculative
   future concern — see the "Open design questions" entry above.
