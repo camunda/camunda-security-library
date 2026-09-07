@@ -12,7 +12,7 @@ The term **Orchestration Cluster (OC)** is used at two abstraction levels:
 - **Physical/deployment view (runtime level):**
   - An OC deployment consists of one or more **Gateways** (the Gateway/Search layer) and one or more **Brokers**.
   - Each Broker contains one or more **Engines**.
-  - The Camunda Security Library (CSL) is embedded in the Gateway/Search layer and enforces authentication and authorization before broker/search access.
+  - The Camunda Security Library (CSL) is embedded in both layers: the full library runs in the Gateway/Search layer, and CSL `core` (see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md)) runs embedded in the Broker/Engine layer — there is no separate engine-side framework.
 
 In high-level diagrams, OC is intentionally simplified as one logical component. In detailed building-block and deployment diagrams (section 5.1 and below), Gateway/Search and Broker/Engine layers are shown explicitly.
 

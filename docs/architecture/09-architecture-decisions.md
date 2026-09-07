@@ -2,7 +2,7 @@
 
 This unified architecture builds on existing identity arc42 docs and ADRs for OC Identity and Management Identity; those ADRs remain the canonical source for detailed trade-offs. The main new decisions here are:
 
-- Use a shared hexagonal Camunda Security Library with SPIs for persistence, propagation, IdP, OC commands, and (optionally) engine-level integration.
+- Use a shared hexagonal Camunda Security Library with SPIs for persistence, propagation, IdP, and OC commands; the engine runs the same CSL `core` directly rather than a separate, optional integration (see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md)).
 - Use Hub as policy SoT whenever present; OC-only deployments are treated as documented first-class modes, not afterthoughts.
 - Ship a single shared Admin UI package, feature-gated by configuration for Hub vs OC, standalone vs Hub-managed.
 - Make logical-tenant and Physical-Tenant support explicit in the core model and diagrams, not side effects.

@@ -43,7 +43,7 @@ In other words, we adopt Option 1 (embedded CSL in Hub + OC) and explicitly reje
 - Shape:
   - CSL is a shared library.
   - Hub embeds one instance; each OC embeds one instance.
-  - Engines integrate via a narrow Security Engine Framework; they never talk to IdPs directly.
+  - Engines integrate via CSL `core` (see [ADR-0014](0014-unified-authz-framework-in-core.md)); they never talk to IdPs directly.
 - Characteristics:
   - Hub:
     - Acts as policy SoT (tenants, roles, mapping rules, authorizations) per cluster.

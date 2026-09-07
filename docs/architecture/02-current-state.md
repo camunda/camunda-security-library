@@ -14,17 +14,17 @@
 | Capability | Hub | Optimize | OC gateway/search | OC engine | State |
 |---|---|---|---|---|---|
 | Authentication (OIDC/basic, sessions) | CSL | CSL | CSL | n/a | Shipped 8.10 |
-| Authorization — read/check | Management Identity | Management Identity | CSL `AuthorizationCheckPort` | CSL `AuthorizationCheckPort` (same evaluator) | OC delivered (#388, Aug 2026); Hub + Optimize targeted 8.11 |
-| Authorization — write/authoring | Management Identity | Management Identity | missing | missing | Targeted 8.11 |
-| Policy distribution Hub → OC / Optimize | — | — | not implemented | — | Targeted 8.11 |
-| Engine integration artifact | — | — | — | CSL `core`, no separate framework | Delivered (ADR-0014, #388) |
+| Authorization — read/check — OC (one evaluator) | — | — | CSL `AuthorizationCheckPort` | CSL `AuthorizationCheckPort` (same evaluator) | Shipped 8.10 (#388) |
+| Authorization — read/check — Hub, Optimize | Management Identity | Management Identity | — | — | Targeted for 8.11 |
+| Authorization — write/authoring | Management Identity | Management Identity | missing | missing | Targeted for 8.11 |
+| Policy distribution Hub → OC / Optimize | — | — | not implemented | — | Targeted for 8.11 |
+| Engine integration artifact — CSL `core`, no separate framework | — | — | — | CSL `core`, no separate framework | Shipped 8.10 (ADR-0014, #388) |
 
 **Design confirmed, not yet implemented:** Optimize receives policy over the same Hub → OC
 snapshot/outbox distribution channel a `managed` OC uses — not a separate mechanism (see
 [§4 System Context](./04-system-context.md)). The write path (OC authoring, and eventually
 Hub/Optimize authoring) is designed to route through `EngineCommandPort`, which is not yet
-defined in `core/port/out/`. Both remain targeted for 8.11 as shown above; "8.11" is a target,
-not a confirmed commitment.
+defined in `core/port/out/`. Both remain targeted for 8.11 as shown above.
 
 ### 2.2 What CSL owns today
 
@@ -32,27 +32,26 @@ not a confirmed commitment.
   session handling) — shipped in Camunda 8.10. Enforcement is always active, in every deployment
   strategy (see [§7 Deployment View](./07-deployment-view.md) and
   [ADR-0003](../adr/0003-no-spring-boot-auto-configuration.md)).
-- **OC authorization — the read/check path.** One evaluator, behind `AuthorizationCheckPort` in
-  CSL `core`, serves both the OC gateway/search layer and the zeebe engine — see
-  [ADR-0014](../adr/0014-unified-authz-framework-in-core.md) and epic
-  [#388](https://github.com/camunda/camunda-security-library/issues/388) (closed 2026-08-13,
+- **OC authorization — the read/check path**, shipped in Camunda 8.10 alongside authentication.
+  One evaluator, behind `AuthorizationCheckPort` in CSL `core`, serves both the OC gateway/search
+  layer and the zeebe engine — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md) and
+  epic [#388](https://github.com/camunda/camunda-security-library/issues/388) (closed 2026-08-13,
   alongside #400, #393, #401, #402, #399). Details in
   [§5.5 Engine authorization integration](./05-building-block-view.md).
 
 ### 2.3 What Management Identity still owns
 
 - **Hub and Optimize authorization**, both the read/check and write/authoring paths, still run
-  through Management Identity. Moving them onto CSL is targeted for Camunda 8.11 — see §2.1.
+  through Management Identity. Moving them onto CSL is targeted for 8.11 — see §2.1.
 - **OC authorization — the write/authoring path** is not yet implemented anywhere (neither
   Management Identity nor CSL); also targeted for 8.11 — see §2.1.
 - Since 8.8, Management Identity is no longer used in SaaS to serve the web applications. It is,
   however, still deployed **headlessly** in SaaS for two specific purposes: handling Optimize
   permissions, and providing RBAC for clusters on versions prior to 8.8.
-- Once Optimize authorization moves to CSL (targeted 8.11 — see §2.1), the projection store
-  backing Optimize's received policy is a host-side concern, not a CSL one: like every other
-  policy receiver, CSL leaves persistence to a host-supplied outbound adapter — the same port
-  model used everywhere else in this document. The expected backing store is Optimize's own
-  Elasticsearch index, though the concrete adapter has not been built yet.
+- Once Optimize authorization moves to CSL (targeted for 8.11 — see §2.1), Optimize persists the
+  received policy projection in its own Elasticsearch store. That store is a host-side concern,
+  not a CSL one: CSL is agnostic to the projection store and leaves persistence to a
+  host-supplied outbound adapter — the same port model used everywhere else in this document.
 
 ---
 

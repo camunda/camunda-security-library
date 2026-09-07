@@ -15,7 +15,7 @@ This section illustrates selected runtime flows as concrete user journeys, focus
 5. Outbox Dispatcher picks up the new events and delivers the full `POLICY_SNAPSHOT` for the target `PolicyVersion` to each affected OC via the configured transport (see `docs/hub-oc-data-propagation.md`).
 6. OC Camunda Security Library:
 - Applies the full policy snapshot to its local projection and updates `last_applied_version`.
-- Propagates engine-scoped changes to engines via the engine command path / Security Engine Framework.
+- Propagates engine-scoped changes to engines via the engine command path, backed by CSL `core` (embedded in the broker/engine layer) rather than a separate framework — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md).
 
 From the admin’s perspective, all policy changes are made centrally in Hub; the OC and engines converge asynchronously.
 
@@ -30,7 +30,7 @@ sequenceDiagram
   participant IdP as Hub IdP
   participant HubDB as Hub DB
   box Orchestration Cluster
-    participant OCSLF as OC Camunda Security Library
+    participant OcCSL as OC Camunda Security Library
     participant Engine as Engine(s)
   end
 
@@ -41,9 +41,9 @@ sequenceDiagram
   HubUI->>HubCSL: Submit policy updates
   HubCSL->>HubDB: Persist policy + PolicyVersion + revisions + propagation events
   Outbox->>HubDB: Read pending events
-  Outbox->>OCSLF: Deliver policy snapshot (transport-agnostic, see hub-oc-data-propagation.md)
-  OCSLF->>OCSLF: Apply snapshot projection
-  OCSLF->>Engine: Propagate engine-scoped changes
+  Outbox->>OcCSL: Deliver policy snapshot (transport-agnostic, see hub-oc-data-propagation.md)
+  OcCSL->>OcCSL: Apply snapshot projection
+  OcCSL->>Engine: Propagate engine-scoped changes
 ```
 
 ### 6.2 End user uses the OC UI in full mode
@@ -71,25 +71,25 @@ sequenceDiagram
   participant IdP as Customer IdP
   box Orchestration Cluster
     participant OcUi as OC UI (Operate, Tasklist, Admin (view only))
-    participant OCSLF as OC Camunda Security Library
+    participant OcCSL as OC Camunda Security Library
     participant SecStore as Secondary Storage
     participant Engine as Engine(s)
   end
 
   User->>OcUi: Open OC UI
-  OcUi->>OCSLF: Start login / present session
-  OCSLF->>IdP: Redirect/validate token
-  IdP-->>OCSLF: OIDC/SAML token claims
-  OCSLF->>OCSLF: Derive roles/groups/tenant assignments
+  OcUi->>OcCSL: Start login / present session
+  OcCSL->>IdP: Redirect/validate token
+  IdP-->>OcCSL: OIDC/SAML token claims
+  OcCSL->>OcCSL: Derive roles/groups/tenant assignments
 
-  OcUi->>OCSLF: API request
-  OCSLF->>SecStore: Load tenant+engine scoped policy
-  OCSLF->>OCSLF: Evaluate permission on requested resource
+  OcUi->>OcCSL: API request
+  OcCSL->>SecStore: Load tenant+engine scoped policy
+  OcCSL->>OcCSL: Evaluate permission on requested resource
   alt Authorized
-    OCSLF->>Engine: Forward/execute operation
+    OcCSL->>Engine: Forward/execute operation
     Engine-->>OcUi: Success response
   else Not authorized
-    OCSLF-->>OcUi: Deny request (error)
+    OcCSL-->>OcUi: Deny request (error)
   end
 ```
 
@@ -109,21 +109,21 @@ sequenceDiagram
   actor Worker
   participant IdP as Customer IdP
   box Orchestration Cluster
-    participant OCSLF as OC Camunda Security Library
+    participant OcCSL as OC Camunda Security Library
     participant Engine as Engine(s)
   end
 
   Worker->>IdP: Request token (client credentials)
   IdP-->>Worker: Access token
-  Worker->>OCSLF: Call OC gRPC/REST APIs with token
-  OCSLF->>IdP: Validate token
-  IdP-->>OCSLF: Validation/claims
-  OCSLF->>OCSLF: Map claims to machine principal permissions
+  Worker->>OcCSL: Call OC gRPC/REST APIs with token
+  OcCSL->>IdP: Validate token
+  IdP-->>OcCSL: Validation/claims
+  OcCSL->>OcCSL: Map claims to machine principal permissions
   alt Authorized
-    OCSLF->>Engine: Execute request
+    OcCSL->>Engine: Execute request
     Engine-->>Worker: Success response
   else Not authorized
-    OCSLF-->>Worker: Reject request
+    OcCSL-->>Worker: Reject request
   end
 ```
 
