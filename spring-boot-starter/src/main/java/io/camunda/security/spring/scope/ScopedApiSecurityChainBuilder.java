@@ -19,6 +19,7 @@ import io.camunda.security.spring.security.OidcResourceServerCustomizer;
 import io.camunda.security.spring.security.SecurityFilterChainSupport;
 import io.camunda.security.spring.security.SecurityHeadersCustomizer;
 import io.camunda.security.spring.spi.OidcApiAuthenticationEntryPoint;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.Collection;
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -499,6 +500,51 @@ public final class ScopedApiSecurityChainBuilder {
   public SecurityFilterChain buildUnprotectedScopedApiChain(
       final HttpSecurity http, final String basePath) throws Exception {
     return buildUnprotectedScopedApiChain(http, basePath, null);
+  }
+
+  /**
+   * Refuses every request under the scope's API paths with 503, for a scope whose real chain could
+   * not be built. It claims those paths on purpose: left unclaimed, they fall to the cluster-wide
+   * chain, which would check the cluster's issuer rather than the scope's. Both handlers are set
+   * because {@code denyAll()} never consults the authentication, so only the access-denied one
+   * fires.
+   *
+   * @param http a <b>fresh</b> {@link HttpSecurity} — the failed attempt's instance cannot be built
+   *     twice
+   */
+  public SecurityFilterChain buildDegradedScopedApiChain(
+      final HttpSecurity http, final String basePath) throws Exception {
+    Objects.requireNonNull(http, "http must not be null");
+    Objects.requireNonNull(basePath, "basePath must not be null");
+    final var prefix = BasePaths.normalize(basePath, "basePath");
+    if (prefix.isEmpty()) {
+      throw new IllegalArgumentException(
+          "basePath must not be the root path '/' for a scoped chain, but was: " + basePath);
+    }
+    final var matchers = pathPort.apiPaths().stream().map(p -> prefix + p).toList();
+    LOG.debug(
+        "Building degraded scoped API chain for basePath={}, matchers={}", basePath, matchers);
+    final var filterChainBuilder =
+        http.securityMatcher(matchers.toArray(String[]::new))
+            .authorizeHttpRequests(auth -> auth.anyRequest().denyAll())
+            .exceptionHandling(
+                eh ->
+                    eh.authenticationEntryPoint(
+                            (request, response, authenticationException) ->
+                                response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE))
+                        .accessDeniedHandler(
+                            (request, response, accessDeniedException) ->
+                                response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE)))
+            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .csrf(AbstractHttpConfigurer::disable)
+            .formLogin(AbstractHttpConfigurer::disable)
+            .anonymous(AbstractHttpConfigurer::disable);
+
+    SecurityFilterChainSupport.applyCorsConfiguration(filterChainBuilder, corsSource);
+    SecurityFilterChainSupport.applyHttpsRedirectCustomizers(
+        filterChainBuilder, httpsRedirectCustomizers);
+
+    return filterChainBuilder.build();
   }
 
   /**

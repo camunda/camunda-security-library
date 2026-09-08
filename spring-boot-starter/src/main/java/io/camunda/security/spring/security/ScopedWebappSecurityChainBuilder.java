@@ -31,6 +31,7 @@ import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
 import io.camunda.security.spring.scope.BasePaths;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import io.camunda.security.spring.spi.OidcAuthenticationEntryPoint;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -42,6 +43,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -441,6 +443,58 @@ public final class ScopedWebappSecurityChainBuilder {
           throw new IllegalStateException(
               "Unsupported authentication method: " + authentication.getMethod());
     };
+  }
+
+  /**
+   * Refuses every request under the scope's webapp paths with 503, for a scope whose real chain
+   * could not be built. It claims those paths on purpose: left unclaimed, they fall to the
+   * cluster-wide chain, which would log the user in against the cluster's identity provider rather
+   * than the scope's.
+   *
+   * @param http a <b>fresh</b> {@link HttpSecurity} — the failed attempt's instance cannot be built
+   *     twice
+   */
+  public SecurityFilterChain buildDegradedScopedWebappChain(
+      final HttpSecurity http, final String basePath) throws Exception {
+    Objects.requireNonNull(http, "http must not be null");
+    Objects.requireNonNull(basePath, "basePath must not be null");
+    final var prefix = BasePaths.normalize(basePath, "basePath");
+    if (prefix.isEmpty()) {
+      throw new IllegalArgumentException(
+          "basePath must not be the root path '/' for a scoped chain, but was: " + basePath);
+    }
+    if (pathPort.webappPaths() == null || pathPort.webappPaths().isEmpty()) {
+      return http.securityMatcher(request -> false)
+          .authorizeHttpRequests(auth -> auth.anyRequest().denyAll())
+          .build();
+    }
+    // The same matchers the real chain claims, heartbeat included
+    final var matchers =
+        withHeartbeatMatcher(
+            pathPort.webappPaths().stream().map(p -> prefix + p).toList(), prefix + HEARTBEAT_URL);
+    LOG.debug(
+        "Building degraded scoped webapp chain for basePath={}, matchers={}", basePath, matchers);
+    final var filterChainBuilder =
+        http.securityMatcher(matchers.toArray(String[]::new))
+            .authorizeHttpRequests(auth -> auth.anyRequest().denyAll())
+            .exceptionHandling(
+                eh ->
+                    eh.authenticationEntryPoint(
+                            (request, response, authenticationException) ->
+                                response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE))
+                        .accessDeniedHandler(
+                            (request, response, accessDeniedException) ->
+                                response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE)))
+            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .csrf(AbstractHttpConfigurer::disable)
+            .formLogin(AbstractHttpConfigurer::disable)
+            .anonymous(AbstractHttpConfigurer::disable);
+
+    SecurityFilterChainSupport.applyCorsConfiguration(filterChainBuilder, corsSource);
+    SecurityFilterChainSupport.applyHttpsRedirectCustomizers(
+        filterChainBuilder, httpsRedirectCustomizers);
+
+    return filterChainBuilder.build();
   }
 
   /**

@@ -12,7 +12,9 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
 import io.camunda.security.api.context.CamundaSecurityScopeProvider;
+import io.camunda.security.api.model.config.AuthenticationMethod;
 import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.oidc.ScopedJwtDecoderFactory;
 import io.camunda.security.spring.security.ScopedWebappSecurityChainBuilder;
@@ -25,6 +27,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
@@ -34,10 +37,12 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.session.MapSessionRepository;
 import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
+import org.springframework.util.StringUtils;
 
 /**
  * {@link BeanDefinitionRegistryPostProcessor} that discovers all {@link
@@ -195,50 +200,136 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
   private OrderedSecurityFilterChainWrapper buildChain(
       final ConfigurableListableBeanFactory beanFactory,
       final ScopedSecurityDescriptor descriptor) {
+    // Outside the try: a bad basePath is a configuration error, not something to degrade.
+    requireUsableBasePath(descriptor.basePath());
     try {
       // HttpSecurity is a prototype bean — each call produces a fresh, independent instance.
       final var http = beanFactory.getBean(HttpSecurity.class);
       final var builder = beanFactory.getBean(ScopedApiSecurityChainBuilder.class);
       final var properties = beanFactory.getBean(CamundaSecurityLibraryProperties.class);
+      final var sessionFilter = getOrBuildSessionFilter(beanFactory, descriptor.basePath());
       final SecurityFilterChain chain;
       if (properties.getAuthentication().isUnprotectedApi()) {
-        final var sessionFilter = getOrBuildSessionFilter(beanFactory, descriptor.basePath());
         chain = builder.buildUnprotectedScopedApiChain(http, descriptor.basePath(), sessionFilter);
       } else {
-        final var sessionFilter = getOrBuildSessionFilter(beanFactory, descriptor.basePath());
         chain =
             builder.buildScopedApiChain(
                 http,
                 descriptor.basePath(),
                 descriptor.authentication(),
-                () -> {
-                  try {
-                    final var decoderFactory = beanFactory.getBean(ScopedJwtDecoderFactory.class);
-                    return decoderFactory.buildIssuerAwareDecoder(descriptor.authentication());
-                  } catch (final NoSuchBeanDefinitionException missing) {
-                    throw new IllegalStateException(
-                        "Cannot build the OIDC scoped API chain for basePath="
-                            + descriptor.basePath()
-                            + ": required bean "
-                            + ScopedJwtDecoderFactory.class.getName()
-                            + " is not present. It is normally provided unconditionally by"
-                            + " ScopedOidcInfrastructureConfiguration (activated via the"
-                            + " CamundaSecurityAutoConfiguration umbrella), independently of"
-                            + " camunda.security.authentication.method. Ensure that configuration"
-                            + " is imported, or register an equivalent ScopedJwtDecoderFactory"
-                            + " bean.",
-                        missing);
-                  }
-                },
+                scopedDecoderSupplier(beanFactory, descriptor),
                 sessionFilter);
       }
       return new OrderedSecurityFilterChainWrapper(chain, ORDER_API);
-    } catch (final IllegalStateException ex) {
-      throw ex;
     } catch (final Exception ex) {
-      throw new IllegalStateException(
-          "Failed to build scoped API security chain for basePath=" + descriptor.basePath(), ex);
+      return degradeOrRethrow(
+          descriptor,
+          ex,
+          "API",
+          ORDER_API,
+          () ->
+              beanFactory
+                  .getBean(ScopedApiSecurityChainBuilder.class)
+                  // A fresh HttpSecurity: the failed attempt's instance cannot be built again.
+                  .buildDegradedScopedApiChain(
+                      beanFactory.getBean(HttpSecurity.class), descriptor.basePath()));
     }
+  }
+
+  /**
+   * Registers a chain that refuses this scope's paths, so one unreachable identity provider does
+   * not abort the whole context. A wiring error is rethrown, and so is any failure on a scope that
+   * does not use OIDC — nothing there reaches a network, so a failure is a configuration error and
+   * belongs at startup. Do not switch on exception type instead: a timeout, a mistyped issuer and a
+   * wiring error have no distinct types.
+   */
+  private OrderedSecurityFilterChainWrapper degradeOrRethrow(
+      final ScopedSecurityDescriptor descriptor,
+      final Exception failure,
+      final String chainKind,
+      final int order,
+      final DegradedChainFactory degraded) {
+    if (descriptor.authentication().getMethod() != AuthenticationMethod.OIDC
+        || hasCause(failure, NoSuchBeanDefinitionException.class)) {
+      throw failure instanceof final RuntimeException unchecked
+          ? unchecked
+          : new IllegalStateException(chainFailureMessage(chainKind, descriptor), failure);
+    }
+    LOG.error(
+        "Could not build the scoped {} security chain for basePath={}, issuer-uri={}. That scope"
+            + " will answer 503 until the process is restarted; other scopes are unaffected. Check"
+            + " that the issuer is reachable and spelled correctly — an unresolvable host and an"
+            + " outage are indistinguishable here.",
+        chainKind,
+        descriptor.basePath(),
+        configuredIssuers(descriptor),
+        failure);
+    try {
+      return new OrderedSecurityFilterChainWrapper(degraded.create(), order);
+    } catch (final Exception degradationFailure) {
+      throw new IllegalStateException(
+          "Failed to build even the degraded " + chainFailureMessage(chainKind, descriptor),
+          degradationFailure);
+    }
+  }
+
+  private static String chainFailureMessage(
+      final String chainKind, final ScopedSecurityDescriptor descriptor) {
+    return "scoped " + chainKind + " security chain for basePath=" + descriptor.basePath();
+  }
+
+  /** Every issuer the scope declares, so a mistyped host is readable from the failure alone. */
+  private static String configuredIssuers(final ScopedSecurityDescriptor descriptor) {
+    final var authentication = descriptor.authentication();
+    final var issuers = new LinkedHashSet<String>();
+    if (StringUtils.hasText(authentication.getOidc().getIssuerUri())) {
+      issuers.add(authentication.getOidc().getIssuerUri());
+    }
+    authentication.getProviders().getOidc().values().stream()
+        .map(OidcConfiguration::getIssuerUri)
+        .filter(StringUtils::hasText)
+        .forEach(issuers::add);
+    return issuers.isEmpty() ? "<none configured>" : String.join(", ", issuers);
+  }
+
+  private static void requireUsableBasePath(final String basePath) {
+    if (BasePaths.normalize(basePath, "basePath").isEmpty()) {
+      throw new IllegalArgumentException(
+          "basePath must not be the root path '/' for a scoped chain, but was: " + basePath);
+    }
+  }
+
+  private static boolean hasCause(final Throwable failure, final Class<? extends Throwable> type) {
+    for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+      if (type.isInstance(cause)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private Supplier<JwtDecoder> scopedDecoderSupplier(
+      final ConfigurableListableBeanFactory beanFactory,
+      final ScopedSecurityDescriptor descriptor) {
+    return () -> {
+      try {
+        final var decoderFactory = beanFactory.getBean(ScopedJwtDecoderFactory.class);
+        return decoderFactory.buildIssuerAwareDecoder(descriptor.authentication());
+      } catch (final NoSuchBeanDefinitionException missing) {
+        throw new IllegalStateException(
+            "Cannot build the OIDC scoped API chain for basePath="
+                + descriptor.basePath()
+                + ": required bean "
+                + ScopedJwtDecoderFactory.class.getName()
+                + " is not present. It is normally provided unconditionally by"
+                + " ScopedOidcInfrastructureConfiguration (activated via the"
+                + " CamundaSecurityAutoConfiguration umbrella), independently of"
+                + " camunda.security.authentication.method. Ensure that configuration"
+                + " is imported, or register an equivalent ScopedJwtDecoderFactory"
+                + " bean.",
+            missing);
+      }
+    };
   }
 
   /**
@@ -288,6 +379,7 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
   private OrderedSecurityFilterChainWrapper buildWebappChain(
       final ConfigurableListableBeanFactory beanFactory,
       final ScopedSecurityDescriptor descriptor) {
+    requireUsableBasePath(descriptor.basePath());
     try {
       // HttpSecurity is a prototype bean — each call produces a fresh, independent instance.
       final var http = beanFactory.getBean(HttpSecurity.class);
@@ -304,11 +396,18 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
       // Webapp chain sorts after the scoped API chain (ORDER_API < ORDER_WEBAPP) so a scoped
       // catch-all webapp matcher cannot claim API requests ahead of the scoped API chain.
       return new OrderedSecurityFilterChainWrapper(chain, ORDER_WEBAPP);
-    } catch (final IllegalStateException ex) {
-      throw ex;
     } catch (final Exception ex) {
-      throw new IllegalStateException(
-          "Failed to build scoped webapp security chain for basePath=" + descriptor.basePath(), ex);
+      return degradeOrRethrow(
+          descriptor,
+          ex,
+          "webapp",
+          ORDER_WEBAPP,
+          () ->
+              beanFactory
+                  .getBean(ScopedWebappSecurityChainBuilder.class)
+                  // A fresh HttpSecurity: the failed attempt's instance cannot be built again.
+                  .buildDegradedScopedWebappChain(
+                      beanFactory.getBean(HttpSecurity.class), descriptor.basePath()));
     }
   }
 
@@ -386,5 +485,10 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
     s = s.replaceAll("[^A-Za-z0-9]+", "-");
     s = s.replaceAll("^-+|-+$", "");
     return s;
+  }
+
+  @FunctionalInterface
+  private interface DegradedChainFactory {
+    SecurityFilterChain create() throws Exception;
   }
 }
