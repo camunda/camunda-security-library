@@ -10,7 +10,7 @@ status: Draft
 
 ## 1. Why one model
 
-Five fixed constraints:
+Six fixed constraints:
 
 - One unified policy model, used by every component.
 - **It extends what CSL already ships — this is not a greenfield design.** The building blocks are
@@ -21,6 +21,16 @@ Five fixed constraints:
   and `MembershipPort` in `core/`; `ConfiguredRole` / `ConfiguredGroup` / `ConfiguredTenant` /
   `ConfiguredMappingRule` / `ConfiguredAuthorization` in `api/model/config/initialization/`. The
   work is extending these to fit the unified model, not replacing them.
+- **The model is not hierarchical, and a role assignment carries its assignment target.** One rule
+  set per level: being an admin of the organization does not make you an admin of a workspace inside
+  it — that has to be configured additionally. The consequence is that the same subject holds
+  different roles in different places, so the place rides on the *assignment* rather than in the
+  role name: *(subject, role, assignment target)*. §4.2 has the detail, §8 the term. External
+  source: the Hub team's
+  [product-strategy#46](https://github.com/camunda/product-strategy/issues/46) specifies that
+  *"Hub and Workspaces get a two-layer role model (Hub platform role + per-workspace role)"*. Why
+  now: the same initiative lists *"CSL-based APIs for role assignment across Hub, Workspace, OC, and
+  PT"* as a dependency on rock-12 / Identity, wanted at the start of 8.11 epic work.
 - Authored centrally in Hub, distributed downward to every OC — in **Hub-managed** deployments. In
   `oc-standalone` there is no Hub: OC is the local source of truth and authors its own policy (see
   the deployment-strategy table in `AGENTS.md`). Same model, no propagation — journey 7 walks that
@@ -57,6 +67,11 @@ question, not a greenfield one.
 claim (SaaS), or `admin:*` / `admin:clusters` / `admin:catalog` / `write:*` from Management Identity
 (SM). No groups, no mapping rules, no service accounts, no outbox, no policy versioning exist in
 Hub's schema (`restapi/db/src/main`) today.
+
+What Hub *does* already have is an assignment narrowed to one place:
+`project_permissions(user_id, project_id, permission)`, one row per (user, project). It carries a
+fixed permission enum where the unified model would carry a Role reference, which makes it the
+precedent §4.2's assignment target generalises rather than replaces.
 
 **Management Identity**'s migration controllers cover tenants/groups/roles/mapping-rules/memberships,
 not `resource_authorizations` — the identity graph migrates, the grants do not.
@@ -129,8 +144,8 @@ flowchart LR
     M["MappingRules"]
   end
 
-  subgraph L2["2 · Scope picker"]
-    S["?  PLACEHOLDER  ?<br/>which levels appear here<br/>is the open question of §4"]
+  subgraph L2["2 · Assignment target picker"]
+    S["Hub · Workspace · OC · PT · Optimize<br/>levels named by the Hub epic;<br/>their CSL representation is open (§4)"]
   end
 
   subgraph L3["3 · Authorizations per plane"]
@@ -144,9 +159,13 @@ flowchart LR
   S --> MG & EX & AN
 ```
 
-Level 2 is drawn as a placeholder deliberately. Filling it in would presuppose the answer to §4.1.
+Level 2 is where an assignment target gets picked (§4.2) — the epic's *"one place"* for setting a
+group's whole access picture. Which levels appear there is no longer wide open: the Hub team's
+[product-strategy#46](https://github.com/camunda/product-strategy/issues/46) names Hub, Workspace,
+OC, Physical Tenant, and Optimize, the last as a yes/no boundary rather than a role. What stays open
+is how CSL represents them — and §4.1 still asks which of them can carry a policy at all.
 
-## 4. Open question: where does policy attach?
+## 4. Where policy attaches, and what a role assignment targets
 
 Proposed Hub structure, from a slide, not from code:
 
@@ -183,21 +202,81 @@ hands back one `AuthorizationCheckPort` per scope; OC maps each scope to a physi
 
 What follows for this question: CSL's logical-tenant check carries a flat ID list —
 `TenantCheck(boolean enabled, List<String> tenantIds)` — because the containment lives in host
-configuration, not in CSL's types. Whichever levels turn out to carry a policy, CSL sees only the
-resulting scope key and resource IDs, so any inheritance down the tree has to be resolved before it
-reaches CSL.
+configuration, not in CSL's types. The containment in the tree is real for addressing, and it
+carries no rule inheritance (§4.2): CSL evaluates the rule set as authored for the level it is asked
+about, with no resolution step sitting above it.
 
-### 4.2 How does inheritance work across the two branches?
+### 4.2 No inheritance — one rule set per level
 
-Does a grant at Organization flow down both branches? Override/deny at a lower level, or
-additive-only?
+Settled, not open: the model is **not hierarchical**. Every level has its own rule set and nothing
+flows down either branch. Being an admin of the organization does not make you an admin of a
+workspace inside it — that has to be configured additionally. The Hub team's
+[product-strategy#46](https://github.com/camunda/product-strategy/issues/46) describes the same
+shape from the product side: a group gets *"their Hub role, their role in each Workspace, their role
+on each OC, their role on each PT, and their access to Optimize"* — five assignments authored
+independently, not one that cascades. The last of those is a different kind, worth flagging:
+Optimize is a yes/no boundary rather than a role.
 
-Recommendation, not a decision: additive-only — far cheaper to reason about and to project into OC.
+**The consequence: the same subject holds different roles in different places.** A user is admin in
+Workspace 1 but just reader in Workspace 2, and reader in Project A of Workspace 1. None of that is
+expressible today. So the place a role applies to rides on the *assignment*:
+
+> *(subject, role, assignment target)*
+
+The **assignment target** is the workspace or project an assignment is narrowed to (§8 defines the
+term, and says why this note avoids calling it a "scope"). It attaches to the assignment whatever
+the subject is: `AuthorizationOwnerType{USER, CLIENT, ROLE, GROUP, MAPPING_RULE, TENANT,
+UNSPECIFIED}` already spans users, clients and groups, so any of them can hold a targeted
+assignment. #46's primary authoring path picks an IdP group — *"which IdP group maps to which Hub
+platform role, which Workspace role"* — with principals reaching the role through group membership;
+that is one path onto the tuple, not a restriction on it.
+
+#46 names the workspace level explicitly and defers *"Fine-grained, project/file-level RBAC"* to a
+later cycle. Read precisely, that deferral is about RBAC granularity *inside* a project (files,
+resources), which may or may not be the same axis as targeting an assignment *at* a project. So
+whether a project can be an assignment target is noted here and left open — not sequenced.
+
+**The alternative we are not taking:** encoding the level in the role name — `workspace-admin`,
+`project-admin`, and one more for every level and every flavour. The assignment target belongs on
+the assignment, not in the name. (For a sense of scale: CSL ships six bootstrap role IDs in
+`DefaultRole` — `admin`, `readonly-admin`, `rpa`, `connectors`, `app-integrations`, `task-worker`.
+A `workspace-admin` would be an authored `Role` entity rather than a new constant there, so this is
+not a claim about that enum growing; the point is only how quickly role names multiply once the
+level lives inside them.)
+
+**Where this gets built.** CSL has no notion of a targeted assignment today, so this is forward
+work, and it lands on five surfaces:
+
+| Will need to carry the assignment target | Why |
+|---|---|
+| [`MembershipPort`](../../core/src/main/java/io/camunda/security/core/port/out/MembershipPort.java) / [`MembershipQuery`](../../core/src/main/java/io/camunda/security/core/port/out/MembershipQuery.java) | Where a role assignment is asked for and answered. `roleIds(MembershipQuery)` (`MembershipPort.java:37`) answers per principal; it will need to answer per *(principal, assignment target)* |
+| [`CamundaAuthentication`](../../api/src/main/java/io/camunda/security/api/model/CamundaAuthentication.java) | Carries resolved membership into every check, so a targeted assignment has to survive that trip |
+| `ConfiguredRole` and its siblings in [`api/model/config/initialization/`](../../api/src/main/java/io/camunda/security/api/model/config/initialization/) | How assignments are declared at startup; a targeted assignment needs a declaration form |
+| The authoring surface | Where an admin picks *(subject, role, assignment target)* — §3.4's level 2, and #46's *"one place"* |
+| Propagation | A targeted assignment has to cross the Hub→OC wire and land in the OC projection |
+
+Two of those force a decision rather than an edit. `MembershipPort` is a **shipped outbound contract
+with host implementers** — OC, and Optimize's `OptimizeMembershipAdapter` (§2) — so changing its
+signature is a breaking change, which by this repo's own rules makes it ADR territory. And
+`CamundaAuthentication` (`CamundaAuthentication.java:39-47`) holds membership as flat sibling lists,
+`authenticatedRoleIds` beside `authenticatedTenantIds` — a targeted role is precisely what one more
+flat list cannot express.
+
+**Direction:** extend membership so that it optionally knows the assignment target. *Optionally* is
+load-bearing — an untargeted assignment is the role at the level it is authored at (#46's Hub
+platform role), and a targeted one is narrowed to that workspace or project.
+
+**Open — shape, not approach:** whether the optional assignment target rides as a nullable
+component of the existing assignment tuple, or as a distinct targeted-assignment record alongside
+it. That choice decides how much of the `MembershipPort` contract moves, so it wants settling
+before the ADR is written.
 
 ### 4.3 The Workspace → Environment edge — the crux
 
-Can a Workspace-level policy — including engine rules — apply to that workspace's assigned
-environments? Can a workspace user configure their environments at workspace level at all?
+Under §4.2 nothing flows down, so the question sharpens. Does a Workspace-level assignment —
+including engine rules — reach that workspace's assigned environments *at all*, or does the
+Workspace→Environment edge merely **assign** environments to a workspace while rules stay authored
+per environment? And can a workspace user configure their environments at workspace level at all?
 
 Evidence, strongest first:
 
@@ -221,14 +300,15 @@ Evidence, strongest first:
    operationally relevant"*), and whether SaaS sources org→cluster from Console is not established
    from this repo. Not a proven gap — we could not find it here.
 
-Conclusion: not "should we allow it" but "which of these edges do we lift, and is that Hub schema
-work in scope."
+Conclusion: not "should we allow it" but "which of these edges do we lift, is that Hub schema work
+in scope, and does the lifted edge grant anything or only assign." With no inheritance, that last
+part is what decides the other two.
 
 `IdpApplication.java` already joins a Workspace to a cluster and a tenant (`Project project`,
 `Folder folder`, non-null `clusterId`, nullable `tenantId`) — but for Intelligent Document
 Processing, an unrelated feature (§8's landmine).
 
-### 4.4 Do org-level defaults for the execution plane exist?
+### 4.4 Organization-level defaults for the execution plane — configuration, not inheritance
 
 Precedent first: Hub already ships org-level-default-with-per-cluster-override, for credentials.
 `Credential` is org-scoped (`organization_id`, `nullable = false`, plus
@@ -239,9 +319,16 @@ configJson, secretRefsJson)`. `Cluster.authorizationEnabled` shows Hub already s
 authz-shaped flag. Proven for a non-identity concern; open question is whether identity adopts the
 same shape.
 
+Note the tension with §4.2: an organization-level default with a per-cluster override *is* a
+hierarchical shape, and §4.2 rules that out for policy. The precedent is proven for configuration,
+not adoptable as-is for authorization — a default that silently applies wherever nothing was
+authored is inheritance under another name.
+
 Sub-question: does an authorization-level concept get built at all, or get struck from the docs?
 The old §5.2's `AuthorizationLevel{ALL, TENANT, PHYSICAL_TENANT}` (§2) is the unimplemented shape it
-was reaching for.
+was reaching for — and under §4.2 it leans towards struck: in a non-hierarchical model whose
+assignments already name the workspace or project they apply to, a level attached to the grant has
+no work left to do.
 
 ### Scope-vs-plane matrix
 
@@ -254,13 +341,20 @@ was reaching for.
 | Physical Tenant | ? | ? | ? |
 | Logical Tenant | ? | ? | ? |
 
-Empty cells are the discussion — the artifact most likely to get drawn on in the room.
+Empty cells are the discussion — the artifact most likely to get drawn on in the room. Under §4.2
+every cell is independent: none is implied by the row above it, and each has to be authored on its
+own. #46's five layers (Hub, Workspace, OC, Physical Tenant, Optimize) read across these rows
+closely enough to use — "product" in that framing is a flavour of level, not a seventh row. A row
+that can carry a policy is also a candidate **assignment target** (§4.2), which is what ties this
+matrix to the assignment question.
 
-Cross-references: 4.3 → journey 2 and journey 4; 4.4 → §3.2.
+Cross-references: 4.2 → journeys 1, 3, and 5; 4.3 → journey 2 and journey 4; 4.4 → §3.2.
 
 ## 5. Further open questions
 
-Numbering continues from §4 — Q1 is §4, Q2–Q8 here. Q1–Q3 are entangled; take as one conversation.
+Numbering continues from §4 — Q1 is §4.1's attachment question, Q2–Q8 here. Q1–Q3 are entangled;
+take as one conversation. (§4.2 is no longer one of them: it is a settled constraint plus one open
+question about shape, kept there rather than renumbered into here.)
 
 **Blocking — decide in the workshop:**
 
@@ -283,6 +377,10 @@ Numbering continues from §4 — Q1 is §4, Q2–Q8 here. Q1–Q3 are entangled;
   `OptimizeOpenSearchClientFactory` / `RichOpenSearchClient`). Open is everything around it: no
   authorization index exists today, no declarative enforcement point, non-functional memberships,
   and per-definition authz was lost in C8. Do public shares stay identity-free? Optimize team owns.
+  [product-strategy#46](https://github.com/camunda/product-strategy/issues/46) settles the
+  *boundary* without settling the substrate: Optimize access is *"Hub-level yes/no access, data
+  always scoped to the viewer's own OC/PT permissions"*, so nothing is authored Optimize-side — but
+  something there still has to hold that yes/no and derive the data scoping from it.
 - **Q5 Mapping-rule matching primitive.** OC: exact match only, the rule is itself a grantable
   principal. Management Identity: `Operator{CONTAINS, EQUALS}` + `MappingRuleType{ROLE, TENANT,
   GROUP}` — OC cannot express `CONTAINS`.
@@ -298,7 +396,14 @@ Numbering continues from §4 — Q1 is §4, Q2–Q8 here. Q1–Q3 are entangled;
   implementation-shaped.
 - **Q8** Where identity-provider connection configuration lives (org / cluster / physical tenant).
   Spelled out as "identity-provider" deliberately — in Hub, `Idp*` means something else entirely
-  (§8).
+  (§8). #46 answers the policy half: a customer may point one OC/PT *"directly to their own IdP,
+  bypassing the shared model for that boundary"* and have it coexist with shared boundaries in the
+  same organization. Where that configuration *lives* is still open.
+
+One divergence to record rather than resolve: the journeys in §6 speak `POLICY_SNAPSHOT`, while #46
+specifies Hub calling each OC/PT's own API, *"with per-boundary (not all-or-nothing)
+success/failure"* and no introspection API. That is delivery mechanics rather than the authz model
+— see [push-vs-pull-policy-propagation.md](./push-vs-pull-policy-propagation.md).
 
 ## 6. User journeys
 
@@ -308,37 +413,56 @@ Each ends with what records this produces and what propagates where. The propaga
 `05-building-block-view.md:405` records `EngineCommandPort` as *"not yet defined in
 `core/port/out/`"*. Journeys use it as shared vocabulary, not as shipped mechanics.
 
-1. **Org admin sets up baseline access after connecting the identity provider.** Connects an IdP in
-   Hub → creates a MappingRule matching an IdP claim → assigns a default Role/Group. Records:
-   MappingRule, Role/Group assignment in Hub, a `PolicyVersion` bump. Propagates: full
-   `POLICY_SNAPSHOT` to every OC in the organization.
+The authoritative product-side journey set lives in the Hub team's
+[product-strategy#46](https://github.com/camunda/product-strategy/issues/46); the seven below are
+CSL's own reading of what those ask of this library.
+
+1. **Org admin sets up Organization-level access after connecting the identity provider.** Connects
+   an IdP in Hub → creates a MappingRule matching an IdP claim → assigns a role to what that rule
+   matches, targeted at the organization. #46's equivalent maps *"which IdP group maps to which Hub
+   platform role, which Workspace role"*. Records: MappingRule, a role assignment in Hub whose
+   assignment target is the organization, a `PolicyVersion` bump. Propagates: full
+   `POLICY_SNAPSHOT` to every OC in the organization. Note what this is *not*: an Organization-level
+   assignment is one level's rule set, not a starting point that descends into workspaces (§4.2) —
+   the snapshot distributes the authored facts, it does not widen them.
 
 2. **Grant a team runtime access to one cluster's logical tenant.** Walks Organization → Cluster →
    Physical Tenant → Logical Tenant. Bites on the missing `organization_id` (§4.3 point 3) and the
    missing cluster→engine mapping (§4.3 point 1, Q6). Records: an Authorization scoped to the
    logical tenant. Propagates: via `EngineCommandPort`, once the edges above are resolved.
 
-3. **Grant at Workspace level, applied to that workspace's environments (including engine rules).**
+3. **Grant at Workspace level, reaching that workspace's environments (including engine rules).**
    The user's question, directly. Unbuildable today — included anyway, because the clicks make §4.3
    concrete. What this needs: a lift, not an invention. Hub resolves environments today from
    `ProcessApplication.default{Dev,Test,Stage,Prod}ClusterId` — one level below the Workspace, fixed
    to four stages, meant as deployment targets. This journey needs that resolution at Workspace
-   level, general in arity, and readable as a policy scope.
+   level, general in arity, and readable as a policy scope. It is now the test of §4.3's sharpened
+   question: with nothing flowing down (§4.2), a Workspace-level assignment reaching that
+   workspace's environments has to be an authored reach, not an inherited one. #46 confirms the
+   requirement is real and product-owned — its two-layer role model gives a group a role *per
+   workspace*.
 
 4. **Grant a team Optimize access — blocked three times over.**
-   a. The model cannot express it — no Optimize resource types in the catalogue yet.
+   a. The model cannot express it — though #46 says it does not need to express it *as a role*:
+      Optimize access is *"a yes/no granted at the Hub level, tied to the OC/PT view permission they
+      already hold"*. What is missing is that boundary on the assignment, not a catalogue of
+      Optimize resource types.
    b. Optimize could not receive it — no authorization store *today*. The intended substrate is the
       search backend Optimize already runs (Q4), but nothing writes a policy into it, and
       `OptimizeMembershipAdapter` returns `List.of()` for all four membership methods.
    c. Optimize could not enforce it if it did — zero declarative enforcement, every check
       hand-written per REST method, per-definition authz lost in C8.
 
-   Answer: not without an authorization index in that backend, a projection path into it, and an
-   enforcement point in Optimize first.
+   Answer: smaller than it first looked, still blocked. The boundary needs no Optimize resource
+   catalogue — #46 renders report data *"scoped to their own view permissions"*, derived from OC/PT
+   rather than authored in Optimize — but something in Optimize still has to store that yes/no,
+   receive it, and enforce it, and none of the three exists today.
 
 5. **Grant Hub-internal workspace access (a Project/Workspace grant) — never leaves Hub.** Contrast
    with journey 3: same word "workspace", but management-plane only, and buildable today as
-   `project_permissions`. Points at Q2 — Hub's shape is not a tuple.
+   `project_permissions`. It is also the closest thing to a shipped assignment target:
+   `project_permissions` holds one row per (user, project) — a role held at one place rather than
+   organization-wide (§2, §4.2). Points at Q2 — Hub's shape is not a tuple.
 
 6. **Onboard a machine principal / worker.** Client-credentials principal registered → assigned
    Role/Group or matched by a MappingRule on a client claim. Records: Principal (machine),
@@ -348,6 +472,9 @@ Each ends with what records this produces and what propagates where. The propaga
 7. **The same policy, in OC-standalone, without Hub.** No Hub, no `PolicyVersion`, no propagation —
    OC authors and enforces locally. Records and enforcement live entirely in the OC-local
    projection. Tests whether every journey above still makes sense with the Hub half removed.
+   Distinct from #46's two-path model, which is a per-boundary opt-out *inside* an organization —
+   one OC/PT wired *"directly to their own IdP"* while the rest of the fleet stays shared — rather
+   than a Hub-less deployment.
 
 ## 7. What CSL owns and what it does not
 
@@ -357,6 +484,12 @@ Each ends with what records this produces and what propagates where. The propaga
 | The in/out port contracts (`*Port`) | Authoring UI/navigation |
 | Check semantics (`AuthorizationCheckPort`, `AuthorizationService`) | Persistence implementation (host-provided adapters) |
 | The authz catalogue for OC (ADR-0008) | Whether/how the catalogue extends to Hub or Optimize (§5, Q3) |
+
+One line [product-strategy#46](https://github.com/camunda/product-strategy/issues/46) draws for us:
+what a role can actually *do* — role definition, mapping-rule mechanics — belongs to the separate
+Unified Custom Roles initiative, while *"CSL-based APIs for role assignment across Hub, Workspace,
+OC, and PT"* is what its dependency table asks of this library. The model and the assignment
+contract are CSL's; the catalogue of what each role means is not settled here.
 
 ## 8. Naming appendix
 
@@ -383,5 +516,10 @@ misread every one of these on sight.
   [ADR-0018](../adr/0018-optimize-reuses-stateful-oidc-webapp-chain.md). Hygiene note, not a
   question.
 
-Agree on words before models: §4's diagram already uses "Workspace" and "Project" in the v2 API
-sense.
+- **"assignment target"** — in this note, the workspace or project that a single role assignment is
+  narrowed to (§4.2). The word *scope* is deliberately not used for it: `core` reserves *scope* for
+  the opaque host key that a host maps to its own concept. It is also not the "target cluster" /
+  "deployment target" sense used elsewhere in this document — hence always the two-word form.
+
+Agree on words before models: §4's diagram and §4.2's assignment examples already use "Workspace"
+and "Project" in the v2 API sense.
