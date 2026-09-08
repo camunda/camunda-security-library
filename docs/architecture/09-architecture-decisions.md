@@ -46,7 +46,7 @@ the topic actually begins.
 - [PolicyVersion commits with full-policy propagation (iteration one)](../vision/policy-version-change-sets.md)
 - [Push vs Pull Policy Propagation (Hub ↔ Orchestration Clusters)](../vision/push-vs-pull-policy-propagation.md)
 - [Identity data persistence in the Orchestration Cluster](../vision/oc-identity-data-persistence-and-engine-command-scope.md)
-- [The Unified Policy Model](../vision/unified-policy-model.md)
+- [The Unified Policy Model](../vision/unified-policy-model.md) — `status: Draft`: discussion input, not a proposal
 
 ---
 

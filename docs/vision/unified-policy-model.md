@@ -10,10 +10,21 @@ status: Draft
 
 ## 1. Why one model
 
-Four fixed constraints:
+Five fixed constraints:
 
 - One unified policy model, used by every component.
-- Authored centrally in Hub, distributed downward to every OC.
+- **It extends what CSL already ships — this is not a greenfield design.** The building blocks are
+  in the codebase today: `Authorization`, `AuthorizationScope`, `AuthorizationResourceType`,
+  `PermissionType`, and `AuthorizationResourceMatcher` in
+  [`api/model/authz/`](../../api/src/main/java/io/camunda/security/api/model/authz/);
+  `AuthorizationCheckPort`, `AuthorizationService`, `AuthorizationChecker`, `MappingRuleMatcher`,
+  and `MembershipPort` in `core/`; `ConfiguredRole` / `ConfiguredGroup` / `ConfiguredTenant` /
+  `ConfiguredMappingRule` / `ConfiguredAuthorization` in `api/model/config/initialization/`. The
+  work is extending these to fit the unified model, not replacing them.
+- Authored centrally in Hub, distributed downward to every OC — in **Hub-managed** deployments. In
+  `oc-standalone` there is no Hub: OC is the local source of truth and authors its own policy (see
+  the deployment-strategy table in `AGENTS.md`). Same model, no propagation — journey 7 walks that
+  case, and it is in scope, not an exception to the model.
 - Distribution/transport is not CSL's concern — CSL supplies the model and the in/out ports, not the
   wire format.
 - Hub's own management-plane authz is in scope of the unified model.
@@ -26,24 +37,26 @@ This document asks whether that precedent extends past OC.
 
 ## 2. Where we are today
 
-Four components, four incompatible grant shapes — not just four vocabularies.
+One shipped canonical grant shape — CSL's, canonical per ADR-0008 and already mirrored by hosts —
+plus three component-local ones, none with a cross-component consumer. Four vocabularies, but not
+four peers: the starting point is extending the canonical shape, not choosing between equals.
 
 | Component | Grant shape | Catalogue | Storage | Scoping |
 |---|---|---|---|---|
-| OC/CSL | `(ownerId, ownerType, resourceType, permissionType, scope)` | Closed enum: 24 `AuthorizationResourceType` × 47 `PermissionType`, matrix-constrained | Host-provided persistence | `AuthorizationResourceMatcher{UNSPECIFIED, ANY, ID, PROPERTY}` |
+| **CSL** (shipped; OC consumes it) | `(ownerId, ownerType, resourceType, permissionType, scope)` | CSL's own, in [`api/model/authz/`](../../api/src/main/java/io/camunda/security/api/model/authz/): closed enums, 24 `AuthorizationResourceType` × 47 `PermissionType`, matrix-constrained via `getSupportedPermissionTypes()` | Host-provided persistence, behind `AuthorizationScopeRepositoryPort` | `AuthorizationResourceMatcher{UNSPECIFIED, ANY, ID, PROPERTY}` |
 | Hub | Fixed role per resource instance: `project_permissions(user_id, project_id, permission)` | `ProjectPermissionLevel{ADMIN, WRITE, READ, COMMENT, NONE}`; role→action matrix (`ProjectOperation`, 28 constants) compiled into an enum, not data | `project_permissions` table | One row per (user, project) |
 | Management Identity | Audience-scoped free-form strings (`write:*`, `admin:clusters`) | `ResourceType` record seeded from YAML (`identity.resource-types`) — ships exactly two: `process-definition`, `decision-definition` | Data-seeded | String match |
 | Optimize | `RoleType{VIEWER, EDITOR, MANAGER}`, compared by `ordinal()` | None | `data.roles` array nested inside each collection document | Instance-wide YAML flags `AuthorizationType{CSV_EXPORT, ENTITY_EDITOR}` |
 
-**OC/CSL** is already the canonical authz catalogue — for OC. `security-protocol/README.md:35`:
+**CSL** already owns the canonical authz catalogue — for OC. `security-protocol/README.md:35`:
 *"CSL is the canonical catalogue of all possible values. Hosts (including this module) mirror the
 values they need and map via `AuthzModelMapper`."* Extending it platform-wide is an extension
 question, not a greenfield one.
 
 **Hub** authors no org-level roles at all — it consumes them: `owner`/`admin` from the Auth0 `orgs`
 claim (SaaS), or `admin:*` / `admin:clusters` / `admin:catalog` / `write:*` from Management Identity
-(SM). No groups, no mapping rules, no service accounts, no outbox, no policy versioning — zero hits
-in `restapi/db/src/main`.
+(SM). No groups, no mapping rules, no service accounts, no outbox, no policy versioning exist in
+Hub's schema (`restapi/db/src/main`) today.
 
 **Management Identity**'s migration controllers cover tenants/groups/roles/mapping-rules/memberships,
 not `resource_authorizations` — the identity graph migrates, the grants do not.
@@ -58,30 +71,32 @@ returns `true` unconditionally (3×). Public shares under `/api/external/**` car
 all. (Current line: `workdir/camunda/optimize`, `io.camunda.optimize`, 8.11 — not the legacy C7
 `workdir/camunda-optimize` line.)
 
-**What the old §5.2 said that no code backs:**
-- `AuthorizationLevel{ALL, TENANT, PHYSICAL_TENANT}` — zero hits anywhere in the OC monorepo.
-- Org-wide grants authored in Hub — Hub authors nothing; it only consumes claims.
-- Optimize resource types — no catalogue, no store.
-- A shared Hub-plane resource-type enum — Hub's permissions are a compiled `ProjectOperation` enum,
-  not catalogue entries.
-- Hierarchy edges that are missing or sit at the wrong level — see §4.
+**What the old §5.2 described but nothing implements:** `AuthorizationLevel{ALL, TENANT,
+PHYSICAL_TENANT}`, org-wide grants authored in Hub, Optimize resource types, and a shared Hub-plane
+resource-type enum. That section documented a model that was never built, so these are gaps in the
+document, not findings about the code. Its hierarchy edges are picked up in §4.
 
-## 3. The model as a proposal
+## 3. The proposed extension
 
 ### 3.1 One sentence
 
-A grant is `(owner) × (resource) × (actions) × (scope)` — the OC/CSL shape. Adopting it
-platform-wide is the proposal.
+A grant is `(owner) × (resource) × (actions) × (scope)` — CSL's shipped shape. The proposal is not a
+new model: it is extending that one platform-wide, keeping the tuple and widening the catalogue and
+the set of enforcers.
 
 ### 3.2 The plane insight
 
-`resourceType` decides who enforces:
+`resourceType` decides who enforces. The catalogue itself is not hypothetical — it ships in CSL as
+[`io.camunda.security.api.model.authz.AuthorizationResourceType`](../../api/src/main/java/io/camunda/security/api/model/authz/AuthorizationResourceType.java),
+24 constants today, each declaring its own supported `PermissionType`s via
+`getSupportedPermissionTypes()`. The table below is not a new catalogue; it is which plane enforces
+which entry:
 
 | Resource type | Enforced by |
 |---|---|
-| `PROCESS_DEFINITION` | OC |
-| A Hub-plane type | Hub, local, never propagated |
-| An Optimize type | Optimize |
+| `PROCESS_DEFINITION` (ships today) | OC |
+| A Hub-plane type (would be added) | Hub, local, never propagated |
+| An Optimize type (would be added) | Optimize |
 
 One vocabulary, three enforcers. Precedent in Hub's own code: `ClusterAppType` maps ten apps onto
 `AppClusterType{AUTOMATION, MANAGEMENT}` — `IDENTITY`/`HUB` → `MANAGEMENT`;
@@ -93,8 +108,11 @@ precedent, not proof.
 
 - **Hub** — fixed roles become derived presets over grant tuples.
 - **Management Identity** — free-form strings become catalogued pairs.
-- **Optimize** — needs a policy store and an enforcement point it does not have.
+- **Optimize** — needs an enforcement point and a projection into its search-backend store (Q4);
+  neither exists today.
 - **OC** — gains resource types it does not enforce and must ignore safely.
+- **CSL** — extends its catalogue and model; the tuple, the ports, and the check semantics stay as
+  shipped.
 
 ### 3.4 Hub navigation sketch
 
@@ -149,16 +167,24 @@ To a workspace user, Cluster / Physical Tenant / Logical Tenant are collectively
 Which of these six levels is a valid attachment point for a grant, and which is addressing detail?
 Not every level in a navigation tree is a policy scope.
 
-The tree itself needs a correction: `Physical Tenant → Logical Tenant` is drawn as containment;
-neither codebase models it that way.
-- CSL: `core`/`api` contain zero physical-tenant mentions. The logical-tenant type is
-  `TenantCheck(boolean enabled, List<String> tenantIds)` — a flat list, no parent, no containment.
-- OC: `PhysicalTenantIds` (`cluster/src/main/java/io/camunda/cluster/PhysicalTenantIds.java`) is a
-  flat `Set<String>` with a `DEFAULT_PHYSICAL_TENANT_ID`, consumed by partition/routing config
-  (`FixedPartition.physicalTenantId`, `PhysicalTenantResolver`).
+The containment in the tree is real. A physical tenant lives inside a cluster and owns its own
+infrastructure — its own database, its own identity-provider connection — and there is always at
+least the default one (`PhysicalTenantIds.DEFAULT_PHYSICAL_TENANT_ID`, `"default"`, in
+`cluster/src/main/java/io/camunda/cluster/PhysicalTenantIds.java`, consumed by partition/routing
+config via `FixedPartition.physicalTenantId` and `PhysicalTenantResolver`). Logical tenants sit
+below it.
 
-Orthogonal config dimensions, not a hierarchy. Reasoning about inheritance down that edge reasons
-about something that does not exist.
+Physical tenancy is an OC concept, and CSL deliberately never learns about it. CSL speaks only an
+opaque **scope** key that the host maps to its own concept, and names the host-facing types
+`Scoped*` accordingly (the convention block in `AGENTS.md`; ADR-0009, ADR-0013, ADR-0019).
+[`ScopedAuthorizationCheckPortFactory`](../../core/src/main/java/io/camunda/security/core/authz/ScopedAuthorizationCheckPortFactory.java)
+hands back one `AuthorizationCheckPort` per scope; OC maps each scope to a physical tenant.
+
+What follows for this question: CSL's logical-tenant check carries a flat ID list —
+`TenantCheck(boolean enabled, List<String> tenantIds)` — because the containment lives in host
+configuration, not in CSL's types. Whichever levels turn out to carry a policy, CSL sees only the
+resulting scope key and resource IDs, so any inheritance down the tree has to be resolved before it
+reaches CSL.
 
 ### 4.2 How does inheritance work across the two branches?
 
@@ -212,9 +238,9 @@ configJson, secretRefsJson)`. `Cluster.authorizationEnabled` shows Hub already s
 authz-shaped flag. Proven for a non-identity concern; open question is whether identity adopts the
 same shape.
 
-The void this was reaching for: `AuthorizationLevel{ALL, TENANT, PHYSICAL_TENANT}` in the old §5.2
-has zero code behind it (§2). Sub-question: does an authorization-level concept get built, or struck
-from the docs?
+Sub-question: does an authorization-level concept get built at all, or get struck from the docs?
+The old §5.2's `AuthorizationLevel{ALL, TENANT, PHYSICAL_TENANT}` (§2) is the unimplemented shape it
+was reaching for.
 
 ### Scope-vs-plane matrix
 
@@ -237,10 +263,11 @@ Numbering continues from §4 — Q1 is §4, Q2–Q8 here. Q1–Q3 are entangled;
 
 **Blocking — decide in the workshop:**
 
-- **Q2 What shape is a grant?** OC's tuple is shipped, canonical per ADR-0008, already mirrored by
+- **Q2 What shape is a grant?** CSL's tuple is shipped, canonical per ADR-0008, already mirrored by
   hosts. Hub's, Management Identity's, and Optimize's shapes are each local to one component with no
   cross-component consumer. Not "pick one of four peers" — "does everyone adopt the shape that is
-  already canonical, and what does each give up." CSL delivers the model; CSL's model is the tuple.
+  already canonical, and what does each give up." CSL delivers the model; CSL's model is the tuple,
+  extended rather than replaced.
 - **Q3 Does the catalogue stay closed?** Closed enum + host mirrors + `AuthzModelMapper` (ADR-0008,
   shipped, SBE/RocksDB stability constraints) vs. data-seeded registry (Management Identity,
   shipped). Two live precedents — pick one. Leftover from the old "top scope and authority"
@@ -249,9 +276,12 @@ Numbering continues from §4 — Q1 is §4, Q2–Q8 here. Q1–Q3 are entangled;
 
 **Needs an owner, not a decision:**
 
-- **Q4 Does Optimize get a policy store?** Not "what are its resource types" — it has no
-  authorization storage, no declarative enforcement point, non-functional memberships, and lost
-  per-definition authz in C8. Do public shares stay identity-free? Optimize team owns.
+- **Q4 How does Optimize store and enforce a policy?** The store is settled: reuse the search
+  backend Optimize already runs — Elasticsearch, or OpenSearch where that is the deployed one
+  (Optimize supports both, via its `database.type` build profile and
+  `OptimizeOpenSearchClientFactory` / `RichOpenSearchClient`). Open is everything around it: no
+  authorization index exists today, no declarative enforcement point, non-functional memberships,
+  and per-definition authz was lost in C8. Do public shares stay identity-free? Optimize team owns.
 - **Q5 Mapping-rule matching primitive.** OC: exact match only, the rule is itself a grantable
   principal. Management Identity: `Operator{CONTAINS, EQUALS}` + `MappingRuleType{ROLE, TENANT,
   GROUP}` — OC cannot express `CONTAINS`.
@@ -295,14 +325,15 @@ Each ends with what records this produces and what propagates where. The propaga
    level, general in arity, and readable as a policy scope.
 
 4. **Grant a team Optimize access — blocked three times over.**
-   a. The model cannot express it — no Optimize resource types in the catalogue.
-   b. Optimize could not receive it — no authorization store; `OptimizeMembershipAdapter` returns
-      `List.of()` for all four membership methods.
+   a. The model cannot express it — no Optimize resource types in the catalogue yet.
+   b. Optimize could not receive it — no authorization store *today*. The intended substrate is the
+      search backend Optimize already runs (Q4), but nothing writes a policy into it, and
+      `OptimizeMembershipAdapter` returns `List.of()` for all four membership methods.
    c. Optimize could not enforce it if it did — zero declarative enforcement, every check
       hand-written per REST method, per-definition authz lost in C8.
 
-   Answer: not without a policy store, a projection path, and an enforcement point in Optimize
-   first.
+   Answer: not without an authorization index in that backend, a projection path into it, and an
+   enforcement point in Optimize first.
 
 5. **Grant Hub-internal workspace access (a Project/Workspace grant) — never leaves Hub.** Contrast
    with journey 3: same word "workspace", but management-plane only, and buildable today as
@@ -321,7 +352,7 @@ Each ends with what records this produces and what propagates where. The propaga
 
 | CSL owns | CSL does not own |
 |---|---|
-| The policy model — roles, groups, mapping rules, principals, authorizations | Transport/delivery mechanics between Hub and OC (`docs/hub-oc-data-propagation.md`) |
+| The policy model — roles, groups, mapping rules, principals, authorizations | Transport/delivery mechanics between Hub and OC ([hub-oc-data-propagation.md](../hub-oc-data-propagation.md)) |
 | The in/out port contracts (`*Port`) | Authoring UI/navigation |
 | Check semantics (`AuthorizationCheckPort`, `AuthorizationService`) | Persistence implementation (host-provided adapters) |
 | The authz catalogue for OC (ADR-0008) | Whether/how the catalogue extends to Hub or Optimize (§5, Q3) |

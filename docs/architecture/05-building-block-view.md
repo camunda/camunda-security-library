@@ -135,8 +135,11 @@ For concrete diagrams:
 
 ### 5.2 Unified policy model
 
-**Not implemented.** The unified policy model is in planning/refinement; no code in this repo
-implements it yet. The design discussion — grant shapes across Hub, OC, Management Identity, and
+**Not implemented end-to-end.** The building blocks ship in CSL today — `Authorization`,
+`AuthorizationResourceType`/`PermissionType`, `MappingRuleMatcher`, `AuthorizationCheckPort` — and
+OC's read/check path uses them. What does not exist is the unified Hub↔OC model itself, its
+projection, and its propagation; those are in planning/refinement, and the work there is to extend
+the shipped building blocks rather than to design a new model. The design discussion — grant shapes across Hub, OC, Management Identity, and
 Optimize, and the open question of where a policy attaches in the org/workspace/cluster hierarchy —
 lives in [`docs/vision/unified-policy-model.md`](../vision/unified-policy-model.md). This section
 will be rewritten once the model is decided.
