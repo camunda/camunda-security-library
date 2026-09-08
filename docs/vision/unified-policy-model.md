@@ -225,11 +225,12 @@ expressible today. So the place a role applies to rides on the *assignment*:
 
 The **assignment target** is the workspace or project an assignment is narrowed to (§8 defines the
 term, and says why this note avoids calling it a "scope"). It attaches to the assignment whatever
-the subject is: `AuthorizationOwnerType{USER, CLIENT, ROLE, GROUP, MAPPING_RULE, TENANT,
-UNSPECIFIED}` already spans users, clients and groups, so any of them can hold a targeted
-assignment. #46's primary authoring path picks an IdP group — *"which IdP group maps to which Hub
-platform role, which Workspace role"* — with principals reaching the role through group membership;
-that is one path onto the tuple, not a restriction on it.
+the subject is: `AuthorizationOwnerType` already spans `USER`, `CLIENT`, `GROUP`, `ROLE` and
+`MAPPING_RULE`, so a targeted assignment can name any of those (its `TENANT` and `UNSPECIFIED`
+constants are not assignment subjects). #46's primary authoring path picks an IdP group —
+*"which IdP group maps to which Hub platform role, which Workspace role"* — with principals
+reaching the role through group membership; that is one path onto the tuple, not a restriction on
+it.
 
 #46 names the workspace level explicitly and defers *"Fine-grained, project/file-level RBAC"* to a
 later cycle. Read precisely, that deferral is about RBAC granularity *inside* a project (files,
