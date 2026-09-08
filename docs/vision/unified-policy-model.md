@@ -168,11 +168,12 @@ Which of these six levels is a valid attachment point for a grant, and which is 
 Not every level in a navigation tree is a policy scope.
 
 The containment in the tree is real. A physical tenant lives inside a cluster and owns its own
-infrastructure — its own database, its own identity-provider connection — and there is always at
-least the default one (`PhysicalTenantIds.DEFAULT_PHYSICAL_TENANT_ID`, `"default"`, in
-`cluster/src/main/java/io/camunda/cluster/PhysicalTenantIds.java`, consumed by partition/routing
-config via `FixedPartition.physicalTenantId` and `PhysicalTenantResolver`). Logical tenants sit
-below it.
+infrastructure — its own database, its own identity-provider connection — with logical tenants below
+it. That isolation is the OC model as the OC team describes it, not something grepped here. What is
+code-verified: physical tenant IDs live in `PhysicalTenantIds`
+(`cluster/src/main/java/io/camunda/cluster/PhysicalTenantIds.java`), there is always at least
+`DEFAULT_PHYSICAL_TENANT_ID` (`"default"`), and partition/routing config consumes them
+(`FixedPartition.physicalTenantId`, `PhysicalTenantResolver`).
 
 Physical tenancy is an OC concept, and CSL deliberately never learns about it. CSL speaks only an
 opaque **scope** key that the host maps to its own concept, and names the host-facing types
