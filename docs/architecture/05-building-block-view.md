@@ -2,7 +2,7 @@
 
 ### 5.1 High-level components
 
-The following diagrams show the internal structure of Hub and Orchestration Cluster, including how Camunda Security Library instance connects to frontend applications, infrastructure, and (in multiple-Physical-Tenant scenarios) individual engine instances.
+The following diagrams show the internal structure of Hub and Orchestration Cluster, including how Camunda Security Library instance connects to frontend applications, infrastructure, and individual engine instances within the Broker.
 
 Both the Hub and OC instances of the Camunda Security Library maintain their own local state:
 
@@ -10,7 +10,7 @@ Both the Hub and OC instances of the Camunda Security Library maintain their own
 - Local tracking of the last applied policy version (`last_applied_version` on the OC side, `last_acked_version` per OC on the Hub side).
 - Local session state.
 
-#### 5.1.1 Full mode Simple (Hub + OC with one Engine)
+#### 5.1.1 Full mode Simple (Hub + OC)
 
 ```mermaid
 flowchart TB
@@ -29,12 +29,16 @@ flowchart TB
 
     subgraph OC["Orchestration Cluster"]
       subgraph GatewayLayer["Gateway / Search Layer"]
-        SecGatOC["Camunda Security Library</br>(embedded in Gateway)"]
+        SecGatOC["Camunda Security Library"]
       end
 
       subgraph Broker["Broker"]
-        Engine["Engine</br>(Physical Tenant)"]
-        CslCore["CSL core"]
+        subgraph PtA["Physical Tenant A (Engine)"]
+          CslCoreA["CSL core"]
+        end
+        subgraph PtB["Physical Tenant B (Engine)"]
+          CslCoreB["CSL core"]
+        end
       end
 
       SecGatOC -->|"config propagation</br>(batch operation)"| Broker
@@ -52,7 +56,8 @@ flowchart TB
   OC & Hub --> IdPs
   Hub --> HubDb
 
-  style Broker fill:#34a853,color:#fff
+  style PtA fill:#34a853,color:#fff
+  style PtB fill:#34a853,color:#fff
 ```
 
 Key building blocks in full mode simple:
@@ -60,9 +65,9 @@ Key building blocks in full mode simple:
 - Hub UI: Unified frontend in the management plane. It includes modeling, management, and admin capabilities, and allows full policy authoring for all configurable layers (Hub, OCs, engines, tenants).
 - Hub + Camunda Security Library: Central source of truth. Manages all policy configuration for all clusters, OCs, and engines. All policy changes originate here.
 - OC UI: Unified frontend in the execution plane. Its admin section shows the cluster-local projection of Hub policy; configuration there is read-only.
-- OC + Camunda Security Library: Per-cluster policy enforcement and projection layer. Receives policy snapshots from Hub via the Hub-to-OC propagation channel. Propagates scoped policy views via batch operation to the single engine.
-- Engine (Physical Tenant): A single execution context (Zeebe engine) inside the Broker. A Physical Tenant is an independent execution unit that hosts one or more logical Tenants (e.g., `default`, `retail`). Receives its scoped projection of cluster policy from OC. No direct Hub connection.
-- CSL `core` (embedded in the Broker): the same authorization artifact the gateway embeds, not a separate engine-specific framework — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md).
+- OC + Camunda Security Library: Per-cluster policy enforcement and projection layer. Receives policy snapshots from Hub via the Hub-to-OC propagation channel. Propagates scoped policy views via batch operation to each Physical Tenant.
+- Physical Tenant A / Physical Tenant B (Engine): Independent execution contexts (Zeebe engines) inside the Broker. A Physical Tenant is an independent execution unit that hosts one or more logical Tenants (e.g., `default`, `retail`). Each receives its own scoped projection of cluster policy from OC. No direct Hub connection.
+- CSL `core`: embedded inside each Physical Tenant — the same authorization artifact the gateway embeds, not a separate engine-specific framework — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md).
 - Infrastructure (IDPs, DBs): Shared existing persistence and IdP connectivity for authentication and authorization across all layers.
 
 > **Important:** A **Physical Tenant** is an Engine (a physical execution unit). A **Tenant** (like `default`, `retail`, `wholesale`) is a logical partition for data and access. Multiple logical Tenants can execute within a single Physical Tenant (Engine). The authorization levels are: `ALL` (cluster-wide), `TENANT` (specific logical tenant) or `PHYSICAL_TENANT` (specific physical tenant).
@@ -71,7 +76,7 @@ Configuration propagation chain: Hub → OC → Physical Tenant (Engine).
 
 For concrete deployment topologies (including multi-gateway and multi-broker layouts), see section [7. Deployment view](./07-deployment-view.md).
 
-#### 5.1.2 OC-only mode Simple (standalone OC with one Engine)
+#### 5.1.2 OC-only mode Simple (standalone OC)
 
 > **Note on physical layout:** In this diagram, the OC box represents the full logical cluster. At the physical level the Camunda Security Library runs inside the **Gateway / Search Layer** (one or more Zeebe Gateways), and each Broker contains one or more **Engines (Physical Tenants)**. See section 1.1 for details.
 
@@ -87,8 +92,12 @@ flowchart TB
       end
 
       subgraph Broker["Broker"]
-        Engine["Engine</br>(Physical Tenant)"]
-        CslCore["CSL core"]
+        subgraph PtA["Physical Tenant A (Engine)"]
+          CslCoreA["CSL core"]
+        end
+        subgraph PtB["Physical Tenant B (Engine)"]
+          CslCoreB["CSL core"]
+        end
       end
 
       OCLib -->|"config propagation</br>(batch operation)"| Broker
@@ -103,20 +112,21 @@ flowchart TB
   Broker --> DBs
   OC --> IdPs
 
-  style Broker fill:#34a853,color:#fff
+  style PtA fill:#34a853,color:#fff
+  style PtB fill:#34a853,color:#fff
 ```
 
 Key building blocks in OC-only mode simple:
 
 - OC UI: Unified runtime frontend that interacts directly with OC. Its admin section allows full policy authoring (no Hub restrictions).
 - OC + Camunda Security Library: Local source of truth. Manages all policy and authorization directly without Hub coordination. All policy changes originate here.
-- Engine (Physical Tenant): A single execution context (Zeebe engine) inside the Broker. A Physical Tenant is an independent execution unit that hosts one or more logical Tenants (e.g., `default`, `retail`). Receives its scoped projection of local OC policy. No direct Hub connection.
-- CSL `core` in the Broker: the same authorization artifact the gateway embeds, not a separate engine-specific framework — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md).
+- Physical Tenant A / Physical Tenant B (Engine): Independent execution contexts (Zeebe engines) inside the Broker. A Physical Tenant is an independent execution unit that hosts one or more logical Tenants (e.g., `default`, `retail`). Each receives its own scoped projection of local OC policy. No direct Hub connection.
+- CSL `core`: embedded inside each Physical Tenant — the same authorization artifact the gateway embeds, not a separate engine-specific framework — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md).
 - Infrastructure (IDPs, DBs): Local persistence and IdP connectivity; no cross-cluster replication or Hub involvement.
 
 > **Important:** A **Physical Tenant** is an Engine (a physical execution unit). A **Tenant** (like `default`, `retail`, `wholesale`) is a logical partition for data and access. Multiple logical Tenants can execute within a single Physical Tenant (Engine).
 
-For more complex OC-only deployments with multiple brokers and multiple engines per broker, see section [7.1.3 OC-only mode – multi-instance example](./07-deployment-view.md#713-oc-only-mode--multi-instance-example-n-gateways--m-brokers).
+For more complex OC-only deployments with multiple brokers, see section [7.1.3 OC-only mode – multi-instance example](./07-deployment-view.md#713-oc-only-mode--multi-instance-example-n-gateways--m-brokers).
 
 #### 5.1.3 Full mode Complex (Hub + OC with multiple Brokers and multiple Engines)
 
