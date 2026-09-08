@@ -34,7 +34,7 @@ flowchart TB
 
       subgraph Broker["Broker"]
         Engine["Engine</br>(Physical Tenant)"]
-        CslCore["CSL core (embedded)"]
+        CslCore["CSL core"]
       end
 
       SecGatOC -->|"config propagation</br>(batch operation)"| Broker
@@ -88,7 +88,7 @@ flowchart TB
 
       subgraph Broker["Broker"]
         Engine["Engine</br>(Physical Tenant)"]
-        CslCore["CSL core (embedded)"]
+        CslCore["CSL core"]
       end
 
       OCLib -->|"config propagation</br>(batch operation)"| Broker
@@ -111,7 +111,7 @@ Key building blocks in OC-only mode simple:
 - OC UI: Unified runtime frontend that interacts directly with OC. Its admin section allows full policy authoring (no Hub restrictions).
 - OC + Camunda Security Library: Local source of truth. Manages all policy and authorization directly without Hub coordination. All policy changes originate here.
 - Engine (Physical Tenant): A single execution context (Zeebe engine) inside the Broker. A Physical Tenant is an independent execution unit that hosts one or more logical Tenants (e.g., `default`, `retail`). Receives its scoped projection of local OC policy. No direct Hub connection.
-- CSL `core` (embedded in the Broker): the same authorization artifact the gateway embeds, not a separate engine-specific framework — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md).
+- CSL `core` in the Broker: the same authorization artifact the gateway embeds, not a separate engine-specific framework — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md).
 - Infrastructure (IDPs, DBs): Local persistence and IdP connectivity; no cross-cluster replication or Hub involvement.
 
 > **Important:** A **Physical Tenant** is an Engine (a physical execution unit). A **Tenant** (like `default`, `retail`, `wholesale`) is a logical partition for data and access. Multiple logical Tenants can execute within a single Physical Tenant (Engine).
@@ -122,7 +122,7 @@ For more complex OC-only deployments with multiple brokers and multiple engines 
 
 This section defines the conceptual behavior only; the complete deployment examples are maintained in section [7. Deployment view](./07-deployment-view.md).
 
-- Full mode keeps the same propagation chain: Hub (policy SoT) -> OC gateway/search layer (Camunda Security Library) -> broker/engine layer (CSL `core`, embedded — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md)).
+- Full mode keeps the same propagation chain: Hub (policy SoT) -> OC gateway/search layer (Camunda Security Library) -> broker/engine layer (CSL `core` — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md)).
 - OC may run one or many gateways and one or many brokers depending on scale and availability targets.
 - Each broker may host one or many engines (Physical Tenants), and each engine hosts one or many logical tenants.
 
@@ -509,7 +509,7 @@ Inbound and outbound ports are CSL boundaries; concrete transport adapters on bo
 
 #### 5.4.1 Property-driven runtime mode switching
 
-The same library core is reused in all deployments. **In every runtime mode, AuthN and AuthZ enforcement is always active** — the library always configures a Spring Security filter chain to authenticate inbound requests and enforce scope-aware authorization decisions. What differs per mode is which additional capabilities (authoring, policy propagation dispatch, engine projection) are switched on.
+The same library core is reused in all deployments. **In every runtime mode, AuthN and AuthZ enforcement is designed to be always active** — the library always configures a Spring Security filter chain to authenticate inbound requests and enforce scope-aware authorization decisions (for what is enforced today, see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance)). What differs per mode is which additional capabilities (authoring, policy propagation dispatch, engine projection) are switched on.
 
 Mode activation is property-driven via Spring Boot conditions (`@ConditionalOnProperty`, or a small custom `@Conditional` when multiple properties contribute to the decision), not via Spring profiles.
 
@@ -587,13 +587,13 @@ The extra layer between UIs/clients and engines is intentional:
   - Differences between full mode (Hub + OC) and OC-only mode are expressed via adapters and configuration, not divergent business logic.
 - Clean separation of concerns
   - IdP integration, session handling, multi-tenancy, mapping rules, and authorization decisions are handled in one place.
-  - Engine integration is reduced to a narrow command API, backed by CSL `core` (embedded) rather than a separate framework, that can evolve independently.
+  - Engine integration is reduced to a narrow command API, backed by CSL `core` rather than a separate framework, that can evolve independently.
 - Pluggable backends
   - Concrete persistence (SQL, search), propagation transport, and IdP clients can be swapped or customized by providing alternative adapters, without changing the domain model.
 
 ### 5.5 Engine authorization integration
 
-Rather than a separate authorization sub-framework embedded in the engine, the zeebe engine uses CSL's `core` authorization model directly — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md). Implementation is tracked in [#388](https://github.com/camunda/camunda-security-library/issues/388).
+Rather than a separate authorization sub-framework embedded in the engine, the zeebe engine uses CSL's `core` authorization model directly — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md).
 
 **Authorization checks (command-time, delivered per [ADR-0014](../adr/0014-unified-authz-framework-in-core.md) / [#388](https://github.com/camunda/camunda-security-library/issues/388), closed 2026-08-13):** `AuthorizationCheckPort` is the unified inbound port in `core/port/in/`, with `AuthorizationService` as its default implementation wired in `spring-boot-starter`. The same evaluator serves both the search layer and the zeebe engine, backed by CSL's `AuthorizationChecker` (`core/authz/`) as the shared scope-evaluation component. RocksDB-backed adapter implementations of `MembershipPort` and `AuthorizationScopeRepositoryPort` provide the engine-side wiring — see the diagram below.
 

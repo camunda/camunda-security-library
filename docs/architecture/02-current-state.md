@@ -14,14 +14,12 @@
 | Capability | Hub | Optimize | OC gateway/search | OC engine | State |
 |---|---|---|---|---|---|
 | Authentication (OIDC/basic, sessions) | CSL | CSL | CSL | n/a | Shipped 8.10 |
-| Authorization — read/check — OC (one evaluator) | — | — | CSL `AuthorizationCheckPort` | CSL `AuthorizationCheckPort` (same evaluator) | Shipped 8.10 (#388) |
-| Authorization — read/check — Hub, Optimize | Management Identity | Management Identity | — | — | Targeted for 8.11 |
-| Authorization — write/authoring | Management Identity | Management Identity | missing | missing | Targeted for 8.11 |
+| Authorization — read/check | Management Identity | Management Identity | CSL `AuthorizationCheckPort` | CSL `AuthorizationCheckPort` (same evaluator) | OC shipped 8.10 (#388); Hub/Optimize targeted for 8.11 |
+| Authorization — write/authoring | Management Identity | Management Identity | — | — | Targeted for 8.11 |
 | Policy distribution Hub → OC / Optimize | — | — | not implemented | — | Targeted for 8.11 |
-| Engine integration artifact | — | — | — | CSL `core`, no separate framework | Shipped 8.10 (ADR-0014, #388) |
 
 **Design confirmed, not yet implemented:** Optimize receives policy over the same Hub → OC
-snapshot/outbox distribution channel a `managed` OC uses — not a separate mechanism (see
+snapshot distribution channel a `managed` OC uses — not a separate mechanism (see
 [§4 System Context](./04-system-context.md)). The write path (OC authoring, and eventually
 Hub/Optimize authoring) is designed to route through `EngineCommandPort`, which is not yet
 defined in `core/port/out/`. Both remain outstanding, as shown above.
@@ -222,7 +220,7 @@ The target architecture is based on the following assumptions:
 The following constraints bound the CSL design and limit what can change without an architectural decision:
 
 - **Embedded library, not a standalone service.** CSL runs inside host applications (Hub, OC); it has no own process, database, or network endpoint.
-- **Host-provided infrastructure.** Hosts supply all persistence, IdP clients, engine command channels, and outbox delivery via port adapter implementations. CSL `core` has zero framework or persistence dependencies (enforced by ArchUnit).
+- **Host-provided infrastructure.** Hosts supply all persistence, IdP clients, engine command channels, and policy distribution via port adapter implementations. CSL `core` has zero framework or persistence dependencies (enforced by ArchUnit).
 - **No Spring Boot auto-configuration by default.** Hosts explicitly activate CSL configuration classes via `@ImportAutoConfiguration`; nothing activates from adding the Maven dependency alone (see [ADR-0003](../adr/0003-no-spring-boot-auto-configuration.md)).
 - **No dedicated global identity database.** Existing host infrastructure (Hub DB, OC DB) is reused; no new shared identity cluster is introduced.
 - **Standalone OC without Hub is a first-class deployment mode.** OC-only must continue to work fully without any Hub dependency.

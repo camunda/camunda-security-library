@@ -32,7 +32,7 @@ flowchart TB
         end
 
         subgraph Broker1["Broker"]
-          CslCore1["CSL core (embedded)"]
+          CslCore1["CSL core"]
         end
       end
 
@@ -54,7 +54,7 @@ An advanced Self-Managed topology where the customer also operates Hub. Hub is d
 - Hub and all OC and Optimize instances are deployed and operated by the customer on their own infrastructure.
 - The Enterprise IdP is integrated at both Hub (management plane auth) and OC/Optimize (execution/analytics plane auth) levels.
 - Cluster discovery and registration are handled via the `ClusterRegistryPort` (outbound) and `ClusterRegistrationPort` (inbound) ports; the host application's adapter determines how new OCs are discovered and registered.
-- OC is configured with an embedded gateway/search layer and broker/engine layer; Camunda Security Library runs in both, as CSL `core` (embedded) in the broker/engine layer (see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md)).
+- OC is configured with an embedded gateway/search layer and broker/engine layer; Camunda Security Library runs in both, as CSL `core` in the broker/engine layer (see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md)).
 - Policy is designed to flow top-down: Hub -> Gateway -> Broker(Engine), same as in SaaS, but without a Camunda-operated broker. The Hub -> Gateway leg is not yet implemented — see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
 - Suitable for large-scale or multi-cluster Self-Managed environments requiring centralized policy governance.
 
@@ -87,7 +87,7 @@ flowchart TB
         end
 
         subgraph Broker1["Broker"]
-          CslCore1["CSL core (embedded)"]
+          CslCore1["CSL core"]
         end
       end
 
@@ -122,10 +122,10 @@ flowchart TB
 
 #### 7.1.3 OC-only mode – multi-instance example (N gateways + M brokers)
 
-Standalone OC topology for higher throughput and availability. Hub is not present; OC remains the local policy source of truth. This diagram shows 2 gateways and 3 brokers as an illustrative example. The same topology scales to any N gateways and M brokers; each gateway and each broker runs CSL — the broker runs CSL `core` (embedded), with no separate engine-side framework.
+Standalone OC topology for higher throughput and availability. Hub is not present; OC remains the local policy source of truth. This diagram shows 2 gateways and 3 brokers as an illustrative example. The same topology scales to any N gateways and M brokers; each gateway and each broker runs CSL — the broker runs CSL `core`, with no separate engine-side framework.
 
 - Each gateway runs the Camunda Security Library and connects clients (Operate, Tasklist, Admin UI, workers) to the cluster.
-- Each broker runs CSL `core` (embedded). It is designed to receive policy snapshots from the
+- Each broker runs CSL `core`. It is designed to receive policy snapshots from the
   gateway layer via `EngineCommandPort`, which is not yet defined in `core/port/out/` — see
   [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
 - Each broker hosts multiple engines (Physical Tenants); logical tenants are assigned to engines using authorization levels `ALL`, `TENANT` and `PHYSICAL_TENANT`.
@@ -148,19 +148,19 @@ flowchart TB
       subgraph Broker1["Broker 1"]
         B1E1["Engine A</br>(Physical Tenant)"]
         B1E2["Engine B</br>(Physical Tenant)"]
-        B1Core["CSL core (embedded)"]
+        B1Core["CSL core"]
       end
 
       subgraph Broker2["Broker 2"]
         B2E1["Engine C</br>(Physical Tenant)"]
         B2E2["Engine D</br>(Physical Tenant)"]
-        B2Core["CSL core (embedded)"]
+        B2Core["CSL core"]
       end
 
       subgraph Broker3["Broker 3"]
         B3E1["Engine E</br>(Physical Tenant)"]
         B3E2["Engine F</br>(Physical Tenant)"]
-        B3Core["CSL core (embedded)"]
+        B3Core["CSL core"]
       end
 
       GW1 --> Broker1

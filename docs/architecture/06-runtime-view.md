@@ -21,7 +21,7 @@ This section illustrates selected runtime flows as concrete user journeys, focus
 5. Outbox Dispatcher picks up the new events and delivers the full `POLICY_SNAPSHOT` for the target `PolicyVersion` to each affected OC — and, in full mode, to Optimize over the same channel — via the configured transport (see `docs/hub-oc-data-propagation.md`).
 6. OC Camunda Security Library:
 - Applies the full policy snapshot to its local projection and updates `last_applied_version`.
-- Propagates engine-scoped changes to engines via the engine command path, backed by CSL `core` (embedded in the broker/engine layer) rather than a separate framework — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md).
+- Propagates engine-scoped changes to engines via the engine command path, backed by CSL `core` rather than a separate framework — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md).
 
 From the admin’s perspective, all policy changes are made centrally in Hub; the OC and engines converge asynchronously.
 
