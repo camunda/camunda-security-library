@@ -483,12 +483,13 @@ class ScopedClientRegistrationFactoryDiscoveryCacheTest {
 
   @Test
   void shouldNotCacheAFailedDiscoveryAttempt() throws Exception {
-    // given an IdP that fails the first discovery request and serves normally afterwards
+    // given an IdP that fails every attempt of one build — a 5xx is retried, so exhausting the
+    // budget takes more than one failure — and serves normally afterwards
     oidcServer = OidcTestServer.startDiscovery(DISCOVERY_TEMPLATE);
-    oidcServer.failNextDiscoveryRequests(1);
+    oidcServer.failNextDiscoveryRequests(2);
     final var providers = Map.of("idp-1", issuerBased("client-1", oidcServer.issuerUri()));
 
-    // when the first attempt fails (a 5xx is not HttpClientErrorException, so Spring wraps it
+    // when every attempt fails (a 5xx is not HttpClientErrorException, so Spring wraps it
     // rather than probing the RFC 8414 fallbacks)
     assertThatThrownBy(() -> factory.createFromProviderMap(providers))
         .isInstanceOf(RuntimeException.class);
