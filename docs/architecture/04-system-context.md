@@ -54,10 +54,7 @@ flowchart TB
   authorization enforcement for analytics and reporting is still on Management Identity.
 - Hub is the single source of truth for all policy and configuration.
 - Hub is deployed independently of the execution plane it configures — it is not co-located
-  with, or scoped to, a single OC. A Hub instance's OC clusters commonly correspond to
-  different delivery stages (e.g. `dev`, `test`, `staging`, `production`) in addition to
-  per-region or per-org splits; Hub is stage-aware and configures policy for all of them from
-  one control plane.
+  with, or scoped to, a single OC.
 - Hub propagates policy changes to OC through a platform-owned propagation
   channel, with OC maintaining a local projection and handling runtime enforcement per
   engine/tenant.
