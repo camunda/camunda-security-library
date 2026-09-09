@@ -208,9 +208,7 @@ flowchart TB
       WebModeler["Web Modeler"]
       AdminHub["Admin UI (read/write)"]
 
-      subgraph Hub["Hub"]
-        SecGatHub["Camunda Security Library"]
-      end
+      Hub["Hub"]
 
       Console & WebModeler & AdminHub --> Hub
     end
@@ -235,7 +233,10 @@ flowchart TB
       OCProd -->|"Process data"| OptProd
     end
 
-    Hub --> OCDev & OCTest & OCStaging & OCProd
+    Hub -->|"policy propagation (planned)"| OCDev
+    Hub -->|"policy propagation (planned)"| OCTest
+    Hub -->|"policy propagation (planned)"| OCStaging
+    Hub -->|"policy propagation (planned)"| OCProd
     Hub -->|"policy propagation (planned)"| OptStaging
     Hub -->|"policy propagation (planned)"| OptProd
   end
@@ -246,6 +247,10 @@ flowchart TB
 
 > Four stages are illustrative, not a requirement — the same pattern extends to any number of
 > stages, regions, or a combination of both.
+
+> All products shown here — Hub, every stage's Orchestration Cluster, and Optimize — are backed
+> by the same Camunda Security Library; the diagram omits the per-product CSL box for
+> readability at this scale (see §7.1.2 above for the whitebox view of a single stage).
 
 ---
 
