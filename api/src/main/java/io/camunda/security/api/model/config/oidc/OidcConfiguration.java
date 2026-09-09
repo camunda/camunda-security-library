@@ -331,9 +331,11 @@ public class OidcConfiguration {
    * can ever match, and Auth0 rejects the whole end-session request with {@code invalid_request}
    * rather than logging the user out.
    *
-   * <p>Orthogonal to {@link #isIdpLogoutEnabled()}: that decides whether to contact the IdP at all,
-   * this decides only whether to ask it for a redirect back. Disabling this still terminates the
-   * IdP session; the IdP renders its own logged-out page instead of returning to the host.
+   * <p>{@link #isIdpLogoutEnabled()} is a separate, currently-unwired flag (no code path reads it
+   * since ADR-0032 removed the host-provided {@code LogoutSuccessHandler} bean seam) — it is not an
+   * orthogonal "contact the IdP at all" switch this property complements today. Disabling this
+   * property still terminates the IdP session; the IdP renders its own logged-out page instead of
+   * returning to the host.
    *
    * <p>See ADR-0043 for why this is configuration rather than a {@code SecurityPathPort} method.
    */
@@ -418,6 +420,7 @@ public class OidcConfiguration {
         || currentAssertionConfiguration.getKidEncoding() != KidEncoding.BASE64URL
         || currentAssertionConfiguration.getKidCase() != null
         || !DEFAULT_CLOCK_SKEW.equals(clockSkew)
+        || postLogoutRedirectEnabled != DEFAULT_POST_LOGOUT_REDIRECT_ENABLED
         || diagnostics.isEnabled();
   }
 

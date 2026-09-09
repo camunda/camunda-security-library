@@ -48,8 +48,8 @@ but the constraint that forbids sending it belongs to the deployment's IdP?
 Add `camunda.security.authentication.oidc.post-logout-redirect-enabled` to `OidcConfiguration`
 (`DEFAULT_POST_LOGOUT_REDIRECT_ENABLED = true`).
 
-`ScopedWebappSecurityChainBuilder.oidcLogoutSuccessHandler` takes the `OidcConfiguration` of the
-scope whose chain it is building and, when the flag is false, returns the
+`ScopedWebappSecurityChainBuilder.oidcLogoutSuccessHandler` takes a `postLogoutRedirectEnabled`
+boolean for the scope whose chain it is building and, when it is false, returns the
 `CamundaOidcLogoutSuccessHandler` without calling `setPostLogoutRedirectUri`. The end-session request
 then goes out with no `post_logout_redirect_uri`, which a strict OP accepts and which still
 terminates the IdP session.
@@ -57,8 +57,11 @@ terminates the IdP session.
 The flag is read *before* `pathPort.postLogoutRedirectPath()`, so the host's route declaration is
 simply unused rather than having to be blanked to suppress the parameter.
 
-The configuration passed in is the scope's own: `properties.getAuthentication().getOidc()` for the
-primary chain, `authentication.getOidc()` for a scoped chain.
+The boolean is derived from the scope's own configuration: `ScopedClientRegistrationFactory#flatten`
+merges the flat `oidc.*` block with any `providers.oidc.<id>` entries into the same registrationId-keyed
+map the chain's own `ClientRegistrationRepository` is built from, and the redirect is enabled only when
+every entry in that map has it enabled. Reading `getOidc()` alone would silently ignore a provider
+declared only under `providers.oidc.<id>`.
 
 ### Why these particular boundaries
 
@@ -71,14 +74,20 @@ primary chain, `authentication.getOidc()` for a scoped chain.
   scoped to the chain's base path, so a cluster-independent landing URL could not read it either. The
   only meaningful choice is send or don't send.
 - **Per scope, not global.** The chain's registration and `end_session_endpoint` already resolve from
-  the scope's own `AuthenticationConfiguration`; a tenant pointing at its own IdP must likewise get
-  that IdP's answer here. `AuthenticationConfiguration#getOidc()` is field-initialized and its setter
-  null-guards, so a scope that leaves it unset inherits the default rather than failing.
+  the scope's own `AuthenticationConfiguration`; a tenant pointing at its own IdP(s) must likewise get
+  those IdPs' answer here. `AuthenticationConfiguration#getOidc()` and `#getProviders()` are both
+  field-initialized and their setters null-guard, so a scope that leaves either unset inherits the
+  default rather than failing.
 - **Default `true`.** Every existing deployment keeps sending the parameter, so the change is inert
   until a deployment opts out.
-- **Orthogonal to `idp-logout-enabled`.** That flag decides whether to contact the IdP at all; this
-  one decides only whether to ask it for a redirect back. Collapsing them would make "my IdP rejects
-  this URL" indistinguishable from "don't end the IdP session", which are opposite intents.
+- **A distinct flag from `idp-logout-enabled`, even though that one is currently unwired.**
+  `isIdpLogoutEnabled()` has no reader anywhere in CSL today — ADR-0032 removed the host-provided
+  `LogoutSuccessHandler` bean seam that would have consumed it, so setting it currently changes no
+  behaviour. That is a separate gap, not a reason to fold this decision into it: `idp-logout-enabled`
+  is meant to answer whether to contact the IdP's `end_session_endpoint` at all, while this flag only
+  ever concerns the redirect parameter on that same request. Reusing the name would conflate "my IdP
+  rejects this URL" with "don't end the IdP session" the day `idp-logout-enabled` is wired up, which
+  are opposite intents.
 
 ## Consequences
 
@@ -97,14 +106,17 @@ primary chain, `authentication.getOidc()` for a scoped chain.
 - When disabled, the user lands on the IdP's own logged-out page instead of returning to the page
   they logged out from. The host's post-logout route goes unused and the stored logout origin is
   discarded silently — the logout works, but the return journey is lost.
-- One more OIDC logout flag sitting next to `idp-logout-enabled`. An operator who reaches for the
-  wrong one trades a broken logout for a silent re-login, so the two need to stay clearly documented
-  apart.
+- One more OIDC logout flag sitting next to `idp-logout-enabled` — and unlike this one,
+  `idp-logout-enabled` is currently unwired (see above), which makes the naming collision more
+  confusing, not less, until that gap is closed: an operator who reaches for the wrong one today gets
+  no effect at all rather than the opposite behaviour they expected.
 - The switch is per scope, not per provider. A scope with several registrations where only one OP is
-  strict must disable the redirect for all of them.
-- The flag is read from `getOidc()`, so a scope configured only through `providers.oidc.<id>` always
-  gets the default. Acceptable while the logout handler is per chain rather than per registration,
-  but it is a seam to revisit if per-provider logout behaviour is ever needed.
+  strict must disable the redirect for all of them; the flag is evaluated across every provider
+  configured for the scope (flat `oidc.*` block and `providers.oidc.<id>` entries alike, see the
+  Decision section), not just the flat block, but it cannot single out one registration within a
+  scope. A finer per-provider switch is a seam to revisit if per-provider logout behaviour is ever
+  needed — it would require the logout handler itself to become registration-aware, since today one
+  handler instance is shared by every registration in the chain.
 
 ## Alternatives Considered
 
@@ -120,9 +132,12 @@ primary chain, `authentication.getOidc()` for a scoped chain.
   logout origin lives on a session whose cookie is path-scoped to the chain, so such an endpoint
   cannot restore it and could only redirect somewhere fixed. It would also require the host's router
   to serve a path outside every scope prefix.
-- **Reuse `idp-logout-enabled`.** Rejected — a different axis. Disabling IdP logout leaves the IdP
-  session alive, so the user is silently signed back in on the next login; that replaces one bug with
-  a worse one.
+- **Reuse `idp-logout-enabled`.** Rejected — a different axis by design, regardless of that flag's
+  current unwired state (see the Decision section). Its documented intent is to decide whether IdP
+  logout is attempted at all; a flag with that name later wired to skip contacting the IdP would leave
+  the IdP session alive, silently signing the user back in on the next login. Reusing it for this
+  decision would mean the day it is wired up, "my IdP rejects this URL" and "don't end the IdP
+  session" become indistinguishable — replacing one bug with a worse one.
 - **Detect a non-empty base-path prefix in CSL and skip the parameter automatically.** Rejected — the
   prefix is not what makes the URL invalid; the IdP's registration policy is. Keycloak and Entra
   accept the prefixed URL, and an implicit rule would silently strip a working redirect from them.
