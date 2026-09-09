@@ -63,7 +63,12 @@ flowchart TB
 Key building blocks in full mode simple:
 
 - Hub UI: Unified frontend in the management plane. It includes modeling, management, and admin capabilities, and allows full policy authoring for all configurable layers (Hub, OCs, engines, tenants).
-- Hub + Camunda Security Library: Central source of truth. Manages all policy configuration for all clusters, OCs, and engines. All policy changes originate here.
+- Hub + Camunda Security Library: Central source of truth, deployed independently of the
+  execution plane it configures (see
+  [§4.1 Full mode](./04-system-context.md#41-full-mode-hub--oc--optimize)). Manages all policy
+  configuration for all clusters, OCs, and engines; a single Hub instance is stage-aware and can
+  configure multiple OC clusters, e.g. separate `dev`/`test`/`staging`/`production` clusters.
+  All policy changes originate here.
 - OC UI: Unified frontend in the execution plane. Its admin section shows the cluster-local projection of Hub policy; configuration there is read-only.
 - OC + Camunda Security Library: Per-cluster policy enforcement and projection layer. Receives policy snapshots from Hub via the Hub-to-OC propagation channel. Propagates scoped policy views via batch operation to each Physical Tenant.
 - Physical Tenant A / Physical Tenant B (Engine): Independent execution contexts (Zeebe engines) inside the Broker. A Physical Tenant is an independent execution unit that hosts one or more logical Tenants (e.g., `default`, `retail`). Each receives its own scoped projection of cluster policy from OC. No direct Hub connection.

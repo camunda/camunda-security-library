@@ -51,7 +51,12 @@ flowchart TB
 
 An advanced Self-Managed topology where the customer also operates Hub. Hub is designed to become the central policy SoT, propagating policy to each OC and Optimize via the platform-owned channel — not yet implemented, see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance). Optimize uses the same Camunda Security Library for authentication (shipped) and is designed to receive policy from Hub (not yet implemented).
 
-- Hub and all OC and Optimize instances are deployed and operated by the customer on their own infrastructure.
+- Hub, OC, and Optimize are deployed and operated by the customer, but as independently deployed
+  units — Hub is not co-located with, or scoped to, a single OC's execution plane (see
+  [§4.1 Full mode](./04-system-context.md#41-full-mode-hub--oc--optimize)). This diagram shows
+  one Hub paired with one OC/Optimize for simplicity; in practice, one Hub instance is typically
+  the policy source of truth for multiple OC clusters, one per delivery stage (`dev`/`test`/
+  `staging`/`production`).
 - The Enterprise IdP is integrated at both Hub (management plane auth) and OC/Optimize (execution/analytics plane auth) levels.
 - Cluster discovery and registration are handled via the `ClusterRegistryPort` (outbound) and `ClusterRegistrationPort` (inbound) ports; the host application's adapter determines how new OCs are discovered and registered.
 - OC is configured with an embedded gateway/search layer and broker/engine layer; Camunda Security Library runs in both, as CSL `core` in the broker/engine layer (see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md)).
@@ -185,7 +190,7 @@ flowchart TB
 
 In SaaS, Camunda operates one shared Hub instance for many customer organizations. The unified identity library therefore has to support multi-organization policy authoring and propagation inside a single Hub runtime.
 
-- One shared Hub instance serves **many organizations** (one per customer); policy and identity data in Hub must therefore be partitioned by organization. Each organization owns one or more OC clusters. This is in direct contrast to Self-Managed, where there is always exactly one organization.
+- One shared Hub instance serves **many organizations** (one per customer); policy and identity data in Hub must therefore be partitioned by organization. Each organization owns one or more OC clusters — commonly one per delivery stage (`dev`/`test`/`staging`/`production`) in addition to per-region splits. This is in direct contrast to Self-Managed, where there is always exactly one organization.
 - In the first iterations, this partitioning is logical only: shared Hub infrastructure and databases are reused, while policy tables and queries are keyed by `organization_id`.
 - Each OC remains associated with exactly one organization boundary for policy propagation.
 - Cluster discovery and registration in Hub are handled via `ClusterRegistryPort` (outbound) and `ClusterRegistrationPort` (inbound) ports. How Hub's adapter implementation populates the cluster registry is a host-application integration concern, not a library concern.

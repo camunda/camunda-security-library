@@ -11,7 +11,15 @@ These are unresolved design questions that require a dedicated ADR before implem
 
 ### Open issues
 
-- **Multiple Hub instances:** The architecture shows a single shared Hub instance in SaaS and a single Hub in Self-Managed full mode. Some customers require multiple Hub instances (e.g. to separate delivery stages). Each Hub instance is an independent CSL deployment; Hub-to-Hub coordination is out of scope. An OC is associated with exactly one Hub at a time; reassignment is an open design question (see above).
+- **Multi-Hub-instance scenarios beyond stage separation:** A single Hub instance is already
+  stage-aware — it can be the policy source of truth for multiple OC clusters, e.g. separate
+  `dev`/`test`/`staging`/`production` clusters (see
+  [§4.1 Full mode](./04-system-context.md#41-full-mode-hub--oc--optimize)), so delivery-stage
+  separation alone does not require multiple Hub instances. What remains open is whether some
+  customers need fully independent Hub deployments for other reasons (e.g. hard multi-tenancy,
+  data residency, migration). Each such Hub instance would be an independent CSL deployment;
+  Hub-to-Hub coordination is out of scope. An OC is associated with exactly one Hub at a time;
+  reassignment across Hub instances is an open design question (see above).
 - **Satellite components (open scope):** Two satellite runtimes are not yet explicitly covered by CSL:
   - *App Integrations backend* — not yet decided whether it receives IdP configuration via Hub's CSL port model or manages its own auth independently.
   - *Connectors runtime* — same open question at the OC level.
