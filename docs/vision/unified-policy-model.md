@@ -379,7 +379,7 @@ same shape.
 Note the tension with §4.2: an organization-level default with a per-cluster override *is* a
 hierarchical shape, and §4.2 rules that out for policy. The precedent is proven for configuration,
 not adoptable as-is for authorization — a default that silently applies wherever nothing was
-authored is inheritance under another name. §4.2's ruling is unchanged.
+authored is inheritance under another name.
 
 Sub-question: does an authorization-level concept get built at all, or get struck from the docs?
 The old §5.2's `AuthorizationLevel{ALL, TENANT, PHYSICAL_TENANT}` (§2) is the unimplemented shape it
@@ -406,7 +406,7 @@ The rows are the candidate `ScopeType` constants (§4.2), and per the settled de
 are in — so what the empty cells decide is which rows can carry a **policy**, not which are
 expressible as a scope. That is what ties this matrix to the assignment question.
 
-Cross-references: 4.2 → journeys 1, 2, and 4; 4.3 → §3.2.
+Cross-references: 4.2 → journeys 1, 2, 3, and 4; 4.3 → §3.2.
 
 ## 5. Further open questions
 
@@ -520,9 +520,9 @@ CSL's own reading of what those ask of this library.
    rather than authored in Optimize — but something in Optimize still has to store that yes/no,
    receive it, and enforce it, and none of the three exists today.
 
-4. **Grant Hub-internal workspace access (a Project/Workspace grant) — never leaves Hub.** The same
-   word "workspace" as the execution-plane grants above, but management-plane only, and buildable
-   today as `project_permissions`. It is also the closest thing to a shipped scope:
+4. **Grant Hub-internal workspace access (a Project/Workspace grant) — never leaves Hub.**
+   Management-plane only, and buildable today as `project_permissions`. It is also the closest
+   thing to a shipped scope:
    `project_permissions` holds one row per (user, project) — a role held at one place rather than
    organization-wide (§2, §4.2). Points at Q2 — Hub's shape is not a tuple.
 
@@ -600,7 +600,7 @@ misread every one of these on sight.
   document. That reading of *target* is unaffected by the rename and stays as written.
 - **"runtime environment"** — dev/test/staging/production is a **tag on a cluster**: not a level of
   §4's tree and not authorization-relevant (design input, reversing earlier revisions of this note
-  that modelled it as a level between Organization and Clusters), Hub's shipped surface for it is
+  that modelled it as a level between Organization and Clusters); Hub's shipped surface for it is
   the `DeploymentStage` enum, and a bare *Environment* is never used as a level name here.
 
 Agree on words before models: §4's diagram and §4.2's assignment examples already use "Workspace"
