@@ -21,11 +21,12 @@ Six fixed constraints:
   and `MembershipPort` in `core/`; `ConfiguredRole` / `ConfiguredGroup` / `ConfiguredTenant` /
   `ConfiguredMappingRule` / `ConfiguredAuthorization` in `api/model/config/initialization/`. The
   work is extending these to fit the unified model, not replacing them.
-- **The model is not hierarchical, and a role assignment carries its assignment target.** One rule
-  set per level: being an admin of the organization does not make you an admin of a workspace inside
-  it — that has to be configured additionally. The consequence is that the same subject holds
-  different roles in different places, so the place rides on the *assignment* rather than in the
-  role name: *(subject, role, assignment target)*. §4.2 has the detail, §8 the term. External
+- **The model is not hierarchical, and a role assignment carries its scope.** One rule set per
+  level: being an admin of the organization does not make you an admin of a workspace inside it —
+  that has to be configured additionally. The consequence is that the same subject holds different
+  roles in different places, so the place rides on the *assignment* rather than in the role name:
+  *(subject, role, scope)*, where a scope is a `(scopeType, scopeId)` pair naming any of the seven
+  levels of §4's tree. §4.2 has the detail, §8 the term. External
   source: the Hub team's
   [product-strategy#46](https://github.com/camunda/product-strategy/issues/46) specifies that
   *"Hub and Workspaces get a two-layer role model (Hub platform role + per-workspace role)"*. Why
@@ -59,7 +60,7 @@ four peers: the starting point is extending the canonical shape, not choosing be
 
 | Component | Grant shape | Catalogue | Storage | Scoping |
 |---|---|---|---|---|
-| **CSL** (shipped; OC consumes it) | `(ownerId, ownerType, resourceType, permissionType, scope)` | CSL's own, in [`api/model/authz/`](../../api/src/main/java/io/camunda/security/api/model/authz/): closed enums, 24 `AuthorizationResourceType` × 47 `PermissionType`, matrix-constrained via `getSupportedPermissionTypes()` | Host-provided persistence, behind `AuthorizationScopeRepositoryPort` | `AuthorizationResourceMatcher{UNSPECIFIED, ANY, ID, PROPERTY}` |
+| **CSL** (shipped; OC consumes it) | `(ownerId, ownerType, resourceType, permissionType, AuthorizationScope)` | CSL's own, in [`api/model/authz/`](../../api/src/main/java/io/camunda/security/api/model/authz/): closed enums, 24 `AuthorizationResourceType` × 47 `PermissionType`, matrix-constrained via `getSupportedPermissionTypes()` | Host-provided persistence, behind `AuthorizationScopeRepositoryPort` | `AuthorizationResourceMatcher{UNSPECIFIED, ANY, ID, PROPERTY}` |
 | Hub | Fixed role per resource instance: `project_permissions(user_id, project_id, permission)` | `ProjectPermissionLevel{ADMIN, WRITE, READ, COMMENT, NONE}`; role→action matrix (`ProjectOperation`, 28 constants) compiled into an enum, not data | `project_permissions` table | One row per (user, project) |
 | Management Identity | Audience-scoped free-form strings (`write:*`, `admin:clusters`) | `ResourceType` record seeded from YAML (`identity.resource-types`) — ships exactly two: `process-definition`, `decision-definition` | Data-seeded | String match |
 | Optimize | `RoleType{VIEWER, EDITOR, MANAGER}`, compared by `ordinal()` | None | `data.roles` array nested inside each collection document | Instance-wide YAML flags `AuthorizationType{CSV_EXPORT, ENTITY_EDITOR}` |
@@ -77,7 +78,7 @@ Hub's schema (`restapi/db/src/main`) today.
 What Hub *does* already have is an assignment narrowed to one place:
 `project_permissions(user_id, project_id, permission)`, one row per (user, project). It carries a
 fixed permission enum where the unified model would carry a Role reference, which makes it the
-precedent §4.2's assignment target generalises rather than replaces.
+precedent §4.2's scoped assignment generalises rather than replaces.
 
 **Management Identity**'s migration controllers cover tenants/groups/roles/mapping-rules/memberships,
 not `resource_authorizations` — the identity graph migrates, the grants do not.
@@ -101,9 +102,10 @@ document, not findings about the code. Its hierarchy edges are picked up in §4.
 
 ### 3.1 One sentence
 
-A grant is `(owner) × (resource) × (actions) × (scope)` — CSL's shipped shape. The proposal is not a
-new model: it is extending that one platform-wide, keeping the tuple and widening the catalogue and
-the set of enforcers.
+A grant is `(owner) × (resource) × (actions) × (resource scope)` — CSL's shipped shape. That last
+element is the resource-instance selector, `AuthorizationScope`, and not §4.2's assignment scope;
+§8 keeps the two apart. The proposal is not a new model: it is extending that one platform-wide,
+keeping the tuple and widening the catalogue and the set of enforcers.
 
 ### 3.2 The plane insight
 
@@ -150,7 +152,7 @@ flowchart LR
     M["MappingRules"]
   end
 
-  subgraph L2["2 · Assignment target picker"]
+  subgraph L2["2 · Assignment scope picker"]
     S["Hub · Workspace · OC · PT · Optimize<br/>levels named by the Hub epic;<br/>their CSL representation is open (§4)"]
   end
 
@@ -165,13 +167,13 @@ flowchart LR
   S --> MG & EX & AN
 ```
 
-Level 2 is where an assignment target gets picked (§4.2) — the epic's *"one place"* for setting a
+Level 2 is where an assignment scope gets picked (§4.2) — the epic's *"one place"* for setting a
 group's whole access picture. Which levels appear there is no longer wide open: the Hub team's
 [product-strategy#46](https://github.com/camunda/product-strategy/issues/46) names Hub, Workspace,
 OC, Physical Tenant, and Optimize, the last as a yes/no boundary rather than a role. What stays open
 is how CSL represents them — and §4.1 still asks which of them can carry a policy at all.
 
-## 4. Where policy attaches, and what a role assignment targets
+## 4. Where policy attaches, and what scope a role assignment carries
 
 Proposed Hub structure, from a slide, not from code:
 
@@ -200,7 +202,10 @@ Tenant / Logical Tenant beneath it are realisation detail whose kind does not ma
 ### 4.1 Which scopes can carry a policy?
 
 Which of these seven levels — the stage environment included — is a valid attachment point for a
-grant, and which is addressing detail? Not every level in a navigation tree is a policy scope.
+grant, and which is addressing detail? All seven are expressible *as* scopes: per §4.2 they are
+exactly the seven `ScopeType` constants, so this heading's "scope" and the matrix column below it
+are the same word on purpose. What stays open is narrower — which of the seven can carry a
+**policy**, rather than only address one.
 
 The containment in the tree is real. A physical tenant lives inside a cluster and owns its own
 infrastructure — its own database, its own identity-provider connection — with logical tenants below
@@ -210,17 +215,39 @@ code-verified: physical tenant IDs live in `PhysicalTenantIds`
 `DEFAULT_PHYSICAL_TENANT_ID` (`"default"`), and partition/routing config consumes them
 (`FixedPartition.physicalTenantId`, `PhysicalTenantResolver`).
 
-Physical tenancy is an OC concept, and CSL deliberately never learns about it. CSL speaks only an
-opaque **scope** key that the host maps to its own concept, and names the host-facing types
+Physical tenancy is an OC concept, and CSL deliberately never learns what one *is*. CSL speaks only
+an opaque **scope** key that the host maps to its own concept, and names the host-facing types
 `Scoped*` accordingly (the convention block in `AGENTS.md`; ADR-0009, ADR-0013, ADR-0019).
 [`ScopedAuthorizationCheckPortFactory`](../../core/src/main/java/io/camunda/security/core/authz/ScopedAuthorizationCheckPortFactory.java)
-hands back one `AuthorizationCheckPort` per scope; OC maps each scope to a physical tenant.
+hands back one `AuthorizationCheckPort` per scope — `forScope(final String scope)`
+(`ScopedAuthorizationCheckPortFactory.java:124`) — and OC maps each scope to a physical tenant.
+
+That opaque key and §4.2's assignment scope are the **same axis**. This is settled design input, and
+it reverses an earlier reading of this document: the key is a `scopeId`, and its `scopeType` is
+`PHYSICAL_TENANT`. What CSL gains is a scope's *kind*, not its *meaning* —
+[`CamundaSecurityScopeProvider`](../../api/src/main/java/io/camunda/security/api/context/CamundaSecurityScopeProvider.java)'s
+*"Scope-agnostic: CSL never interprets the meaning of a scope"*
+(`CamundaSecurityScopeProvider.java:15-16`) survives as written, while CSL does learn that a given
+scope names a physical tenant rather than a workspace. That distinction is the hinge of the whole
+decision, and it is what the ADR named in §4.2 has to amend the opacity wording for.
+
+One caveat, so the merge is not overclaimed: the opaque key is not one uniform thing today. The
+authz surface keys by that opaque `String scope`, but the chain-building surface keys by base path —
+`ScopedSecurityDescriptor(String basePath, AuthenticationConfiguration authentication)`,
+*"A path-scoped security chain request"* (`ScopedSecurityDescriptor.java:12-14`). The unification is
+clean for the check-port key; the chain-building key is a routing axis and stays outside it.
 
 What follows for this question: CSL's logical-tenant check carries a flat ID list —
 `TenantCheck(boolean enabled, List<String> tenantIds)` — because the containment lives in host
 configuration, not in CSL's types. The containment in the tree is real for addressing, and it
 carries no rule inheritance (§4.2): CSL evaluates the rule set as authored for the level it is asked
 about, with no resolution step sitting above it.
+
+Admitting `LOGICAL_TENANT` as a `ScopeType` (§4.2) opens a question here that did not exist before:
+"on this logical tenant" becomes expressible twice — as the scope on an assignment, and through the
+shipped `CamundaAuthentication.authenticatedTenantIds` / `TenantCheck` path. Which of the two is
+authoritative for an execution-plane check is open, and it is a direct consequence of taking the
+whole tree as scope types rather than stopping at the physical tenant.
 
 ### 4.2 No inheritance — one rule set per level
 
@@ -238,11 +265,16 @@ Optimize is a yes/no boundary rather than a role.
 Workspace 1 but just reader in Workspace 2, and reader in Project A of Workspace 1. None of that is
 expressible today. So the place a role applies to rides on the *assignment*:
 
-> *(subject, role, assignment target)*
+> *(subject, role, scope)*, where a scope is a `(scopeType, scopeId)` pair
 
-The **assignment target** is the workspace, project, or stage environment an assignment is narrowed
-to (§8 defines the term, and says why this note avoids calling it a "scope"). That a stage
-environment can itself be targeted is settled design input, not an open question: *admin in dev,
+The **scope** is the level an assignment is narrowed to, carried as a typed pair: a `scopeType`,
+settled as spanning all seven levels of §4's tree — `ORGANIZATION`, `WORKSPACE`, `PROJECT`,
+`STAGE_ENVIRONMENT`, `CLUSTER`, `PHYSICAL_TENANT`, `LOGICAL_TENANT` — plus the `scopeId` naming the
+instance. Calling it *scope* is a deliberate reversal: earlier revisions of this note called it the
+*assignment target* precisely to keep it away from `core`'s opaque host key, and that reasoning is
+withdrawn — the two are one axis (§4.1), with the physical-tenant key one `scopeType` among seven.
+§8 records the three things CSL now calls "scope" and which of them unify. That a stage
+environment can itself be a scope is settled design input, not an open question: *admin in dev,
 reader in prod*. It generalises something Hub already ships as a fixed rule. camunda-docs' *Deploy a
 project* page says of the Production stage *"Only administrators and organization owners can deploy
 to this stage"*, and the one organization-level setting Hub defines is
@@ -250,7 +282,7 @@ to this stage"*, and the one organization-level setting Hub defines is
 rather than *where*. So stage-differentiated authorization exists today; it is just expressed as
 fixed rules rather than as data an assignment could carry. It attaches to the assignment whatever
 the subject is: `AuthorizationOwnerType` already spans `USER`, `CLIENT`, `GROUP`, `ROLE` and
-`MAPPING_RULE`, so a targeted assignment can name any of those (its `TENANT` and `UNSPECIFIED`
+`MAPPING_RULE`, so a scoped assignment can name any of those (its `TENANT` and `UNSPECIFIED`
 constants are not assignment subjects). #46's primary authoring path picks an IdP group —
 *"which IdP group maps to which Hub platform role, which Workspace role"* — with principals
 reaching the role through group membership; that is one path onto the tuple, not a restriction on
@@ -258,51 +290,79 @@ it.
 
 #46 names the workspace level explicitly and defers *"Fine-grained, project/file-level RBAC"* to a
 later cycle. Read precisely, that deferral is about RBAC granularity *inside* a project (files,
-resources), which may or may not be the same axis as targeting an assignment *at* a project. So
-whether a project can be an assignment target is noted here and left open — not sequenced.
+resources), which may or may not be the same axis as scoping an assignment *at* a project. So
+whether a project is a scope that can carry a *policy* — as opposed to one that is merely
+expressible, which all seven are — is noted here and left open, not sequenced.
 
 **The alternative we are not taking:** encoding the level in the role name — `workspace-admin`,
-`project-admin`, and one more for every level and every flavour. The assignment target belongs on
-the assignment, not in the name. (For a sense of scale: CSL ships six bootstrap role IDs in
+`project-admin`, and one more for every level and every flavour. The scope belongs on the
+assignment, not in the name. (For a sense of scale: CSL ships six bootstrap role IDs in
 `DefaultRole` — `admin`, `readonly-admin`, `rpa`, `connectors`, `app-integrations`, `task-worker`.
 A `workspace-admin` would be an authored `Role` entity rather than a new constant there, so this is
 not a claim about that enum growing; the point is only how quickly role names multiply once the
 level lives inside them.)
 
-**Where this gets built.** CSL has no notion of a targeted assignment today, so this is forward
+**Where this gets built.** CSL has no notion of a scoped assignment today, so this is forward
 work, and it lands on five surfaces:
 
-| Will need to carry the assignment target | Why |
+| Will need to carry the scope | Why |
 |---|---|
-| [`MembershipPort`](../../core/src/main/java/io/camunda/security/core/port/out/MembershipPort.java) / [`MembershipQuery`](../../core/src/main/java/io/camunda/security/core/port/out/MembershipQuery.java) | Where a role assignment is asked for and answered. `roleIds(MembershipQuery)` (`MembershipPort.java:37`) answers per principal; it will need to answer per *(principal, assignment target)* |
-| [`CamundaAuthentication`](../../api/src/main/java/io/camunda/security/api/model/CamundaAuthentication.java) | Carries resolved membership into every check, so a targeted assignment has to survive that trip |
-| `ConfiguredRole` and its siblings in [`api/model/config/initialization/`](../../api/src/main/java/io/camunda/security/api/model/config/initialization/) | How assignments are declared at startup; a targeted assignment needs a declaration form |
-| The authoring surface | Where an admin picks *(subject, role, assignment target)* — §3.4's level 2, and #46's *"one place"* |
-| Propagation | A targeted assignment has to cross the Hub→OC wire and land in the OC projection |
+| [`MembershipPort`](../../core/src/main/java/io/camunda/security/core/port/out/MembershipPort.java) / [`MembershipQuery`](../../core/src/main/java/io/camunda/security/core/port/out/MembershipQuery.java) | Where a role assignment is asked for and answered. `roleIds(MembershipQuery)` (`MembershipPort.java:37`) answers per principal; it will need to answer per *(principal, scope)* |
+| [`CamundaAuthentication`](../../api/src/main/java/io/camunda/security/api/model/CamundaAuthentication.java) | Carries resolved membership into every check, so a scoped assignment has to survive that trip |
+| `ConfiguredRole` and its siblings in [`api/model/config/initialization/`](../../api/src/main/java/io/camunda/security/api/model/config/initialization/) | How assignments are declared at startup; a scoped assignment needs a declaration form |
+| The authoring surface | Where an admin picks *(subject, role, scope)* — §3.4's level 2, and #46's *"one place"* |
+| Propagation | A scoped assignment has to cross the Hub→OC wire and land in the OC projection |
 
 Two of those force a decision rather than an edit. `MembershipPort` is a **shipped outbound contract
 with host implementers** — OC, and Optimize's `OptimizeMembershipAdapter` (§2) — so changing its
 signature is a breaking change, which by this repo's own rules makes it ADR territory. And
 `CamundaAuthentication` (`CamundaAuthentication.java:39-47`) holds membership as flat sibling lists,
-`authenticatedRoleIds` beside `authenticatedTenantIds` — a targeted role is precisely what one more
+`authenticatedRoleIds` beside `authenticatedTenantIds` — a scoped role is precisely what one more
 flat list cannot express.
 
-**Direction:** extend membership so that it optionally knows the assignment target. *Optionally* is
-load-bearing — an untargeted assignment is the role at the level it is authored at (#46's Hub
-platform role), and a targeted one is narrowed to that workspace or project.
+**Direction:** extend membership so that it knows the scope — `scopeType` and `scopeId`. There is no
+unscoped assignment: because `ORGANIZATION` is itself a `scopeType`, what an earlier revision of
+this note called an untargeted assignment (#46's Hub platform role) is `(ORGANIZATION, <orgId>)`.
+Nothing here is nullable, which is the point of admitting the whole tree rather than only the levels
+below the organization.
 
-**Open — shape, not approach:** whether the optional assignment target rides as a nullable
-component of the existing assignment tuple, or as a distinct targeted-assignment record alongside
-it. That choice decides how much of the `MembershipPort` contract moves, so it wants settling
-before the ADR is written. The stage environment adds a second dimension to the same question:
-because an assignment target now spans kinds — workspace, project, stage environment — it is also
-open whether the assignment target is a bare ID or a typed *(kind, id)* pair.
+Two of the seven constants have nothing to name yet, and being expressible is not the same as having
+an ID space. `STAGE_ENVIRONMENT` has none at all: per §4.3 point 2 the stage is four enum constants
+bound to four columns on `hub_projects` and *derived* from a deployment's cluster ID — no entity, no
+table, nothing a `scopeId` could hold. That makes Q6's "does the stage environment become a
+first-class Hub entity" a **prerequisite** for this scope type rather than a design question
+alongside it. And `ORGANIZATION`'s ID exists but is inert in self-managed —
+`04-system-context.md:13` again: *"`organization_id` is fixed and the multi-org partitioning is
+present in the model but not operationally relevant"* — so `(ORGANIZATION, <orgId>)` carries real
+information in SaaS and reads as "everywhere" in self-managed.
 
-There is a fork on the enforcement side too, named here rather than resolved. The execution-plane
-check only ever sees the opaque scope key of §4.1, so CSL cannot tell which stage environment a
-scope key belongs to. Either a stage-environment assignment is resolved into its member clusters and
-physical tenants *before* it goes on the wire, or CSL gains a second host-mapped notion beside the
-scope key. The scope key is what creates that fork; it is not a precedent for how targeting works.
+**Open — shape, not approach.** Half of this is now settled: the scope is a typed
+*(scopeType, scopeId)* pair rather than a bare ID, which admitting seven kinds leaves no way around.
+What stays open is narrower. Whether the pair rides as two components on the existing assignment
+tuple or as its own record, which decides how much of the `MembershipPort` contract moves. And where
+the scope enters that contract: as fields on
+[`MembershipQuery`](../../core/src/main/java/io/camunda/security/core/port/out/MembershipQuery.java),
+which all four `MembershipPort` methods already take, or as per-scope overloads beside them. Both
+want settling before the ADR is written.
+
+The enforcement-side question is reshaped by this rather than removed. Its second branch — that CSL
+gains another host-mapped notion beside the opaque scope key — is in effect what the typed pair
+chooses, except that it is not a *second* notion: it is the same one, now carrying its kind (§4.1).
+What genuinely remains open is **resolution**. An execution-plane check runs against a physical
+tenant, so something still has to turn `(STAGE_ENVIRONMENT, staging)` into the clusters and physical
+tenants it covers, and §4.3 point 2 says that grouping does not exist in Hub yet. Whether Hub
+resolves it before the wire or the receiving OC resolves it locally is open; knowing a scope's kind
+is what makes the question askable, not what answers it.
+
+**This needs an ADR, deliberately not written in this pass.** It has to name `ScopeType` and its
+seven constants, change
+[`MembershipPort`](../../core/src/main/java/io/camunda/security/core/port/out/MembershipPort.java) —
+the shipped outbound contract with host implementers called out two paragraphs above — and amend the
+opacity wording that has CSL knowing nothing at all about a scope: ADR-0009, ADR-0013, ADR-0019, and
+`AGENTS.md`'s convention block (*"`core` has no notion of a physical tenant — only an opaque
+*scope* key"*, *"Don't introduce tenant-flavored names … in `core`"*). Those files are left
+untouched here on purpose: this note is discussion input, and a decided ADR is amended by writing a
+new one.
 
 One input back to the Hub team: #46's five assignment layers — Hub, Workspace, OC, Physical Tenant,
 Optimize — do not name the stage environment. Recorded as an input, not as a correction.
@@ -388,8 +448,8 @@ could silently apply. §4.4's ruling is unchanged.
 Sub-question: does an authorization-level concept get built at all, or get struck from the docs?
 The old §5.2's `AuthorizationLevel{ALL, TENANT, PHYSICAL_TENANT}` (§2) is the unimplemented shape it
 was reaching for — and under §4.2 it leans towards struck: in a non-hierarchical model whose
-assignments already name the workspace, project, or stage environment they apply to, a level
-attached to the grant has no work left to do.
+assignments already carry the scope they apply to — a `(scopeType, scopeId)` pair that can name any
+of the seven levels — a level attached to the grant has no work left to do.
 
 ### Scope-vs-plane matrix
 
@@ -408,8 +468,9 @@ every cell is independent: none is implied by the row above it, and each has to 
 own. #46's five layers (Hub, Workspace, OC, Physical Tenant, Optimize) read across these rows
 closely enough to use — "product" in that framing is a flavour of level, not a row of its own — but
 they do not name the Stage Environment row, which is the input back to the Hub team noted in §4.2.
-A row that can carry a policy is also a candidate **assignment target** (§4.2), which is what ties
-this matrix to the assignment question.
+The rows are the candidate `ScopeType` constants (§4.2), and per the settled design input all seven
+are in — so what the empty cells decide is which rows can carry a **policy**, not which are
+expressible as a scope. That is what ties this matrix to the assignment question.
 
 Cross-references: 4.2 → journeys 1, 3, and 5; 4.3 → journey 2 and journey 4; 4.4 → §3.2.
 
@@ -450,7 +511,9 @@ question about shape, kept there rather than renumbered into here.)
 - **Q6 The Hub↔cluster schema work implied by §4.3.** An authoritative cluster→engine mapping (Hub's
   own Javadoc says absent); whether the stage environment becomes a first-class Hub entity that
   groups clusters — replacing the per-project `default*ClusterId` slots and the stage derived from
-  the target cluster ID — or identity gets its own assignment table; and if it does become one, who
+  the target cluster ID — or identity gets its own assignment table. That part is a **prerequisite**
+  rather than a parallel question: nothing today gives a stage environment an ID a `scopeId` could
+  hold, so `STAGE_ENVIRONMENT` as a `scopeType` depends on it (§4.2). And if it does become one, who
   enforces the cardinality, since 1:n containment (each cluster in exactly one stage environment) is
   the design intent while today's model is n:m *by design* (`runtime-connection-store.ts:25-27`)
   with `deriveStage` silently resolving ties — so 1:n is a constraint someone has to add, not a
@@ -488,9 +551,9 @@ CSL's own reading of what those ask of this library.
 
 1. **Org admin sets up Organization-level access after connecting the identity provider.** Connects
    an IdP in Hub → creates a MappingRule matching an IdP claim → assigns a role to what that rule
-   matches, targeted at the organization. #46's equivalent maps *"which IdP group maps to which Hub
+   matches, scoped to the organization. #46's equivalent maps *"which IdP group maps to which Hub
    platform role, which Workspace role"*. Records: MappingRule, a role assignment in Hub whose
-   assignment target is the organization, a `PolicyVersion` bump. Propagates: full
+   scope is `(ORGANIZATION, <orgId>)`, a `PolicyVersion` bump. Propagates: full
    `POLICY_SNAPSHOT` out of the management plane to every OC in the organization (§1). Note what
    this is *not*: an Organization-level
    assignment is one level's rule set, not a starting point that descends into workspaces (§4.2) —
@@ -501,8 +564,9 @@ CSL's own reading of what those ask of this library.
    not existing (§4.3 point 2) and on the missing cluster→engine mapping (§4.3 point 1, Q6); the
    org→cluster step above it is not blocked but is represented differently per deployment
    flavour, so an assignment there has two shapes to satisfy (§4.3 point 3). Records: an
-   Authorization scoped to the logical tenant. Propagates: via `EngineCommandPort`, once the
-   edges above are resolved.
+   Authorization whose scope is `(LOGICAL_TENANT, <tenantId>)` — the one scope type that overlaps a
+   shipped path, since the same reach is already expressible through `authenticatedTenantIds` /
+   `TenantCheck` (§4.1). Propagates: via `EngineCommandPort`, once the edges above are resolved.
 
 3. **Grant at Workspace level, reaching that workspace's stage environments (including engine
    rules).** The user's question, directly. Unbuildable today — included anyway, because the clicks
@@ -535,7 +599,7 @@ CSL's own reading of what those ask of this library.
 
 5. **Grant Hub-internal workspace access (a Project/Workspace grant) — never leaves Hub.** Contrast
    with journey 3: same word "workspace", but management-plane only, and buildable today as
-   `project_permissions`. It is also the closest thing to a shipped assignment target:
+   `project_permissions`. It is also the closest thing to a shipped scope:
    `project_permissions` holds one row per (user, project) — a role held at one place rather than
    organization-wide (§2, §4.2). Points at Q2 — Hub's shape is not a tuple.
 
@@ -591,11 +655,25 @@ misread every one of these on sight.
   [ADR-0018](../adr/0018-optimize-reuses-stateful-oidc-webapp-chain.md). Hygiene note, not a
   question.
 
-- **"assignment target"** — in this note, the workspace, project, or stage environment that a single
-  role assignment is narrowed to (§4.2). The word *scope* is deliberately not used for it: `core`
-  reserves *scope* for the opaque host key that a host maps to its own concept. It is also not the
-  "target cluster" /
-  "deployment target" sense used elsewhere in this document — hence always the two-word form.
+- **"scope"** — in this note, the level a single role assignment is narrowed to, carried as a
+  `(scopeType, scopeId)` pair (§4.2). `scopeType` spans all seven levels of §4's tree:
+  `ORGANIZATION`, `WORKSPACE`, `PROJECT`, `STAGE_ENVIRONMENT`, `CLUSTER`, `PHYSICAL_TENANT`,
+  `LOGICAL_TENANT`. Earlier revisions of this note called it the *assignment target* and avoided the
+  word *scope* on purpose; that was reversed as design input — the two are one axis.
+
+  The word now has three referents in CSL, two of which unify and one of which does not. The
+  assignment scope above is the new one. The opaque check-port key — `forScope(final String scope)`
+  (`ScopedAuthorizationCheckPortFactory.java:124`), one `AuthorizationCheckPort` per scope, each
+  mapped by OC to a physical tenant — **is** the same thing: a `scopeId` whose type is
+  `PHYSICAL_TENANT`.
+  [`AuthorizationScope`](../../api/src/main/java/io/camunda/security/api/model/authz/AuthorizationScope.java)
+  is **not**: `(matcher, resourceId, resourcePropertyName)` selects *resource instances* inside a
+  single grant — an unrelated concept with a colliding name. So a plain *scope* here is always the
+  assignment scope, and the other sense is written **resource scope** or named as
+  `AuthorizationScope` (§2's grant-shape row and §3.1's tuple mean that one).
+
+  None of the three is the "target cluster" / "deployment target" sense used elsewhere in this
+  document. That reading of *target* is unaffected by the rename and stays as written.
 - **"stage environment"** — in this note, the dev/test/staging/production level between Organization
   and Clusters that Hub configures (§4). The shipped surfaces call the same idea a *deployment
   stage*: Hub's `DeploymentStage` enum, four fixed constants bound per process application and
