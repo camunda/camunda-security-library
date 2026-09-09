@@ -184,6 +184,69 @@ flowchart TB
 
 > **Note on storage in multi-instance topologies:** The `DBs` node in the diagram is a summary. In practice, each engine (Physical Tenant) has its own dedicated storage scope: embedded primary storage (RocksDB — one instance per engine, internal to the broker) and its own secondary storage (Elasticsearch, OpenSearch, or RDBMS — either a dedicated database per engine or a dedicated schema within a shared database instance).
 
+#### 7.1.4 Full mode – multi-stage example (one Hub across dev/test/staging/production)
+
+This extends §7.1.2 to show what it means for a single Hub instance to be
+[stage-aware](./04-system-context.md#41-full-mode-hub--oc--optimize) end to end: one Hub
+deployment acting as the policy source of truth for several independently deployed OC clusters,
+one per delivery stage. Each stage is its own customer-managed environment; stages share no
+infrastructure — only the same Hub as their policy source.
+
+- Hub is deployed once and is not tied to any single stage; it holds one policy authoring surface and propagates it to every stage's OC (and, where deployed, Optimize) through the platform-owned channel — see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance) for what's shipped today.
+- Each stage's OC (and Optimize, where present) is a fully independent deployment: its own database(s), its own Enterprise IdP client registration, its own scaling — nothing is shared between stages.
+- Optimize is not required in every stage. This example follows a common pattern of running Optimize only where analytics matter operationally (`staging`, `production`) and skipping it in `dev`/`test`.
+- Suitable for organizations that need one centrally governed policy source across their whole delivery pipeline, not just a single environment.
+
+```mermaid
+---
+title: Self-Managed Deployment – Full mode, multi-stage example (dev/test/staging/production)
+---
+flowchart TB
+  subgraph Customer["Customer-managed Infrastructure"]
+    subgraph MgmtPlane["Management Plane"]
+      Console["Console"]
+      WebModeler["Web Modeler"]
+      AdminHub["Admin UI (read/write)"]
+
+      subgraph Hub["Hub"]
+        SecGatHub["Camunda Security Library"]
+      end
+
+      Console & WebModeler & AdminHub --> Hub
+    end
+
+    subgraph DevStage["dev"]
+      OCDev["Orchestration Cluster"]
+    end
+
+    subgraph TestStage["test"]
+      OCTest["Orchestration Cluster"]
+    end
+
+    subgraph StagingStage["staging"]
+      OCStaging["Orchestration Cluster"]
+      OptStaging["Optimize"]
+      OCStaging -->|"Process data"| OptStaging
+    end
+
+    subgraph ProdStage["production"]
+      OCProd["Orchestration Cluster"]
+      OptProd["Optimize"]
+      OCProd -->|"Process data"| OptProd
+    end
+
+    Hub --> OCDev & OCTest & OCStaging & OCProd
+    Hub -->|"policy propagation (planned)"| OptStaging
+    Hub -->|"policy propagation (planned)"| OptProd
+  end
+
+  EnterpriseIdP[["Enterprise IdP(s)</br>(per stage, Keycloak, Entra, Okta, ...)"]]
+  Hub & OCDev & OCTest & OCStaging & OCProd & OptStaging & OptProd --> EnterpriseIdP
+```
+
+> Four stages are illustrative, not a requirement — the same pattern extends to any number of
+> stages, regions, or a combination of both.
+
 ---
 
 ### 7.2 SaaS deployment
