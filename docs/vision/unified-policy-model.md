@@ -153,7 +153,7 @@ flowchart LR
   end
 
   subgraph L2["2 · Assignment scope picker"]
-    S["Hub · Workspace · OC · PT · Optimize<br/>levels named by the Hub epic;<br/>their CSL representation is open (§4)"]
+    S["Hub · Workspace · OC · PT · Optimize<br/>five layers named by the Hub epic;<br/>how they map onto §4.2's seven ScopeType constants is open"]
   end
 
   subgraph L3["3 · Authorizations per plane"]
@@ -170,8 +170,11 @@ flowchart LR
 Level 2 is where an assignment scope gets picked (§4.2) — the epic's *"one place"* for setting a
 group's whole access picture. Which levels appear there is no longer wide open: the Hub team's
 [product-strategy#46](https://github.com/camunda/product-strategy/issues/46) names Hub, Workspace,
-OC, Physical Tenant, and Optimize, the last as a yes/no boundary rather than a role. What stays open
-is how CSL represents them — and §4.1 still asks which of them can carry a policy at all.
+OC, Physical Tenant, and Optimize, the last as a yes/no boundary rather than a role. The *shape*
+CSL represents them in is settled too — a `(scopeType, scopeId)` pair over seven constants (§4.2).
+What stays open is how the epic's five layers map onto those seven: "Optimize" is not a level in
+§4's tree at all, and "Hub" sits closer to the management plane than to `ORGANIZATION`. And §4.1
+still asks which of the seven can carry a policy.
 
 ## 4. Where policy attaches, and what scope a role assignment carries
 
@@ -477,8 +480,10 @@ Cross-references: 4.2 → journeys 1, 3, and 5; 4.3 → journey 2 and journey 4;
 ## 5. Further open questions
 
 Numbering continues from §4 — Q1 is §4.1's attachment question, Q2–Q8 here. Q1–Q3 are entangled;
-take as one conversation. (§4.2 is no longer one of them: it is a settled constraint plus one open
-question about shape, kept there rather than renumbered into here.)
+take as one conversation. (§4.2 is not one of them: it is a settled constraint plus the open
+questions that constraint leaves behind — the pair's shape, where it enters `MembershipPort`,
+resolution of a stage-environment scope, and whether a project can carry a policy — all kept there
+rather than renumbered into here.)
 
 **Blocking — decide in the workshop:**
 
