@@ -38,9 +38,9 @@ Six fixed constraints:
   `AppClusterType.MANAGEMENT` app while the orchestration apps it deploys to are `AUTOMATION`,
   reached per request over `cluster_apps.grpc_url` / `rest_url`. So every execution-plane grant Hub
   authors has to cross a wire: propagation is structural, not an optimisation.
-  In `oc-standalone` there is no Hub: OC is the local source of truth and authors its own policy (see
-  the deployment-strategy table in `AGENTS.md`). Same model, no propagation — journey 7 walks that
-  case, and it is in scope, not an exception to the model.
+  In `oc-standalone` there is no Hub: OC is the local source of truth and authors its own policy
+  (see the deployment-strategy table in `AGENTS.md`). Same model, no propagation — journey 7 walks
+  that case, and it is in scope, not an exception to the model.
 - Distribution/transport is not CSL's concern — CSL supplies the model and the in/out ports, not the
   wire format.
 - Hub's own management-plane authz is in scope of the unified model.
@@ -388,8 +388,8 @@ could silently apply. §4.4's ruling is unchanged.
 Sub-question: does an authorization-level concept get built at all, or get struck from the docs?
 The old §5.2's `AuthorizationLevel{ALL, TENANT, PHYSICAL_TENANT}` (§2) is the unimplemented shape it
 was reaching for — and under §4.2 it leans towards struck: in a non-hierarchical model whose
-assignments already name the workspace or project they apply to, a level attached to the grant has
-no work left to do.
+assignments already name the workspace, project, or stage environment they apply to, a level
+attached to the grant has no work left to do.
 
 ### Scope-vs-plane matrix
 
@@ -454,9 +454,10 @@ question about shape, kept there rather than renumbered into here.)
   enforces the cardinality, since 1:n containment (each cluster in exactly one stage environment) is
   the design intent while today's model is n:m *by design* (`runtime-connection-store.ts:25-27`)
   with `deriveStage` silently resolving ties — so 1:n is a constraint someone has to add, not a
-  property that holds. Plus whether `organization_id` on `clusters` is needed at all, given SaaS
-  resolves org→clusters through Console (§4.3 point 3). Hub team owns — a consequence of §4, not a
-  second discussion of it.
+  property that holds. Plus — with *where* the org→cluster relation lives already settled (§4.3
+  point 3: configuration in self-managed, Cloud Console in SaaS) — the open part of it: whether
+  Hub needs an `organization_id` on `clusters` of its own at all. Hub team owns — a consequence
+  of §4, not a second discussion of it.
 
 **Park:**
 
@@ -497,9 +498,11 @@ CSL's own reading of what those ask of this library.
 
 2. **Grant a team runtime access to one cluster's logical tenant.** Walks Organization → Stage
    Environment → Cluster → Physical Tenant → Logical Tenant. Bites on the stage-environment level
-   not existing and on org→cluster living outside Hub's schema (§4.3 points 2 and 3), and on the
-   missing cluster→engine mapping (§4.3 point 1, Q6). Records: an Authorization scoped to the
-   logical tenant. Propagates: via `EngineCommandPort`, once the edges above are resolved.
+   not existing (§4.3 point 2) and on the missing cluster→engine mapping (§4.3 point 1, Q6); the
+   org→cluster step above it is not blocked but is represented differently per deployment
+   flavour, so an assignment there has two shapes to satisfy (§4.3 point 3). Records: an
+   Authorization scoped to the logical tenant. Propagates: via `EngineCommandPort`, once the
+   edges above are resolved.
 
 3. **Grant at Workspace level, reaching that workspace's stage environments (including engine
    rules).** The user's question, directly. Unbuildable today — included anyway, because the clicks
