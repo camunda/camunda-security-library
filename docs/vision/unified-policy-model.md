@@ -31,8 +31,14 @@ Six fixed constraints:
   *"Hub and Workspaces get a two-layer role model (Hub platform role + per-workspace role)"*. Why
   now: the same initiative lists *"CSL-based APIs for role assignment across Hub, Workspace, OC, and
   PT"* as a dependency on rock-12 / Identity, wanted at the start of 8.11 epic work.
-- Authored centrally in Hub, distributed downward to every OC — in **Hub-managed** deployments. In
-  `oc-standalone` there is no Hub: OC is the local source of truth and authors its own policy (see
+- Authored centrally in Hub, distributed downward to every OC — in **Hub-managed** deployments. Hub
+  is not deployed alongside the execution plane: it runs in the management plane and configures each
+  execution plane remotely. [`07-deployment-view.md`](../architecture/07-deployment-view.md) §7.1.2
+  already draws that split, and Hub's own code encodes it — `ClusterAppType.HUB` is an
+  `AppClusterType.MANAGEMENT` app while the orchestration apps it deploys to are `AUTOMATION`,
+  reached per request over `cluster_apps.grpc_url` / `rest_url`. So every execution-plane grant Hub
+  authors has to cross a wire: propagation is structural, not an optimisation.
+  In `oc-standalone` there is no Hub: OC is the local source of truth and authors its own policy (see
   the deployment-strategy table in `AGENTS.md`). Same model, no propagation — journey 7 walks that
   case, and it is in scope, not an exception to the model.
 - Distribution/transport is not CSL's concern — CSL supplies the model and the in/out ports, not the
@@ -173,18 +179,28 @@ Proposed Hub structure, from a slide, not from code:
 Organization
  ├── Workspaces
  │   └── Projects
- └── Clusters
-     └── Physical Tenants
-         └── Logical Tenants
+ └── Stage Environments        (dev, test, staging, prod — Hub configures all of them)
+     └── Clusters
+         └── Physical Tenants
+             └── Logical Tenants
 ```
 
-To a workspace user, Cluster / Physical Tenant / Logical Tenant are collectively just an
-**Environment** — the kind does not matter to them.
+The **stage environment** level is design intent like the rest of this tree: an organization defines
+its stage environments, and each cluster belongs to one of them. Design intent is the operative
+phrase — today's Hub contradicts the cardinality, holding stages as four fixed per-project slots
+that are n:m against clusters (§4.3 point 2, Q6).
+
+Hub itself sits outside every box from the stage-environment line down (§1): it configures all of
+them across a wire. That is why propagation is structural rather than an optimisation, and why
+§4.3's missing cluster→engine mapping blocks journeys 2 and 3 rather than merely complicating them.
+
+What a workspace user addresses is a stage environment — *"deploy to test"*. The Cluster / Physical
+Tenant / Logical Tenant beneath it are realisation detail whose kind does not matter to them.
 
 ### 4.1 Which scopes can carry a policy?
 
-Which of these six levels is a valid attachment point for a grant, and which is addressing detail?
-Not every level in a navigation tree is a policy scope.
+Which of these seven levels — the stage environment included — is a valid attachment point for a
+grant, and which is addressing detail? Not every level in a navigation tree is a policy scope.
 
 The containment in the tree is real. A physical tenant lives inside a cluster and owns its own
 infrastructure — its own database, its own identity-provider connection — with logical tenants below
@@ -210,7 +226,8 @@ about, with no resolution step sitting above it.
 
 Settled, not open: the model is **not hierarchical**. Every level has its own rule set and nothing
 flows down either branch. Being an admin of the organization does not make you an admin of a
-workspace inside it — that has to be configured additionally. The Hub team's
+workspace inside it, nor an admin in `prod` — and being an admin in `dev` says nothing at all about
+`prod`. Each of those is its own rule set, and has to be configured additionally. The Hub team's
 [product-strategy#46](https://github.com/camunda/product-strategy/issues/46) describes the same
 shape from the product side: a group gets *"their Hub role, their role in each Workspace, their role
 on each OC, their role on each PT, and their access to Optimize"* — five assignments authored
@@ -223,8 +240,15 @@ expressible today. So the place a role applies to rides on the *assignment*:
 
 > *(subject, role, assignment target)*
 
-The **assignment target** is the workspace or project an assignment is narrowed to (§8 defines the
-term, and says why this note avoids calling it a "scope"). It attaches to the assignment whatever
+The **assignment target** is the workspace, project, or stage environment an assignment is narrowed
+to (§8 defines the term, and says why this note avoids calling it a "scope"). That a stage
+environment can itself be targeted is settled design input, not an open question: *admin in dev,
+reader in prod*. It generalises something Hub already ships as a fixed rule. camunda-docs' *Deploy a
+project* page says of the Production stage *"Only administrators and organization owners can deploy
+to this stage"*, and the one organization-level setting Hub defines is
+`OrganizationSettingsKey.DEPLOYMENT_POLICY` (`ADMIN_ONLY` / `REVIEW_REQUIRED`) — *who* may deploy
+rather than *where*. So stage-differentiated authorization exists today; it is just expressed as
+fixed rules rather than as data an assignment could carry. It attaches to the assignment whatever
 the subject is: `AuthorizationOwnerType` already spans `USER`, `CLIENT`, `GROUP`, `ROLE` and
 `MAPPING_RULE`, so a targeted assignment can name any of those (its `TENANT` and `UNSPECIFIED`
 constants are not assignment subjects). #46's primary authoring path picks an IdP group —
@@ -270,36 +294,70 @@ platform role), and a targeted one is narrowed to that workspace or project.
 **Open — shape, not approach:** whether the optional assignment target rides as a nullable
 component of the existing assignment tuple, or as a distinct targeted-assignment record alongside
 it. That choice decides how much of the `MembershipPort` contract moves, so it wants settling
-before the ADR is written.
+before the ADR is written. The stage environment adds a second dimension to the same question:
+because an assignment target now spans kinds — workspace, project, stage environment — it is also
+open whether the assignment target is a bare ID or a typed *(kind, id)* pair.
 
-### 4.3 The Workspace → Environment edge — the crux
+There is a fork on the enforcement side too, named here rather than resolved. The execution-plane
+check only ever sees the opaque scope key of §4.1, so CSL cannot tell which stage environment a
+scope key belongs to. Either a stage-environment assignment is resolved into its member clusters and
+physical tenants *before* it goes on the wire, or CSL gains a second host-mapped notion beside the
+scope key. The scope key is what creates that fork; it is not a precedent for how targeting works.
+
+One input back to the Hub team: #46's five assignment layers — Hub, Workspace, OC, Physical Tenant,
+Optimize — do not name the stage environment. Recorded as an input, not as a correction.
+
+### 4.3 The Workspace → Stage Environment edge — the crux
 
 Under §4.2 nothing flows down, so the question sharpens. Does a Workspace-level assignment —
-including engine rules — reach that workspace's assigned environments *at all*, or does the
-Workspace→Environment edge merely **assign** environments to a workspace while rules stay authored
-per environment? And can a workspace user configure their environments at workspace level at all?
+including engine rules — reach that workspace's assigned stage environments *at all*, or does the
+Workspace → Stage Environment edge merely **assign** stage environments to a workspace while rules
+stay authored per stage environment? And can a workspace user configure their stage environments at
+workspace level at all?
 
 Evidence, strongest first:
 
 1. **Hub's own code states the gap outright.** `RuntimeConfigurationValidationRequest.java:19-20`,
    verbatim: *"`physicalTenantId` identifies the orchestration cluster (engine) holding the
    configuration; `null` unless Hub has an authoritative cluster-to-engine mapping, which it does
-   not today."* Not an inference — Hub documenting itself.
-2. **The environment edge exists — one level too low, wrong flavour.** `ProcessApplication` (v2
-   *Project*) has `defaultDevClusterId` / `defaultTestClusterId` / `defaultStageClusterId` /
-   `defaultProdClusterId`. `Project` (v2 *Workspace*) has no cluster reference at all.
-   `ProjectDeploymentFile` joins `processApplication` + `clusterId` + `DeploymentStage stage` +
-   `DeploymentStatus`. Today: environments attach to a Project, as four fixed deployment-target
-   defaults — not to a Workspace, not as an identity scope. Sharper question: is the existing
-   Project-level, stage-keyed edge the right thing to lift to Workspace level and repurpose as a
-   policy scope, or does identity need its own n:m assignment?
-3. **The org→cluster column is absent, with a caveat.** `Cluster.java`'s full field list — `id,
-   name, namespace, version, authentication, authorizationEnabled, created, createdBy, updated,
-   updatedBy, license, apps, tags, customProperties, discoveredProperties` — has no
-   `organization_id`. SM has exactly one organization by design (`04-system-context.md:13`:
-   *"`organization_id` is fixed and the multi-org partitioning is present in the model but not
-   operationally relevant"*), and whether SaaS sources org→cluster from Console is not established
-   from this repo. Not a proven gap — we could not find it here.
+   not today."* Not an inference — Hub documenting itself. And because Hub is not co-deployed with
+   the execution plane (§1), that mapping is not a detail on the path to the engine: it *is* the
+   path.
+2. **The stage-environment edge exists — one level too low, and derived rather than authored.**
+   `DeploymentStage` is a bare four-constant enum (`DEV, TEST, STAGE, PROD`). The binding lives in
+   four unannotated, nullable, non-foreign-key `String` columns on `ProcessApplication` (v2
+   *Project*, table `hub_projects`) — `defaultDevClusterId` / `defaultTestClusterId` /
+   `defaultStageClusterId` / `defaultProdClusterId` — written per process application through
+   `PUT /process-applications/{processApplicationId}/stages`. `Project` (v2 *Workspace*) has no
+   cluster reference at all. And a deployment's stage is *derived*, not chosen:
+   `ProjectDeploymentService.deriveStage(clusterId, processApplication)` reverse-looks-up the target
+   cluster ID against those four columns in a fixed `if/else` order, returns `null` when none
+   matches, and the result is stored as `ProjectDeploymentFile`'s nullable `stage` column beside
+   `clusterId` and `DeploymentStatus`.
+
+   Two consequences worth naming. The relation is **n:m by design** — Hub's own frontend records it
+   as such: *"A cluster assigned to several stages appears once per assignment, since that is a
+   supported configuration, and each entry carries the stage it was assigned to"*
+   (`runtime-connection-store.ts:25-27`) — while `deriveStage`'s ordered `if/else` silently keeps
+   only the first match. And `tags` is not the stage mechanism it can look like: the `['dev',
+   'test']` value in the self-managed `camunda.modeler.clusters[*].tags` docs is an example,
+   `cluster_tags` is a free-form string bag, and no code reads a tag as a stage. So what is missing
+   is not a column but a level: a named grouping of clusters that a grant could name. Sharper
+   question: is the existing per-project, stage-keyed edge the right thing to lift into an
+   organization-level stage environment and repurpose as a policy scope, or does identity need its
+   own n:m assignment?
+3. **The org→cluster relation lives outside Hub's schema, and differs per flavour.**
+   `Cluster.java`'s full field list — `id, name, namespace, version, authentication,
+   authorizationEnabled, created, createdBy, updated, updatedBy, license, apps, tags,
+   customProperties, discoveredProperties` — has no `organization_id`, and no stage attribute
+   either. Where the relation does live: in self-managed, clusters are declared in configuration
+   (`ClusterProperties`, `camunda.modeler.clusters[*]` — which carries neither an organization nor a
+   stage field) and synced into the `clusters` table; in SaaS it is a remote Cloud Console call
+   keyed by organization, `CloudConsoleService.getClusters(organizationId, token)` filtered by
+   `CloudClusterService.getCluster(...)`. SM has exactly one organization by design
+   (`04-system-context.md:13`: *"`organization_id` is fixed and the multi-org partitioning is
+   present in the model but not operationally relevant"*). So the level a stage environment would
+   attach to is represented differently in the two flavours — part of Q6, not a gap in one repo.
 
 Conclusion: not "should we allow it" but "which of these edges do we lift, is that Hub schema work
 in scope, and does the lifted edge grant anything or only assign." With no inheritance, that last
@@ -323,7 +381,9 @@ same shape.
 Note the tension with §4.2: an organization-level default with a per-cluster override *is* a
 hierarchical shape, and §4.2 rules that out for policy. The precedent is proven for configuration,
 not adoptable as-is for authorization — a default that silently applies wherever nothing was
-authored is inheritance under another name.
+authored is inheritance under another name. Inserting the stage environment between organization and
+cluster multiplies that tension rather than easing it: it adds one more layer at which a default
+could silently apply. §4.4's ruling is unchanged.
 
 Sub-question: does an authorization-level concept get built at all, or get struck from the docs?
 The old §5.2's `AuthorizationLevel{ALL, TENANT, PHYSICAL_TENANT}` (§2) is the unimplemented shape it
@@ -338,6 +398,7 @@ no work left to do.
 | Organization | ? | ? | ? |
 | Workspace | ? | ? | ? |
 | Project | ? | ? | ? |
+| Stage Environment | ? | ? | ? |
 | Cluster | ? | ? | ? |
 | Physical Tenant | ? | ? | ? |
 | Logical Tenant | ? | ? | ? |
@@ -345,9 +406,10 @@ no work left to do.
 Empty cells are the discussion — the artifact most likely to get drawn on in the room. Under §4.2
 every cell is independent: none is implied by the row above it, and each has to be authored on its
 own. #46's five layers (Hub, Workspace, OC, Physical Tenant, Optimize) read across these rows
-closely enough to use — "product" in that framing is a flavour of level, not a seventh row. A row
-that can carry a policy is also a candidate **assignment target** (§4.2), which is what ties this
-matrix to the assignment question.
+closely enough to use — "product" in that framing is a flavour of level, not a row of its own — but
+they do not name the Stage Environment row, which is the input back to the Hub team noted in §4.2.
+A row that can carry a policy is also a candidate **assignment target** (§4.2), which is what ties
+this matrix to the assignment question.
 
 Cross-references: 4.2 → journeys 1, 3, and 5; 4.3 → journey 2 and journey 4; 4.4 → §3.2.
 
@@ -386,10 +448,15 @@ question about shape, kept there rather than renumbered into here.)
   principal. Management Identity: `Operator{CONTAINS, EQUALS}` + `MappingRuleType{ROLE, TENANT,
   GROUP}` — OC cannot express `CONTAINS`.
 - **Q6 The Hub↔cluster schema work implied by §4.3.** An authoritative cluster→engine mapping (Hub's
-  own Javadoc says absent); whether the Project-level `default*ClusterId` slots get lifted to
-  Workspace level and generalised beyond dev/test/stage/prod, or identity gets its own assignment
-  table; whether `organization_id` on `clusters` is actually needed or supplied by Console in SaaS.
-  Hub team owns — a consequence of §4, not a second discussion of it.
+  own Javadoc says absent); whether the stage environment becomes a first-class Hub entity that
+  groups clusters — replacing the per-project `default*ClusterId` slots and the stage derived from
+  the target cluster ID — or identity gets its own assignment table; and if it does become one, who
+  enforces the cardinality, since 1:n containment (each cluster in exactly one stage environment) is
+  the design intent while today's model is n:m *by design* (`runtime-connection-store.ts:25-27`)
+  with `deriveStage` silently resolving ties — so 1:n is a constraint someone has to add, not a
+  property that holds. Plus whether `organization_id` on `clusters` is needed at all, given SaaS
+  resolves org→clusters through Console (§4.3 point 3). Hub team owns — a consequence of §4, not a
+  second discussion of it.
 
 **Park:**
 
@@ -423,24 +490,28 @@ CSL's own reading of what those ask of this library.
    matches, targeted at the organization. #46's equivalent maps *"which IdP group maps to which Hub
    platform role, which Workspace role"*. Records: MappingRule, a role assignment in Hub whose
    assignment target is the organization, a `PolicyVersion` bump. Propagates: full
-   `POLICY_SNAPSHOT` to every OC in the organization. Note what this is *not*: an Organization-level
+   `POLICY_SNAPSHOT` out of the management plane to every OC in the organization (§1). Note what
+   this is *not*: an Organization-level
    assignment is one level's rule set, not a starting point that descends into workspaces (§4.2) —
    the snapshot distributes the authored facts, it does not widen them.
 
-2. **Grant a team runtime access to one cluster's logical tenant.** Walks Organization → Cluster →
-   Physical Tenant → Logical Tenant. Bites on the missing `organization_id` (§4.3 point 3) and the
+2. **Grant a team runtime access to one cluster's logical tenant.** Walks Organization → Stage
+   Environment → Cluster → Physical Tenant → Logical Tenant. Bites on the stage-environment level
+   not existing and on org→cluster living outside Hub's schema (§4.3 points 2 and 3), and on the
    missing cluster→engine mapping (§4.3 point 1, Q6). Records: an Authorization scoped to the
    logical tenant. Propagates: via `EngineCommandPort`, once the edges above are resolved.
 
-3. **Grant at Workspace level, reaching that workspace's environments (including engine rules).**
-   The user's question, directly. Unbuildable today — included anyway, because the clicks make §4.3
-   concrete. What this needs: a lift, not an invention. Hub resolves environments today from
+3. **Grant at Workspace level, reaching that workspace's stage environments (including engine
+   rules).** The user's question, directly. Unbuildable today — included anyway, because the clicks
+   make §4.3 concrete. What this needs: a lift, not an invention. Hub resolves a deployment's stage
+   today by reverse-looking-up its target cluster against
    `ProcessApplication.default{Dev,Test,Stage,Prod}ClusterId` — one level below the Workspace, fixed
-   to four stages, meant as deployment targets. This journey needs that resolution at Workspace
-   level, general in arity, and readable as a policy scope. It is now the test of §4.3's sharpened
+   to four stages, derived rather than authored, and meant as deployment targets. This journey needs
+   a named level instead: stage environments that group clusters, resolvable at Workspace level,
+   general in arity, and readable as a policy scope. It is now the test of §4.3's sharpened
    question: with nothing flowing down (§4.2), a Workspace-level assignment reaching that
-   workspace's environments has to be an authored reach, not an inherited one. #46 confirms the
-   requirement is real and product-owned — its two-layer role model gives a group a role *per
+   workspace's stage environments has to be an authored reach, not an inherited one. #46 confirms
+   the requirement is real and product-owned — its two-layer role model gives a group a role *per
    workspace*.
 
 4. **Grant a team Optimize access — blocked three times over.**
@@ -517,10 +588,16 @@ misread every one of these on sight.
   [ADR-0018](../adr/0018-optimize-reuses-stateful-oidc-webapp-chain.md). Hygiene note, not a
   question.
 
-- **"assignment target"** — in this note, the workspace or project that a single role assignment is
-  narrowed to (§4.2). The word *scope* is deliberately not used for it: `core` reserves *scope* for
-  the opaque host key that a host maps to its own concept. It is also not the "target cluster" /
+- **"assignment target"** — in this note, the workspace, project, or stage environment that a single
+  role assignment is narrowed to (§4.2). The word *scope* is deliberately not used for it: `core`
+  reserves *scope* for the opaque host key that a host maps to its own concept. It is also not the
+  "target cluster" /
   "deployment target" sense used elsewhere in this document — hence always the two-word form.
+- **"stage environment"** — in this note, the dev/test/staging/production level between Organization
+  and Clusters that Hub configures (§4). The shipped surfaces call the same idea a *deployment
+  stage*: Hub's `DeploymentStage` enum, four fixed constants bound per process application and
+  derived from the target cluster ID, not a level that groups anything. A bare *Environment* is
+  never used as a level name here.
 
 Agree on words before models: §4's diagram and §4.2's assignment examples already use "Workspace"
 and "Project" in the v2 API sense.
