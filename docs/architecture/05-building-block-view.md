@@ -135,110 +135,14 @@ For concrete diagrams:
 
 ### 5.2 Unified policy model
 
-The unified identity architecture is built around a single policy model that is shared between Hub Identity & Policy and OC Identity. Hub is the source of truth for this model per cluster; in shared-Hub deployments, Hub stores it per organization and cluster. Each OC hosts a cluster-local projection of the same concepts for enforcement.
-
-In CSL, a **Policy** means the effective access configuration for a scope, derived from roles, groups, mapping rules, principals, and authorizations.
-
-Iteration one models these building blocks directly (roles, groups, mapping rules, principals, and authorizations) and propagates them as versioned snapshots. We intentionally defer introducing a separate first-class `Policy` aggregate until there is a concrete need for additional abstraction.
-
-At a high level, the shared policy model consists of:
-
-- **Organization**
-  - Hub-side partitioning boundary for identity and policy data.
-  - In SaaS, one Hub instance serves multiple organizations, so all Hub policy tables and queries must be organization-aware.
-  - In early iterations, this separation is logical only: shared Hub infrastructure and databases remain in place, but all policy state is keyed and filtered by organization.
-  - Each Orchestration Cluster belongs to exactly one organization boundary for policy propagation at a given time.
-
-- **Tenant**
-  - Logical partition for data and access in a cluster (for example `default`, `retail`, `wholesale`, `customer-x`).
-  - Used to scope where a principal is allowed to read or write data.
-  - Tenant configuration (names, descriptions, flags) is authored in Hub and projected to each OC.
-
-- **Group / Role**
-  - **Group**
-    - Collection of principals (users, mapping rules, clients) that should share the same permissions.
-  - **Role**
-    - Reusable set of permissions that can be attached to groups, users, or clients.
-    - Roles are used both on the management plane (Hub apps) and execution plane (cluster APIs and UIs).
-
-- **MappingRule**
-  - Declarative rule that maps **IdP claims** to Camunda concepts:
-    - `claimName` (for example `groups`, `org`, `department`).
-    - `operator` (for example `EQUALS`, `CONTAINS`).
-    - `claimValue` (for example `camunda-platform-admin`, `Retail`).
-  - Targets one or more **roles**, **groups**, and **tenants**:
-    - When an incoming token’s claims match, the principal automatically receives those roles/groups/tenants.
-  - This is the main mechanism that turns IdP attributes into platform-level permissions.
-
-- **Principal**
-  - Represents an actor that can authenticate and be authorized:
-  - **User principal**
-    - Identified by an IdP user claim (for example `preferred_username`, `email`).
-    - May have direct role/group assignments in addition to mapping-rule derived ones.
-  - **Machine principal**
-    - Identified by client credentials (for example `client_id`).
-    - Used by workers, automation, and integrations (job workers, CI/CD, connectors, etc.).
-
-- **Authorization**
-  - Fine-grained permission record that ties **owners** to **resources** and **actions**:
-  - Conceptually:
-    - `(ownerType, ownerId, resourceType, resourceId, permissions[])`
-  - Examples:
-    - Owner: `GROUP:RetailDevelopers`
-      ResourceType: `PROCESS_DEFINITION`
-      ResourceId: `*`
-      Permissions: `[READ_PROCESS_DEFINITION, READ_PROCESS_INSTANCE, CREATE_PROCESS_INSTANCE]`
-    - Owner: `ROLE:ClusterAdmin`
-      ResourceType: `CLUSTER_API`
-      ResourceId: `*`
-      Permissions: `[MANAGE_CLUSTER_SETTINGS, MANAGE_USERS]`
-  - The same structure is used on:
-    - **OC side** for engine and cluster resources (definitions, instances, tasks, cluster APIs).
-    - **Hub side** for management resources (orgs, workspaces, projects, assets, clusters).
-
-#### 5.2.1 Hub vs. OC responsibilities
-
-Both Hub and OC use exactly the same policy model, but with different responsibilities.
-
-- **Hub Identity & Policy** (central policy authoring and propagation)
-  - Acts as **policy source of truth** for all clusters in full-mode deployments.
-  - Authoring location for tenants, roles, groups, mapping rules, and authorizations (all authorization levels: `ALL`, `TENANT`, `PHYSICAL_TENANT`).
-  - Stores organization-scoped `PolicyVersion` records per cluster and drives propagation via Outbox/`OutboxEvent`.
-  - Handles authentication for Hub applications (Console, Web Modeler, Admin UI) via the same Camunda Security Library instance.
-  - Does **not** enforce authorization for runtime execution APIs; that is strictly an OC responsibility.
-
-- **OC Identity** (cluster-local policy enforcement)
-  - Hosts a **cluster-local projection** of the same entities received from Hub (or locally authored in OC-only mode).
-  - Enforces authorizations for all incoming requests:
-    - The OC UI (Operate, Tasklist, Admin).
-    - Cluster runtime APIs (gRPC/REST) for workers and integrations.
-  - Validates IdP tokens for users and machines accessing the cluster.
-  - Derives tenant assignments and roles from token claims via mapping rules.
-  - Is designed to route identity-scoped policy updates to engines via `EngineCommandPort` — an outbound port not yet defined in `core/port/out/` (see §5.4).
-  - Does not invent new policy; it only applies and enforces what Hub (or, in standalone mode, local OC configuration) defines.
-
-This unified model allows:
-
-- The same concepts (tenants, roles, groups, mapping rules, authorizations, principals, scope metadata) to be used consistently on both **management** and **execution** planes.
-- Identity-as-code and migrations to operate on one canonical representation (`PolicyVersion`) per cluster, with clear ownership (Hub or OC-local) and enforcement (OC or engine-local).
-
-#### 5.2.2 Responsibility matrix (IdP and policy-related information)
-
-The following table summarizes which information must be known to which component:
-
-| Information type                             | Hub (full mode)                                                | OC (full mode)                                                      | OC-only mode (OC)                | Engine                                 |
-|---------------------------------------------|-----------------------------------------------------------------|---------------------------------------------------------------------|----------------------------------|----------------------------------------|
-| IdP client credentials (client IDs/secrets) | Yes (managed centrally or per logical Tenant)                  | Yes (cluster-local credentials / secrets per OC / logical Tenant / Physical Tenant) | Yes                              | No                                     |
-| IdP connections per logical Tenant (OIDC/SAML) | Yes (for Hub apps)                                          | Yes (for cluster-side authn)                                        | Yes                              | No (trusts OC)                         |
-| Organization / cluster ownership metadata   | Yes (organization boundary + OC enumeration via `ClusterRegistryPort`) | Yes (cluster-local identity context)                                | No                               | No                                     |
-| Logical Tenant                              | Yes (SoT)                                                      | Yes (projection per cluster)                                        | Yes                              | Indirectly via OC commands             |
-| Mapping rules (claims → roles/tenants)      | Yes (SoT)                                                      | Yes (projection per cluster)                                        | Yes                              | No                                     |
-| Roles and groups                            | Yes (SoT)                                                      | Yes (projection per cluster)                                        | Yes                              | No (only resulting permissions)        |
-| Authorizations (role/group → resource perms)| Yes (SoT)                                                      | Yes (projection per cluster; Physical-Tenant-scoped and logical-Tenant-scoped views) | Yes                              | Indirectly (via engine-local projections) |
-| Policy versions and propagation state       | Yes (`PolicyVersion`, `EntityRevision`, optional `PolicyVersionChange`, and per-target acknowledgement state), scoped by organization + cluster in shared Hub deployments | Yes (`last_applied_version` per cluster)                            | Yes (local policy versions only) | No explicit versioning; consumes cluster-level policy updates |
-| Session data                                | Yes (Hub sessions only)                                        | Yes (cluster sessions only)                                         | Yes                              | No                                     |
-
-Engines only need to know the effective permissions resulting from the policy model; they neither talk to IdPs nor store policy versions.
+**Not implemented end-to-end.** The building blocks ship in CSL today — `Authorization`,
+`AuthorizationResourceType`/`PermissionType`, `MappingRuleMatcher`, `AuthorizationCheckPort` — and
+OC's read/check path uses them. What does not exist is the unified Hub↔OC model itself, its
+projection, and its propagation; those are in planning/refinement, and the work there is to extend
+the shipped building blocks rather than to design a new model. The design discussion — grant shapes across Hub, OC, Management Identity, and
+Optimize, and the open question of where a policy attaches in the org/workspace/cluster hierarchy —
+lives in [`docs/vision/unified-policy-model.md`](../vision/unified-policy-model.md). This section
+will be rewritten once the model is decided.
 
 ### 5.3 Policy propagation boundary and semantic versioning (Hub → OC / Optimize)
 
