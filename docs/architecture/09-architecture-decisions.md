@@ -35,6 +35,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0020: Configurable session idle timeout driven by client activity, not request traffic](../adr/0020-configurable-activity-driven-session-idle-timeout.md)
 - [ADR-0021: Hand-author spring-configuration-metadata.json for camunda.security.* properties](../adr/0021-hand-authored-spring-configuration-metadata.md)
 - [ADR-0022: Camunda-branded multi-IdP login picker, shown only when there is a real choice](../adr/0022-camunda-branded-multi-idp-login-picker.md)
+- [ADR-0023: Degrade a scope whose identity provider is unreachable, instead of failing startup](../adr/0023-degrade-a-scope-whose-idp-is-unreachable.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 
