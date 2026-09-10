@@ -11,9 +11,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcProvidersConfiguration;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
@@ -123,6 +128,77 @@ class CamundaSecurityLibraryPropertiesTest {
               final var properties = context.getBean(CamundaSecurityLibraryProperties.class);
               assertThat(properties.getSession().getHeartbeat().isEnabled()).isTrue();
             });
+  }
+
+  @Test
+  void shouldWarnWhenHeartbeatEnabledWithTooShortMaxInactiveInterval() {
+    final var appender = attachAppender();
+    try {
+      runner
+          .withPropertyValues(
+              "camunda.security.session.heartbeat.enabled=true",
+              "camunda.security.session.max-inactive-interval=60s")
+          .run(context -> assertThat(context).hasNotFailed());
+    } finally {
+      detachAppender(appender);
+    }
+
+    assertThat(appender.list)
+        .anySatisfy(
+            event -> {
+              assertThat(event.getLevel()).isEqualTo(Level.WARN);
+              assertThat(event.getFormattedMessage())
+                  .contains("max-inactive-interval is set to")
+                  .contains("heartbeat.enabled=true");
+            });
+  }
+
+  @Test
+  void shouldNotWarnWhenHeartbeatEnabledWithLongEnoughMaxInactiveInterval() {
+    final var appender = attachAppender();
+    try {
+      runner
+          .withPropertyValues(
+              "camunda.security.session.heartbeat.enabled=true",
+              "camunda.security.session.max-inactive-interval=10m")
+          .run(context -> assertThat(context).hasNotFailed());
+    } finally {
+      detachAppender(appender);
+    }
+
+    assertThat(appender.list)
+        .noneSatisfy(
+            event -> assertThat(event.getFormattedMessage()).contains("max-inactive-interval"));
+  }
+
+  @Test
+  void shouldNotWarnWhenHeartbeatDisabledEvenWithShortMaxInactiveInterval() {
+    final var appender = attachAppender();
+    try {
+      runner
+          .withPropertyValues("camunda.security.session.max-inactive-interval=60s")
+          .run(context -> assertThat(context).hasNotFailed());
+    } finally {
+      detachAppender(appender);
+    }
+
+    assertThat(appender.list)
+        .noneSatisfy(
+            event -> assertThat(event.getFormattedMessage()).contains("max-inactive-interval"));
+  }
+
+  private static ListAppender<ILoggingEvent> attachAppender() {
+    final Logger logger = (Logger) LoggerFactory.getLogger(CamundaSecurityLibraryProperties.class);
+    final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    appender.start();
+    logger.addAppender(appender);
+    return appender;
+  }
+
+  private static void detachAppender(final ListAppender<ILoggingEvent> appender) {
+    final Logger logger = (Logger) LoggerFactory.getLogger(CamundaSecurityLibraryProperties.class);
+    logger.detachAppender(appender);
+    appender.stop();
   }
 
   @Test

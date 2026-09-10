@@ -115,4 +115,122 @@ class JwtGrantedAuthoritiesAuthenticationConverterTest {
             ex ->
                 assertThat(ex.getError().getErrorCode()).isEqualTo(OAuth2ErrorCodes.INVALID_TOKEN));
   }
+
+  @Test
+  void noArgConstructorStillDefaultsToSubjectClaim() {
+    final var defaultConverter = new JwtGrantedAuthoritiesAuthenticationConverter();
+    final var jwt =
+        Jwt.withTokenValue("token").header("alg", "RS256").claim("sub", "alice").build();
+    final var authentication = new JwtAuthenticationToken(jwt, List.of());
+
+    final var result = defaultConverter.convert(authentication);
+
+    assertThat(result.authenticatedUsername()).isEqualTo("alice");
+  }
+
+  @Test
+  void usesConfiguredUsernameClaimWhenPresent() {
+    final var customClaimConverter =
+        new JwtGrantedAuthoritiesAuthenticationConverter("employee_id");
+    final var jwt =
+        Jwt.withTokenValue("token")
+            .header("alg", "RS256")
+            .claim("sub", "0607abf4-e5c6-430d-8624-32b205dad6c1")
+            .claim("employee_id", "alice")
+            .build();
+    final var authentication = new JwtAuthenticationToken(jwt, List.of());
+
+    final var result = customClaimConverter.convert(authentication);
+
+    assertThat(result.authenticatedUsername()).isEqualTo("alice");
+  }
+
+  @Test
+  void resolvesUsernameFromNestedJsonPathClaim() {
+    final var jsonPathConverter =
+        new JwtGrantedAuthoritiesAuthenticationConverter("$.realm_access.user");
+    final var jwt =
+        Jwt.withTokenValue("token")
+            .header("alg", "RS256")
+            .claim("realm_access", Map.of("user", "bob"))
+            .build();
+    final var authentication = new JwtAuthenticationToken(jwt, List.of());
+
+    final var result = jsonPathConverter.convert(authentication);
+
+    assertThat(result.authenticatedUsername()).isEqualTo("bob");
+  }
+
+  @Test
+  void throwsOAuth2AuthenticationExceptionWhenConfiguredClaimValueIsNotAString() {
+    final var customClaimConverter =
+        new JwtGrantedAuthoritiesAuthenticationConverter("employee_id");
+    final var jwt =
+        Jwt.withTokenValue("token")
+            .header("alg", "RS256")
+            .claim("sub", "alice")
+            .claim("employee_id", List.of("alice"))
+            .build();
+    final var authentication = new JwtAuthenticationToken(jwt, List.of());
+
+    assertThatThrownBy(() -> customClaimConverter.convert(authentication))
+        .isInstanceOfSatisfying(
+            OAuth2AuthenticationException.class,
+            ex ->
+                assertThat(ex.getError().getErrorCode()).isEqualTo(OAuth2ErrorCodes.INVALID_TOKEN));
+  }
+
+  @Test
+  void throwsOAuth2AuthenticationExceptionWhenConfiguredClaimIsMissingFromToken() {
+    final var customClaimConverter =
+        new JwtGrantedAuthoritiesAuthenticationConverter("employee_id");
+    final var jwt =
+        Jwt.withTokenValue("token")
+            .header("alg", "RS256")
+            .claim("sub", "0607abf4-e5c6-430d-8624-32b205dad6c1")
+            .build();
+    final var authentication = new JwtAuthenticationToken(jwt, List.of());
+
+    assertThatThrownBy(() -> customClaimConverter.convert(authentication))
+        .isInstanceOfSatisfying(
+            OAuth2AuthenticationException.class,
+            ex ->
+                assertThat(ex.getError().getErrorCode()).isEqualTo(OAuth2ErrorCodes.INVALID_TOKEN));
+  }
+
+  @Test
+  void throwsOAuth2AuthenticationExceptionWhenConfiguredClaimIsBlank() {
+    final var customClaimConverter =
+        new JwtGrantedAuthoritiesAuthenticationConverter("employee_id");
+    final var jwt =
+        Jwt.withTokenValue("token")
+            .header("alg", "RS256")
+            .claim("sub", "0607abf4-e5c6-430d-8624-32b205dad6c1")
+            .claim("employee_id", "  ")
+            .build();
+    final var authentication = new JwtAuthenticationToken(jwt, List.of());
+
+    assertThatThrownBy(() -> customClaimConverter.convert(authentication))
+        .isInstanceOfSatisfying(
+            OAuth2AuthenticationException.class,
+            ex ->
+                assertThat(ex.getError().getErrorCode()).isEqualTo(OAuth2ErrorCodes.INVALID_TOKEN));
+  }
+
+  @Test
+  void errorMessageNamesTheConfiguredClaimNotSub() {
+    final var customClaimConverter =
+        new JwtGrantedAuthoritiesAuthenticationConverter("employee_id");
+    final var jwt =
+        Jwt.withTokenValue("token")
+            .header("alg", "RS256")
+            .claim("iss", "https://issuer.example")
+            .build();
+    final var authentication = new JwtAuthenticationToken(jwt, List.of());
+
+    assertThatThrownBy(() -> customClaimConverter.convert(authentication))
+        .isInstanceOfSatisfying(
+            OAuth2AuthenticationException.class,
+            ex -> assertThat(ex.getError().getDescription()).contains("employee_id"));
+  }
 }

@@ -22,7 +22,7 @@ import java.util.Map;
  * <p>Exposing this as an {@code api} port lets non-Spring consumers (for example the Zeebe engine)
  * depend only on the public surface for claims-to-authentication conversion — used both for
  * authorization checks and for tenant resolution — instead of the concrete {@code core}
- * implementation. See ADR-0028.
+ * implementation. See ADR-0014.
  */
 public interface TokenClaimsAuthenticationResolver {
 

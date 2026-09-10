@@ -41,11 +41,11 @@ Before opening the editor, identify:
 
 ### 2. Pick the next number
 
-Check `docs/adr/` for the highest existing number and add one. ADRs are numbered sequentially and never renumbered. If two PRs both add ADR-NNNN, the second to merge bumps to NNNN+1 in a follow-up commit.
+Check `docs/adr/` for the highest existing number and add one. ADRs are numbered sequentially. If two PRs both add ADR-NNNN, the second to merge bumps to NNNN+1 in a follow-up commit.
 
 ### 3. Draft the ADR file
 
-Create `docs/adr/NNNN-kebab-case-title.md`. Look at [`0009-web-app-authorization-spis.md`](../adr/0009-web-app-authorization-spis.md) and [`0010-admin-user-setup-spis.md`](../adr/0010-admin-user-setup-spis.md) as recent reference shapes.
+Create `docs/adr/NNNN-kebab-case-title.md`. Look at [`0004-admin-user-setup-spis.md`](../adr/0004-admin-user-setup-spis.md) as a reference shape.
 
 Use the structure below. Match it exactly — readers and tooling rely on the shape.
 
@@ -98,7 +98,7 @@ Accepted
 
 - **Status** — appears in both the frontmatter (`status: Accepted`) and the body's `## Status` section. Both should match. Default is `Accepted` for live decisions. Use `Proposed` only when the decision isn't final yet (rare; prefer not to open a PR until it is). Change to `Superseded by ADR-XXXX` once a later ADR replaces this one.
 - **Title** — phrase as the decision, not the topic ("Lift webapp authorization filter into CSL", not "Webapp authorization filter").
-- **`Deciders`** — comma-separated names. Required for new ADRs from this workflow onward. Existing ADRs (0001–0010) predate this requirement and are not retroactively updated. For solo work, list just the author; for cross-team agreement, list everyone whose buy-in the decision relies on.
+- **`Deciders`** — comma-separated names. Required for new ADRs from this workflow onward. Existing ADRs (0001–0002) predate this requirement and are not retroactively updated. For solo work, list just the author; for cross-team agreement, list everyone whose buy-in the decision relies on.
 - **Context** — problem + question. End with one sentence that names the question this ADR answers, e.g. *"What SPI shape lets hosts plug in the web-app-id derivation without duplicating the filter?"*. Don't narrate process.
 - **Decision** — concrete artefacts: type names, package locations, integration points. The reader should be able to map the ADR onto the code.
 - **Consequences** — at least one accepted trade-off. If you can't think of one, the decision probably isn't substantive enough to warrant an ADR.
@@ -127,9 +127,11 @@ Before committing, verify:
 - [ ] Context ends with the question this ADR answers.
 - [ ] At least one alternative is documented and rejected.
 - [ ] Consequences include at least one accepted trade-off.
-- [ ] Cross-references to related ADRs use clickable relative links (e.g. `[ADR-0009](0009-web-app-authorization-spis.md)`).
+- [ ] Cross-references to related ADRs use clickable relative links (e.g. `[ADR-0014](0014-unified-authz-framework-in-core.md)`).
 - [ ] No edits to existing decided ADRs except status changes and editorial fixes that preserve meaning.
 
 ## ADRs are immutable
 
 Decided ADRs are historical records — do not substantively modify them. If a decision needs revisiting, write a new ADR that supersedes the old one and update the old one's `Status` to `Superseded by ADR-NNNN`. Editorial fixes (typos, link repair, terminology normalization) are permitted as long as they preserve the original decision and rationale exactly.
+
+ADR numbers can still change as an exception to this rule: a periodic **consolidation** pass may merge superseded/amended ADRs into a single current-truth record and renumber the survivors to close the resulting gaps (see [#622](https://github.com/camunda/camunda-security-library/pull/622), which first did this). A consolidation is expected to be rare — most repos should go a long time between them — and must explicitly suspend and then restore this immutability rule for its own duration, as #622 did. Renumbering outside of a declared consolidation is not permitted.

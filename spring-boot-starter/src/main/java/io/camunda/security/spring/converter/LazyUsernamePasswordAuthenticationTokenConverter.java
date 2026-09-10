@@ -8,12 +8,16 @@
 package io.camunda.security.spring.converter;
 
 import io.camunda.security.api.context.CamundaAuthenticationConverter;
+import io.camunda.security.api.context.MembershipResolutionContextPropagator;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.core.port.out.MembershipPort.PrincipalType;
 import io.camunda.security.core.port.out.MembershipQuery;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Supplier;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 
@@ -21,9 +25,17 @@ public final class LazyUsernamePasswordAuthenticationTokenConverter
     implements CamundaAuthenticationConverter<Authentication> {
 
   private final MembershipPort membershipPort;
+  private final MembershipResolutionContextPropagator contextPropagator;
 
   public LazyUsernamePasswordAuthenticationTokenConverter(final MembershipPort membershipPort) {
-    this.membershipPort = membershipPort;
+    this(membershipPort, MembershipResolutionContextPropagator.identity());
+  }
+
+  public LazyUsernamePasswordAuthenticationTokenConverter(
+      final MembershipPort membershipPort,
+      final MembershipResolutionContextPropagator contextPropagator) {
+    this.membershipPort = Objects.requireNonNull(membershipPort, "membershipPort");
+    this.contextPropagator = Objects.requireNonNull(contextPropagator, "contextPropagator");
   }
 
   @Override
@@ -40,12 +52,11 @@ public final class LazyUsernamePasswordAuthenticationTokenConverter
     // mappingRuleIds() would return an empty list (no rules can match), so mappingRulesSupplier
     // is deliberately not wired — authenticatedMappingRuleIds() returns the record default.
     final var base = new MembershipQuery(Map.of(), username, PrincipalType.USER);
-    final var lazyGroupIds = CamundaAuthentication.lazyList(() -> membershipPort.groupIds(base));
+    final var lazyGroupIds = decoratedLazyList(() -> membershipPort.groupIds(base));
     final var lazyRoleIds =
-        CamundaAuthentication.lazyList(
-            () -> membershipPort.roleIds(base.withGroupIds(lazyGroupIds)));
+        decoratedLazyList(() -> membershipPort.roleIds(base.withGroupIds(lazyGroupIds)));
     final var lazyTenantIds =
-        CamundaAuthentication.lazyList(
+        decoratedLazyList(
             () ->
                 membershipPort.tenantIds(base.withGroupIds(lazyGroupIds).withRoleIds(lazyRoleIds)));
 
@@ -55,5 +66,9 @@ public final class LazyUsernamePasswordAuthenticationTokenConverter
                 .groupIdsSupplier(() -> lazyGroupIds)
                 .roleIdsSupplier(() -> lazyRoleIds)
                 .tenantsSupplier(() -> lazyTenantIds));
+  }
+
+  private List<String> decoratedLazyList(final Supplier<List<String>> supplier) {
+    return CamundaAuthentication.lazyList(contextPropagator.decorate(supplier));
   }
 }

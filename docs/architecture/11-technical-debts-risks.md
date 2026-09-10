@@ -4,7 +4,7 @@
 
 These are unresolved design questions that require a dedicated ADR before implementation can proceed:
 
-- **SPI boundaries for OC/engine command creation** (`EngineCommandPort`): still open. Webapp, session, user, and scope provider SPI boundaries have been defined (ADRs 0009, 0010, 0017, 0021, 0025, 0027); the engine-command interface is the remaining open design question.
+- **SPI boundaries for OC/engine command creation** (`EngineCommandPort`): still open. Webapp, session, user, and scope provider SPI boundaries have been defined (ADRs 0004, 0009, 0010, 0013, 0014); the engine-command interface is the remaining open design question.
 - **Migration path** from current Auth0-based SaaS setup to "Enterprise IdP as SoT" while keeping Auth0 as a private implementation detail — not yet addressed in an ADR.
 - **Policy endpoint ownership:** If the endpoints to apply policy changes are public, Hub will not be aware of what a customer applies to OC and will run out of sync. The right ownership boundary is unresolved.
 - **Snapshot idempotency:** How can we apply a snapshot multiple times? How could we reset the projections in primary and secondary storage?
@@ -21,7 +21,6 @@ These are unresolved design questions that require a dedicated ADR before implem
 
 - `EngineCommandPort` SPI boundary for OC → engine policy propagation is still undefined (see Open design questions above).
 - The deployment strategy property values currently use an `oc-` prefix (`oc-standalone`, `oc-managed`); a rename to `standalone` / `managed` is planned (docs already use the shorter names).
-- ADR numbering has duplicate entries for 0011, 0020, and 0023; a file rename to resolve the ambiguity is deferred. A CI lint step that fails when two files in `docs/adr/` share the same four-digit numeric prefix is planned to prevent recurrence.
 
 ---
 

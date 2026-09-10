@@ -381,7 +381,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
   /**
    * Regression test for a multi-provider scope: one provider disables {@code
    * post-logout-redirect-enabled} while the other leaves it at its default. The flag is per scope,
-   * not per registration (ADR-0043), so a single strict IdP among several must suppress the
+   * not per registration (ADR-0023), so a single strict IdP among several must suppress the
    * redirect for the whole chain rather than being silently outvoted by the other provider's
    * default.
    */
@@ -579,6 +579,29 @@ class ScopedWebappSecurityChainBuilderScopedTest {
                   .contains(BASE_PATH + "/oauth2/authorization/oidc")
                   .contains(BASE_PATH + "/oauth2/authorization/oidc-secondary");
             });
+  }
+
+  @Test
+  void scopedLoginRedirectsStraightToSoleProviderInsteadOfRenderingPicker() throws Exception {
+    // Mirrors the primary-chain assertion in
+    // OidcWebappLoginPickerTest#anonymousLoginRedirectsStraightToSoleProviderInsteadOfRenderingPicker
+    // for the per-scope chain: with only one provider configured for the scope there is nothing to
+    // pick between, so a direct GET to the scoped login URL redirects on to that provider's
+    // (prefixed) authorization endpoint instead of rendering a picker (ADR-0022).
+    runner.run(
+        ctx -> {
+          final var chain = ctx.getBean("scopedOidcTestChain", SecurityFilterChain.class);
+          final var proxy = new FilterChainProxy(List.of(chain));
+          final var request = new MockHttpServletRequest("GET", BASE_PATH + "/login");
+          final var response = new MockHttpServletResponse();
+
+          proxy.doFilter(request, response, new MockFilterChain());
+
+          assertThat(response.getStatus()).isEqualTo(302);
+          assertThat(response.getRedirectedUrl())
+              .as("must redirect straight to the sole scoped registration, not render a picker")
+              .isEqualTo(BASE_PATH + "/oauth2/authorization/oidc");
+        });
   }
 
   @Test

@@ -69,11 +69,10 @@ class LoginLinksBuilderPrefixTest {
   }
 
   @Test
-  void defaultOauth2LoginPickerFilterWithBaseUriUsesPrefix() {
+  void camundaLoginPickerFilterWithBaseUriUsesPrefix() {
     final var repo = new InMemoryClientRegistrationRepository(registration("oidc"));
     final var filter =
-        LoginLinksBuilder.defaultOauth2LoginPickerFilter(
-            repo, "/physical-tenants/t1/login", "/physical-tenants/t1");
+        new CamundaLoginPickerFilter(repo, "/physical-tenants/t1/login", "/physical-tenants/t1");
     assertThat(filter.getLoginPageUrl()).isEqualTo("/physical-tenants/t1/login");
   }
 

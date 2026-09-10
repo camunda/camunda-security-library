@@ -34,6 +34,7 @@ import java.security.spec.ECGenParameterSpec;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Reusable test-support fixture: an ephemeral JDK {@link HttpServer} on a loopback port serving
@@ -49,26 +50,50 @@ import java.util.List;
  *       /.well-known/openid-configuration}
  *   <li>{@link #startDiscovery(String)} — discovery document only, no key material; the {@code %s}
  *       placeholder in the template is replaced with the actual issuer URI
+ *   <li>{@link #startRfc8414Discovery(String, String)} — discovery document served only under the
+ *       RFC 8414 path {@code /.well-known/openid-configuration<issuerPath>}, so Spring's OIDC probe
+ *       404s and it falls back
  * </ul>
  *
  * <p>Implements {@link AutoCloseable} for try-with-resources or {@code @AfterEach} use.
  */
 public final class OidcTestServer implements AutoCloseable {
 
+  private static final String OIDC_METADATA_PATH = "/.well-known/openid-configuration";
+
   private final HttpServer server;
   private final String kid;
   private final JWSAlgorithm algorithm;
   private final JWSSigner signer;
 
+  // Created before the discovery context is registered, because the handler closes over them — the
+  // instance does not exist yet at registration time.
+  private final AtomicInteger discoveryRequests;
+  private final AtomicInteger discoveryFailuresRemaining;
+
   private OidcTestServer(
       final HttpServer server,
       final String kid,
       final JWSAlgorithm algorithm,
-      final JWSSigner signer) {
+      final JWSSigner signer,
+      final AtomicInteger discoveryRequests,
+      final AtomicInteger discoveryFailuresRemaining) {
     this.server = server;
     this.kid = kid;
     this.algorithm = algorithm;
     this.signer = signer;
+    this.discoveryRequests = discoveryRequests;
+    this.discoveryFailuresRemaining = discoveryFailuresRemaining;
+  }
+
+  /** Number of requests served on the discovery endpoint since this server started. */
+  public int discoveryRequestCount() {
+    return discoveryRequests.get();
+  }
+
+  /** Makes the next {@code count} discovery requests answer 500, then resume serving normally. */
+  public void failNextDiscoveryRequests(final int count) {
+    discoveryFailuresRemaining.set(count);
   }
 
   /**
@@ -89,11 +114,18 @@ public final class OidcTestServer implements AutoCloseable {
     final var jwkJson = new JWKSet(jwk).toPublicJWKSet().toString();
     final var httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     final var base = "http://127.0.0.1:" + httpServer.getAddress().getPort();
+    final var requests = new AtomicInteger();
+    final var failures = new AtomicInteger();
     registerJsonContext(httpServer, "/jwks", jwkJson);
-    registerJsonContext(
-        httpServer, "/.well-known/openid-configuration", buildDiscovery(base, JWSAlgorithm.RS256));
+    registerDiscoveryContext(
+        httpServer,
+        OIDC_METADATA_PATH,
+        buildDiscovery(base, JWSAlgorithm.RS256),
+        requests,
+        failures);
     httpServer.start();
-    return new OidcTestServer(httpServer, kid, JWSAlgorithm.RS256, new RSASSASigner(jwk));
+    return new OidcTestServer(
+        httpServer, kid, JWSAlgorithm.RS256, new RSASSASigner(jwk), requests, failures);
   }
 
   /**
@@ -113,12 +145,23 @@ public final class OidcTestServer implements AutoCloseable {
     final var jwkJson = new JWKSet(jwk).toPublicJWKSet().toString();
     final var httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     final var base = "http://127.0.0.1:" + httpServer.getAddress().getPort();
+    final var requests = new AtomicInteger();
+    final var failures = new AtomicInteger();
     registerJsonContext(httpServer, "/jwks", jwkJson);
-    registerJsonContext(
-        httpServer, "/.well-known/openid-configuration", buildDiscovery(base, JWSAlgorithm.ES256));
+    registerDiscoveryContext(
+        httpServer,
+        OIDC_METADATA_PATH,
+        buildDiscovery(base, JWSAlgorithm.ES256),
+        requests,
+        failures);
     httpServer.start();
     return new OidcTestServer(
-        httpServer, kid, JWSAlgorithm.ES256, new ECDSASigner((ECPrivateKey) pair.getPrivate()));
+        httpServer,
+        kid,
+        JWSAlgorithm.ES256,
+        new ECDSASigner((ECPrivateKey) pair.getPrivate()),
+        requests,
+        failures);
   }
 
   /**
@@ -129,10 +172,36 @@ public final class OidcTestServer implements AutoCloseable {
   public static OidcTestServer startDiscovery(final String responseTemplate) throws IOException {
     final var httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     final var issuer = "http://127.0.0.1:" + httpServer.getAddress().getPort();
-    registerJsonContext(
-        httpServer, "/.well-known/openid-configuration", responseTemplate.formatted(issuer));
+    final var requests = new AtomicInteger();
+    final var failures = new AtomicInteger();
+    registerDiscoveryContext(
+        httpServer, OIDC_METADATA_PATH, responseTemplate.formatted(issuer), requests, failures);
     httpServer.start();
-    return new OidcTestServer(httpServer, null, null, null);
+    return new OidcTestServer(httpServer, null, null, null, requests, failures);
+  }
+
+  /**
+   * Starts a server that serves the discovery document at the RFC 8414 address only: {@code
+   * /.well-known/openid-configuration<issuerPath>}. The address Spring tries first, {@code
+   * <issuerPath>/.well-known/openid-configuration}, is left unregistered and answers 404, so Spring
+   * moves on to this one — the only route that accepts a document with no {@code jwks_uri}. The
+   * document's issuer is {@code <base><issuerPath>}, which is what a provider must set as its
+   * {@code issuer-uri}.
+   */
+  public static OidcTestServer startRfc8414Discovery(
+      final String issuerPath, final String responseTemplate) throws IOException {
+    final var httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    final var issuer = "http://127.0.0.1:" + httpServer.getAddress().getPort() + issuerPath;
+    final var requests = new AtomicInteger();
+    final var failures = new AtomicInteger();
+    registerDiscoveryContext(
+        httpServer,
+        OIDC_METADATA_PATH + issuerPath,
+        responseTemplate.formatted(issuer),
+        requests,
+        failures);
+    httpServer.start();
+    return new OidcTestServer(httpServer, null, null, null, requests, failures);
   }
 
   /** Returns the key ID ({@code kid}) used in JWT headers. */
@@ -278,6 +347,36 @@ public final class OidcTestServer implements AutoCloseable {
         }
         """
         .formatted(base, base, base, base, algorithm.getName());
+  }
+
+  /**
+   * Serves the discovery document, counting every request so tests can assert how many times an
+   * issuer was fetched. Separate from {@link #registerJsonContext} so {@code /jwks} stays
+   * uncounted.
+   */
+  private static void registerDiscoveryContext(
+      final HttpServer httpServer,
+      final String path,
+      final String responseJson,
+      final AtomicInteger requests,
+      final AtomicInteger failuresRemaining) {
+    httpServer.createContext(
+        path,
+        exchange -> {
+          try (exchange) {
+            requests.incrementAndGet();
+            if (failuresRemaining.getAndUpdate(remaining -> Math.max(0, remaining - 1)) > 0) {
+              exchange.sendResponseHeaders(500, -1);
+              return;
+            }
+            final byte[] bytes = responseJson.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+          } catch (final IOException ex) {
+            throw new IllegalStateException("Failed to serve the discovery document", ex);
+          }
+        });
   }
 
   private static void registerJsonContext(

@@ -105,7 +105,7 @@ Significant design choices are documented as ADRs in `docs/adr/`. When in doubt,
 
 ## Releases
 
-Releases are created by the [`release` workflow](.github/workflows/release.yml), dispatched manually from the GitHub Actions tab. The workflow runs `maven-release-plugin`, **publishes to Camunda's internal Maven repository** (visible to internal consumers immediately), **stages a deployment on Sonatype Central** (an operator publishes it manually for external consumers — see below), creates a GitHub Release, and (in canary mode) opens a mergeback PR. Concurrent dispatches are serialized — never cancelled — so an accidental second dispatch queues behind the in-flight one.
+Releases are created by the [`release` workflow](.github/workflows/release.yml), dispatched manually from the GitHub Actions tab. The workflow runs `maven-release-plugin`, **publishes to Camunda's internal Maven repository** (visible to internal consumers immediately), **publishes to Sonatype Central automatically** (`autoPublish=true`, `waitUntil=published` — external consumers see it as soon as Central Portal validation passes, no manual click required), creates a GitHub Release, and (in canary mode) opens a mergeback PR. Concurrent dispatches are serialized — never cancelled — so an accidental second dispatch queues behind the in-flight one.
 
 ### Dispatching a release
 
@@ -128,10 +128,9 @@ Go to **Actions → release → Run workflow** and fill in:
 
 ### After a successful release
 
-1. The tag and GitHub Release are published. The artifact is **published to Camunda's internal Maven repository** (immediately visible to internal consumers) and **staged on Sonatype Central** (not yet visible to external consumers).
-2. **Publish the staged release on Sonatype Central.** Log in to <https://central.sonatype.com/publishing> with the Camunda credentials from Keeper, find the staged deployment for `io.camunda:camunda-security-library:<version>`, verify the contents look right, and click **Publish**. Once published, the artifact is final and cannot be unpublished.
-3. In canary mode, a mergeback PR is opened from `release/<version>` into the base branch. Review and merge it to bring the version-bump commits back to the base.
-4. **CI on the mergeback PR:** GitHub does not run workflows on PRs opened via `GITHUB_TOKEN`. To trigger CI on the mergeback PR, push an empty commit (`git commit --allow-empty -m "ci: trigger"`) or close-and-reopen the PR.
+1. The tag and GitHub Release are published. The artifact is **published to Camunda's internal Maven repository** (immediately visible to internal consumers) and **published to Sonatype Central automatically** — `release:perform` waits (`waitUntil=published`) until Central Portal validation passes and the deployment publishes, so the workflow doesn't complete until the artifact is live for external consumers. Once published, the artifact is final and cannot be unpublished.
+2. In canary mode, a mergeback PR is opened from `release/<version>` into the base branch. Review and merge it to bring the version-bump commits back to the base.
+3. **CI on the mergeback PR:** GitHub does not run workflows on PRs opened via `GITHUB_TOKEN`. To trigger CI on the mergeback PR, push an empty commit (`git commit --allow-empty -m "ci: trigger"`) or close-and-reopen the PR.
 
 ### Recovery from a failed release (canary mode)
 
@@ -145,9 +144,8 @@ The canary branch is intentionally left on origin when a run fails — it carrie
    |---|---|---|
    | `release:prepare` | Version commits on canary; **the tag may also be on origin** if prepare failed during/after the push step | Check with `git ls-remote origin refs/tags/<version>`; if present, delete: `git push origin :refs/tags/<version>` |
    | `release:perform` (before staging upload) | Above + tag definitely pushed to origin | Delete the tag: `git push origin :refs/tags/<version>` |
-   | `release:perform` (after staging upload) | Above + staged deployment on Sonatype Central | Above + **Drop** the staged deployment at <https://central.sonatype.com/publishing> (Camunda creds in Keeper) |
-   | `Create GitHub Release` or later | Above + GitHub Release exists | Above + delete the GitHub Release: `gh release delete <version>` |
-   | After you clicked **Publish** on Sonatype Central | Artifact is final on Maven Central | **Stop.** Sonatype Central does not allow unpublishing — pick a new version, or finish the remaining workflow steps manually. |
+   | `release:perform` (after staging upload, before Central publishes) | Above + a deployment on Sonatype Central pending or failing validation | Above + check <https://central.sonatype.com/publishing> (Camunda creds in Keeper); if a deployment is still sitting there unpublished, **Drop** it |
+   | `release:perform` published the deployment, or any later step | Artifact is final on Maven Central; a `Create GitHub Release` step later in the run may also have completed | **Stop** on the Maven Central side — Sonatype Central does not allow unpublishing; pick a new version, or finish the remaining workflow steps manually. If a GitHub Release was also created, delete it: `gh release delete <version>` |
 
    The staged-deployment **Drop** is the critical step — without it, a same-version retry will fail when `release:perform` tries to upload to Central again.
 

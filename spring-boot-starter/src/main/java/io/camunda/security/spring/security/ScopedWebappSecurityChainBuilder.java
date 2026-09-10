@@ -33,7 +33,6 @@ import io.camunda.security.spring.scope.BasePaths;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import io.camunda.security.spring.spi.OidcAuthenticationEntryPoint;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -64,12 +63,11 @@ import org.springframework.security.web.authentication.logout.CookieClearingLogo
 import org.springframework.security.web.authentication.logout.LogoutHandler;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
-import org.springframework.security.web.authentication.ui.DefaultLoginPageGeneratingFilter;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.util.matcher.RequestHeaderRequestMatcher;
-import org.springframework.security.web.util.matcher.RequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcherEntry;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 import org.springframework.web.cors.CorsConfigurationSource;
 
@@ -96,7 +94,7 @@ public final class ScopedWebappSecurityChainBuilder {
   private final ObjectProvider<OAuth2AuthorizationRequestResolver>
       authorizationRequestResolverProvider;
   private final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider;
-  private final ObjectProvider<DefaultLoginPageGeneratingFilter> oidcLoginPickerProvider;
+  private final ObjectProvider<CamundaLoginPickerFilter> oidcLoginPickerProvider;
   private final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider;
   private final OAuth2AuthorizedClientManagerFactory authorizedClientManagerFactory;
   private final ScopedClientRegistrationFactory scopedClientRegistrationFactory;
@@ -113,7 +111,7 @@ public final class ScopedWebappSecurityChainBuilder {
       final ObjectProvider<OidcUserService> oidcUserServiceProvider,
       final ObjectProvider<OAuth2AuthorizationRequestResolver> authorizationRequestResolverProvider,
       final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
-      final ObjectProvider<DefaultLoginPageGeneratingFilter> oidcLoginPickerProvider,
+      final ObjectProvider<CamundaLoginPickerFilter> oidcLoginPickerProvider,
       final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider,
       final OAuth2AuthorizedClientManagerFactory authorizedClientManagerFactory,
       final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
@@ -145,7 +143,7 @@ public final class ScopedWebappSecurityChainBuilder {
    * constants.
    *
    * <p>The supplied {@code sessionRepositoryFilter} is installed before {@link
-   * SecurityContextHolderFilter} (see ADR-0031).
+   * SecurityContextHolderFilter} (see ADR-0009).
    */
   public SecurityFilterChain buildOidcWebappChain(
       final HttpSecurity http,
@@ -162,7 +160,7 @@ public final class ScopedWebappSecurityChainBuilder {
     final var logoutUrl = LOGOUT_URL;
     // The OAuth2 redirection-endpoint path (where Spring listens for the authorization-code
     // callback) is derived from the configured client redirect-uri, so a host can align it with the
-    // callback its IdP client already has registered (ADR-0038). Defaults to REDIRECT_URI
+    // callback its IdP client already has registered (ADR-0018). Defaults to REDIRECT_URI
     // (/sso-callback) when redirect-uri is unset, preserving existing behaviour. The servlet
     // context-path is stripped so the path stays context-relative: Spring's redirection-endpoint
     // matcher matches the context-path-relative request path, so a redirect-uri that embeds the
@@ -201,7 +199,7 @@ public final class ScopedWebappSecurityChainBuilder {
             .anonymous(AbstractHttpConfigurer::disable)
             // No oauth2ResourceServer on the webapp chain: it authenticates users interactively via
             // oauth2Login and serves them from the session. Bearer/JWT (client-credentials, direct
-            // API access) is the API chain's responsibility (ADR-0023); a bearer token presented to
+            // API access) is the API chain's responsibility (ADR-0011); a bearer token presented to
             // a webapp path falls through to the delegating entry point below, which returns 401.
             .oauth2Login(
                 oauthLogin -> {
@@ -250,7 +248,7 @@ public final class ScopedWebappSecurityChainBuilder {
             authorizedClientRepository, authorizedClientManager, logoutHandler),
         AuthorizationFilter.class);
 
-    // AdminUserCheckFilter is intentionally NOT wired on the OIDC chain (ADR-0011, GH-189): under
+    // AdminUserCheckFilter is intentionally NOT wired on the OIDC chain (ADR-0004, GH-189): under
     // OIDC, admin provisioning is driven by IdP claims, and the filter cannot tell "no admin yet"
     // from "membership not yet projected". Only WebAppAuthorizationCheck runs here.
     final var webAppFilter = webAppAuthorizationFilterProvider.getIfAvailable();
@@ -273,9 +271,7 @@ public final class ScopedWebappSecurityChainBuilder {
     // writes before the picker commits the response.
     final var loginPickerFilter =
         oidcLoginPickerProvider.getIfAvailable(
-            () ->
-                LoginLinksBuilder.defaultOauth2LoginPickerFilter(
-                    clientRegistrationRepository, loginUrl));
+            () -> new CamundaLoginPickerFilter(clientRegistrationRepository, loginUrl));
     filterChainBuilder.addFilterAfter(loginPickerFilter, CsrfFilter.class);
 
     applyOidcRedirectDiagnosticsFilter(filterChainBuilder, redirectUri);
@@ -286,7 +282,7 @@ public final class ScopedWebappSecurityChainBuilder {
   /**
    * Appends {@code heartbeatPath} to the chain's securityMatcher patterns so the heartbeat endpoint
    * is always reachable, independent of whatever the host declared in {@code
-   * SecurityPathPort#webappPaths()} (ADR-0042) — unlike {@code LOGIN_URL}/{@code LOGOUT_URL}, which
+   * SecurityPathPort#webappPaths()} (ADR-0020) — unlike {@code LOGIN_URL}/{@code LOGOUT_URL}, which
    * rely on the host's own declared patterns already covering them.
    */
   // package-private for unit testing
@@ -304,7 +300,7 @@ public final class ScopedWebappSecurityChainBuilder {
    * CSL constants.
    *
    * <p>The supplied {@code sessionRepositoryFilter} is installed before {@link
-   * SecurityContextHolderFilter} (see ADR-0031).
+   * SecurityContextHolderFilter} (see ADR-0009).
    */
   public SecurityFilterChain buildBasicWebappChain(
       final HttpSecurity http, final SessionRepositoryFilter<?> sessionRepositoryFilter)
@@ -455,7 +451,7 @@ public final class ScopedWebappSecurityChainBuilder {
    * Resolves the OAuth2 redirection-endpoint path (where Spring listens for the authorization-code
    * callback) from the configured client {@code redirect-uri}. Strips a leading {@code {baseUrl}}
    * placeholder or a {@code scheme://host} prefix and any query/fragment, so a host can point the
-   * callback at whatever path its IdP client already has registered (ADR-0038, Optimize reuses
+   * callback at whatever path its IdP client already has registered (ADR-0018, Optimize reuses
    * {@code /api/authentication/callback}). Falls back to {@code defaultPath} when the redirect-uri
    * is unset or yields no path, preserving the default {@code /sso-callback} behaviour.
    *
@@ -617,7 +613,7 @@ public final class ScopedWebappSecurityChainBuilder {
    * <p>A chain shares one {@link CamundaOidcLogoutSuccessHandler} across every registration in the
    * scope — the flat {@code oidc.*} block and any {@code providers.oidc.<id>} entries alike (see
    * {@link ScopedClientRegistrationFactory#flatten}) — so the flag can only be applied per scope,
-   * not per registration (ADR-0043). Reading it off {@code authentication.getOidc()} alone would
+   * not per registration (ADR-0023). Reading it off {@code authentication.getOidc()} alone would
    * silently ignore any provider declared only under {@code providers.oidc.*}, so this flattens the
    * same way the registrations themselves are built and disables the redirect for the whole scope
    * when any configured provider disables it — a single strict IdP among several still gets its
@@ -679,11 +675,12 @@ public final class ScopedWebappSecurityChainBuilder {
         new LoginUrlAuthenticationEntryPoint(
             resolveOauthRedirectTarget(
                 clientRegistrationRepository, loginUrl, authorizationBaseUri));
-    final var entryPoints = new LinkedHashMap<RequestMatcher, AuthenticationEntryPoint>();
-    entryPoints.put(new RequestHeaderRequestMatcher("Authorization"), bearerEntryPoint);
-    final var delegatingEntryPoint = new DelegatingAuthenticationEntryPoint(entryPoints);
-    delegatingEntryPoint.setDefaultEntryPoint(oauthRedirectEntryPoint);
-    return delegatingEntryPoint;
+    // The LinkedHashMap constructor and setDefaultEntryPoint(...) are both @Deprecated in favor of
+    // this constructor, which takes the default entry point and matcher entries together.
+    return new DelegatingAuthenticationEntryPoint(
+        oauthRedirectEntryPoint,
+        new RequestMatcherEntry<>(
+            new RequestHeaderRequestMatcher("Authorization"), bearerEntryPoint));
   }
 
   /**
@@ -698,13 +695,11 @@ public final class ScopedWebappSecurityChainBuilder {
    *
    * <p><b>Note:</b> this adopts <em>any</em> {@link OidcAuthenticationEntryPoint} bean in context —
    * a host-registered override or {@link OidcAuthenticationEntryPointConfiguration}'s own
-   * library-supplied default (used today only by {@code JwtCookieAuthenticationFilter}, and not
-   * currently imported by any active chain — see that class's Javadoc) are indistinguishable here.
-   * That default is a plain redirect with no bearer-vs-browser distinction; co-importing {@link
-   * OidcAuthenticationEntryPointConfiguration} alongside this builder replaces the bearer-aware
-   * {@code DelegatingAuthenticationEntryPoint} fallback below and changes bearer-token requests
-   * from 401 to a redirect. This is a known, intentional consequence of adopting the SPI wholesale
-   * (matching how {@code JwtCookieAuthenticationFilter} already treats the same bean) — see {@code
+   * library-supplied default are indistinguishable here. That default is a plain redirect with no
+   * bearer-vs-browser distinction; co-importing {@link OidcAuthenticationEntryPointConfiguration}
+   * alongside this builder replaces the bearer-aware {@code DelegatingAuthenticationEntryPoint}
+   * fallback below and changes bearer-token requests from 401 to a redirect. This is a known,
+   * intentional consequence of adopting the SPI wholesale — see {@code
    * scopedChainAdoptsLibraryDefaultOidcEntryPointWhenBothConfigurationsArePresent} for the
    * characterization test pinning this behavior so a future change to precedence is made
    * deliberately, not accidentally.
@@ -797,8 +792,7 @@ public final class ScopedWebappSecurityChainBuilder {
         new CamundaOidcAuthorizationRequestResolver(
             clientRegistrationRepository, providerMap, authorizationBaseUri);
     final var scopedPicker =
-        LoginLinksBuilder.defaultOauth2LoginPickerFilter(
-            clientRegistrationRepository, loginUrl, prefix);
+        new CamundaLoginPickerFilter(clientRegistrationRepository, loginUrl, prefix);
 
     // Install the per-scope session filter before the security context filter so the Spring-Session
     // backed, Path-scoped session is available throughout the chain.
@@ -828,7 +822,7 @@ public final class ScopedWebappSecurityChainBuilder {
             .anonymous(AbstractHttpConfigurer::disable)
             // No oauth2ResourceServer on the webapp chain: it authenticates users interactively via
             // oauth2Login and serves them from the session. Bearer/JWT (client-credentials, direct
-            // API access) is the API chain's responsibility (ADR-0023); a bearer token presented to
+            // API access) is the API chain's responsibility (ADR-0011); a bearer token presented to
             // a webapp path falls through to the delegating entry point below, which returns 401.
             .oauth2Login(
                 oauthLogin -> {
@@ -877,7 +871,7 @@ public final class ScopedWebappSecurityChainBuilder {
             authorizedClientRepository, authorizedClientManager, logoutHandler),
         AuthorizationFilter.class);
 
-    // AdminUserCheckFilter is intentionally NOT wired on the OIDC chain (ADR-0011, GH-189): under
+    // AdminUserCheckFilter is intentionally NOT wired on the OIDC chain (ADR-0004, GH-189): under
     // OIDC, admin provisioning is driven by IdP claims, and the filter cannot tell "no admin yet"
     // from "membership not yet projected". Only WebAppAuthorizationCheck runs here.
     final var webAppFilter = webAppAuthorizationFilterProvider.getIfAvailable();

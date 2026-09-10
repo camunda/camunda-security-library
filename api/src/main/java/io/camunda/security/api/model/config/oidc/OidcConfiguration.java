@@ -332,12 +332,12 @@ public class OidcConfiguration {
    * rather than logging the user out.
    *
    * <p>{@link #isIdpLogoutEnabled()} is a separate, currently-unwired flag (no code path reads it
-   * since ADR-0032 removed the host-provided {@code LogoutSuccessHandler} bean seam) — it is not an
+   * since ADR-0009 removed the host-provided {@code LogoutSuccessHandler} bean seam) — it is not an
    * orthogonal "contact the IdP at all" switch this property complements today. Disabling this
    * property still terminates the IdP session; the IdP renders its own logged-out page instead of
    * returning to the host.
    *
-   * <p>See ADR-0043 for why this is configuration rather than a {@code SecurityPathPort} method.
+   * <p>See ADR-0023 for why this is configuration rather than a {@code SecurityPathPort} method.
    */
   public boolean isPostLogoutRedirectEnabled() {
     return postLogoutRedirectEnabled;

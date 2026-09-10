@@ -26,8 +26,8 @@ import org.springframework.security.web.authentication.LoginUrlAuthenticationEnt
  * /login} so the picker is shown.
  *
  * <p>This configuration is not imported by {@link
- * io.camunda.security.spring.CamundaSecurityAutoConfiguration}; it is picked up once the {@code
- * OidcJwtCookieWebappSecurityConfiguration} imports it.
+ * io.camunda.security.spring.CamundaSecurityAutoConfiguration}; a host picks it up by importing it
+ * alongside {@link ScopedWebappSecurityChainBuilder}'s stateful OIDC webapp chain.
  */
 @Configuration
 public class OidcAuthenticationEntryPointConfiguration {

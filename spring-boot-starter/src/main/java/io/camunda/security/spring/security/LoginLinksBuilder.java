@@ -12,39 +12,16 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
-import org.springframework.security.web.authentication.ui.DefaultLoginPageGeneratingFilter;
 
 final class LoginLinksBuilder {
 
   private LoginLinksBuilder() {}
 
-  static DefaultLoginPageGeneratingFilter defaultOauth2LoginPickerFilter(
-      final ClientRegistrationRepository clientRegistrationRepository, final String loginPageUrl) {
-    return defaultOauth2LoginPickerFilter(clientRegistrationRepository, loginPageUrl, "");
-  }
-
-  /**
-   * Builds the login picker filter with authorization links prefixed by {@code
-   * authorizationBaseUriPrefix}. Use this overload for per-scope chains where the authorization
-   * endpoint lives under a basePath (e.g. {@code /physical-tenants/t1/oauth2/authorization/{id}}).
-   */
-  static DefaultLoginPageGeneratingFilter defaultOauth2LoginPickerFilter(
-      final ClientRegistrationRepository clientRegistrationRepository,
-      final String loginPageUrl,
-      final String authorizationBaseUriPrefix) {
-    final var picker = new DefaultLoginPageGeneratingFilter();
-    picker.setLoginPageUrl(loginPageUrl);
-    picker.setOauth2LoginEnabled(true);
-    picker.setOauth2AuthenticationUrlToClientName(
-        buildLoginLinks(clientRegistrationRepository, authorizationBaseUriPrefix));
-    return picker;
-  }
-
   /**
    * Builds the {@code /oauth2/authorization/{id}} -> client display name map consumed by {@link
-   * DefaultLoginPageGeneratingFilter#setOauth2AuthenticationUrlToClientName(Map)}. Returns an empty
-   * map when the repository is not iterable (host-supplied implementation that does not extend
-   * {@link Iterable}); the picker then renders without OAuth2 links, which still beats a 404.
+   * CamundaLoginPickerFilter}. Returns an empty map when the repository is not iterable
+   * (host-supplied implementation that does not extend {@link Iterable}); the picker filter then
+   * falls through to the rest of the chain rather than rendering an empty page.
    */
   static Map<String, String> buildLoginLinks(
       final ClientRegistrationRepository clientRegistrationRepository) {
