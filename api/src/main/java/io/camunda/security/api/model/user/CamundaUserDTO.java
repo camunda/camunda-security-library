@@ -8,15 +8,11 @@
 package io.camunda.security.api.model.user;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * Public view of the authenticated user returned by {@code CamundaUserPort#getCurrentUser()}
- * (defined in the core module). The record is framework-free and uses only primitives so it carries
- * no dependency on host search-domain entities.
- *
- * <p>The {@code c8Links} map keys are application identifiers (e.g. {@code "operate"}, {@code
- * "tasklist"}); hosts that store stronger types convert them to strings at the boundary.
+ * (defined in the core module). The record is framework-free and uses only primitives, so it
+ * carries no dependency on host search-domain entities.
  */
 public record CamundaUserDTO(
     String displayName,
@@ -27,7 +23,6 @@ public record CamundaUserDTO(
     List<String> groups,
     List<String> roles,
     String salesPlanType,
-    Map<String, String> c8Links,
     boolean canLogout) {
 
   public CamundaUserDTO {
@@ -35,6 +30,5 @@ public record CamundaUserDTO(
     tenants = tenants != null ? tenants : List.of();
     groups = groups != null ? groups : List.of();
     roles = roles != null ? roles : List.of();
-    c8Links = c8Links != null ? c8Links : Map.of();
   }
 }

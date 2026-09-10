@@ -84,7 +84,6 @@ class OidcCamundaUserServiceTest {
     assertThat(dto.groups()).containsExactly("group-1");
     assertThat(dto.roles()).containsExactly("role-1");
     assertThat(dto.authorizedComponents()).containsExactly("operate", "admin");
-    assertThat(dto.c8Links()).isEmpty();
     assertThat(dto.canLogout()).isTrue();
   }
 
