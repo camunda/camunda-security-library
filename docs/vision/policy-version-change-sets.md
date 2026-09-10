@@ -5,7 +5,9 @@ status: Proposed
 # PolicyVersion commits with full-policy propagation (iteration one)
 
 > **Not yet implemented.** This document was moved out of `docs/adr/` — where it was originally
-> recorded as ADR-0001 — because no code implements it yet, planned for Camunda 8.11. As part of
+> recorded as ADR-0001 — because no code implements it yet;
+> for timing see [rollout status](../architecture/02-current-state.md#21-rollout-status-at-a-glance).
+> As part of
 > the same consolidation, ADR-0001 was reassigned to an unrelated, currently-Accepted decision, so
 > use this file's git history, not that ADR, to trace this document's origin. When work on this
 > topic actually begins, revisit this document and promote it back into `docs/adr/` as a new,
