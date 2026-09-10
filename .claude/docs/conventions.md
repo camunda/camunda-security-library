@@ -7,7 +7,7 @@ Hexagonal architecture naming (replaces traditional controller/service/repo nami
 **Ports** — an interface is always a `Port`.
 
 - Inbound port interfaces live in `port/in/`. They are the use-case contracts a host application (or any caller) invokes. Example: `GroupPort` with methods like `create(...)`.
-- Outbound port interfaces live in `port/out/`. They are the contracts the domain needs the outside world to satisfy. Example: `GroupPersistencePort`, `IdpPort`, `EngineCommandPort`.
+- Outbound port interfaces live in `port/out/`. They are the contracts the domain needs the outside world to satisfy. Example: `GroupPersistencePort`, `IdpClientPort`, `EngineCommandPort`.
 
 **Implementations**
 
@@ -18,7 +18,6 @@ Hexagonal architecture naming (replaces traditional controller/service/repo nami
 **Other**
 
 - Spring Data interfaces may keep the `Repository` suffix (e.g., `JpaRoleRepository extends JpaRepository`) since they are framework-generated — but the outbound adapter that wraps them should follow the naming above.
-- Existing code may still contain legacy `*PortImpl`, `*AdapterImpl`, and `adapter/` contract packages. Do not refactor those names unless the work explicitly calls for it.
 
 ## Project-Specific Patterns
 

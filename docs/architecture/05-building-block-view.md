@@ -2,7 +2,7 @@
 
 ### 5.1 High-level components
 
-The following diagrams show the internal structure of Hub and Orchestration Cluster, including how Camunda Security Library instance connects to frontend applications, infrastructure, and (in multiple-Physical-Tenant scenarios) individual engine instances.
+The following diagrams show the internal structure of Hub and Orchestration Cluster, including how Camunda Security Library instance connects to frontend applications, infrastructure, and individual engine instances within the Broker.
 
 Both the Hub and OC instances of the Camunda Security Library maintain their own local state:
 
@@ -10,7 +10,7 @@ Both the Hub and OC instances of the Camunda Security Library maintain their own
 - Local tracking of the last applied policy version (`last_applied_version` on the OC side, `last_acked_version` per OC on the Hub side).
 - Local session state.
 
-#### 5.1.1 Full mode Simple (Hub + OC with one Engine)
+#### 5.1.1 Full mode Simple (Hub + OC)
 
 ```mermaid
 flowchart TB
@@ -29,12 +29,16 @@ flowchart TB
 
     subgraph OC["Orchestration Cluster"]
       subgraph GatewayLayer["Gateway / Search Layer"]
-        SecGatOC["Camunda Security Library</br>(embedded in Gateway)"]
+        SecGatOC["Camunda Security Library"]
       end
 
       subgraph Broker["Broker"]
-        Engine["Engine</br>(Physical Tenant)"]
-        SecEngFrame["Security Engine Framework"]
+        subgraph PtA["Physical Tenant A (Engine)"]
+          CslCoreA["CSL core"]
+        end
+        subgraph PtB["Physical Tenant B (Engine)"]
+          CslCoreB["CSL core"]
+        end
       end
 
       SecGatOC -->|"config propagation</br>(batch operation)"| Broker
@@ -52,17 +56,21 @@ flowchart TB
   OC & Hub --> IdPs
   Hub --> HubDb
 
-  style Broker fill:#34a853,color:#fff
+  style PtA fill:#34a853,color:#fff
+  style PtB fill:#34a853,color:#fff
 ```
 
 Key building blocks in full mode simple:
 
 - Hub UI: Unified frontend in the management plane. It includes modeling, management, and admin capabilities, and allows full policy authoring for all configurable layers (Hub, OCs, engines, tenants).
-- Hub + Camunda Security Library: Central source of truth. Manages all policy configuration for all clusters, OCs, and engines. All policy changes originate here.
+- Hub + Camunda Security Library: Central source of truth, deployed independently of the
+  execution plane it configures (see
+  [§4.1 Full mode](./04-system-context.md#41-full-mode-hub--oc--optimize)). Manages all policy
+  configuration for all clusters, OCs, and engines. All policy changes originate here.
 - OC UI: Unified frontend in the execution plane. Its admin section shows the cluster-local projection of Hub policy; configuration there is read-only.
-- OC + Camunda Security Library: Per-cluster policy enforcement and projection layer. Receives policy snapshots from Hub via the Hub-to-OC propagation channel. Propagates scoped policy views via batch operation to the single engine.
-- Engine (Physical Tenant): A single execution context (Zeebe engine) inside the Broker. A Physical Tenant is an independent execution unit that hosts one or more logical Tenants (e.g., `default`, `retail`). Receives its scoped projection of cluster policy from OC. No direct Hub connection.
-- Security Engine Framework: Engine-specific policy enforcement layer.
+- OC + Camunda Security Library: Per-cluster policy enforcement and projection layer. Receives policy snapshots from Hub via the Hub-to-OC propagation channel. Propagates scoped policy views via batch operation to each Physical Tenant.
+- Physical Tenant A / Physical Tenant B (Engine): Independent execution contexts (Zeebe engines) inside the Broker. A Physical Tenant is an independent execution unit that hosts one or more logical Tenants (e.g., `default`, `retail`). Each receives its own scoped projection of cluster policy from OC. No direct Hub connection.
+- CSL `core`: embedded inside each Physical Tenant — the same authorization artifact the gateway embeds, not a separate engine-specific framework — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md).
 - Infrastructure (IDPs, DBs): Shared existing persistence and IdP connectivity for authentication and authorization across all layers.
 
 > **Important:** A **Physical Tenant** is an Engine (a physical execution unit). A **Tenant** (like `default`, `retail`, `wholesale`) is a logical partition for data and access. Multiple logical Tenants can execute within a single Physical Tenant (Engine). The authorization levels are: `ALL` (cluster-wide), `TENANT` (specific logical tenant) or `PHYSICAL_TENANT` (specific physical tenant).
@@ -71,7 +79,7 @@ Configuration propagation chain: Hub → OC → Physical Tenant (Engine).
 
 For concrete deployment topologies (including multi-gateway and multi-broker layouts), see section [7. Deployment view](./07-deployment-view.md).
 
-#### 5.1.2 OC-only mode Simple (standalone OC with one Engine)
+#### 5.1.2 OC-only mode Simple (standalone OC)
 
 > **Note on physical layout:** In this diagram, the OC box represents the full logical cluster. At the physical level the Camunda Security Library runs inside the **Gateway / Search Layer** (one or more Zeebe Gateways), and each Broker contains one or more **Engines (Physical Tenants)**. See section 1.1 for details.
 
@@ -87,8 +95,12 @@ flowchart TB
       end
 
       subgraph Broker["Broker"]
-        Engine["Engine</br>(Physical Tenant)"]
-        EngLib["Security Engine Framework"]
+        subgraph PtA["Physical Tenant A (Engine)"]
+          CslCoreA["CSL core"]
+        end
+        subgraph PtB["Physical Tenant B (Engine)"]
+          CslCoreB["CSL core"]
+        end
       end
 
       OCLib -->|"config propagation</br>(batch operation)"| Broker
@@ -103,26 +115,27 @@ flowchart TB
   Broker --> DBs
   OC --> IdPs
 
-  style Broker fill:#34a853,color:#fff
+  style PtA fill:#34a853,color:#fff
+  style PtB fill:#34a853,color:#fff
 ```
 
 Key building blocks in OC-only mode simple:
 
 - OC UI: Unified runtime frontend that interacts directly with OC. Its admin section allows full policy authoring (no Hub restrictions).
 - OC + Camunda Security Library: Local source of truth. Manages all policy and authorization directly without Hub coordination. All policy changes originate here.
-- Engine (Physical Tenant): A single execution context (Zeebe engine) inside the Broker. A Physical Tenant is an independent execution unit that hosts one or more logical Tenants (e.g., `default`, `retail`). Receives its scoped projection of local OC policy. No direct Hub connection.
-- Security Engine Framework: Engine-specific policy enforcement layer.
+- Physical Tenant A / Physical Tenant B (Engine): Independent execution contexts (Zeebe engines) inside the Broker. A Physical Tenant is an independent execution unit that hosts one or more logical Tenants (e.g., `default`, `retail`). Each receives its own scoped projection of local OC policy. No direct Hub connection.
+- CSL `core`: embedded inside each Physical Tenant — the same authorization artifact the gateway embeds, not a separate engine-specific framework — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md).
 - Infrastructure (IDPs, DBs): Local persistence and IdP connectivity; no cross-cluster replication or Hub involvement.
 
 > **Important:** A **Physical Tenant** is an Engine (a physical execution unit). A **Tenant** (like `default`, `retail`, `wholesale`) is a logical partition for data and access. Multiple logical Tenants can execute within a single Physical Tenant (Engine).
 
-For more complex OC-only deployments with multiple brokers and multiple engines per broker, see section [7.1.3 OC-only mode – multi-instance example](./07-deployment-view.md#713-oc-only-mode--multi-instance-example-n-gateways--m-brokers).
+For more complex OC-only deployments with multiple brokers, see section [7.1.3 OC-only mode – multi-instance example](./07-deployment-view.md#713-oc-only-mode--multi-instance-example-n-gateways--m-brokers).
 
 #### 5.1.3 Full mode Complex (Hub + OC with multiple Brokers and multiple Engines)
 
 This section defines the conceptual behavior only; the complete deployment examples are maintained in section [7. Deployment view](./07-deployment-view.md).
 
-- Full mode keeps the same propagation chain: Hub (policy SoT) -> OC gateway/search layer (Camunda Security Library) -> broker/engine layer (Security Engine Framework).
+- Full mode keeps the same propagation chain: Hub (policy SoT) -> OC gateway/search layer (Camunda Security Library) -> broker/engine layer (CSL `core` — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md)).
 - OC may run one or many gateways and one or many brokers depending on scale and availability targets.
 - Each broker may host one or many engines (Physical Tenants), and each engine hosts one or many logical tenants.
 
@@ -133,7 +146,7 @@ For concrete diagrams:
 
 ---
 
-## 5.2 Unified policy model
+### 5.2 Unified policy model
 
 The unified identity architecture is built around a single policy model that is shared between Hub Identity & Policy and OC Identity. Hub is the source of truth for this model per cluster; in shared-Hub deployments, Hub stores it per organization and cluster. Each OC hosts a cluster-local projection of the same concepts for enforcement.
 
@@ -214,7 +227,7 @@ Both Hub and OC use exactly the same policy model, but with different responsibi
     - Cluster runtime APIs (gRPC/REST) for workers and integrations.
   - Validates IdP tokens for users and machines accessing the cluster.
   - Derives tenant assignments and roles from token claims via mapping rules.
-  - Routes identity-scoped policy updates to engines via the `EngineCommandPort`.
+  - Is designed to route identity-scoped policy updates to engines via `EngineCommandPort` — an outbound port not yet defined in `core/port/out/` (see §5.4).
   - Does not invent new policy; it only applies and enforces what Hub (or, in standalone mode, local OC configuration) defines.
 
 This unified model allows:
@@ -509,21 +522,21 @@ Inbound and outbound ports are CSL boundaries; concrete transport adapters on bo
 
 #### 5.4.1 Property-driven runtime mode switching
 
-The same library core is reused in all deployments. **In every runtime mode, AuthN and AuthZ enforcement is always active** — the library always configures a Spring Security filter chain to authenticate inbound requests and enforce scope-aware authorization decisions. What differs per mode is which additional capabilities (authoring, policy propagation dispatch, engine projection) are switched on.
+The same library core is reused in all deployments. **In every runtime mode, AuthN and AuthZ enforcement is designed to be always active** — the library always configures a Spring Security filter chain to authenticate inbound requests and enforce scope-aware authorization decisions (for what is enforced today, see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance)). What differs per mode is which additional capabilities (authoring, policy propagation dispatch, engine projection) are switched on.
 
 Mode activation is property-driven via Spring Boot conditions (`@ConditionalOnProperty`, or a small custom `@Conditional` when multiple properties contribute to the decision), not via Spring profiles.
 
-**Current implementation state:** authentication method selection (`camunda.security.authentication.method=basic|oidc`) is active today and governs which filter chains are assembled. The deployment strategy property (`hub` / `managed` / `standalone` — current property values use an `oc-` prefix: `oc-managed`, `oc-standalone`) is defined in the configuration model but is not yet consumed by the filter chain layer — it is planned for the policy work that wires `PolicyPort`, `PolicyApplyPort`, and the Hub/OC-specific outbound ports.
+**Current implementation state:** authentication method selection (`camunda.security.authentication.method=basic|oidc`) is active today and governs which filter chains are assembled. The deployment strategy property (`hub` / `managed` / `standalone` — current property values use an `oc-` prefix: `oc-managed`, `oc-standalone`) does not exist in the codebase yet — neither the property nor a binding type is present — it is planned for the policy work that wires `PolicyPort`, `PolicyApplyPort`, and the Hub/OC-specific outbound ports.
 
-Hub enforces AuthN/AuthZ for the Hub UI using the same `AuthorizationCheckPort` used by OC, configured with Hub-scoped resources. `IdpClientPort` is a planned outbound port for external IdP interactions; the current OIDC integration wires `OidcProviderConfigurationPort` instead.
+`AuthorizationCheckPort` is generic enough to serve Hub-scoped resources with the same evaluator OC already uses, but Hub has not cut over to it — Hub authorization still runs through Management Identity today (see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance)). `IdpClientPort` is a planned outbound port for external IdP interactions; the current OIDC integration wires `OidcProviderConfigurationPort` instead.
 
 **Camunda Security Library responsibilities by deployment strategy:**
 
 | Deployment strategy | AuthN/AuthZ enforcement | Policy source | Policy authoring | Outbox dispatch to OCs | Engine projection | Cluster registry | Runtime context |
 |---|---|---|---|---|---|---|---|
 | `hub` | ✅ Hub-scoped (org, workspace, cluster resources) | Hub is SoT | ✅ via Hub UI/API | ✅ via `OutboxPort` | ❌ no engines in Hub | ✅ `ClusterRegistrationPort` + `ClusterRegistryPort` | Hub authentication and policy management for the Hub UI |
-| `managed` | ✅ Cluster-scoped (engine, tenant, task resources) | Receives from Hub | ❌ (read-only in the admin section of the OC UI) | ❌ | ✅ via `EngineCommandPort` | ❌ | OC receives policy via `/identity/policies/apply` endpoint from Hub; enforces for all cluster requests and exposes the applied policy through the admin section of the OC UI |
-| `standalone` | ✅ Cluster-scoped (engine, tenant, task resources) | OC is local SoT | ✅ via the admin section of the OC UI and OC APIs | ❌ | ✅ via `EngineCommandPort` | ❌ | OC is fully autonomous; local policy authoring and engine projection through the admin section of the OC UI |
+| `managed` | ✅ Cluster-scoped (engine, tenant, task resources) | Receives from Hub | ❌ (read-only in the admin section of the OC UI) | ❌ | ❌ (target: `EngineCommandPort`, not yet defined) | ❌ | OC receives policy via `/identity/policies/apply` endpoint from Hub; enforces for all cluster requests and exposes the applied policy through the admin section of the OC UI |
+| `standalone` | ✅ Cluster-scoped (engine, tenant, task resources) | OC is local SoT | ✅ via the admin section of the OC UI and OC APIs | ❌ | ❌ (target: `EngineCommandPort`, not yet defined) | ❌ | OC is fully autonomous; local policy authoring and engine projection through the admin section of the OC UI |
 
 ```mermaid
 flowchart TB
@@ -587,15 +600,15 @@ The extra layer between UIs/clients and engines is intentional:
   - Differences between full mode (Hub + OC) and OC-only mode are expressed via adapters and configuration, not divergent business logic.
 - Clean separation of concerns
   - IdP integration, session handling, multi-tenancy, mapping rules, and authorization decisions are handled in one place.
-  - Engine integration is reduced to a narrow command API (Security Engine Framework) that can evolve independently.
+  - Engine integration is reduced to a narrow command API, backed by CSL `core` rather than a separate framework, that can evolve independently.
 - Pluggable backends
   - Concrete persistence (SQL, search), propagation transport, and IdP clients can be swapped or customized by providing alternative adapters, without changing the domain model.
 
-#### 5.5 Engine authorization integration
+### 5.5 Engine authorization integration
 
-Rather than a separate authorization sub-framework embedded in the engine, the zeebe engine uses CSL's `core` authorization model directly — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md). Implementation is tracked in [#388](https://github.com/camunda/camunda-security-library/issues/388).
+Rather than a separate authorization sub-framework embedded in the engine, the zeebe engine uses CSL's `core` authorization model directly — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md).
 
-**Authorization checks (command-time, planned per ADR-0014 / [#388](https://github.com/camunda/camunda-security-library/issues/388)):** The target design introduces `AuthorizationCheckPort` as a unified inbound port in `core/port/in/`, with `AuthorizationService` as its default implementation wired in `spring-boot-starter`. Today, CSL provides `AuthorizationChecker` (`core/authz/`) as the shared scope-evaluation component used by the search layer. The full port-based engine integration — including RocksDB-backed adapter implementations of `MembershipPort` and `AuthorizationScopeRepositoryPort` — is tracked in [#388](https://github.com/camunda/camunda-security-library/issues/388).
+**Authorization checks (command-time, delivered per [ADR-0014](../adr/0014-unified-authz-framework-in-core.md) / [#388](https://github.com/camunda/camunda-security-library/issues/388), closed 2026-08-13):** `AuthorizationCheckPort` is the unified inbound port in `core/port/in/`, with `AuthorizationService` as its default implementation wired in `spring-boot-starter`. The same evaluator serves both the search layer and the zeebe engine, backed by CSL's `AuthorizationChecker` (`core/authz/`) as the shared scope-evaluation component. RocksDB-backed adapter implementations of `MembershipPort` and `AuthorizationScopeRepositoryPort` provide the engine-side wiring — see the diagram below.
 
 **Policy state propagation (planned):** OC CSL will propagate identity state changes (tenants, roles, authorizations) to each engine through `EngineCommandPort` (planned outbound port). See section 5.5.2.
 
@@ -613,8 +626,8 @@ graph LR
   end
 
   subgraph CSL_CORE["CSL core"]
-    ACP["AuthorizationCheckPort</br>(planned; core/port/in/)"]
-    AS["AuthorizationService</br>(planned core implementation)"]
+    ACP["AuthorizationCheckPort</br>(core/port/in/)"]
+    AS["AuthorizationService</br>(core implementation)"]
     MP["MembershipPort</br>(core/port/out/)"]
     ASRP["AuthorizationScopeRepositoryPort</br>(core/port/out/)"]
   end
@@ -631,7 +644,7 @@ graph LR
 
 | Port | Responsibility |
 |---|---|
-| `AuthorizationCheckPort` | Unified authorization check port used by both the search layer and the zeebe engine. Covers scope-based, tenant, and property-based checks; returns `Either<AuthorizationRejection, Void>` with the failure reason (tenant vs. permission), or a `boolean` skip-checks query for hot-path short-circuiting. Implemented by `AuthorizationService` in `core`. |
+| `AuthorizationCheckPort` | Unified authorization check port used by both the search layer and the zeebe engine. Covers scope-based, tenant, and property-based checks across three `check(...)` overloads, all returning `Either<AuthorizationRejection, Void>` with the failure reason (tenant vs. permission). Implemented by `AuthorizationService` in `core`, which separately exposes a `boolean` `skipChecks()` query for hot-path short-circuiting — deliberately **not** part of the port itself (see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md)). |
 
 **Engine-provided outbound port adapters:**
 
@@ -646,24 +659,24 @@ graph LR
 
 Using CSL's `core` authz framework for both layers is intentional:
 
-- **Single evaluation kernel, no drift (planned):** ADR-0014 proposes a shared `AuthorizationCheckPort` implemented by a core `AuthorizationService`. Today, CSL already provides `AuthorizationChecker` (`core/authz`) as the shared scope-evaluation component.
+- **Single evaluation kernel, no drift:** per [ADR-0014](../adr/0014-unified-authz-framework-in-core.md), `AuthorizationCheckPort` is the shared port, implemented by `AuthorizationService` in `core`, which delegates to `AuthorizationChecker` (`core/authz`) as the shared scope-evaluation component.
 - **No new port contracts:** the engine integrates against existing `MembershipPort` and `AuthorizationScopeRepositoryPort` — no new outbound ports to stabilize before the engine migration begins.
 - **Richer failure detail:** `AuthorizationCheckPort` exposes failure reasons (tenant vs. permission) via an `Either`-style result (`Either<AuthorizationRejection, Void>`), per ADR-0014 — the single authorization surface for both the search layer and the engine, replacing the earlier boolean-only inbound port.
-- **Spring-free auth context (planned):** ADR-0014 proposes `ClaimsAuthenticationConverter` in `core` to convert raw claims to `CamundaAuthentication` without Spring dependencies.
+- **Spring-free auth context:** per ADR-0014, `LazyTokenClaimsConverter` (`core/authz/`) converts raw claims to `CamundaAuthentication` without Spring dependencies.
 - **Primary-storage-optimized adapters:** engine-side caching remains an adapter concern; CSL core stays dependency-free and cache-agnostic.
 
 #### 5.5.2 Config propagation to the engine via batch operations
 
 When the OC Camunda Security Library needs to propagate a policy change to a Physical Tenant (Engine) inside a Broker, it must create a potentially large number of identity commands and/or resources inside the engine (tenants, roles, mapping rules, authorizations). Creating these one-by-one would be fragile and slow.
 
-**The propagation is therefore implemented using the engine's existing Batch Operation feature.** The `EngineCommandPort` adapter creates for each Physical Tenant a single batch operation. This gives us:
+**The propagation is designed to use the engine's existing Batch Operation feature, once `EngineCommandPort` is defined and its adapter built.** The adapter would create, for each Physical Tenant, a single batch operation. This gives us:
 
 - **Atomicity:** all identity resources for one policy update land in the engine together as one batch job.
 - **Scalability:** the batch operation infrastructure already handles large volumes of commands efficiently.
 - **Observability:** batch operation progress and failure are visible through existing batch operation monitoring.
 - **Consistency with the engine's design:** no new ad-hoc bulk command mechanism is introduced; we reuse an already-solved problem.
 
-This is the primary mechanism by which the OC Gateway/Search Layer propagates Physical Tenant configuration to Brokers and their engines.
+This is intended to be the primary mechanism by which the OC Gateway/Search Layer propagates Physical Tenant configuration to Brokers and their engines.
 
 Open Topic: Currently, in batch operation we just handover lists of numbers to the engine. For this feature, we need to push a list of objects ...
 

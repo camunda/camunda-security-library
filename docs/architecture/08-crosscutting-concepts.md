@@ -3,7 +3,7 @@
 - IdP-agnostic: Any OIDC/SAML IdP integrating via standards (no IdP-specific code in the domain layer).
 - RBAC + ABAC: Roles and authorizations with optional attribute-based policies (resource attributes, environment conditions).
 - Multi-tenancy: Tenant-aware identity context propagated from tokens/headers; tenant-specific policy and IdP configuration; propagation filters by tenant.
-- Lifecycle handling: Principal and tenant assignment are derived from IdP claims and mapping rules; clusters receive derived principals and policies from Hub.
+- Lifecycle handling: Principal and tenant assignment are derived from IdP claims and mapping rules. Clusters and Optimize are designed to also receive derived principals and policies from Hub — not yet implemented, see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
 - Observability: Identity flows emit metrics, logs, and traces (e.g. authn attempts, authz decisions, propagation delay, health indicators). For Spring Security instrumentation, align with the Spring Security observability integration guidance: https://docs.spring.io/spring-security/reference/reactive/integrations/observability.html
 
 ### 8.1 Scalability and operational considerations
@@ -16,9 +16,12 @@ The unified identity architecture must support SaaS deployments at significant s
 - Largest single organization successfully onboarded ~200 users
 - Approximately 43,000 total clusters created across all organizations
 
-**Implications for Hub and OC:**
+**Implications for Hub, OC, and Optimize:**
 
-1. **Policy propagation scale**: Hub must reliably propagate policy changes to 43k+ clusters without overwhelming either Hub or OC infrastructure.
+1. **Policy propagation scale**: Hub is designed to reliably propagate policy changes to 43k+
+   clusters and Optimize without overwhelming Hub, OC, or Optimize infrastructure — this
+   propagation path is not yet implemented, see
+   [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
 2. **Visibility and monitoring**: At this scale, operators must be able to track policy rollout state across thousands of clusters in real time. Hub must surface which clusters are on which policy versions, and what delivery state each cluster is in (pending, delivered, failed, retrying).
 3. **Rate limiting and backpressure**: Both push-based and pull-based propagation require careful handling of load spikes:
   - Push: Hub propagation dispatcher must respect OC capacity and not flood clusters with simultaneous policy updates.

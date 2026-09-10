@@ -12,7 +12,7 @@ The term **Orchestration Cluster (OC)** is used at two abstraction levels:
 - **Physical/deployment view (runtime level):**
   - An OC deployment consists of one or more **Gateways** (the Gateway/Search layer) and one or more **Brokers**.
   - Each Broker contains one or more **Engines**.
-  - The Camunda Security Library (CSL) is embedded in the Gateway/Search layer and enforces authentication and authorization before broker/search access.
+  - The Camunda Security Library (CSL) is embedded in both layers: the full library runs in the Gateway/Search layer, and CSL `core` (see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md)) runs embedded in the Broker/Engine layer — there is no separate engine-side framework.
 
 In high-level diagrams, OC is intentionally simplified as one logical component. In detailed building-block and deployment diagrams (section 5.1 and below), Gateway/Search and Broker/Engine layers are shown explicitly.
 
@@ -28,8 +28,8 @@ In high-level diagrams, OC is intentionally simplified as one logical component.
 
 The terms **Hub UI** and **OC UI** refer to aggregated frontend applications, not separate per-component UIs.
 
-- **Hub UI** (management plane): A single management-plane frontend that consolidates Console, Web Modeler, Admin, and related management capabilities. Hub-side components authenticate and authorize through one CSL instance.
-- **OC UI** (execution plane): A single execution-plane frontend that consolidates Operate, Tasklist, and cluster administration capabilities. OC-side components authenticate and authorize through one CSL instance. In full mode (Hub + OC), the admin section is read-only and reflects policy projected from Hub. In standalone mode, the admin section is read-write and supports local policy authoring.
+- **Hub UI** (management plane): A single management-plane frontend that consolidates Console, Web Modeler, Admin, and related management capabilities. Hub-side components authenticate through one CSL instance (shipped); authorization still runs through Management Identity — see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance).
+- **OC UI** (execution plane): A single execution-plane frontend that consolidates Operate, Tasklist, and cluster administration capabilities. OC-side components authenticate and authorize through one CSL instance (shipped). In full mode (Hub + OC), the admin section is designed to run read-only, reflecting policy projected from Hub — not yet implemented, see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance). In standalone mode, the admin section is intended to be read-write and support local policy authoring; that authoring path is also not yet implemented (see the same table).
 
 ### SPI (in CSL context)
 
@@ -40,6 +40,10 @@ An extension interface in `spring-boot-starter/spi/` (or `api/context/`) that ho
 In the SaaS legacy context, Auth0 acts as an identity federation layer (broker): it is Camunda-operated, federates customer Enterprise IdPs, and issues tokens to Camunda services. In the target architecture, customers connect their Enterprise IdP directly; no Camunda-operated broker sits between the customer's IdP and CSL.
 
 ### Policy receiver
+
+> Design concept. Hub → OC/Optimize policy distribution is not yet implemented — see
+> [rollout status](./02-current-state.md#21-rollout-status-at-a-glance); the definitions
+> below describe the intended behaviour once it ships.
 
 A CSL-embedded host application that receives and enforces policy published by Hub, rather than authoring policy locally. OC instances using the `managed` deployment strategy and Optimize in full-mode deployments are policy receivers.
 
