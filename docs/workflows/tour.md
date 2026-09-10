@@ -43,10 +43,10 @@ Read these in order if you're new. `CLAUDE.md` and everything it `@`-includes (`
 ## Architecture in thirty seconds
 
 - **Hexagonal (ports and adapters).** `core` (domain) has zero framework dependencies. Adapters and implementations depend on `core`, never the reverse.
-- **Deployment strategies.** Active capabilities are selected by a configuration property — `oc-standalone`, `oc-managed`, `hub`. Not Spring profiles.
-- **One library, many hosts.** The same library embeds into Hub and OC. Host-specific code lives in adapters that implement outbound ports; nothing host-specific leaks into `core`.
+- **Deployment strategies (not yet implemented).** The design is for active capabilities to be selected by a configuration property — `standalone`, `managed`, `hub` (current property values still use an `oc-` prefix). Not Spring profiles. Not yet consumed by the filter chain layer — see [rollout status](../architecture/02-current-state.md#21-rollout-status-at-a-glance).
+- **One library, many hosts.** The same library embeds into Hub, OC, and Optimize. Host-specific code lives in adapters that implement outbound ports; nothing host-specific leaks into `core`.
 - **Naming.** Interfaces are always ports. Inbound `*Port` interfaces live in `core/port/in/`; outbound `*Port` interfaces live in `core/port/out/`. Services implement inbound ports; adapters implement outbound ports. Do not introduce `*Impl` names in new code.
-- **Auth is always on.** Authentication and authorization enforcement are active in every deployment strategy.
+- **Auth is always on.** Authentication enforcement is active in every deployment strategy, across all hosts. OC's authorization read/check path is shipped the same way; Hub and Optimize authorization still run through Management Identity — see [rollout status](../architecture/02-current-state.md#21-rollout-status-at-a-glance).
 
 See [architecture.md](../../.claude/docs/architecture.md) for the full picture.
 

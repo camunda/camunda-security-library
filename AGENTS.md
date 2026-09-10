@@ -22,7 +22,7 @@ Public consumer-facing types are exposed from the `api` module:
 
 ### Deployment Strategies
 
-Active capabilities are selected via a deployment strategy configuration property (not Spring profiles):
+Active capabilities are selected via a deployment strategy configuration property (not Spring profiles). **Not yet implemented:** no such property exists in the codebase yet — the strategy names below are design intent, and Authoring/Outbox Dispatch/Engine Projection are all still under development — see [rollout status](docs/architecture/02-current-state.md#21-rollout-status-at-a-glance).
 
 | Strategy | Policy Authority | Authoring | Outbox Dispatch | Engine Projection |
 |---|---|---|---|---|
@@ -30,9 +30,11 @@ Active capabilities are selected via a deployment strategy configuration propert
 | `oc-managed` | Receives from Hub | No (read-only) | No | Yes |
 | `hub` | Hub (central SoT) | Yes | Yes | No |
 
-Authentication and authorization enforcement is always active in every strategy.
+Authentication is always active in every strategy. Authorization enforcement is always active for
+OC's read/check path; Hub and Optimize authorization still runs through Management Identity — see
+[rollout status](docs/architecture/02-current-state.md#21-rollout-status-at-a-glance).
 
-> **Note:** Some docs/ADRs use an `oc-` prefix (`oc-standalone`, `oc-managed`). A rename to the shorter names (`standalone`, `managed`) is planned.
+> **Note:** The property values above carry an `oc-` prefix; a rename to the shorter names (`standalone`, `managed`) is planned.
 
 ### Unified Policy Model
 
@@ -56,10 +58,9 @@ An interface is always a `Port`. Use `port/in/` for inbound ports and `port/out/
 
 - Inbound port interfaces: suffixed with `Port`, in `port/in/` (e.g., `GroupPort`)
 - Inbound port implementations (business logic): named by responsibility, typically `*Service` (e.g., `GroupService`)
-- Outbound port interfaces: suffixed with `Port`, in `port/out/` (e.g., `GroupPersistencePort`, `IdpPort`)
+- Outbound port interfaces: suffixed with `Port`, in `port/out/` (e.g., `GroupPersistencePort`, `IdpClientPort`)
 - Outbound port implementations (external-system I/O): suffixed with `Adapter` (e.g., `GroupPersistenceAdapter`, `IdpClientAdapter`)
 - Never use `*Impl` as a naming convention for implementations
-- Existing code may still contain legacy `*PortImpl`, `*AdapterImpl`, and `adapter/` contract packages until explicitly refactored
 - **`core` has no notion of a physical tenant** — only an opaque *scope* key that a host maps to
   its own concept (a physical tenant, a base path, etc.); `core` never learns what a scope means.
   Host-facing types that assemble or resolve something per scope are conventionally prefixed

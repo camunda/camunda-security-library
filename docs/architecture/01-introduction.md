@@ -1,11 +1,16 @@
 ## 1. Introduction and goals
 
-> **Document structure:** Sections 1 and 2 provide as-is context — the current identity architecture and its limitations. The arc42 target architecture begins at section 3.
+> **Document structure:** Section 2 states current rollout status ([§2.1](./02-current-state.md#21-rollout-status-at-a-glance))
+> and, as background, the pre-CSL identity architecture and its limitations. The arc42 target
+> architecture begins at section 3.
 
-This document describes the planned Unified Identity Architecture for Camunda Hub and Orchestration Clusters in an arc42-style structure. It:
+This document describes the Unified Identity Architecture for Camunda Hub, Optimize, and
+Orchestration Clusters in an arc42-style structure, part of which — authentication, and the OC
+authorization read path — has already shipped (see [§2.1](./02-current-state.md#21-rollout-status-at-a-glance)),
+with the remainder targeted for a later release. It:
 
-- Summarizes the current identity architecture across Camunda platform components (OC Identity, Management Identity, SaaS Auth0).
-- Proposes a target architecture with a single identity plane, implemented as a hexagonal library reused in Hub and Orchestration Clusters.
+- Summarizes the pre-CSL identity architecture across Camunda platform components (OC Identity, Management Identity, SaaS Auth0) as background.
+- Describes a single identity plane, implemented as a hexagonal library embedded in Hub, Optimize, and Orchestration Clusters — see [§2.1](./02-current-state.md#21-rollout-status-at-a-glance) for what of it has shipped versus what remains target design.
 - Shows how the architecture supports multiple Physical Tenants per broker/cluster and multi-tenancy.
 - Emphasizes that standalone Orchestration Cluster (without Hub) remains a first-class deployment option.
 - Outlines how a single shared frontend and pluggable backends (persistence, OC command creation, etc.) fit into the design.

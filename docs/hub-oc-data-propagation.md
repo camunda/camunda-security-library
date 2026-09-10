@@ -165,7 +165,8 @@ This document defines only **how bytes move** from Hub outbound port to OC/Optim
 
 Payload semantics (for example policy model rules, version semantics, and apply behavior) remain in architecture/domain docs and are intentionally not duplicated here.
 
-CSL semantic ownership remains unchanged:
+CSL semantic ownership, once the distribution path below is implemented (not yet — see
+[rollout status](./architecture/02-current-state.md#21-rollout-status-at-a-glance)):
 
 - `PolicyVersion` is the semantic commit marker for policy state.
 - Hub tracks semantic delivery acknowledgement per target (`last_acked_version`).
@@ -176,7 +177,8 @@ CSL semantic ownership remains unchanged:
 Scope mapping:
 
 - Transport delivery state is described here.
-- CSL semantic apply-state and policy-version ownership are described in `docs/architecture_docs.md` section `5.3`.
+- CSL semantic apply-state and policy-version ownership are described in
+  [`docs/architecture/05-building-block-view.md` §5.3](./architecture/05-building-block-view.md#53-policy-propagation-boundary-and-semantic-versioning-hub--oc--optimize).
 
 
 
