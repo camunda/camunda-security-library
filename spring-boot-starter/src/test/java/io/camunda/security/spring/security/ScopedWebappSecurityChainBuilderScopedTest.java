@@ -330,6 +330,199 @@ class ScopedWebappSecurityChainBuilderScopedTest {
   }
 
   /**
+   * Control for {@link #scopedOidcChainOmitsPostLogoutRedirectUriWhenDisabled()}: with the host
+   * declaring a post-logout route and the scope never setting {@code post-logout-redirect-enabled},
+   * the scoped chain does send {@code post_logout_redirect_uri}, resolved under the scope's base
+   * path. Leaving the flag unset rather than passing an explicit {@code true} also pins the default
+   * as enabled, so an accidental flip of {@code DEFAULT_POST_LOGOUT_REDIRECT_ENABLED} fails here.
+   */
+  @Test
+  void scopedOidcChainSendsPostLogoutRedirectUriByDefault() {
+    postLogoutRunner(PostLogoutRouteScopedConfig.class)
+        .run(
+            ctx ->
+                assertThat(scopedPostLogoutRedirectUri(ctx))
+                    .isEqualTo("{baseUrl}" + BASE_PATH + "/post-logout"));
+  }
+
+  /**
+   * Turning off {@code post-logout-redirect-enabled} must leave the handler with no {@code
+   * post_logout_redirect_uri}, even though the host still declares a route.
+   *
+   * <p>This is what a deployment behind an IdP that cannot register the resulting URL needs. Auth0
+   * matches {@code post_logout_redirect_uri} against its "Allowed Logout URLs" exactly and accepts
+   * wildcards only in the subdomain position, so a scoped chain's per-tenant path prefix yields a
+   * URL no entry can match — and Auth0 then rejects the entire end-session request rather than
+   * logging the user out. Omitting the parameter still terminates the IdP session.
+   *
+   * <p>Reads the flag off the scope's own {@link AuthenticationConfiguration}, not the cluster's,
+   * so a tenant pointing at its own IdP gets that IdP's capability — matching how its registration
+   * and end-session endpoint already resolve per scope.
+   */
+  @Test
+  void scopedOidcChainOmitsPostLogoutRedirectUriWhenDisabled() {
+    postLogoutRunner(PostLogoutDisabledScopedConfig.class)
+        .run(ctx -> assertThat(scopedPostLogoutRedirectUri(ctx)).isNull());
+  }
+
+  /**
+   * Regression test: the sole provider is declared only under {@code providers.oidc.<id>} — the
+   * flat {@code oidc.*} block is left untouched (no {@code clientId}), so {@link
+   * io.camunda.security.spring.oidc.ScopedClientRegistrationFactory#flatten} contributes no flat
+   * entry to the scope's provider map. Reading the flag off {@code authentication.getOidc()} alone
+   * would silently miss this provider and keep sending {@code post_logout_redirect_uri}.
+   */
+  @Test
+  void scopedOidcChainOmitsPostLogoutRedirectUriWhenDisabledViaProvidersOnly() {
+    postLogoutRunner(PostLogoutDisabledViaProvidersOnlyScopedConfig.class)
+        .run(ctx -> assertThat(scopedPostLogoutRedirectUri(ctx)).isNull());
+  }
+
+  /**
+   * Regression test for a multi-provider scope: one provider disables {@code
+   * post-logout-redirect-enabled} while the other leaves it at its default. The flag is per scope,
+   * not per registration (ADR-0023), so a single strict IdP among several must suppress the
+   * redirect for the whole chain rather than being silently outvoted by the other provider's
+   * default.
+   */
+  @Test
+  void scopedOidcChainOmitsPostLogoutRedirectUriWhenAnyProviderDisablesIt() {
+    postLogoutRunner(PostLogoutDisabledForOneOfTwoProvidersScopedConfig.class)
+        .run(ctx -> assertThat(scopedPostLogoutRedirectUri(ctx)).isNull());
+  }
+
+  private WebApplicationContextRunner postLogoutRunner(final Class<?> scopedChainConfig) {
+    return new WebApplicationContextRunner()
+        .withUserConfiguration(
+            ObjectMapperConfig.class, StubPathsWithPostLogoutRoute.class, scopedChainConfig)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                BaseSecurityConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                ScopedOidcInfrastructureConfiguration.class,
+                ScopedWebappSecurityChainBuilderConfiguration.class));
+  }
+
+  private static String scopedPostLogoutRedirectUri(
+      final org.springframework.context.ApplicationContext ctx) {
+    final var chain =
+        (DefaultSecurityFilterChain) ctx.getBean("scopedOidcTestChain", SecurityFilterChain.class);
+    final var logoutFilter =
+        chain.getFilters().stream()
+            .filter(LogoutFilter.class::isInstance)
+            .map(LogoutFilter.class::cast)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("scoped OIDC chain must have a LogoutFilter"));
+    final var successHandler =
+        (LogoutSuccessHandler) ReflectionTestUtils.getField(logoutFilter, "logoutSuccessHandler");
+    return (String) ReflectionTestUtils.getField(successHandler, "postLogoutRedirectUri");
+  }
+
+  private static SessionRepositoryFilter<?> scopedSessionFilter() {
+    return new SessionRepositoryFilter<>(new MapSessionRepository(new ConcurrentHashMap<>()));
+  }
+
+  /** A scoped OIDC configuration that never touches {@code postLogoutRedirectEnabled}. */
+  private static AuthenticationConfiguration scopedOidcAuthentication() {
+    return scopedOidcAuthentication(OidcConfiguration.builder());
+  }
+
+  /** A scoped OIDC configuration that sets {@code postLogoutRedirectEnabled} explicitly. */
+  private static AuthenticationConfiguration scopedOidcAuthentication(
+      final boolean postLogoutRedirectEnabled) {
+    return scopedOidcAuthentication(
+        OidcConfiguration.builder().postLogoutRedirectEnabled(postLogoutRedirectEnabled));
+  }
+
+  /**
+   * Completes a scoped OIDC {@link AuthenticationConfiguration} from a partially built {@code
+   * OidcConfiguration}. Sets {@code oidc} (not only {@code providers}) because that is the
+   * per-scope object the chain builder reads the flag from.
+   */
+  private static AuthenticationConfiguration scopedOidcAuthentication(
+      final OidcConfiguration.Builder oidcBuilder) {
+    final var auth = new AuthenticationConfiguration();
+    auth.setMethod(AuthenticationMethod.OIDC);
+    final var oidc =
+        oidcBuilder
+            .clientId("client-oidc")
+            .redirectUri("{baseUrl}" + BASE_PATH + "/sso-callback")
+            .authorizationUri("http://localhost/oidc/auth")
+            .tokenUri("http://localhost/oidc/token")
+            .jwkSetUri("http://localhost/oidc/jwks")
+            .build();
+    auth.setOidc(oidc);
+    final var providers = new OidcProvidersConfiguration();
+    final var oidcMap = new LinkedHashMap<String, OidcConfiguration>();
+    oidcMap.put("oidc", oidc);
+    providers.setOidc(oidcMap);
+    auth.setProviders(providers);
+    return auth;
+  }
+
+  /**
+   * A scoped OIDC configuration whose sole provider is declared only under {@code
+   * providers.oidc.<id>} — the flat {@code oidc.*} block is left at its defaults (no {@code
+   * clientId}), so it contributes no entry when the scope's providers are flattened.
+   */
+  private static AuthenticationConfiguration providerOnlyOidcAuthentication(
+      final boolean postLogoutRedirectEnabled) {
+    final var auth = new AuthenticationConfiguration();
+    auth.setMethod(AuthenticationMethod.OIDC);
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("client-oidc")
+            .redirectUri("{baseUrl}" + BASE_PATH + "/sso-callback")
+            .authorizationUri("http://localhost/oidc/auth")
+            .tokenUri("http://localhost/oidc/token")
+            .jwkSetUri("http://localhost/oidc/jwks")
+            .postLogoutRedirectEnabled(postLogoutRedirectEnabled)
+            .build();
+    final var providers = new OidcProvidersConfiguration();
+    final var oidcMap = new LinkedHashMap<String, OidcConfiguration>();
+    oidcMap.put("oidc", oidc);
+    providers.setOidc(oidcMap);
+    auth.setProviders(providers);
+    return auth;
+  }
+
+  /**
+   * A scoped OIDC configuration with two {@code providers.oidc.<id>} entries, only one of which
+   * disables {@code postLogoutRedirectEnabled}.
+   */
+  private static AuthenticationConfiguration twoProvidersOidcAuthentication(
+      final boolean firstPostLogoutRedirectEnabled, final boolean secondPostLogoutRedirectEnabled) {
+    final var auth = new AuthenticationConfiguration();
+    auth.setMethod(AuthenticationMethod.OIDC);
+    final var providers = new OidcProvidersConfiguration();
+    final var oidcMap = new LinkedHashMap<String, OidcConfiguration>();
+    oidcMap.put(
+        "oidc",
+        OidcConfiguration.builder()
+            .clientId("client-oidc")
+            .redirectUri("{baseUrl}" + BASE_PATH + "/sso-callback")
+            .authorizationUri("http://localhost/oidc/auth")
+            .tokenUri("http://localhost/oidc/token")
+            .jwkSetUri("http://localhost/oidc/jwks")
+            .postLogoutRedirectEnabled(firstPostLogoutRedirectEnabled)
+            .build());
+    oidcMap.put(
+        "oidc-secondary",
+        OidcConfiguration.builder()
+            .clientId("client-oidc-secondary")
+            .redirectUri("{baseUrl}" + BASE_PATH + "/sso-callback")
+            .authorizationUri("http://localhost/oidc-secondary/auth")
+            .tokenUri("http://localhost/oidc-secondary/token")
+            .jwkSetUri("http://localhost/oidc-secondary/jwks")
+            .postLogoutRedirectEnabled(secondPostLogoutRedirectEnabled)
+            .build());
+    providers.setOidc(oidcMap);
+    auth.setProviders(providers);
+    return auth;
+  }
+
+  /**
    * A host may (wrongly) override {@link SecurityPathPort#postLogoutRedirectPath()} to return a
    * bare {@code null} despite the {@code Optional} return type. The builder must fail fast with a
    * clear message and migration hint, not NPE deep inside the redirect-URI template.
@@ -872,6 +1065,121 @@ class ScopedWebappSecurityChainBuilderScopedTest {
       return http ->
           http.addFilterBefore(
               new SecurityHeadersMarkerFilter(), SecurityContextHolderFilter.class);
+    }
+  }
+
+  /** A {@link SecurityPathPort} that declares a post-logout route, unlike {@link StubPaths}. */
+  @Configuration
+  static class StubPathsWithPostLogoutRoute {
+
+    @Bean
+    SecurityPathPort securityPathPort() {
+      return StubSecurityPaths.builder()
+          .postLogoutRedirectPath(java.util.Optional.of("/post-logout"))
+          .build();
+    }
+  }
+
+  /** Scoped OIDC chain whose scope never sets {@code postLogoutRedirectEnabled}. */
+  @Configuration
+  static class PostLogoutRouteScopedConfig {
+
+    @Bean
+    JwtDecoder jwtDecoderPostLogoutRoute() {
+      return token -> {
+        throw new UnsupportedOperationException("stub — not called in this test");
+      };
+    }
+
+    @Bean("scopedOidcTestChain")
+    SecurityFilterChain scopedOidcTestChain(
+        final HttpSecurity http, final ScopedWebappSecurityChainBuilder builder) throws Exception {
+      return builder.buildScopedWebappChain(
+          http,
+          BASE_PATH,
+          scopedOidcAuthentication(),
+          scopedSessionFilter(),
+          "camunda-session-physical-tenants-t1",
+          "X-CSRF-TOKEN-physical-tenants-t1");
+    }
+  }
+
+  /** Same scoped chain, but with the scope's {@code postLogoutRedirectEnabled} turned off. */
+  @Configuration
+  static class PostLogoutDisabledScopedConfig {
+
+    @Bean
+    JwtDecoder jwtDecoderPostLogoutDisabled() {
+      return token -> {
+        throw new UnsupportedOperationException("stub — not called in this test");
+      };
+    }
+
+    @Bean("scopedOidcTestChain")
+    SecurityFilterChain scopedOidcTestChain(
+        final HttpSecurity http, final ScopedWebappSecurityChainBuilder builder) throws Exception {
+      return builder.buildScopedWebappChain(
+          http,
+          BASE_PATH,
+          scopedOidcAuthentication(false),
+          scopedSessionFilter(),
+          "camunda-session-physical-tenants-t1",
+          "X-CSRF-TOKEN-physical-tenants-t1");
+    }
+  }
+
+  /**
+   * Same scoped chain, but the sole provider is declared only under {@code providers.oidc.<id>}
+   * with {@code postLogoutRedirectEnabled} turned off there — the flat {@code oidc.*} block is
+   * untouched.
+   */
+  @Configuration
+  static class PostLogoutDisabledViaProvidersOnlyScopedConfig {
+
+    @Bean
+    JwtDecoder jwtDecoderPostLogoutDisabledProvidersOnly() {
+      return token -> {
+        throw new UnsupportedOperationException("stub — not called in this test");
+      };
+    }
+
+    @Bean("scopedOidcTestChain")
+    SecurityFilterChain scopedOidcTestChain(
+        final HttpSecurity http, final ScopedWebappSecurityChainBuilder builder) throws Exception {
+      return builder.buildScopedWebappChain(
+          http,
+          BASE_PATH,
+          providerOnlyOidcAuthentication(false),
+          scopedSessionFilter(),
+          "camunda-session-physical-tenants-t1",
+          "X-CSRF-TOKEN-physical-tenants-t1");
+    }
+  }
+
+  /**
+   * Same scoped chain, but with two {@code providers.oidc.<id>} entries where only one disables
+   * {@code postLogoutRedirectEnabled}.
+   */
+  @Configuration
+  static class PostLogoutDisabledForOneOfTwoProvidersScopedConfig {
+
+    @Bean
+    JwtDecoder jwtDecoderPostLogoutDisabledOneOfTwo() {
+      return token -> {
+        throw new UnsupportedOperationException("stub — not called in this test");
+      };
+    }
+
+    @Bean("scopedOidcTestChain")
+    SecurityFilterChain scopedOidcTestChain(
+        final HttpSecurity http, final ScopedWebappSecurityChainBuilder builder) throws Exception {
+      return builder.buildScopedWebappChain(
+          http,
+          BASE_PATH,
+          twoProvidersOidcAuthentication(true, false),
+          scopedSessionFilter(),
+          "camunda-session-physical-tenants-t1",
+          "X-CSRF-TOKEN-physical-tenants-t1");
     }
   }
 }

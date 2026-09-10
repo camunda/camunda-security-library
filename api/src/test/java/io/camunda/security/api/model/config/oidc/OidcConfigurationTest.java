@@ -220,6 +220,16 @@ public class OidcConfigurationTest {
             "clockSkew is set",
             OidcConfiguration.builder().clockSkew(DEFAULT_CLOCK_SKEW.plusSeconds(1)).build(),
             true),
+        Arguments.of(
+            "postLogoutRedirectEnabled is set to false",
+            OidcConfiguration.builder().postLogoutRedirectEnabled(false).build(),
+            true),
+        Arguments.of(
+            "default postLogoutRedirectEnabled is set",
+            OidcConfiguration.builder()
+                .postLogoutRedirectEnabled(OidcConfiguration.DEFAULT_POST_LOGOUT_REDIRECT_ENABLED)
+                .build(),
+            false),
         Arguments.of("default", new OidcConfiguration(), false),
         Arguments.of(
             "default authorizeRequestConfiguration is set",
