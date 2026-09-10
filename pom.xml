@@ -13,7 +13,7 @@
 
     <groupId>io.camunda</groupId>
     <artifactId>camunda-security-library</artifactId>
-    <version>1.0.1-SNAPSHOT</version>
+    <version>1.0.2-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>Camunda Security Library</name>
