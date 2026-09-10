@@ -120,6 +120,19 @@ class ScopedApiSecurityChainBuilderTest {
           .withUserConfiguration(OidcScopedChainConfig.class)
           .withPropertyValues("camunda.security.authentication.method=oidc");
 
+  private final WebApplicationContextRunner degradedRunner =
+      new WebApplicationContextRunner()
+          .withUserConfiguration(ObjectMapperConfig.class, StubPaths.class)
+          .withConfiguration(
+              AutoConfigurations.of(
+                  CamundaSecurityConfiguration.class,
+                  BaseSecurityConfiguration.class,
+                  CorsBeansConfiguration.class,
+                  ScopedApiSecurityChainBuilderConfiguration.class,
+                  AuthFailureHandlerConfiguration.class))
+          .withUserConfiguration(DegradedScopedChainConfig.class)
+          .withPropertyValues("camunda.security.authentication.method=oidc");
+
   // -------------------------------------------------------------------------
   // Basic auth scenarios
   // -------------------------------------------------------------------------
@@ -1131,6 +1144,51 @@ class ScopedApiSecurityChainBuilderTest {
   }
 
   // -------------------------------------------------------------------------
+  // Degraded chain (scope whose identity provider could not be resolved)
+  // -------------------------------------------------------------------------
+
+  @Test
+  void degradedScopedChainStillOwnsTheScopesPaths() {
+    degradedRunner.run(
+        ctx -> {
+          final var chain = ctx.getBean("scopedDegradedChain", SecurityFilterChain.class);
+
+          // it must keep claiming the scope's paths: unclaimed, they fall to whatever matches
+          // next, which on a host without the catch-all chain checks the cluster's issuer
+          assertThat(chain.matches(new MockHttpServletRequest("GET", SCOPED_PATH))).isTrue();
+          assertThat(chain.matches(new MockHttpServletRequest("GET", OUT_OF_SCOPE_PATH))).isFalse();
+        });
+  }
+
+  @Test
+  void degradedScopedChainRefusesAnUnauthenticatedRequest() {
+    degradedRunner.run(ctx -> assertDegradedChainRefuses(ctx, null));
+  }
+
+  @Test
+  void degradedScopedChainRefusesABearerToken() {
+    // a syntactically well-formed token the degraded chain has no decoder to verify
+    degradedRunner.run(ctx -> assertDegradedChainRefuses(ctx, "Bearer header.payload.signature"));
+  }
+
+  @Test
+  void degradedScopedChainRefusesEvenTheScopesUnprotectedApiPaths() {
+    degradedRunner.run(
+        ctx -> {
+          final var chain = ctx.getBean("scopedDegradedChain", SecurityFilterChain.class);
+          final var next = new MockFilterChain();
+          final var response = new MockHttpServletResponse();
+
+          new FilterChainProxy(List.of(chain))
+              .doFilter(new MockHttpServletRequest("GET", SCOPED_UNPROTECTED_PATH), response, next);
+
+          // deliberate: a scope that cannot authenticate anyone serves nothing at all
+          assertThat(next.getRequest()).isNull();
+          assertThat(response.getStatus()).isEqualTo(503);
+        });
+  }
+
+  // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
 
@@ -1147,6 +1205,26 @@ class ScopedApiSecurityChainBuilderTest {
   private static String basicHeader(final String username, final String password) {
     final var token = (username + ":" + password).getBytes(StandardCharsets.UTF_8);
     return "Basic " + Base64.getEncoder().encodeToString(token);
+  }
+
+  private static void assertDegradedChainRefuses(
+      final org.springframework.context.ApplicationContext ctx, final String authorizationHeader)
+      throws Exception {
+    final var chain = ctx.getBean("scopedDegradedChain", SecurityFilterChain.class);
+    final var request = new MockHttpServletRequest("GET", SCOPED_PATH);
+    if (authorizationHeader != null) {
+      request.addHeader("Authorization", authorizationHeader);
+    }
+    final var response = new MockHttpServletResponse();
+    final var next = new MockFilterChain();
+
+    new FilterChainProxy(List.of(chain)).doFilter(request, response, next);
+
+    // the request never reaching the application is the proof; the status alone is not
+    assertThat(next.getRequest())
+        .as("a degraded scope must never pass a request downstream")
+        .isNull();
+    assertThat(response.getStatus()).isEqualTo(503);
   }
 
   // -------------------------------------------------------------------------
@@ -1236,6 +1314,34 @@ class ScopedApiSecurityChainBuilderTest {
                   "no decoder configured");
             };
           });
+    }
+  }
+
+  @Configuration
+  static class DegradedScopedChainConfig {
+
+    @Bean
+    @Order(1)
+    SecurityFilterChain scopedDegradedChain(
+        final HttpSecurity http,
+        final CamundaSecurityLibraryProperties properties,
+        final AuthFailureHandler authFailureHandler,
+        final SecurityPathPort pathPort,
+        final ObjectProvider<OidcResourceServerCustomizer> resourceServerCustomizers,
+        final CorsConfigurationSource corsSource,
+        final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
+        final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers)
+        throws Exception {
+      final var builder =
+          new ScopedApiSecurityChainBuilder(
+              properties,
+              authFailureHandler,
+              pathPort,
+              resourceServerCustomizers,
+              corsSource,
+              httpsRedirectCustomizers,
+              securityHeadersCustomizers);
+      return builder.buildDegradedScopedApiChain(http, BASE_PATH);
     }
   }
 

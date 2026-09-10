@@ -403,6 +403,49 @@ class ScopedSecurityChainConfigurationTest {
     }
   }
 
+  /**
+   * The scope keeps its own paths while its identity provider is unreachable. Leaving them
+   * unclaimed would let them fall to whatever matches next, which on a host that disables the
+   * catch-all chain is the cluster-wide webapp chain — the cluster's issuer, not the scope's.
+   */
+  @Test
+  void anUnreachableIdpDegradesItsOwnScopeInsteadOfFailingStartup() throws Exception {
+    final var server = OidcTestServer.startRsa("scope-key");
+    try {
+      // given an IdP that fails every request, retry budget included
+      server.failNextDiscoveryRequests(50);
+      final var auth = new AuthenticationConfiguration();
+      auth.setMethod(AuthenticationMethod.OIDC);
+      auth.setOidc(server.oidcConfiguration("scope-client"));
+      final CamundaSecurityScopeProvider scopeProvider =
+          () -> List.of(new ScopedSecurityDescriptor(SCOPED_BASE, auth));
+
+      // when the context starts
+      basicRunner()
+          .withBean(CamundaSecurityScopeProvider.class, () -> scopeProvider)
+          .run(
+              ctx -> {
+                // then startup succeeds
+                assertThat(ctx)
+                    .as("one scope's unreachable IdP must not abort startup")
+                    .hasNotFailed();
+
+                // and the scope still owns its paths, refusing every request
+                final var next = new MockFilterChain();
+                final var response = new MockHttpServletResponse();
+                new FilterChainProxy(List.of(contributedChain(ctx)))
+                    .doFilter(new MockHttpServletRequest("GET", SCOPED_V2), response, next);
+
+                assertThat(next.getRequest())
+                    .as("a degraded scope must never pass a request downstream")
+                    .isNull();
+                assertThat(response.getStatus()).isEqualTo(503);
+              });
+    } finally {
+      server.stop();
+    }
+  }
+
   // 10. unprotected-api=true: scoped chain is permit-all (mirrors primary unprotected chain)
   @Test
   void unprotectedApiTrueMakesContributedScopedChainPermitAll() throws Exception {

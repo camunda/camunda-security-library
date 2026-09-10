@@ -10,6 +10,7 @@ package io.camunda.security.spring.oidc;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.spring.security.CamundaSecurityFilterChainConstants;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +23,8 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 
 /**
  * Builds {@link ClientRegistration} instances from {@link OidcConfiguration} maps. Extracted from
@@ -39,6 +42,15 @@ import org.springframework.util.StringUtils;
 public final class ScopedClientRegistrationFactory {
 
   private static final Logger LOG = LoggerFactory.getLogger(ScopedClientRegistrationFactory.class);
+
+  /**
+   * Total discovery attempts per issuer, and the pause between them. Two attempts cover an IdP that
+   * is moments from ready; more would only lengthen a startup path that already blocks on Spring's
+   * fixed 30-second discovery timeout, which {@code ClientRegistrations} does not let us shorten.
+   */
+  private static final int DISCOVERY_ATTEMPTS = 2;
+
+  private static final Duration DISCOVERY_RETRY_DELAY = Duration.ofSeconds(2);
 
   /**
    * Discovery documents already fetched, keyed by the raw {@code issuer-uri}. Never normalized:
@@ -334,7 +346,57 @@ public final class ScopedClientRegistrationFactory {
     final var cached = discoveryByIssuer.get(issuerUri);
     return cached != null
         ? ClientRegistrations.fromOidcConfiguration(cached)
-        : ClientRegistrations.fromIssuerLocation(issuerUri);
+        : fetchDiscoveryDocument(issuerUri);
+  }
+
+  /**
+   * Resolves an issuer's discovery document, retrying a transient failure. Only transient causes
+   * are retried; a deterministic one would spend the startup path to fail anyway.
+   */
+  private static ClientRegistration.Builder fetchDiscoveryDocument(final String issuerUri) {
+    for (int attempt = 1; ; attempt++) {
+      try {
+        return ClientRegistrations.fromIssuerLocation(issuerUri);
+      } catch (final RuntimeException failure) {
+        if (attempt >= DISCOVERY_ATTEMPTS || !isTransient(failure)) {
+          throw failure;
+        }
+        LOG.debug(
+            "OIDC discovery for issuer {} failed on attempt {} of {} ({}); retrying in {}",
+            issuerUri,
+            attempt,
+            DISCOVERY_ATTEMPTS,
+            failure.getMessage(),
+            DISCOVERY_RETRY_DELAY,
+            failure);
+        awaitRetry(issuerUri);
+      }
+    }
+  }
+
+  /**
+   * Whether a later attempt might not hit the same failure: the IdP was unreachable ({@link
+   * ResourceAccessException}, whether a timeout or a refusal) or answered with a 5xx. The whole
+   * cause chain is searched because Spring wraps what it caught in an {@link
+   * IllegalArgumentException} naming the issuer.
+   */
+  static boolean isTransient(final Throwable failure) {
+    for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+      if (cause instanceof ResourceAccessException || cause instanceof HttpServerErrorException) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static void awaitRetry(final String issuerUri) {
+    try {
+      Thread.sleep(DISCOVERY_RETRY_DELAY);
+    } catch (final InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(
+          "Interrupted while waiting to retry OIDC discovery for issuer " + issuerUri, interrupted);
+    }
   }
 
   /**
