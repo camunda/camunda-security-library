@@ -65,6 +65,11 @@ public class OidcClaimsProviderConfiguration {
    * OIDC host that disables the webapp chain and enables UserInfo augmentation without supplying
    * its own {@link ClientRegistrationRepository} or {@link OidcClaimsProvider} therefore gets no
    * UserInfo-augmenting default from CSL.
+   *
+   * <p>Reading the UserInfo URIs off the repository resolves its registrations and so performs OIDC
+   * discovery, which is why the mapping is built on first claims lookup rather than here — an
+   * unreachable identity provider must not abort the application context. See {@link
+   * DeferredOidcClaimsProvider}.
    */
   @Bean
   @ConditionalOnProperty(
@@ -79,12 +84,14 @@ public class OidcClaimsProviderConfiguration {
       @Qualifier("oidcUserInfoHttpClient") final HttpClient httpClient,
       @Autowired(required = false) final MeterRegistry meterRegistry) {
     final var augmentation = properties.getAuthentication().getOidc().getUserInfoAugmentation();
-    final Map<String, String> uriByIssuer = buildUserInfoUriByIssuer(clientRegistrationRepository);
-    return CachingOidcClaimsProvider.forConfiguredMappings(
-        new OidcUserInfoHttpClient(httpClient, objectMapper),
-        uriByIssuer,
-        augmentation,
-        meterRegistry);
+    return new DeferredOidcClaimsProvider(
+        "the per-issuer UserInfo endpoint mapping",
+        () ->
+            CachingOidcClaimsProvider.forConfiguredMappings(
+                new OidcUserInfoHttpClient(httpClient, objectMapper),
+                buildUserInfoUriByIssuer(clientRegistrationRepository),
+                augmentation,
+                meterRegistry));
   }
 
   @Bean

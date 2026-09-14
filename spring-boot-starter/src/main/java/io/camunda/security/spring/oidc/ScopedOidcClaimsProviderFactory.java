@@ -73,12 +73,18 @@ public final class ScopedOidcClaimsProviderFactory {
    * providers. A null augmentation config is treated as disabled; in that case (or when not
    * enabled) returns a {@link NoopOidcClaimsProvider}.
    *
+   * <p>The issuer→userInfoUri map is derived from resolved {@link ClientRegistration}s and so
+   * requires OIDC discovery; the returned provider builds it on first claims lookup rather than
+   * here, keeping chain construction free of network calls (see {@link
+   * DeferredOidcClaimsProvider}). A scope whose providers expose no userInfoUri at all therefore
+   * fails on its first claims lookup instead of at build time.
+   *
    * @param authentication the per-scope authentication configuration; must not be {@code null}
    * @return an {@link OidcClaimsProvider} appropriate for the given config
    * @throws IllegalStateException if augmentation is enabled but the config declares no OIDC
-   *     provider, or declares providers none of which exposes a userInfoUri — both are config
-   *     mismatches that would leave the scope silently un-augmented (the provider-less case mirrors
-   *     {@link ScopedJwtDecoderFactory}, which also rejects a provider-less OIDC scope)
+   *     provider, or a provider block is incomplete — config mismatches that would leave the scope
+   *     silently un-augmented (the provider-less case mirrors {@link ScopedJwtDecoderFactory},
+   *     which also rejects a provider-less OIDC scope)
    */
   public OidcClaimsProvider buildClaimsProvider(final AuthenticationConfiguration authentication) {
     Objects.requireNonNull(authentication, "authentication must not be null");
@@ -87,9 +93,8 @@ public final class ScopedOidcClaimsProviderFactory {
       return new NoopOidcClaimsProvider();
     }
 
-    final List<ClientRegistration> registrations =
-        clientRegistrationFactory.createWithoutLoginRoutes(authentication);
-    if (registrations.isEmpty()) {
+    final var providers = clientRegistrationFactory.flatten(authentication);
+    if (providers.isEmpty()) {
       throw new IllegalStateException(
           "UserInfo augmentation is enabled for the scope but its AuthenticationConfiguration"
               + " declares no OIDC provider, so a claims provider cannot be built. Either configure"
@@ -98,9 +103,16 @@ public final class ScopedOidcClaimsProviderFactory {
               + " This mirrors ScopedJwtDecoderFactory, which also rejects a provider-less OIDC"
               + " scope.");
     }
-    final Map<String, String> uriByIssuer = buildUserInfoUriByIssuer(registrations);
-    return CachingOidcClaimsProvider.forConfiguredMappings(
-        userInfoHttpClient, uriByIssuer, augmentation, meterRegistry);
+    clientRegistrationFactory.validateWithoutLoginRoutes(providers);
+    return new DeferredOidcClaimsProvider(
+        "the per-issuer UserInfo endpoint mapping for provider(s) " + providers.keySet(),
+        () ->
+            CachingOidcClaimsProvider.forConfiguredMappings(
+                userInfoHttpClient,
+                buildUserInfoUriByIssuer(
+                    clientRegistrationFactory.createWithoutLoginRoutes(providers)),
+                augmentation,
+                meterRegistry));
   }
 
   /**
