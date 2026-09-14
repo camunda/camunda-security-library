@@ -26,6 +26,11 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
  * CachingOidcClaimsProvider}, failing fast if the config declares no OIDC provider or none exposes
  * a userInfoUri; when augmentation is disabled it returns a {@link NoopOidcClaimsProvider}.
  *
+ * <p>Like that factory it builds its registrations with {@link
+ * ScopedClientRegistrationFactory#createWithoutLoginRoutes}: augmentation reads a registration's
+ * issuer and UserInfo endpoint on request, and redirects no browser, so it runs on a scope whose
+ * redirect-uri or registration id could serve no login route.
+ *
  * <p>Augmentation enabled-flag and cache settings are read from the per-scope {@link
  * AuthenticationConfiguration} (via {@code oidc.userInfoAugmentation}), not from the global {@link
  * io.camunda.security.spring.CamundaSecurityLibraryProperties}. This ensures that each scope's
@@ -81,7 +86,8 @@ public final class ScopedOidcClaimsProviderFactory {
       return new NoopOidcClaimsProvider();
     }
 
-    final List<ClientRegistration> registrations = clientRegistrationFactory.create(authentication);
+    final List<ClientRegistration> registrations =
+        clientRegistrationFactory.createWithoutLoginRoutes(authentication);
     if (registrations.isEmpty()) {
       throw new IllegalStateException(
           "UserInfo augmentation is enabled for the scope but its AuthenticationConfiguration"

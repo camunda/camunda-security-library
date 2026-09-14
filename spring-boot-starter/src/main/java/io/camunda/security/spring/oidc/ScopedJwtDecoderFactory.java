@@ -53,7 +53,7 @@ public final class ScopedJwtDecoderFactory {
    */
   public JwtDecoder buildIssuerAwareDecoder(final AuthenticationConfiguration authentication) {
     final var providers = clientRegistrationFactory.flatten(authentication);
-    final var registrations = clientRegistrationFactory.createFromProviderMap(providers);
+    final var registrations = clientRegistrationFactory.createWithoutLoginRoutes(providers);
     if (registrations.isEmpty()) {
       throw new IllegalStateException(
           "Scope OIDC chain requires at least one OIDC provider, but the scope's"

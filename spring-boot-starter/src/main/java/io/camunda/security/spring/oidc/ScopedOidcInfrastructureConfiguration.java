@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 
 /**
  * Provides the per-scope OIDC infrastructure beans unconditionally — independently of the cluster's
@@ -26,10 +27,13 @@ import org.springframework.context.annotation.Configuration;
  * io.camunda.security.api.model.config.ScopedSecurityDescriptor} regardless of whether {@code
  * camunda.security.authentication.method} is {@code oidc} or {@code basic}.
  *
- * <p>The four core factories declared here are stateless: they build from a passed {@link
- * io.camunda.security.api.model.config.AuthenticationConfiguration} rather than reading the global
- * configuration at construction time. Gating them on the global method was therefore an artificial
- * coupling. Moving them here decouples per-scope OIDC chain construction from the cluster's global
+ * <p>The four core factories declared here build from a passed {@link
+ * io.camunda.security.api.model.config.AuthenticationConfiguration} rather than from the global
+ * authentication configuration, so gating them on the global method was an artificial coupling. The
+ * one deployment-wide value they do take at construction is {@code server.servlet.context-path}:
+ * {@link ScopedClientRegistrationFactory} judges a configured {@code redirect-uri} against the
+ * context path the servlet will report, which is fixed for the application and cannot vary per
+ * scope. Moving them here decouples per-scope OIDC chain construction from the cluster's global
  * authentication mode. The additional {@link ScopedOidcClaimsProviderFactory} is always registered
  * (mirroring the sibling {@link ScopedJwtDecoderFactory}); the per-scope {@link
  * io.camunda.security.api.model.config.AuthenticationConfiguration} decides whether augmentation
@@ -63,8 +67,10 @@ public class ScopedOidcInfrastructureConfiguration {
 
   @Bean
   @ConditionalOnMissingBean
-  public ScopedClientRegistrationFactory scopedClientRegistrationFactory() {
-    return new ScopedClientRegistrationFactory();
+  public ScopedClientRegistrationFactory scopedClientRegistrationFactory(
+      final Environment environment) {
+    return new ScopedClientRegistrationFactory(
+        environment.getProperty("server.servlet.context-path", ""));
   }
 
   /**

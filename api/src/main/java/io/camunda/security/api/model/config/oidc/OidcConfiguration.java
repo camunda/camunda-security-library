@@ -145,13 +145,35 @@ public class OidcConfiguration {
   }
 
   /**
-   * The OAuth2 client {@code redirect_uri} sent to the IdP. When set, it must start with the {@code
-   * {baseUrl}} template placeholder (Spring expands it to the application's base URL) or be an
-   * absolute {@code scheme://host} URL — the {@code redirect_uri} sent to the IdP has to be
-   * absolute. A bare path (e.g. {@code /api/authentication/callback}) is rejected at startup: the
-   * local redirection-endpoint filter would derive a working path from it, but the IdP would
-   * receive a non-absolute {@code redirect_uri} and reject the login. Leave unset to use the {@code
-   * {baseUrl}/sso-callback} default.
+   * The OAuth2 client {@code redirect_uri} sent to the IdP. When set, it must expand to an absolute
+   * http(s) URL with a usable host and port and a callback path, and carry no fragment — that is
+   * where the IdP redirects the browser back to, and where the redirection endpoint derived from
+   * this same value listens. A query is allowed. Spring expands the placeholders {@code {baseUrl}},
+   * {@code {baseScheme}}, {@code {baseHost}}, {@code {basePort}}, {@code {basePath}}, {@code
+   * {registrationId}} and {@code {action}} per request, and nothing else; {@code {basePort}} and
+   * {@code {basePath}} include their own {@code :} and {@code /}.
+   *
+   * <p>Which chain serves that callback is a property of the chain, not of this value: a scoped
+   * chain mounts the endpoint for the value it was built with, while the unscoped webapp chain
+   * derives its single endpoint from the flat {@code camunda.security.authentication.oidc} block
+   * alone, so a value set only on a provider entry is sent to the IdP but not served there. A flat
+   * block with a {@code client-id} contributes a registration of its own, so its value is both sent
+   * and served — unless a provider entry reuses the flat {@code registration-id} and so replaces
+   * that registration, after which the provider value is what the IdP is sent while the flat value
+   * still decides what is served; a flat block that sets only {@code redirect-uri} moves the served
+   * path without changing what any provider sends.
+   *
+   * <p>Anything else is rejected at startup by a caller that derives a redirection endpoint from it
+   * — the webapp client beans and the webapp chains. A caller that derives none builds its
+   * registrations without these checks, because nothing on its path redirects a browser: an API
+   * chain's token validation and UserInfo augmentation. Rejected: a bare path (e.g. {@code
+   * /api/authentication/callback}), an unknown placeholder, an incomplete authority, a port outside
+   * 0–65535, a fragment, or a URL without a path (e.g. {@code http://localhost}), or a path glued
+   * onto the base URL instead of separated from it by a {@code /} (e.g. {@code
+   * {baseUrl}api/callback}, which expands to a different host): the local redirection-endpoint
+   * filter would derive a path from it, or fall back to its default, while the IdP receives a
+   * {@code redirect_uri} that does not lead the browser back to that filter, and the login fails.
+   * Leave unset to use the {@code {baseUrl}/sso-callback} default.
    */
   public String getRedirectUri() {
     return redirectUri;
