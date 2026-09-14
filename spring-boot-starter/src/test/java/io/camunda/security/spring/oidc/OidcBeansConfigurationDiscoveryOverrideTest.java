@@ -142,6 +142,14 @@ final class OidcBeansConfigurationDiscoveryOverrideTest {
                   .isEqualTo("https://explicit.example.com/jwks");
               assertThat(registration.getProviderDetails().getUserInfoEndpoint().getUri())
                   .isEqualTo("https://explicit.example.com/userinfo");
+              // Discovery already set this to "sub"; the explicit userInfoUri override writes it
+              // again with the same value, so the override is a no-op here rather than a change.
+              assertThat(
+                      registration
+                          .getProviderDetails()
+                          .getUserInfoEndpoint()
+                          .getUserNameAttributeName())
+                  .isEqualTo("sub");
             });
   }
 

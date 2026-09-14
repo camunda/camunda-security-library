@@ -21,6 +21,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.ClientRegistrations;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
+import org.springframework.security.oauth2.core.oidc.IdTokenClaimNames;
 import org.springframework.util.StringUtils;
 
 /**
@@ -282,7 +283,9 @@ public final class ScopedClientRegistrationFactory {
    * Builds the base {@link ClientRegistration.Builder}: discovery via {@code issuer-uri} when set,
    * otherwise an empty builder; in both cases any explicitly-configured endpoint URI on {@link
    * OidcConfiguration} overrides the discovered value. A non-blank value on the configuration
-   * always wins; a null/blank value leaves the discovered value untouched.
+   * always wins; a null/blank value leaves the discovered value untouched. The one exception is
+   * {@code userNameAttributeName}, which is not adopter-configured at all: see {@link
+   * #applyExplicitEndpointOverrides}.
    *
    * <p>Mirrors OC's previous {@code ClientRegistrationFactory} so that adopters can rely on
    * explicit overrides to plug gaps in incomplete IdP discovery metadata (older Keycloak realms,
@@ -339,7 +342,10 @@ public final class ScopedClientRegistrationFactory {
 
   /**
    * Applies any explicitly-configured endpoint URI on top of the builder, so a non-blank value on
-   * the configuration always wins and a null/blank one leaves the discovered value untouched.
+   * the configuration always wins and a null/blank one leaves the discovered value untouched. The
+   * one exception is {@code userNameAttributeName}: it is not an endpoint URI and not adopter
+   * configured, but is written unconditionally whenever {@code userInfoUri} is set, to mirror what
+   * discovery already does for the {@code issuer-uri} path (see below).
    *
    * <p>Must run before the registration is built: on the {@code issuer-uri} path these overrides
    * are what plug gaps in an incomplete discovery document, and {@code build()} asserts that {@code
@@ -358,6 +364,12 @@ public final class ScopedClientRegistrationFactory {
     }
     if (StringUtils.hasText(oidc.getUserInfoUri())) {
       builder.userInfoUri(oidc.getUserInfoUri());
+      // Discovery (fromIssuerLocation) sets this unconditionally to "sub"; the manual-endpoint
+      // path needs the same default, or DefaultOAuth2UserService throws
+      // missing_user_name_attribute on every login as soon as a UserInfo endpoint is configured.
+      // Deliberately not oidc.getUsernameClaim(): that field may be a JSONPath expression
+      // (OidcPrincipalLoader), which would then be missing from the flat UserInfo response.
+      builder.userNameAttributeName(IdTokenClaimNames.SUB);
     }
     return builder;
   }

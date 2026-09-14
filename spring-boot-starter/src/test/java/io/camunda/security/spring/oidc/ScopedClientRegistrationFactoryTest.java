@@ -261,6 +261,46 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   // ---------------------------------------------------------------------------
+  // userInfoUri / userNameAttributeName
+  // ---------------------------------------------------------------------------
+
+  @Test
+  void shouldSetUserNameAttributeNameToSubWhenUserInfoUriConfiguredWithoutIssuer() {
+    // given a manual-endpoint provider that also configures a UserInfo endpoint
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("my-client")
+            .authorizationUri("https://idp.example.com/auth")
+            .tokenUri("https://idp.example.com/token")
+            .jwkSetUri("https://idp.example.com/jwks")
+            .userInfoUri("https://idp.example.com/userinfo")
+            .build();
+
+    // when
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    // then DefaultOAuth2UserService needs this set, or every login fails with
+    // missing_user_name_attribute as soon as a UserInfo endpoint is configured
+    final var userInfoEndpoint = registrations.get(0).getProviderDetails().getUserInfoEndpoint();
+    assertThat(userInfoEndpoint.getUri()).isEqualTo("https://idp.example.com/userinfo");
+    assertThat(userInfoEndpoint.getUserNameAttributeName()).isEqualTo("sub");
+  }
+
+  @Test
+  void shouldLeaveUserNameAttributeNameUnsetWhenUserInfoUriNotConfigured() {
+    // given a manual-endpoint provider with no UserInfo endpoint at all
+    final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
+
+    // when
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    // then
+    final var userInfoEndpoint = registrations.get(0).getProviderDetails().getUserInfoEndpoint();
+    assertThat(userInfoEndpoint.getUri()).isNull();
+    assertThat(userInfoEndpoint.getUserNameAttributeName()).isNull();
+  }
+
+  // ---------------------------------------------------------------------------
   // create(AuthenticationConfiguration)
   // ---------------------------------------------------------------------------
 
