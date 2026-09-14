@@ -227,6 +227,36 @@ final class ScopedJwtDecoderFactoryTest {
   }
 
   @Test
+  void shouldRejectSeveralProvidersWhenOneSetsNoIssuerUri() throws Exception {
+    // given two providers in one scope, one configured with explicit endpoints and no issuer-uri
+    serverA = OidcTestServer.startRsa("key-a");
+    final var authentication = new AuthenticationConfiguration();
+    authentication
+        .getProviders()
+        .getOidc()
+        .put("provider-a", serverA.oidcConfiguration("client-a"));
+    authentication
+        .getProviders()
+        .getOidc()
+        .put(
+            "provider-b",
+            OidcConfiguration.builder()
+                .clientId("client-b")
+                .redirectUri("{baseUrl}/sso-callback")
+                .authorizationUri(serverA.issuerUri() + "/auth")
+                .tokenUri(serverA.issuerUri() + "/token")
+                .jwkSetUri(serverA.jwksUri())
+                .build());
+    final var factory = factoryFor(authentication.getProviders().getOidc());
+
+    // when / then the issuer-aware decoder cannot route without an issuer per provider, and seeing
+    // that needs no discovery, so it fails where the chain is built
+    assertThatThrownBy(() -> factory.buildIssuerAwareDecoder(authentication))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("provider-b");
+  }
+
+  @Test
   void shouldRejectTwoProvidersTokenWithUnknownIssuer() throws Exception {
     serverA = OidcTestServer.startRsa("key-a");
     serverB = OidcTestServer.startRsa("key-b");

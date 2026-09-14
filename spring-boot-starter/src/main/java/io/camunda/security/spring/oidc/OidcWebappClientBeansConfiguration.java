@@ -21,12 +21,12 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProviderBuilder;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
-import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.SupplierJwtDecoder;
 
 /**
  * Provides the client-registration-dependent OIDC beans ({@link JwtDecoder}, {@link
@@ -65,19 +65,34 @@ public class OidcWebappClientBeansConfiguration {
               + " camunda.security.authentication.providers.oidc.<id>.* entries.");
     }
 
-    final var registrations = factory.createFromProviderMap(sources);
-    return new InMemoryClientRegistrationRepository(registrations);
+    return new LazyClientRegistrationRepository(factory, sources);
   }
 
+  /**
+   * Default {@link JwtDecoder} for the OIDC chains. Enumerating the repository resolves every
+   * registration and so performs OIDC discovery, which is why the decoder is built on first token
+   * decode rather than at startup: an unreachable identity provider must not abort the application
+   * context. {@link SupplierJwtDecoder} memoizes the decoder on success only, so a failed attempt
+   * is retried on the next request instead of requiring a restart. The issuer requirement the
+   * issuer-aware decoder places on a multi-provider deployment is checked against the configuration
+   * here, so that misconfiguration still fails at startup.
+   */
   @Bean
   @ConditionalOnMissingBean
   public JwtDecoder jwtDecoder(
       final ClientRegistrationRepository clientRegistrationRepository,
       final OidcProviderConfigurationPort oidcProviderConfigurationPort,
       final OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory) {
-    final var registrations = iterableRegistrations(clientRegistrationRepository);
     final var providers = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
-    return oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(registrations, providers);
+    oidcAccessTokenDecoderFactory.validateProvidersHaveIssuer(providers);
+    return new SupplierJwtDecoder(
+        () ->
+            DeferredOidcResolution.resolve(
+                "the OIDC access-token decoder for provider(s) "
+                    + DeferredOidcResolution.describeProviders(providers),
+                () ->
+                    oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
+                        iterableRegistrations(clientRegistrationRepository), providers)));
   }
 
   @SuppressWarnings("unchecked")

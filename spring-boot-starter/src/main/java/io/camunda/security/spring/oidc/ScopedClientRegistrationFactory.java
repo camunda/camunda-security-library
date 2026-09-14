@@ -294,6 +294,17 @@ public final class ScopedClientRegistrationFactory {
     validateWithoutNetwork(providers, scopedRedirectUriPath, LoginRouteChecks.ENFORCED);
   }
 
+  /**
+   * As {@link #validateWithoutNetwork}, for a caller that derives no browser login route from the
+   * configuration — see {@link #createWithoutLoginRoutes(Map)}.
+   *
+   * @throws IllegalStateException if a provider block fails one of the checks {@link
+   *     #validateWithoutNetwork} describes, other than the login route checks
+   */
+  public void validateWithoutLoginRoutes(final Map<String, OidcConfiguration> providers) {
+    validateWithoutNetwork(providers, null, LoginRouteChecks.SKIPPED);
+  }
+
   private void validateWithoutNetwork(
       final Map<String, OidcConfiguration> providers,
       final String scopedRedirectUriPath,

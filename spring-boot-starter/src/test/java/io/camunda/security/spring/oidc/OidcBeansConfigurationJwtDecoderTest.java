@@ -133,13 +133,39 @@ class OidcBeansConfigurationJwtDecoderTest {
         .withUserConfiguration(EmptyRegistrationRepository.class)
         .run(
             ctx -> {
-              assertThat(ctx).hasFailed();
-              assertThat(ctx.getStartupFailure())
+              assertThat(ctx).hasNotFailed();
+              assertThatThrownBy(() -> ctx.getBean(JwtDecoder.class).decode("any-token"))
                   .rootCause()
                   .isInstanceOf(IllegalStateException.class)
                   .hasMessageContaining("empty")
                   .hasMessageContaining("providers.oidc");
             });
+  }
+
+  @Test
+  void shouldFailAtStartupWhenOneOfSeveralProvidersSetsNoIssuerUri() {
+    // given two providers, one of them configured with explicit endpoints and no issuer-uri
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.keycloak.client-id=kc-client",
+            "camunda.security.authentication.providers.oidc.keycloak.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.providers.oidc.keycloak.issuer-uri=https://kc.example.com",
+            "camunda.security.authentication.providers.oidc.keycloak.authorization-uri=https://kc.example.com/auth",
+            "camunda.security.authentication.providers.oidc.keycloak.token-uri=https://kc.example.com/token",
+            "camunda.security.authentication.providers.oidc.keycloak.jwk-set-uri=https://kc.example.com/jwks",
+            "camunda.security.authentication.providers.oidc.azure.client-id=az-client",
+            "camunda.security.authentication.providers.oidc.azure.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.providers.oidc.azure.authorization-uri=https://az.example.com/auth",
+            "camunda.security.authentication.providers.oidc.azure.token-uri=https://az.example.com/token",
+            "camunda.security.authentication.providers.oidc.azure.jwk-set-uri=https://az.example.com/jwks")
+        // the issuer-aware decoder routes tokens by their issuer, so it needs one per provider;
+        // that needs no discovery to see, so it must not wait for the first token decode
+        .run(
+            ctx ->
+                assertThat(ctx)
+                    .getFailure()
+                    .hasMessageContaining("issuerUri")
+                    .hasMessageContaining("azure"));
   }
 
   @Test
@@ -222,8 +248,8 @@ class OidcBeansConfigurationJwtDecoderTest {
         .withUserConfiguration(NoJwkSetUriRegistration.class)
         .run(
             ctx -> {
-              assertThat(ctx).hasFailed();
-              assertThat(ctx.getStartupFailure())
+              assertThat(ctx).hasNotFailed();
+              assertThatThrownBy(() -> ctx.getBean(JwtDecoder.class).decode("any-token"))
                   .rootCause()
                   .isInstanceOf(IllegalArgumentException.class)
                   .hasMessageContaining("jwk-set-uri");
