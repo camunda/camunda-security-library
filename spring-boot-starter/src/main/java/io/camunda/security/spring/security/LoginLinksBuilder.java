@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.security;
 
+import io.camunda.security.spring.oidc.LazyClientRegistrationRepository;
 import io.camunda.security.spring.scope.BasePaths;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -44,6 +45,16 @@ final class LoginLinksBuilder {
       normalizedPrefix = BasePaths.normalize(prefix, "prefix");
     }
     final var links = new LinkedHashMap<String, String>();
+    // Answer from configuration for a lazy repository: the picker only needs ids and display
+    // names, and iterating would resolve every registration against its identity provider — one
+    // unreachable provider would then take the whole picker down.
+    if (clientRegistrationRepository instanceof final LazyClientRegistrationRepository lazy) {
+      lazy.clientNamesByRegistrationId()
+          .forEach(
+              (id, displayName) ->
+                  links.put(normalizedPrefix + "/oauth2/authorization/" + id, displayName));
+      return links;
+    }
     if (!(clientRegistrationRepository instanceof final Iterable<?> iterable)) {
       return links;
     }

@@ -127,6 +127,30 @@ public class OidcAccessTokenDecoderFactory {
    * @param clientRegistrations the list of client registrations to validate
    * @throws IllegalArgumentException if any registration is missing a valid issuer URI
    */
+  /**
+   * Runs the issuer requirement that {@link #createIssuerAwareAccessTokenDecoder} enforces on
+   * resolved registrations against the provider configuration instead. A caller that resolves its
+   * registrations lazily can then reject a multi-provider deployment with an unset issuer-uri where
+   * the misconfiguration is, rather than on the first token decode.
+   *
+   * @throws IllegalArgumentException if more than one provider is configured and any of them sets
+   *     no issuer-uri
+   */
+  public void validateProvidersHaveIssuer(final Map<String, OidcConfiguration> providersById) {
+    if (providersById.size() < 2) {
+      return;
+    }
+    final var invalidProviders =
+        providersById.entrySet().stream()
+            .filter(provider -> !StringUtils.hasText(provider.getValue().getIssuerUri()))
+            .map(Map.Entry::getKey)
+            .toList();
+    if (!invalidProviders.isEmpty()) {
+      throw new IllegalArgumentException(
+          ERROR_MISSING_ISSUER.formatted(String.join(", ", invalidProviders)));
+    }
+  }
+
   protected void validateClientRegistrationsHaveIssuer(
       final List<ClientRegistration> clientRegistrations) {
     final var invalidProviders =

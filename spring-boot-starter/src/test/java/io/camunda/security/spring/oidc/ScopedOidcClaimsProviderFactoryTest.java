@@ -44,13 +44,15 @@ final class ScopedOidcClaimsProviderFactoryTest {
 
   @InjectMocks private ScopedOidcClaimsProviderFactory factory;
 
-  // Augmentation enabled → CachingOidcClaimsProvider
+  // Augmentation enabled → augmenting provider, built on first claims lookup
   @Test
-  void shouldBuildCachingProviderWhenAugmentationEnabled() {
+  void shouldBuildDeferredCachingProviderWhenAugmentationEnabled() {
     final var authentication =
         authEnabled("https://idp.example.com", "https://idp.example.com/userinfo");
+    final var providers = Map.of("oidc", authentication.getOidc());
 
-    when(clientRegistrationFactory.createWithoutLoginRoutes(authentication))
+    when(clientRegistrationFactory.flatten(authentication)).thenReturn(providers);
+    when(clientRegistrationFactory.createWithoutLoginRoutes(providers))
         .thenReturn(
             List.of(
                 registrationWithUserInfo(
@@ -58,7 +60,9 @@ final class ScopedOidcClaimsProviderFactoryTest {
 
     final OidcClaimsProvider provider = factory.buildClaimsProvider(authentication);
 
-    assertThat(provider).isInstanceOf(CachingOidcClaimsProvider.class);
+    assertThat(provider).isInstanceOf(DeferredOidcClaimsProvider.class);
+    verifyNoInteractions(httpClient);
+    assertThat(claimsForUnaugmentedToken(provider)).containsEntry("iss", "https://idp.example.com");
   }
 
   // Augmentation disabled → NoopOidcClaimsProvider (no network calls made)
@@ -99,16 +103,20 @@ final class ScopedOidcClaimsProviderFactoryTest {
     verifyNoInteractions(clientRegistrationFactory, httpClient);
   }
 
-  // Augmentation enabled but no provider exposes a userInfoUri → fail fast (config mismatch)
+  // Augmentation enabled but no provider exposes a userInfoUri → fails on first claims lookup
   @Test
-  void shouldThrowWhenAugmentationEnabledButNoUserInfoEndpoint() {
+  void shouldThrowOnFirstLookupWhenAugmentationEnabledButNoUserInfoEndpoint() {
     final var authentication = authEnabled("https://idp.example.com", null);
+    final var providers = Map.of("oidc", authentication.getOidc());
 
     // Provider resolves but has no userInfoUri — augmentation could never run.
-    when(clientRegistrationFactory.createWithoutLoginRoutes(authentication))
+    when(clientRegistrationFactory.flatten(authentication)).thenReturn(providers);
+    when(clientRegistrationFactory.createWithoutLoginRoutes(providers))
         .thenReturn(List.of(registrationWithoutUserInfo("oidc", "https://idp.example.com")));
 
-    assertThatThrownBy(() -> factory.buildClaimsProvider(authentication))
+    final OidcClaimsProvider provider = factory.buildClaimsProvider(authentication);
+
+    assertThatThrownBy(() -> claimsForUnaugmentedToken(provider))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("userInfoUri");
   }
@@ -119,13 +127,23 @@ final class ScopedOidcClaimsProviderFactoryTest {
     final var authentication =
         authEnabled("https://idp.example.com", "https://idp.example.com/userinfo");
 
-    // No OIDC provider resolves for this scope — a broken config, mirroring
-    // ScopedJwtDecoderFactory.
-    when(clientRegistrationFactory.createWithoutLoginRoutes(authentication)).thenReturn(List.of());
+    // No OIDC provider is configured for this scope — a broken config, mirroring
+    // ScopedJwtDecoderFactory. A config error needs no network access, so it still fails where the
+    // chain is built rather than on the first request.
+    when(clientRegistrationFactory.flatten(authentication)).thenReturn(Map.of());
 
     assertThatThrownBy(() -> factory.buildClaimsProvider(authentication))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("declares no OIDC provider");
+  }
+
+  /**
+   * Runs a claims lookup that forces the deferred delegate to be built but performs no UserInfo
+   * call: the token carries no {@code openid} scope, so an augmenting provider returns the claims
+   * unchanged.
+   */
+  private static Map<String, Object> claimsForUnaugmentedToken(final OidcClaimsProvider provider) {
+    return provider.claimsFor(Map.of("iss", "https://idp.example.com"), "token");
   }
 
   // buildUserInfoUriByIssuer helper

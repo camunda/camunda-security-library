@@ -214,7 +214,8 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
                 () -> {
                   try {
                     final var decoderFactory = beanFactory.getBean(ScopedJwtDecoderFactory.class);
-                    return decoderFactory.buildIssuerAwareDecoder(descriptor.authentication());
+                    return decoderFactory.buildIssuerAwareDecoder(
+                        descriptor.authentication(), "basePath=" + descriptor.basePath());
                   } catch (final NoSuchBeanDefinitionException missing) {
                     throw new IllegalStateException(
                         "Cannot build the OIDC scoped API chain for basePath="
