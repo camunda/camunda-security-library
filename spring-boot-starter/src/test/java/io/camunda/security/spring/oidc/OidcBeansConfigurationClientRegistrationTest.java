@@ -248,6 +248,15 @@ class OidcBeansConfigurationClientRegistrationTest {
               final var registration = repository.findByRegistrationId("foo");
               assertThat(registration).isNotNull();
               assertThat(registration.getProviderDetails().getUserInfoEndpoint().getUri()).isNull();
+              // userNameAttributeName is set from the (now-nulled) userInfoUri override before
+              // user-info-enabled=false is applied; deliberately left in place since it is inert
+              // once the URI is null — DefaultOAuth2UserService never reads it in that case.
+              assertThat(
+                      registration
+                          .getProviderDetails()
+                          .getUserInfoEndpoint()
+                          .getUserNameAttributeName())
+                  .isEqualTo("sub");
             });
   }
 
