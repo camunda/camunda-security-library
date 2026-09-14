@@ -90,6 +90,21 @@ final class ScopedJwtDecoderFactoryTest {
   }
 
   @Test
+  void shouldDecodeWhenTheRedirectUriCouldNotBeServedByThisApplication() throws Exception {
+    // given an API-only scope whose redirect-uri names no callback this application serves
+    serverA = OidcTestServer.startRsa("key-a");
+    final var authentication = singleProviderAuth("provider-a", serverA);
+    authentication.getOidc().setRedirectUri("https://example.com");
+    final var factory = factoryFor(Map.of("provider-a", serverA.oidcConfiguration("test-client")));
+
+    // when nothing on this path redirects a browser, so the callback is never used
+    final var decoder = factory.buildIssuerAwareDecoder(authentication);
+
+    // then
+    assertThat(decoder.decode(serverA.sign(serverA.issuerUri())).getSubject()).isEqualTo("alice");
+  }
+
+  @Test
   void shouldRejectSingleProviderTokenWithUnknownIssuer() throws Exception {
     serverA = OidcTestServer.startRsa("key-a");
     final var authentication = singleProviderAuth("provider-a", serverA);
