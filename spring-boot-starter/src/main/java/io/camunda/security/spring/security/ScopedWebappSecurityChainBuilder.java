@@ -27,6 +27,7 @@ import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.handler.OAuth2AuthenticationExceptionHandler;
 import io.camunda.security.spring.oidc.CamundaOidcAuthorizationRequestResolver;
+import io.camunda.security.spring.oidc.OidcRedirectionEndpoint;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
 import io.camunda.security.spring.scope.BasePaths;
@@ -69,6 +70,7 @@ import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.util.matcher.RequestHeaderRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcherEntry;
 import org.springframework.session.web.http.SessionRepositoryFilter;
+import org.springframework.util.StringUtils;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 /**
@@ -168,8 +170,17 @@ public final class ScopedWebappSecurityChainBuilder {
     // match the callback and loop the login (GH-569).
     final var authentication = properties.getAuthentication();
     final var oidc = authentication != null ? authentication.getOidc() : null;
+    // The flat block drives this endpoint whether or not it also contributes a client registration,
+    // so validate it here: a value set without a client-id is not part of the provider map and
+    // would otherwise fall back to the default callback while the IdP redirects elsewhere.
+    // The registration id is only passed when the flat block contributes a registration: a
+    // redirect-only block's id names nothing, and the endpoint mounts the placeholder as a
+    // wildcard.
+    scopedClientRegistrationFactory.validateRedirectionEndpointSource(
+        oidc != null ? oidc.getRedirectUri() : null,
+        oidc != null && StringUtils.hasText(oidc.getClientId()) ? oidc.getRegistrationId() : null);
     final var redirectUri =
-        resolveRedirectionEndpointPath(
+        OidcRedirectionEndpoint.resolve(
             oidc != null ? oidc.getRedirectUri() : null, servletContextPath(http), REDIRECT_URI);
 
     // Install the session filter before the security context filter.
@@ -445,118 +456,6 @@ public final class ScopedWebappSecurityChainBuilder {
           throw new IllegalStateException(
               "Unsupported authentication method: " + authentication.getMethod());
     };
-  }
-
-  /**
-   * Resolves the OAuth2 redirection-endpoint path (where Spring listens for the authorization-code
-   * callback) from the configured client {@code redirect-uri}. Strips a leading {@code {baseUrl}}
-   * placeholder or a {@code scheme://host} prefix and any query/fragment, so a host can point the
-   * callback at whatever path its IdP client already has registered (ADR-0018, Optimize reuses
-   * {@code /api/authentication/callback}). Falls back to {@code defaultPath} when the redirect-uri
-   * is unset or yields no path, preserving the default {@code /sso-callback} behaviour.
-   *
-   * <p>The returned path is <b>context-relative</b>: any leading {@code contextPath} segment is
-   * stripped. Spring's {@code redirectionEndpoint().baseUri(...)} matcher matches the
-   * context-path-relative request path (a {@code PathPatternRequestMatcher} excludes the servlet
-   * context-path), so a redirect-uri that embeds the context-path — e.g. {@code
-   * https://host/orchestration/sso-callback} under {@code
-   * server.servlet.context-path=/orchestration}, as the 8.10 chart renders — must have that prefix
-   * removed, or the callback filter never fires and the login loops indefinitely (GH-569). A {@code
-   * {baseUrl}} template already yields a context-relative path (the placeholder subsumes the
-   * context-path), so the stripping is a no-op there; it only rescues a concrete absolute
-   * redirect-uri.
-   *
-   * <p>A {@code {registrationId}} placeholder (as in Spring's default template {@code
-   * {baseUrl}/login/oauth2/code/{registrationId}}) is rewritten to an Ant {@code *} wildcard, since
-   * {@code redirectionEndpoint().baseUri(...)} matches literally and would otherwise never match a
-   * concrete callback such as {@code /login/oauth2/code/oidc}.
-   *
-   * @throws IllegalArgumentException if the redirect-uri yields a non-blank path that does not
-   *     start with {@code "/"} (e.g. {@code "{baseUrl}api/callback"}); Spring Security's {@code
-   *     redirectionEndpoint().baseUri(...)} requires a leading slash, so we reject early with a
-   *     clear message instead of failing obscurely at request time.
-   */
-  static String resolveRedirectionEndpointPath(
-      final String configuredRedirectUri, final String contextPath, final String defaultPath) {
-    if (configuredRedirectUri == null || configuredRedirectUri.isBlank()) {
-      return defaultPath;
-    }
-    String path = configuredRedirectUri.trim();
-    if (path.startsWith("{baseUrl}")) {
-      path = path.substring("{baseUrl}".length());
-    } else {
-      final int scheme = path.indexOf("://");
-      if (scheme >= 0) {
-        final int slash = path.indexOf('/', scheme + 3);
-        path = slash >= 0 ? path.substring(slash) : "";
-      }
-    }
-    final int query = path.indexOf('?');
-    if (query >= 0) {
-      path = path.substring(0, query);
-    }
-    final int fragment = path.indexOf('#');
-    if (fragment >= 0) {
-      path = path.substring(0, fragment);
-    }
-    path = stripContextPath(path, contextPath);
-    // Spring's default template ends in "{registrationId}"; the redirection-endpoint matcher must
-    // use an Ant wildcard for that segment so it matches the resolved id (e.g. ".../code/oidc").
-    path = path.replace("{registrationId}", "*");
-    if (path.isBlank()) {
-      LOG.warn(
-          "OIDC redirect-uri '{}' carries no callback path beyond the servlet context-path '{}'; "
-              + "falling back to the default redirection-endpoint path '{}'. The OIDC login "
-              + "callback will be served at that default — set a redirect-uri with an explicit "
-              + "callback segment to override it.",
-          configuredRedirectUri,
-          contextPath,
-          defaultPath);
-      return defaultPath;
-    }
-    if (!path.startsWith("/")) {
-      throw new IllegalArgumentException(
-          "OIDC redirect-uri must resolve to a path starting with '/', but '"
-              + configuredRedirectUri
-              + "' resolved to: "
-              + path);
-    }
-    // Log the resolved matcher path so the callback the chain listens on is reconstructable from
-    // logs alone (this resolution silently broke logins for a full alpha cycle — see GH-569).
-    LOG.debug(
-        "Resolved OIDC redirection-endpoint path '{}' from redirect-uri '{}' (servlet context-path"
-            + " '{}')",
-        path,
-        configuredRedirectUri,
-        contextPath);
-    return path;
-  }
-
-  /**
-   * Removes a leading servlet {@code contextPath} segment from an application-relative {@code
-   * path}, matching only on whole path segments so {@code /orchestration} does not strip the prefix
-   * of {@code /orchestration-ui/...}. Returns {@code path} unchanged when {@code contextPath} is
-   * blank or the root {@code "/"}, and {@code ""} when {@code path} is the context-path itself
-   * (with or without a trailing slash) — i.e. a redirect-uri carrying no callback segment, which
-   * the caller then resolves to the default callback path rather than a matcher of {@code "/"} that
-   * would never match the real callback.
-   */
-  private static String stripContextPath(final String path, final String contextPath) {
-    if (contextPath == null || contextPath.isBlank() || "/".equals(contextPath)) {
-      return path;
-    }
-    final String normalized =
-        contextPath.endsWith("/")
-            ? contextPath.substring(0, contextPath.length() - 1)
-            : contextPath;
-    final String withTrailingSlash = normalized + "/";
-    if (path.equals(normalized) || path.equals(withTrailingSlash)) {
-      return "";
-    }
-    if (path.startsWith(withTrailingSlash)) {
-      return path.substring(normalized.length());
-    }
-    return path;
   }
 
   /**

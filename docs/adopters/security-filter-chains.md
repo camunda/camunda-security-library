@@ -145,53 +145,53 @@ For most conditional use cases the CSL ships purpose-built meta-annotations (see
 | `user-info-augmentation.cache-ttl` | duration | `5m` | How long a successful UserInfo response is cached per token identity (`iss+jti`, or `iss+sub+iat+exp` when `jti` is absent). |
 | `user-info-augmentation.cache-max-size` | int | `10000` | Maximum number of entries in the UserInfo claims cache. |
 | `user-info-augmentation.negative-cache-ttl` | duration | `5s` | How long a failed UserInfo fetch is cached before retrying. Limits retry traffic when the IdP is degraded. |
-| `redirect-uri` | string | unset | OAuth2 redirect-uri template. |
+| `redirect-uri` | string | unset (effective `{baseUrl}/sso-callback`) | OAuth2 `redirect_uri` sent to the IdP, and the path the webapp chain mounts its redirection endpoint at. Rejected at startup when it cannot be both — see [`redirect-uri` and the redirection endpoint](#redirect-uri-and-the-redirection-endpoint). |
 | `scope` | list&lt;string&gt; | `[openid, profile]` | OAuth2 scopes requested. |
 | `audiences` | list&lt;string&gt; | empty | Reserved; not consumed by the default beans. |
 | `registration-id` | string | `oidc` | Spring Security client registration id. |
 | `client-authentication-method` | string | `client_secret_basic` | Spring Security `ClientAuthenticationMethod` literal. |
 
+### `redirect-uri` and the redirection endpoint
+
+One value decides two things: the `redirect_uri` sent to the IdP, and the path the webapp chain mounts its redirection endpoint at (so a host can point the callback at a path its IdP client already has registered — see [ADR-0018](../adr/0018-optimize-reuses-stateful-oidc-webapp-chain.md)). Spring expands `{baseUrl}`, `{baseScheme}`, `{baseHost}`, `{basePort}`, `{basePath}`, `{registrationId}` and `{action}` in it per request and nothing else; `{basePort}` and `{basePath}` expand with their own `:` and `/`.
+
+Which chain serves the callback is not decided by the value. A scoped (per-tenant) chain mounts the redirection endpoint for the very value it validates, so both uses agree by construction. The unscoped chain mounts a single endpoint derived from the flat `camunda.security.authentication.oidc.redirect-uri` alone: a `redirect-uri` set only under `providers.oidc.<id>` is still sent to the IdP, but the unscoped chain does not listen on it. A flat block with a `client-id` contributes a registration of its own, so its value is both sent and served — unless a provider entry reuses the flat `registration-id`, because that entry [overwrites the flat one](#combining-the-flat-and-providers-shapes) and then supplies what the IdP is sent while the flat value still decides what is served, so such an entry has to repeat the flat `redirect-uri`; a flat block that sets only `redirect-uri` moves the served path without changing what any provider sends. An unscoped deployment on the providers shape therefore has to carry a custom callback path in both places: the flat block, which moves the mounted endpoint, and every provider entry, which is what the IdP is told. Routing is the host's too: a chain only sees the callback when its own `securityMatcher` covers that path, which for the webapp chain comes from `SecurityPathPort.webappPaths()` — so a host that moves the callback off the webapp paths has to list it there.
+
+A caller that derives a redirection endpoint from the value rejects it at startup — the webapp client beans and the webapp chains — unless it expands, under the deployment's own `server.servlet.context-path`, to:
+
+- an absolute `http`/`https` URL with a host, a path, and a port in 1–65535 if it names one;
+- a URL without a fragment (RFC 6749 §3.1.2 forbids one in a redirection endpoint URI; a query is allowed and is passed on to the IdP);
+- a path Spring Security's default `StrictHttpFirewall` lets through — no empty segment (`//`), dot segment (`/./`, `/../`), semicolon, backslash, percent escape of any of those, or control character, since it rejects such a request before any chain sees it;
+- a callback path that the redirection endpoint derived from the same value serves.
+
+A provider-map rejection names the provider and both properties that can set the value; a flat `redirect-uri` that contributes no registration of its own names only `camunda.security.authentication.oidc.redirect-uri`, since there is no provider to name. A caller that derives no browser login route is not one of these callers — an API chain's token validation and UserInfo augmentation, neither of which redirects a browser or mounts a redirection endpoint. Both also skip the registration-id addressability check below, since they use the id as a registration key and never resolve `/oauth2/authorization/<id>`. So an API-only deployment keeps starting with a `redirect-uri` it could never serve or an id the login route could not address, and the login paths still reject both.
+
+The same startup pass rejects any provider block Spring itself could not turn into a `ClientRegistration`: a blank `client-id` or `client-authentication-method`, a `scope` entry holding a space-separated list rather than one value per entry, a malformed value — not an absolute `http`/`https` URL with a host, or naming a port outside 1–65535 — in any configured endpoint URL (`issuer-uri`, `authorization-uri`, `token-uri`, `jwk-set-uri`, `additional-jwk-set-uris`, `end-session-endpoint-uri`, and `user-info-uri` unless `user-info-enabled: false` discards it), and a registration id that is not addressable as a single path segment (the login route is `<basePath>/oauth2/authorization/<id>`). None of these values became newly mandatory — the failure simply moves from the first login attempt to startup, where the configuration is.
+
+Values that look plausible and are rejected:
+
+| Value | Why |
+|-------|-----|
+| `{baseUrl}api/callback` | no `/` after the placeholder, so it expands to a different host (`https://hostapi/callback`) |
+| `https://example.com/{basePath}/sso-callback` | `{basePath}` in a segment of its own — empty on a root deployment, an extra segment under a context path |
+| `https://example.com:{basePort}/sso-callback` | `{basePort}` brings its own `:`, so a non-default port expands to `example.com::8443` |
+| `https://example.com/orchestration` under `server.servlet.context-path=/orchestration` | the whole path is the context path, leaving no callback segment for the redirection endpoint |
+| `https://example.com:99999/sso-callback` | URI syntax accepts the port, but no TCP connection can be opened to it |
+
 ### UserInfo claim augmentation
 
-The `user-info-augmentation` block enables an opt-in, request-time mechanism
-that calls the IdP's `/userinfo` endpoint and merges the returned claims onto
-the JWT. This is distinct from the `user-info-enabled` toggle (which controls
-whether Spring Security calls UserInfo during the *login* flow): augmentation
-operates on every authenticated API request using the bearer token.
+The `user-info-augmentation` block enables an opt-in, request-time mechanism that calls the IdP's `/userinfo` endpoint and merges the returned claims onto the JWT. This is distinct from the `user-info-enabled` toggle (which controls whether Spring Security calls UserInfo during the *login* flow): augmentation operates on every authenticated API request using the bearer token.
 
 **When to use augmentation vs. `user-info-enabled`:**
 
-- Use `user-info-enabled: false` when you want to skip the UserInfo call
-  entirely during the webapp OAuth2 login flow (e.g. the IdP does not expose
-  `/userinfo`, or you only need id-token claims for the session).
-- Use `user-info-augmentation.enabled: true` when your IdP omits
-  authorization-relevant claims (groups, roles, custom attributes) from the
-  access token. Augmentation fetches these at request time and merges them in.
+- Use `user-info-enabled: false` when you want to skip the UserInfo call entirely during the webapp OAuth2 login flow (e.g. the IdP does not expose `/userinfo`, or you only need id-token claims for the session).
+- Use `user-info-augmentation.enabled: true` when your IdP omits authorization-relevant claims (groups, roles, custom attributes) from the access token. Augmentation fetches these at request time and merges them in.
 
-> **Note:** augmentation sources the UserInfo endpoint URI from the
-> `ClientRegistration`. Setting `user-info-enabled: false` nulls that URI. If
-> that leaves *every* configured provider without a UserInfo URI (a single-IdP
-> setup, or a multi-IdP setup where all providers disable it), CSL fails fast
-> at startup with an `IllegalStateException` rather than silently running
-> without augmentation — enabling augmentation with nothing it can ever
-> augment is treated as a configuration mismatch. In a multi-IdP setup where
-> only *some* providers disable `user-info-enabled`, the coupling is silent
-> instead: tokens from those providers' issuers skip augmentation at request
-> time with no error surfaced (logged at DEBUG). Leave `user-info-enabled` at
-> its default (`true`) for any provider you want augmentation to cover. See
-> [ADR-0007](../adr/0007-oidc-user-info-enabled-toggle.md) for the full
-> mechanism.
+> **Note:** augmentation sources the UserInfo endpoint URI from the `ClientRegistration`. Setting `user-info-enabled: false` nulls that URI. If that leaves *every* configured provider without a UserInfo URI (a single-IdP setup, or a multi-IdP setup where all providers disable it), CSL fails fast at startup with an `IllegalStateException` rather than silently running without augmentation — enabling augmentation with nothing it can ever augment is treated as a configuration mismatch. In a multi-IdP setup where only *some* providers disable `user-info-enabled`, the coupling is silent instead: tokens from those providers' issuers skip augmentation at request time with no error surfaced (logged at DEBUG). Leave `user-info-enabled` at its default (`true`) for any provider you want augmentation to cover. See [ADR-0007](../adr/0007-oidc-user-info-enabled-toggle.md) for the full mechanism.
 
-**JWT-wins invariant.** UserInfo claims are merged additively: JWT claims always
-win on any conflict. The UserInfo response can never override `sub`, `iss`,
-`aud`, `exp`, or any other claim that is already present in the signed token.
-This preserves the cryptographic trust boundary of the JWT.
+**JWT-wins invariant.** UserInfo claims are merged additively: JWT claims always win on any conflict. The UserInfo response can never override `sub`, `iss`, `aud`, `exp`, or any other claim that is already present in the signed token. This preserves the cryptographic trust boundary of the JWT.
 
-**Fail-open.** If the `/userinfo` call fails (network error, non-2xx status,
-JSON parse error, or a `sub` mismatch per OIDC §5.3.2), the auth chain
-continues with the original JWT claims unchanged. Failed fetches are
-negatively cached for `negative-cache-ttl` to limit retry traffic while the
-IdP is degraded.
+**Fail-open.** If the `/userinfo` call fails (network error, non-2xx status, JSON parse error, or a `sub` mismatch per OIDC §5.3.2), the auth chain continues with the original JWT claims unchanged. Failed fetches are negatively cached for `negative-cache-ttl` to limit retry traffic while the IdP is degraded.
 
 **Example:**
 
@@ -211,10 +211,7 @@ camunda:
           negative-cache-ttl: 5s
 ```
 
-Tuning `negative-cache-ttl`: a lower value recovers faster after the IdP
-returns to health; a higher value reduces load on a degraded endpoint. The
-5-second default is conservative — raise it (e.g. `30s`) if your IdP has
-frequent short outages that generate high retry traffic.
+Tuning `negative-cache-ttl`: a lower value recovers faster after the IdP returns to health; a higher value reduces load on a degraded endpoint. The 5-second default is conservative — raise it (e.g. `30s`) if your IdP has frequent short outages that generate high retry traffic.
 
 ### Multi-IdP OIDC (`camunda.security.authentication.providers.oidc.<id>.*`)
 
@@ -235,19 +232,17 @@ camunda:
             issuer-uri: https://keycloak.example.com/realms/camunda
             client-id: camunda-keycloak
             client-secret: ${KEYCLOAK_SECRET}
-            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
           azure:
             issuer-uri: https://login.microsoftonline.com/<tenant-id>/v2.0
             client-id: camunda-azure
             client-secret: ${AZURE_SECRET}
-            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
 ```
 
 With this configuration, users start a login at `/oauth2/authorization/keycloak` or `/oauth2/authorization/azure`.
 
-> **Multi-provider token validation** works automatically — the library builds an issuer-aware
-> `JwtDecoder` when multiple providers are configured. No flat `oidc.*` block or custom
-> `@Bean JwtDecoder` is required. See [JwtDecoder selection rules](#resource-server-jwtdecoder-selection).
+The callback path has two sides, and a custom one has to be set on both. The unscoped webapp chain mounts its single redirection endpoint from the flat `camunda.security.authentication.oidc.redirect-uri`, while what the IdP is told comes from each provider entry's own `redirect-uri` — so the examples here set neither and the callback stays at the default `/sso-callback` for every provider, which is what the chain mounts. To serve Spring's conventional path instead, set `redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"` on the flat block **and** on every provider entry: the flat value moves the mounted endpoint (the `{registrationId}` in it becomes a single-segment wildcard, so one endpoint serves every registration) and the provider values put the matching callback in the authorization request. Setting it in only one of the two places sends the browser to a path nothing listens on, or listens on a path the IdP is never told — see [`redirect-uri` and the redirection endpoint](#redirect-uri-and-the-redirection-endpoint). A flat `redirect-uri` needs no `client-id` alongside it if the flat block should not contribute a provider of its own.
+
+> **Multi-provider token validation** works automatically — the library builds an issuer-aware `JwtDecoder` when multiple providers are configured. No flat `oidc.*` block or custom `@Bean JwtDecoder` is required. See [JwtDecoder selection rules](#resource-server-jwtdecoder-selection).
 
 #### Combining the flat and providers shapes
 
@@ -277,33 +272,20 @@ camunda:
             issuer-uri: https://keycloak.example.com/realms/camunda
             client-id: camunda
             client-secret: ${KEYCLOAK_SECRET}
-            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
 ```
 
 The flat shape stays supported indefinitely — there is no deprecation. Migrate when adding a second provider, or stay on the flat shape if a single IdP is all the host needs.
 
 #### Resource-server `JwtDecoder` selection
 
-The library ships a single `JwtDecoder` bean that automatically selects the appropriate
-validation strategy based on the number of configured OIDC providers:
+The library ships a single `JwtDecoder` bean that automatically selects the appropriate validation strategy based on the number of configured OIDC providers:
 
-- **Single provider** (flat `oidc.*` block or single `providers.oidc.<id>` entry): a single-issuer
-  `NimbusJwtDecoder` is built from the registration's JWK set URI. Behaviour is identical to prior
-  releases — no configuration change required.
-- **Multiple providers** (two or more entries across flat and providers shapes): an **issuer-aware**
-  decoder is built. When a token arrives, the library reads its `iss` claim and routes key selection
-  and validation to the matching registration. A token whose `iss` matches no configured provider
-  fails with a `BadJwtException` whose message matches `"Unknown issuer '<iss>'. No matching client registration found."`. All provider registrations must have an
-  `issuer-uri` configured; startup fails with a message listing any offending registration ids
-  otherwise.
+- **Single provider** (flat `oidc.*` block or single `providers.oidc.<id>` entry): a single-issuer `NimbusJwtDecoder` is built from the registration's JWK set URI. Behaviour is identical to prior releases — no configuration change required.
+- **Multiple providers** (two or more entries across flat and providers shapes): an **issuer-aware** decoder is built. When a token arrives, the library reads its `iss` claim and routes key selection and validation to the matching registration. A token whose `iss` matches no configured provider fails with a `BadJwtException` whose message matches `"Unknown issuer '<iss>'. No matching client registration found."`. All provider registrations must have an `issuer-uri` configured; startup fails with a message listing any offending registration ids otherwise.
 
-For the issuer-aware path, per-provider `audiences` and `additional-jwk-set-uris` are honoured
-independently — a token from provider A is validated against A's audience list and A's JWK set
-URIs only.
+For the issuer-aware path, per-provider `audiences` and `additional-jwk-set-uris` are honoured independently — a token from provider A is validated against A's audience list and A's JWK set URIs only.
 
-A host-supplied `@Bean JwtDecoder` continues to take precedence via `@ConditionalOnMissingBean`.
-The library's default `JWSKeySelectorFactory`, `TokenValidatorFactory`, and
-`OidcAccessTokenDecoderFactory` beans are also overridable independently.
+A host-supplied `@Bean JwtDecoder` continues to take precedence via `@ConditionalOnMissingBean`. The library's default `JWSKeySelectorFactory`, `TokenValidatorFactory`, and `OidcAccessTokenDecoderFactory` beans are also overridable independently.
 
 See [ADR-0006](../adr/0006-multi-idp-oidc-configuration.md) for the design rationale.
 
@@ -355,13 +337,11 @@ camunda:
             issuer-uri: https://keycloak.example.com/realms/camunda
             client-id: camunda-keycloak
             client-secret: ${KEYCLOAK_SECRET}
-            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
             # user-info-enabled defaults to true — Spring fetches UserInfo
           azure:
             issuer-uri: https://login.microsoftonline.com/<tenant-id>/v2.0
             client-id: camunda-azure
             client-secret: ${AZURE_SECRET}
-            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
             user-info-enabled: false   # skip the /userinfo call for Azure
 ```
 
@@ -578,14 +558,7 @@ public class HostScopeConfiguration {
 
 How each scope's `AuthenticationConfiguration` is assembled (which providers it carries, per-provider overrides, the auth method) is entirely the host's concern — CSL only consumes the finished configuration.
 
-**Per-scope auth method independence.** Each scope selects its own authentication method via the
-descriptor's `authentication.getMethod()`, independently of the cluster's global
-`camunda.security.authentication.method`. CSL provides the per-scope OIDC infrastructure
-(`ScopedJwtDecoderFactory`, `ScopedClientRegistrationFactory`, `OidcAccessTokenDecoderFactory`,
-`JWSKeySelectorFactory`) through the unconditional `ScopedOidcInfrastructureConfiguration` class,
-which is always active as a member of the `CamundaSecurityAutoConfiguration` umbrella. A host can
-therefore contribute an OIDC-scoped descriptor even when the cluster's global method is `basic` —
-no global OIDC configuration is required and no additional `@Import` is needed.
+**Per-scope auth method independence.** Each scope selects its own authentication method via the descriptor's `authentication.getMethod()`, independently of the cluster's global `camunda.security.authentication.method`. CSL provides the per-scope OIDC infrastructure (`ScopedJwtDecoderFactory`, `ScopedClientRegistrationFactory`, `OidcAccessTokenDecoderFactory`, `JWSKeySelectorFactory`) through the unconditional `ScopedOidcInfrastructureConfiguration` class, which is always active as a member of the `CamundaSecurityAutoConfiguration` umbrella. A host can therefore contribute an OIDC-scoped descriptor even when the cluster's global method is `basic` — no global OIDC configuration is required and no additional `@Import` is needed.
 
 **Dev-mode note.** When `camunda.security.authentication.unprotected-api=true` is set globally, all contributed scoped chains are also built as permit-all — the descriptor's `authentication.method` is ignored in this mode. This matches the global chain behaviour in dev environments, but means per-scope security is not enforced when the flag is on. Don't set this flag in production or any environment where per-scope isolation is a requirement.
 
@@ -606,9 +579,7 @@ public OidcResourceServerCustomizer protectedResourceMetadata(...) {
 
 ### `JwtAuthenticationConverter` — per-chain JWT authority mapping
 
-`ScopedApiSecurityChainBuilder.buildOidcApiChain(...)` and `buildScopedApiChain(...)` each have an
-overload that accepts a Spring Security `Converter<Jwt, Authentication>` (a.k.a.
-`JwtAuthenticationConverter`), applied only to that specific chain instance:
+`ScopedApiSecurityChainBuilder.buildOidcApiChain(...)` and `buildScopedApiChain(...)` each have an overload that accepts a Spring Security `Converter<Jwt, Authentication>` (a.k.a. `JwtAuthenticationConverter`), applied only to that specific chain instance:
 
 ```java
 @Bean
@@ -623,25 +594,9 @@ public SecurityFilterChain apiV1FilterChain(
 }
 ```
 
-Use this when your application builds **multiple simultaneous OIDC API chains that need different
-authority-mapping logic** — for example, distinct chains per API version. This is a genuinely
-per-chain hook, not a globally-registered customizer: passing `null` (or, for the
-`buildScopedApiChain` overload, a supplier that returns `null`) preserves Spring Security's default
-`JwtAuthenticationConverter` behavior for that chain. See
-[ADR-0016](../adr/0016-cors-and-https-redirect-host-hooks.md) for why this is a method
-parameter rather than an `ObjectProvider`-discovered bean like `OidcResourceServerCustomizer` or
-`HttpsRedirectCustomizer` below.
+Use this when your application builds **multiple simultaneous OIDC API chains that need different authority-mapping logic** — for example, distinct chains per API version. This is a genuinely per-chain hook, not a globally-registered customizer: passing `null` (or, for the `buildScopedApiChain` overload, a supplier that returns `null`) preserves Spring Security's default `JwtAuthenticationConverter` behavior for that chain. See [ADR-0016](../adr/0016-cors-and-https-redirect-host-hooks.md) for why this is a method parameter rather than an `ObjectProvider`-discovered bean like `OidcResourceServerCustomizer` or `HttpsRedirectCustomizer` below.
 
-> **Not the same as CSL's `CamundaAuthenticationConverter`.** The [Authentication
-> converters](#authentication-converters) section above documents `OidcTokenAuthenticationConverter`
-> and `JwtGrantedAuthoritiesAuthenticationConverter` — CSL's own higher-level contract that maps a
-> Spring Security `Authentication` into a `CamundaAuthentication` (tenants, roles, memberships).
-> This section is about the lower-level Spring Security seam that runs *before* that: the raw
-> `Converter<Jwt, Authentication>` wired directly into `oauth2ResourceServer().jwt(...)`, which
-> determines what kind of `Authentication`/`GrantedAuthority` set exists in the first place before
-> CSL's own converter ever sees it. Most deployments only need CSL's `CamundaAuthenticationConverter`
-> layer; this per-chain hook exists for the narrower case of a host running multiple API chains that
-> must each map JWT claims to authorities differently before CSL's layer runs.
+> **Not the same as CSL's `CamundaAuthenticationConverter`.** The [Authentication converters](#authentication-converters) section above documents `OidcTokenAuthenticationConverter` and `JwtGrantedAuthoritiesAuthenticationConverter` — CSL's own higher-level contract that maps a Spring Security `Authentication` into a `CamundaAuthentication` (tenants, roles, memberships). This section is about the lower-level Spring Security seam that runs *before* that: the raw `Converter<Jwt, Authentication>` wired directly into `oauth2ResourceServer().jwt(...)`, which determines what kind of `Authentication`/`GrantedAuthority` set exists in the first place before CSL's own converter ever sees it. Most deployments only need CSL's `CamundaAuthenticationConverter` layer; this per-chain hook exists for the narrower case of a host running multiple API chains that must each map JWT claims to authorities differently before CSL's layer runs.
 
 ### `OidcTokenEndpointCustomizer` — customise the OAuth2 login token endpoint
 

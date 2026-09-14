@@ -21,6 +21,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProviderBuilder;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedClientManager;
@@ -82,8 +83,10 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
   // Co-presence is safe — both are @ConditionalOnMissingBean.
   @Bean
   @ConditionalOnMissingBean
-  public ScopedClientRegistrationFactory scopedClientRegistrationFactory() {
-    return new ScopedClientRegistrationFactory();
+  public ScopedClientRegistrationFactory scopedClientRegistrationFactory(
+      final Environment environment) {
+    return new ScopedClientRegistrationFactory(
+        environment.getProperty("server.servlet.context-path", ""));
   }
 
   @Bean

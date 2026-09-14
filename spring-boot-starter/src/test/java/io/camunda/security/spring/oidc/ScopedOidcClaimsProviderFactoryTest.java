@@ -50,7 +50,7 @@ final class ScopedOidcClaimsProviderFactoryTest {
     final var authentication =
         authEnabled("https://idp.example.com", "https://idp.example.com/userinfo");
 
-    when(clientRegistrationFactory.create(authentication))
+    when(clientRegistrationFactory.createWithoutLoginRoutes(authentication))
         .thenReturn(
             List.of(
                 registrationWithUserInfo(
@@ -105,7 +105,7 @@ final class ScopedOidcClaimsProviderFactoryTest {
     final var authentication = authEnabled("https://idp.example.com", null);
 
     // Provider resolves but has no userInfoUri — augmentation could never run.
-    when(clientRegistrationFactory.create(authentication))
+    when(clientRegistrationFactory.createWithoutLoginRoutes(authentication))
         .thenReturn(List.of(registrationWithoutUserInfo("oidc", "https://idp.example.com")));
 
     assertThatThrownBy(() -> factory.buildClaimsProvider(authentication))
@@ -121,7 +121,7 @@ final class ScopedOidcClaimsProviderFactoryTest {
 
     // No OIDC provider resolves for this scope — a broken config, mirroring
     // ScopedJwtDecoderFactory.
-    when(clientRegistrationFactory.create(authentication)).thenReturn(List.of());
+    when(clientRegistrationFactory.createWithoutLoginRoutes(authentication)).thenReturn(List.of());
 
     assertThatThrownBy(() -> factory.buildClaimsProvider(authentication))
         .isInstanceOf(IllegalStateException.class)

@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.security;
 
+import io.camunda.security.spring.oidc.OidcRedirectionEndpoint;
 import jakarta.servlet.http.HttpServletRequest;
 
 /** Shared constants for the CSL security filter chains. */
@@ -16,7 +17,7 @@ public final class CamundaSecurityFilterChainConstants {
   public static final String X_CSRF_TOKEN = "X-CSRF-TOKEN";
   public static final String LOGIN_URL = "/login";
   public static final String LOGOUT_URL = "/logout";
-  public static final String REDIRECT_URI = "/sso-callback";
+  public static final String REDIRECT_URI = OidcRedirectionEndpoint.DEFAULT_PATH;
 
   /**
    * The session activity-heartbeat endpoint (ADR-0020). Derived from {@code basePath} on every
