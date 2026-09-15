@@ -11,12 +11,15 @@ import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 /**
@@ -43,25 +46,50 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
  * DelegatingCamundaAuthenticationConverter} by registering it as a {@link
  * CamundaAuthenticationConverter} bean. It opts in to handling only {@link JwtAuthenticationToken}
  * instances; non-matching authentications are dispatched to a different converter.
+ *
+ * <p>A bearer token's {@code iss} claim selects a per-provider claim converter when one is
+ * configured; an unrecognized issuer falls back to the default.
  */
 public final class OidcTokenAuthenticationConverter
     implements CamundaAuthenticationConverter<Authentication> {
 
-  private final LazyTokenClaimsConverter tokenClaimsConverter;
+  private final LazyTokenClaimsConverter defaultTokenClaimsConverter;
   private final OidcClaimsProvider claimsProvider;
+  private final TokenClaimsConvertersByIssuer tokenClaimsConvertersByIssuer;
 
   /**
-   * @param tokenClaimsConverter maps the (possibly augmented) claims map to a {@code
+   * @param defaultTokenClaimsConverter maps the (possibly augmented) claims map to a {@code
    *     CamundaAuthentication}, including principal selection and memberships resolution.
    * @param claimsProvider augments or replaces the JWT claims before they are mapped — for example
    *     by calling the OIDC UserInfo endpoint. Use {@code NoopOidcClaimsProvider} for the JWT-only
    *     behaviour.
    */
   public OidcTokenAuthenticationConverter(
-      final LazyTokenClaimsConverter tokenClaimsConverter,
+      final LazyTokenClaimsConverter defaultTokenClaimsConverter,
       final OidcClaimsProvider claimsProvider) {
-    this.tokenClaimsConverter = tokenClaimsConverter;
+    this(defaultTokenClaimsConverter, claimsProvider, new TokenClaimsConvertersByIssuer(Map.of()));
+  }
+
+  /**
+   * @param defaultTokenClaimsConverter used when the bearer token's issuer has no entry in {@code
+   *     tokenClaimsConvertersByIssuer} — including a missing {@code iss} claim, or a provider
+   *     configured without an {@code issuer-uri}.
+   * @param claimsProvider augments or replaces the JWT claims before they are mapped — for example
+   *     by calling the OIDC UserInfo endpoint. Use {@code NoopOidcClaimsProvider} for the JWT-only
+   *     behaviour.
+   * @param tokenClaimsConvertersByIssuer per-issuer claim converters, keyed by issuer URI. If
+   *     multiple registrations share an issuer, only one occupies that entry.
+   */
+  public OidcTokenAuthenticationConverter(
+      final LazyTokenClaimsConverter defaultTokenClaimsConverter,
+      final OidcClaimsProvider claimsProvider,
+      final TokenClaimsConvertersByIssuer tokenClaimsConvertersByIssuer) {
+    this.defaultTokenClaimsConverter = defaultTokenClaimsConverter;
     this.claimsProvider = claimsProvider;
+    this.tokenClaimsConvertersByIssuer =
+        tokenClaimsConvertersByIssuer != null
+            ? tokenClaimsConvertersByIssuer
+            : new TokenClaimsConvertersByIssuer(Map.of());
   }
 
   @Override
@@ -74,12 +102,11 @@ public final class OidcTokenAuthenticationConverter
     try {
       return Optional.of(authentication)
           .map(JwtAuthenticationToken.class::cast)
+          .map(JwtAuthenticationToken::getToken)
           .map(
-              token -> {
-                final Jwt jwt = token.getToken();
-                return claimsProvider.claimsFor(jwt.getClaims(), jwt.getTokenValue());
-              })
-          .map(tokenClaimsConverter::convert)
+              jwt ->
+                  resolveTokenClaimsConverter(jwt)
+                      .convert(claimsProvider.claimsFor(jwt.getClaims(), jwt.getTokenValue())))
           .orElseThrow(
               () ->
                   new IllegalStateException(
@@ -88,5 +115,16 @@ public final class OidcTokenAuthenticationConverter
       throw new OAuth2AuthenticationException(
           new OAuth2Error(OAuth2ErrorCodes.INVALID_TOKEN, e.getMessage(), null), e);
     }
+  }
+
+  /**
+   * Reads the issuer from the raw JWT claims, not the possibly-augmented claims {@link
+   * OidcClaimsProvider} produces. {@link Objects#toString(Object, String)} normalizes it regardless
+   * of whether the JWT decoder yielded a {@code String} or a {@code java.net.URL}, so the lookup
+   * can't miss on type alone.
+   */
+  private LazyTokenClaimsConverter resolveTokenClaimsConverter(final Jwt jwt) {
+    final var issuer = Objects.toString(jwt.getClaims().get(JwtClaimNames.ISS), null);
+    return tokenClaimsConvertersByIssuer.getOrDefault(issuer, defaultTokenClaimsConverter);
   }
 }
