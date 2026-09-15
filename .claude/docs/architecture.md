@@ -15,7 +15,6 @@ The CSL is a multi-module Maven library. Modules will be added as implementation
 - Dependency direction: `core` → `api`. The public types live in `api/`; `core` ports import them. Implementations (services, adapters) depend on the port contracts, not the reverse.
 - `*Port` contracts speak domain types only; transport translation is the caller's responsibility
 - Outbound adapter implementations must never leak infrastructure exceptions (JPA, SQL, HTTP client) into the domain
-- Existing code may still use legacy `adapter/` contract packages and `*Impl` names. Do not refactor those names unless the work explicitly calls for it.
 
 ## Deployment Strategy Architecture
 
@@ -23,7 +22,7 @@ The CSL is embedded into host applications. Active capabilities are selected via
 
 - **Authentication method**: `camunda.security.authentication.method=basic|oidc` selects the auth-mode chains.
 - **API protection**: `camunda.security.authentication.unprotected-api=true|false` swaps the API protection chain for the dev-mode permit-all variant.
-- **Deployment strategy** (`oc-standalone` / `oc-managed` / `hub`): planned for the policy work; **not currently consumed by the filter chain layer.** AuthN/AuthZ enforcement is always active regardless of strategy.
+- **Deployment strategy** (`oc-standalone` / `oc-managed` / `hub`): design intent for the policy work; **no such property exists in the codebase yet** — neither the strategy names nor a binding type. Authentication is always active in every strategy. Authorization enforcement is always active for OC's read/check path; Hub and Optimize authorization still runs through Management Identity — see [rollout status](../../docs/architecture/02-current-state.md#21-rollout-status-at-a-glance).
 
 **Important:** The CSL does not use Spring Boot auto-configuration (see [ADR-0003](../../docs/adr/0003-no-spring-boot-auto-configuration.md)). `@ConditionalOnProperty` annotations on configuration classes are present for future use but have no effect until the host explicitly `@Import`s the class. Nothing activates by simply adding the Maven dependency.
 
@@ -154,7 +153,13 @@ check only ever sees the resulting resource ID, not the level it came from.
 
 ## Data Flow
 
-### Policy propagation (Hub → OC)
+### Policy propagation (Hub → OC) — target design, not yet implemented
+
+Authentication is shipped across Hub, OC, and Optimize; OC's authorization *read* path is shipped
+behind `AuthorizationCheckPort` (ADR-0014). The flow below — Hub → OC policy distribution and the
+OC → engine forwarding step — is design-target only: `EngineCommandPort` is not yet defined in
+`core/port/out/`, and no outbox/dispatch mechanism exists yet. See
+[rollout status](../../docs/architecture/02-current-state.md#21-rollout-status-at-a-glance).
 
 ```
 Policy change committed in Hub
@@ -162,7 +167,7 @@ Policy change committed in Hub
   → Outbox event recorded in same transaction
   → Hub dispatcher sends POLICY_SNAPSHOT to target OC
   → OC Camunda Security Library receives and applies snapshot
-  → OC forwards identity state as engine commands (via EngineCommandPort)
+  → OC forwards identity state as engine commands (via EngineCommandPort, not yet defined)
   → Engine persists to primary storage (RocksDB)
   → Exporter writes to secondary storage (ES/OS/RDBMS)
 ```

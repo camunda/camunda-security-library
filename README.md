@@ -18,7 +18,7 @@ For the platform team: one codebase to maintain, one security surface to audit, 
 
 ## Architecture
 
-The CSL is a **hexagonal (ports and adapters) Spring Boot library** embedded into host applications (Hub, Orchestration Clusters, Optimize). For new code, interfaces in the core should be modeled as ports: inbound ports model use cases, and outbound ports model dependencies on persistence, IdP clients, engine commands, and outbox delivery. Host applications provide adapters that implement those outbound ports. Some legacy outbound contracts still exist in `core` under `io.camunda.security.core.adapter` and will remain until they are refactored to follow this convention consistently.
+The CSL is a **hexagonal (ports and adapters) Spring Boot library** embedded into host applications (Hub, Orchestration Clusters, Optimize). For new code, interfaces in the core should be modeled as ports: inbound ports model use cases, and outbound ports model dependencies on persistence, IdP clients, engine commands, and outbox delivery. Host applications provide adapters that implement those outbound ports.
 
 No host-specific code leaks into the library domain. Swapping a database, replacing an IdP client, or adding a new deployment topology requires only a new adapter.
 
@@ -28,14 +28,14 @@ No host-specific code leaks into the library domain. Swapping a database, replac
 - `api`: public consumer-facing types intended to be imported by host applications.
   - Put shared public models in `api/model` (for example `CamundaAuthentication`).
   - Put shared public context/helper contracts in `api/context` (for example holders, providers, converters).
-- `spring-boot-starter`: Spring-specific auto-configuration and authentication filter chain wiring.
+- `spring-boot-starter`: Spring configuration classes for authentication filter chains, activated by explicit `@Import` — no auto-configuration, see [ADR-0003](docs/adr/0003-no-spring-boot-auto-configuration.md).
 - `adapters` *(planned)*: non-Spring infrastructure adapter code for environments that do not use Spring Boot.
 
 Rule of thumb: if a type is a hexagonal inbound or outbound port, keep it in `core`. Use `api` for public adopter-facing models and helper/context contracts that are not hexagonal ports.
 
 ### Deployment Strategies
 
-Active capabilities are selected via a **deployment strategy configuration property** (not Spring profiles):
+Active capabilities are selected via a **deployment strategy configuration property** (not Spring profiles). **Not yet implemented:** no such property exists in the codebase yet — the strategy names below are design intent, and Authoring/Outbox Dispatch/Engine Projection are all still under development — see the [rollout status table](docs/architecture/02-current-state.md#21-rollout-status-at-a-glance).
 
 | Strategy | Policy Authority | Authoring | Outbox Dispatch | Engine Projection |
 |---|---|---|---|---|
@@ -43,7 +43,11 @@ Active capabilities are selected via a **deployment strategy configuration prope
 | `oc-managed` | Receives from Hub | No (read-only) | No | Yes |
 | `hub` | Hub (central source of truth) | Yes | Yes | No |
 
-Authentication and authorization enforcement is **always active** in every strategy.
+> **Note:** The property values above carry an `oc-` prefix; a rename to the shorter names (`standalone`, `managed`) is planned.
+
+Authentication is **always active** in every strategy. Authorization enforcement is always active for
+OC's read/check path; Hub and Optimize authorization still runs through Management Identity — see
+[rollout status](docs/architecture/02-current-state.md#21-rollout-status-at-a-glance).
 
 ### Unified Policy Model
 
@@ -65,7 +69,7 @@ Authorizations have three authorization levels: `ALL`, `TENANT`, or `PHYSICAL_TE
 
 ## Getting Started
 
-The library ships as a Spring Boot starter. Hosts include the artefact, set a few properties, and the central security filter chains plus their dependencies (JWT decoder, OAuth2 client beans, default failure handler) wire automatically.
+The library ships as a Spring Boot starter. Hosts include the artefact, import the configuration they want, and set a few properties; the central security filter chains plus their dependencies (JWT decoder, OAuth2 client beans, default failure handler) are then wired for them. Nothing activates from adding the dependency alone.
 
 ```xml
 <dependency>
