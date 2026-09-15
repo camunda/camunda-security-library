@@ -964,18 +964,26 @@ Two IdPs in one deployment, behaving differently:
 camunda:
   security:
     authentication:
+      method: oidc
       providers:
         oidc:
           keycloak:
-            client-id: keycloak-client
+            client-id: camunda-keycloak
             issuer-uri: https://keycloak.example.com/realms/camunda
-            # unset: keeps the host route, {baseUrl}<basePath>/post-logout
+            # nothing set: keeps the host route, {baseUrl}<basePath>/post-logout
+
           auth0:
-            client-id: auth0-client
+            client-id: camunda-auth0
             issuer-uri: https://example.eu.auth0.com/
-            # registered verbatim in Auth0's Allowed Logout URLs
-            post-logout-redirect-uri: https://accounts.example.com/logged-out
+            # one Allowed Logout URLs entry covers every scope on this host
+            post-logout-redirect-uri: "{baseUrl}/post-logout"
 ```
+
+The map key is the registrationId — it is what the handler looks the resolved URL up under at logout, matched against the registration the user authenticated with, so these keys are not free-form labels. For a chain whose base path is `/physical-tenants/t1` on `https://camunda.example.com`, the two registrations send `https://camunda.example.com/physical-tenants/t1/post-logout` and `https://camunda.example.com/post-logout` respectively.
+
+The `auth0` entry is the shape worth copying for a strict OP: `{baseUrl}` keeps the host dynamic but drops the scope prefix, so one registered entry matches every scope on that host, where a `/`-leading value would need one entry per scope. Quote the `{...}` form in YAML or it parses as a map. An absolute URL (`https://accounts.example.com/logged-out`) works the same way when the landing page lives off-host entirely.
+
+The flat `camunda.security.authentication.oidc.*` block counts as one more registration here, keyed by its `registration-id` (default `oidc`), and gets its own independent answer — so a host can carry a flat block and per-provider entries with different post-logout behaviour on each.
 
 Disabling the redirect still terminates the IdP session; the IdP renders its own logged-out page rather than returning the browser to the host, so the user is not sent back to the page they logged out from. This is orthogonal to `idp-logout-enabled`, which is intended to decide whether the IdP is contacted at all — note that flag is currently unwired and setting it changes no behaviour.
 
