@@ -12,11 +12,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -86,5 +88,117 @@ class OidcTokenAuthenticationConverterTest {
             OAuth2AuthenticationException.class,
             ex ->
                 assertThat(ex.getError().getErrorCode()).isEqualTo(OAuth2ErrorCodes.INVALID_TOKEN));
+  }
+
+  @Test
+  void usesPerIssuerConverterWhenIssuerMatches() {
+    final var perIssuerConverter = mock(LazyTokenClaimsConverter.class);
+    final var jwt =
+        Jwt.withTokenValue("token")
+            .header("alg", "RS256")
+            .claim("iss", "https://entra.example.com")
+            .claim("sub", "alice")
+            .build();
+    final var authentication = new JwtAuthenticationToken(jwt);
+    final var issuerAwareConverter =
+        new OidcTokenAuthenticationConverter(
+            tokenClaimsConverter,
+            claimsProvider,
+            new TokenClaimsConvertersByIssuer(
+                Map.of("https://entra.example.com", perIssuerConverter)));
+    when(claimsProvider.claimsFor(jwt.getClaims(), "token")).thenReturn(jwt.getClaims());
+    final var expected = CamundaAuthentication.of(b -> b.user("alice"));
+    when(perIssuerConverter.convert(jwt.getClaims())).thenReturn(expected);
+
+    assertThat(issuerAwareConverter.convert(authentication)).isSameAs(expected);
+    verifyNoInteractions(tokenClaimsConverter);
+  }
+
+  @Test
+  void fallsBackToDefaultConverterWhenIssuerDoesNotMatchAnyEntry() {
+    final var perIssuerConverter = mock(LazyTokenClaimsConverter.class);
+    final var jwt =
+        Jwt.withTokenValue("token")
+            .header("alg", "RS256")
+            .claim("iss", "https://auth0.example.com")
+            .claim("sub", "alice")
+            .build();
+    final var authentication = new JwtAuthenticationToken(jwt);
+    final var issuerAwareConverter =
+        new OidcTokenAuthenticationConverter(
+            tokenClaimsConverter,
+            claimsProvider,
+            new TokenClaimsConvertersByIssuer(
+                Map.of("https://entra.example.com", perIssuerConverter)));
+    when(claimsProvider.claimsFor(jwt.getClaims(), "token")).thenReturn(jwt.getClaims());
+    final var expected = CamundaAuthentication.of(b -> b.user("alice"));
+    when(tokenClaimsConverter.convert(jwt.getClaims())).thenReturn(expected);
+
+    assertThat(issuerAwareConverter.convert(authentication)).isSameAs(expected);
+    verifyNoInteractions(perIssuerConverter);
+  }
+
+  @Test
+  void fallsBackToDefaultConverterWhenIssuerClaimIsAbsent() {
+    final var perIssuerConverter = mock(LazyTokenClaimsConverter.class);
+    final var jwt =
+        Jwt.withTokenValue("token").header("alg", "RS256").claim("sub", "alice").build();
+    final var authentication = new JwtAuthenticationToken(jwt);
+    final var issuerAwareConverter =
+        new OidcTokenAuthenticationConverter(
+            tokenClaimsConverter,
+            claimsProvider,
+            new TokenClaimsConvertersByIssuer(
+                Map.of("https://entra.example.com", perIssuerConverter)));
+    when(claimsProvider.claimsFor(jwt.getClaims(), "token")).thenReturn(jwt.getClaims());
+    final var expected = CamundaAuthentication.of(b -> b.user("alice"));
+    when(tokenClaimsConverter.convert(jwt.getClaims())).thenReturn(expected);
+
+    assertThat(issuerAwareConverter.convert(authentication)).isSameAs(expected);
+    verifyNoInteractions(perIssuerConverter);
+  }
+
+  @Test
+  void matchesIssuerRegardlessOfStringOrUrlClaimType() throws Exception {
+    // A real NimbusJwtDecoder converts the 'iss' claim to java.net.URL; hand-built claims maps
+    // elsewhere in this test class use a String. The lookup must match either representation.
+    final var perIssuerConverter = mock(LazyTokenClaimsConverter.class);
+    final var jwt =
+        Jwt.withTokenValue("token")
+            .header("alg", "RS256")
+            .claim("iss", URI.create("https://entra.example.com").toURL())
+            .claim("sub", "alice")
+            .build();
+    final var authentication = new JwtAuthenticationToken(jwt);
+    final var issuerAwareConverter =
+        new OidcTokenAuthenticationConverter(
+            tokenClaimsConverter,
+            claimsProvider,
+            new TokenClaimsConvertersByIssuer(
+                Map.of("https://entra.example.com", perIssuerConverter)));
+    when(claimsProvider.claimsFor(jwt.getClaims(), "token")).thenReturn(jwt.getClaims());
+    final var expected = CamundaAuthentication.of(b -> b.user("alice"));
+    when(perIssuerConverter.convert(jwt.getClaims())).thenReturn(expected);
+
+    assertThat(issuerAwareConverter.convert(authentication)).isSameAs(expected);
+    verifyNoInteractions(tokenClaimsConverter);
+  }
+
+  @Test
+  void treatsNullConvertersRecordAsEmpty() {
+    final var jwt =
+        Jwt.withTokenValue("token")
+            .header("alg", "RS256")
+            .claim("iss", "https://auth0.example.com")
+            .claim("sub", "alice")
+            .build();
+    final var authentication = new JwtAuthenticationToken(jwt);
+    final var issuerAwareConverter =
+        new OidcTokenAuthenticationConverter(tokenClaimsConverter, claimsProvider, null);
+    when(claimsProvider.claimsFor(jwt.getClaims(), "token")).thenReturn(jwt.getClaims());
+    final var expected = CamundaAuthentication.of(b -> b.user("alice"));
+    when(tokenClaimsConverter.convert(jwt.getClaims())).thenReturn(expected);
+
+    assertThat(issuerAwareConverter.convert(authentication)).isSameAs(expected);
   }
 }
