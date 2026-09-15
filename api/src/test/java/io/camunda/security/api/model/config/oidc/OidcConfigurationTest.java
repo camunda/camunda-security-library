@@ -230,6 +230,16 @@ public class OidcConfigurationTest {
                 .postLogoutRedirectEnabled(OidcConfiguration.DEFAULT_POST_LOGOUT_REDIRECT_ENABLED)
                 .build(),
             false),
+        Arguments.of(
+            "postLogoutRedirectUri is set",
+            OidcConfiguration.builder()
+                .postLogoutRedirectUri("https://accounts.example.com/logged-out")
+                .build(),
+            true),
+        Arguments.of(
+            "default postLogoutRedirectUri is unset",
+            OidcConfiguration.builder().postLogoutRedirectUri(null).build(),
+            false),
         Arguments.of("default", new OidcConfiguration(), false),
         Arguments.of(
             "default authorizeRequestConfiguration is set",

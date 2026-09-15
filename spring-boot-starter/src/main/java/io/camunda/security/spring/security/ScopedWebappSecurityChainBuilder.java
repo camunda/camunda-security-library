@@ -33,9 +33,13 @@ import io.camunda.security.spring.scope.BasePaths;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import io.camunda.security.spring.spi.OidcAuthenticationEntryPoint;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -69,6 +73,7 @@ import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.util.matcher.RequestHeaderRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcherEntry;
 import org.springframework.session.web.http.SessionRepositoryFilter;
+import org.springframework.util.StringUtils;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 /**
@@ -85,6 +90,16 @@ import org.springframework.web.cors.CorsConfigurationSource;
 public final class ScopedWebappSecurityChainBuilder {
 
   private static final Logger LOG = LoggerFactory.getLogger(ScopedWebappSecurityChainBuilder.class);
+
+  /**
+   * The URI template variables {@code OidcClientInitiatedLogoutSuccessHandler} populates when it
+   * expands {@code post_logout_redirect_uri}. Anything else throws from {@code buildAndExpand} at
+   * logout time, so a configured value naming one is rejected at startup instead.
+   */
+  private static final Set<String> SUPPORTED_TEMPLATE_VARIABLES =
+      Set.of("baseUrl", "baseScheme", "baseHost", "basePort", "basePath", "registrationId");
+
+  private static final Pattern TEMPLATE_VARIABLE = Pattern.compile("\\{([^}]*)}");
 
   private final AuthFailureHandler authFailureHandler;
   private final CamundaSecurityLibraryProperties properties;
@@ -227,9 +242,7 @@ public final class ScopedWebappSecurityChainBuilder {
                       .invalidateHttpSession(true);
                   logout.logoutSuccessHandler(
                       oidcLogoutSuccessHandler(
-                          clientRegistrationRepository,
-                          "",
-                          isPostLogoutRedirectEnabled(clusterAuthentication())));
+                          clientRegistrationRepository, "", clusterAuthentication()));
                 });
 
     // Heartbeat is installed first among AuthorizationFilter-anchored filters (insertion order is
@@ -608,54 +621,169 @@ public final class ScopedWebappSecurityChainBuilder {
   }
 
   /**
-   * Whether every OIDC provider configured for the scope accepts {@code post_logout_redirect_uri}.
+   * The {@code post_logout_redirect_uri} template to send for each OIDC registration in the scope,
+   * where {@code ""} means "send none for this registration".
    *
-   * <p>A chain shares one {@link CamundaOidcLogoutSuccessHandler} across every registration in the
-   * scope — the flat {@code oidc.*} block and any {@code providers.oidc.<id>} entries alike (see
-   * {@link ScopedClientRegistrationFactory#flatten}) — so the flag can only be applied per scope,
-   * not per registration (ADR-0023). Reading it off {@code authentication.getOidc()} alone would
-   * silently ignore any provider declared only under {@code providers.oidc.*}, so this flattens the
-   * same way the registrations themselves are built and disables the redirect for the whole scope
-   * when any configured provider disables it — a single strict IdP among several still gets its
-   * rejection avoided.
+   * <p>Built from {@link ScopedClientRegistrationFactory#flatten} — the same registrationId-keyed
+   * map the chain's {@link ClientRegistrationRepository} is built from, covering the flat {@code
+   * oidc.*} block and every {@code providers.oidc.<id>} entry — so a deployment with several IdPs
+   * gets each one's own answer. Reading {@code authentication.getOidc()} alone would silently
+   * ignore any provider declared only under {@code providers.oidc.*}.
+   *
+   * <p>The map is total over the scope's registrations, so the handler never has to fall back to a
+   * chain-wide default: whatever it finds for a registrationId is that registration's final answer.
+   *
+   * <p>ADR-0024. This replaced a single per-scope boolean, which forced one strict IdP to strip the
+   * redirect from every other IdP in the scope (ADR-0023).
    */
-  private boolean isPostLogoutRedirectEnabled(final AuthenticationConfiguration authentication) {
-    return scopedClientRegistrationFactory.flatten(authentication).values().stream()
-        .allMatch(OidcConfiguration::isPostLogoutRedirectEnabled);
+  private Map<String, String> postLogoutRedirectUris(
+      final AuthenticationConfiguration authentication, final String prefix) {
+    final var composedDefault = composedPostLogoutRedirectUri(prefix);
+    final Map<String, String> redirectUris = new LinkedHashMap<>();
+    scopedClientRegistrationFactory
+        .flatten(authentication)
+        .forEach(
+            (registrationId, oidc) ->
+                redirectUris.put(
+                    registrationId,
+                    postLogoutRedirectUri(registrationId, oidc, prefix, composedDefault)));
+    return redirectUris;
   }
 
   /**
-   * Builds the chain's logout success handler.
+   * One provider's {@code post_logout_redirect_uri} template, or {@code ""} to send none.
    *
-   * <p>{@code postLogoutRedirectEnabled} reflects the scope the chain belongs to — the cluster's
-   * for the primary chain, the tenant's for a scoped one (see {@link
-   * #isPostLogoutRedirectEnabled(AuthenticationConfiguration)}) — so a scoped chain pointing at its
-   * own IdP(s) reads their post-logout capability, matching how its registration and end-session
-   * endpoint are already resolved per scope.
+   * <p>{@code post-logout-redirect-enabled=false} wins over a configured URI. An operator with both
+   * set is saying "this IdP rejects the parameter", which is the more specific statement; sending
+   * the URI anyway would resurrect the very rejection the flag exists to avoid. It is logged,
+   * because silently ignoring an explicitly configured value is otherwise an afternoon lost.
    */
-  private LogoutSuccessHandler oidcLogoutSuccessHandler(
-      final ClientRegistrationRepository repo,
+  // Package-private for unit testing, like postLogoutRedirectUri(String, Optional) above.
+  static String postLogoutRedirectUri(
+      final String registrationId,
+      final OidcConfiguration oidc,
       final String prefix,
-      final boolean postLogoutRedirectEnabled) {
-    final var handler = new CamundaOidcLogoutSuccessHandler(repo);
-    // A deployment whose IdP cannot register the resulting URL turns this off, and the end-session
-    // request goes out with no post_logout_redirect_uri at all. Checked before the route is read
-    // so the host's declaration is simply unused, rather than having to be blanked to suppress it.
-    if (!postLogoutRedirectEnabled) {
-      LOG.debug(
-          "post_logout_redirect_uri is disabled; the IdP will apply its own post-logout default.");
-      return handler;
+      final String composedDefault) {
+    final var configured = oidc.getPostLogoutRedirectUri();
+    if (!oidc.isPostLogoutRedirectEnabled()) {
+      if (StringUtils.hasText(configured)) {
+        LOG.warn(
+            "OIDC registration '{}' sets post-logout-redirect-uri '{}' but also "
+                + "post-logout-redirect-enabled=false; no post_logout_redirect_uri will be sent. "
+                + "Remove one of the two to make the intent unambiguous.",
+            registrationId,
+            configured);
+      }
+      return "";
     }
+    if (!StringUtils.hasText(configured)) {
+      return composedDefault;
+    }
+    return validatedPostLogoutRedirectUri(registrationId, configured.trim(), prefix);
+  }
+
+  /**
+   * Turns a configured {@code post-logout-redirect-uri} into the template sent to Spring, rejecting
+   * values that cannot work.
+   *
+   * <p>A value starting with {@code /} is a path and is resolved against the chain just as the
+   * host's own route is, so it keeps per-scope resolution. Any other value is a URI template handed
+   * to Spring untouched and deliberately does <em>not</em> pick up the chain's base path. That is
+   * the point of the property: a deployment served under a per-cluster prefix needs a URL its IdP
+   * can have registered, and the prefix is exactly what makes the composed one unregisterable at an
+   * OP like Auth0.
+   *
+   * <p>Everything here fails at startup rather than at logout. The placeholder check is the reason
+   * it is worth the code: Spring expands the template with a fixed six-entry variable map, so an
+   * unrecognised {@code {placeholder}} throws from deep inside {@code buildAndExpand} on the logout
+   * request itself — a 500 on the one request a user cannot usefully retry, long after the typo
+   * shipped.
+   */
+  private static String validatedPostLogoutRedirectUri(
+      final String registrationId, final String configured, final String prefix) {
+    if (configured.indexOf('\r') >= 0 || configured.indexOf('\n') >= 0) {
+      throw new IllegalArgumentException(
+          "camunda.security.authentication.oidc.post-logout-redirect-uri for registration '"
+              + registrationId
+              + "' must not contain CR or LF characters");
+    }
+    rejectUnsupportedTemplateVariables(registrationId, configured);
+    if (configured.startsWith("/")) {
+      return "{baseUrl}" + prefix + configured;
+    }
+    if (configured.startsWith("{") || configured.contains("://")) {
+      return configured;
+    }
+    throw new IllegalArgumentException(
+        "camunda.security.authentication.oidc.post-logout-redirect-uri for registration '"
+            + registrationId
+            + "' must be an absolute URL, a path starting with '/', or a template starting with a"
+            + " placeholder such as {baseUrl}, but was: "
+            + configured);
+  }
+
+  /**
+   * Rejects any {@code {placeholder}} Spring's post-logout template expansion does not populate.
+   * The supported set is fixed by {@code OidcClientInitiatedLogoutSuccessHandler}.
+   */
+  private static void rejectUnsupportedTemplateVariables(
+      final String registrationId, final String configured) {
+    final var matcher = TEMPLATE_VARIABLE.matcher(configured);
+    while (matcher.find()) {
+      final var name = matcher.group(1);
+      if (!SUPPORTED_TEMPLATE_VARIABLES.contains(name)) {
+        throw new IllegalArgumentException(
+            "camunda.security.authentication.oidc.post-logout-redirect-uri for registration '"
+                + registrationId
+                + "' uses unsupported template variable {"
+                + name
+                + "}; supported variables are "
+                + SUPPORTED_TEMPLATE_VARIABLES);
+      }
+    }
+  }
+
+  /** The host-declared route, composed against the chain, used when nothing is configured. */
+  private String composedPostLogoutRedirectUri(final String prefix) {
     final var route =
         Objects.requireNonNull(
             pathPort.postLogoutRedirectPath(),
             "SecurityPathPort#postLogoutRedirectPath() must not return null; "
                 + "return Optional.empty() to send no post_logout_redirect_uri");
-    final var uri = postLogoutRedirectUri(prefix, route);
-    if (!uri.isEmpty()) {
-      handler.setPostLogoutRedirectUri(uri);
+    return postLogoutRedirectUri(prefix, route);
+  }
+
+  /**
+   * Builds the chain's logout success handler, resolving {@code post_logout_redirect_uri} per
+   * registration.
+   *
+   * <p>{@code authentication} is the scope the chain belongs to — the cluster's for the primary
+   * chain, the tenant's for a scoped one — so a scoped chain pointing at its own IdP(s) reads their
+   * post-logout configuration, matching how its registrations and end-session endpoints are already
+   * resolved per scope.
+   */
+  private LogoutSuccessHandler oidcLogoutSuccessHandler(
+      final ClientRegistrationRepository repo,
+      final String prefix,
+      final AuthenticationConfiguration authentication) {
+    final var redirectUris = postLogoutRedirectUris(authentication, prefix);
+    if (LOG.isDebugEnabled()) {
+      redirectUris.forEach(
+          (registrationId, uri) -> {
+            if (uri.isEmpty()) {
+              LOG.debug(
+                  "post_logout_redirect_uri is disabled for OIDC registration '{}'; "
+                      + "the IdP will apply its own post-logout default.",
+                  registrationId);
+            } else {
+              LOG.debug(
+                  "OIDC registration '{}' will send post_logout_redirect_uri '{}'.",
+                  registrationId,
+                  uri);
+            }
+          });
     }
-    return handler;
+    return new CamundaOidcLogoutSuccessHandler(repo, redirectUris);
   }
 
   // Moved verbatim from OidcWebappSecurityConfiguration; package-private for unit testing.
@@ -850,9 +978,7 @@ public final class ScopedWebappSecurityChainBuilder {
                           pathScopedCookieClearingLogoutHandler(scopedCsrfCookieName, prefix));
                   logout.logoutSuccessHandler(
                       oidcLogoutSuccessHandler(
-                          clientRegistrationRepository,
-                          prefix,
-                          isPostLogoutRedirectEnabled(authentication)));
+                          clientRegistrationRepository, prefix, authentication));
                 });
 
     // Installed first among AuthorizationFilter-anchored filters (see buildOidcWebappChain) so a
