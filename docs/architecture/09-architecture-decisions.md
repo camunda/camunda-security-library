@@ -36,6 +36,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0021: Hand-author spring-configuration-metadata.json for camunda.security.* properties](../adr/0021-hand-authored-spring-configuration-metadata.md)
 - [ADR-0022: Camunda-branded multi-IdP login picker, shown only when there is a real choice](../adr/0022-camunda-branded-multi-idp-login-picker.md)
 - [ADR-0023: Suppress `post_logout_redirect_uri` by configuration for IdPs that cannot register it](../adr/0023-configurable-post-logout-redirect-suppression.md)
+- [ADR-0024: Make `post_logout_redirect_uri` configurable and resolve it per client registration](../adr/0024-per-registration-post-logout-redirect-uri.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 
