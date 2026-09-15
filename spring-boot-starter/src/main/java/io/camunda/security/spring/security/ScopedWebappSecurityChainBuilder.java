@@ -27,6 +27,7 @@ import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.handler.OAuth2AuthenticationExceptionHandler;
 import io.camunda.security.spring.oidc.CamundaOidcAuthorizationRequestResolver;
+import io.camunda.security.spring.oidc.LazyClientRegistrationRepository;
 import io.camunda.security.spring.oidc.OidcRedirectionEndpoint;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
@@ -48,7 +49,6 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
-import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
@@ -216,6 +216,13 @@ public final class ScopedWebappSecurityChainBuilder {
                 oauthLogin -> {
                   oauthLogin
                       .clientRegistrationRepository(clientRegistrationRepository)
+                      // Declaring the login page keeps OAuth2LoginConfigurer#init out of the
+                      // branch that enumerates the registration repository to build its own login
+                      // links: that resolves every issuer's discovery document while the context is
+                      // still starting, so one unreachable provider aborts the boot. The entry
+                      // point installed under exceptionHandling above already produces the same
+                      // redirect.
+                      .loginPage(loginUrl)
                       .authorizedClientRepository(authorizedClientRepository)
                       .redirectionEndpoint(
                           redirectionEndpoint -> redirectionEndpoint.baseUri(redirectUri))
@@ -396,8 +403,8 @@ public final class ScopedWebappSecurityChainBuilder {
    * configuration. Derives prefixed matchers and endpoint URLs from the basePath and delegates to
    * either the OIDC or BASIC chain builder depending on the authentication method.
    *
-   * <p>For OIDC scopes, builds a per-scope OAuth2 client stack: an {@link
-   * InMemoryClientRegistrationRepository} from the descriptor's providers, an {@link
+   * <p>For OIDC scopes, builds a per-scope OAuth2 client stack: a {@link
+   * LazyClientRegistrationRepository} over the descriptor's providers, an {@link
    * HttpSessionOAuth2AuthorizedClientRepository}, an {@link OAuth2AuthorizedClientManager} via the
    * injected factory, and a prefix-aware {@link CamundaOidcAuthorizationRequestResolver}. The login
    * picker is also prefix-aware so its authorization links point to {@code
@@ -637,6 +644,18 @@ public final class ScopedWebappSecurityChainBuilder {
       final String loginUrl,
       final String authorizationBaseUri) {
     final var defaultTarget = authorizationBaseUri + "/" + OIDC_REGISTRATION_ID;
+    // Answer from configuration for a lazy repository: this runs while the chain is built, and
+    // iterating it would resolve every registration against its identity provider.
+    if (clientRegistrationRepository instanceof final LazyClientRegistrationRepository lazy) {
+      final var registrationIds = lazy.registrationIds();
+      if (registrationIds.isEmpty()) {
+        return defaultTarget;
+      }
+      if (registrationIds.size() > 1) {
+        return loginUrl;
+      }
+      return authorizationBaseUri + "/" + registrationIds.iterator().next();
+    }
     if (!(clientRegistrationRepository instanceof final Iterable<?> iterable)) {
       return defaultTarget;
     }
@@ -681,8 +700,8 @@ public final class ScopedWebappSecurityChainBuilder {
               + "a scoped OIDC webapp chain requires at least one provider");
     }
     final var clientRegistrationRepository =
-        new InMemoryClientRegistrationRepository(
-            scopedClientRegistrationFactory.createFromProviderMap(providerMap, redirectUri));
+        new LazyClientRegistrationRepository(
+            scopedClientRegistrationFactory, providerMap, redirectUri, "basePath=" + prefix);
     final var authorizedClientRepository = new HttpSessionOAuth2AuthorizedClientRepository();
     final var authorizedClientManager =
         authorizedClientManagerFactory.create(
@@ -727,6 +746,13 @@ public final class ScopedWebappSecurityChainBuilder {
                 oauthLogin -> {
                   oauthLogin
                       .clientRegistrationRepository(clientRegistrationRepository)
+                      // Declaring the login page keeps OAuth2LoginConfigurer#init out of the
+                      // branch that enumerates the registration repository to build its own login
+                      // links: that resolves every issuer's discovery document while the context is
+                      // still starting, so one unreachable provider aborts the boot. The entry
+                      // point installed under exceptionHandling above already produces the same
+                      // redirect.
+                      .loginPage(loginUrl)
                       .authorizedClientRepository(authorizedClientRepository)
                       .redirectionEndpoint(
                           redirectionEndpoint -> redirectionEndpoint.baseUri(redirectUri))
