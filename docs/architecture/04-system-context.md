@@ -55,10 +55,10 @@ flowchart TB
 - Hub is the single source of truth for all policy and configuration.
 - Hub is deployed independently of the execution plane it configures — it is not co-located
   with, or scoped to, a single OC. In Hub, each OC cluster carries an environment tag (e.g.
-  `dev`/`test`/`staging`/`production`) — a Hub-side operational label, not part of the Unified
-  Policy Model and not evaluated by authorization. A single Hub instance can therefore be the
-  policy source of truth for clusters in different environments at the same time, e.g. a `dev`
-  cluster and a `production` cluster under the same Hub.
+  `dev`/`test`/`staging`/`production`) — a Hub-side operational label, by design not intended to
+  be part of the Unified Policy Model or evaluated by authorization. A single Hub instance can
+  therefore be the policy source of truth for clusters in different environments at the same
+  time, e.g. a `dev` cluster and a `production` cluster under the same Hub.
 - Hub propagates policy changes to OC through a platform-owned propagation
   channel, with OC maintaining a local projection and handling runtime enforcement per
   engine/tenant.

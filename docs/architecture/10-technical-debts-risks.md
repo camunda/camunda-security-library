@@ -1,4 +1,4 @@
-## 11. Technical Debts, Risks, and Open Design Questions
+## 10. Technical Debts, Risks, and Open Design Questions
 
 ### Open design questions
 

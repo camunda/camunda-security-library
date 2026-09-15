@@ -15,8 +15,8 @@ SCIM provisioning is part of the planned end-state target architecture, but it i
 - §7 [Deployment View](./07-deployment-view.md)
 - §8 [Crosscutting Concepts](./08-crosscutting-concepts.md)
 - §9 [Architecture Decision Records](./09-architecture-decisions.md)
-- §11 [Technical Debts, Risks, and Open Design Questions](./11-technical-debts-risks.md)
-- §12 [Glossary](./12-glossary.md)
+- §10 [Technical Debts, Risks, and Open Design Questions](./10-technical-debts-risks.md)
+- §11 [Glossary](./11-glossary.md)
 
 ## Related Documents
 

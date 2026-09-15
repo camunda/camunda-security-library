@@ -1,4 +1,4 @@
-## 12. Glossary
+## 11. Glossary
 
 Full term definitions for diagrams and runtime descriptions throughout this document.
 
