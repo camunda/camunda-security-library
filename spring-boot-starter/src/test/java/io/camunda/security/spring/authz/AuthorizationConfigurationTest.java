@@ -21,9 +21,12 @@ import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.core.port.out.AuthorizationCheckLatencyRecorder;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
+import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
+import io.camunda.security.spring.context.CamundaAuthenticationBeansConfiguration;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,6 +38,7 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 @ExtendWith(MockitoExtension.class)
 class AuthorizationConfigurationTest {
@@ -175,6 +179,27 @@ class AuthorizationConfigurationTest {
               // Both disabled → skipChecks() must be true
               assertThat(service.skipChecks()).isTrue();
             });
+  }
+
+  /**
+   * {@code CamundaAuthenticationBeansConfiguration#lazyTokenClaimsConverter} is deliberately not
+   * gated on {@code camunda.security.authentication.method=oidc}, since authorization enforcement
+   * needs it regardless of authentication method. Unlike the other tests here, this one imports the
+   * real bean-producing configuration class instead of stubbing {@code LazyTokenClaimsConverter},
+   * to prove the cross-class wiring actually resolves.
+   */
+  @Test
+  void authorizationServiceResolvesWithRealConverterWhenMethodIsNotOidc() {
+    new ApplicationContextRunner()
+        .withBean(HttpServletRequest.class, MockHttpServletRequest::new)
+        .withBean(MembershipPort.class, () -> org.mockito.Mockito.mock(MembershipPort.class))
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                CamundaAuthenticationBeansConfiguration.class,
+                AuthorizationConfiguration.class))
+        .run(ctx -> assertThat(ctx).hasSingleBean(AuthorizationService.class));
   }
 
   @Configuration

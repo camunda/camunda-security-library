@@ -495,7 +495,24 @@ CSL ships two `CamundaAuthenticationConverter<Authentication>` implementations f
 | `OidcTokenAuthenticationConverter` | Standard OIDC deployments where memberships (roles, groups, tenants) are resolved from a database via `MembershipPort`. Reads `sub` or a client-id claim and delegates resolution to `LazyTokenClaimsConverter`. |
 | `JwtGrantedAuthoritiesAuthenticationConverter` | Deployments where the JWT itself is the authoritative source of roles — for example, SaaS tokens where an upstream `JwtAuthenticationConverter` has already extracted role authorities from a fixed claim before CSL runs. No `MembershipPort` call is made. Only suitable for user tokens where the configured claim (`sub` by default) identifies the principal; M2M/client-credentials tokens must be handled separately. |
 
-**Registering the converter.** Pass the `usernameClaim` so this converter resolves the principal from the same claim `OidcTokenAuthenticationConverter` uses — but note the two are not equivalent: this converter only ever reads `usernameClaim` (it ignores `clientIdClaim` and `preferUsernameClaim`) and always resolves to `CamundaAuthentication.user`, never `clientId` — by design, it has no client-credentials/M2M support (see #475). A claim configured but absent, blank, or not a string fails the token rather than falling back to `sub`, matching `LazyTokenClaimsConverter`'s behavior for the same misconfiguration; only an unconfigured (default) claim falls back to `sub`.
+**Registering `OidcTokenAuthenticationConverter`.**
+
+```java
+@Bean
+public CamundaAuthenticationConverter<Authentication> authenticationConverter(
+    final LazyTokenClaimsConverter lazyTokenClaimsConverter,
+    final OidcClaimsProvider claimsProvider,
+    final ObjectProvider<TokenClaimsConvertersByIssuer> tokenClaimsConvertersByIssuer) {
+  return new OidcTokenAuthenticationConverter(
+      lazyTokenClaimsConverter, claimsProvider, tokenClaimsConvertersByIssuer.getIfAvailable());
+}
+```
+
+CSL supplies `TokenClaimsConvertersByIssuer` as a bean (when `MembershipPort` and `LazyTokenClaimsConverter` are both present) so a multi-provider deployment resolves each bearer token's claims using the `usernameClaim`/`clientIdClaim` config of the registration that declared its `iss`, instead of always the primary provider's. It's optional — passing `null` (or omitting it via the two-argument constructor) keeps every token on the primary provider's claim config.
+
+Per-provider claim configuration does not inherit from the flat block: a `providers.oidc.<id>` entry that omits `username-claim`/`client-id-claim` gets `OidcConfiguration`'s own defaults, not the flat block's — a BYOIDP provider declaring only `issuer-uri` and `client-id` loses client-credentials/M2M claim resolution unless it repeats `client-id-claim` itself.
+
+**Registering `JwtGrantedAuthoritiesAuthenticationConverter`.** Pass the `usernameClaim` so this converter resolves the principal from the same claim `OidcTokenAuthenticationConverter` uses — but note the two are not equivalent: this converter only ever reads `usernameClaim` (it ignores `clientIdClaim` and `preferUsernameClaim`) and always resolves to `CamundaAuthentication.user`, never `clientId` — by design, it has no client-credentials/M2M support (see #475). A claim configured but absent, blank, or not a string fails the token rather than falling back to `sub`, matching `LazyTokenClaimsConverter`'s behavior for the same misconfiguration; only an unconfigured (default) claim falls back to `sub`.
 
 The configured claim must be a stable, unique identifier, not a display name, and every part of the host that resolves identity from this principal (session storage, membership lookups, audit logs) has to key off that same claim. Changing it after the fact is a breaking change for any such consumer that still assumes `sub` — for example, Hub cannot move off `sub` today because its `AuthenticationEventListener` hardcodes `sub` while other Hub code paths read the CSL principal.
 
