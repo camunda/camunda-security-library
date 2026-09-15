@@ -53,6 +53,8 @@ import org.springframework.web.util.UriComponentsBuilder;
 class CamundaOidcLogoutSuccessHandlerTest {
 
   private static final String REGISTRATION_ID = "client";
+  private static final String SECONDARY_REGISTRATION_ID = "client-secondary";
+  private static final String ABSOLUTE_POST_LOGOUT_URI = "https://accounts.example.com/logged-out";
   private static final String SAME_ORIGIN_REFERER = "https://camunda.com/component/ui/page";
   private static final String CROSS_ORIGIN_REFERER = "https://other.com/component/ui/page";
 
@@ -62,7 +64,7 @@ class CamundaOidcLogoutSuccessHandlerTest {
 
   @BeforeEach
   void setUp() {
-    handler = new CamundaOidcLogoutSuccessHandler(clientRegistrationRepository);
+    handler = new CamundaOidcLogoutSuccessHandler(clientRegistrationRepository, Map.of());
   }
 
   @Test
@@ -379,23 +381,194 @@ class CamundaOidcLogoutSuccessHandlerTest {
   /** A scoped chain's {@code post_logout_redirect_uri} resolves under the scope's base path. */
   @Test
   void scopedPostLogoutRedirectUriResolvesUnderScopeBasePath() {
-    handler.setPostLogoutRedirectUri(
-        ScopedWebappSecurityChainBuilder.postLogoutRedirectUri(
-            "/physical-tenants/t1", Optional.of("/post-logout")));
+    final var scopedHandler =
+        handlerWithRedirectUris(
+            Map.of(
+                REGISTRATION_ID,
+                ScopedWebappSecurityChainBuilder.postLogoutRedirectUri(
+                    "/physical-tenants/t1", Optional.of("/post-logout"))));
     final MockHttpServletRequest request = requestWithReferer(SAME_ORIGIN_REFERER);
     when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
         .thenReturn(clientRegistration());
 
     final String targetUrl =
-        handler.determineTargetUrl(
+        scopedHandler.determineTargetUrl(
             request, new MockHttpServletResponse(), oidcAuthentication(null));
 
-    final MultiValueMap<String, String> query = queryParams(targetUrl, "idp.com", "/logout");
-    assertThat(
-            URLDecoder.decode(
-                Objects.requireNonNull(query.getFirst("post_logout_redirect_uri")),
-                StandardCharsets.UTF_8))
+    assertThat(postLogoutRedirectUriOf(targetUrl))
         .isEqualTo("https://camunda.com/component/physical-tenants/t1/post-logout");
+  }
+
+  /**
+   * An absolute configured value reaches the IdP untouched — no {@code {baseUrl}} expansion, and
+   * notably no chain base path, which is what makes it registerable at an OP that matches the
+   * parameter exactly.
+   */
+  @Test
+  void configuredAbsoluteUriIsSentVerbatim() {
+    final var configuredHandler =
+        handlerWithRedirectUris(Map.of(REGISTRATION_ID, ABSOLUTE_POST_LOGOUT_URI));
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    final String targetUrl =
+        configuredHandler.determineTargetUrl(
+            requestWithReferer(SAME_ORIGIN_REFERER),
+            new MockHttpServletResponse(),
+            oidcAuthentication(null));
+
+    assertThat(postLogoutRedirectUriOf(targetUrl)).isEqualTo(ABSOLUTE_POST_LOGOUT_URI);
+  }
+
+  /**
+   * The behaviour this whole change exists for: two IdPs in one chain, each told to send the
+   * browser somewhere different. Before ADR-0024 one handler served the chain, so both got whatever
+   * the last-written template said.
+   */
+  @Test
+  void eachRegistrationReceivesItsOwnPostLogoutRedirectUri() {
+    final var multiIdpHandler =
+        handlerWithRedirectUris(
+            Map.of(
+                REGISTRATION_ID,
+                ABSOLUTE_POST_LOGOUT_URI,
+                SECONDARY_REGISTRATION_ID,
+                "{baseUrl}/post-logout"));
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+    when(clientRegistrationRepository.findByRegistrationId(SECONDARY_REGISTRATION_ID))
+        .thenReturn(clientRegistration(SECONDARY_REGISTRATION_ID));
+
+    final String first =
+        multiIdpHandler.determineTargetUrl(
+            requestWithReferer(SAME_ORIGIN_REFERER),
+            new MockHttpServletResponse(),
+            oidcAuthentication(REGISTRATION_ID, null));
+    final String second =
+        multiIdpHandler.determineTargetUrl(
+            requestWithReferer(SAME_ORIGIN_REFERER),
+            new MockHttpServletResponse(),
+            oidcAuthentication(SECONDARY_REGISTRATION_ID, null));
+
+    assertThat(postLogoutRedirectUriOf(first)).isEqualTo(ABSOLUTE_POST_LOGOUT_URI);
+    assertThat(postLogoutRedirectUriOf(second))
+        .isEqualTo("https://camunda.com/component/post-logout");
+  }
+
+  /**
+   * A registration mapped to {@code ""} — how the chain builder expresses {@code
+   * post-logout-redirect-enabled=false} — sends no parameter, while its sibling still does.
+   */
+  @Test
+  void registrationMappedToAnEmptyUriSendsNoPostLogoutRedirectParam() {
+    final var multiIdpHandler =
+        handlerWithRedirectUris(
+            Map.of(REGISTRATION_ID, "", SECONDARY_REGISTRATION_ID, ABSOLUTE_POST_LOGOUT_URI));
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    final String targetUrl =
+        multiIdpHandler.determineTargetUrl(
+            requestWithReferer(SAME_ORIGIN_REFERER),
+            new MockHttpServletResponse(),
+            oidcAuthentication(null));
+
+    assertThat(queryParams(targetUrl, "idp.com", "/logout").getFirst("post_logout_redirect_uri"))
+        .isNull();
+  }
+
+  /** A registrationId the chain never configured must not inherit another registration's URI. */
+  @Test
+  void unknownRegistrationIdSendsNoPostLogoutRedirectParam() {
+    final var multiIdpHandler =
+        handlerWithRedirectUris(Map.of(SECONDARY_REGISTRATION_ID, ABSOLUTE_POST_LOGOUT_URI));
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    final String targetUrl =
+        multiIdpHandler.determineTargetUrl(
+            requestWithReferer(SAME_ORIGIN_REFERER),
+            new MockHttpServletResponse(),
+            oidcAuthentication(null));
+
+    assertThat(queryParams(targetUrl, "idp.com", "/logout").getFirst("post_logout_redirect_uri"))
+        .isNull();
+  }
+
+  /**
+   * {@code logout_hint} is appended by this handler after the delegate has produced the end-session
+   * URL, so it has to survive the delegate hop.
+   */
+  @Test
+  void logoutHintIsStillAppendedWhenAPerRegistrationUriIsConfigured() {
+    final var configuredHandler =
+        handlerWithRedirectUris(Map.of(REGISTRATION_ID, ABSOLUTE_POST_LOGOUT_URI));
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    final String targetUrl =
+        configuredHandler.determineTargetUrl(
+            requestWithReferer(SAME_ORIGIN_REFERER),
+            new MockHttpServletResponse(),
+            oidcAuthentication("user@camunda.com"));
+
+    assertThat(targetUrl).contains("logout_hint=user@camunda.com");
+    assertThat(postLogoutRedirectUriOf(targetUrl)).isEqualTo(ABSOLUTE_POST_LOGOUT_URI);
+  }
+
+  /**
+   * Regression guard for the delegate's fall-through. "The IdP published no {@code
+   * end_session_endpoint}" is detected by comparing the resolved URL against this handler's own
+   * default target URL; a delegate carries its own copy of that field, so a delegate-produced
+   * default reaching the comparison would silently defeat it. Here the registration has a mapped
+   * URI (so a delegate is used) but no end-session endpoint.
+   */
+  @Test
+  void missingEndSessionEndpointStillStoresRedirectMessageWhenAUriIsMapped() {
+    final var configuredHandler =
+        handlerWithRedirectUris(Map.of(REGISTRATION_ID, ABSOLUTE_POST_LOGOUT_URI));
+    final MockHttpServletRequest request = requestWithReferer(SAME_ORIGIN_REFERER);
+    final HttpSession session = request.getSession(true);
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistrationWithoutEndSessionEndpoint());
+
+    configuredHandler.determineTargetUrl(
+        request, new MockHttpServletResponse(), oidcAuthentication(null));
+
+    assertThat(session.getAttribute(REDIRECT_MESSAGE_ATTRIBUTE)).isNotNull();
+  }
+
+  /**
+   * The other, louder half of the same guard: a fetch-based logout with no end-session endpoint
+   * must answer 204. If the sentinel were defeated it would answer {@code 200 {"url": "/"}} and the
+   * webapp would navigate to {@code /} believing it was the IdP's end-session URL.
+   */
+  @Test
+  void fetchLogoutWithoutEndSessionStillReturnsNoContentWhenAUriIsMapped()
+      throws IOException, ServletException {
+    final var configuredHandler =
+        handlerWithRedirectUris(Map.of(REGISTRATION_ID, ABSOLUTE_POST_LOGOUT_URI));
+    final MockHttpServletResponse response = new MockHttpServletResponse();
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistrationWithoutEndSessionEndpoint());
+
+    configuredHandler.onLogoutSuccess(
+        fetchRequestWithReferer(SAME_ORIGIN_REFERER), response, oidcAuthentication(null));
+
+    assertThat(response.getStatus()).isEqualTo(204);
+    assertThat(response.getContentAsString()).isEmpty();
+  }
+
+  private CamundaOidcLogoutSuccessHandler handlerWithRedirectUris(
+      final Map<String, String> postLogoutRedirectUriByRegistrationId) {
+    return new CamundaOidcLogoutSuccessHandler(
+        clientRegistrationRepository, postLogoutRedirectUriByRegistrationId);
+  }
+
+  private static String postLogoutRedirectUriOf(final String targetUrl) {
+    final MultiValueMap<String, String> query = queryParams(targetUrl, "idp.com", "/logout");
+    return URLDecoder.decode(
+        Objects.requireNonNull(query.getFirst("post_logout_redirect_uri")), StandardCharsets.UTF_8);
   }
 
   private static MultiValueMap<String, String> queryParams(
@@ -408,6 +581,11 @@ class CamundaOidcLogoutSuccessHandlerTest {
   }
 
   private static OAuth2AuthenticationToken oidcAuthentication(final String loginHint) {
+    return oidcAuthentication(REGISTRATION_ID, loginHint);
+  }
+
+  private static OAuth2AuthenticationToken oidcAuthentication(
+      final String registrationId, final String loginHint) {
     final Map<String, Object> claims = new HashMap<>();
     claims.put("sub", "user-id");
     if (loginHint != null) {
@@ -416,7 +594,7 @@ class CamundaOidcLogoutSuccessHandlerTest {
     final OidcIdToken token = new OidcIdToken("value", now(), now().plusSeconds(60), claims);
     final DefaultOidcUser oidcUser =
         new DefaultOidcUser(List.of(new SimpleGrantedAuthority("ROLE_USER")), token);
-    return new OAuth2AuthenticationToken(oidcUser, oidcUser.getAuthorities(), REGISTRATION_ID);
+    return new OAuth2AuthenticationToken(oidcUser, oidcUser.getAuthorities(), registrationId);
   }
 
   private static OAuth2AuthenticationToken plainOAuth2Authentication() {
@@ -428,9 +606,16 @@ class CamundaOidcLogoutSuccessHandlerTest {
   }
 
   private static ClientRegistration clientRegistration() {
+    return clientRegistration(REGISTRATION_ID);
+  }
+
+  private static ClientRegistration clientRegistration(final String registrationId) {
     final Map<String, Object> metadata = new HashMap<>();
     metadata.put("end_session_endpoint", "https://idp.com/logout");
-    return baseRegistrationBuilder().providerConfigurationMetadata(metadata).build();
+    return baseRegistrationBuilder()
+        .registrationId(registrationId)
+        .providerConfigurationMetadata(metadata)
+        .build();
   }
 
   private static ClientRegistration clientRegistrationWithoutEndSessionEndpoint() {
