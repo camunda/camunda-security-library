@@ -43,7 +43,7 @@ defined in `core/port/out/`. Both remain outstanding, as shown above.
   through Management Identity. Moving them onto CSL is targeted work — see §2.1.
 - **OC authorization — the write/authoring path** is not yet implemented on CSL; Management
   Identity never owned it either, though engine-side identity CRUD processors do still live in
-  `zeebe/engine` (see [technical debts](./11-technical-debts-risks.md)) — see §2.1.
+  `zeebe/engine` (see [technical debts](./10-technical-debts-risks.md)) — see §2.1.
 - Since 8.8, Management Identity is no longer used in SaaS to serve the web applications. It is,
   however, still deployed **headlessly** in SaaS for two specific purposes: handling Optimize
   permissions, and providing RBAC for clusters on versions prior to 8.8.
@@ -236,4 +236,4 @@ The following constraints bound the CSL design and limit what can change without
 
 ### 2.9 Unresolved issues
 
-Open issues and technical debts are tracked in [§11 Technical Debts, Risks, and Open Design Questions](./11-technical-debts-risks.md).
+Open issues and technical debts are tracked in [§10 Technical Debts, Risks, and Open Design Questions](./10-technical-debts-risks.md).

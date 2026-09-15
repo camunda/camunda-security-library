@@ -535,7 +535,7 @@ Mode activation is property-driven via Spring Boot conditions (`@ConditionalOnPr
 | Deployment strategy | AuthN/AuthZ enforcement | Policy source | Policy authoring | Outbox dispatch to OCs | Engine projection | Cluster registry | Runtime context |
 |---|---|---|---|---|---|---|---|
 | `hub` | ✅ Hub-scoped (org, workspace, cluster resources) | Hub is SoT | ✅ via Hub UI/API | ✅ via `OutboxPort` | ❌ no engines in Hub | ✅ `ClusterRegistrationPort` + `ClusterRegistryPort` | Hub authentication and policy management for the Hub UI |
-| `managed` | ✅ Cluster-scoped (engine, tenant, task resources) | Receives from Hub | ❌ (read-only in the admin section of the OC UI) | ❌ | ❌ (target: `EngineCommandPort`, not yet defined) | ❌ | OC receives policy via `/identity/policies/apply` endpoint from Hub; enforces for all cluster requests and exposes the applied policy through the admin section of the OC UI |
+| `managed` | ✅ Cluster-scoped (engine, tenant, task resources) | Receives from Hub | ❌ (read-only in the admin section of the OC UI) | ❌ | ❌ (target: `EngineCommandPort`, not yet defined) | ❌ | Target: OC receives policy via `/identity/policies/apply` endpoint from Hub (`PolicyApplyPort` is a stub, not yet implemented); enforces for all cluster requests and exposes the applied policy through the admin section of the OC UI |
 | `standalone` | ✅ Cluster-scoped (engine, tenant, task resources) | OC is local SoT | ✅ via the admin section of the OC UI and OC APIs | ❌ | ❌ (target: `EngineCommandPort`, not yet defined) | ❌ | OC is fully autonomous; local policy authoring and engine projection through the admin section of the OC UI |
 
 ```mermaid
@@ -608,7 +608,7 @@ The extra layer between UIs/clients and engines is intentional:
 
 Rather than a separate authorization sub-framework embedded in the engine, the zeebe engine uses CSL's `core` authorization model directly — see [ADR-0014](../adr/0014-unified-authz-framework-in-core.md).
 
-**Authorization checks (command-time, delivered per [ADR-0014](../adr/0014-unified-authz-framework-in-core.md) / [#388](https://github.com/camunda/camunda-security-library/issues/388), closed 2026-08-13):** `AuthorizationCheckPort` is the unified inbound port in `core/port/in/`, with `AuthorizationService` as its default implementation wired in `spring-boot-starter`. The same evaluator serves both the search layer and the zeebe engine, backed by CSL's `AuthorizationChecker` (`core/authz/`) as the shared scope-evaluation component. RocksDB-backed adapter implementations of `MembershipPort` and `AuthorizationScopeRepositoryPort` provide the engine-side wiring — see the diagram below.
+**Authorization checks (command-time, delivered per [ADR-0014](../adr/0014-unified-authz-framework-in-core.md) — see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance)):** `AuthorizationCheckPort` is the unified inbound port in `core/port/in/`, with `AuthorizationService` as its default implementation wired in `spring-boot-starter`. The same evaluator serves both the search layer and the zeebe engine, backed by CSL's `AuthorizationChecker` (`core/authz/`) as the shared scope-evaluation component. RocksDB-backed adapter implementations of `MembershipPort` and `AuthorizationScopeRepositoryPort` provide the engine-side wiring — see the diagram below.
 
 **Policy state propagation (planned):** OC CSL will propagate identity state changes (tenants, roles, authorizations) to each engine through `EngineCommandPort` (planned outbound port). See section 5.5.2.
 
