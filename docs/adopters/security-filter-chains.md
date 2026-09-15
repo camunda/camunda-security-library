@@ -973,6 +973,48 @@ public Optional<String> postLogoutRedirectPath() {
 
 CSL sends the IdP `{baseUrl}<basePath><route>` as the `post_logout_redirect_uri`, so a scoped chain resolves it under its own prefix. The route must start with `/`. The default is `Optional.empty()`, meaning no `post_logout_redirect_uri` is sent and the IdP applies its own default — never return `null`. Every per-scope redirect URI must be allow-listed at the IdP; multi-tenant deployments need a wildcard or pattern registration. See [ADR-0009](../adr/0009-session-store-port-and-web-session-ownership.md).
 
+**What the route is: a default, not the final word.** Two configuration properties override it, and both are resolved **per OIDC client registration** — the flat `oidc.*` block and each `providers.oidc.<id>` entry get their own answer ([ADR-0024](../adr/0024-per-registration-post-logout-redirect-uri.md)). The precedence for one registration is:
+
+| Configuration | What CSL sends |
+|---|---|
+| `post-logout-redirect-enabled: false` | nothing — the IdP applies its own post-logout default |
+| `post-logout-redirect-uri` starting with `/` | `{baseUrl}` + the chain's base path + that path |
+| `post-logout-redirect-uri` anything else | that value verbatim, as a URI template — **no base path** |
+| neither set | `{baseUrl}` + the chain's base path + the host route above |
+
+The verbatim form deliberately skips the base path. That is what it is for: an OP such as Auth0 matches `post_logout_redirect_uri` against its *Allowed Logout URLs* exactly and allows wildcards only in the subdomain position, so a per-cluster path prefix produces a URL no entry can ever match — and Auth0 then rejects the whole end-session request with `invalid_request` rather than logging the user out. Naming a registerable URL is how a deployment keeps the redirect instead of dropping it.
+
+A template may use `{baseUrl}`, `{baseScheme}`, `{baseHost}`, `{basePort}`, `{basePath}` and `{registrationId}`. Any other placeholder, a value that is neither absolute nor a path nor a template, and CR/LF in the value are all rejected at startup. Setting `post-logout-redirect-enabled: false` alongside a URI wins — no parameter is sent — and is logged at `WARN`.
+
+Two IdPs in one deployment, behaving differently:
+
+```yaml
+camunda:
+  security:
+    authentication:
+      method: oidc
+      providers:
+        oidc:
+          keycloak:
+            client-id: camunda-keycloak
+            issuer-uri: https://keycloak.example.com/realms/camunda
+            # nothing set: keeps the host route, {baseUrl}<basePath>/post-logout
+
+          auth0:
+            client-id: camunda-auth0
+            issuer-uri: https://example.eu.auth0.com/
+            # one Allowed Logout URLs entry covers every scope on this host
+            post-logout-redirect-uri: "{baseUrl}/post-logout"
+```
+
+The map key is the registrationId — it is what the handler looks the resolved URL up under at logout, matched against the registration the user authenticated with, so these keys are not free-form labels. For a chain whose base path is `/physical-tenants/t1` on `https://camunda.example.com`, the two registrations send `https://camunda.example.com/physical-tenants/t1/post-logout` and `https://camunda.example.com/post-logout` respectively.
+
+The `auth0` entry is the shape worth copying for a strict OP: `{baseUrl}` keeps the host dynamic but drops the scope prefix, so one registered entry matches every scope on that host, where a `/`-leading value would need one entry per scope. Quote the `{...}` form in YAML or it parses as a map. An absolute URL (`https://accounts.example.com/logged-out`) works the same way when the landing page lives off-host entirely.
+
+The flat `camunda.security.authentication.oidc.*` block counts as one more registration here, keyed by its `registration-id` (default `oidc`), and gets its own independent answer — so a host can carry a flat block and per-provider entries with different post-logout behaviour on each.
+
+Disabling the redirect still terminates the IdP session; the IdP renders its own logged-out page rather than returning the browser to the host, so the user is not sent back to the page they logged out from. This is orthogonal to `idp-logout-enabled`, which is intended to decide whether the IdP is contacted at all — note that flag is currently unwired and setting it changes no behaviour.
+
 **Reading the post-logout redirect URL**
 
 ```java
