@@ -318,7 +318,7 @@ Two constraints to be aware of:
 - **A resolvable `jwk-set-uri` is required.** Set `jwk-set-uri` explicitly, or set `issuer-uri` so OIDC discovery populates it. A provider that resolves neither fails with `OIDC Provider '<id>' is missing a valid 'jwk-set-uri'. Issuer URI: <issuer>` at the first token decode. The decoder is built on first use, so an identity provider that CSL cannot reach at startup does not stop the application context.
 - **`kid` collision precedence.** If two JWK Sets publish a key with the same `kid` (unlikely in practice), the primary `jwk-set-uri` wins because it is queried first. Reorder `additional-jwk-set-uris` to change precedence among the additional URIs.
 
-See [ADR-0006](../adr/0006-multi-idp-oidc-configuration.md) for the design rationale, the choice of composite `JWKSource` over Spring's `JwtIssuerAuthenticationManagerResolver`, and the lazy failure model, and [ADR-0025](../adr/0025-deferred-oidc-resolution.md) for the first-use resolution lifecycle.
+See [ADR-0006](../adr/0006-multi-idp-oidc-configuration.md) for the design rationale, the choice of composite `JWKSource` over Spring's `JwtIssuerAuthenticationManagerResolver`, and the lazy failure model, and [ADR-0026](../adr/0025-deferred-oidc-resolution.md) for the first-use resolution lifecycle.
 
 #### Disabling the UserInfo fetch
 
@@ -944,6 +944,40 @@ public Optional<String> postLogoutRedirectPath() {
 ```
 
 CSL sends the IdP `{baseUrl}<basePath><route>` as the `post_logout_redirect_uri`, so a scoped chain resolves it under its own prefix. The route must start with `/`. The default is `Optional.empty()`, meaning no `post_logout_redirect_uri` is sent and the IdP applies its own default — never return `null`. Every per-scope redirect URI must be allow-listed at the IdP; multi-tenant deployments need a wildcard or pattern registration. See [ADR-0009](../adr/0009-session-store-port-and-web-session-ownership.md).
+
+**What the route is: a default, not the final word.** Two configuration properties override it, and both are resolved **per OIDC client registration** — the flat `oidc.*` block and each `providers.oidc.<id>` entry get their own answer ([ADR-0026](../adr/0026-per-registration-post-logout-redirect-uri.md)). The precedence for one registration is:
+
+| Configuration | What CSL sends |
+|---|---|
+| `post-logout-redirect-enabled: false` | nothing — the IdP applies its own post-logout default |
+| `post-logout-redirect-uri` starting with `/` | `{baseUrl}` + the chain's base path + that path |
+| `post-logout-redirect-uri` anything else | that value verbatim, as a URI template — **no base path** |
+| neither set | `{baseUrl}` + the chain's base path + the host route above |
+
+The verbatim form deliberately skips the base path. That is what it is for: an OP such as Auth0 matches `post_logout_redirect_uri` against its *Allowed Logout URLs* exactly and allows wildcards only in the subdomain position, so a per-cluster path prefix produces a URL no entry can ever match — and Auth0 then rejects the whole end-session request with `invalid_request` rather than logging the user out. Naming a registerable URL is how a deployment keeps the redirect instead of dropping it.
+
+A template may use `{baseUrl}`, `{baseScheme}`, `{baseHost}`, `{basePort}`, `{basePath}` and `{registrationId}`. Any other placeholder, a value that is neither absolute nor a path nor a template, and CR/LF in the value are all rejected at startup. Setting `post-logout-redirect-enabled: false` alongside a URI wins — no parameter is sent — and is logged at `WARN`.
+
+Two IdPs in one deployment, behaving differently:
+
+```yaml
+camunda:
+  security:
+    authentication:
+      providers:
+        oidc:
+          keycloak:
+            client-id: keycloak-client
+            issuer-uri: https://keycloak.example.com/realms/camunda
+            # unset: keeps the host route, {baseUrl}<basePath>/post-logout
+          auth0:
+            client-id: auth0-client
+            issuer-uri: https://example.eu.auth0.com/
+            # registered verbatim in Auth0's Allowed Logout URLs
+            post-logout-redirect-uri: https://accounts.example.com/logged-out
+```
+
+Disabling the redirect still terminates the IdP session; the IdP renders its own logged-out page rather than returning the browser to the host, so the user is not sent back to the page they logged out from. This is orthogonal to `idp-logout-enabled`, which is intended to decide whether the IdP is contacted at all — note that flag is currently unwired and setting it changes no behaviour.
 
 **Reading the post-logout redirect URL**
 
