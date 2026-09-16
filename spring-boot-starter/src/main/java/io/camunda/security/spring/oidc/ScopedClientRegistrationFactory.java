@@ -570,15 +570,40 @@ public final class ScopedClientRegistrationFactory {
    *
    * <p>See ADR-0025.
    */
-  private static void requirePostLogoutRedirectUri(
+  /**
+   * Validates only the {@code post-logout-redirect-uri} of each provider.
+   *
+   * <p>{@link #validateWithoutNetwork} already runs this as part of a full provider-block check,
+   * and that is the path a normal deployment takes. This narrower entry point exists for the
+   * consumer that can reach a provider map the factory never built: the primary chain's {@code
+   * ClientRegistrationRepository} bean is {@code @ConditionalOnMissingBean}, so a host can replace
+   * it and bypass {@code createFromProviderMap} entirely, while the logout handler is still
+   * configured from the provider-configuration port. Without this the values it composes would
+   * never have been checked.
+   *
+   * <p>Running twice is harmless — the checks are pure — and the alternative, a second copy of the
+   * rules at the consumer, is what keeping one implementation is meant to avoid.
+   *
+   * @param providers the provider configurations keyed by registration id; must not be {@code null}
+   * @throws IllegalStateException if any configured value cannot work
+   */
+  public void validatePostLogoutRedirectUris(final Map<String, OidcConfiguration> providers) {
+    Objects.requireNonNull(providers, "providers must not be null");
+    providers.forEach(this::requirePostLogoutRedirectUri);
+  }
+
+  private void requirePostLogoutRedirectUri(
       final String registrationId, final OidcConfiguration oidc) {
     final var configured = oidc.getPostLogoutRedirectUri();
     if (!StringUtils.hasText(configured)) {
       return;
     }
     final var value = configured.trim();
-    if (value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
-      throw postLogoutRedirectUriError(registrationId, value, "must not contain CR or LF");
+    // Covers CR and LF, which would otherwise forge a line in the log this error is written to,
+    // and the rest of the control characters, which no component can serve.
+    if (value.chars().anyMatch(Character::isISOControl)) {
+      throw postLogoutRedirectUriError(
+          registrationId, value, "must not contain control characters");
     }
     // OpenID Connect RP-Initiated Logout 1.0 §2 gives post_logout_redirect_uri no fragment, so an
     // OP has no reason to accept one.
@@ -589,6 +614,13 @@ public final class ScopedClientRegistrationFactory {
     if (value.startsWith("/")) {
       return;
     }
+    if (!continuesWithAPath(value)) {
+      throw postLogoutRedirectUriError(
+          registrationId,
+          value,
+          "must continue with a path after {baseUrl}, which already carries the scheme, host and"
+              + " port");
+    }
     if (!resolvesToAnAbsoluteUrl(value)) {
       throw postLogoutRedirectUriError(
           registrationId,
@@ -598,6 +630,72 @@ public final class ScopedClientRegistrationFactory {
               + " host, such as {baseScheme}://{baseHost})");
     }
     requireParseableAbsoluteUrl(registrationId, value);
+    if (!isUsablePostLogoutRedirectUri(value, registrationId)) {
+      throw postLogoutRedirectUriError(
+          registrationId,
+          value,
+          "must expand to an absolute http(s) URL with a host, a port in 1-65535 if it names one,"
+              + " and no fragment");
+    }
+  }
+
+  /**
+   * Whether the value is still a usable URL once expanded, for every request shape.
+   *
+   * <p>The structural checks above catch what expansion cannot — a placeholder standing where the
+   * scheme belongs survives expansion as a perfectly valid URL — and this catches what they cannot:
+   * a literal {@code %zz} in the path, a port that expands out of range, and the several ways a
+   * value can be correct on one request and malformed on another.
+   *
+   * <p>{@link #sampleRequestShapes} is the same two-shape probe {@code redirect-uri} is held to,
+   * and the second shape is the one that matters here: {@code basePort} expands with its own {@code
+   * ':'} only on a non-default port, so a template that also supplies one is right on the first
+   * shape and wrong on the second.
+   *
+   * <p>A path is expanded under {@code {baseUrl}}, which is how the chain composes it.
+   */
+  private boolean isUsablePostLogoutRedirectUri(
+      final String configured, final String registrationId) {
+    final var template =
+        configured.startsWith("/") ? BASE_URL_PLACEHOLDER + configured : configured;
+    return sampleRequestShapes(registrationId).stream()
+        .allMatch(uriVariables -> expandsToAUsablePostLogoutUrl(template, uriVariables));
+  }
+
+  private static boolean expandsToAUsablePostLogoutUrl(
+      final String template, final Map<String, String> uriVariables) {
+    final URI expanded;
+    try {
+      expanded =
+          new URI(
+              UriComponentsBuilder.fromUriString(template)
+                  .buildAndExpand(uriVariables)
+                  .toUriString());
+    } catch (final IllegalArgumentException | URISyntaxException cannotExpand) {
+      return false;
+    }
+    final var scheme = expanded.getScheme();
+    return expanded.isAbsolute()
+        && ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
+        && StringUtils.hasText(expanded.getHost())
+        && namesAPortInTcpRange(expanded)
+        && expanded.getRawFragment() == null;
+  }
+
+  /**
+   * Whether a {@code {baseUrl}} value carries on with a path.
+   *
+   * <p>{@code {baseUrl}} already expands to scheme, host, port and context path, so anything but a
+   * path after it duplicates a component: {@code {baseUrl}:8080/logout} becomes {@code
+   * https://host:8443:8080/logout} on a non-default port. Only the shape rule catches this — the
+   * value expands to something a URI parser still accepts on a default-port request.
+   */
+  private static boolean continuesWithAPath(final String value) {
+    if (!value.startsWith(BASE_URL_PLACEHOLDER)) {
+      return true;
+    }
+    final var rest = value.substring(BASE_URL_PLACEHOLDER.length());
+    return rest.isEmpty() || rest.startsWith("/") || rest.startsWith("?");
   }
 
   /**

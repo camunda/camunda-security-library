@@ -870,7 +870,7 @@ class ScopedClientRegistrationFactoryTest {
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("provider-b")
         .hasMessageContaining("providers.oidc.provider-b.redirect-uri")
-        .hasMessageContaining(redirectUri);
+        .hasMessageContaining(UrlRedaction.redact(redirectUri));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -884,7 +884,7 @@ class ScopedClientRegistrationFactoryTest {
     assertThatThrownBy(() -> factory.validateRedirectionEndpointSource(redirectUri, "oidc"))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("camunda.security.authentication.oidc.redirect-uri")
-        .hasMessageContaining(redirectUri);
+        .hasMessageContaining(UrlRedaction.redact(redirectUri));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -1142,7 +1142,8 @@ class ScopedClientRegistrationFactoryTest {
         "{baseScheme}://accounts.example.com/logged-out",
         "https://{baseHost}{basePort}/logged-out",
         "https://{baseHost}:8080/logged-out",
-        "https://accounts.example.com:8443/logged-out"
+        "https://accounts.example.com:8443/logged-out",
+        "{baseUrl}"
       })
   @ParameterizedTest
   void shouldAcceptAUsablePostLogoutRedirectUri(final String configured) {
@@ -1172,6 +1173,48 @@ class ScopedClientRegistrationFactoryTest {
   void shouldRejectAPostLogoutRedirectUriWithAPortOutsideTheTcpRange() {
     assertPostLogoutRedirectUriRejected("https://accounts.example.com:99999/logout")
         .hasMessageContaining("port");
+  }
+
+  /**
+   * A templated host does not excuse the port beside it. The structural check can only see that the
+   * port is digits; expanding the value is what shows the number is out of range.
+   */
+  @Test
+  void shouldRejectAPostLogoutRedirectUriWithATemplatedHostAndAnOutOfRangePort() {
+    assertPostLogoutRedirectUriRejected("https://{baseHost}:99999/logout")
+        .hasMessageContaining("must expand to an absolute http(s) URL");
+  }
+
+  /**
+   * {@code basePort} brings its own {@code ':'}, so a literal one before it doubles up. Only the
+   * non-default-port shape shows it: on the default port the placeholder expands to nothing and the
+   * value merely ends in a stray colon.
+   */
+  @Test
+  void shouldRejectAPostLogoutRedirectUriWithALiteralColonBeforeBasePort() {
+    assertPostLogoutRedirectUriRejected("https://accounts.example.com:{basePort}/logged-out")
+        .hasMessageContaining("must expand to an absolute http(s) URL");
+  }
+
+  /**
+   * {@code {baseUrl}} already carries scheme, host, port and context path, so anything but a path
+   * after it duplicates a component — {@code https://host:8443:8080/logout} on a non-default port.
+   * Expansion alone cannot catch this: on a default-port request the result still parses.
+   */
+  @Test
+  void shouldRejectAPostLogoutRedirectUriThatAddsAPortAfterBaseUrl() {
+    assertPostLogoutRedirectUriRejected("{baseUrl}:8080/logout")
+        .hasMessageContaining("must continue with a path after {baseUrl}");
+  }
+
+  /**
+   * A literal path is checked even when a placeholder sits further along it. Parsing only the
+   * authority in that case would let a malformed escape through to logout.
+   */
+  @Test
+  void shouldRejectAPostLogoutRedirectUriWithAMalformedEscapeInALiteralPath() {
+    assertPostLogoutRedirectUriRejected("https://accounts.example.com/%zz/{basePath}")
+        .hasMessageContaining("must expand to an absolute http(s) URL");
   }
 
   /**
@@ -1251,10 +1294,23 @@ class ScopedClientRegistrationFactoryTest {
     assertPostLogoutRedirectUriRejected(configured).hasMessageContaining("must not contain");
   }
 
+  /**
+   * CR and LF would forge a line in the log this very message lands in; the other control
+   * characters are simply unusable. Both are rejected by the same check.
+   */
+  @ValueSource(strings = {"https://accounts.example.com/x\r\nSet-Cookie: a=b", "/good\tbye"})
+  @ParameterizedTest
+  void shouldRejectAPostLogoutRedirectUriWithControlCharacters(final String configured) {
+    assertPostLogoutRedirectUriRejected(configured)
+        .hasMessageContaining("must not contain control characters");
+  }
+
+  /** And the message that reports one must not carry the control characters either. */
   @Test
-  void shouldRejectAPostLogoutRedirectUriWithCrlf() {
-    assertPostLogoutRedirectUriRejected("https://accounts.example.com/x\r\nSet-Cookie: a=b")
-        .hasMessageContaining("must not contain CR or LF");
+  void shouldEscapeControlCharactersInTheRejectionMessage() {
+    assertPostLogoutRedirectUriRejected("https://accounts.example.com/x\r\nINFO forged")
+        .hasMessageNotContaining("\r")
+        .hasMessageNotContaining("\n");
   }
 
   /**

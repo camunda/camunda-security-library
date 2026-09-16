@@ -42,19 +42,36 @@ class UrlRedactionTest {
   }
 
   /**
-   * The fragment survives a redacted query. Messages that reject a value for carrying a fragment
-   * have to show it, or the operator cannot see what to remove.
+   * The '#' stays so a message rejecting a value for carrying a fragment can still point at it; the
+   * contents go, because OAuth returns tokens in fragments and nothing stops one reaching
+   * configuration.
    */
   @Test
-  void shouldKeepTheFragmentWhileRemovingTheQuery() {
-    assertThat(UrlRedaction.redact("https://idp.example.com/cb?token=secret#section"))
-        .isEqualTo("https://idp.example.com/cb…#section");
+  void shouldKeepTheFragmentMarkerButNotItsContents() {
+    assertThat(UrlRedaction.redact("https://idp.example.com/cb#access_token=secret"))
+        .isEqualTo("https://idp.example.com/cb#…");
   }
 
   @Test
-  void shouldKeepAFragmentWithNoQueryPresent() {
-    assertThat(UrlRedaction.redact("https://idp.example.com/cb#section"))
-        .isEqualTo("https://idp.example.com/cb#section");
+  void shouldRedactBothTheQueryAndTheFragmentContents() {
+    assertThat(UrlRedaction.redact("https://idp.example.com/cb?token=secret#access_token=secret"))
+        .isEqualTo("https://idp.example.com/cb…#…");
+  }
+
+  @Test
+  void shouldLeaveABareFragmentMarkerAlone() {
+    assertThat(UrlRedaction.redact("https://idp.example.com/cb#"))
+        .isEqualTo("https://idp.example.com/cb#");
+  }
+
+  /**
+   * A rejected value is exactly what these messages quote, and CR/LF is one of the reasons a value
+   * gets rejected. Passed through unescaped it would forge a line in the log the message lands in.
+   */
+  @Test
+  void shouldEscapeControlCharacters() {
+    assertThat(UrlRedaction.redact("https://idp.example.com/cb\r\nINFO forged"))
+        .isEqualTo("https://idp.example.com/cb\\u000d\\u000aINFO forged");
   }
 
   /** Values reach this helper unexpanded and sometimes unparseable; none of that may throw. */

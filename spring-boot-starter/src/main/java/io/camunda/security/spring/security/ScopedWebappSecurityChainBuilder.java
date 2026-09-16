@@ -536,6 +536,11 @@ public final class ScopedWebappSecurityChainBuilder {
    */
   private Map<String, String> postLogoutRedirectUris(
       final Map<String, OidcConfiguration> sources, final String prefix) {
+    // The factory validates these when it builds the registrations, which is the usual path. A host
+    // that replaces the ClientRegistrationRepository bean bypasses that, and this handler is still
+    // configured from the provider map — so the map actually consumed is validated here too. The
+    // rules live in one place; this only calls them.
+    scopedClientRegistrationFactory.validatePostLogoutRedirectUris(sources);
     final var composedDefault = composedPostLogoutRedirectUri(prefix);
     final Map<String, String> redirectUris = new LinkedHashMap<>();
     sources.forEach(

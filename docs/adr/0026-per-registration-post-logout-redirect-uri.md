@@ -149,6 +149,13 @@ rejected value redacts its user-info and query first.
   validating the same kind of thing is exactly what that consolidated away. It also puts this
   property next to `redirect-uri` and the endpoint URLs, which are checked the same way.
 
+  The consumer calls the same rules for the map it actually uses, through
+  `validatePostLogoutRedirectUris`. A host may replace the primary chain's
+  `ClientRegistrationRepository` bean and so never reach `createFromProviderMap`, while the logout
+  handler is still configured from the provider-configuration port — without that second call the
+  values it composes would never have been checked. One implementation, two callers, rather than one
+  caller and a gap.
+
   Only the *shape* moved. Composition still needs the chain's base path, so deciding where a legal
   value resolves stays in `ScopedWebappSecurityChainBuilder`; deciding whether it is legal does
   not. One consequence worth naming: a host that supplies its own `ClientRegistrationRepository`
