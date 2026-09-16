@@ -61,6 +61,11 @@ public final class ScopedClientRegistrationFactory {
 
   private static final String BASE_HOST_PLACEHOLDER = "{baseHost}";
   private static final String BASE_PORT_PLACEHOLDER = "{basePort}";
+  private static final String BASE_PATH_PLACEHOLDER = "{basePath}";
+
+  /** The placeholders that bring their own delimiter and so may trail a host. */
+  private static final List<String> AUTHORITY_TRAILING_PLACEHOLDERS =
+      List.of(BASE_PATH_PLACEHOLDER, BASE_PORT_PLACEHOLDER);
 
   /** RFC 3986 §3.1. */
   private static final Pattern URI_SCHEME = Pattern.compile("[A-Za-z][A-Za-z0-9+.-]*");
@@ -614,9 +619,20 @@ public final class ScopedClientRegistrationFactory {
       throw postLogoutRedirectUriError(registrationId, value, "must not contain a fragment ('#')");
     }
     requireExpandableTemplate(registrationId, value);
-    if (value.startsWith("/")) {
-      return;
+    if (!value.startsWith("/")) {
+      requireUsableAbsoluteForm(registrationId, value);
     }
+    if (!isUsablePostLogoutRedirectUri(value, registrationId)) {
+      throw postLogoutRedirectUriError(
+          registrationId,
+          value,
+          "must expand to an absolute http(s) URL with a host, a port in 1-65535 if it names one,"
+              + " and no fragment");
+    }
+  }
+
+  /** The checks that only a non-path value can fail. */
+  private static void requireUsableAbsoluteForm(final String registrationId, final String value) {
     if (!continuesWithAPath(value)) {
       throw postLogoutRedirectUriError(
           registrationId,
@@ -633,13 +649,6 @@ public final class ScopedClientRegistrationFactory {
               + " host, such as {baseScheme}://{baseHost})");
     }
     requireParseableAbsoluteUrl(registrationId, value);
-    if (!isUsablePostLogoutRedirectUri(value, registrationId)) {
-      throw postLogoutRedirectUriError(
-          registrationId,
-          value,
-          "must expand to an absolute http(s) URL with a host, a port in 1-65535 if it names one,"
-              + " and no fragment");
-    }
   }
 
   /**
@@ -744,24 +753,35 @@ public final class ScopedClientRegistrationFactory {
   }
 
   private static boolean isUsableAuthority(final String authority) {
+    // {basePort} carries its own ':' and {basePath} its own '/', so either can legitimately trail
+    // the host and neither ends the authority the way a literal delimiter would. Peel them off —
+    // both, in any order — before looking at what is left.
     var host = authority;
-    String port = null;
-    if (host.endsWith(BASE_PORT_PLACEHOLDER)) {
-      // {basePort} expands to "" or ":8080", so it stands in for the whole port component.
-      host = host.substring(0, host.length() - BASE_PORT_PLACEHOLDER.length());
-      port = "";
-    } else {
-      // Last ':' after any ']' so an IPv6 literal's own colons are not mistaken for a port.
-      final var colon = host.lastIndexOf(':');
-      if (colon > host.lastIndexOf(']')) {
-        port = host.substring(colon + 1);
-        host = host.substring(0, colon);
+    var peeled = true;
+    while (peeled) {
+      peeled = false;
+      for (final String placeholder : AUTHORITY_TRAILING_PLACEHOLDERS) {
+        if (host.endsWith(placeholder)) {
+          host = host.substring(0, host.length() - placeholder.length());
+          peeled = true;
+        }
       }
+    }
+    // A ':' left behind is one the value supplied itself, on top of the one {basePort} brings.
+    if (host.endsWith(":")) {
+      return false;
+    }
+    String port = null;
+    // Last ':' after any ']' so an IPv6 literal's own colons are not mistaken for a port.
+    final var colon = host.lastIndexOf(':');
+    if (colon > host.lastIndexOf(']')) {
+      port = host.substring(colon + 1);
+      host = host.substring(0, colon);
     }
     final var hostIsUsable =
         BASE_HOST_PLACEHOLDER.equals(host) || (!host.isEmpty() && host.indexOf('{') < 0);
     final var portIsUsable =
-        port == null || port.isEmpty() || port.chars().allMatch(Character::isDigit);
+        port == null || (!port.isEmpty() && port.chars().allMatch(Character::isDigit));
     return hostIsUsable && portIsUsable;
   }
 

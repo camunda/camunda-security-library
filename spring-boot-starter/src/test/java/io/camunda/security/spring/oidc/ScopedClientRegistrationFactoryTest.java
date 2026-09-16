@@ -1143,7 +1143,12 @@ class ScopedClientRegistrationFactoryTest {
         "https://{baseHost}{basePort}/logged-out",
         "https://{baseHost}:8080/logged-out",
         "https://accounts.example.com:8443/logged-out",
-        "{baseUrl}"
+        "{baseUrl}",
+        // {basePath} brings its own '/' and {basePort} its own ':', so both may trail the host
+        // without ending the authority — rejecting these would fail a context-path deployment.
+        "https://{baseHost}{basePort}{basePath}/logged-out",
+        "https://accounts.example.com{basePath}/logged-out",
+        "{baseScheme}://{baseHost}{basePort}{basePath}/logged-out"
       })
   @ParameterizedTest
   void shouldAcceptAUsablePostLogoutRedirectUri(final String configured) {
@@ -1186,14 +1191,17 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   /**
-   * {@code basePort} brings its own {@code ':'}, so a literal one before it doubles up. Only the
-   * non-default-port shape shows it: on the default port the placeholder expands to nothing and the
-   * value merely ends in a stray colon.
+   * {@code basePort} brings its own {@code ':'}, so a literal one before it doubles up — {@code
+   * https://accounts.example.com::8443/…} on a non-default port.
+   *
+   * <p>Caught by the authority rule rather than by expansion: peeling a trailing {@code {basePort}}
+   * is what lets it legitimately follow a host, and the colon left behind is the giveaway that the
+   * value supplied one too.
    */
   @Test
   void shouldRejectAPostLogoutRedirectUriWithALiteralColonBeforeBasePort() {
     assertPostLogoutRedirectUriRejected("https://accounts.example.com:{basePort}/logged-out")
-        .hasMessageContaining("must expand to an absolute http(s) URL");
+        .hasMessageContaining("must be an absolute URL");
   }
 
   /**
@@ -1205,6 +1213,30 @@ class ScopedClientRegistrationFactoryTest {
   void shouldRejectAPostLogoutRedirectUriThatAddsAPortAfterBaseUrl() {
     assertPostLogoutRedirectUriRejected("{baseUrl}:8080/logout")
         .hasMessageContaining("must continue with a path after {baseUrl}");
+  }
+
+  /**
+   * The path form faces the same expansion check as the rest. It returns early from the
+   * absolute-URL rules, which do not apply to it, and used to return from the method with it — so a
+   * malformed escape reached Spring, prefixed with {@code {baseUrl}}, and failed at logout.
+   */
+  @ValueSource(strings = {"/goodbye/%zz", "/goodbye/{basePath}%zz"})
+  @ParameterizedTest
+  void shouldRejectAPostLogoutRedirectPathThatCannotExpand(final String configured) {
+    assertPostLogoutRedirectUriRejected(configured)
+        .hasMessageContaining("must expand to an absolute http(s) URL");
+  }
+
+  /**
+   * Surrounding whitespace is trimmed before anything else looks at the value, and the trimmed
+   * value is what both this check and the chain composition use — so an edge newline from a YAML
+   * block scalar is hygiene, not a rejected control character. One in the middle is a different
+   * matter.
+   */
+  @Test
+  void shouldTrimSurroundingWhitespaceRatherThanRejectIt() {
+    assertThatNoException()
+        .isThrownBy(() -> validatePostLogoutRedirectUri("\n  https://accounts.example.com/x  \n"));
   }
 
   /**

@@ -983,7 +983,10 @@ The map key is the registrationId — it is what the handler looks the resolved 
 
 The `auth0` entry is the shape worth copying for a strict OP: `{baseUrl}` keeps the host dynamic but drops the scope prefix, so one registered entry matches every scope on that host, where a `/`-leading value would need one entry per scope. Quote the `{...}` form in YAML or it parses as a map. An absolute URL (`https://accounts.example.com/logged-out`) works the same way when the landing page lives off-host entirely.
 
-The flat `camunda.security.authentication.oidc.*` block counts as one more registration here, keyed by its `registration-id` (default `oidc`), and gets its own independent answer — so a host can carry a flat block and per-provider entries with different post-logout behaviour on each. The flat block only becomes a registration once its `client-id` is set (`ScopedClientRegistrationFactory#flatten`); setting `post-logout-redirect-uri` there on its own has no effect, because there is no registration for it to apply to.
+The flat `camunda.security.authentication.oidc.*` block counts as one more registration here, keyed by its `registration-id` (default `oidc`), so a host can carry a flat block and per-provider entries with different post-logout behaviour on each. Two conditions apply, both from `ScopedClientRegistrationFactory#flatten`:
+
+- The flat block only becomes a registration once its `client-id` is set. Setting `post-logout-redirect-uri` there on its own has no effect, because there is no registration for it to apply to.
+- A `providers.oidc.<id>` entry **replaces** the flat block when the two share a registration id — the providers map is merged over it, whole entry at a time. With a `providers.oidc.oidc` entry present, the default-id flat block contributes nothing, and its post-logout settings are not merged in field by field.
 
 Disabling the redirect still terminates the IdP session; the IdP renders its own logged-out page rather than returning the browser to the host, so the user is not sent back to the page they logged out from. This is orthogonal to `idp-logout-enabled`, which is intended to decide whether the IdP is contacted at all — note that flag is currently unwired and setting it changes no behaviour.
 
