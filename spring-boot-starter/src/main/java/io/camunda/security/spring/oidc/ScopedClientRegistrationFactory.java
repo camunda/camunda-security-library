@@ -98,10 +98,10 @@ public final class ScopedClientRegistrationFactory {
 
   /**
    * Stand-ins for the request-derived values {@code DefaultOAuth2AuthorizationRequestResolver}
-   * expands a redirect-uri against, both carrying the deployment's own context path and the
-   * registration's own id, and differing in the port: {@code basePort} expands with its own {@code
-   * :} only on a non-default port, so a template that supplies the {@code :} itself is absolute on
-   * the first shape and broken on the second.
+   * expands a redirect-uri against. Both carry the deployment's own context path and the
+   * registration's own id; they differ in the port because {@code basePort} expands with its own
+   * {@code :} only on a non-default one, so a template that supplies the {@code :} itself is
+   * absolute on the first shape and broken on the second.
    */
   private List<Map<String, String>> sampleRequestShapes(final String registrationId) {
     return List.of(
@@ -128,11 +128,9 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Normalizes a configured {@code server.servlet.context-path} to what {@code
-   * request.getContextPath()} reports, which is what the resolver expands {@code basePath} from:
-   * {@code ""} for a root deployment, otherwise a leading and no trailing slash. A configured
-   * {@code /orchestration/} would otherwise expand to a callback with an empty path segment that no
-   * request can carry.
+   * The resolver expands {@code basePath} from {@code request.getContextPath()}, so a configured
+   * {@code /orchestration/} has to lose its trailing slash here: judged as configured, it would
+   * yield a callback with an empty path segment no request can carry.
    */
   private static String contextPathAsTheServletReportsIt(final String configured) {
     if (!StringUtils.hasText(configured) || "/".equals(configured)) {
@@ -167,10 +165,9 @@ public final class ScopedClientRegistrationFactory {
    * malformed entry is reported before an earlier entry's issuer is contacted for discovery.
    *
    * <p>The scoped webapp chain's redirection endpoint listens at a prefixed path (e.g. {@code
-   * /physical-tenants/{id}/sso-callback}). The registrations built here must carry a matching
-   * {@code redirect_uri} so that {@code DefaultOAuth2AuthorizationRequestResolver} sends the
-   * correct callback URL to the IdP. Without this override the IdP calls back to the unprefixed
-   * cluster path, which the scoped chain never intercepts.
+   * /physical-tenants/{id}/sso-callback}), so the registrations built here have to carry a matching
+   * {@code redirect_uri}: without the override the IdP calls back to the unprefixed cluster path,
+   * which the scoped chain never intercepts.
    *
    * @param providers map of registrationId to {@link OidcConfiguration}; must not be {@code null}
    * @param scopedRedirectUriPath path component to use as the redirect-uri (e.g. {@code
@@ -182,8 +179,6 @@ public final class ScopedClientRegistrationFactory {
    *     callback URL
    * @throws IllegalStateException if any provider block fails one of the checks {@link
    *     #validateWithoutNetwork} describes
-   * @throws IllegalArgumentException if a configured redirect-uri does not expand to a usable
-   *     callback URL
    */
   public List<ClientRegistration> createFromProviderMap(
       final Map<String, OidcConfiguration> providers, final String scopedRedirectUriPath) {
@@ -279,13 +274,13 @@ public final class ScopedClientRegistrationFactory {
    * still reject a malformed provider block at startup, where the misconfiguration belongs, rather
    * than on the first request that happens to need it.
    *
-   * @throws IllegalStateException if a registrationId, client-id or client-authentication-method is
-   *     blank, a registrationId is not addressable as a single path segment of the login route, a
-   *     scope carries a character a scope token cannot, a provider sets neither issuer-uri nor all
-   *     of authorization-uri, token-uri and jwk-set-uri, or a configured endpoint URL is not an
-   *     absolute http(s) URL with a host and a port in TCP range. The URL checks run before the
-   *     completeness check, so a malformed value in an otherwise incomplete block is named rather
-   *     than hidden behind the completeness error.
+   * @throws IllegalStateException if a provider block is one Spring could not turn into a {@link
+   *     ClientRegistration}: a blank registrationId, client-id or client-authentication-method, a
+   *     registrationId the login route cannot address as a single path segment, a scope carrying a
+   *     character a scope token cannot, an endpoint URL that is not an absolute http(s) URL with a
+   *     host and a port in TCP range, or a block setting neither issuer-uri nor all of
+   *     authorization-uri, token-uri and jwk-set-uri. A malformed URL is named before the
+   *     completeness error it causes.
    * @throws IllegalArgumentException if {@code scopedRedirectUriPath} is not absolute or is a path
    *     the default firewall blocks, or a configured redirect-uri does not expand to a usable
    *     callback URL
@@ -411,9 +406,8 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * {@link ClientRegistration.Builder#build()} rejects a blank client-id, so this check only moves
-   * that failure to where the misconfiguration is, instead of leaving it to whichever request first
-   * resolves the registration.
+   * {@link ClientRegistration.Builder#build()} rejects a blank client-id anyway; checking it here
+   * only moves that failure off whichever request first resolves the registration.
    */
   private static void requireClientId(final String registrationId, final OidcConfiguration oidc) {
     if (!StringUtils.hasText(oidc.getClientId())) {
@@ -429,8 +423,8 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * The build path turns this value into a {@link ClientAuthenticationMethod}, which rejects a
-   * blank one, so constructing it here is what moves that failure to where the misconfiguration is.
+   * Constructing the {@link ClientAuthenticationMethod} the build path constructs leaves the rule
+   * with Spring and moves its failure off the first request that needs the registration.
    */
   private static void requireClientAuthenticationMethod(
       final String registrationId, final OidcConfiguration oidc) {
@@ -453,8 +447,7 @@ public final class ScopedClientRegistrationFactory {
    * {@link ClientRegistration.Builder#build()} rejects a scope containing a character RFC 6749
    * excludes from a scope token — a space, most notably, which is what a single {@code scope} entry
    * holding a space-separated list amounts to. Running that validation on a probe registration
-   * leaves the rule with Spring and needs no network, so the misconfiguration fails at startup
-   * rather than on the first authorization request.
+   * leaves the rule with Spring and needs no network.
    */
   private static void requireUsableScopes(
       final String registrationId, final OidcConfiguration oidc) {
@@ -486,9 +479,9 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Every endpoint a provider block can configure names a location the application sends HTTP
-   * requests to, so each has to be an absolute http(s) URL. Checking their syntax needs no network
-   * access, which keeps a typo a startup failure even where the request itself happens later.
+   * Every endpoint a provider block can configure names a location the application sends requests
+   * to, and none of them needs a network to check, which keeps a typo a startup failure even where
+   * the request itself happens much later.
    */
   private static void requireAbsoluteEndpointUrls(
       final String registrationId, final OidcConfiguration oidc) {
@@ -530,8 +523,10 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Whether a URL names a port a TCP connection can be opened to. {@code -1} is {@link
-   * URI#getPort()} for a URL that omits it, leaving the scheme's default.
+   * {@code URI} accepts a numeric port no socket can use, {@code :0} and {@code :65536} among them,
+   * and still reports a host — so such a value passes every other check and fails only where
+   * something opens a connection to it. {@code -1} is what {@link URI#getPort()} reports for a URL
+   * that omits the port, leaving the scheme's default.
    */
   private static boolean namesAPortInTcpRange(final URI uri) {
     final var port = uri.getPort();
@@ -705,7 +700,7 @@ public final class ScopedClientRegistrationFactory {
    * </ol>
    *
    * <p>The default lets a provider that omits {@code redirect-uri} still complete the login flow,
-   * matching the behaviour of OC's former {@code ClientRegistrationFactory}.
+   * as OC's former {@code ClientRegistrationFactory} did.
    *
    * @throws IllegalArgumentException if the configured {@code redirect-uri} does not expand to a
    *     usable callback URL
@@ -756,17 +751,16 @@ public final class ScopedClientRegistrationFactory {
 
   /**
    * Whether the configured redirect-uri yields a callback both the IdP and this application can
-   * use, under every {@link #sampleRequestShapes request shape} of this registration. It has to
-   * expand — as {@code DefaultOAuth2AuthorizationRequestResolver} expands it, same builder and
-   * variable names — to an absolute http(s) URL with a host, a port a TCP connection can be opened
-   * to and a path, carry no fragment (RFC 6749, section 3.1.2, forbids one; a query is allowed and
-   * is passed on to the IdP) and a path {@link #isServableByTheDefaultFirewall the default firewall
-   * lets through}, and name a callback {@link #callbackMatchesTheRedirectionEndpoint the
-   * redirection endpoint derived from it matches}.
+   * use, under every {@link #sampleRequestShapes request shape} of this registration: an absolute
+   * http(s) URL with a host, a port in TCP range and a path, no fragment (RFC 6749, section 3.1.2,
+   * forbids one; a query is allowed and is passed on to the IdP), a path {@link
+   * #isServableByTheDefaultFirewall the default firewall lets through}, and a callback {@link
+   * #callbackMatchesTheRedirectionEndpoint the redirection endpoint derived from it matches}.
    *
-   * <p>Expanding rather than modelling which placeholder yields what leaves no rule of ours to keep
-   * current: a placeholder the resolver cannot expand, one that leaves the authority incomplete and
-   * a template that is no URL at all all fail on the expansion itself.
+   * <p>Expanding it as {@code DefaultOAuth2AuthorizationRequestResolver} does — same builder, same
+   * variable names — rather than modelling which placeholder yields what leaves no rule of ours to
+   * keep current: an unexpandable placeholder, an authority left incomplete and a template that is
+   * no URL at all all fail on the expansion itself.
    */
   private boolean isUsableRedirectUri(final String configured, final String registrationId) {
     return sampleRequestShapes(registrationId).stream()

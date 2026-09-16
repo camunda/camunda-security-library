@@ -146,15 +146,13 @@ public class OidcConfiguration {
 
   /**
    * The OAuth2 client {@code redirect_uri} sent to the IdP, and the value the redirection endpoint
-   * that serves the callback is derived from. When set, it must expand to an absolute http(s) URL
-   * with a host, a port in 1-65535 if it names one, a callback path and no fragment; a query is
-   * allowed. Spring expands {@code {baseUrl}}, {@code {baseScheme}}, {@code {baseHost}}, {@code
-   * {basePort}}, {@code {basePath}}, {@code {registrationId}} and {@code {action}} in it per
-   * request, and nothing else. Anything else is rejected at startup by a caller that derives a
-   * redirection endpoint from it — a bare path such as {@code /api/authentication/callback}, an
-   * unknown placeholder, an incomplete authority or a path glued onto {@code {baseUrl}} would have
-   * the IdP send the browser where no redirection-endpoint filter listens. Leave unset to use the
-   * {@code {baseUrl}/sso-callback} default.
+   * that serves the callback is derived from. Both uses have to agree, so a caller that derives an
+   * endpoint from it rejects at startup a value that would have the IdP send the browser where no
+   * redirection-endpoint filter listens. When set, it must expand to an absolute http(s) URL with a
+   * host, a port in 1-65535 if it names one, a callback path and no fragment; a query is allowed,
+   * and only {@code {baseUrl}}, {@code {baseScheme}}, {@code {baseHost}}, {@code {basePort}},
+   * {@code {basePath}}, {@code {registrationId}} and {@code {action}} expand. Leave unset to use
+   * the {@code {baseUrl}/sso-callback} default.
    *
    * <p>Which chain serves that callback, which callers enforce the rule, and the values that look
    * plausible and are rejected are covered by the adopters' security-filter-chains document.
