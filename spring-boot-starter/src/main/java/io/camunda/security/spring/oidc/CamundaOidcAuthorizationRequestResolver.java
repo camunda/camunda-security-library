@@ -115,8 +115,22 @@ public final class CamundaOidcAuthorizationRequestResolver
     return Optional.of(getOrCreateResolver(registrationId)).map(requestSupplier).orElse(null);
   }
 
+  /**
+   * The resolver of a registration. {@code get} then {@code putIfAbsent}, not {@code
+   * computeIfAbsent}: the latter locks part of the map while it builds the resolver, and that build
+   * resolves the registration. An unreachable identity provider would hold that lock for the
+   * complete discovery timeout, and the requests of the other registrations in the same bin would
+   * wait for it. Two builds of the same registration therefore run at the same time, and the first
+   * result wins.
+   */
   private OAuth2AuthorizationRequestResolver getOrCreateResolver(final String registrationId) {
-    return resolvers.computeIfAbsent(registrationId, this::createResolver);
+    final var cached = resolvers.get(registrationId);
+    if (cached != null) {
+      return cached;
+    }
+    final var resolver = createResolver(registrationId);
+    final var winner = resolvers.putIfAbsent(registrationId, resolver);
+    return winner != null ? winner : resolver;
   }
 
   private OAuth2AuthorizationRequestResolver createResolver(final String registrationId) {

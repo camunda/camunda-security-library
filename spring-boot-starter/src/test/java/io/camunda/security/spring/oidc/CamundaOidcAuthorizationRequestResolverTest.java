@@ -15,6 +15,9 @@ import io.camunda.security.api.model.config.oidc.AuthorizeRequestConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -166,5 +169,43 @@ class CamundaOidcAuthorizationRequestResolverTest {
     assertThat(result.getAdditionalParameters())
         .containsEntry("prompt", "consent")
         .containsEntry("resource", List.of("https://api.example.com"));
+  }
+
+  @Test
+  void shouldLetConcurrentRequestsResolveTheSameRegistrationAtTheSameTime() throws Exception {
+    // given
+    final var bothInside = new CountDownLatch(2);
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenAnswer(
+            invocation -> {
+              bothInside.countDown();
+              assertThat(bothInside.await(5, TimeUnit.SECONDS)).isTrue();
+              return clientRegistration;
+            });
+    final var resolver =
+        new CamundaOidcAuthorizationRequestResolver(
+            clientRegistrationRepository, Map.of(REGISTRATION_ID, new OidcConfiguration()));
+    final var executor = Executors.newFixedThreadPool(2);
+
+    try {
+      // when
+      final var requests =
+          List.of(
+              executor.submit(
+                  () ->
+                      resolver.resolve(
+                          new MockHttpServletRequest("GET", AUTHORIZATION_REQUEST_URI))),
+              executor.submit(
+                  () ->
+                      resolver.resolve(
+                          new MockHttpServletRequest("GET", AUTHORIZATION_REQUEST_URI))));
+
+      // then
+      for (final var request : requests) {
+        assertThat(request.get(10, TimeUnit.SECONDS)).isNotNull();
+      }
+    } finally {
+      executor.shutdownNow();
+    }
   }
 }
