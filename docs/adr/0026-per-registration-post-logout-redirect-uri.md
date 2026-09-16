@@ -78,10 +78,17 @@ chain-wide composed route via `setPostLogoutRedirectUri`.
 or LF, when its braces are unbalanced, when it names a template variable outside the six Spring
 populates (`baseUrl`, `baseScheme`, `baseHost`, `basePort`, `basePath`, `registrationId`), when a
 placeholder-free absolute value does not parse or carries no host, or when it is neither absolute nor
-a path nor a template that still resolves to an absolute URL. A template qualifies only if it starts
-with `{baseUrl}` or carries an explicit scheme — every placeholder being *supported* is not enough,
-since `{basePath}/goodbye` and `{registrationId}/goodbye` expand to relative values that
-RP-Initiated Logout forbids. Validation runs before `post-logout-redirect-enabled` is consulted.
+a path nor a template that still resolves to an absolute URL, or when it carries a fragment
+(RP-Initiated Logout 1.0 §2 gives the parameter none).
+
+A template qualifies only if it starts with `{baseUrl}`, or carries an explicit scheme *and* a host
+position that can actually hold one — either `{baseHost}` or a placeholder-free literal. Every
+placeholder being *supported* is not enough: `{basePath}/goodbye` expands to a relative value, and
+`https://{basePath}/goodbye` carries a scheme but expands to `https:///goodbye` with no host, so the
+cheaper checks pass and only the host-position rule catches it.
+
+Validation runs before `post-logout-redirect-enabled` is consulted, and every message that reports a
+rejected value redacts its user-info and query first.
 
 ### Why these particular boundaries
 

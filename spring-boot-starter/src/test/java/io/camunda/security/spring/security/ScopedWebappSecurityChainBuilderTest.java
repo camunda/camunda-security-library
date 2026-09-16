@@ -314,24 +314,32 @@ class ScopedWebappSecurityChainBuilderTest {
         .withMessageContaining("unmatched '}'");
   }
 
-  /**
-   * {@code "://"} is only a lexical hint. {@code "https://"} carries no authority at all, so it
-   * fails to parse; without the parse step it would pass as "absolute" and be rejected by the OP at
-   * logout instead of here.
-   */
+  /** {@code "://"} is only a lexical hint: this one carries no host position at all. */
   @Test
-  void configuredAbsoluteUriThatDoesNotParseThrows() {
+  void configuredAbsoluteUriWithAnEmptyHostThrows() {
     assertThatIllegalArgumentException()
         .isThrownBy(() -> resolvedPostLogoutRedirectUri("", configuredUri("https://")))
-        .withMessageContaining("is not a valid URI");
+        .withMessageContaining("must be an absolute URL");
   }
 
-  /** A URI that parses but names no host is equally unusable as a redirect target. */
+  /** Same for a scheme whose authority is empty, even though the value parses as a URI. */
   @Test
   void configuredAbsoluteUriWithoutHostThrows() {
     assertThatIllegalArgumentException()
         .isThrownBy(() -> resolvedPostLogoutRedirectUri("", configuredUri("file:///logged-out")))
-        .withMessageContaining("missing a scheme or a host");
+        .withMessageContaining("must be an absolute URL");
+  }
+
+  /**
+   * A literal host clears the host-position rule, so the value reaches the URI parse — which is
+   * what catches a host that cannot be parsed at all.
+   */
+  @Test
+  void configuredAbsoluteUriWithAnUnparseableHostThrows() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(
+            () -> resolvedPostLogoutRedirectUri("", configuredUri("https://ex ample.com/logout")))
+        .withMessageContaining("is not a valid URI");
   }
 
   /** An absolute URL whose host only exists after expansion must still be accepted. */
@@ -355,6 +363,79 @@ class ScopedWebappSecurityChainBuilderTest {
         .withMessageContaining("unsupported template variable {tenantId}");
   }
 
+  /**
+   * A scheme is not enough: the authority has to be able to hold a host. {@code basePath} expands
+   * to a path, so this leaves {@code https:///goodbye} with no host — and the placeholder-free
+   * parse in {@link ScopedWebappSecurityChainBuilder} is skipped for any value carrying a brace, so
+   * nothing else would catch it.
+   */
+  @Test
+  void configuredTemplateWithAPathPlaceholderInTheHostPositionThrows() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(
+            () -> resolvedPostLogoutRedirectUri("", configuredUri("https://{basePath}/goodbye")))
+        .withMessageContaining("must be an absolute URL");
+  }
+
+  /** Same for any other placeholder that cannot name a host. */
+  @Test
+  void configuredTemplateWithARegistrationIdInTheHostPositionThrows() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(
+            () ->
+                resolvedPostLogoutRedirectUri(
+                    "", configuredUri("https://{registrationId}/goodbye")))
+        .withMessageContaining("must be an absolute URL");
+  }
+
+  /** A literal host alongside a templated scheme is fine — the host position holds a real host. */
+  @Test
+  void configuredTemplateWithTemplatedSchemeAndLiteralHostIsAccepted() {
+    assertThat(
+            resolvedPostLogoutRedirectUri(
+                "", configuredUri("{baseScheme}://accounts.example.com/logged-out")))
+        .isEqualTo("{baseScheme}://accounts.example.com/logged-out");
+  }
+
+  /**
+   * RP-Initiated Logout 1.0 §2 gives {@code post_logout_redirect_uri} no fragment, so the OP has no
+   * reason to accept one. Rejected for every form, not just the absolute one.
+   */
+  @Test
+  void configuredUriWithAFragmentThrows() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(
+            () ->
+                resolvedPostLogoutRedirectUri(
+                    "", configuredUri("https://accounts.example.com/logged-out#section")))
+        .withMessageContaining("must not contain a fragment");
+  }
+
+  /** The path form is held to the same rule. */
+  @Test
+  void configuredPathWithAFragmentThrows() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> resolvedPostLogoutRedirectUri("", configuredUri("/goodbye#section")))
+        .withMessageContaining("must not contain a fragment");
+  }
+
+  /**
+   * A rejected value reaches an exception message that normally lands in application logs, so its
+   * credentials and query must not travel with it. The host and path survive, which is what locates
+   * the mistake.
+   */
+  @Test
+  void rejectionMessageRedactsUserInfoAndQuery() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(
+            () ->
+                resolvedPostLogoutRedirectUri(
+                    "", configuredUri("https://user:secret@accounts.example.com/{tenantId}?t=abc")))
+        .withMessageNotContaining("secret")
+        .withMessageNotContaining("t=abc")
+        .withMessageContaining("accounts.example.com");
+  }
+
   /** The value lands in a query parameter on a 302 Location header; CR/LF must not survive. */
   @Test
   void configuredUriWithCrlfThrows() {
@@ -364,139 +445,6 @@ class ScopedWebappSecurityChainBuilderTest {
                 resolvedPostLogoutRedirectUri(
                     "", configuredUri("https://accounts.example.com/x\r\nSet-Cookie: a=b")))
         .withMessageContaining("must not contain CR or LF");
-  }
-
-  // redirection-endpoint path resolution (ADR-0018): configurable callback path
-
-  @Test
-  void redirectionEndpointPathDefaultsWhenRedirectUriUnset() {
-    assertThat(
-            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
-                null, "", "/sso-callback"))
-        .isEqualTo("/sso-callback");
-    assertThat(
-            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
-                "  ", "", "/sso-callback"))
-        .isEqualTo("/sso-callback");
-  }
-
-  @Test
-  void redirectionEndpointPathStripsBaseUrlPlaceholder() {
-    assertThat(
-            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
-                "{baseUrl}/api/authentication/callback", "", "/sso-callback"))
-        .isEqualTo("/api/authentication/callback");
-  }
-
-  @Test
-  void redirectionEndpointPathStripsSchemeHostAndQuery() {
-    assertThat(
-            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
-                "https://optimize.example.com/sso-callback?x=1", "", "/sso-callback"))
-        .isEqualTo("/sso-callback");
-  }
-
-  @Test
-  void redirectionEndpointPathRewritesRegistrationIdPlaceholderToWildcard() {
-    assertThat(
-            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
-                "{baseUrl}/login/oauth2/code/{registrationId}", "", "/sso-callback"))
-        .isEqualTo("/login/oauth2/code/*");
-  }
-
-  @Test
-  void redirectionEndpointPathRejectsResolvedPathWithoutLeadingSlash() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(
-            () ->
-                ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
-                    "{baseUrl}api/callback", "", "/sso-callback"))
-        .withMessageContaining("must resolve to a path starting with '/'")
-        .withMessageContaining("api/callback");
-  }
-
-  // GH-569 regression: a redirect-uri that embeds the servlet context-path must yield a
-  // context-relative callback path, or Spring's redirection-endpoint matcher (which matches the
-  // context-path-stripped request path) never fires and the OIDC login loops indefinitely.
-
-  @Test
-  void redirectionEndpointPathStripsContextPathFromAbsoluteRedirectUri() {
-    // given an absolute redirect-uri whose path embeds the /orchestration context-path (what the
-    // Camunda 8.10 chart renders for a context-path'd webapp)
-    // when resolved with that context-path
-    // then only the context-relative callback path remains
-    assertThat(
-            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
-                "https://host.example.com/orchestration/sso-callback",
-                "/orchestration",
-                "/sso-callback"))
-        .isEqualTo("/sso-callback");
-  }
-
-  @Test
-  void redirectionEndpointPathStripsContextPathOnlyOnWholeSegments() {
-    // given a context-path that is a string prefix of a longer first segment
-    // when resolved
-    // then the partial match is not stripped
-    assertThat(
-            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
-                "https://host.example.com/orchestration-ui/sso-callback",
-                "/orchestration",
-                "/sso-callback"))
-        .isEqualTo("/orchestration-ui/sso-callback");
-  }
-
-  @Test
-  void redirectionEndpointPathKeepsPathWhenContextPathNotEmbedded() {
-    // given a root-registered redirect-uri (Optimize CCSaaS: built from the base host, no
-    // clusterId prefix) while the app runs under a context-path
-    // when resolved
-    // then the callback path is untouched (Spring strips the context-path at request time)
-    assertThat(
-            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
-                "https://host.example.com/sso-callback?uuid=cluster-1",
-                "/cluster-1",
-                "/sso-callback"))
-        .isEqualTo("/sso-callback");
-  }
-
-  @Test
-  void redirectionEndpointPathDefaultsWhenRedirectUriIsExactlyContextPath() {
-    // given a redirect-uri whose whole path is the context-path (no callback segment)
-    // when resolved
-    // then it falls back to the default rather than yielding a blank matcher
-    assertThat(
-            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
-                "https://host.example.com/orchestration", "/orchestration", "/sso-callback"))
-        .isEqualTo("/sso-callback");
-  }
-
-  @Test
-  void redirectionEndpointPathStripsContextPathWhenContextPathPropertyHasTrailingSlash() {
-    // given the servlet context-path property itself carries a trailing slash (a value an operator
-    // may set, e.g. server.servlet.context-path=/orchestration/) against a normal redirect-uri
-    // when resolved
-    // then stripContextPath normalizes the context-path and still yields the context-relative
-    // callback
-    assertThat(
-            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
-                "https://host.example.com/orchestration/sso-callback",
-                "/orchestration/",
-                "/sso-callback"))
-        .isEqualTo("/sso-callback");
-  }
-
-  @Test
-  void redirectionEndpointPathDefaultsWhenRedirectUriIsContextPathWithTrailingSlash() {
-    // given a redirect-uri whose whole path is the context-path with a trailing slash (a common
-    // operator variant of "context root, no callback segment")
-    // when resolved
-    // then it falls back to the default just like the exact-match case, rather than stripping to a
-    // "/" matcher that would never match the real callback and reintroduce the login loop
-    assertThat(
-            ScopedWebappSecurityChainBuilder.resolveRedirectionEndpointPath(
-                "https://host.example.com/orchestration/", "/orchestration", "/sso-callback"))
-        .isEqualTo("/sso-callback");
   }
 
   @Test

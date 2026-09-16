@@ -16,12 +16,14 @@ import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.AuthenticationMethod;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcProvidersConfiguration;
+import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.filter.AdminUserCheckFilter;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
+import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import jakarta.servlet.FilterChain;
@@ -46,6 +48,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
+import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.DefaultSecurityFilterChain;
@@ -459,6 +462,57 @@ class ScopedWebappSecurityChainBuilderScopedTest {
   void scopedOidcChainOmitsPostLogoutRedirectUriWhenDisabledEvenIfConfigured() {
     postLogoutRunner(PostLogoutDisabledWithUriScopedConfig.class)
         .run(ctx -> assertThat(scopedPostLogoutRedirectUris(ctx)).containsOnly(entry("oidc", "")));
+  }
+
+  /**
+   * The primary chain takes its per-registration map from {@link OidcProviderConfigurationPort},
+   * which is the same source its {@link ClientRegistrationRepository} is built from — not from the
+   * library properties.
+   *
+   * <p>The distinction only shows when the two disagree, so this test makes them disagree: the
+   * properties configure no {@code post-logout-redirect-uri}, while a host-supplied port reports a
+   * provider that sets one. Reading the properties would yield the composed default and silently
+   * drop the host's setting. Both the port bean and the repository bean are
+   * {@code @ConditionalOnMissingBean}, and the port's default implementation exposes {@code
+   * initializeProviders} as {@code protected}, so overriding it is a supported thing for a host to
+   * do.
+   */
+  @Test
+  void primaryOidcChainReadsThePerRegistrationMapFromTheProviderConfigurationPort() {
+    new WebApplicationContextRunner()
+        .withUserConfiguration(
+            ObjectMapperConfig.class,
+            StubPathsWithPostLogoutRoute.class,
+            HostSuppliedProviderPortConfig.class,
+            PrimaryOidcChainConfig.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                BaseSecurityConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                ScopedOidcInfrastructureConfiguration.class,
+                ScopedWebappSecurityChainBuilderConfiguration.class))
+        .run(
+            ctx ->
+                assertThat(primaryPostLogoutRedirectUris(ctx))
+                    .containsOnly(entry("host-idp", CUSTOM_ABSOLUTE_POST_LOGOUT_URI)));
+  }
+
+  @SuppressWarnings("unchecked")
+  private static Map<String, String> primaryPostLogoutRedirectUris(
+      final org.springframework.context.ApplicationContext ctx) {
+    final var chain =
+        (DefaultSecurityFilterChain) ctx.getBean("primaryOidcTestChain", SecurityFilterChain.class);
+    final var logoutFilter =
+        chain.getFilters().stream()
+            .filter(LogoutFilter.class::isInstance)
+            .map(LogoutFilter.class::cast)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("primary OIDC chain must have a LogoutFilter"));
+    final var successHandler =
+        (LogoutSuccessHandler) ReflectionTestUtils.getField(logoutFilter, "logoutSuccessHandler");
+    return (Map<String, String>)
+        ReflectionTestUtils.getField(successHandler, "postLogoutRedirectUriByRegistrationId");
   }
 
   private WebApplicationContextRunner postLogoutRunner(final Class<?> scopedChainConfig) {
@@ -1410,6 +1464,75 @@ class ScopedWebappSecurityChainBuilderScopedTest {
           scopedSessionFilter(),
           "camunda-session-physical-tenants-t1",
           "X-CSRF-TOKEN-physical-tenants-t1");
+    }
+  }
+
+  /**
+   * A host-supplied {@link OidcProviderConfigurationPort} reporting one provider whose {@code
+   * postLogoutRedirectUri} exists nowhere in the library properties.
+   */
+  @Configuration
+  static class HostSuppliedProviderPortConfig {
+
+    @Bean
+    OidcProviderConfigurationPort hostSuppliedOidcProviderConfigurationPort() {
+      final var oidc =
+          OidcConfiguration.builder()
+              .clientId("client-host-idp")
+              .redirectUri("{baseUrl}/sso-callback")
+              .authorizationUri("http://localhost/host-idp/auth")
+              .tokenUri("http://localhost/host-idp/token")
+              .jwkSetUri("http://localhost/host-idp/jwks")
+              .postLogoutRedirectUri(CUSTOM_ABSOLUTE_POST_LOGOUT_URI)
+              .build();
+      final Map<String, OidcConfiguration> providers = Map.of("host-idp", oidc);
+      return new OidcProviderConfigurationPort() {
+
+        @Override
+        public OidcConfiguration getOidcAuthenticationConfigurationById(
+            final String registrationId) {
+          return providers.get(registrationId);
+        }
+
+        @Override
+        public Map<String, OidcConfiguration> getOidcAuthenticationConfigurations() {
+          return providers;
+        }
+      };
+    }
+  }
+
+  /** The primary (unprefixed) OIDC webapp chain, built the way a host builds it. */
+  @Configuration
+  static class PrimaryOidcChainConfig {
+
+    @Bean
+    JwtDecoder jwtDecoderPrimaryChain() {
+      return token -> {
+        throw new UnsupportedOperationException("stub — not called in this test");
+      };
+    }
+
+    @Bean("primaryOidcTestChain")
+    SecurityFilterChain primaryOidcTestChain(
+        final HttpSecurity http,
+        final ScopedWebappSecurityChainBuilder builder,
+        final OidcProviderConfigurationPort port,
+        final ScopedClientRegistrationFactory factory)
+        throws Exception {
+      final var repository =
+          new InMemoryClientRegistrationRepository(
+              factory.createFromProviderMap(port.getOidcAuthenticationConfigurations()));
+      final var authorizedClients = new HttpSessionOAuth2AuthorizedClientRepository();
+      return builder.buildOidcWebappChain(
+          http,
+          repository,
+          authorizedClients,
+          // Never exercised: this test inspects the chain's logout filter, it issues no request.
+          request -> {
+            throw new UnsupportedOperationException("stub — not called in this test");
+          },
+          scopedSessionFilter());
     }
   }
 }

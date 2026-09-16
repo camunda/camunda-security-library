@@ -639,20 +639,18 @@ public final class ScopedWebappSecurityChainBuilder {
   private static String validatedPostLogoutRedirectUri(
       final String registrationId, final String configured, final String prefix) {
     if (configured.indexOf('\r') >= 0 || configured.indexOf('\n') >= 0) {
-      throw new IllegalArgumentException(
-          "camunda.security.authentication.oidc.post-logout-redirect-uri for registration '"
-              + registrationId
-              + "' must not contain CR or LF characters");
+      throw templateException(registrationId, configured, "must not contain CR or LF characters");
+    }
+    // OpenID Connect RP-Initiated Logout 1.0 §2: post_logout_redirect_uri carries no fragment. The
+    // OP has no reason to accept one, so a value holding it fails here rather than at logout.
+    if (configured.indexOf('#') >= 0) {
+      throw templateException(registrationId, configured, "must not contain a fragment ('#')");
     }
     rejectMalformedTemplate(registrationId, configured);
     if (configured.startsWith("/")) {
       return "{baseUrl}" + prefix + configured;
     }
-    // Only a template that still expands to an absolute URL qualifies. Accepting any leading
-    // placeholder would let {basePath}/goodbye or {registrationId}/goodbye through, and Spring
-    // expands those to a relative string — which RP-Initiated Logout forbids for
-    // post_logout_redirect_uri, so the IdP rejects it at logout instead of this failing at startup.
-    if (configured.startsWith("{baseUrl}") || configured.contains("://")) {
+    if (resolvesToAnAbsoluteUrl(configured)) {
       rejectMalformedAbsoluteUri(registrationId, configured);
       return configured;
     }
@@ -660,8 +658,41 @@ public final class ScopedWebappSecurityChainBuilder {
         registrationId,
         configured,
         "must be an absolute URL, a path starting with '/', or a template that still resolves to an"
-            + " absolute URL (starting with {baseUrl}, or carrying an explicit scheme such as"
-            + " {baseScheme}://{baseHost})");
+            + " absolute URL (starting with {baseUrl}, or carrying an explicit scheme and a host,"
+            + " such as {baseScheme}://{baseHost})");
+  }
+
+  /**
+   * Whether a non-path value still yields an absolute URL once Spring expands it.
+   *
+   * <p>A leading {@code {baseUrl}} does by definition. Otherwise the value has to carry a scheme,
+   * <em>and</em> the authority between {@code "://"} and the next delimiter has to be something
+   * that can actually be a host: either {@code {baseHost}} or a literal with no placeholder in it.
+   *
+   * <p>Checking the scheme alone is not enough, which is the trap here. {@code
+   * https://{basePath}/goodbye} carries one, and every placeholder in it is supported, so the
+   * cheaper checks pass — but {@code basePath} expands to a path, leaving {@code https:///goodbye}
+   * with no host at all. {@link #rejectMalformedAbsoluteUri} cannot catch it either, because it
+   * skips parsing for any value holding a placeholder.
+   */
+  private static boolean resolvesToAnAbsoluteUrl(final String configured) {
+    if (configured.startsWith("{baseUrl}")) {
+      return true;
+    }
+    final var schemeEnd = configured.indexOf("://");
+    if (schemeEnd < 0) {
+      return false;
+    }
+    final var authority = configured.substring(schemeEnd + 3);
+    var hostEnd = authority.length();
+    for (final char delimiter : new char[] {'/', ':', '?', '#'}) {
+      final var at = authority.indexOf(delimiter);
+      if (at >= 0 && at < hostEnd) {
+        hostEnd = at;
+      }
+    }
+    final var host = authority.substring(0, hostEnd);
+    return "{baseHost}".equals(host) || (!host.isEmpty() && host.indexOf('{') < 0);
   }
 
   /**
@@ -731,17 +762,42 @@ public final class ScopedWebappSecurityChainBuilder {
   }
 
   /**
-   * The URI template with any query string or fragment removed, for logging.
+   * The URI template with its user-info, query string and fragment removed.
    *
-   * <p>The value is operator-supplied and can carry credentials, tokens or PII in a query, which
-   * must not reach a log at any level. The scheme, host and path are what an operator needs to
-   * recognise which target is in play, so those are kept. String-trimmed rather than URI-parsed
-   * because the value may still hold unexpanded placeholders, which are not legal URI characters.
+   * <p>Used wherever the configured value reaches a log or an exception message. It is
+   * operator-supplied, and both {@code https://user:password@host/logout} and a query string can
+   * carry credentials or tokens, which must not be emitted at any level. Scheme, host and path
+   * survive, which is what identifies the target and locates a typo.
+   *
+   * <p>String-trimmed rather than URI-parsed because the value may hold unexpanded placeholders,
+   * which are not legal URI characters, and because this also runs on values that were rejected
+   * precisely for being unparseable.
    */
-  private static String withoutQuery(final String uri) {
+  private static String redacted(final String uri) {
+    final var schemeEnd = uri.indexOf("://");
+    var result = uri;
+    if (schemeEnd >= 0) {
+      final var authorityStart = schemeEnd + 3;
+      final var authorityEnd = endOfAuthority(uri, authorityStart);
+      final var at = uri.lastIndexOf('@', authorityEnd - 1);
+      if (at >= authorityStart) {
+        result = uri.substring(0, authorityStart) + "…@" + uri.substring(at + 1);
+      }
+    }
     final var cut =
-        IntStream.of(uri.indexOf('?'), uri.indexOf('#')).filter(i -> i >= 0).min().orElse(-1);
-    return cut < 0 ? uri : uri.substring(0, cut) + "…";
+        IntStream.of(result.indexOf('?'), result.indexOf('#')).filter(i -> i >= 0).min().orElse(-1);
+    return cut < 0 ? result : result.substring(0, cut) + "…";
+  }
+
+  private static int endOfAuthority(final String uri, final int from) {
+    var end = uri.length();
+    for (final char delimiter : new char[] {'/', '?', '#'}) {
+      final var at = uri.indexOf(delimiter, from);
+      if (at >= 0 && at < end) {
+        end = at;
+      }
+    }
+    return end;
   }
 
   private static IllegalArgumentException templateException(
@@ -752,7 +808,7 @@ public final class ScopedWebappSecurityChainBuilder {
             + "' "
             + problem
             + ", but was: "
-            + configured);
+            + redacted(configured));
   }
 
   /** The host-declared route, composed against the chain, used when nothing is configured. */
@@ -802,7 +858,7 @@ public final class ScopedWebappSecurityChainBuilder {
               LOG.debug(
                   "OIDC registration '{}' will send post_logout_redirect_uri '{}'.",
                   registrationId,
-                  withoutQuery(uri));
+                  redacted(uri));
             }
           });
     }
