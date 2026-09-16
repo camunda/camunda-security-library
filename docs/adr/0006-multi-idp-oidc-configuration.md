@@ -53,7 +53,7 @@ Every registration on the issuer-aware path must carry an `issuer-uri`; the coun
 
 Every registration must also resolve a JWK Set URI — set explicitly via `jwk-set-uri`, or populated by OIDC discovery from `issuer-uri`. A registration that resolves neither fails with `IllegalArgumentException` naming the provider and its issuer URI.
 
-The switch reads the registrations out of `ClientRegistrationRepository`, which therefore has to implement `Iterable<ClientRegistration>`. The library default, `InMemoryClientRegistrationRepository`, does. A host wiring a custom non-iterable repository gets an `IllegalStateException` naming that requirement and must register its own `@Bean JwtDecoder`.
+The switch reads the registrations out of `ClientRegistrationRepository`, which therefore has to implement `Iterable<ClientRegistration>`. The library default, `LazyClientRegistrationRepository`, does. A host wiring a custom non-iterable repository gets an `IllegalStateException` naming that requirement and must register its own `@Bean JwtDecoder`.
 
 ### `additional-jwk-set-uris`: one composition mechanism, routed per issuer
 
@@ -94,7 +94,7 @@ All decoder paths share one algorithm set — `RS256/384/512` plus `ES256/384/51
 
 | Concern | Default | Override path |
 |---|---|---|
-| `ClientRegistrationRepository` | `InMemoryClientRegistrationRepository` populated from the merged flat + providers map | Host registers any `@Bean ClientRegistrationRepository` — the CSL default backs off via `@ConditionalOnMissingBean`. A non-iterable repository additionally requires a host `@Bean JwtDecoder` |
+| `ClientRegistrationRepository` | `LazyClientRegistrationRepository` over the merged flat + providers map, resolving each registration at its first lookup | Host registers any `@Bean ClientRegistrationRepository` — the CSL default backs off via `@ConditionalOnMissingBean`. A non-iterable repository additionally requires a host `@Bean JwtDecoder` |
 | `JwtDecoder`, 1 registration | Single-issuer `NimbusJwtDecoder` built from the registration's JWK Set URI | Host registers `@Bean JwtDecoder` |
 | `JwtDecoder`, more than 1 registration | Issuer-aware decoder (`IssuerAwareJWSKeySelector` + `IssuerAwareTokenValidator`); every registration needs an `issuer-uri` | Host registers `@Bean JwtDecoder` |
 | `additional-jwk-set-uris`, more than 1 registration | One `CompositeJWKSource` per issuer, behind a per-issuer `JWSVerificationKeySelector`, routed by `IssuerAwareJWSKeySelector` on the token's `iss` | Host registers `@Bean JWSKeySelectorFactory` or `@Bean JwtDecoder` |
