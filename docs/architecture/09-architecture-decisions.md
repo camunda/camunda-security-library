@@ -37,6 +37,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0022: Camunda-branded multi-IdP login picker, shown only when there is a real choice](../adr/0022-camunda-branded-multi-idp-login-picker.md)
 - [ADR-0023: Suppress `post_logout_redirect_uri` by configuration for IdPs that cannot register it](../adr/0023-configurable-post-logout-redirect-suppression.md)
 - [ADR-0024: Per-issuer claim-converter map for multi-provider bearer-token principal resolution](../adr/0024-per-issuer-token-claims-converter-map.md)
+- [ADR-0025: Deferred OIDC resolution at first use](../adr/0025-deferred-oidc-resolution.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 

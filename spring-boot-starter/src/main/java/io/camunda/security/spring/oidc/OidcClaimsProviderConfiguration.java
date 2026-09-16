@@ -25,8 +25,9 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 
 /**
- * Registers the {@link OidcClaimsProvider} bean: either a {@link CachingOidcClaimsProvider} when
- * {@code camunda.security.authentication.oidc.user-info-augmentation.enabled=true}, or a {@link
+ * Registers the {@link OidcClaimsProvider} bean: either a {@link DeferredOidcClaimsProvider} that
+ * builds a {@link CachingOidcClaimsProvider} at the first claims lookup when {@code
+ * camunda.security.authentication.oidc.user-info-augmentation.enabled=true}, or a {@link
  * NoopOidcClaimsProvider} otherwise. A host-supplied {@link OidcClaimsProvider} bean suppresses
  * both via {@link ConditionalOnMissingBean}.
  *
@@ -116,9 +117,7 @@ public class OidcClaimsProviderConfiguration {
 
   /**
    * Builds the per-issuer UserInfo URI map from the resolved {@link ClientRegistration}s. Requires
-   * the repository to be iterable (the default {@link
-   * org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository}
-   * is).
+   * the repository to be iterable (the default {@link LazyClientRegistrationRepository} is).
    *
    * @throws IllegalStateException if the repository is not iterable — augmentation is enabled, so a
    *     mapping must be derivable; failing here makes the non-iterable repository the explicit
