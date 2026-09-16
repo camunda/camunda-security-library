@@ -92,11 +92,25 @@ public class OidcWebappClientBeansConfiguration {
     return new SupplierJwtDecoder(
         () ->
             DeferredOidcResolution.resolve(
-                "the OIDC access-token decoder for provider(s) "
-                    + DeferredOidcResolution.describeProviders(providers),
+                decoderSubject(clientRegistrationRepository, providers),
                 () ->
                     oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
                         iterableRegistrations(clientRegistrationRepository), providers)));
+  }
+
+  /**
+   * Names the decoder that a failure log reports, together with each provider the decoder covers. A
+   * host repository holds a set of registrations that the configuration of the library does not
+   * describe, so the subject names the host instead of naming providers the failure may not
+   * concern.
+   */
+  private static String decoderSubject(
+      final ClientRegistrationRepository repository,
+      final Map<String, OidcConfiguration> providers) {
+    return "the OIDC access-token decoder "
+        + (repository instanceof LazyClientRegistrationRepository
+            ? "for provider(s) " + DeferredOidcResolution.describeProviders(providers)
+            : "of the ClientRegistrationRepository of the host application");
   }
 
   @SuppressWarnings("unchecked")
