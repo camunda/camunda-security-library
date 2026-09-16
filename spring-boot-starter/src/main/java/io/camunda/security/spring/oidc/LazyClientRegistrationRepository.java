@@ -127,8 +127,8 @@ public final class LazyClientRegistrationRepository
                 factory
                     .createFromProviderMap(Map.of(registrationId, config), scopedRedirectUriPath)
                     .getFirst());
-    resolved.putIfAbsent(registrationId, registration);
-    return registration;
+    final var winner = resolved.putIfAbsent(registrationId, registration);
+    return winner != null ? winner : registration;
   }
 
   @Override

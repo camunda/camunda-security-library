@@ -37,6 +37,7 @@ public final class DeferredOidcResolution {
   private static final Logger LOG = LoggerFactory.getLogger(DeferredOidcResolution.class);
   private static final long WARN_INTERVAL_NANOS = Duration.ofMinutes(1).toNanos();
   private static final Map<String, AtomicLong> LAST_WARN_NANOS = new ConcurrentHashMap<>();
+  private static final int MAX_TRACKED_SUBJECTS = 256;
 
   private DeferredOidcResolution() {}
 
@@ -55,8 +56,9 @@ public final class DeferredOidcResolution {
       if (shouldWarn(subject)) {
         LOG.warn(
             "Failed to resolve {}. This request is rejected. The next request makes a new"
-                + " attempt, so the deployment recovers without a restart after the identity"
-                + " provider answers again.",
+                + " attempt. A failure that an unreachable identity provider causes therefore"
+                + " ends without a restart as soon as that provider answers again. A failure that"
+                + " the configuration causes repeats until the configuration changes.",
             subject,
             failed);
       } else {
@@ -90,8 +92,26 @@ public final class DeferredOidcResolution {
         .collect(Collectors.joining(", "));
   }
 
+  /**
+   * Drops each subject whose last warning is older than the interval. Such a subject permits a
+   * warning at once, so its entry holds no information. A host that creates and drops scopes gives
+   * a new subject for each scope, and the removal therefore keeps this state at the size of the
+   * subjects that fail now.
+   */
+  static void removeIdleSubjects(final long now) {
+    LAST_WARN_NANOS.values().removeIf(lastWarn -> now - lastWarn.get() >= WARN_INTERVAL_NANOS);
+  }
+
+  /** The number of subjects the rate limit holds state for. */
+  static int trackedSubjectCount() {
+    return LAST_WARN_NANOS.size();
+  }
+
   private static boolean shouldWarn(final String subject) {
     final long now = System.nanoTime();
+    if (LAST_WARN_NANOS.size() >= MAX_TRACKED_SUBJECTS) {
+      removeIdleSubjects(now);
+    }
     final var lastWarn =
         LAST_WARN_NANOS.computeIfAbsent(
             subject, key -> new AtomicLong(now - WARN_INTERVAL_NANOS - 1));

@@ -74,7 +74,10 @@ public class OidcWebappClientBeansConfiguration {
    * decoder at the first token decode, and not while the application starts, because an identity
    * provider it cannot reach must not stop the application context. The issuer requirement that the
    * issuer-aware decoder makes on a deployment with several providers is checked against the
-   * configuration here, so that such a configuration error still stops the start.
+   * configuration here, so that such a configuration error still stops the start. The check runs on
+   * the repository of the library only, because the configuration describes the registrations the
+   * library built. A host repository can hold another set, and the decoder checks the registrations
+   * of that set at the first token decode.
    */
   @Bean
   @ConditionalOnMissingBean
@@ -83,7 +86,9 @@ public class OidcWebappClientBeansConfiguration {
       final OidcProviderConfigurationPort oidcProviderConfigurationPort,
       final OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory) {
     final var providers = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
-    oidcAccessTokenDecoderFactory.validateProvidersHaveIssuer(providers);
+    if (clientRegistrationRepository instanceof LazyClientRegistrationRepository) {
+      oidcAccessTokenDecoderFactory.validateProvidersHaveIssuer(providers);
+    }
     return new SupplierJwtDecoder(
         () ->
             DeferredOidcResolution.resolve(
