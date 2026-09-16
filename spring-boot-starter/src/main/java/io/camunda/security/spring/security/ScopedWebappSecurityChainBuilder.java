@@ -216,12 +216,12 @@ public final class ScopedWebappSecurityChainBuilder {
                 oauthLogin -> {
                   oauthLogin
                       .clientRegistrationRepository(clientRegistrationRepository)
-                      // Declaring the login page keeps OAuth2LoginConfigurer#init out of the
-                      // branch that enumerates the registration repository to build its own login
-                      // links: that resolves every issuer's discovery document while the context is
-                      // still starting, so one unreachable provider aborts the boot. The entry
-                      // point installed under exceptionHandling above already produces the same
-                      // redirect.
+                      // A declared login page keeps OAuth2LoginConfigurer#init out of the branch
+                      // that reads the registration repository to build login links of its own.
+                      // That branch resolves the discovery document of each issuer while the
+                      // context still starts, so one provider the application cannot reach stops
+                      // the start. The entry point that exceptionHandling above installs already
+                      // sends the same redirect.
                       .loginPage(loginUrl)
                       .authorizedClientRepository(authorizedClientRepository)
                       .redirectionEndpoint(
@@ -644,8 +644,8 @@ public final class ScopedWebappSecurityChainBuilder {
       final String loginUrl,
       final String authorizationBaseUri) {
     final var defaultTarget = authorizationBaseUri + "/" + OIDC_REGISTRATION_ID;
-    // Answer from configuration for a lazy repository: this runs while the chain is built, and
-    // iterating it would resolve every registration against its identity provider.
+    // A lazy repository answers from the configuration. This code runs while the application
+    // builds the chain, and iteration resolves each registration against its identity provider.
     if (clientRegistrationRepository instanceof final LazyClientRegistrationRepository lazy) {
       final var registrationIds = lazy.registrationIds();
       if (registrationIds.isEmpty()) {
@@ -746,12 +746,12 @@ public final class ScopedWebappSecurityChainBuilder {
                 oauthLogin -> {
                   oauthLogin
                       .clientRegistrationRepository(clientRegistrationRepository)
-                      // Declaring the login page keeps OAuth2LoginConfigurer#init out of the
-                      // branch that enumerates the registration repository to build its own login
-                      // links: that resolves every issuer's discovery document while the context is
-                      // still starting, so one unreachable provider aborts the boot. The entry
-                      // point installed under exceptionHandling above already produces the same
-                      // redirect.
+                      // A declared login page keeps OAuth2LoginConfigurer#init out of the branch
+                      // that reads the registration repository to build login links of its own.
+                      // That branch resolves the discovery document of each issuer while the
+                      // context still starts, so one provider the application cannot reach stops
+                      // the start. The entry point that exceptionHandling above installs already
+                      // sends the same redirect.
                       .loginPage(loginUrl)
                       .authorizedClientRepository(authorizedClientRepository)
                       .redirectionEndpoint(

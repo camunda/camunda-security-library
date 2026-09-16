@@ -45,9 +45,9 @@ final class LoginLinksBuilder {
       normalizedPrefix = BasePaths.normalize(prefix, "prefix");
     }
     final var links = new LinkedHashMap<String, String>();
-    // Answer from configuration for a lazy repository: the picker only needs ids and display
-    // names, and iterating would resolve every registration against its identity provider — one
-    // unreachable provider would then take the whole picker down.
+    // A lazy repository answers from the configuration. The picker needs the ids and the display
+    // names only, and iteration resolves each registration against its identity provider. One
+    // provider the application cannot reach would then stop the whole picker.
     if (clientRegistrationRepository instanceof final LazyClientRegistrationRepository lazy) {
       lazy.clientNamesByRegistrationId()
           .forEach(

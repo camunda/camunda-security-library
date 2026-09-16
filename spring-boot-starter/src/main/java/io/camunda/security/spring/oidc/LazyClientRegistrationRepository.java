@@ -21,26 +21,26 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.util.StringUtils;
 
 /**
- * A {@link ClientRegistrationRepository} that runs OIDC discovery on first use of a registration
- * instead of when the repository is built.
+ * A {@link ClientRegistrationRepository} that makes OIDC discovery at the first use of a
+ * registration, and not while the application builds the repository.
  *
  * <p>{@link
  * org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository}
- * takes finished {@link ClientRegistration}s, so building one at startup means fetching every
- * issuer's discovery document while the application context comes up — an unreachable identity
- * provider then aborts the context and the deployment restart-loops until the provider is back.
- * Resolving per registration on first lookup keeps the startup path free of network calls: the
- * requests that need an unreachable provider fail, everything else keeps working, and the
- * deployment recovers without a restart.
+ * takes complete {@link ClientRegistration}s. To build one while the application starts, the
+ * application must request the discovery document of each issuer at that time. An identity provider
+ * it cannot reach then stops the application context, and the deployment restarts again and again
+ * until the provider answers. This repository resolves one registration at its first lookup
+ * instead. The start therefore makes no network request. Each request that needs an unreachable
+ * provider fails, every other request succeeds, and the deployment recovers without a restart.
  *
- * <p>Only successful resolutions are cached, so a failure is retried on the next lookup. The
- * configuration is validated without network access when the repository is constructed, so a
- * malformed provider block still fails the startup it is a bug in.
+ * <p>The repository keeps a resolved registration after a successful lookup only. The next lookup
+ * therefore makes a new attempt after a failed one. The constructor validates the configuration
+ * without network access, so an incorrect provider block still stops the start it is a defect in.
  *
- * <p>Iteration resolves every configured registration and therefore performs discovery. Callers on
- * the startup path must use {@link #registrationIds()} or {@link #clientNamesByRegistrationId()},
- * which answer from configuration alone; {@link Iterable} is implemented for hosts that enumerate
- * the repository per request.
+ * <p>Iteration resolves each configured registration, and therefore makes discovery. A caller that
+ * runs while the application starts must use {@link #registrationIds()} or {@link
+ * #clientNamesByRegistrationId()}, which answer from the configuration alone. This class implements
+ * {@link Iterable} for a host that reads the repository for each request.
  */
 public final class LazyClientRegistrationRepository
     implements ClientRegistrationRepository, Iterable<ClientRegistration> {
@@ -58,12 +58,13 @@ public final class LazyClientRegistrationRepository
   }
 
   /**
-   * @param scopedRedirectUriPath per-scope redirect-uri path, see {@link
+   * @param scopedRedirectUriPath the redirect-uri path of the scope, see {@link
    *     ScopedClientRegistrationFactory#createFromProviderMap(Map, String)}
-   * @param scopeDescription how to refer to the scope this repository serves in a failure log (e.g.
-   *     {@code basePath=/physical-tenants/t1}), or {@code null} for the unscoped wording
-   * @throws IllegalStateException if a provider block cannot produce a registration for reasons
-   *     that need no network access (blank registrationId, no issuer-uri and incomplete endpoints)
+   * @param scopeDescription the name a failure log gives to the scope this repository serves (for
+   *     example {@code basePath=/physical-tenants/t1}), or {@code null} for the unscoped text
+   * @throws IllegalStateException if a provider block gives no registration for a reason that needs
+   *     no network access, such as a blank registrationId, or no issuer-uri together with
+   *     incomplete endpoints
    * @throws IllegalArgumentException if a configured redirect-uri is not absolute
    */
   public LazyClientRegistrationRepository(
@@ -80,17 +81,18 @@ public final class LazyClientRegistrationRepository
     factory.validateWithoutNetwork(this.providers, scopedRedirectUriPath);
   }
 
-  /** The configured registrationIds, in configuration order. Resolves nothing. */
+  /** The configured registrationIds, in the order of the configuration. Resolves nothing. */
   public Set<String> registrationIds() {
     return providers.keySet();
   }
 
   /**
-   * The display name per registrationId that a resolved {@link ClientRegistration} would carry,
-   * derived from configuration alone: the configured {@code client-name}, else the issuer-uri,
-   * which is what {@link ClientRegistrations#fromIssuerLocation} puts on a discovered registration,
-   * else the registrationId, which is the builder's own fallback for an explicit-endpoint
-   * registration. Resolves nothing.
+   * The display name that a resolved {@link ClientRegistration} carries, for each registrationId,
+   * from the configuration alone. The method takes the configured {@code client-name}. If the
+   * configuration sets none, it takes the issuer-uri, which is the name {@link
+   * ClientRegistrations#fromIssuerLocation} gives a discovered registration. If the configuration
+   * sets no issuer-uri either, it takes the registrationId, which is the name the builder gives a
+   * registration with explicit endpoints. Resolves nothing.
    */
   public Map<String, String> clientNamesByRegistrationId() {
     final var names = new LinkedHashMap<String, String>();

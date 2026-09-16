@@ -66,10 +66,10 @@ public class OidcClaimsProviderConfiguration {
    * its own {@link ClientRegistrationRepository} or {@link OidcClaimsProvider} therefore gets no
    * UserInfo-augmenting default from CSL.
    *
-   * <p>Reading the UserInfo URIs off the repository resolves its registrations and so performs OIDC
-   * discovery, which is why the mapping is built on first claims lookup rather than here — an
-   * unreachable identity provider must not abort the application context. See {@link
-   * DeferredOidcClaimsProvider}.
+   * <p>To read the UserInfo URIs from the repository is to resolve its registrations, which OIDC
+   * discovery resolves. The provider therefore builds the mapping at the first claims lookup, and
+   * not here, because an identity provider the application cannot reach must not stop the
+   * application context. See {@link DeferredOidcClaimsProvider}.
    */
   @Bean
   @ConditionalOnProperty(
