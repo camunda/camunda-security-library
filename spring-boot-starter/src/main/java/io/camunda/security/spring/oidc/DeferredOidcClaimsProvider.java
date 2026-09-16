@@ -13,13 +13,11 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
- * An {@link OidcClaimsProvider} that builds its delegate at the first claims lookup.
+ * An {@link OidcClaimsProvider} that builds its delegate at the first claims lookup, and keeps the
+ * delegate after a successful build only.
  *
- * <p>A provider that augments claims from UserInfo needs the UserInfo URI of each issuer, and OIDC
- * discovery resolves those URIs. The application must not make that request while it starts,
- * because an identity provider it cannot reach then stops the start. The provider keeps the
- * delegate after a successful build only, so the next claims lookup makes a new attempt after a
- * failed one, and it holds no lock while the build runs. See {@link
+ * <p>The delegate needs the UserInfo URI of each issuer, which OIDC discovery resolves. That
+ * request must not run while the application starts. See {@link
  * DeferredOidcResolution#memoizeOnSuccess(Supplier)}.
  */
 public final class DeferredOidcClaimsProvider implements OidcClaimsProvider {

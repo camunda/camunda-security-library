@@ -21,18 +21,15 @@ import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
 
 /**
- * Runs an OIDC resolution step that the application makes after it starts, and limits the rate at
- * which failures of that step reach the log.
+ * Runs an OIDC resolution step at its first use, and limits the rate at which failures of that step
+ * reach the log.
  *
- * <p>Such a step runs on a request thread. An identity provider the application cannot reach
- * therefore causes one failure per request, and not one failure per start. A log entry for each
- * failure lets one unreachable issuer fill the log at the rate of the requests. This class
- * therefore writes one warning per minute for each subject, and writes the other failures at debug
- * level.
+ * <p>The step runs on a request thread, so an unreachable identity provider fails one request after
+ * another. One entry per failure would fill the log. The class therefore writes one warning per
+ * minute for each subject, and the other failures at debug level.
  *
- * <p>The method throws the original exception again, and does not change it. Spring Security
- * therefore reports a provider it cannot reach as a server error, and not as a credential it
- * refuses. That holds for the resource-server chain and for the login flow.
+ * <p>The original exception is thrown again without a change, so Spring Security reports an
+ * unreachable provider as a server error, and not as a refused credential.
  */
 public final class DeferredOidcResolution {
 
@@ -58,10 +55,9 @@ public final class DeferredOidcResolution {
     } catch (final RuntimeException failed) {
       if (shouldWarn(subject)) {
         LOG.warn(
-            "Failed to resolve {}. This request is rejected. The next request makes a new"
-                + " attempt. A failure that an unreachable identity provider causes therefore"
-                + " ends without a restart as soon as that provider answers again. A failure that"
-                + " the configuration causes repeats until the configuration changes.",
+            "Failed to resolve {}. This request is rejected, and the next request makes a new"
+                + " attempt. An unreachable identity provider therefore needs no restart, and a"
+                + " configuration error repeats until the configuration changes.",
             subject,
             failed);
       } else {
@@ -72,14 +68,13 @@ public final class DeferredOidcResolution {
   }
 
   /**
-   * A supplier that calls {@code resolution} until it succeeds, and returns the result of that
-   * attempt from then on.
+   * A supplier that calls {@code resolution} until it succeeds, and returns that result from then
+   * on.
    *
-   * <p>The supplier holds no lock while the resolution runs, unlike {@code SingletonSupplier}. A
-   * burst of requests for a provider the application cannot reach would otherwise wait one
-   * discovery timeout after another, and the request threads of the application would run out. Two
-   * callers therefore each make their own attempt, and the first result wins. A duplicate attempt
-   * on a reachable provider costs one discovery request.
+   * <p>The supplier holds no lock across the resolution, unlike {@code SingletonSupplier}. A burst
+   * of requests for an unreachable provider would otherwise wait one discovery timeout after
+   * another, and the request threads would run out. Each caller therefore makes its own attempt,
+   * and the first result wins.
    */
   public static <T> Supplier<T> memoizeOnSuccess(final Supplier<T> resolution) {
     final var resolved = new AtomicReference<T>();
@@ -94,9 +89,8 @@ public final class DeferredOidcResolution {
   }
 
   /**
-   * Names one provider for a resolution subject, in the form {@code 'camunda' (issuer
-   * https://idp/realms/camunda)}. The name holds the issuer, because the issuer is the endpoint a
-   * failed resolution could not reach.
+   * Names one provider, as {@code 'camunda' (issuer https://idp/realms/camunda)}. The name holds
+   * the issuer, because that is the endpoint a failed resolution could not reach.
    */
   public static String describeProvider(
       final String registrationId, final OidcConfiguration config) {
@@ -118,9 +112,8 @@ public final class DeferredOidcResolution {
   }
 
   /**
-   * The rate-limit state of a subject. A subject the state holds already needs no lock, so a
-   * failure of a known subject costs one map lookup. A subject the state does not hold yet enters
-   * it under a lock, because the limit holds only while one thread at a time adds an entry.
+   * The rate-limit state of a subject. A known subject needs no lock. A new subject enters the
+   * state under a lock, because the limit holds only while one thread at a time adds an entry.
    */
   private static AtomicLong trackedSubject(final String subject, final long now) {
     final var tracked = LAST_WARN_NANOS.get(subject);
@@ -144,10 +137,9 @@ public final class DeferredOidcResolution {
   }
 
   /**
-   * Drops the subject that warned least recently, until the state holds fewer subjects than the
-   * limit. The state therefore stays bounded while more subjects than the limit fail inside one
-   * interval, which a host that gives a new subject for each scope it creates can reach. The
-   * dropped subject permits one more warning than the interval allows, and that is the cost of the
+   * Drops the subject that warned least recently, until the state is below the limit. A host that
+   * gives a new subject for each scope could otherwise pass the limit inside one interval. A
+   * dropped subject permits one warning more than the interval allows, which is the cost of the
    * bound.
    */
   private static void dropLeastRecentSubjects() {

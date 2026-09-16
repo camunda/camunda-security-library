@@ -22,18 +22,15 @@ import org.springframework.util.StringUtils;
 
 /**
  * A {@link ClientRegistrationRepository} that makes OIDC discovery at the first use of a
- * registration, and not while the application builds the repository.
+ * registration, and not while the application builds the repository. An unreachable identity
+ * provider therefore fails the requests that need it, and not the start. The repository keeps a
+ * resolved registration after a successful lookup only, so the next lookup makes a new attempt
+ * after a failed one. The constructor validates the configuration without network access, so an
+ * incorrect provider block still stops the start.
  *
- * <p>An identity provider the application cannot reach therefore fails the requests that need it,
- * and not the start. Each other request succeeds, and the deployment recovers without a restart.
- * The repository keeps a resolved registration after a successful lookup only, so the next lookup
- * makes a new attempt after a failed one. The constructor validates the configuration without
- * network access, so an incorrect provider block still stops the start it is a defect in.
- *
- * <p>Iteration resolves each configured registration, and therefore makes discovery. It serves a
- * host that reads the repository for each request. A caller that runs while the application starts
- * must use {@link #registrationIds()} or {@link #clientNamesByRegistrationId()}, which answer from
- * the configuration alone.
+ * <p>Iteration resolves each registration, and therefore makes discovery. A caller that runs while
+ * the application starts must use {@link #registrationIds()} or {@link
+ * #clientNamesByRegistrationId()}, which answer from the configuration alone.
  */
 public final class LazyClientRegistrationRepository
     implements ClientRegistrationRepository, Iterable<ClientRegistration> {
@@ -111,11 +108,9 @@ public final class LazyClientRegistrationRepository
     if (config == null) {
       return null;
     }
-    // Two lookups of the same registration at the same time each make their own attempt. A
-    // single-flight lock would hold one caller for the complete discovery timeout of the other
-    // attempt, and that timeout is 30 seconds for a provider the application cannot reach. A
-    // duplicate attempt on a reachable provider costs one discovery request, and the first result
-    // wins.
+    // Two lookups of the same registration each make their own attempt. A single-flight lock
+    // would hold one caller for the complete discovery timeout of the other attempt, which is 30
+    // seconds for an unreachable provider. The first result wins.
     final var cached = resolved.get(registrationId);
     if (cached != null) {
       return cached;

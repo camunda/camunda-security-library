@@ -15,12 +15,10 @@ import org.springframework.security.oauth2.jwt.JwtException;
 
 /**
  * A {@link JwtDecoder} that builds its delegate at the first decode, and keeps the delegate after a
- * successful build only. A decode after a failed build therefore makes a new attempt, and a
- * deployment recovers as soon as the identity provider answers again.
+ * successful build only. A decode after a failed build therefore makes a new attempt.
  *
- * <p>Spring's {@code SupplierJwtDecoder} holds its initialization lock while the supplier runs,
- * which is why this decoder replaces it. See {@link
- * DeferredOidcResolution#memoizeOnSuccess(Supplier)}.
+ * <p>Spring's {@code SupplierJwtDecoder} holds its initialization lock across the build, which is
+ * why this decoder replaces it. See {@link DeferredOidcResolution#memoizeOnSuccess(Supplier)}.
  */
 public final class DeferredJwtDecoder implements JwtDecoder {
 
@@ -36,9 +34,8 @@ public final class DeferredJwtDecoder implements JwtDecoder {
   }
 
   /**
-   * Builds the delegate, and reports a failed build as {@code SupplierJwtDecoder} reports it. The
-   * resource-server chain therefore answers with a server error, and not with a credential it
-   * refuses.
+   * Reports a failed build as {@code SupplierJwtDecoder} reports it, so the chain answers with a
+   * server error and not with a refused credential.
    */
   private static JwtDecoder build(final Supplier<JwtDecoder> delegateSupplier) {
     try {

@@ -68,15 +68,14 @@ public class OidcWebappClientBeansConfiguration {
   }
 
   /**
-   * The default {@link JwtDecoder} of the OIDC chains. To read the repository is to resolve each
-   * registration, which OIDC discovery resolves. {@link DeferredJwtDecoder} therefore builds the
-   * decoder at the first token decode, and not while the application starts, because an identity
-   * provider it cannot reach must not stop the application context. The issuer requirement that the
-   * issuer-aware decoder makes on a deployment with several providers is checked against the
-   * configuration here, so that such a configuration error still stops the start. The check runs on
-   * the repository of the library only, because the configuration describes the registrations the
-   * library built. A host repository can hold another set, and the decoder checks the registrations
-   * of that set at the first token decode.
+   * The default {@link JwtDecoder} for OIDC chains. To read the repository is to make OIDC
+   * discovery, so {@link DeferredJwtDecoder} builds the decoder at the first token decode. An
+   * unreachable identity provider must not stop the application context.
+   *
+   * <p>The issuer requirement of the issuer-aware decoder needs no network access, so the method
+   * checks it here, and a configuration error still stops the start. The check covers the
+   * repository of the library only, because a host repository can hold another set of
+   * registrations.
    */
   @Bean
   @ConditionalOnMissingBean
@@ -98,10 +97,9 @@ public class OidcWebappClientBeansConfiguration {
   }
 
   /**
-   * Names the decoder that a failure log reports, together with each provider the decoder covers. A
-   * host repository holds a set of registrations that the configuration of the library does not
-   * describe, so the subject names the host instead of naming providers the failure may not
-   * concern.
+   * Names the decoder and the providers it covers. A host repository holds registrations that the
+   * configuration of the library does not describe, so the subject names the host instead of
+   * providers the failure may not concern.
    */
   private static String decoderSubject(
       final ClientRegistrationRepository repository,
