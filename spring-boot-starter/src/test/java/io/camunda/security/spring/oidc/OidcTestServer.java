@@ -34,6 +34,7 @@ import java.security.spec.ECGenParameterSpec;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -316,6 +317,25 @@ public final class OidcTestServer implements AutoCloseable {
    */
   public String signWithAudience(final String issuer, final String audience) throws Exception {
     return signWithAudience(issuer, audience != null ? List.of(audience) : List.of());
+  }
+
+  /**
+   * Signs a JWT with subject {@code alice}, the given {@code issuer}, the given extra claims, and a
+   * 60-second expiry.
+   */
+  public String sign(final String issuer, final Map<String, Object> extraClaims) throws Exception {
+    requireKeyMaterial();
+    final var header = new JWSHeader.Builder(algorithm).keyID(kid).build();
+    final var builder =
+        new JWTClaimsSet.Builder()
+            .subject("alice")
+            .issuer(issuer)
+            .issueTime(Date.from(Instant.now()))
+            .expirationTime(Date.from(Instant.now().plusSeconds(60)));
+    extraClaims.forEach(builder::claim);
+    final var jwt = new SignedJWT(header, builder.build());
+    jwt.sign(signer);
+    return jwt.serialize();
   }
 
   /** Stops the underlying HTTP server. */
