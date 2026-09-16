@@ -14,7 +14,6 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -158,11 +157,10 @@ class OidcRedirectionEndpointTest {
   }
 
   // Both sides are derived from the real components, so a redirect-uri shape one supports and the
-  // other does not fails here rather than at login. Templates are the ones startup validation
-  // accepts — keep in sync with ScopedClientRegistrationFactoryTest#usableRedirectUris.
+  // other does not fails here rather than at login.
 
   @ParameterizedTest(name = "{0}")
-  @MethodSource("redirectUrisAcceptedAtStartup")
+  @MethodSource("io.camunda.security.spring.oidc.RedirectUriSamples#usable")
   void callbackOfAnAcceptedRedirectUriIsMatchedByTheRedirectionEndpoint(final String redirectUri)
       throws URISyntaxException {
     for (final var contextPath : List.of("", SAMPLE_CONTEXT_PATH)) {
@@ -186,23 +184,6 @@ class OidcRedirectionEndpointTest {
               redirectUri, contextPath, callbackPath, endpointPath)
           .isTrue();
     }
-  }
-
-  private static Stream<String> redirectUrisAcceptedAtStartup() {
-    return Stream.of(
-        "http://localhost/sso-callback",
-        "HTTPS://example.com/sso-callback",
-        "https://example.com/sso-callback?tenant=a",
-        "https://example.com/contextual/sso-callback",
-        "https://example.com/context",
-        "https://example.com/login/oauth2/code/{registrationId}",
-        "{baseUrl}/sso-callback",
-        "{baseScheme}://{baseHost}/sso-callback",
-        "{baseScheme}://{baseHost}{basePort}{basePath}/sso-callback",
-        "https://example.com{basePath}/{action}/sso-callback",
-        "{baseUrl}/orchestration/sso-callback",
-        "https://example.com{basePath}/orchestration/sso-callback",
-        "https://example.com:65535/sso-callback");
   }
 
   /**
