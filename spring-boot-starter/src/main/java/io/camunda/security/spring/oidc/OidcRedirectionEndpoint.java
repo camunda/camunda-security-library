@@ -53,29 +53,9 @@ public final class OidcRedirectionEndpoint {
     if (configuredRedirectUri == null || configuredRedirectUri.isBlank()) {
       return defaultPath;
     }
-    String path = configuredRedirectUri.trim();
-    boolean contextPathCarriedByAPlaceholder = false;
-    if (path.startsWith(BASE_URL_PLACEHOLDER)) {
-      path = path.substring(BASE_URL_PLACEHOLDER.length());
-      contextPathCarriedByAPlaceholder = true;
-    } else {
-      final int scheme = path.indexOf("://");
-      if (scheme >= 0) {
-        final int slash = path.indexOf('/', scheme + 3);
-        final String beforeThePath = slash >= 0 ? path.substring(0, slash) : path;
-        contextPathCarriedByAPlaceholder = beforeThePath.contains(BASE_PATH_PLACEHOLDER);
-        path = slash >= 0 ? path.substring(slash) : "";
-      }
-    }
-    final int query = path.indexOf('?');
-    if (query >= 0) {
-      path = path.substring(0, query);
-    }
-    final int fragment = path.indexOf('#');
-    if (fragment >= 0) {
-      path = path.substring(0, fragment);
-    }
-    if (!contextPathCarriedByAPlaceholder) {
+    final var template = pathOfTheTemplate(configuredRedirectUri.trim());
+    var path = withoutQueryAndFragment(template.path());
+    if (!template.contextPathCarriedByAPlaceholder()) {
       path = stripContextPath(path, contextPath);
     }
     // Spring's default template ends in "{registrationId}"; the redirection-endpoint matcher must
@@ -92,13 +72,7 @@ public final class OidcRedirectionEndpoint {
           defaultPath);
       return defaultPath;
     }
-    if (!path.startsWith("/")) {
-      throw new IllegalArgumentException(
-          "OIDC redirect-uri must resolve to a path starting with '/', but '"
-              + configuredRedirectUri
-              + "' resolved to: "
-              + path);
-    }
+    requireLeadingSlash(path, configuredRedirectUri);
     // Log the resolved matcher path so the callback the chain listens on is reconstructable from
     // logs alone (this resolution silently broke logins for a full alpha cycle — see GH-569).
     LOG.debug(
@@ -108,6 +82,49 @@ public final class OidcRedirectionEndpoint {
         configuredRedirectUri,
         contextPath);
     return path;
+  }
+
+  /**
+   * Takes the path off a template, whether the template starts with {@code {baseUrl}} or spells the
+   * scheme and authority out. A template with neither is a path already.
+   */
+  private static TemplatePath pathOfTheTemplate(final String template) {
+    if (template.startsWith(BASE_URL_PLACEHOLDER)) {
+      return new TemplatePath(template.substring(BASE_URL_PLACEHOLDER.length()), true);
+    }
+    final int scheme = template.indexOf("://");
+    if (scheme < 0) {
+      return new TemplatePath(template, false);
+    }
+    final int slash = template.indexOf('/', scheme + 3);
+    final String beforeThePath = slash >= 0 ? template.substring(0, slash) : template;
+    return new TemplatePath(
+        slash >= 0 ? template.substring(slash) : "", beforeThePath.contains(BASE_PATH_PLACEHOLDER));
+  }
+
+  /**
+   * The matcher sees the request path only, so a query the IdP is told about and a fragment do not
+   * belong in the endpoint pattern.
+   */
+  private static String withoutQueryAndFragment(final String path) {
+    final int end = Math.min(indexOrEnd(path, '?'), indexOrEnd(path, '#'));
+    return path.substring(0, end);
+  }
+
+  private static int indexOrEnd(final String path, final char delimiter) {
+    final int index = path.indexOf(delimiter);
+    return index >= 0 ? index : path.length();
+  }
+
+  /** {@code redirectionEndpoint().baseUri(...)} needs a leading slash. */
+  private static void requireLeadingSlash(final String path, final String configuredRedirectUri) {
+    if (!path.startsWith("/")) {
+      throw new IllegalArgumentException(
+          "OIDC redirect-uri must resolve to a path starting with '/', but '"
+              + configuredRedirectUri
+              + "' resolved to: "
+              + path);
+    }
   }
 
   /**
@@ -134,4 +151,11 @@ public final class OidcRedirectionEndpoint {
     }
     return path;
   }
+
+  /**
+   * The path part of a redirect-uri template, and whether a placeholder in front of it expands to
+   * the context path. The two travel together because the second answer decides whether {@link
+   * #stripContextPath} may touch the first.
+   */
+  private record TemplatePath(String path, boolean contextPathCarriedByAPlaceholder) {}
 }
