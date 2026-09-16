@@ -386,7 +386,9 @@ public final class ScopedClientRegistrationFactory {
               + " character that has to be escaped resolves to a path that no longer names the"
               + " provider, and a form the default firewall blocks is rejected before the"
               + " authorization filter sees it — and where redirect-uri templates"
-              + " {registrationId}, the callback the IdP receives resolves elsewhere too.");
+              + " {registrationId}, the callback the IdP receives resolves elsewhere too. Set"
+              + " camunda.security.authentication.oidc.registration-id (flat block) or rename the"
+              + " key under camunda.security.authentication.providers.oidc.<id>.");
     }
   }
 
