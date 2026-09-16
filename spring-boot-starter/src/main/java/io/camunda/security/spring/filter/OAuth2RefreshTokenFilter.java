@@ -27,6 +27,7 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.web.authentication.logout.LogoutHandler;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -128,7 +129,13 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
             "Re-authorization is not supported or not required for the client");
       }
 
-    } catch (final OAuth2AuthenticationException e) {
+    } catch (final OAuth2AuthenticationException | OAuth2AuthorizationException e) {
+      // A failed refresh (e.g. invalid_grant) surfaces as OAuth2AuthorizationException, not
+      // OAuth2AuthenticationException; uncaught, it escapes to the container and logs as ERROR.
+      LOG.warn(
+          "Failed to refresh access token for principal '{}': {}",
+          authenticationToken.getName(),
+          e.getMessage());
       logoutAndThrowAuthenticationException(
           request, response, authenticationToken, "refresh_token_failed", e);
     }
