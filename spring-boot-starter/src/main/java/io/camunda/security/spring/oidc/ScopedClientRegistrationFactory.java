@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.server.PathContainer;
@@ -56,6 +57,14 @@ public final class ScopedClientRegistrationFactory {
    * Anything else throws from {@code buildAndExpand} at logout, so a value naming one is rejected
    * here instead.
    */
+  private static final String BASE_SCHEME_PLACEHOLDER = "{baseScheme}";
+
+  private static final String BASE_HOST_PLACEHOLDER = "{baseHost}";
+  private static final String BASE_PORT_PLACEHOLDER = "{basePort}";
+
+  /** RFC 3986 §3.1. */
+  private static final Pattern URI_SCHEME = Pattern.compile("[A-Za-z][A-Za-z0-9+.-]*");
+
   private static final Set<String> POST_LOGOUT_TEMPLATE_VARIABLES =
       Set.of("baseUrl", "baseScheme", "baseHost", "basePort", "basePath", "registrationId");
 
@@ -594,34 +603,65 @@ public final class ScopedClientRegistrationFactory {
   /**
    * Whether a non-path value still yields an absolute URL once Spring expands it.
    *
-   * <p>A leading {@code {baseUrl}} does by definition. Otherwise the value has to carry a scheme,
-   * <em>and</em> the authority between {@code "://"} and the next delimiter has to be something
-   * that can actually be a host: either {@code {baseHost}} or a literal with no placeholder in it.
+   * <p>A leading {@code {baseUrl}} does by definition. Otherwise the value needs a usable scheme
+   * <em>and</em> a usable authority, and each has a trap of its own.
    *
-   * <p>Checking the scheme alone is not enough, which is the trap. {@code
-   * https://{basePath}/goodbye} carries one, and every placeholder in it is supported, so the
-   * cheaper checks pass — but {@code basePath} expands to a path, leaving {@code https:///goodbye}
-   * with no host at all. The parse below cannot catch it either, because it skips any value holding
-   * a placeholder.
+   * <p>The scheme has to be a real scheme or {@code {baseScheme}}, not merely a {@code "://"}
+   * somewhere in the string: {@code {basePath}https://host/logout} contains one and expands to
+   * {@code /prefix...https://host/logout}, which is relative.
+   *
+   * <p>The authority has to be able to hold a host and, if it names a port, a number. {@code
+   * https://{basePath}/goodbye} carries a scheme and only supported placeholders, yet expands to
+   * {@code https:///goodbye} with no host; {@code https://host:{registrationId}/logout} expands to
+   * a port of {@code oidc}. {@code {baseHost}} and {@code {basePort}} are the two placeholders that
+   * do belong here — {@code basePort} carries its own {@code ':'} — so they are allowed by name.
    */
   private static boolean resolvesToAnAbsoluteUrl(final String value) {
     if (value.startsWith(BASE_URL_PLACEHOLDER)) {
       return true;
     }
     final var schemeEnd = value.indexOf("://");
-    if (schemeEnd < 0) {
-      return false;
-    }
-    final var authority = value.substring(schemeEnd + 3);
-    var hostEnd = authority.length();
-    for (final char delimiter : new char[] {'/', ':', '?', '#'}) {
-      final var at = authority.indexOf(delimiter);
-      if (at >= 0 && at < hostEnd) {
-        hostEnd = at;
+    return schemeEnd >= 0
+        && isUsableScheme(value.substring(0, schemeEnd))
+        && isUsableAuthority(authorityOf(value, schemeEnd + 3));
+  }
+
+  private static boolean isUsableScheme(final String scheme) {
+    return BASE_SCHEME_PLACEHOLDER.equals(scheme) || URI_SCHEME.matcher(scheme).matches();
+  }
+
+  /** The authority: everything up to the first {@code '/'}, {@code '?'} or {@code '#'}. */
+  private static String authorityOf(final String value, final int from) {
+    var end = value.length();
+    for (final char delimiter : new char[] {'/', '?', '#'}) {
+      final var at = value.indexOf(delimiter, from);
+      if (at >= 0 && at < end) {
+        end = at;
       }
     }
-    final var host = authority.substring(0, hostEnd);
-    return "{baseHost}".equals(host) || (!host.isEmpty() && host.indexOf('{') < 0);
+    return value.substring(from, end);
+  }
+
+  private static boolean isUsableAuthority(final String authority) {
+    var host = authority;
+    String port = null;
+    if (host.endsWith(BASE_PORT_PLACEHOLDER)) {
+      // {basePort} expands to "" or ":8080", so it stands in for the whole port component.
+      host = host.substring(0, host.length() - BASE_PORT_PLACEHOLDER.length());
+      port = "";
+    } else {
+      // Last ':' after any ']' so an IPv6 literal's own colons are not mistaken for a port.
+      final var colon = host.lastIndexOf(':');
+      if (colon > host.lastIndexOf(']')) {
+        port = host.substring(colon + 1);
+        host = host.substring(0, colon);
+      }
+    }
+    final var hostIsUsable =
+        BASE_HOST_PLACEHOLDER.equals(host) || (!host.isEmpty() && host.indexOf('{') < 0);
+    final var portIsUsable =
+        port == null || port.isEmpty() || port.chars().allMatch(Character::isDigit);
+    return hostIsUsable && portIsUsable;
   }
 
   /**
@@ -666,23 +706,44 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Parses a value whose host position holds a literal, which {@link #resolvesToAnAbsoluteUrl} has
-   * already established. Skipped for a value holding a placeholder, since braces are not legal URI
-   * characters and the host may only exist after expansion.
+   * Parses whatever part of the value is already literal.
+   *
+   * <p>Skipping the parse for any value containing a placeholder was too coarse: {@code https://ex
+   * ample.com/{basePath}} has a perfectly literal — and malformed — host, and only the templated
+   * path made it skip. So the authority is parsed whenever it holds no placeholder, and the whole
+   * value only when nothing at all is templated.
+   *
+   * <p>A {@code {baseScheme}} is parsed as {@code https}: the scheme is unknown until the request,
+   * but standing one in is what lets the authority after it be checked at all.
    */
   private static void requireParseableAbsoluteUrl(final String registrationId, final String value) {
-    if (value.indexOf('{') >= 0) {
+    if (value.startsWith(BASE_URL_PLACEHOLDER)) {
       return;
     }
+    final var schemeEnd = value.indexOf("://");
+    final var scheme = value.substring(0, schemeEnd);
+    final var authority = authorityOf(value, schemeEnd + 3);
+    if (authority.indexOf('{') >= 0) {
+      return;
+    }
+    final var probeScheme = BASE_SCHEME_PLACEHOLDER.equals(scheme) ? "https" : scheme;
+    final var probe =
+        value.indexOf('{') < 0
+            ? probeScheme + value.substring(schemeEnd)
+            : probeScheme + "://" + authority;
     final URI parsed;
     try {
-      parsed = new URI(value);
+      parsed = new URI(probe);
     } catch (final URISyntaxException malformed) {
       throw postLogoutRedirectUriError(
           registrationId, value, "is not a valid URI: " + malformed.getReason());
     }
     if (!parsed.isAbsolute() || !StringUtils.hasText(parsed.getHost())) {
       throw postLogoutRedirectUriError(registrationId, value, "is missing a scheme or a host");
+    }
+    if (!namesAPortInTcpRange(parsed)) {
+      throw postLogoutRedirectUriError(
+          registrationId, value, "must name a port in 1-65535 if it names one");
     }
   }
 

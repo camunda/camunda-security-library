@@ -561,6 +561,15 @@ public final class ScopedWebappSecurityChainBuilder {
    *
    * <p>Falls back to the cluster properties when no port is present, which is what the port's own
    * default implementation resolves to anyway.
+   *
+   * <p>The registrationId is the join key, and that is the whole contract. A host may replace only
+   * the {@link ClientRegistrationRepository} bean and leave the port at its default, in which case
+   * a registration whose id also appears in the port's map takes that entry's post-logout settings
+   * — the operator keyed configuration to that id, so honouring it is the point. An id that means
+   * two different providers in the two sources is contradictory configuration rather than something
+   * CSL can detect: a repository need not be {@code Iterable} (see {@code LoginLinksBuilder}), so
+   * the two sets cannot be compared in general, and matching ids would not prove common provenance
+   * anyway. An id absent from the map keeps the chain-wide default.
    */
   private Map<String, OidcConfiguration> primaryOidcSources() {
     final var port = oidcProviderConfigurationPortProvider.getIfAvailable();

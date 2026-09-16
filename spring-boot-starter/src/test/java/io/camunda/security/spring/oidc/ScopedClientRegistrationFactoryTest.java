@@ -1128,17 +1128,61 @@ class ScopedClientRegistrationFactoryTest {
     assertThatNoException().isThrownBy(() -> validatePostLogoutRedirectUri(null));
   }
 
+  /**
+   * {@code {basePort}} carries its own {@code ':'}, so {@code {baseHost}{basePort}} is the
+   * canonical way to write a host with an optional port — rejecting it would fail a working
+   * deployment at startup, which is worse than the false accepts this validation exists to stop.
+   */
   @ValueSource(
       strings = {
         "/goodbye",
         "{baseUrl}/post-logout",
         "https://accounts.example.com/logged-out",
         "{baseScheme}://{baseHost}/logged-out",
-        "{baseScheme}://accounts.example.com/logged-out"
+        "{baseScheme}://accounts.example.com/logged-out",
+        "https://{baseHost}{basePort}/logged-out",
+        "https://{baseHost}:8080/logged-out",
+        "https://accounts.example.com:8443/logged-out"
       })
   @ParameterizedTest
   void shouldAcceptAUsablePostLogoutRedirectUri(final String configured) {
     assertThatNoException().isThrownBy(() -> validatePostLogoutRedirectUri(configured));
+  }
+
+  /**
+   * A {@code "://"} anywhere in the string is not a scheme. {@code
+   * {basePath}https://accounts.example.com/logout} contains one, uses only supported placeholders,
+   * and expands to {@code /prefix...https://...} — still relative.
+   */
+  @Test
+  void shouldRejectAPostLogoutRedirectUriWhoseSchemeIsNotAtTheStart() {
+    assertPostLogoutRedirectUriRejected("{basePath}https://accounts.example.com/logout")
+        .hasMessageContaining("must be an absolute URL");
+  }
+
+  /** A placeholder in the port position expands to something no socket can use. */
+  @Test
+  void shouldRejectAPostLogoutRedirectUriWithAPlaceholderInThePortPosition() {
+    assertPostLogoutRedirectUriRejected("https://accounts.example.com:{registrationId}/logout")
+        .hasMessageContaining("must be an absolute URL");
+  }
+
+  /** A literal port still has to be a port, matching what the other endpoint URLs enforce. */
+  @Test
+  void shouldRejectAPostLogoutRedirectUriWithAPortOutsideTheTcpRange() {
+    assertPostLogoutRedirectUriRejected("https://accounts.example.com:99999/logout")
+        .hasMessageContaining("port");
+  }
+
+  /**
+   * A placeholder in the path must not excuse a malformed literal host. Skipping the parse for any
+   * templated value was too coarse: the host here is literal, and wrong.
+   */
+  @ValueSource(
+      strings = {"https://ex ample.com/{basePath}", "{baseScheme}://ex ample.com/logged-out"})
+  @ParameterizedTest
+  void shouldRejectAPostLogoutRedirectUriWithALiteralHostThatCannotParse(final String configured) {
+    assertPostLogoutRedirectUriRejected(configured).hasMessageContaining("is not a valid URI");
   }
 
   /**

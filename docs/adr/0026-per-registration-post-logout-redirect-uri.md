@@ -213,6 +213,13 @@ rejected value redacts its user-info and query first.
   every registration disables the redirect. Previously it booted in that narrow case. The port
   already forbids `null` and both in-tree hosts return `Optional`, so this is a deliberate
   strictness increase rather than a regression.
+- The registrationId is the only join between the per-registration map and the chain's
+  registrations. A host that replaces just the `ClientRegistrationRepository` bean, leaving the port
+  at its default, gets the port's settings applied to any registration whose id matches — which is
+  what an operator keying configuration to that id asked for, but is wrong if the same id means two
+  different providers across the two sources. CSL cannot detect that: a repository need not be
+  `Iterable`, so the two sets cannot be compared in general, and matching ids would not prove common
+  provenance. Treated as contradictory configuration and documented rather than guarded.
 - A configured absolute URL is opaque to CSL: it cannot verify the host serves anything there, so a
   typo lands the user on a dead page after a successful logout. Validation establishes that the value
   is a well-formed, expandable URL — not that it is the right one, nor that it is registered at the
