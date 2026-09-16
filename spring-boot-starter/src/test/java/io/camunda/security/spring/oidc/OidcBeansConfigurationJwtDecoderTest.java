@@ -169,6 +169,34 @@ class OidcBeansConfigurationJwtDecoderTest {
   }
 
   @Test
+  void shouldStartWhenAHostRepositoryReplacesTheRegistrationsOfTheProviderMap() {
+    // given a host repository that holds one issuer-aware registration, while the provider map sets
+    // no issuer-uri for one of its two providers
+    runner
+        .withUserConfiguration(SingleRegistrationRepository.class)
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.keycloak.client-id=kc-client",
+            "camunda.security.authentication.providers.oidc.keycloak.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.providers.oidc.keycloak.issuer-uri=https://kc.example.com",
+            "camunda.security.authentication.providers.oidc.keycloak.authorization-uri=https://kc.example.com/auth",
+            "camunda.security.authentication.providers.oidc.keycloak.token-uri=https://kc.example.com/token",
+            "camunda.security.authentication.providers.oidc.keycloak.jwk-set-uri=https://kc.example.com/jwks",
+            "camunda.security.authentication.providers.oidc.azure.client-id=az-client",
+            "camunda.security.authentication.providers.oidc.azure.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.providers.oidc.azure.authorization-uri=https://az.example.com/auth",
+            "camunda.security.authentication.providers.oidc.azure.token-uri=https://az.example.com/token",
+            "camunda.security.authentication.providers.oidc.azure.jwk-set-uri=https://az.example.com/jwks")
+        // the provider map describes registrations the library did not build, so the requirement of
+        // the issuer-aware decoder belongs to the registrations of the host repository, and the
+        // decoder checks those at the first token decode
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              assertThat(ctx).hasSingleBean(JwtDecoder.class);
+            });
+  }
+
+  @Test
   void shouldFailWithInformativeErrorWhenOnlyAdditionalJwkSetUrisConfigured() {
     runner
         .withPropertyValues(
@@ -424,6 +452,20 @@ class OidcBeansConfigurationJwtDecoderTest {
           List.of(
               testRegistration("keycloak", "https://kc.example.com/jwks", "https://kc.example.com"),
               testRegistration("azure", "https://az.example.com/jwks", "https://az.example.com")));
+    }
+  }
+
+  /**
+   * A host repository with one registration, used to show that the issuer requirement of the
+   * issuer-aware decoder is made on the provider map of the library only.
+   */
+  @Configuration
+  static class SingleRegistrationRepository {
+
+    @Bean
+    ClientRegistrationRepository clientRegistrationRepository() {
+      return new InMemoryClientRegistrationRepository(
+          testRegistration("keycloak", "https://kc.example.com/jwks", "https://kc.example.com"));
     }
   }
 

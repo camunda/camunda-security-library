@@ -15,6 +15,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.UUID;
@@ -145,6 +146,30 @@ final class DeferredOidcResolutionTest {
     assertThat(failures).hasValue(threads);
     assertThat(eventsAt(Level.WARN)).hasSize(1);
     assertThat(eventsAt(Level.DEBUG)).hasSize(threads - 1);
+  }
+
+  @Test
+  void shouldKeepNoStateForASubjectThatStoppedFailing() {
+    // given warnings for more subjects than one deployment fails on at a time, as a host that
+    // creates and drops scopes produces over its lifetime
+    for (int i = 0; i < 300; i++) {
+      final var subject = "scope-" + UUID.randomUUID();
+      assertThatThrownBy(
+              () ->
+                  DeferredOidcResolution.resolve(
+                      subject,
+                      () -> {
+                        throw new IllegalStateException("unreachable");
+                      }))
+          .isInstanceOf(IllegalStateException.class);
+    }
+
+    // when the interval of each subject passes
+    DeferredOidcResolution.removeIdleSubjects(System.nanoTime() + Duration.ofHours(1).toNanos());
+
+    // then the rate limit holds state for the subjects that fail now only, so a long-running host
+    // does not accumulate it
+    assertThat(DeferredOidcResolution.trackedSubjectCount()).isZero();
   }
 
   @Test
