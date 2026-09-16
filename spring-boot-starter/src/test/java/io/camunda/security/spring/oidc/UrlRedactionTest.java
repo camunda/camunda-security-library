@@ -28,6 +28,23 @@ class UrlRedactionTest {
         .isEqualTo("https://…@idp.example.com/token");
   }
 
+  /**
+   * A scheme-relative authority is still an authority. Such a value reaches these messages — an
+   * {@code issuer-uri} of this shape is rejected for not being absolute, and the rejection quotes
+   * it — so missing it would leak the credential the helper exists to hide.
+   */
+  @Test
+  void shouldRemoveUserInfoFromASchemeRelativeAuthority() {
+    assertThat(UrlRedaction.redact("//user:password@idp.example.com/realm"))
+        .isEqualTo("//…@idp.example.com/realm");
+  }
+
+  /** A single leading slash is a path, not an authority. */
+  @Test
+  void shouldLeaveARootRelativePathAlone() {
+    assertThat(UrlRedaction.redact("/goodbye")).isEqualTo("/goodbye");
+  }
+
   /** A '@' in the path belongs to the path, not to an authority that has already ended. */
   @Test
   void shouldKeepAnAtSignInThePath() {

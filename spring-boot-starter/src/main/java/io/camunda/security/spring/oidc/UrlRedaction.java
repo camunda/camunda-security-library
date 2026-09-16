@@ -52,11 +52,10 @@ public final class UrlRedaction {
   }
 
   private static String withoutUserInfo(final String url) {
-    final var schemeEnd = url.indexOf("://");
-    if (schemeEnd < 0) {
+    final var authorityStart = authorityStart(url);
+    if (authorityStart < 0) {
       return url;
     }
-    final var authorityStart = schemeEnd + 3;
     final var authorityEnd = endOfAuthority(url, authorityStart);
     // lastIndexOf so a '@' in the credentials themselves does not end the user-info early.
     final var at = url.lastIndexOf('@', authorityEnd - 1);
@@ -74,6 +73,22 @@ public final class UrlRedaction {
     return fragmentStart < 0
         ? url.substring(0, queryStart) + ELLIPSIS
         : url.substring(0, queryStart) + ELLIPSIS + url.substring(fragmentStart);
+  }
+
+  /**
+   * Where the authority begins, or {@code -1} when the value has none.
+   *
+   * <p>A scheme-relative {@code //host/path} is an authority too. It reaches these messages — an
+   * {@code issuer-uri} of {@code //user:password@idp.example.com/realm} is rejected for not being
+   * absolute, and the rejection quotes it — so recognising only {@code "://"} would let exactly the
+   * credentials this class exists to hide through.
+   */
+  private static int authorityStart(final String url) {
+    final var schemeEnd = url.indexOf("://");
+    if (schemeEnd >= 0) {
+      return schemeEnd + 3;
+    }
+    return url.startsWith("//") ? 2 : -1;
   }
 
   /** Keeps the {@code '#'} so the message can still point at it, drops what it carries. */

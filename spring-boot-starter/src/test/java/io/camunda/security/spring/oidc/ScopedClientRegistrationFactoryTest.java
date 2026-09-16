@@ -1265,6 +1265,19 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   /**
+   * The variable name reaches the message before the value is redacted, so a name that is not a
+   * plausible identifier is reported generically rather than echoed — otherwise anything can be
+   * written between the braces to get it into the log verbatim.
+   */
+  @Test
+  void shouldNotEchoAnUnsupportedTemplateVariableThatCarriesCredentials() {
+    assertPostLogoutRedirectUriRejected("{baseUrl}/{https://user:secret@host}")
+        .hasMessageNotContaining("secret")
+        .hasMessageContaining("an unsupported template variable")
+        .hasMessageContaining("supported variables are");
+  }
+
+  /**
    * An unclosed brace is invisible to a closed-pair check, and {@code UriComponentsBuilder} does
    * not reject it either — it expands to a literal and ships to the IdP as-is.
    */

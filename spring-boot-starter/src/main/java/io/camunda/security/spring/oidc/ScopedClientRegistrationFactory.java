@@ -65,6 +65,9 @@ public final class ScopedClientRegistrationFactory {
   /** RFC 3986 §3.1. */
   private static final Pattern URI_SCHEME = Pattern.compile("[A-Za-z][A-Za-z0-9+.-]*");
 
+  /** What a mistyped template variable looks like; see {@link #unsupportedVariable}. */
+  private static final Pattern SAFE_VARIABLE_NAME = Pattern.compile("[A-Za-z0-9_-]{1,40}");
+
   private static final Set<String> POST_LOGOUT_TEMPLATE_VARIABLES =
       Set.of("baseUrl", "baseScheme", "baseHost", "basePort", "basePath", "registrationId");
 
@@ -790,9 +793,9 @@ public final class ScopedClientRegistrationFactory {
           throw postLogoutRedirectUriError(
               registrationId,
               value,
-              "uses unsupported template variable {"
-                  + (name.matches("[A-Za-z][A-Za-z0-9]*") ? name : "?")
-                  + "}; supported variables are "
+              "uses "
+                  + unsupportedVariable(name)
+                  + "; supported variables are "
                   + POST_LOGOUT_TEMPLATE_VARIABLES);
         }
         openAt = -1;
@@ -843,6 +846,26 @@ public final class ScopedClientRegistrationFactory {
       throw postLogoutRedirectUriError(
           registrationId, value, "must name a port in 1-65535 if it names one");
     }
+  }
+
+  /**
+   * Names the offending variable only when the name looks like one.
+   *
+   * <p>Whatever sits between the braces is operator-supplied and reaches this message before the
+   * value itself is redacted, so echoing it unconditionally re-opens the hole the redaction closes
+   * — {@code {https://user:password@host}} is a syntactically valid thing to write. A real typo is
+   * a short identifier; anything else is named generically, and the supported list below is the
+   * actionable part either way.
+   *
+   * <p>Supersedes the inline guard in f4ff08d, which substituted {@code "?"} for an unsafe name.
+   * Same rule; the sentence is rebuilt around it instead, so it does not read as though the
+   * operator had written {@code {?}}, and the length bound stops a long identifier-shaped string
+   * riding through.
+   */
+  private static String unsupportedVariable(final String name) {
+    return SAFE_VARIABLE_NAME.matcher(name).matches()
+        ? "unsupported template variable {" + name + "}"
+        : "an unsupported template variable";
   }
 
   private static IllegalStateException postLogoutRedirectUriError(
