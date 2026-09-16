@@ -68,8 +68,7 @@ public class OidcClaimsProviderConfiguration {
    *
    * <p>To read the UserInfo URIs from the repository is to resolve its registrations, which OIDC
    * discovery resolves. The provider therefore builds the mapping at the first claims lookup, and
-   * not here, because an identity provider the application cannot reach must not stop the
-   * application context. See {@link DeferredOidcClaimsProvider}.
+   * not here. See {@link DeferredOidcClaimsProvider}.
    */
   @Bean
   @ConditionalOnProperty(
@@ -85,7 +84,7 @@ public class OidcClaimsProviderConfiguration {
       @Autowired(required = false) final MeterRegistry meterRegistry) {
     final var augmentation = properties.getAuthentication().getOidc().getUserInfoAugmentation();
     return new DeferredOidcClaimsProvider(
-        "the per-issuer UserInfo endpoint mapping",
+        userInfoMappingSubject(clientRegistrationRepository),
         () ->
             CachingOidcClaimsProvider.forConfiguredMappings(
                 new OidcUserInfoHttpClient(httpClient, objectMapper),
@@ -102,6 +101,17 @@ public class OidcClaimsProviderConfiguration {
   @ConditionalOnMissingBean(OidcClaimsProvider.class)
   OidcClaimsProvider noopOidcClaimsProvider() {
     return new NoopOidcClaimsProvider();
+  }
+
+  /**
+   * Names the mapping that a failure log reports, together with each provider the mapping covers. A
+   * deployment with several identity providers can therefore see which one it cannot reach.
+   */
+  private static String userInfoMappingSubject(final ClientRegistrationRepository repo) {
+    return "the per-issuer UserInfo endpoint mapping"
+        + (repo instanceof final LazyClientRegistrationRepository lazy
+            ? " for provider(s) " + lazy.providerDescriptions()
+            : "");
   }
 
   /**

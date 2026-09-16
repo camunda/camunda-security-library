@@ -12,6 +12,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
@@ -20,11 +24,13 @@ import io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfigu
 import java.net.http.HttpClient;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 
@@ -119,6 +125,52 @@ final class ScopedOidcClaimsProviderFactoryTest {
     assertThatThrownBy(() -> claimsForUnaugmentedToken(provider))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("userInfoUri");
+  }
+
+  @Test
+  void shouldNameTheScopeAndTheProviderWhenTheClaimsMappingCannotBeBuilt() {
+    // given a scoped provider whose registration exposes no userInfoUri, so the deferred build of
+    // the mapping fails at the first claims lookup
+    final var basePath = "/physical-tenants/" + UUID.randomUUID();
+    final var authentication = authEnabled("https://idp.example.com", null);
+    final var providers = Map.of("oidc", authentication.getOidc());
+    when(clientRegistrationFactory.flatten(authentication)).thenReturn(providers);
+    when(clientRegistrationFactory.createWithoutLoginRoutes(providers))
+        .thenReturn(List.of(registrationWithoutUserInfo("oidc", "https://idp.example.com")));
+    final var provider = factory.buildClaimsProvider(authentication, "basePath=" + basePath);
+    final var appender = captureResolutionLogs();
+
+    // when
+    try {
+      assertThatThrownBy(() -> claimsForUnaugmentedToken(provider))
+          .isInstanceOf(IllegalStateException.class);
+    } finally {
+      releaseResolutionLogs(appender);
+    }
+
+    // then the WARN tells the operator which provider and which scope the failure belongs to, so
+    // two scopes that configure the same provider stay distinguishable
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .singleElement()
+        .satisfies(
+            event ->
+                assertThat(event.getFormattedMessage())
+                    .contains("'oidc'")
+                    .contains("https://idp.example.com")
+                    .contains("basePath=" + basePath));
+  }
+
+  private static ListAppender<ILoggingEvent> captureResolutionLogs() {
+    final var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    ((Logger) LoggerFactory.getLogger(DeferredOidcResolution.class)).addAppender(appender);
+    return appender;
+  }
+
+  private static void releaseResolutionLogs(final ListAppender<ILoggingEvent> appender) {
+    ((Logger) LoggerFactory.getLogger(DeferredOidcResolution.class)).detachAppender(appender);
+    appender.stop();
   }
 
   // Augmentation enabled but no OIDC provider resolves → fail fast (broken config)

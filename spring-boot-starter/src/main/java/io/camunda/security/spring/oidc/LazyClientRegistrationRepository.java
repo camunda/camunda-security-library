@@ -24,23 +24,16 @@ import org.springframework.util.StringUtils;
  * A {@link ClientRegistrationRepository} that makes OIDC discovery at the first use of a
  * registration, and not while the application builds the repository.
  *
- * <p>{@link
- * org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository}
- * takes complete {@link ClientRegistration}s. To build one while the application starts, the
- * application must request the discovery document of each issuer at that time. An identity provider
- * it cannot reach then stops the application context, and the deployment restarts again and again
- * until the provider answers. This repository resolves one registration at its first lookup
- * instead. The start therefore makes no network request. Each request that needs an unreachable
- * provider fails, every other request succeeds, and the deployment recovers without a restart.
+ * <p>An identity provider the application cannot reach therefore fails the requests that need it,
+ * and not the start. Each other request succeeds, and the deployment recovers without a restart.
+ * The repository keeps a resolved registration after a successful lookup only, so the next lookup
+ * makes a new attempt after a failed one. The constructor validates the configuration without
+ * network access, so an incorrect provider block still stops the start it is a defect in.
  *
- * <p>The repository keeps a resolved registration after a successful lookup only. The next lookup
- * therefore makes a new attempt after a failed one. The constructor validates the configuration
- * without network access, so an incorrect provider block still stops the start it is a defect in.
- *
- * <p>Iteration resolves each configured registration, and therefore makes discovery. A caller that
- * runs while the application starts must use {@link #registrationIds()} or {@link
- * #clientNamesByRegistrationId()}, which answer from the configuration alone. This class implements
- * {@link Iterable} for a host that reads the repository for each request.
+ * <p>Iteration resolves each configured registration, and therefore makes discovery. It serves a
+ * host that reads the repository for each request. A caller that runs while the application starts
+ * must use {@link #registrationIds()} or {@link #clientNamesByRegistrationId()}, which answer from
+ * the configuration alone.
  */
 public final class LazyClientRegistrationRepository
     implements ClientRegistrationRepository, Iterable<ClientRegistration> {
@@ -100,6 +93,11 @@ public final class LazyClientRegistrationRepository
     return names;
   }
 
+  /** Names each configured provider, as a failure log of this repository names it. */
+  public String providerDescriptions() {
+    return DeferredOidcResolution.describeProviders(providers);
+  }
+
   private static String clientName(final String registrationId, final OidcConfiguration config) {
     if (StringUtils.hasText(config.getClientName())) {
       return config.getClientName();
@@ -113,6 +111,11 @@ public final class LazyClientRegistrationRepository
     if (config == null) {
       return null;
     }
+    // Two lookups of the same registration at the same time each make their own attempt. A
+    // single-flight lock would hold one caller for the complete discovery timeout of the other
+    // attempt, and that timeout is 30 seconds for a provider the application cannot reach. A
+    // duplicate attempt on a reachable provider costs one discovery request, and the first result
+    // wins.
     final var cached = resolved.get(registrationId);
     if (cached != null) {
       return cached;

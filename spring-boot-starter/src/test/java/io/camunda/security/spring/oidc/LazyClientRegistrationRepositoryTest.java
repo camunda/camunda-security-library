@@ -215,6 +215,31 @@ final class LazyClientRegistrationRepositoryTest {
   }
 
   @Test
+  void shouldDescribeEachConfiguredProviderWithoutResolvingIt() {
+    // given two providers on issuers that are not listening at all, so any resolution would fail
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put("first", unreachableProvider("http://127.0.0.1:1/realms/first"));
+    providers.put("second", unreachableProvider("http://127.0.0.1:1/realms/second"));
+
+    // when
+    final var descriptions = newRepository(providers).providerDescriptions();
+
+    // then the text a failure log carries is available from the configuration alone
+    assertThat(descriptions)
+        .isEqualTo(
+            "'first' (issuer http://127.0.0.1:1/realms/first), 'second' (issuer"
+                + " http://127.0.0.1:1/realms/second)");
+  }
+
+  private static OidcConfiguration unreachableProvider(final String issuerUri) {
+    return OidcConfiguration.builder()
+        .clientId("client")
+        .redirectUri("{baseUrl}/sso-callback")
+        .issuerUri(issuerUri)
+        .build();
+  }
+
+  @Test
   void shouldNameTheScopeAndTheIssuerWhenAScopedRegistrationCannotBeResolved() {
     // given a scoped repository whose provider sits on an issuer that is not listening at all
     final var basePath = "/physical-tenants/" + UUID.randomUUID();
