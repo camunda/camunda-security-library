@@ -87,6 +87,13 @@ import org.springframework.web.cors.CorsConfigurationSource;
  * <p>Shared collaborators (handlers, providers, properties, pathPort) are constructor-injected and
  * held as fields, mirroring {@code ScopedApiSecurityChainBuilder}. Per-invocation inputs (the
  * cluster OAuth2 stack and the {@link HttpSecurity} instance) remain method parameters.
+ *
+ * <p>The constructor is Spring-wired and is not a stable extension point: it has taken a new
+ * collaborator each time the chain gained one (#529, #541, #625), always by extending the single
+ * signature rather than by adding an overload. A host obtains this bean from the context — {@link
+ * ScopedWebappSecurityChainBuilderConfiguration} is the only place in the library that constructs
+ * it — and calls {@link #buildOidcWebappChain} or {@link #buildScopedWebappChain} on it. Those two
+ * methods are the surface a host binds to.
  */
 public final class ScopedWebappSecurityChainBuilder {
 
