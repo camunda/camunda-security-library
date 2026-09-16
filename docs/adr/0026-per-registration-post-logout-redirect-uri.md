@@ -74,7 +74,7 @@ how `post-logout-redirect-enabled=false` is expressed. `isPostLogoutRedirectEnab
 registrationId absent from the map falls through to `super`, which continues to carry the
 chain-wide composed route via `setPostLogoutRedirectUri`.
 
-**Validation at the chain builder.** A configured value is rejected at startup when it contains CR
+**Validation in the registration factory.** A configured value is rejected at startup when it contains CR
 or LF, when its braces are unbalanced, when it names a template variable outside the six Spring
 populates (`baseUrl`, `baseScheme`, `baseHost`, `basePort`, `basePath`, `registrationId`), when a
 placeholder-free absolute value does not parse or carries no host, or when it is neither absolute nor
@@ -140,13 +140,27 @@ rejected value redacts its user-info and query first.
   avoids is silent: a fetch-based logout would answer `200 {"url": "/"}` instead of `204`, and the
   webapp would navigate to `/` believing it was the IdP's end-session URL.
 
-- **Validation in the chain builder, not `OidcConfiguration#validate()`.** `validate()` is reached
-  through `CamundaSecurityLibraryProperties`' `@PostConstruct`, which only walks the *cluster*
-  properties bean. A scoped `AuthenticationConfiguration` is constructed by the host and handed
-  straight to `buildScopedWebappChain`, so a check there would silently miss every per-tenant
-  configuration. The chain builder sees both, and knows the chain prefix. This also follows the
-  sibling property: `redirect-uri`'s rule is documented on `OidcConfiguration` but enforced in
-  `ScopedClientRegistrationFactory#resolveRedirectUri`.
+- **Validation in `ScopedClientRegistrationFactory#validateWithoutNetwork`, not in
+  `OidcConfiguration#validate()` and not in the chain builder.** `validate()` is reached through
+  `CamundaSecurityLibraryProperties`' `@PostConstruct`, which only walks the *cluster* properties
+  bean, so a check there would silently miss every scoped configuration. The chain builder sees
+  both, which is where this started — but ADR-0024's companion refactor made
+  `validateWithoutNetwork` the single place an OIDC provider block is checked, and a second site
+  validating the same kind of thing is exactly what that consolidated away. It also puts this
+  property next to `redirect-uri` and the endpoint URLs, which are checked the same way.
+
+  Only the *shape* moved. Composition still needs the chain's base path, so deciding where a legal
+  value resolves stays in `ScopedWebappSecurityChainBuilder`; deciding whether it is legal does
+  not. One consequence worth naming: a host that supplies its own `ClientRegistrationRepository`
+  bypasses the factory entirely and so is not validated — but that is already true of every other
+  URL property, and such a host's registrations never pass through the factory at all.
+
+- **Messages that name a rejected value redact it first.** `UrlRedaction` strips user-info and the
+  query string from every configured URL the factory reports, this property and the pre-existing
+  ones alike, since a startup failure lands in application logs like anything else. The fragment is
+  kept on purpose: several of these messages exist *because* a value carries one, so hiding it would
+  redact the thing the operator has to delete, and a fragment in static configuration is a
+  structural mistake rather than somewhere credentials get passed.
 
 - **Rejecting unknown template variables is worth the code.** Spring expands the template with a
   fixed six-entry variable map, so `{tenantId}` throws from inside `buildAndExpand` on the logout

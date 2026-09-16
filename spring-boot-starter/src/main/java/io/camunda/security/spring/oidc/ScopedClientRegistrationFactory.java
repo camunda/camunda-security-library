@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +50,14 @@ public final class ScopedClientRegistrationFactory {
   private static final Logger LOG = LoggerFactory.getLogger(ScopedClientRegistrationFactory.class);
 
   private static final String BASE_URL_PLACEHOLDER = "{baseUrl}";
+
+  /**
+   * The URI template variables Spring populates when it expands {@code post_logout_redirect_uri}.
+   * Anything else throws from {@code buildAndExpand} at logout, so a value naming one is rejected
+   * here instead.
+   */
+  private static final Set<String> POST_LOGOUT_TEMPLATE_VARIABLES =
+      Set.of("baseUrl", "baseScheme", "baseHost", "basePort", "basePath", "registrationId");
 
   /** The login route that {@code LoginLinksBuilder} makes. The id checks use the same route. */
   private static final String LOGIN_ROUTE_PROBE = "https://probe.invalid/oauth2/authorization/";
@@ -321,6 +330,12 @@ public final class ScopedClientRegistrationFactory {
           requireClientAuthenticationMethod(registrationId, oidc);
           requireUsableScopes(registrationId, oidc);
           requireAbsoluteEndpointUrls(registrationId, oidc, loginRouteChecks);
+          if (loginRouteChecks == LoginRouteChecks.ENFORCED) {
+            // Only a caller mounting the browser login chain mounts the logout handler, which is
+            // the
+            // sole consumer of this value — the same reasoning that gates end-session-endpoint-uri.
+            requirePostLogoutRedirectUri(registrationId, oidc);
+          }
           requireEndpointConfiguration(registrationId, oidc);
           resolveRedirectUri(registrationId, oidc, scopedRedirectUriPath, loginRouteChecks);
         });
@@ -365,7 +380,7 @@ public final class ScopedClientRegistrationFactory {
         "camunda.security.authentication.oidc.redirect-uri must expand to an absolute http(s) URL"
             + " with a host and a callback path, and without a fragment, because the webapp chain"
             + " mounts its redirection endpoint at that path, but was: "
-            + configured
+            + UrlRedaction.redact(configured)
             + ". Spring expands {baseUrl}, {baseScheme}, {baseHost}, {basePort}, {basePath},"
             + " {registrationId} and {action} per request — {basePort} and {basePath} include"
             + " their own ':' and '/' — and expands nothing else.");
@@ -531,6 +546,161 @@ public final class ScopedClientRegistrationFactory {
     }
   }
 
+  /**
+   * Rejects a {@code post-logout-redirect-uri} that cannot work, before a logout ever runs.
+   *
+   * <p>Three accepted shapes: a path starting with {@code /}, which the logout chain resolves
+   * against its own base path; an absolute URL; or a URI template that still resolves to an
+   * absolute URL once Spring expands it. The template form is what lets a deployment served under a
+   * per-cluster prefix name a URL its IdP can actually have registered, so it cannot simply be
+   * disallowed.
+   *
+   * <p>Everything here fails at startup rather than at logout, which is the point: Spring expands
+   * the template on the logout request itself, so an unexpandable value throws from inside {@code
+   * buildAndExpand} on the one request a user cannot usefully retry — long after the typo shipped.
+   *
+   * <p>See ADR-0025.
+   */
+  private static void requirePostLogoutRedirectUri(
+      final String registrationId, final OidcConfiguration oidc) {
+    final var configured = oidc.getPostLogoutRedirectUri();
+    if (!StringUtils.hasText(configured)) {
+      return;
+    }
+    final var value = configured.trim();
+    if (value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
+      throw postLogoutRedirectUriError(registrationId, value, "must not contain CR or LF");
+    }
+    // OpenID Connect RP-Initiated Logout 1.0 §2 gives post_logout_redirect_uri no fragment, so an
+    // OP has no reason to accept one.
+    if (value.indexOf('#') >= 0) {
+      throw postLogoutRedirectUriError(registrationId, value, "must not contain a fragment ('#')");
+    }
+    requireExpandableTemplate(registrationId, value);
+    if (value.startsWith("/")) {
+      return;
+    }
+    if (!resolvesToAnAbsoluteUrl(value)) {
+      throw postLogoutRedirectUriError(
+          registrationId,
+          value,
+          "must be an absolute URL, a path starting with '/', or a template that still resolves to"
+              + " an absolute URL (starting with {baseUrl}, or carrying an explicit scheme and a"
+              + " host, such as {baseScheme}://{baseHost})");
+    }
+    requireParseableAbsoluteUrl(registrationId, value);
+  }
+
+  /**
+   * Whether a non-path value still yields an absolute URL once Spring expands it.
+   *
+   * <p>A leading {@code {baseUrl}} does by definition. Otherwise the value has to carry a scheme,
+   * <em>and</em> the authority between {@code "://"} and the next delimiter has to be something
+   * that can actually be a host: either {@code {baseHost}} or a literal with no placeholder in it.
+   *
+   * <p>Checking the scheme alone is not enough, which is the trap. {@code
+   * https://{basePath}/goodbye} carries one, and every placeholder in it is supported, so the
+   * cheaper checks pass — but {@code basePath} expands to a path, leaving {@code https:///goodbye}
+   * with no host at all. The parse below cannot catch it either, because it skips any value holding
+   * a placeholder.
+   */
+  private static boolean resolvesToAnAbsoluteUrl(final String value) {
+    if (value.startsWith(BASE_URL_PLACEHOLDER)) {
+      return true;
+    }
+    final var schemeEnd = value.indexOf("://");
+    if (schemeEnd < 0) {
+      return false;
+    }
+    final var authority = value.substring(schemeEnd + 3);
+    var hostEnd = authority.length();
+    for (final char delimiter : new char[] {'/', ':', '?', '#'}) {
+      final var at = authority.indexOf(delimiter);
+      if (at >= 0 && at < hostEnd) {
+        hostEnd = at;
+      }
+    }
+    final var host = authority.substring(0, hostEnd);
+    return "{baseHost}".equals(host) || (!host.isEmpty() && host.indexOf('{') < 0);
+  }
+
+  /**
+   * Rejects a template Spring cannot expand: an unbalanced brace, or a placeholder outside the
+   * fixed set its post-logout expansion populates.
+   *
+   * <p>Scans rather than regex-matches because a regex for a brace-delimited name only sees
+   * <em>closed</em> pairs, and the open ones are the dangerous case. {@code UriComponentsBuilder}
+   * does not reject an unclosed brace: <code>&#123;baseUrl&#125;&#123;tenantId</code> expands to
+   * the literal <code>https://host&#123;tenantId</code> and is sent to the IdP exactly like that. A
+   * closed-pair check would find only {@code baseUrl}, pass it, and ship the malformed URL.
+   */
+  private static void requireExpandableTemplate(final String registrationId, final String value) {
+    int openAt = -1;
+    for (int i = 0; i < value.length(); i++) {
+      final char c = value.charAt(i);
+      if (c == '{') {
+        if (openAt >= 0) {
+          throw postLogoutRedirectUriError(registrationId, value, "contains a nested '{'");
+        }
+        openAt = i;
+      } else if (c == '}') {
+        if (openAt < 0) {
+          throw postLogoutRedirectUriError(registrationId, value, "contains an unmatched '}'");
+        }
+        final var name = value.substring(openAt + 1, i);
+        if (!POST_LOGOUT_TEMPLATE_VARIABLES.contains(name)) {
+          throw postLogoutRedirectUriError(
+              registrationId,
+              value,
+              "uses unsupported template variable {"
+                  + name
+                  + "}; supported variables are "
+                  + POST_LOGOUT_TEMPLATE_VARIABLES);
+        }
+        openAt = -1;
+      }
+    }
+    if (openAt >= 0) {
+      throw postLogoutRedirectUriError(registrationId, value, "contains an unclosed '{'");
+    }
+  }
+
+  /**
+   * Parses a value whose host position holds a literal, which {@link #resolvesToAnAbsoluteUrl} has
+   * already established. Skipped for a value holding a placeholder, since braces are not legal URI
+   * characters and the host may only exist after expansion.
+   */
+  private static void requireParseableAbsoluteUrl(final String registrationId, final String value) {
+    if (value.indexOf('{') >= 0) {
+      return;
+    }
+    final URI parsed;
+    try {
+      parsed = new URI(value);
+    } catch (final URISyntaxException malformed) {
+      throw postLogoutRedirectUriError(
+          registrationId, value, "is not a valid URI: " + malformed.getReason());
+    }
+    if (!parsed.isAbsolute() || !StringUtils.hasText(parsed.getHost())) {
+      throw postLogoutRedirectUriError(registrationId, value, "is missing a scheme or a host");
+    }
+  }
+
+  private static IllegalStateException postLogoutRedirectUriError(
+      final String registrationId, final String value, final String problem) {
+    return new IllegalStateException(
+        "Cannot build ClientRegistration '"
+            + registrationId
+            + "': post-logout-redirect-uri "
+            + problem
+            + ", but was: "
+            + UrlRedaction.redact(value)
+            + ". Set camunda.security.authentication.oidc.post-logout-redirect-uri (flat) or"
+            + " camunda.security.authentication.providers.oidc."
+            + registrationId
+            + ".post-logout-redirect-uri.");
+  }
+
   private static void requireAbsoluteHttpUrl(
       final String registrationId, final String property, final String value) {
     if (!StringUtils.hasText(value)) {
@@ -570,7 +740,7 @@ public final class ScopedClientRegistrationFactory {
         + property
         + " must be an absolute http(s) URL with a host and, if it names a port, one in 1-65535,"
         + " but was: "
-        + value
+        + UrlRedaction.redact(value)
         + ". Set camunda.security.authentication.oidc."
         + property
         + " (flat) or camunda.security.authentication.providers.oidc."
@@ -746,7 +916,7 @@ public final class ScopedClientRegistrationFactory {
                 + " default firewall lets through, and one the scoped chain's redirection endpoint"
                 + " matches once expanded — no empty or dot segment, semicolon, backslash,"
                 + " percent escape or control character, but was: "
-                + scopedRedirectUriPath);
+                + UrlRedaction.redact(scopedRedirectUriPath));
       }
       return scoped;
     }
@@ -762,7 +932,7 @@ public final class ScopedClientRegistrationFactory {
                 + " the browser, and the redirection endpoint derived from this value has to match"
                 + " that same expanded path,"
                 + " but was: "
-                + configured
+                + UrlRedaction.redact(configured)
                 + ". Spring expands {baseUrl}, {baseScheme}, {baseHost}, {basePort}, {basePath},"
                 + " {registrationId} and {action} per request — {basePort} and {basePath} include"
                 + " their own ':' and '/' — and expands nothing else."

@@ -1105,6 +1105,146 @@ class ScopedClientRegistrationFactoryTest {
    * Creates an {@link OidcConfiguration} with explicit endpoints, letting the caller replace one of
    * them.
    */
+  // post-logout-redirect-uri (ADR-0025)
+  //
+  // Validated here, with every other OIDC provider-block check, rather than where the value is
+  // consumed. ScopedWebappSecurityChainBuilder only composes an already-valid value against its
+  // chain.
+
+  private void validatePostLogoutRedirectUri(final String configured) {
+    factory.validateWithoutNetwork(
+        Map.of("oidc", explicitEndpointsWith(b -> b.postLogoutRedirectUri(configured))), null);
+  }
+
+  private org.assertj.core.api.AbstractThrowableAssert<?, ? extends Throwable>
+      assertPostLogoutRedirectUriRejected(final String configured) {
+    return assertThatThrownBy(() -> validatePostLogoutRedirectUri(configured))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("post-logout-redirect-uri");
+  }
+
+  @Test
+  void shouldAcceptAnUnsetPostLogoutRedirectUri() {
+    assertThatNoException().isThrownBy(() -> validatePostLogoutRedirectUri(null));
+  }
+
+  @ValueSource(
+      strings = {
+        "/goodbye",
+        "{baseUrl}/post-logout",
+        "https://accounts.example.com/logged-out",
+        "{baseScheme}://{baseHost}/logged-out",
+        "{baseScheme}://accounts.example.com/logged-out"
+      })
+  @ParameterizedTest
+  void shouldAcceptAUsablePostLogoutRedirectUri(final String configured) {
+    assertThatNoException().isThrownBy(() -> validatePostLogoutRedirectUri(configured));
+  }
+
+  /**
+   * A relative value, whatever placeholders it uses. RP-Initiated Logout requires {@code
+   * post_logout_redirect_uri} to be absolute, so the OP rejects the logout rather than the
+   * deployment failing to start.
+   *
+   * <p>{@code https://{basePath}/goodbye} is the one worth spelling out: it carries a scheme and
+   * every placeholder in it is supported, so only the host-position rule catches it — Spring
+   * expands it to {@code https:///goodbye}.
+   */
+  @ValueSource(
+      strings = {
+        "goodbye",
+        "{basePath}/goodbye",
+        "{baseHost}/logged-out",
+        "{registrationId}/goodbye",
+        "https://{basePath}/goodbye",
+        "https://{registrationId}/goodbye",
+        "https://",
+        "file:///logged-out"
+      })
+  @ParameterizedTest
+  void shouldRejectAPostLogoutRedirectUriThatIsNotAbsolute(final String configured) {
+    assertPostLogoutRedirectUriRejected(configured).hasMessageContaining("must be an absolute URL");
+  }
+
+  /**
+   * Spring expands the template with a fixed variable map, so an unsupported name throws from
+   * inside {@code buildAndExpand} on the logout request itself — a 500 on the one request a user
+   * cannot usefully retry.
+   */
+  @Test
+  void shouldRejectAPostLogoutRedirectUriWithAnUnsupportedTemplateVariable() {
+    assertPostLogoutRedirectUriRejected("{baseUrl}/{tenantId}")
+        .hasMessageContaining("unsupported template variable {tenantId}");
+  }
+
+  /**
+   * An unclosed brace is invisible to a closed-pair check, and {@code UriComponentsBuilder} does
+   * not reject it either — it expands to a literal and ships to the IdP as-is.
+   */
+  @ValueSource(strings = {"{baseUrl}{tenantId", "{baseUrl"})
+  @ParameterizedTest
+  void shouldRejectAPostLogoutRedirectUriWithAnUnclosedBrace(final String configured) {
+    assertPostLogoutRedirectUriRejected(configured).hasMessageContaining("unclosed '{'");
+  }
+
+  @Test
+  void shouldRejectAPostLogoutRedirectUriWithAnUnmatchedClosingBrace() {
+    assertPostLogoutRedirectUriRejected("https://accounts.example.com/a}")
+        .hasMessageContaining("unmatched '}'");
+  }
+
+  /** A literal host reaches the URI parse, which is what catches a host that cannot be parsed. */
+  @Test
+  void shouldRejectAPostLogoutRedirectUriWithAnUnparseableHost() {
+    assertPostLogoutRedirectUriRejected("https://ex ample.com/logout")
+        .hasMessageContaining("is not a valid URI");
+  }
+
+  /** RP-Initiated Logout 1.0 §2 gives the parameter no fragment, for any of the accepted forms. */
+  @ValueSource(strings = {"https://accounts.example.com/logged-out#section", "/goodbye#section"})
+  @ParameterizedTest
+  void shouldRejectAPostLogoutRedirectUriWithAFragment(final String configured) {
+    assertPostLogoutRedirectUriRejected(configured).hasMessageContaining("must not contain");
+  }
+
+  @Test
+  void shouldRejectAPostLogoutRedirectUriWithCrlf() {
+    assertPostLogoutRedirectUriRejected("https://accounts.example.com/x\r\nSet-Cookie: a=b")
+        .hasMessageContaining("must not contain CR or LF");
+  }
+
+  /**
+   * The value is validated even when the redirect is switched off, so a typo surfaces at startup
+   * rather than lying dormant until someone flips the flag back on.
+   */
+  @Test
+  void shouldRejectAnUnusablePostLogoutRedirectUriEvenWhenTheRedirectIsDisabled() {
+    assertThatThrownBy(
+            () ->
+                factory.validateWithoutNetwork(
+                    Map.of(
+                        "oidc",
+                        explicitEndpointsWith(
+                            b ->
+                                b.postLogoutRedirectUri("{tenantId}/goodbye")
+                                    .postLogoutRedirectEnabled(false))),
+                    null))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("unsupported template variable {tenantId}");
+  }
+
+  /**
+   * A rejected value reaches a startup exception that lands in application logs, so its credentials
+   * and query must not travel with it. The host and path survive, which is what locates the typo.
+   */
+  @Test
+  void shouldRedactCredentialsAndQueryFromARejectedPostLogoutRedirectUri() {
+    assertPostLogoutRedirectUriRejected("https://user:secret@accounts.example.com/{tenantId}?t=abc")
+        .hasMessageNotContaining("secret")
+        .hasMessageNotContaining("t=abc")
+        .hasMessageContaining("accounts.example.com");
+  }
+
   private static OidcConfiguration explicitEndpointsWith(
       final UnaryOperator<OidcConfiguration.Builder> override) {
     return override

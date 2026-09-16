@@ -159,7 +159,10 @@ class ScopedWebappSecurityChainBuilderTest {
         .withMessageContaining("must start with '/'");
   }
 
-  // configured post-logout-redirect-uri: per-registration override (ADR-0025)
+  // configured post-logout-redirect-uri: composition (ADR-0025)
+  //
+  // Only the resolution of an already-valid value lives here. Rejecting a malformed one is
+  // ScopedClientRegistrationFactory's job now, and ScopedClientRegistrationFactoryTest covers it.
 
   private static String resolvedPostLogoutRedirectUri(
       final String prefix, final OidcConfiguration.Builder oidc) {
@@ -205,45 +208,6 @@ class ScopedWebappSecurityChainBuilderTest {
   }
 
   /**
-   * A template that expands to a relative value is rejected, even though every placeholder in it is
-   * supported. RP-Initiated Logout requires {@code post_logout_redirect_uri} to be absolute, and
-   * Spring expands this one to {@code /physical-tenants/t1/goodbye} — so without this check the IdP
-   * rejects the logout at runtime rather than the deployment failing at startup.
-   */
-  @Test
-  void configuredTemplateThatExpandsToARelativeValueThrows() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(() -> resolvedPostLogoutRedirectUri("", configuredUri("{basePath}/goodbye")))
-        .withMessageContaining("must be an absolute URL");
-  }
-
-  /** Same for a placeholder that carries no scheme of its own. */
-  @Test
-  void configuredTemplateWithHostButNoSchemeThrows() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(() -> resolvedPostLogoutRedirectUri("", configuredUri("{baseHost}/logged-out")))
-        .withMessageContaining("must be an absolute URL");
-  }
-
-  /** And for a supported placeholder that is not location-bearing at all. */
-  @Test
-  void configuredTemplateStartingWithANonLocationPlaceholderThrows() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(
-            () -> resolvedPostLogoutRedirectUri("", configuredUri("{registrationId}/goodbye")))
-        .withMessageContaining("must be an absolute URL");
-  }
-
-  /** A template spelling the scheme out explicitly still resolves absolute, so it is accepted. */
-  @Test
-  void configuredTemplateWithExplicitSchemeIsAccepted() {
-    assertThat(
-            resolvedPostLogoutRedirectUri(
-                SCOPE_PREFIX, configuredUri("{baseScheme}://{baseHost}/logged-out")))
-        .isEqualTo("{baseScheme}://{baseHost}/logged-out");
-  }
-
-  /**
    * A template is passed through too, so a host can opt out of the prefix while keeping baseUrl.
    */
   @Test
@@ -261,190 +225,6 @@ class ScopedWebappSecurityChainBuilderTest {
                 configuredUri("https://accounts.example.com/logged-out")
                     .postLogoutRedirectEnabled(false)))
         .isEmpty();
-  }
-
-  /** A bare relative token is not a usable post_logout_redirect_uri at any OP; fail at startup. */
-  @Test
-  void schemelessRelativeConfiguredUriThrows() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(() -> resolvedPostLogoutRedirectUri("", configuredUri("goodbye")))
-        .withMessageContaining("must be an absolute URL");
-  }
-
-  /**
-   * Spring expands the template against a fixed six-variable map, so an unrecognised placeholder
-   * throws from inside {@code buildAndExpand} on the logout request itself — a 500 on the one
-   * request a user cannot usefully retry. Catch it at startup instead.
-   */
-  @Test
-  void configuredUriWithUnsupportedTemplateVariableThrows() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(() -> resolvedPostLogoutRedirectUri("", configuredUri("{tenantId}/goodbye")))
-        .withMessageContaining("unsupported template variable {tenantId}");
-  }
-
-  /**
-   * An unclosed brace is the case a closed-pair check cannot see. {@code UriComponentsBuilder} does
-   * not reject it either: <code>&#123;baseUrl&#125;&#123;tenantId</code> expands to the literal
-   * <code>https://host&#123;tenantId</code>, verified empirically — so without this the malformed
-   * URL reaches the IdP with no startup failure at all, the opposite of what this validation is
-   * for.
-   */
-  @Test
-  void configuredUriWithUnclosedBraceThrows() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(() -> resolvedPostLogoutRedirectUri("", configuredUri("{baseUrl}{tenantId")))
-        .withMessageContaining("unclosed '{'");
-  }
-
-  /** A lone unclosed placeholder passes startsWith("{") but expands to itself; reject it too. */
-  @Test
-  void configuredUriThatIsOnlyAnUnclosedBraceThrows() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(() -> resolvedPostLogoutRedirectUri("", configuredUri("{baseUrl")))
-        .withMessageContaining("unclosed '{'");
-  }
-
-  /** A stray closing brace is equally unexpandable. */
-  @Test
-  void configuredUriWithUnmatchedClosingBraceThrows() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(
-            () -> resolvedPostLogoutRedirectUri("", configuredUri("https://x.example.com/a}")))
-        .withMessageContaining("unmatched '}'");
-  }
-
-  /** {@code "://"} is only a lexical hint: this one carries no host position at all. */
-  @Test
-  void configuredAbsoluteUriWithAnEmptyHostThrows() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(() -> resolvedPostLogoutRedirectUri("", configuredUri("https://")))
-        .withMessageContaining("must be an absolute URL");
-  }
-
-  /** Same for a scheme whose authority is empty, even though the value parses as a URI. */
-  @Test
-  void configuredAbsoluteUriWithoutHostThrows() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(() -> resolvedPostLogoutRedirectUri("", configuredUri("file:///logged-out")))
-        .withMessageContaining("must be an absolute URL");
-  }
-
-  /**
-   * A literal host clears the host-position rule, so the value reaches the URI parse — which is
-   * what catches a host that cannot be parsed at all.
-   */
-  @Test
-  void configuredAbsoluteUriWithAnUnparseableHostThrows() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(
-            () -> resolvedPostLogoutRedirectUri("", configuredUri("https://ex ample.com/logout")))
-        .withMessageContaining("is not a valid URI");
-  }
-
-  /** An absolute URL whose host only exists after expansion must still be accepted. */
-  @Test
-  void configuredAbsoluteUriWithTemplateVariableHostIsAccepted() {
-    assertThat(resolvedPostLogoutRedirectUri("", configuredUri("https://{baseHost}/logged-out")))
-        .isEqualTo("https://{baseHost}/logged-out");
-  }
-
-  /**
-   * A value is validated even when the redirect is switched off, so a typo surfaces at startup
-   * rather than lying dormant until someone flips the flag back on.
-   */
-  @Test
-  void configuredUriIsValidatedEvenWhenTheRedirectIsDisabled() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(
-            () ->
-                resolvedPostLogoutRedirectUri(
-                    "", configuredUri("{tenantId}/goodbye").postLogoutRedirectEnabled(false)))
-        .withMessageContaining("unsupported template variable {tenantId}");
-  }
-
-  /**
-   * A scheme is not enough: the authority has to be able to hold a host. {@code basePath} expands
-   * to a path, so this leaves {@code https:///goodbye} with no host — and the placeholder-free
-   * parse in {@link ScopedWebappSecurityChainBuilder} is skipped for any value carrying a brace, so
-   * nothing else would catch it.
-   */
-  @Test
-  void configuredTemplateWithAPathPlaceholderInTheHostPositionThrows() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(
-            () -> resolvedPostLogoutRedirectUri("", configuredUri("https://{basePath}/goodbye")))
-        .withMessageContaining("must be an absolute URL");
-  }
-
-  /** Same for any other placeholder that cannot name a host. */
-  @Test
-  void configuredTemplateWithARegistrationIdInTheHostPositionThrows() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(
-            () ->
-                resolvedPostLogoutRedirectUri(
-                    "", configuredUri("https://{registrationId}/goodbye")))
-        .withMessageContaining("must be an absolute URL");
-  }
-
-  /** A literal host alongside a templated scheme is fine — the host position holds a real host. */
-  @Test
-  void configuredTemplateWithTemplatedSchemeAndLiteralHostIsAccepted() {
-    assertThat(
-            resolvedPostLogoutRedirectUri(
-                "", configuredUri("{baseScheme}://accounts.example.com/logged-out")))
-        .isEqualTo("{baseScheme}://accounts.example.com/logged-out");
-  }
-
-  /**
-   * RP-Initiated Logout 1.0 §2 gives {@code post_logout_redirect_uri} no fragment, so the OP has no
-   * reason to accept one. Rejected for every form, not just the absolute one.
-   */
-  @Test
-  void configuredUriWithAFragmentThrows() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(
-            () ->
-                resolvedPostLogoutRedirectUri(
-                    "", configuredUri("https://accounts.example.com/logged-out#section")))
-        .withMessageContaining("must not contain a fragment");
-  }
-
-  /** The path form is held to the same rule. */
-  @Test
-  void configuredPathWithAFragmentThrows() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(() -> resolvedPostLogoutRedirectUri("", configuredUri("/goodbye#section")))
-        .withMessageContaining("must not contain a fragment");
-  }
-
-  /**
-   * A rejected value reaches an exception message that normally lands in application logs, so its
-   * credentials and query must not travel with it. The host and path survive, which is what locates
-   * the mistake.
-   */
-  @Test
-  void rejectionMessageRedactsUserInfoAndQuery() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(
-            () ->
-                resolvedPostLogoutRedirectUri(
-                    "", configuredUri("https://user:secret@accounts.example.com/{tenantId}?t=abc")))
-        .withMessageNotContaining("secret")
-        .withMessageNotContaining("t=abc")
-        .withMessageContaining("accounts.example.com");
-  }
-
-  /** The value lands in a query parameter on a 302 Location header; CR/LF must not survive. */
-  @Test
-  void configuredUriWithCrlfThrows() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(
-            () ->
-                resolvedPostLogoutRedirectUri(
-                    "", configuredUri("https://accounts.example.com/x\r\nSet-Cookie: a=b")))
-        .withMessageContaining("must not contain CR or LF");
   }
 
   @Test

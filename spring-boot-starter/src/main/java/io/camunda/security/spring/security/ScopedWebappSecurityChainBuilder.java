@@ -32,19 +32,16 @@ import io.camunda.security.spring.oidc.LazyClientRegistrationRepository;
 import io.camunda.security.spring.oidc.OidcRedirectionEndpoint;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
+import io.camunda.security.spring.oidc.UrlRedaction;
 import io.camunda.security.spring.scope.BasePaths;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import io.camunda.security.spring.spi.OidcAuthenticationEntryPoint;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
-import java.util.stream.IntStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -94,14 +91,6 @@ import org.springframework.web.cors.CorsConfigurationSource;
 public final class ScopedWebappSecurityChainBuilder {
 
   private static final Logger LOG = LoggerFactory.getLogger(ScopedWebappSecurityChainBuilder.class);
-
-  /**
-   * The URI template variables {@code OidcClientInitiatedLogoutSuccessHandler} populates when it
-   * expands {@code post_logout_redirect_uri}. Anything else throws from {@code buildAndExpand} at
-   * logout time, so a configured value naming one is rejected at startup instead.
-   */
-  private static final Set<String> SUPPORTED_TEMPLATE_VARIABLES =
-      Set.of("baseUrl", "baseScheme", "baseHost", "basePort", "basePath", "registrationId");
 
   private final AuthFailureHandler authFailureHandler;
   private final CamundaSecurityLibraryProperties properties;
@@ -583,6 +572,16 @@ public final class ScopedWebappSecurityChainBuilder {
   /**
    * One provider's {@code post_logout_redirect_uri} template, or {@code ""} to send none.
    *
+   * <p>Composition only. The value's shape was already vetted at startup by {@link
+   * ScopedClientRegistrationFactory}, which validates every OIDC provider block in one place
+   * (ADR-0025), so this decides where an already-legal value resolves, not whether it is legal.
+   *
+   * <p>A value starting with {@code /} is a path and resolves against this chain just as the host's
+   * own route does, keeping per-scope resolution. Anything else is a URI template handed to Spring
+   * untouched, and deliberately does <em>not</em> pick up the chain's base path: a deployment
+   * served under a per-cluster prefix needs a URL its IdP can have registered, and the prefix is
+   * exactly what makes the composed one unregisterable at an OP like Auth0.
+   *
    * <p>{@code post-logout-redirect-enabled=false} wins over a configured URI. An operator with both
    * set is saying "this IdP rejects the parameter", which is the more specific statement; sending
    * the URI anyway would resurrect the very rejection the flag exists to avoid. It is logged,
@@ -595,18 +594,11 @@ public final class ScopedWebappSecurityChainBuilder {
       final String prefix,
       final String composedDefault) {
     final var configured = oidc.getPostLogoutRedirectUri();
-    // Validate before consulting the flag, so a typo is caught at startup whether or not the
-    // redirect happens to be switched off today — otherwise it lies dormant until someone switches
-    // it back on. It also means the value below is known clean before it reaches a log line.
-    final var validated =
-        StringUtils.hasText(configured)
-            ? validatedPostLogoutRedirectUri(registrationId, configured.trim(), prefix)
-            : null;
+    final var value = StringUtils.hasText(configured) ? configured.trim() : null;
     if (!oidc.isPostLogoutRedirectEnabled()) {
-      if (validated != null) {
+      if (value != null) {
         // The registrationId locates the offending configuration on its own, so the value itself
-        // adds nothing here and is left out: it is operator-supplied and may carry a query string
-        // with tokens or other data that must not reach a log at any level.
+        // adds nothing here and is left out rather than redacted.
         LOG.warn(
             "OIDC registration '{}' sets both post-logout-redirect-uri and "
                 + "post-logout-redirect-enabled=false; the configured URI is ignored and no "
@@ -616,199 +608,10 @@ public final class ScopedWebappSecurityChainBuilder {
       }
       return "";
     }
-    return validated != null ? validated : composedDefault;
-  }
-
-  /**
-   * Turns a configured {@code post-logout-redirect-uri} into the template sent to Spring, rejecting
-   * values that cannot work.
-   *
-   * <p>A value starting with {@code /} is a path and is resolved against the chain just as the
-   * host's own route is, so it keeps per-scope resolution. Any other value is a URI template handed
-   * to Spring untouched and deliberately does <em>not</em> pick up the chain's base path. That is
-   * the point of the property: a deployment served under a per-cluster prefix needs a URL its IdP
-   * can have registered, and the prefix is exactly what makes the composed one unregisterable at an
-   * OP like Auth0.
-   *
-   * <p>Everything here fails at startup rather than at logout. The placeholder check is the reason
-   * it is worth the code: Spring expands the template with a fixed six-entry variable map, so an
-   * unrecognised {@code {placeholder}} throws from deep inside {@code buildAndExpand} on the logout
-   * request itself — a 500 on the one request a user cannot usefully retry, long after the typo
-   * shipped.
-   */
-  private static String validatedPostLogoutRedirectUri(
-      final String registrationId, final String configured, final String prefix) {
-    if (configured.indexOf('\r') >= 0 || configured.indexOf('\n') >= 0) {
-      throw templateException(registrationId, configured, "must not contain CR or LF characters");
+    if (value == null) {
+      return composedDefault;
     }
-    // OpenID Connect RP-Initiated Logout 1.0 §2: post_logout_redirect_uri carries no fragment. The
-    // OP has no reason to accept one, so a value holding it fails here rather than at logout.
-    if (configured.indexOf('#') >= 0) {
-      throw templateException(registrationId, configured, "must not contain a fragment ('#')");
-    }
-    rejectMalformedTemplate(registrationId, configured);
-    if (configured.startsWith("/")) {
-      return "{baseUrl}" + prefix + configured;
-    }
-    if (resolvesToAnAbsoluteUrl(configured)) {
-      rejectMalformedAbsoluteUri(registrationId, configured);
-      return configured;
-    }
-    throw templateException(
-        registrationId,
-        configured,
-        "must be an absolute URL, a path starting with '/', or a template that still resolves to an"
-            + " absolute URL (starting with {baseUrl}, or carrying an explicit scheme and a host,"
-            + " such as {baseScheme}://{baseHost})");
-  }
-
-  /**
-   * Whether a non-path value still yields an absolute URL once Spring expands it.
-   *
-   * <p>A leading {@code {baseUrl}} does by definition. Otherwise the value has to carry a scheme,
-   * <em>and</em> the authority between {@code "://"} and the next delimiter has to be something
-   * that can actually be a host: either {@code {baseHost}} or a literal with no placeholder in it.
-   *
-   * <p>Checking the scheme alone is not enough, which is the trap here. {@code
-   * https://{basePath}/goodbye} carries one, and every placeholder in it is supported, so the
-   * cheaper checks pass — but {@code basePath} expands to a path, leaving {@code https:///goodbye}
-   * with no host at all. {@link #rejectMalformedAbsoluteUri} cannot catch it either, because it
-   * skips parsing for any value holding a placeholder.
-   */
-  private static boolean resolvesToAnAbsoluteUrl(final String configured) {
-    if (configured.startsWith("{baseUrl}")) {
-      return true;
-    }
-    final var schemeEnd = configured.indexOf("://");
-    if (schemeEnd < 0) {
-      return false;
-    }
-    final var authority = configured.substring(schemeEnd + 3);
-    var hostEnd = authority.length();
-    for (final char delimiter : new char[] {'/', ':', '?', '#'}) {
-      final var at = authority.indexOf(delimiter);
-      if (at >= 0 && at < hostEnd) {
-        hostEnd = at;
-      }
-    }
-    final var host = authority.substring(0, hostEnd);
-    return "{baseHost}".equals(host) || (!host.isEmpty() && host.indexOf('{') < 0);
-  }
-
-  /**
-   * Rejects a template Spring cannot expand: an unbalanced brace, or a placeholder outside the
-   * fixed set its post-logout expansion populates.
-   *
-   * <p>Scans rather than regex-matches because a regex for a brace-delimited name only sees
-   * <em>closed</em> pairs, and the open ones are the dangerous case. {@code UriComponentsBuilder}
-   * does not reject an unclosed brace: <code>&#123;baseUrl&#125;&#123;tenantId</code> expands to
-   * the literal <code>https://host&#123;tenantId</code> and is sent to the IdP exactly like that. A
-   * closed-pair check would find only {@code baseUrl}, pass it, and ship the malformed URL.
-   */
-  private static void rejectMalformedTemplate(
-      final String registrationId, final String configured) {
-    int openAt = -1;
-    for (int i = 0; i < configured.length(); i++) {
-      final char c = configured.charAt(i);
-      if (c == '{') {
-        if (openAt >= 0) {
-          throw templateException(registrationId, configured, "contains a nested '{'");
-        }
-        openAt = i;
-      } else if (c == '}') {
-        if (openAt < 0) {
-          throw templateException(registrationId, configured, "contains an unmatched '}'");
-        }
-        final var name = configured.substring(openAt + 1, i);
-        if (!SUPPORTED_TEMPLATE_VARIABLES.contains(name)) {
-          throw templateException(
-              registrationId,
-              configured,
-              "uses unsupported template variable {"
-                  + name
-                  + "}; supported variables are "
-                  + SUPPORTED_TEMPLATE_VARIABLES);
-        }
-        openAt = -1;
-      }
-    }
-    if (openAt >= 0) {
-      throw templateException(registrationId, configured, "contains an unclosed '{'");
-    }
-  }
-
-  /**
-   * Rejects an absolute form that is not actually a usable URL.
-   *
-   * <p>A {@code "://"} substring is only lexical: {@code "https://"} carries no host, expands to
-   * itself, and is rejected by the OP rather than at startup. Parsing is skipped for a value
-   * holding a placeholder, since braces are not legal URI characters and the host may only exist
-   * after expansion — {@link #rejectMalformedTemplate} has already vetted those.
-   */
-  private static void rejectMalformedAbsoluteUri(
-      final String registrationId, final String configured) {
-    if (configured.indexOf('{') >= 0) {
-      return;
-    }
-    final URI uri;
-    try {
-      uri = new URI(configured);
-    } catch (final URISyntaxException e) {
-      throw templateException(registrationId, configured, "is not a valid URI: " + e.getReason());
-    }
-    if (!uri.isAbsolute() || !StringUtils.hasText(uri.getHost())) {
-      throw templateException(registrationId, configured, "is missing a scheme or a host");
-    }
-  }
-
-  /**
-   * The URI template with its user-info, query string and fragment removed.
-   *
-   * <p>Used wherever the configured value reaches a log or an exception message. It is
-   * operator-supplied, and both {@code https://user:password@host/logout} and a query string can
-   * carry credentials or tokens, which must not be emitted at any level. Scheme, host and path
-   * survive, which is what identifies the target and locates a typo.
-   *
-   * <p>String-trimmed rather than URI-parsed because the value may hold unexpanded placeholders,
-   * which are not legal URI characters, and because this also runs on values that were rejected
-   * precisely for being unparseable.
-   */
-  private static String redacted(final String uri) {
-    final var schemeEnd = uri.indexOf("://");
-    var result = uri;
-    if (schemeEnd >= 0) {
-      final var authorityStart = schemeEnd + 3;
-      final var authorityEnd = endOfAuthority(uri, authorityStart);
-      final var at = uri.lastIndexOf('@', authorityEnd - 1);
-      if (at >= authorityStart) {
-        result = uri.substring(0, authorityStart) + "…@" + uri.substring(at + 1);
-      }
-    }
-    final var cut =
-        IntStream.of(result.indexOf('?'), result.indexOf('#')).filter(i -> i >= 0).min().orElse(-1);
-    return cut < 0 ? result : result.substring(0, cut) + "…";
-  }
-
-  private static int endOfAuthority(final String uri, final int from) {
-    var end = uri.length();
-    for (final char delimiter : new char[] {'/', '?', '#'}) {
-      final var at = uri.indexOf(delimiter, from);
-      if (at >= 0 && at < end) {
-        end = at;
-      }
-    }
-    return end;
-  }
-
-  private static IllegalArgumentException templateException(
-      final String registrationId, final String configured, final String problem) {
-    return new IllegalArgumentException(
-        "camunda.security.authentication.oidc.post-logout-redirect-uri for registration '"
-            + registrationId
-            + "' "
-            + problem
-            + ", but was: "
-            + redacted(configured));
+    return value.startsWith("/") ? "{baseUrl}" + prefix + value : value;
   }
 
   /** The host-declared route, composed against the chain, used when nothing is configured. */
@@ -858,7 +661,7 @@ public final class ScopedWebappSecurityChainBuilder {
               LOG.debug(
                   "OIDC registration '{}' will send post_logout_redirect_uri '{}'.",
                   registrationId,
-                  redacted(uri));
+                  UrlRedaction.redact(uri));
             }
           });
     }
