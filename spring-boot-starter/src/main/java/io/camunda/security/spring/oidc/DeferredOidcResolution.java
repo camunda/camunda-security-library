@@ -95,6 +95,24 @@ public final class DeferredOidcResolution {
   }
 
   /**
+   * The rate-limit state of a subject. A subject the state holds already needs no lock, so a
+   * failure of a known subject costs one map lookup. A subject the state does not hold yet enters
+   * it under a lock, because the limit holds only while one thread at a time adds an entry.
+   */
+  private static AtomicLong trackedSubject(final String subject, final long now) {
+    final var tracked = LAST_WARN_NANOS.get(subject);
+    if (tracked != null) {
+      return tracked;
+    }
+    synchronized (LAST_WARN_NANOS) {
+      removeIdleSubjects(now);
+      dropLeastRecentSubjects();
+      return LAST_WARN_NANOS.computeIfAbsent(
+          subject, key -> new AtomicLong(now - WARN_INTERVAL_NANOS - 1));
+    }
+  }
+
+  /**
    * Drops each subject whose last warning is older than the interval. Such a subject permits a
    * warning at once, so its entry holds no information.
    */
@@ -128,13 +146,7 @@ public final class DeferredOidcResolution {
 
   private static boolean shouldWarn(final String subject) {
     final long now = System.nanoTime();
-    if (LAST_WARN_NANOS.size() >= MAX_TRACKED_SUBJECTS && !LAST_WARN_NANOS.containsKey(subject)) {
-      removeIdleSubjects(now);
-      dropLeastRecentSubjects();
-    }
-    final var lastWarn =
-        LAST_WARN_NANOS.computeIfAbsent(
-            subject, key -> new AtomicLong(now - WARN_INTERVAL_NANOS - 1));
+    final var lastWarn = trackedSubject(subject, now);
     final long previous = lastWarn.get();
     return now - previous >= WARN_INTERVAL_NANOS && lastWarn.compareAndSet(previous, now);
   }

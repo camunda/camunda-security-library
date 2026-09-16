@@ -26,7 +26,6 @@ import org.springframework.security.oauth2.client.web.HttpSessionOAuth2Authorize
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.SupplierJwtDecoder;
 
 /**
  * Provides the client-registration-dependent OIDC beans ({@link JwtDecoder}, {@link
@@ -70,7 +69,7 @@ public class OidcWebappClientBeansConfiguration {
 
   /**
    * The default {@link JwtDecoder} of the OIDC chains. To read the repository is to resolve each
-   * registration, which OIDC discovery resolves. {@link SupplierJwtDecoder} therefore builds the
+   * registration, which OIDC discovery resolves. {@link DeferredJwtDecoder} therefore builds the
    * decoder at the first token decode, and not while the application starts, because an identity
    * provider it cannot reach must not stop the application context. The issuer requirement that the
    * issuer-aware decoder makes on a deployment with several providers is checked against the
@@ -89,7 +88,7 @@ public class OidcWebappClientBeansConfiguration {
     if (clientRegistrationRepository instanceof LazyClientRegistrationRepository) {
       oidcAccessTokenDecoderFactory.validateProvidersHaveIssuer(providers);
     }
-    return new SupplierJwtDecoder(
+    return new DeferredJwtDecoder(
         () ->
             DeferredOidcResolution.resolve(
                 decoderSubject(clientRegistrationRepository, providers),
