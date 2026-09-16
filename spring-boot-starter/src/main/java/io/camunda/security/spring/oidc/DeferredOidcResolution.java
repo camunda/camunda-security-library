@@ -19,16 +19,18 @@ import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
 
 /**
- * Runs an OIDC resolution step that was deferred out of application startup and reports its
- * failures at a bounded rate.
+ * Runs an OIDC resolution step that the application makes after it starts, and limits the rate at
+ * which failures of that step reach the log.
  *
- * <p>Deferred resolution happens on a request thread, so an unreachable IdP fails once per request
- * rather than once per boot. Logging every failure would let a single unreachable issuer fill the
- * log at request rate, so the warning is emitted at most once per minute per subject and the rest
- * are logged at debug level. The original exception is always rethrown unchanged, so the caller's
- * error handling stays what it was before resolution was deferred: Spring Security reports a
- * provider it cannot reach as a server error rather than as a rejected credential, on the
- * resource-server chain as much as on the login flow.
+ * <p>Such a step runs on a request thread. An identity provider the application cannot reach
+ * therefore causes one failure per request, and not one failure per start. A log entry for each
+ * failure lets one unreachable issuer fill the log at the rate of the requests. This class
+ * therefore writes one warning per minute for each subject, and writes the other failures at debug
+ * level.
+ *
+ * <p>The method throws the original exception again, and does not change it. Spring Security
+ * therefore reports a provider it cannot reach as a server error, and not as a credential it
+ * refuses. That holds for the resource-server chain and for the login flow.
  */
 public final class DeferredOidcResolution {
 
@@ -39,10 +41,12 @@ public final class DeferredOidcResolution {
   private DeferredOidcResolution() {}
 
   /**
-   * Invokes {@code resolution}, logging and rethrowing any {@link RuntimeException} it throws.
+   * Calls {@code resolution}. If it throws a {@link RuntimeException}, the method writes a log
+   * entry and throws the exception again.
    *
-   * @param subject what is being resolved, used as the log message's subject and as the rate-limit
-   *     key (e.g. {@code client registration 'camunda' (issuer https://idp/realms/camunda)})
+   * @param subject what the step resolves. The log message names it, and the rate limit counts per
+   *     subject (for example {@code client registration 'camunda' (issuer
+   *     https://idp/realms/camunda)}).
    */
   public static <T> T resolve(final String subject, final Supplier<T> resolution) {
     try {
@@ -50,8 +54,9 @@ public final class DeferredOidcResolution {
     } catch (final RuntimeException failed) {
       if (shouldWarn(subject)) {
         LOG.warn(
-            "Failed to resolve {}. This request is rejected; the next one retries, so the"
-                + " deployment recovers on its own once the identity provider answers again.",
+            "Failed to resolve {}. This request is rejected. The next request makes a new"
+                + " attempt, so the deployment recovers without a restart after the identity"
+                + " provider answers again.",
             subject,
             failed);
       } else {
@@ -62,9 +67,9 @@ public final class DeferredOidcResolution {
   }
 
   /**
-   * Names a single provider for use in a resolution subject, as {@code 'camunda' (issuer
-   * https://idp/realms/camunda)}. The issuer is included because it is the endpoint the failed
-   * resolution could not reach.
+   * Names one provider for a resolution subject, in the form {@code 'camunda' (issuer
+   * https://idp/realms/camunda)}. The name holds the issuer, because the issuer is the endpoint a
+   * failed resolution could not reach.
    */
   public static String describeProvider(
       final String registrationId, final OidcConfiguration config) {
@@ -76,7 +81,7 @@ public final class DeferredOidcResolution {
   }
 
   /**
-   * Names every provider a resolution covers, see {@link #describeProvider(String,
+   * Names each provider that one resolution covers, see {@link #describeProvider(String,
    * OidcConfiguration)}.
    */
   public static String describeProviders(final Map<String, OidcConfiguration> providers) {

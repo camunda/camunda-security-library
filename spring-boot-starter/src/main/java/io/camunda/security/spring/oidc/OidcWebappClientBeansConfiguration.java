@@ -69,13 +69,14 @@ public class OidcWebappClientBeansConfiguration {
   }
 
   /**
-   * Default {@link JwtDecoder} for the OIDC chains. Enumerating the repository resolves every
-   * registration and so performs OIDC discovery, which is why the decoder is built on first token
-   * decode rather than at startup: an unreachable identity provider must not abort the application
-   * context. {@link SupplierJwtDecoder} memoizes the decoder on success only, so a failed attempt
-   * is retried on the next request instead of requiring a restart. The issuer requirement the
-   * issuer-aware decoder places on a multi-provider deployment is checked against the configuration
-   * here, so that misconfiguration still fails at startup.
+   * The default {@link JwtDecoder} of the OIDC chains. To read the repository is to resolve each
+   * registration, which OIDC discovery resolves. The bean therefore builds the decoder at the first
+   * token decode, and not while the application starts, because an identity provider it cannot
+   * reach must not stop the application context. {@link SupplierJwtDecoder} keeps the decoder after
+   * a successful build only. The next request therefore makes a new attempt after a failed one, and
+   * the deployment needs no restart. The issuer requirement that the issuer-aware decoder makes on
+   * a deployment with several providers is checked against the configuration here, so that such a
+   * configuration error still stops the start.
    */
   @Bean
   @ConditionalOnMissingBean

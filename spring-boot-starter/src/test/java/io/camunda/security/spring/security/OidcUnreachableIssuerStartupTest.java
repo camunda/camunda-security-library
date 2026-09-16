@@ -46,14 +46,13 @@ import org.springframework.session.MapSessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
- * Regression coverage for camunda/camunda#61967: an OIDC deployment whose identity provider is
- * unreachable must still start. Discovery used to run while the application context came up, so an
- * identity provider that was down — or merely slower to start than Camunda — aborted the context
- * and left the deployment restart-looping until the provider came back.
+ * An OIDC deployment starts, also if it cannot reach its identity provider. A provider that is
+ * down, or that starts more slowly than Camunda does, is a condition a deployment meets, and not a
+ * reason to refuse to start.
  *
- * <p>The requests that need the provider still fail while it is down. What changed is the blast
- * radius: the process stays up, everything not needing that provider keeps working, and recovery
- * needs no restart.
+ * <p>A request that needs the provider still fails while the provider is down. The tests hold what
+ * such a failure must cost: the process stays up, each request that needs no such provider
+ * succeeds, and the deployment recovers without a restart.
  */
 class OidcUnreachableIssuerStartupTest {
 

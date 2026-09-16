@@ -122,19 +122,14 @@ public class OidcAccessTokenDecoderFactory {
   }
 
   /**
-   * Validates that all provided {@link ClientRegistration} entries have a configured issuer URI.
+   * Makes the issuer requirement of {@link #createIssuerAwareAccessTokenDecoder} on the provider
+   * configuration, and not on resolved registrations. A caller that resolves its registrations on
+   * first use can therefore reject a deployment that configures several providers and sets no
+   * issuer-uri for one of them. The failure then occurs at the configuration, and not at the first
+   * token decode.
    *
-   * @param clientRegistrations the list of client registrations to validate
-   * @throws IllegalArgumentException if any registration is missing a valid issuer URI
-   */
-  /**
-   * Runs the issuer requirement that {@link #createIssuerAwareAccessTokenDecoder} enforces on
-   * resolved registrations against the provider configuration instead. A caller that resolves its
-   * registrations lazily can then reject a multi-provider deployment with an unset issuer-uri where
-   * the misconfiguration is, rather than on the first token decode.
-   *
-   * @throws IllegalArgumentException if more than one provider is configured and any of them sets
-   *     no issuer-uri
+   * @throws IllegalArgumentException if the configuration holds more than one provider and one of
+   *     them sets no issuer-uri
    */
   public void validateProvidersHaveIssuer(final Map<String, OidcConfiguration> providersById) {
     if (providersById.size() < 2) {
@@ -151,6 +146,12 @@ public class OidcAccessTokenDecoderFactory {
     }
   }
 
+  /**
+   * Validates that all provided {@link ClientRegistration} entries have a configured issuer URI.
+   *
+   * @param clientRegistrations the list of client registrations to validate
+   * @throws IllegalArgumentException if any registration is missing a valid issuer URI
+   */
   protected void validateClientRegistrationsHaveIssuer(
       final List<ClientRegistration> clientRegistrations) {
     final var invalidProviders =

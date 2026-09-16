@@ -73,18 +73,19 @@ public final class ScopedOidcClaimsProviderFactory {
    * providers. A null augmentation config is treated as disabled; in that case (or when not
    * enabled) returns a {@link NoopOidcClaimsProvider}.
    *
-   * <p>The issuer→userInfoUri map is derived from resolved {@link ClientRegistration}s and so
-   * requires OIDC discovery; the returned provider builds it on first claims lookup rather than
-   * here, keeping chain construction free of network calls (see {@link
-   * DeferredOidcClaimsProvider}). A scope whose providers expose no userInfoUri at all therefore
-   * fails on its first claims lookup instead of at build time.
+   * <p>The map from an issuer to a userInfoUri comes from resolved {@link ClientRegistration}s,
+   * which OIDC discovery resolves. The provider that this method returns builds the map at the
+   * first claims lookup, and not here, so that the application makes no network request while it
+   * builds the chain. See {@link DeferredOidcClaimsProvider}. A scope whose providers give no
+   * userInfoUri at all therefore fails at its first claims lookup, and not while the application
+   * builds the provider.
    *
    * @param authentication the per-scope authentication configuration; must not be {@code null}
    * @return an {@link OidcClaimsProvider} appropriate for the given config
-   * @throws IllegalStateException if augmentation is enabled but the config declares no OIDC
-   *     provider, or a provider block is incomplete — config mismatches that would leave the scope
-   *     silently un-augmented (the provider-less case mirrors {@link ScopedJwtDecoderFactory},
-   *     which also rejects a provider-less OIDC scope)
+   * @throws IllegalStateException if augmentation is enabled and the configuration declares no OIDC
+   *     provider, or a provider block is incomplete. Each of these configurations leaves the scope
+   *     without augmentation and reports nothing. For a scope without a provider, this factory
+   *     behaves as {@link ScopedJwtDecoderFactory}, which also refuses such a scope.
    */
   public OidcClaimsProvider buildClaimsProvider(final AuthenticationConfiguration authentication) {
     Objects.requireNonNull(authentication, "authentication must not be null");

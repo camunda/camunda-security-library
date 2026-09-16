@@ -14,13 +14,15 @@ import java.util.function.Supplier;
 import org.springframework.util.function.SingletonSupplier;
 
 /**
- * An {@link OidcClaimsProvider} that builds its delegate on first use.
+ * An {@link OidcClaimsProvider} that builds its delegate at the first claims lookup.
  *
- * <p>The UserInfo augmenting provider needs the per-issuer UserInfo URIs, which come from resolved
- * {@link org.springframework.security.oauth2.client.registration.ClientRegistration}s and so
- * require OIDC discovery. Deferring construction keeps that discovery off the startup path; {@link
- * SingletonSupplier} memoizes the delegate on success only, so a failed attempt is retried on the
- * next claims lookup.
+ * <p>The provider that augments claims from UserInfo needs the UserInfo URI of each issuer. Those
+ * URIs come from resolved {@link
+ * org.springframework.security.oauth2.client.registration.ClientRegistration}s, which OIDC
+ * discovery resolves. The application must not make that request while it starts, because an
+ * identity provider it cannot reach then stops the start. {@link SingletonSupplier} keeps the
+ * delegate after a successful build only. The next claims lookup therefore makes a new attempt
+ * after a failed one.
  */
 public final class DeferredOidcClaimsProvider implements OidcClaimsProvider {
 
@@ -28,8 +30,8 @@ public final class DeferredOidcClaimsProvider implements OidcClaimsProvider {
   private final String subject;
 
   /**
-   * @param subject what the delegate needs resolved, used for failure logging (see {@link
-   *     DeferredOidcResolution#resolve(String, Supplier)})
+   * @param subject what the delegate resolves. A failure log names it, see {@link
+   *     DeferredOidcResolution#resolve(String, Supplier)}.
    */
   public DeferredOidcClaimsProvider(
       final String subject, final Supplier<OidcClaimsProvider> delegate) {

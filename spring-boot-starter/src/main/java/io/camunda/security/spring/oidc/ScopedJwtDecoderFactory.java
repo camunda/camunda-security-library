@@ -50,11 +50,12 @@ public final class ScopedJwtDecoderFactory {
    * audiences each validate tokens against their own audience list rather than a global
    * singleton's.
    *
-   * <p>The returned decoder resolves the provider's OIDC discovery document on first token decode,
-   * not here: this method runs while the security chain is being built, and an unreachable identity
-   * provider must not abort the application context. {@link SupplierJwtDecoder} memoizes on success
-   * only, so a failed attempt is retried on the next request. Configuration errors that need no
-   * network access are still raised here, where the misconfiguration belongs.
+   * <p>The decoder that this method returns resolves the OIDC discovery document of the provider at
+   * the first token decode, and not here. This method runs while the application builds the
+   * security chain, and an identity provider it cannot reach must not stop the application context.
+   * {@link SupplierJwtDecoder} keeps the decoder after a successful build only, so the next request
+   * makes a new attempt after a failed one. A configuration error that needs no network access
+   * still causes a failure here, at the configuration it is in.
    *
    * @param authentication the authentication configuration describing the OIDC provider(s)
    * @return a {@link JwtDecoder} ready to verify tokens from the configured providers
@@ -68,11 +69,11 @@ public final class ScopedJwtDecoderFactory {
   }
 
   /**
-   * As {@link #buildIssuerAwareDecoder(AuthenticationConfiguration)}, naming the scope the decoder
-   * belongs to in its failure logs.
+   * As {@link #buildIssuerAwareDecoder(AuthenticationConfiguration)}. A failure log of the decoder
+   * also names the scope the decoder belongs to.
    *
-   * @param scopeDescription how to refer to the scope in a log message (e.g. {@code
-   *     basePath=/physical-tenants/t1}), or {@code null} for the unscoped wording
+   * @param scopeDescription the name a log message gives to the scope (for example {@code
+   *     basePath=/physical-tenants/t1}), or {@code null} for the unscoped text
    */
   public JwtDecoder buildIssuerAwareDecoder(
       final AuthenticationConfiguration authentication, final String scopeDescription) {
