@@ -606,11 +606,8 @@ public final class ScopedClientRegistrationFactory {
       final OidcConfiguration oidc,
       final String scopedRedirectUriPath,
       final LoginRouteChecks loginRouteChecks) {
-    requireRegistrationId(registrationId);
-    requireClientId(registrationId, oidc);
-    requireClientAuthenticationMethod(registrationId, oidc);
-    requireUsableScopes(registrationId, oidc);
-    requireAbsoluteEndpointUrls(registrationId, oidc);
+    // Every no-network check ran in validateWithoutNetwork, over the whole map, before the first
+    // registration was built. Repeating the list here let the two copies drift.
     final var redirectUri =
         resolveRedirectUri(registrationId, oidc, scopedRedirectUriPath, loginRouteChecks);
     final ClientRegistration.Builder builder =
