@@ -11,16 +11,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The path a configured OIDC {@code redirect-uri} mounts its redirection endpoint at.
+ * The path where a configured OIDC {@code redirect-uri} mounts its redirection endpoint.
  *
- * <p>One value decides two things: the {@code redirect_uri} sent to the IdP, and the callback path
- * the webapp chain listens on. Deriving the second from the first lives here because both the chain
- * that mounts the endpoint and the validation that rejects a value the chain cannot mount have to
- * agree on it, and neither of them owns the rule.
+ * <p>One value decides two things. It is the {@code redirect_uri} that the application sends to the
+ * IdP, and it gives the callback path where the webapp chain listens. This class holds the rule
+ * that derives the second value from the first value. Two components need that rule: the chain that
+ * mounts the endpoint, and the validation that rejects a value the chain cannot mount. Neither
+ * component owns the rule, and both must apply it in the same way.
  */
 public final class OidcRedirectionEndpoint {
 
-  /** The callback path served when no {@code redirect-uri} is configured. */
+  /** The callback path that the application serves if you configure no {@code redirect-uri}. */
   public static final String DEFAULT_PATH = "/sso-callback";
 
   private static final String BASE_URL_PLACEHOLDER = "{baseUrl}";
@@ -30,21 +31,22 @@ public final class OidcRedirectionEndpoint {
   private OidcRedirectionEndpoint() {}
 
   /**
-   * Resolves the redirection-endpoint path from a configured {@code redirect-uri}, relative to the
-   * servlet {@code contextPath}, falling back to {@code defaultPath} where the value carries no
-   * callback path of its own.
+   * Resolves the redirection-endpoint path from a configured {@code redirect-uri}. The result is
+   * relative to the servlet {@code contextPath}. If the value has no callback path of its own, the
+   * method returns {@code defaultPath}.
    *
-   * <p>Only a value that spells the context path out has it taken off, as the absolute URL the
-   * chart renders for a context-path'd webapp does; one carrying it through {@code {baseUrl}} or
-   * {@code {basePath}} has it accounted for already, since the resolver expands both from {@code
-   * request.getContextPath()}.
+   * <p>The method removes the context path only from a value that contains it, as the absolute URL
+   * for a webapp with a context path does. A value that carries the context path in {@code
+   * {baseUrl}} or {@code {basePath}} accounts for it already, because the resolver expands both
+   * placeholders from {@code request.getContextPath()}.
    *
-   * <p>A {@code {registrationId}} placeholder becomes a {@code *} wildcard so the matcher states
-   * the intent — any registration id — rather than leaning on {@code PathPatternRequestMatcher}
-   * reading a left-over placeholder as a single-segment path variable.
+   * <p>The method replaces a {@code {registrationId}} placeholder with a {@code *} wildcard. The
+   * wildcard makes the intention clear: the matcher accepts any registration id. Without the
+   * wildcard, the result depends on {@code PathPatternRequestMatcher}, which reads the remaining
+   * placeholder as a path variable for one segment.
    *
-   * @throws IllegalArgumentException if the value yields a non-blank path not starting with {@code
-   *     "/"}, which {@code redirectionEndpoint().baseUri(...)} requires
+   * @throws IllegalArgumentException if the value gives a path that is not blank and does not start
+   *     with {@code "/"}, because {@code redirectionEndpoint().baseUri(...)} needs a leading slash
    */
   public static String resolve(
       final String configuredRedirectUri, final String contextPath, final String defaultPath) {
@@ -109,10 +111,11 @@ public final class OidcRedirectionEndpoint {
   }
 
   /**
-   * Removes a leading servlet {@code contextPath} from an application-relative {@code path}, by
-   * whole segments only, so a {@code /context} context path does not cut down a callback at {@code
-   * /contextual/sso-callback}. Yields {@code ""} where the path is the context path itself, leaving
-   * what a value without a callback segment means to the caller.
+   * Removes a leading servlet {@code contextPath} from an application-relative {@code path}. The
+   * method compares complete segments only. A {@code /context} context path therefore does not
+   * shorten a callback at {@code /contextual/sso-callback}. If the path is the context path itself,
+   * the method returns {@code ""}. The caller then decides what a value without a callback segment
+   * means.
    */
   public static String stripContextPath(final String path, final String contextPath) {
     if (contextPath == null || contextPath.isBlank() || "/".equals(contextPath)) {

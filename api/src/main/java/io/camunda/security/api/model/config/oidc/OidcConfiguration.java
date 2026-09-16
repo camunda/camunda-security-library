@@ -145,17 +145,19 @@ public class OidcConfiguration {
   }
 
   /**
-   * The OAuth2 client {@code redirect_uri} sent to the IdP, and the value the redirection endpoint
-   * that serves the callback is derived from. Both uses have to agree, so a caller that derives an
-   * endpoint from it rejects at startup a value that would have the IdP send the browser where no
-   * redirection-endpoint filter listens. When set, it must expand to an absolute http(s) URL with a
-   * host, a port in 1-65535 if it names one, a callback path and no fragment; a query is allowed,
-   * and only {@code {baseUrl}}, {@code {baseScheme}}, {@code {baseHost}}, {@code {basePort}},
-   * {@code {basePath}}, {@code {registrationId}} and {@code {action}} expand. Leave unset to use
-   * the {@code {baseUrl}/sso-callback} default.
+   * The OAuth2 client {@code redirect_uri} that the application sends to the IdP. The application
+   * also derives the redirection endpoint that serves the callback from this value. The two uses
+   * must agree. A caller that derives an endpoint from this value therefore rejects it at startup
+   * if the IdP would send the browser to a path where no redirection-endpoint filter listens.
    *
-   * <p>Which chain serves that callback, which callers enforce the rule, and the values that look
-   * plausible and are rejected are covered by the adopters' security-filter-chains document.
+   * <p>If you set this property, it must expand to an absolute http(s) URL with a host, a callback
+   * path and no fragment. If the URL has a port, the port must be in the range 1 to 65535. A query
+   * is permitted. Spring expands only {@code {baseUrl}}, {@code {baseScheme}}, {@code {baseHost}},
+   * {@code {basePort}}, {@code {basePath}}, {@code {registrationId}} and {@code {action}}. If you
+   * do not set this property, the application uses the {@code {baseUrl}/sso-callback} default.
+   *
+   * <p>The adopters' security-filter-chains document tells you which chain serves that callback,
+   * which callers apply the rule, and which values look correct but are rejected.
    */
   public String getRedirectUri() {
     return redirectUri;
