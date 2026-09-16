@@ -16,11 +16,13 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
@@ -188,6 +190,35 @@ final class DeferredOidcResolutionTest {
     }
 
     // then the rate limit holds state for the limit at most, so no host grows it without a bound
+    assertThat(DeferredOidcResolution.trackedSubjectCount())
+        .isLessThanOrEqualTo(DeferredOidcResolution.MAX_TRACKED_SUBJECTS);
+  }
+
+  @Test
+  void shouldBoundTheRateLimitStateWhileSubjectsFailInParallel() throws Exception {
+    // given failures for more subjects than the limit holds, from several threads at a time
+    try (final var threads = Executors.newFixedThreadPool(8)) {
+      final var failures = new ArrayList<Future<?>>();
+      for (int i = 0; i < DeferredOidcResolution.MAX_TRACKED_SUBJECTS * 4; i++) {
+        final var subject = "scope-" + UUID.randomUUID();
+        failures.add(
+            threads.submit(
+                () ->
+                    assertThatThrownBy(
+                            () ->
+                                DeferredOidcResolution.resolve(
+                                    subject,
+                                    () -> {
+                                      throw new IllegalStateException("unreachable");
+                                    }))
+                        .isInstanceOf(IllegalStateException.class)));
+      }
+      for (final var failure : failures) {
+        failure.get(10, TimeUnit.SECONDS);
+      }
+    }
+
+    // then the limit holds for parallel failures as well, so no burst of new scopes passes it
     assertThat(DeferredOidcResolution.trackedSubjectCount())
         .isLessThanOrEqualTo(DeferredOidcResolution.MAX_TRACKED_SUBJECTS);
   }

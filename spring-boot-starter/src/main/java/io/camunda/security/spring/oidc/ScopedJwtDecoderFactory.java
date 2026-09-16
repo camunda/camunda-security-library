@@ -12,7 +12,6 @@ import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.util.List;
 import java.util.Map;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.SupplierJwtDecoder;
 import org.springframework.util.StringUtils;
 
 /**
@@ -86,7 +85,7 @@ public final class ScopedJwtDecoderFactory {
     }
     clientRegistrationFactory.validateWithoutLoginRoutes(providers);
     decoderFactory.validateProvidersHaveIssuer(providers);
-    return new SupplierJwtDecoder(
+    return new DeferredJwtDecoder(
         () ->
             DeferredOidcResolution.resolve(
                 decoderSubject(providers, scopeDescription),
