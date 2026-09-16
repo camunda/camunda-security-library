@@ -683,7 +683,10 @@ class ScopedClientRegistrationFactoryTest {
     assertThatNoException().isThrownBy(() -> factory.createWithoutLoginRoutes(providers));
     assertThatThrownBy(() -> factory.createFromProviderMap(providers))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("single path segment");
+        .hasMessageContaining("single path segment")
+        // the id can come from either shape, so the message names both properties that set it
+        .hasMessageContaining("camunda.security.authentication.oidc.registration-id")
+        .hasMessageContaining("camunda.security.authentication.providers.oidc.<id>");
   }
 
   @Test
