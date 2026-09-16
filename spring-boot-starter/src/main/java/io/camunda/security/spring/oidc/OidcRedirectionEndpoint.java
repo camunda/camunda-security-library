@@ -31,21 +31,20 @@ public final class OidcRedirectionEndpoint {
 
   /**
    * Resolves the redirection-endpoint path from a configured {@code redirect-uri}, relative to the
-   * servlet {@code contextPath}, falling back to {@code defaultPath} when the value is unset or
-   * carries no callback path of its own.
+   * servlet {@code contextPath}, falling back to {@code defaultPath} where the value carries no
+   * callback path of its own.
    *
-   * <p>The context path is taken off only a value that spells it out, as the absolute URL the chart
-   * renders for a context-path'd webapp does. One carrying it through {@code {baseUrl}} or {@code
-   * {basePath}} has it accounted for already, since the resolver expands both from {@code
+   * <p>Only a value that spells the context path out has it taken off, as the absolute URL the
+   * chart renders for a context-path'd webapp does; one carrying it through {@code {baseUrl}} or
+   * {@code {basePath}} has it accounted for already, since the resolver expands both from {@code
    * request.getContextPath()}.
    *
-   * <p>A {@code {registrationId}} placeholder is rewritten to a {@code *} wildcard so the matcher
-   * states the intent — any registration id — rather than relying on {@code
-   * PathPatternRequestMatcher} reading the left-over placeholder as a single-segment path variable.
+   * <p>A {@code {registrationId}} placeholder becomes a {@code *} wildcard so the matcher states
+   * the intent — any registration id — rather than leaning on {@code PathPatternRequestMatcher}
+   * reading a left-over placeholder as a single-segment path variable.
    *
    * @throws IllegalArgumentException if the value yields a non-blank path not starting with {@code
-   *     "/"} (e.g. {@code "{baseUrl}api/callback"}), which {@code
-   *     redirectionEndpoint().baseUri(...)} requires
+   *     "/"}, which {@code redirectionEndpoint().baseUri(...)} requires
    */
   public static String resolve(
       final String configuredRedirectUri, final String contextPath, final String defaultPath) {
@@ -110,10 +109,10 @@ public final class OidcRedirectionEndpoint {
   }
 
   /**
-   * Removes a leading servlet {@code contextPath} segment from an application-relative {@code
-   * path}, matching whole segments only, so {@code /orchestration} does not strip the prefix of
-   * {@code /orchestration-ui/...}. Returns {@code path} unchanged when {@code contextPath} is blank
-   * or the root {@code "/"}, and {@code ""} when {@code path} is the context-path itself.
+   * Removes a leading servlet {@code contextPath} from an application-relative {@code path}, by
+   * whole segments only, so a {@code /context} context path does not cut down a callback at {@code
+   * /contextual/sso-callback}. Yields {@code ""} where the path is the context path itself, leaving
+   * what a value without a callback segment means to the caller.
    */
   public static String stripContextPath(final String path, final String contextPath) {
     if (contextPath == null || contextPath.isBlank() || "/".equals(contextPath)) {
