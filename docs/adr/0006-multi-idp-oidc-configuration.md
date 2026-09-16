@@ -40,7 +40,7 @@ The two shapes are flattened into a single `LinkedHashMap<String, OidcConfigurat
 1. If the flat block's `clientId` is non-blank, put the flat block under its `registrationId` (default `oidc`).
 2. `putAll(providers.oidc)` — a colliding provider id overwrites the flat entry.
 
-That merged map is the library's single source of provider configuration; it is exposed to the rest of the library through the `OidcProviderConfigurationPort` inbound port so every consumer (decoder, authorization-request resolver, claims provider, per-scope chains) reads the same view. Each entry is built into a `ClientRegistration` by a shared factory: discovery via `issuer-uri` when set, with explicit `authorization-uri`/`token-uri`/`jwk-set-uri`/`user-info-uri` overrides layered on top to plug gaps in incomplete IdP discovery metadata. Blank `registrationId` values fail fast with an exception naming the misconfigured property; blank URI values are treated as missing via `StringUtils.hasText` so empty environment-variable bindings do not slip through to a generic Spring assertion. The result is wrapped in a `LazyClientRegistrationRepository`, which resolves a registration at its first lookup so that an identity provider CSL cannot reach does not stop the application start. An empty merged map fails with an `IllegalStateException` pointing the adopter at both property shapes.
+That merged map is the library's single source of provider configuration; it is exposed to the rest of the library through the `OidcProviderConfigurationPort` inbound port so every consumer (decoder, authorization-request resolver, claims provider, per-scope chains) reads the same view. Each entry is built into a `ClientRegistration` by a shared factory: discovery via `issuer-uri` when set, with explicit `authorization-uri`/`token-uri`/`jwk-set-uri`/`user-info-uri` overrides layered on top to plug gaps in incomplete IdP discovery metadata. Blank `registrationId` values fail fast with an exception naming the misconfigured property; blank URI values are treated as missing via `StringUtils.hasText` so empty environment-variable bindings do not slip through to a generic Spring assertion. The result is wrapped in an `InMemoryClientRegistrationRepository`. An empty merged map fails with an `IllegalStateException` pointing the adopter at both property shapes.
 
 ### Decoder selection: a registration-count switch
 
@@ -53,7 +53,7 @@ Every registration on the issuer-aware path must carry an `issuer-uri`; the coun
 
 Every registration must also resolve a JWK Set URI — set explicitly via `jwk-set-uri`, or populated by OIDC discovery from `issuer-uri`. A registration that resolves neither fails with `IllegalArgumentException` naming the provider and its issuer URI.
 
-The switch reads the registrations out of `ClientRegistrationRepository`, which therefore has to implement `Iterable<ClientRegistration>`. The library default, `LazyClientRegistrationRepository`, does. A host wiring a custom non-iterable repository gets an `IllegalStateException` naming that requirement and must register its own `@Bean JwtDecoder`.
+The switch reads the registrations out of `ClientRegistrationRepository`, which therefore has to implement `Iterable<ClientRegistration>`. The library default, `InMemoryClientRegistrationRepository`, does. A host wiring a custom non-iterable repository gets an `IllegalStateException` naming that requirement and must register its own `@Bean JwtDecoder`.
 
 ### `additional-jwk-set-uris`: one composition mechanism, routed per issuer
 
@@ -94,7 +94,7 @@ All decoder paths share one algorithm set — `RS256/384/512` plus `ES256/384/51
 
 | Concern | Default | Override path |
 |---|---|---|
-| `ClientRegistrationRepository` | `LazyClientRegistrationRepository` over the merged flat + providers map, resolving each registration at its first lookup | Host registers any `@Bean ClientRegistrationRepository` — the CSL default backs off via `@ConditionalOnMissingBean`. A non-iterable repository additionally requires a host `@Bean JwtDecoder` |
+| `ClientRegistrationRepository` | `InMemoryClientRegistrationRepository` populated from the merged flat + providers map | Host registers any `@Bean ClientRegistrationRepository` — the CSL default backs off via `@ConditionalOnMissingBean`. A non-iterable repository additionally requires a host `@Bean JwtDecoder` |
 | `JwtDecoder`, 1 registration | Single-issuer `NimbusJwtDecoder` built from the registration's JWK Set URI | Host registers `@Bean JwtDecoder` |
 | `JwtDecoder`, more than 1 registration | Issuer-aware decoder (`IssuerAwareJWSKeySelector` + `IssuerAwareTokenValidator`); every registration needs an `issuer-uri` | Host registers `@Bean JwtDecoder` |
 | `additional-jwk-set-uris`, more than 1 registration | One `CompositeJWKSource` per issuer, behind a per-issuer `JWSVerificationKeySelector`, routed by `IssuerAwareJWSKeySelector` on the token's `iss` | Host registers `@Bean JWSKeySelectorFactory` or `@Bean JwtDecoder` |
