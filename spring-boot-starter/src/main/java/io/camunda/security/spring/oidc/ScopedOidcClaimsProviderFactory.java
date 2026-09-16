@@ -68,11 +68,10 @@ public final class ScopedOidcClaimsProviderFactory {
    * configuration that sets no {@code oidc.userInfoAugmentation}, or disables it, gets a {@link
    * NoopOidcClaimsProvider}.
    *
-   * <p>The map from an issuer to a userInfoUri comes from {@link ClientRegistration}s that OIDC
-   * discovery resolves. The provider that this method returns builds the map at the first claims
-   * lookup, and not here, so that the application makes no network request while it builds the
-   * chain. See {@link DeferredOidcClaimsProvider}. A scope whose providers give no userInfoUri at
-   * all therefore fails at that first lookup.
+   * <p>The map from an issuer to a userInfoUri comes from resolved {@link ClientRegistration}s,
+   * which OIDC discovery resolves. The provider builds the map at the first claims lookup, so the
+   * application makes no network request while it builds the chain. See {@link
+   * DeferredOidcClaimsProvider}.
    *
    * @throws IllegalStateException if augmentation is enabled and the configuration declares no OIDC
    *     provider, or a provider block is incomplete. Each of these configurations leaves the scope

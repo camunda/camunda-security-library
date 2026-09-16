@@ -66,9 +66,8 @@ public class OidcClaimsProviderConfiguration {
    * its own {@link ClientRegistrationRepository} or {@link OidcClaimsProvider} therefore gets no
    * UserInfo-augmenting default from CSL.
    *
-   * <p>To read the UserInfo URIs from the repository is to resolve its registrations, which OIDC
-   * discovery resolves. The provider therefore builds the mapping at the first claims lookup, and
-   * not here. See {@link DeferredOidcClaimsProvider}.
+   * <p>To read the UserInfo URIs from the repository is to make OIDC discovery, so the provider
+   * builds the mapping at the first claims lookup. See {@link DeferredOidcClaimsProvider}.
    */
   @Bean
   @ConditionalOnProperty(
@@ -104,11 +103,9 @@ public class OidcClaimsProviderConfiguration {
   }
 
   /**
-   * Names the mapping that a failure log reports, together with each provider the mapping covers. A
-   * deployment with several identity providers can therefore see which one it cannot reach. A host
-   * repository holds a set of registrations that the configuration of the library does not
-   * describe, so the subject names the host instead of naming providers the failure may not
-   * concern.
+   * Names the mapping and the providers it covers. A host repository holds registrations that the
+   * configuration of the library does not describe, so the subject names the host instead of
+   * providers the failure may not concern.
    */
   private static String userInfoMappingSubject(final ClientRegistrationRepository repo) {
     return "the per-issuer UserInfo endpoint mapping "
