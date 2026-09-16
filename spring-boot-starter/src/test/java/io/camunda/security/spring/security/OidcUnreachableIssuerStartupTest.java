@@ -11,8 +11,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.camunda.security.api.context.CamundaSecurityScopeProvider;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.AuthenticationMethod;
+import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcProvidersConfiguration;
 import io.camunda.security.core.port.out.SecurityPathPort;
@@ -23,7 +25,9 @@ import io.camunda.security.spring.oidc.OidcTestServer;
 import io.camunda.security.spring.oidc.OidcWebappClientBeansConfiguration;
 import io.camunda.security.spring.oidc.ScopedJwtDecoderFactory;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
+import io.camunda.security.spring.scope.ScopedSecurityChainConfiguration;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,6 +35,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.mock.web.MockFilterChain;
@@ -219,6 +224,33 @@ class OidcUnreachableIssuerStartupTest {
             });
   }
 
+  @Test
+  void shouldStartAScopedApiChainWhoseIssuerIsUnreachable() {
+    // given a host that contributes an OIDC scope whose provider does not answer
+    final var descriptor =
+        new ScopedSecurityDescriptor(
+            SCOPE_BASE_PATH, scopedAuthentication("unreachable", UNREACHABLE_ISSUER_URI));
+
+    // when the registrar builds the chains of that scope
+    new WebApplicationContextRunner()
+        .withUserConfiguration(ObjectMapperConfig.class, StubPaths.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                BaseSecurityConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                ScopedSecurityChainConfiguration.class))
+        .withPropertyValues("camunda.security.authentication.method=oidc")
+        .withBean(CamundaSecurityScopeProvider.class, () -> () -> List.of(descriptor))
+        .run(
+            ctx -> {
+              // then the scope gets its chain, and the decoder of that chain resolves the provider
+              // at the first token decode
+              assertThat(ctx).hasNotFailed();
+              assertThat(scopedApiChainNames(ctx)).isNotEmpty();
+            });
+  }
+
   private static WebApplicationContextRunner scopedRunner() {
     return new WebApplicationContextRunner()
         .withUserConfiguration(ObjectMapperConfig.class, StubPaths.class, ScopedChainConfig.class)
@@ -270,6 +302,12 @@ class OidcUnreachableIssuerStartupTest {
             "camunda.security.authentication.oidc.client-secret=secret",
             "camunda.security.authentication.oidc.redirect-uri=http://localhost/sso-callback",
             "camunda.security.authentication.oidc.issuer-uri=" + issuerUri);
+  }
+
+  private static List<String> scopedApiChainNames(final ApplicationContext ctx) {
+    return Arrays.stream(ctx.getBeanNamesForType(SecurityFilterChain.class))
+        .filter(name -> name.startsWith("scopedApiSecurityFilterChain"))
+        .toList();
   }
 
   @Configuration
