@@ -11,16 +11,16 @@ import io.camunda.security.api.context.OidcClaimsProvider;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
-import org.springframework.util.function.SingletonSupplier;
 
 /**
  * An {@link OidcClaimsProvider} that builds its delegate at the first claims lookup.
  *
  * <p>A provider that augments claims from UserInfo needs the UserInfo URI of each issuer, and OIDC
  * discovery resolves those URIs. The application must not make that request while it starts,
- * because an identity provider it cannot reach then stops the start. {@link SingletonSupplier}
- * keeps the delegate after a successful build only, so the next claims lookup makes a new attempt
- * after a failed one.
+ * because an identity provider it cannot reach then stops the start. The provider keeps the
+ * delegate after a successful build only, so the next claims lookup makes a new attempt after a
+ * failed one, and it holds no lock while the build runs. See {@link
+ * DeferredOidcResolution#memoizeOnSuccess(Supplier)}.
  */
 public final class DeferredOidcClaimsProvider implements OidcClaimsProvider {
 
@@ -35,7 +35,8 @@ public final class DeferredOidcClaimsProvider implements OidcClaimsProvider {
       final String subject, final Supplier<OidcClaimsProvider> delegate) {
     this.subject = Objects.requireNonNull(subject, "subject must not be null");
     this.delegate =
-        SingletonSupplier.of(Objects.requireNonNull(delegate, "delegate must not be null"));
+        DeferredOidcResolution.memoizeOnSuccess(
+            Objects.requireNonNull(delegate, "delegate must not be null"));
   }
 
   @Override
