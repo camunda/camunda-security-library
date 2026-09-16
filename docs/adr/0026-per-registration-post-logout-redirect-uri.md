@@ -67,15 +67,17 @@ how `post-logout-redirect-enabled=false` is expressed. `isPostLogoutRedirectEnab
 `allMatch` fold is deleted.
 
 **One delegate per registration.** `CamundaOidcLogoutSuccessHandler` eagerly builds one
-`OidcClientInitiatedLogoutSuccessHandler` per registration that sends a parameter, each with its own
+`OidcClientInitiatedLogoutSuccessHandler` per configured registration, each with its own
 `postLogoutRedirectUri` set once at construction, and dispatches on the authenticated
-`registrationId`. A registrationId with no delegate — disabled, no host route, or unknown — falls
-through to `super`.
+`registrationId`. A suppressed registration still gets a delegate, one with no template. A
+registrationId absent from the map falls through to `super`, which continues to carry the
+chain-wide composed route via `setPostLogoutRedirectUri`.
 
 **Validation at the chain builder.** A configured value is rejected at startup when it contains CR
-or LF, when it is neither absolute nor a path nor a template, or when it names a template variable
-outside the six Spring populates (`baseUrl`, `baseScheme`, `baseHost`, `basePort`, `basePath`,
-`registrationId`).
+or LF, when its braces are unbalanced, when it names a template variable outside the six Spring
+populates (`baseUrl`, `baseScheme`, `baseHost`, `basePort`, `basePath`, `registrationId`), when a
+placeholder-free absolute value does not parse or carries no host, or when it is neither absolute nor
+a path nor a template. Validation runs before `post-logout-redirect-enabled` is consulted.
 
 ### Why these particular boundaries
 
@@ -93,8 +95,19 @@ outside the six Spring populates (`baseUrl`, `baseScheme`, `baseHost`, `basePort
 - **Delegates are eager, not lazily cached.** The registration set is fixed at construction and a
   delegate is a two-field object, so there is nothing to defer. Building eagerly removes a
   `computeIfAbsent`, a concurrency question, and any unbounded-growth question for an unknown
-  registrationId. Absence of a key then means "send no parameter", which covers disabled, no host
-  route, and unknown registration under one rule.
+  registrationId.
+
+- **A suppressed registration and an unknown one resolve differently, and the chain keeps its
+  chain-wide default.** These look like the same "no entry" case and are not.
+  `buildOidcWebappChain` takes the `ClientRegistrationRepository` as a parameter and CSL's own bean
+  is `@ConditionalOnMissingBean`, so a host can supply a repository holding registrations that never
+  appear under `camunda.security.authentication.*`. Those cannot be in the map. Before this ADR they
+  received the composed route like every other registration, because one template served the whole
+  chain; collapsing them into "no entry means send nothing" would silently drop their
+  `post_logout_redirect_uri` — a regression for exactly the hosts that are hardest to test. So the
+  chain still calls `setPostLogoutRedirectUri` with the composed route, an unknown registrationId
+  inherits it through `super`, and a registration configured off gets a delegate with no template so
+  it cannot pick that default back up.
 
 - **The delegate returns `null` rather than its own default target URL.** `determineTargetUrl` and
   `onLogoutSuccess` both detect "the IdP published no `end_session_endpoint`" by comparing the
@@ -124,6 +137,17 @@ outside the six Spring populates (`baseUrl`, `baseScheme`, `baseHost`, `basePort
   will accept; honouring the URI anyway would resurrect the rejection the flag exists to avoid. The
   combination is logged at `WARN`, because silently ignoring an explicitly configured value is
   otherwise an afternoon lost.
+
+- **Validation runs before the enabled flag is read.** A configured value is checked even when
+  `post-logout-redirect-enabled` is `false`, so a typo surfaces at startup rather than lying dormant
+  until someone switches the redirect back on. It also means nothing unvalidated reaches a log line.
+
+- **Templates are scanned for brace balance, not regex-matched.** A regex for `{name}` only sees
+  *closed* pairs, and the open ones are the dangerous case: `UriComponentsBuilder` does not reject
+  an unclosed brace, so `{baseUrl}{tenantId` expands to the literal `https://host{tenantId` and is
+  sent to the IdP exactly like that. A closed-pair check finds only `baseUrl`, passes it, and ships
+  the malformed URL. Likewise `"://"` is only a lexical hint, so a placeholder-free absolute value is
+  parsed and required to carry a scheme and a host — `https://` otherwise passes as "absolute".
 
 - **Default unset, default enabled.** The change is inert until a deployment opts in.
 
@@ -155,7 +179,13 @@ outside the six Spring populates (`baseUrl`, `baseScheme`, `baseHost`, `basePort
   already forbids `null` and both in-tree hosts return `Optional`, so this is a deliberate
   strictness increase rather than a regression.
 - A configured absolute URL is opaque to CSL: it cannot verify the host serves anything there, so a
-  typo lands the user on a dead page after a successful logout.
+  typo lands the user on a dead page after a successful logout. Validation establishes that the value
+  is a well-formed, expandable URL — not that it is the right one, nor that it is registered at the
+  IdP.
+- The chain-wide template is still set on the handler even when every configured registration
+  overrides it, purely so registrations from a host-supplied repository keep it. It is dead weight
+  for the common case, and it means two places can now answer "what does this chain send" — the map
+  and the inherited field — with the map winning.
 
 ## Alternatives Considered
 

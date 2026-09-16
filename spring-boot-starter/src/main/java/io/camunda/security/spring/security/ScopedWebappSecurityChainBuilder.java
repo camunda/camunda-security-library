@@ -34,6 +34,8 @@ import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
 import io.camunda.security.spring.scope.BasePaths;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import io.camunda.security.spring.spi.OidcAuthenticationEntryPoint;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,7 +43,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -99,8 +100,6 @@ public final class ScopedWebappSecurityChainBuilder {
    */
   private static final Set<String> SUPPORTED_TEMPLATE_VARIABLES =
       Set.of("baseUrl", "baseScheme", "baseHost", "basePort", "basePath", "registrationId");
-
-  private static final Pattern TEMPLATE_VARIABLE = Pattern.compile("\\{([^}]*)}");
 
   private final AuthFailureHandler authFailureHandler;
   private final CamundaSecurityLibraryProperties properties;
@@ -570,21 +569,25 @@ public final class ScopedWebappSecurityChainBuilder {
       final String prefix,
       final String composedDefault) {
     final var configured = oidc.getPostLogoutRedirectUri();
+    // Validate before consulting the flag, so a typo is caught at startup whether or not the
+    // redirect happens to be switched off today — otherwise it lies dormant until someone switches
+    // it back on. It also means the value below is known clean before it reaches a log line.
+    final var validated =
+        StringUtils.hasText(configured)
+            ? validatedPostLogoutRedirectUri(registrationId, configured.trim(), prefix)
+            : null;
     if (!oidc.isPostLogoutRedirectEnabled()) {
-      if (StringUtils.hasText(configured)) {
+      if (validated != null) {
         LOG.warn(
-            "OIDC registration '{}' sets post-logout-redirect-uri '{}' but also "
+            "OIDC registration '{}' resolves post-logout-redirect-uri to '{}' but also sets "
                 + "post-logout-redirect-enabled=false; no post_logout_redirect_uri will be sent. "
                 + "Remove one of the two to make the intent unambiguous.",
             registrationId,
-            configured);
+            validated);
       }
       return "";
     }
-    if (!StringUtils.hasText(configured)) {
-      return composedDefault;
-    }
-    return validatedPostLogoutRedirectUri(registrationId, configured.trim(), prefix);
+    return validated != null ? validated : composedDefault;
   }
 
   /**
@@ -612,11 +615,12 @@ public final class ScopedWebappSecurityChainBuilder {
               + registrationId
               + "' must not contain CR or LF characters");
     }
-    rejectUnsupportedTemplateVariables(registrationId, configured);
+    rejectMalformedTemplate(registrationId, configured);
     if (configured.startsWith("/")) {
       return "{baseUrl}" + prefix + configured;
     }
     if (configured.startsWith("{") || configured.contains("://")) {
+      rejectMalformedAbsoluteUri(registrationId, configured);
       return configured;
     }
     throw new IllegalArgumentException(
@@ -628,24 +632,80 @@ public final class ScopedWebappSecurityChainBuilder {
   }
 
   /**
-   * Rejects any {@code {placeholder}} Spring's post-logout template expansion does not populate.
-   * The supported set is fixed by {@code OidcClientInitiatedLogoutSuccessHandler}.
+   * Rejects a template Spring cannot expand: an unbalanced brace, or a placeholder outside the
+   * fixed set its post-logout expansion populates.
+   *
+   * <p>Scans rather than regex-matches because a regex for a brace-delimited name only sees
+   * <em>closed</em> pairs, and the open ones are the dangerous case. {@code UriComponentsBuilder}
+   * does not reject an unclosed brace: <code>&#123;baseUrl&#125;&#123;tenantId</code> expands to
+   * the literal <code>https://host&#123;tenantId</code> and is sent to the IdP exactly like that. A
+   * closed-pair check would find only {@code baseUrl}, pass it, and ship the malformed URL.
    */
-  private static void rejectUnsupportedTemplateVariables(
+  private static void rejectMalformedTemplate(
       final String registrationId, final String configured) {
-    final var matcher = TEMPLATE_VARIABLE.matcher(configured);
-    while (matcher.find()) {
-      final var name = matcher.group(1);
-      if (!SUPPORTED_TEMPLATE_VARIABLES.contains(name)) {
-        throw new IllegalArgumentException(
-            "camunda.security.authentication.oidc.post-logout-redirect-uri for registration '"
-                + registrationId
-                + "' uses unsupported template variable {"
-                + name
-                + "}; supported variables are "
-                + SUPPORTED_TEMPLATE_VARIABLES);
+    int openAt = -1;
+    for (int i = 0; i < configured.length(); i++) {
+      final char c = configured.charAt(i);
+      if (c == '{') {
+        if (openAt >= 0) {
+          throw templateException(registrationId, configured, "contains a nested '{'");
+        }
+        openAt = i;
+      } else if (c == '}') {
+        if (openAt < 0) {
+          throw templateException(registrationId, configured, "contains an unmatched '}'");
+        }
+        final var name = configured.substring(openAt + 1, i);
+        if (!SUPPORTED_TEMPLATE_VARIABLES.contains(name)) {
+          throw templateException(
+              registrationId,
+              configured,
+              "uses unsupported template variable {"
+                  + name
+                  + "}; supported variables are "
+                  + SUPPORTED_TEMPLATE_VARIABLES);
+        }
+        openAt = -1;
       }
     }
+    if (openAt >= 0) {
+      throw templateException(registrationId, configured, "contains an unclosed '{'");
+    }
+  }
+
+  /**
+   * Rejects an absolute form that is not actually a usable URL.
+   *
+   * <p>A {@code "://"} substring is only lexical: {@code "https://"} carries no host, expands to
+   * itself, and is rejected by the OP rather than at startup. Parsing is skipped for a value
+   * holding a placeholder, since braces are not legal URI characters and the host may only exist
+   * after expansion — {@link #rejectMalformedTemplate} has already vetted those.
+   */
+  private static void rejectMalformedAbsoluteUri(
+      final String registrationId, final String configured) {
+    if (configured.indexOf('{') >= 0) {
+      return;
+    }
+    final URI uri;
+    try {
+      uri = new URI(configured);
+    } catch (final URISyntaxException e) {
+      throw templateException(registrationId, configured, "is not a valid URI: " + e.getReason());
+    }
+    if (!uri.isAbsolute() || !StringUtils.hasText(uri.getHost())) {
+      throw templateException(registrationId, configured, "is missing a scheme or a host");
+    }
+  }
+
+  private static IllegalArgumentException templateException(
+      final String registrationId, final String configured, final String problem) {
+    return new IllegalArgumentException(
+        "camunda.security.authentication.oidc.post-logout-redirect-uri for registration '"
+            + registrationId
+            + "' "
+            + problem
+            + ", but was: "
+            + configured);
   }
 
   /** The host-declared route, composed against the chain, used when nothing is configured. */
@@ -672,6 +732,17 @@ public final class ScopedWebappSecurityChainBuilder {
       final String prefix,
       final AuthenticationConfiguration authentication) {
     final var redirectUris = postLogoutRedirectUris(authentication, prefix);
+    final var handler = new CamundaOidcLogoutSuccessHandler(repo, redirectUris);
+    // The chain-wide default still has to be set, for registrations the map does not cover. A host
+    // may supply its own ClientRegistrationRepository — CSL's default bean is
+    // @ConditionalOnMissingBean
+    // — holding registrations that never appear under camunda.security.authentication.*. Those are
+    // absent from the map, and before ADR-0024 they got this composed route like everyone else;
+    // leaving it unset would silently drop their post_logout_redirect_uri.
+    final var composedDefault = composedPostLogoutRedirectUri(prefix);
+    if (!composedDefault.isEmpty()) {
+      handler.setPostLogoutRedirectUri(composedDefault);
+    }
     if (LOG.isDebugEnabled()) {
       redirectUris.forEach(
           (registrationId, uri) -> {
@@ -688,7 +759,7 @@ public final class ScopedWebappSecurityChainBuilder {
             }
           });
     }
-    return new CamundaOidcLogoutSuccessHandler(repo, redirectUris);
+    return handler;
   }
 
   // Moved verbatim from OidcWebappSecurityConfiguration; package-private for unit testing.

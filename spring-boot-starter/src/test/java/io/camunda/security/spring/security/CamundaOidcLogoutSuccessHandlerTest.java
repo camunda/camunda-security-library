@@ -479,7 +479,7 @@ class CamundaOidcLogoutSuccessHandlerTest {
 
   /** A registrationId the chain never configured must not inherit another registration's URI. */
   @Test
-  void unknownRegistrationIdSendsNoPostLogoutRedirectParam() {
+  void unknownRegistrationIdDoesNotInheritAnotherRegistrationsUri() {
     final var multiIdpHandler =
         handlerWithRedirectUris(Map.of(SECONDARY_REGISTRATION_ID, ABSOLUTE_POST_LOGOUT_URI));
     when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
@@ -493,6 +493,76 @@ class CamundaOidcLogoutSuccessHandlerTest {
 
     assertThat(queryParams(targetUrl, "idp.com", "/logout").getFirst("post_logout_redirect_uri"))
         .isNull();
+  }
+
+  /**
+   * A registration the map does not mention falls back to the chain-wide template.
+   *
+   * <p>This is not a convenience. A host may supply its own {@code ClientRegistrationRepository} —
+   * CSL's default bean is {@code @ConditionalOnMissingBean} — holding registrations that never
+   * appear under {@code camunda.security.authentication.*}, so they cannot appear in the map.
+   * Before the redirect became per-registration they received the chain's composed route like
+   * everyone else; dropping their {@code post_logout_redirect_uri} would be a silent regression.
+   */
+  @Test
+  void registrationMissingFromTheMapFallsBackToTheChainWideUri() {
+    final var handlerWithChainDefault =
+        handlerWithRedirectUris(Map.of(SECONDARY_REGISTRATION_ID, ABSOLUTE_POST_LOGOUT_URI));
+    handlerWithChainDefault.setPostLogoutRedirectUri("{baseUrl}/post-logout");
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    final String targetUrl =
+        handlerWithChainDefault.determineTargetUrl(
+            requestWithReferer(SAME_ORIGIN_REFERER),
+            new MockHttpServletResponse(),
+            oidcAuthentication(null));
+
+    assertThat(postLogoutRedirectUriOf(targetUrl))
+        .isEqualTo("https://camunda.com/component/post-logout");
+  }
+
+  /**
+   * An explicitly suppressed registration must not pick the chain-wide template back up. This is
+   * why suppressed registrations still get a delegate rather than being left out of the map: the
+   * fallback above would otherwise hand them exactly the value configuration removed.
+   */
+  @Test
+  void suppressedRegistrationDoesNotFallBackToTheChainWideUri() {
+    final var handlerWithChainDefault = handlerWithRedirectUris(Map.of(REGISTRATION_ID, ""));
+    handlerWithChainDefault.setPostLogoutRedirectUri("{baseUrl}/post-logout");
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    final String targetUrl =
+        handlerWithChainDefault.determineTargetUrl(
+            requestWithReferer(SAME_ORIGIN_REFERER),
+            new MockHttpServletResponse(),
+            oidcAuthentication(null));
+
+    assertThat(queryParams(targetUrl, "idp.com", "/logout").getFirst("post_logout_redirect_uri"))
+        .isNull();
+  }
+
+  /**
+   * The one-argument constructor keeps the pre-ADR-0024 contract: no per-registration overrides,
+   * behaviour governed entirely by the inherited setter.
+   */
+  @Test
+  void handlerWithoutOverridesUsesTheInheritedTemplateForEveryRegistration() {
+    final var plainHandler = new CamundaOidcLogoutSuccessHandler(clientRegistrationRepository);
+    plainHandler.setPostLogoutRedirectUri("{baseUrl}/post-logout");
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration());
+
+    final String targetUrl =
+        plainHandler.determineTargetUrl(
+            requestWithReferer(SAME_ORIGIN_REFERER),
+            new MockHttpServletResponse(),
+            oidcAuthentication(null));
+
+    assertThat(postLogoutRedirectUriOf(targetUrl))
+        .isEqualTo("https://camunda.com/component/post-logout");
   }
 
   /**

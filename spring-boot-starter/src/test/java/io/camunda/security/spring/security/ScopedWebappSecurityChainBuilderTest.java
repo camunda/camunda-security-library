@@ -244,6 +244,78 @@ class ScopedWebappSecurityChainBuilderTest {
         .withMessageContaining("unsupported template variable {tenantId}");
   }
 
+  /**
+   * An unclosed brace is the case a closed-pair check cannot see. {@code UriComponentsBuilder} does
+   * not reject it either: <code>&#123;baseUrl&#125;&#123;tenantId</code> expands to the literal
+   * <code>https://host&#123;tenantId</code>, verified empirically — so without this the malformed
+   * URL reaches the IdP with no startup failure at all, the opposite of what this validation is
+   * for.
+   */
+  @Test
+  void configuredUriWithUnclosedBraceThrows() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> resolvedPostLogoutRedirectUri("", configuredUri("{baseUrl}{tenantId")))
+        .withMessageContaining("unclosed '{'");
+  }
+
+  /** A lone unclosed placeholder passes startsWith("{") but expands to itself; reject it too. */
+  @Test
+  void configuredUriThatIsOnlyAnUnclosedBraceThrows() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> resolvedPostLogoutRedirectUri("", configuredUri("{baseUrl")))
+        .withMessageContaining("unclosed '{'");
+  }
+
+  /** A stray closing brace is equally unexpandable. */
+  @Test
+  void configuredUriWithUnmatchedClosingBraceThrows() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(
+            () -> resolvedPostLogoutRedirectUri("", configuredUri("https://x.example.com/a}")))
+        .withMessageContaining("unmatched '}'");
+  }
+
+  /**
+   * {@code "://"} is only a lexical hint. {@code "https://"} carries no authority at all, so it
+   * fails to parse; without the parse step it would pass as "absolute" and be rejected by the OP at
+   * logout instead of here.
+   */
+  @Test
+  void configuredAbsoluteUriThatDoesNotParseThrows() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> resolvedPostLogoutRedirectUri("", configuredUri("https://")))
+        .withMessageContaining("is not a valid URI");
+  }
+
+  /** A URI that parses but names no host is equally unusable as a redirect target. */
+  @Test
+  void configuredAbsoluteUriWithoutHostThrows() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> resolvedPostLogoutRedirectUri("", configuredUri("file:///logged-out")))
+        .withMessageContaining("missing a scheme or a host");
+  }
+
+  /** An absolute URL whose host only exists after expansion must still be accepted. */
+  @Test
+  void configuredAbsoluteUriWithTemplateVariableHostIsAccepted() {
+    assertThat(resolvedPostLogoutRedirectUri("", configuredUri("https://{baseHost}/logged-out")))
+        .isEqualTo("https://{baseHost}/logged-out");
+  }
+
+  /**
+   * A value is validated even when the redirect is switched off, so a typo surfaces at startup
+   * rather than lying dormant until someone flips the flag back on.
+   */
+  @Test
+  void configuredUriIsValidatedEvenWhenTheRedirectIsDisabled() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(
+            () ->
+                resolvedPostLogoutRedirectUri(
+                    "", configuredUri("{tenantId}/goodbye").postLogoutRedirectEnabled(false)))
+        .withMessageContaining("unsupported template variable {tenantId}");
+  }
+
   /** The value lands in a query parameter on a 302 Location header; CR/LF must not survive. */
   @Test
   void configuredUriWithCrlfThrows() {

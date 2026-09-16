@@ -46,11 +46,19 @@ import org.springframework.web.util.UriComponentsBuilder;
  *       multi-provider deployment can carry its own landing URL or send none at all (ADR-0024).
  * </ul>
  *
- * <p>The post-logout redirect URL is only accepted when it points back to the same application
- * (same-origin check).
+ * <p>The same-origin check applies to the {@code Referer}-derived URL stashed on the session under
+ * {@link #POST_LOGOUT_REDIRECT_ATTRIBUTE}, which the host replays after logout — not to the {@code
+ * post_logout_redirect_uri} sent to the IdP. That one is deployment configuration and is allowed to
+ * point off-host, which is the point of ADR-0024: an account page on another host is often the only
+ * URL a strict OP will accept.
  *
- * <p>CSL configures {@code post_logout_redirect_uri} per registration through the constructor; the
- * inherited {@link OidcClientInitiatedLogoutSuccessHandler#setPostLogoutRedirectUri} is not used.
+ * <p>Resolution order for {@code post_logout_redirect_uri}: a registration named in the
+ * constructor's map uses its own value, or sends none when that value is empty; a registration the
+ * map does not mention falls back to the inherited {@link
+ * OidcClientInitiatedLogoutSuccessHandler#setPostLogoutRedirectUri}. That fallback matters because
+ * a host may supply its own {@link ClientRegistrationRepository} holding registrations that never
+ * appear in {@code camunda.security.authentication.*}, and those must keep the chain-wide default
+ * rather than silently lose the parameter.
  */
 public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLogoutSuccessHandler {
 
@@ -91,9 +99,12 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
    *
    * <p>Supplied by {@link ScopedWebappSecurityChainBuilder}, which derives it from the same
    * registrationId-keyed map the chain's {@link ClientRegistrationRepository} is built from, so the
-   * keys line up by construction. It is total over the scope's registrations: an explicit {@code
-   * ""} (the redirect was configured off) and an absent key (no such registration in this chain)
-   * are different statements, even though both send no parameter.
+   * keys line up by construction for every registration CSL configured.
+   *
+   * <p>An explicit {@code ""} and an absent key are different statements, and the difference is
+   * load-bearing: {@code ""} means configuration turned the redirect off for a registration CSL
+   * knows about, while absent means CSL was never told about that registration at all — a
+   * host-supplied repository — so it inherits the chain-wide default instead.
    *
    * <p>Dispatch uses {@link #delegatesByRegistrationId}, derived from this at construction. This
    * map is kept as the handler's record of what the chain resolved — it is what the chain's tests
@@ -112,11 +123,21 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
    * handler's field per request would be the obvious alternative and is a data race: two concurrent
    * logouts would hand each other's redirect URI to the wrong IdP.
    *
-   * <p>Holds only the registrations with a non-empty template, so a registrationId absent here
-   * sends no {@code post_logout_redirect_uri} — covering a disabled registration, a host that
-   * declares no route, and an unknown registrationId under one rule.
+   * <p>Holds an entry for every registration CSL configured, the suppressed ones included — those
+   * get a delegate with no template, so they send no parameter. Only a registrationId CSL was never
+   * told about is absent here, and that one falls back to this handler's own inherited template.
    */
   private final Map<String, RegistrationScopedHandler> delegatesByRegistrationId;
+
+  /**
+   * A handler with no per-registration overrides: every registration uses whatever the inherited
+   * {@link OidcClientInitiatedLogoutSuccessHandler#setPostLogoutRedirectUri} is set to, which is
+   * the behaviour this class had before ADR-0024.
+   */
+  public CamundaOidcLogoutSuccessHandler(
+      final ClientRegistrationRepository clientRegistrationRepository) {
+    this(clientRegistrationRepository, Map.of());
+  }
 
   public CamundaOidcLogoutSuccessHandler(
       final ClientRegistrationRepository clientRegistrationRepository,
@@ -132,13 +153,17 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
     final Map<String, RegistrationScopedHandler> delegates = new LinkedHashMap<>();
     this.postLogoutRedirectUriByRegistrationId.forEach(
         (registrationId, redirectUri) -> {
+          // The delegate must share this handler's repository: the two have to agree on whether a
+          // registration publishes an end_session_endpoint, or the fall-through below misfires.
+          final var delegate = new RegistrationScopedHandler(clientRegistrationRepository);
+          // An empty value is a configured suppression, so the delegate keeps Spring's null
+          // template and sends no parameter. Omitting these instead would route them down the
+          // unknown-registration path, which inherits the chain-wide default — the exact opposite
+          // of what was configured.
           if (!redirectUri.isEmpty()) {
-            // The delegate must share this handler's repository: the two have to agree on whether a
-            // registration publishes an end_session_endpoint, or the fall-through below misfires.
-            final var delegate = new RegistrationScopedHandler(clientRegistrationRepository);
             delegate.setPostLogoutRedirectUri(redirectUri);
-            delegates.put(registrationId, delegate);
           }
+          delegates.put(registrationId, delegate);
         });
     delegatesByRegistrationId = Map.copyOf(delegates);
   }
@@ -278,10 +303,10 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
   /**
    * The IdP end-session URL for the registration this user authenticated with.
    *
-   * <p>Delegates when the registration has a {@code post_logout_redirect_uri} of its own, and falls
-   * back to {@code super} — this handler's own, exactly the call made before the parameter became
-   * per-registration — for every other case: no configured URI, an unknown registrationId, a
-   * non-OIDC authentication, or a delegate that found no {@code end_session_endpoint}.
+   * <p>Delegates when CSL configured this registration, and falls back to {@code super} — this
+   * handler's own, exactly the call made before the parameter became per-registration, and the
+   * carrier of the chain-wide template — for a registrationId CSL never saw, a non-OIDC
+   * authentication, or a delegate that found no {@code end_session_endpoint}.
    *
    * <p>That fall-through is load-bearing, not tidiness. {@link #determineTargetUrl} and {@link
    * #onLogoutSuccess} both detect "the IdP published no {@code end_session_endpoint}" by comparing
