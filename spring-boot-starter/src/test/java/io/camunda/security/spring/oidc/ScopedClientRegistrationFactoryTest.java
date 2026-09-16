@@ -709,6 +709,21 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
+  void shouldBuildWithoutLoginRoutesGivenAnEndSessionEndpointOnlyLogoutWouldDereference() {
+    // given a malformed end-session endpoint, whose only consumer is the webapp logout handler
+    final var providers =
+        Map.of("oidc", explicitEndpointsWith(b -> b.endSessionEndpointUri("not a URL")));
+
+    // when a caller mounts no login chain, and therefore no logout handler
+    // then the value it never dereferences is no reason to refuse to start, while a login path
+    // still rejects it
+    assertThatNoException().isThrownBy(() -> factory.createWithoutLoginRoutes(providers));
+    assertThatThrownBy(() -> factory.createFromProviderMap(providers))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("end-session-endpoint-uri");
+  }
+
+  @Test
   void shouldIgnoreAMalformedUserInfoUriOfAProviderThatDisabledUserInfo() {
     // given a stale user-info-uri on a provider whose UserInfo lookup is switched off
     final var oidc = explicitEndpointsWith(b -> b.userInfoUri("not a URL").userInfoEnabled(false));
