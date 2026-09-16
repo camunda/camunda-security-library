@@ -50,22 +50,22 @@ public final class ScopedClientRegistrationFactory {
 
   private static final String BASE_URL_PLACEHOLDER = "{baseUrl}";
 
-  /** Mirrors the login route {@code LoginLinksBuilder} emits, for id addressability checks. */
+  /** The login route that {@code LoginLinksBuilder} makes. The id checks use the same route. */
   private static final String LOGIN_ROUTE_PROBE = "https://probe.invalid/oauth2/authorization/";
 
   /**
-   * Whether a request for this callback can reach a filter chain at all. Spring Security's default
-   * {@code StrictHttpFirewall} blocklists these substrings in a request URL and rejects the request
-   * before any chain is consulted, so a redirect-uri expanding to such a path names a callback the
-   * IdP would send the browser to and nothing could answer. The list is pinned against the firewall
-   * itself in {@code ScopedClientRegistrationFactoryTest}.
+   * Substrings that the default {@code StrictHttpFirewall} of Spring Security does not permit in a
+   * request URL. The firewall rejects such a request before it examines a filter chain. If a
+   * redirect-uri expands to a path with one of these substrings, no component can answer the
+   * callback. A test in {@code ScopedClientRegistrationFactoryTest} compares this list with the
+   * firewall itself.
    */
   private static final List<String> REJECTED_BY_THE_DEFAULT_FIREWALL =
       List.of("//", ";", "%3b", "%2f", "\\", "%5c", "%25", "%2e", "%00", "%0a", "%0d");
 
   /**
-   * Segments the same firewall rejects as a non-normalized request URL, so a callback carrying one
-   * is unreachable for the same reason.
+   * Segments that the same firewall rejects, because the request URL is then not normalized. A
+   * callback that contains such a segment is also unreachable.
    */
   private static final List<String> DOT_SEGMENTS = List.of(".", "..");
 
@@ -78,30 +78,29 @@ public final class ScopedClientRegistrationFactory {
    */
   private final Map<String, Map<String, Object>> discoveryByIssuer = new ConcurrentHashMap<>();
 
-  /** The deployment's context path as {@code request.getContextPath()} reports it. */
+  /** The context path of the deployment, in the form {@code request.getContextPath()} reports. */
   private final String basePath;
 
-  /** Validates redirect-uri templates against a deployment without a servlet context path. */
+  /** Makes a factory for a deployment that has no servlet context path. */
   public ScopedClientRegistrationFactory() {
     this("");
   }
 
   /**
-   * @param servletContextPath {@code server.servlet.context-path} as configured, {@code ""} when
-   *     unset — the same raw value {@link OidcRedirectionEndpoint#resolve} resolves a redirection
-   *     endpoint against, so both sides judge a redirect-uri under the deployment's real context
-   *     path
+   * @param servletContextPath the configured {@code server.servlet.context-path}, or {@code ""} if
+   *     it is not set. {@link OidcRedirectionEndpoint#resolve} uses the same unchanged value. Both
+   *     components therefore examine a redirect-uri under the real context path of the deployment.
    */
   public ScopedClientRegistrationFactory(final String servletContextPath) {
     basePath = contextPathAsTheServletReportsIt(servletContextPath);
   }
 
   /**
-   * Stand-ins for the request-derived values {@code DefaultOAuth2AuthorizationRequestResolver}
-   * expands a redirect-uri against. Both carry the deployment's own context path and the
-   * registration's own id; they differ in the port because {@code basePort} expands with its own
-   * {@code :} only on a non-default one, so a template that supplies the {@code :} itself is
-   * absolute on the first shape and broken on the second.
+   * Substitute values for the request data that {@code DefaultOAuth2AuthorizationRequestResolver}
+   * expands a redirect-uri with. Each shape carries the context path of the deployment and the id
+   * of the registration. The shapes differ in the port, because {@code basePort} expands with its
+   * own {@code :} only if the port is not the default port. A template that supplies the {@code :}
+   * itself is therefore absolute in the first shape and incorrect in the second shape.
    */
   private List<Map<String, String>> sampleRequestShapes(final String registrationId) {
     return List.of(
@@ -128,9 +127,10 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * The resolver expands {@code basePath} from {@code request.getContextPath()}, so a configured
-   * {@code /orchestration/} has to lose its trailing slash here: judged as configured, it would
-   * yield a callback with an empty path segment no request can carry.
+   * The resolver expands {@code basePath} from {@code request.getContextPath()}. This method
+   * therefore removes the trailing slash from a configured value such as {@code /orchestration/}.
+   * With the trailing slash, the factory examines the redirect-uri against a callback that has an
+   * empty path segment, and no request can carry such a segment.
    */
   private static String contextPathAsTheServletReportsIt(final String configured) {
     if (!StringUtils.hasText(configured) || "/".equals(configured)) {
@@ -143,8 +143,8 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Creates one {@link ClientRegistration} per entry in the given provider map. The map key is used
-   * as the {@code registrationId}.
+   * Creates one {@link ClientRegistration} for each entry in the provider map. The method uses the
+   * map key as the {@code registrationId}.
    *
    * @param providers map of registrationId to {@link OidcConfiguration}; must not be {@code null}
    * @return an ordered list of {@link ClientRegistration} instances, one per map entry
@@ -159,20 +159,21 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Creates one {@link ClientRegistration} per entry in the given provider map, overriding the
-   * {@code redirect_uri} for each registration when {@code scopedRedirectUriPath} is non-null and
-   * non-blank. The whole map is validated with {@link #validateWithoutNetwork} first, so a
-   * malformed entry is reported before an earlier entry's issuer is contacted for discovery.
+   * Creates one {@link ClientRegistration} for each entry in the provider map. If {@code
+   * scopedRedirectUriPath} is not null and not blank, the method replaces the {@code redirect_uri}
+   * of each registration with that path. The method validates the complete map with {@link
+   * #validateWithoutNetwork} first. It therefore reports an incorrect entry before it contacts the
+   * issuer of an earlier entry for discovery.
    *
-   * <p>The scoped webapp chain's redirection endpoint listens at a prefixed path (e.g. {@code
-   * /physical-tenants/{id}/sso-callback}), so the registrations built here have to carry a matching
-   * {@code redirect_uri}: without the override the IdP calls back to the unprefixed cluster path,
-   * which the scoped chain never intercepts.
+   * <p>The redirection endpoint of the scoped webapp chain listens at a path with a prefix, for
+   * example {@code /physical-tenants/{id}/sso-callback}. The registrations must carry a {@code
+   * redirect_uri} that agrees with that path. Without the replacement, the IdP calls back to the
+   * cluster path that has no prefix, and the scoped chain does not intercept that path.
    *
    * @param providers map of registrationId to {@link OidcConfiguration}; must not be {@code null}
-   * @param scopedRedirectUriPath path component to use as the redirect-uri (e.g. {@code
-   *     /physical-tenants/t1/sso-callback}); when {@code null} or blank the redirect-uri from the
-   *     {@link OidcConfiguration} is used unchanged
+   * @param scopedRedirectUriPath the path to use as the redirect-uri, for example {@code
+   *     /physical-tenants/t1/sso-callback}. If it is {@code null} or blank, the method keeps the
+   *     redirect-uri from the {@link OidcConfiguration}.
    * @return an ordered list of {@link ClientRegistration} instances, one per map entry
    * @throws IllegalArgumentException if scopedRedirectUriPath is non-blank but is not a path the
    *     default firewall lets through, or a configured redirect-uri does not expand to a usable
@@ -186,15 +187,17 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Creates one {@link ClientRegistration} per entry for a caller that derives no browser login
-   * route from the configuration — an API chain's token validation, or UserInfo augmentation, both
-   * of which read the issuer, keys and endpoints of a registration and never redirect a browser.
+   * Creates one {@link ClientRegistration} for each entry, for a caller that derives no browser
+   * login route from the configuration. Two callers do this: the token validation of an API chain,
+   * and UserInfo augmentation. Both read the issuer, the keys and the endpoints of a registration,
+   * and neither redirects a browser.
    *
-   * <p>Every check on a value such a caller uses still runs. The {@link LoginRouteChecks login
-   * route checks} do not: a redirect-uri this application could not serve, or a registration id the
-   * login route could not address, is not a reason to refuse to start where no login route exists.
-   * The login paths — the webapp client beans and the webapp chains — still reject both, which is
-   * where either is what actually breaks.
+   * <p>The method makes each check on a value that such a caller uses. It does not make the {@link
+   * LoginRouteChecks login route checks}. If no login route exists, a redirect-uri that the
+   * application cannot serve, or a registration id that the login route cannot address, is no
+   * reason to stop the application. The login paths are the webapp client beans and the webapp
+   * chains. They continue to reject both values, because they are the paths where such a value
+   * breaks the login.
    *
    * @param providers map of registrationId to {@link OidcConfiguration}; must not be {@code null}
    * @return an ordered list of {@link ClientRegistration} instances, one per map entry
@@ -207,8 +210,8 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * As {@link #createWithoutLoginRoutes(Map)}, flattening the {@link AuthenticationConfiguration}
-   * first.
+   * The same as {@link #createWithoutLoginRoutes(Map)}, but the method flattens the {@link
+   * AuthenticationConfiguration} first.
    *
    * @param authentication the authentication configuration; must not be {@code null}
    * @return an ordered list of {@link ClientRegistration} instances
@@ -256,8 +259,8 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Convenience method: flattens the {@link AuthenticationConfiguration} and builds all {@link
-   * ClientRegistration} instances from the result.
+   * Flattens the {@link AuthenticationConfiguration} and then builds all {@link ClientRegistration}
+   * instances from the result.
    *
    * @param authentication the authentication configuration; must not be {@code null}
    * @return an ordered list of {@link ClientRegistration} instances
@@ -269,21 +272,21 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Runs every check {@link #createFromProviderMap(Map, String)} performs that needs no network
-   * access, without building any registration. Lets a caller that resolves registrations lazily
-   * still reject a malformed provider block at startup, where the misconfiguration belongs, rather
-   * than on the first request that happens to need it.
+   * Makes each check that {@link #createFromProviderMap(Map, String)} makes without network access,
+   * and builds no registration. A caller that resolves registrations only when it needs them can
+   * therefore reject an incorrect provider block at startup. The failure then occurs where the
+   * configuration is, and not on the first request that needs the block.
    *
-   * @throws IllegalStateException if a provider block is one Spring could not turn into a {@link
-   *     ClientRegistration}: a blank registrationId, client-id or client-authentication-method, a
-   *     registrationId the login route cannot address as a single path segment, a scope carrying a
-   *     character a scope token cannot, an endpoint URL that is not an absolute http(s) URL with a
-   *     host and a port in TCP range, or a block setting neither issuer-uri nor all of
-   *     authorization-uri, token-uri and jwk-set-uri. A malformed URL is named before the
-   *     completeness error it causes.
-   * @throws IllegalArgumentException if {@code scopedRedirectUriPath} is not absolute or is a path
-   *     the default firewall blocks, or a configured redirect-uri does not expand to a usable
-   *     callback URL
+   * @throws IllegalStateException if Spring cannot make a {@link ClientRegistration} from a
+   *     provider block. The causes are a blank registrationId, client-id or
+   *     client-authentication-method, a registrationId that the login route cannot address as one
+   *     path segment, a scope that contains a character a scope token does not permit, an endpoint
+   *     URL that is not an absolute http(s) URL with a host and a port in the TCP range, and a
+   *     block that sets neither issuer-uri nor all of authorization-uri, token-uri and jwk-set-uri.
+   *     The method reports an incorrect URL before the completeness error that the URL causes.
+   * @throws IllegalArgumentException if {@code scopedRedirectUriPath} is not absolute, or is a path
+   *     the default firewall does not permit, or if a configured redirect-uri does not expand to a
+   *     usable callback URL
    */
   public void validateWithoutNetwork(
       final Map<String, OidcConfiguration> providers, final String scopedRedirectUriPath) {
@@ -312,9 +315,9 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Whether the caller derives browser login routes from the configuration — the login route from
-   * the registration id and the redirection endpoint from the redirect-uri. A caller that derives
-   * neither is held to neither.
+   * Tells if the caller derives browser login routes from the configuration. Such a caller derives
+   * the login route from the registration id, and the redirection endpoint from the redirect-uri.
+   * The factory makes a check only for a caller that derives the related route.
    */
   private enum LoginRouteChecks {
     ENFORCED,
@@ -322,18 +325,18 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Validates the flat {@code redirect-uri} the unscoped webapp chain mounts its redirection
-   * endpoint from, against the same contract a provider's value is held to. The flat block drives
-   * that endpoint whether or not it also contributes a registration, so a value set without a
-   * {@code client-id} never reaches {@link #validateWithoutNetwork} — and the chain would silently
-   * mount the default callback instead of the configured one.
+   * Validates the flat {@code redirect-uri} that the unscoped webapp chain uses for its redirection
+   * endpoint. The method applies the same contract as for a value in a provider block. The flat
+   * block decides that endpoint also if it adds no registration. A value without a {@code
+   * client-id} therefore never reaches {@link #validateWithoutNetwork}, and the chain mounts the
+   * default callback instead of the configured callback.
    *
-   * @param configured the flat {@code camunda.security.authentication.oidc.redirect-uri}; a blank
-   *     value leaves the default callback in place and is accepted
-   * @param registrationId the flat block's registration id, which a {@code {registrationId}}
-   *     placeholder expands to; a blank one falls back to {@link
-   *     OidcConfiguration#DEFAULT_REGISTRATION_ID}, since a flat block that contributes no
-   *     registration has no id of its own and the chain mounts the placeholder as a wildcard
+   * @param configured the flat {@code camunda.security.authentication.oidc.redirect-uri}. The
+   *     method accepts a blank value, and the default callback stays in use.
+   * @param registrationId the registration id of the flat block, which a {@code {registrationId}}
+   *     placeholder expands to. If it is blank, the method uses {@link
+   *     OidcConfiguration#DEFAULT_REGISTRATION_ID}, because a flat block that adds no registration
+   *     has no id of its own, and the chain mounts the placeholder as a wildcard.
    * @throws IllegalArgumentException if the value does not expand to a usable callback URL
    */
   public void validateRedirectionEndpointSource(
@@ -366,9 +369,10 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Holds the id to what the browser login route needs of it. Only a caller that mounts that route
-   * asks: a token decoder or a claims provider uses the id as a registration key and never resolves
-   * {@code /oauth2/authorization/<id>}, so an id it can use is no reason to refuse to start.
+   * Applies to the id the conditions of the browser login route. Only a caller that mounts that
+   * route makes this check. A token decoder or a claims provider uses the id as a registration key
+   * and never resolves {@code /oauth2/authorization/<id>}. An id that such a caller can use is
+   * therefore no reason to stop the application.
    */
   private static void requireRegistrationIdAddressableByTheLoginRoute(final String registrationId) {
     if (!isAddressableAsASinglePathSegment(registrationId)) {
@@ -385,9 +389,9 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Builds the login route the way {@code LoginLinksBuilder} does, then asks {@link URI} whether
-   * the id survives it as one segment and the default firewall whether that route is servable —
-   * rather than deciding here which characters are delimiters or blocked forms.
+   * Makes the login route in the same way as {@code LoginLinksBuilder}. The method then asks {@link
+   * URI} if the id stays one segment in that route, and asks the default firewall if it permits the
+   * route. This class therefore does not decide which characters are delimiters or forbidden forms.
    */
   private static boolean isAddressableAsASinglePathSegment(final String registrationId) {
     try {
@@ -406,8 +410,8 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * {@link ClientRegistration.Builder#build()} rejects a blank client-id anyway; checking it here
-   * only moves that failure off whichever request first resolves the registration.
+   * {@link ClientRegistration.Builder#build()} rejects a blank client-id. This check only moves
+   * that failure to startup, away from the first request that resolves the registration.
    */
   private static void requireClientId(final String registrationId, final OidcConfiguration oidc) {
     if (!StringUtils.hasText(oidc.getClientId())) {
@@ -423,8 +427,9 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Constructing the {@link ClientAuthenticationMethod} the build path constructs leaves the rule
-   * with Spring and moves its failure off the first request that needs the registration.
+   * The check makes the {@link ClientAuthenticationMethod} that the build path makes. Spring
+   * therefore keeps the rule, and the failure occurs at startup and not on the first request that
+   * needs the registration.
    */
   private static void requireClientAuthenticationMethod(
       final String registrationId, final OidcConfiguration oidc) {
@@ -444,10 +449,11 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * {@link ClientRegistration.Builder#build()} rejects a scope containing a character RFC 6749
-   * excludes from a scope token — a space, most notably, which is what a single {@code scope} entry
-   * holding a space-separated list amounts to. Running that validation on a probe registration
-   * leaves the rule with Spring and needs no network.
+   * {@link ClientRegistration.Builder#build()} rejects a scope that contains a character that RFC
+   * 6749 does not permit in a scope token. The most frequent such character is a space. A space
+   * occurs if one {@code scope} entry holds a list that spaces separate. The check makes that
+   * validation on a probe registration. Spring therefore keeps the rule, and the check needs no
+   * network.
    */
   private static void requireUsableScopes(
       final String registrationId, final OidcConfiguration oidc) {
@@ -479,9 +485,9 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Every endpoint a provider block can configure names a location the application sends requests
-   * to, and none of them needs a network to check, which keeps a typo a startup failure even where
-   * the request itself happens much later.
+   * Each endpoint in a provider block is an address to which the application sends requests. A
+   * check of these addresses needs no network. A typo therefore causes a failure at startup, also
+   * if the related request occurs much later.
    */
   private static void requireAbsoluteEndpointUrls(
       final String registrationId, final OidcConfiguration oidc) {
@@ -523,10 +529,10 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * {@code URI} accepts a numeric port no socket can use, {@code :0} and {@code :65536} among them,
-   * and still reports a host — so such a value passes every other check and fails only where
-   * something opens a connection to it. {@code -1} is what {@link URI#getPort()} reports for a URL
-   * that omits the port, leaving the scheme's default.
+   * {@code URI} accepts a numeric port that no socket can use, for example {@code :0} and {@code
+   * :65536}, and it still reports a host. Such a value therefore satisfies each other check, and it
+   * fails only where a component opens a connection. {@link URI#getPort()} reports {@code -1} for a
+   * URL without a port, and the default port of the scheme then applies.
    */
   private static boolean namesAPortInTcpRange(final URI uri) {
     final var port = uri.getPort();
@@ -570,9 +576,9 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * A non-blank path without a leading '/' would produce "{baseUrl}physical-tenants/..." which is
-   * not a valid URI — reject it early so the caller gets a clear error instead of a subtle misuse.
-   * What the path expands to is judged per registration in {@link #resolveRedirectUri}.
+   * A path that is not blank and has no leading '/' gives "{baseUrl}physical-tenants/...", which is
+   * not a valid URI. The method rejects such a path immediately, so that the caller gets a clear
+   * error. {@link #resolveRedirectUri} examines the expansion of the path for each registration.
    */
   private static void requireAbsoluteScopedRedirectUriPath(final String scopedRedirectUriPath) {
     if (StringUtils.hasText(scopedRedirectUriPath) && !scopedRedirectUriPath.startsWith("/")) {
@@ -687,20 +693,21 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Resolves the {@code redirect_uri} for a registration, in precedence order:
+   * Resolves the {@code redirect_uri} for a registration. The method uses the first value that
+   * applies:
    *
    * <ol>
-   *   <li>a scoped path (per-scope chain) as {@code {baseUrl}<scopedRedirectUriPath>}, so the
-   *       callback matches the prefixed redirection endpoint of that chain;
-   *   <li>an explicitly-configured {@code redirect-uri} on the {@link OidcConfiguration}, which
-   *       must expand to an absolute URL — see {@link #isUsableRedirectUri} and {@link
-   *       OidcConfiguration#getRedirectUri()};
-   *   <li>the {@code {baseUrl}/sso-callback} default, matching the redirection endpoint registered
-   *       under {@link OidcRedirectionEndpoint#DEFAULT_PATH}.
+   *   <li>a scoped path for a per-scope chain, as {@code {baseUrl}<scopedRedirectUriPath>}. The
+   *       callback then agrees with the redirection endpoint of that chain, which has a prefix.
+   *   <li>a {@code redirect-uri} that the {@link OidcConfiguration} configures. It must expand to
+   *       an absolute URL. See {@link #isUsableRedirectUri} and {@link
+   *       OidcConfiguration#getRedirectUri()}.
+   *   <li>the {@code {baseUrl}/sso-callback} default. It agrees with the redirection endpoint at
+   *       {@link OidcRedirectionEndpoint#DEFAULT_PATH}.
    * </ol>
    *
-   * <p>The default lets a provider that omits {@code redirect-uri} still complete the login flow,
-   * as OC's former {@code ClientRegistrationFactory} did.
+   * <p>With the default, a provider that sets no {@code redirect-uri} can complete the login flow.
+   * The former {@code ClientRegistrationFactory} in OC did the same.
    *
    * @throws IllegalArgumentException if the configured {@code redirect-uri} does not expand to a
    *     usable callback URL
@@ -750,17 +757,20 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Whether the configured redirect-uri yields a callback both the IdP and this application can
-   * use, under every {@link #sampleRequestShapes request shape} of this registration: an absolute
-   * http(s) URL with a host, a port in TCP range and a path, no fragment (RFC 6749, section 3.1.2,
-   * forbids one; a query is allowed and is passed on to the IdP), a path {@link
-   * #isServableByTheDefaultFirewall the default firewall lets through}, and a callback {@link
-   * #callbackMatchesTheRedirectionEndpoint the redirection endpoint derived from it matches}.
+   * Tells if the configured redirect-uri gives a callback that the IdP and this application can
+   * both use, in each {@link #sampleRequestShapes request shape} of this registration. The
+   * expansion must give an absolute http(s) URL with a host, a port in the TCP range and a path.
+   * The URL must have no fragment, because RFC 6749, section 3.1.2, does not permit one. A query is
+   * permitted, and the application sends it to the IdP. The path must be a path {@link
+   * #isServableByTheDefaultFirewall the default firewall permits}, and the callback must be a
+   * callback {@link #callbackMatchesTheRedirectionEndpoint the related redirection endpoint
+   * matches}.
    *
-   * <p>Expanding it as {@code DefaultOAuth2AuthorizationRequestResolver} does — same builder, same
-   * variable names — rather than modelling which placeholder yields what leaves no rule of ours to
-   * keep current: an unexpandable placeholder, an authority left incomplete and a template that is
-   * no URL at all all fail on the expansion itself.
+   * <p>The check expands the value as {@code DefaultOAuth2AuthorizationRequestResolver} does, with
+   * the same builder and the same variable names. It does not model which placeholder gives which
+   * value. No rule in this class must therefore stay correct with a Spring upgrade. A placeholder
+   * that the resolver cannot expand, an authority that stays incomplete, and a template that is no
+   * URL all fail in the expansion itself.
    */
   private boolean isUsableRedirectUri(final String configured, final String registrationId) {
     return sampleRequestShapes(registrationId).stream()
@@ -768,11 +778,12 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Whether the redirection endpoint {@link OidcRedirectionEndpoint#resolve} derives from this
-   * redirect-uri matches the callback path the expansion produced — the agreement between the two
-   * consumers of the value. Routing is out of scope: neither whether a chain mounts this provider's
-   * value, nor whether a chain's own {@code securityMatcher} selects it for the callback request,
-   * follows from the value alone. Both come from the host's {@code SecurityPathPort}.
+   * Tells if the redirection endpoint that {@link OidcRedirectionEndpoint#resolve} derives from
+   * this redirect-uri matches the callback path from the expansion. The two users of the value must
+   * agree in this way. The method does not examine routing. The value alone does not tell if a
+   * chain mounts the value of this provider, and it does not tell if the {@code securityMatcher} of
+   * a chain selects the value for the callback request. The {@code SecurityPathPort} of the host
+   * gives both answers.
    */
   private static boolean callbackMatchesTheRedirectionEndpoint(
       final String configured, final URI expanded, final String contextPath) {

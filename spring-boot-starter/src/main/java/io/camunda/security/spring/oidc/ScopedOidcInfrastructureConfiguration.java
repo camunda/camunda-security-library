@@ -22,28 +22,14 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 
 /**
- * Provides the per-scope OIDC infrastructure beans unconditionally — independently of the cluster's
- * global authentication method. This allows a host to contribute an OIDC-scoped {@link
- * io.camunda.security.api.model.config.ScopedSecurityDescriptor} regardless of whether {@code
+ * Provides the per-scope OIDC infrastructure beans unconditionally, and independently of the global
+ * authentication method of the cluster. A host can therefore contribute an OIDC-scoped {@link
+ * io.camunda.security.api.model.config.ScopedSecurityDescriptor} whether {@code
  * camunda.security.authentication.method} is {@code oidc} or {@code basic}.
  *
- * <p>The four core factories declared here build from a passed {@link
- * io.camunda.security.api.model.config.AuthenticationConfiguration} rather than from the global
- * authentication configuration, so gating them on the global method was an artificial coupling. The
- * one deployment-wide value they do take at construction is {@code server.servlet.context-path}:
- * {@link ScopedClientRegistrationFactory} judges a configured {@code redirect-uri} against the
- * context path the servlet will report, which is fixed for the application and cannot vary per
- * scope. Moving them here decouples per-scope OIDC chain construction from the cluster's global
- * authentication mode. The additional {@link ScopedOidcClaimsProviderFactory} is always registered
- * (mirroring the sibling {@link ScopedJwtDecoderFactory}); the per-scope {@link
- * io.camunda.security.api.model.config.AuthenticationConfiguration} decides whether augmentation
- * runs. The global {@code oidcUserInfoHttpClient} bean is used when present; otherwise a default
- * client is built, so a scope can enable augmentation independently of the cluster default.
- *
- * <p>Each bean is {@link ConditionalOnMissingBean} so a host (or the method-gated {@link
- * OidcBeansConfiguration}) can still override individual factories. The global {@link
- * OidcBeansConfiguration} declares no duplicate {@code @Bean} definitions for these types after
- * this refactor, so there is no bean-definition collision.
+ * <p>Each bean is {@link ConditionalOnMissingBean}, so a host, or the method-gated {@link
+ * OidcBeansConfiguration}, can override an individual factory. The global {@link
+ * OidcBeansConfiguration} declares no duplicate {@code @Bean} definition for these types.
  *
  * <p>The injected {@link TokenValidatorFactory} parameter on {@link
  * #oidcAccessTokenDecoderFactory(JWSKeySelectorFactory, ObjectProvider)} uses an {@link

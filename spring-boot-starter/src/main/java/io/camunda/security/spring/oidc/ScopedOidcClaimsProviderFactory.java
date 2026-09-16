@@ -26,10 +26,11 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
  * CachingOidcClaimsProvider}, failing fast if the config declares no OIDC provider or none exposes
  * a userInfoUri; when augmentation is disabled it returns a {@link NoopOidcClaimsProvider}.
  *
- * <p>Like that factory it builds its registrations with {@link
- * ScopedClientRegistrationFactory#createWithoutLoginRoutes}: augmentation reads a registration's
- * issuer and UserInfo endpoint on request, and redirects no browser, so it runs on a scope whose
- * redirect-uri or registration id could serve no login route.
+ * <p>This factory builds its registrations with {@link
+ * ScopedClientRegistrationFactory#createWithoutLoginRoutes}, as the sibling factory does.
+ * Augmentation reads the issuer and the UserInfo endpoint of a registration for each request, and
+ * it redirects no browser. It therefore also runs on a scope whose redirect-uri or registration id
+ * serves no login route.
  *
  * <p>Augmentation enabled-flag and cache settings are read from the per-scope {@link
  * AuthenticationConfiguration} (via {@code oidc.userInfoAugmentation}), not from the global {@link
