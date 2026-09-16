@@ -173,6 +173,26 @@ final class DeferredOidcResolutionTest {
   }
 
   @Test
+  void shouldBoundTheRateLimitStateWhileManySubjectsFailAtTheSameTime() {
+    // given failures for more subjects than the limit holds, inside one warning interval
+    for (int i = 0; i < DeferredOidcResolution.MAX_TRACKED_SUBJECTS * 2; i++) {
+      final var subject = "scope-" + UUID.randomUUID();
+      assertThatThrownBy(
+              () ->
+                  DeferredOidcResolution.resolve(
+                      subject,
+                      () -> {
+                        throw new IllegalStateException("unreachable");
+                      }))
+          .isInstanceOf(IllegalStateException.class);
+    }
+
+    // then the rate limit holds state for the limit at most, so no host grows it without a bound
+    assertThat(DeferredOidcResolution.trackedSubjectCount())
+        .isLessThanOrEqualTo(DeferredOidcResolution.MAX_TRACKED_SUBJECTS);
+  }
+
+  @Test
   void shouldNameTheProviderAndItsIssuerInTheSubject() {
     // given
     final var providers = new LinkedHashMap<String, OidcConfiguration>();

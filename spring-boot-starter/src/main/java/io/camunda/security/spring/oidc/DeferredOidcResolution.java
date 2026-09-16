@@ -9,6 +9,7 @@ package io.camunda.security.spring.oidc;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -34,10 +35,11 @@ import org.springframework.util.StringUtils;
  */
 public final class DeferredOidcResolution {
 
+  static final int MAX_TRACKED_SUBJECTS = 256;
+
   private static final Logger LOG = LoggerFactory.getLogger(DeferredOidcResolution.class);
   private static final long WARN_INTERVAL_NANOS = Duration.ofMinutes(1).toNanos();
   private static final Map<String, AtomicLong> LAST_WARN_NANOS = new ConcurrentHashMap<>();
-  private static final int MAX_TRACKED_SUBJECTS = 256;
 
   private DeferredOidcResolution() {}
 
@@ -94,12 +96,29 @@ public final class DeferredOidcResolution {
 
   /**
    * Drops each subject whose last warning is older than the interval. Such a subject permits a
-   * warning at once, so its entry holds no information. A host that creates and drops scopes gives
-   * a new subject for each scope, and the removal therefore keeps this state at the size of the
-   * subjects that fail now.
+   * warning at once, so its entry holds no information.
    */
   static void removeIdleSubjects(final long now) {
     LAST_WARN_NANOS.values().removeIf(lastWarn -> now - lastWarn.get() >= WARN_INTERVAL_NANOS);
+  }
+
+  /**
+   * Drops the subject that warned least recently, until the state holds fewer subjects than the
+   * limit. The state therefore stays bounded while more subjects than the limit fail inside one
+   * interval, which a host that gives a new subject for each scope it creates can reach. The
+   * dropped subject permits one more warning than the interval allows, and that is the cost of the
+   * bound.
+   */
+  private static void dropLeastRecentSubjects() {
+    while (LAST_WARN_NANOS.size() >= MAX_TRACKED_SUBJECTS) {
+      final var leastRecent =
+          LAST_WARN_NANOS.entrySet().stream()
+              .min(Comparator.comparingLong(subject -> subject.getValue().get()))
+              .orElse(null);
+      if (leastRecent == null || LAST_WARN_NANOS.remove(leastRecent.getKey()) == null) {
+        return;
+      }
+    }
   }
 
   /** The number of subjects the rate limit holds state for. */
@@ -109,8 +128,9 @@ public final class DeferredOidcResolution {
 
   private static boolean shouldWarn(final String subject) {
     final long now = System.nanoTime();
-    if (LAST_WARN_NANOS.size() >= MAX_TRACKED_SUBJECTS) {
+    if (LAST_WARN_NANOS.size() >= MAX_TRACKED_SUBJECTS && !LAST_WARN_NANOS.containsKey(subject)) {
       removeIdleSubjects(now);
+      dropLeastRecentSubjects();
     }
     final var lastWarn =
         LAST_WARN_NANOS.computeIfAbsent(

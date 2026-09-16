@@ -105,13 +105,16 @@ public class OidcClaimsProviderConfiguration {
 
   /**
    * Names the mapping that a failure log reports, together with each provider the mapping covers. A
-   * deployment with several identity providers can therefore see which one it cannot reach.
+   * deployment with several identity providers can therefore see which one it cannot reach. A host
+   * repository holds a set of registrations that the configuration of the library does not
+   * describe, so the subject names the host instead of naming providers the failure may not
+   * concern.
    */
   private static String userInfoMappingSubject(final ClientRegistrationRepository repo) {
-    return "the per-issuer UserInfo endpoint mapping"
+    return "the per-issuer UserInfo endpoint mapping "
         + (repo instanceof final LazyClientRegistrationRepository lazy
-            ? " for provider(s) " + lazy.providerDescriptions()
-            : "");
+            ? "for provider(s) " + lazy.providerDescriptions()
+            : "of the ClientRegistrationRepository of the host application");
   }
 
   /**
