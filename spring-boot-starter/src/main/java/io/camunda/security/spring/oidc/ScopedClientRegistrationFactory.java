@@ -193,11 +193,11 @@ public final class ScopedClientRegistrationFactory {
    * and neither redirects a browser.
    *
    * <p>The method makes each check on a value that such a caller uses. It does not make the {@link
-   * LoginRouteChecks login route checks}. If no login route exists, a redirect-uri that the
-   * application cannot serve, or a registration id that the login route cannot address, is no
-   * reason to stop the application. The login paths are the webapp client beans and the webapp
-   * chains. They continue to reject both values, because they are the paths where such a value
-   * breaks the login.
+   * LoginRouteChecks login chain checks}. If no login chain exists, a redirect-uri the application
+   * cannot serve, a registration id the login route cannot address, and a malformed end-session
+   * endpoint are no reason to stop the application. The login paths are the webapp client beans and
+   * the webapp chains. They continue to reject each of these values, because they are the paths
+   * where such a value breaks the flow.
    *
    * @param providers map of registrationId to {@link OidcConfiguration}; must not be {@code null}
    * @return an ordered list of {@link ClientRegistration} instances, one per map entry
@@ -280,10 +280,11 @@ public final class ScopedClientRegistrationFactory {
    * @throws IllegalStateException if Spring cannot make a {@link ClientRegistration} from a
    *     provider block. The causes are a blank registrationId, client-id or
    *     client-authentication-method, a registrationId that the login route cannot address as one
-   *     path segment, a scope that contains a character a scope token does not permit, an endpoint
-   *     URL that is not an absolute http(s) URL with a host and a port in the TCP range, and a
-   *     block that sets neither issuer-uri nor all of authorization-uri, token-uri and jwk-set-uri.
-   *     The method reports an incorrect URL before the completeness error that the URL causes.
+   *     path segment, a scope that contains a character a scope token does not permit, a configured
+   *     endpoint URL that is not an absolute http(s) URL with a host and a port in the TCP range,
+   *     and a block that sets neither issuer-uri nor all of authorization-uri, token-uri and
+   *     jwk-set-uri. The method reports an incorrect URL before the completeness error that the URL
+   *     causes.
    * @throws IllegalArgumentException if {@code scopedRedirectUriPath} is not absolute, or is a path
    *     the default firewall does not permit, or if a configured redirect-uri does not expand to a
    *     usable callback URL
@@ -308,16 +309,17 @@ public final class ScopedClientRegistrationFactory {
           requireClientId(registrationId, oidc);
           requireClientAuthenticationMethod(registrationId, oidc);
           requireUsableScopes(registrationId, oidc);
-          requireAbsoluteEndpointUrls(registrationId, oidc);
+          requireAbsoluteEndpointUrls(registrationId, oidc, loginRouteChecks);
           requireEndpointConfiguration(registrationId, oidc);
           resolveRedirectUri(registrationId, oidc, scopedRedirectUriPath, loginRouteChecks);
         });
   }
 
   /**
-   * Tells if the caller derives browser login routes from the configuration. Such a caller derives
-   * the login route from the registration id, and the redirection endpoint from the redirect-uri.
-   * The factory makes a check only for a caller that derives the related route.
+   * Tells if the caller mounts the browser login chain. Such a caller derives the login route from
+   * the registration id, and the redirection endpoint from the redirect-uri. It also mounts the
+   * logout handler, which is the only consumer of the end-session endpoint. The factory makes each
+   * of these checks only for such a caller.
    */
   private enum LoginRouteChecks {
     ENFORCED,
@@ -487,10 +489,14 @@ public final class ScopedClientRegistrationFactory {
   /**
    * Each endpoint in a provider block is an address to which the application sends requests. A
    * check of these addresses needs no network. A typo therefore causes a failure at startup, also
-   * if the related request occurs much later.
+   * if the related request occurs much later. Two endpoints are exempt where nothing dereferences
+   * them: a {@code user-info-uri} that the build path discards, and the end-session endpoint of a
+   * caller that mounts no login chain.
    */
   private static void requireAbsoluteEndpointUrls(
-      final String registrationId, final OidcConfiguration oidc) {
+      final String registrationId,
+      final OidcConfiguration oidc,
+      final LoginRouteChecks loginRouteChecks) {
     requireAbsoluteHttpUrl(registrationId, "issuer-uri", oidc.getIssuerUri());
     requireAbsoluteHttpUrl(registrationId, "authorization-uri", oidc.getAuthorizationUri());
     requireAbsoluteHttpUrl(registrationId, "token-uri", oidc.getTokenUri());
@@ -500,8 +506,12 @@ public final class ScopedClientRegistrationFactory {
       // never requested — validating it would fail a deployment that works today.
       requireAbsoluteHttpUrl(registrationId, "user-info-uri", oidc.getUserInfoUri());
     }
-    requireAbsoluteHttpUrl(
-        registrationId, "end-session-endpoint-uri", oidc.getEndSessionEndpointUri());
+    if (loginRouteChecks == LoginRouteChecks.ENFORCED) {
+      // CamundaOidcLogoutSuccessHandler is the only consumer, and it exists on the webapp login
+      // chain. A caller that mounts no such chain never dereferences the value.
+      requireAbsoluteHttpUrl(
+          registrationId, "end-session-endpoint-uri", oidc.getEndSessionEndpointUri());
+    }
     if (oidc.getAdditionalJwkSetUris() != null) {
       oidc.getAdditionalJwkSetUris()
           .forEach(uri -> requireAbsoluteHttpUrl(registrationId, "additional-jwk-set-uris", uri));
