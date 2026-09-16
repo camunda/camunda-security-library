@@ -846,7 +846,7 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @ParameterizedTest(name = "{0}")
-  @MethodSource("unusableRedirectUris")
+  @MethodSource("io.camunda.security.spring.oidc.RedirectUriSamples#unusable")
   void shouldRejectARedirectUriThatIsNotAUsableCallbackUrlWithoutNetwork(final String redirectUri) {
     final var oidc = explicitEndpointsWith(b -> b.redirectUri(redirectUri));
 
@@ -860,7 +860,7 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @ParameterizedTest(name = "{0}")
-  @MethodSource("unusableRedirectUris")
+  @MethodSource("io.camunda.security.spring.oidc.RedirectUriSamples#unusable")
   void shouldRejectAFlatRedirectUriTheWebappChainCannotMount(final String redirectUri) {
     // given a flat redirect-uri that contributes no registration of its own — no client-id beside
     // it — but still decides where the unscoped chain mounts its redirection endpoint
@@ -874,7 +874,7 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @ParameterizedTest(name = "{0}")
-  @MethodSource("usableRedirectUris")
+  @MethodSource("io.camunda.security.spring.oidc.RedirectUriSamples#usable")
   void shouldAcceptAFlatRedirectUriTheWebappChainCanMount(final String redirectUri) {
     // when / then the value the chain mounts its endpoint from names a callback it can serve
     assertThatNoException()
@@ -908,68 +908,14 @@ class ScopedClientRegistrationFactoryTest {
             });
   }
 
-  private static Stream<String> unusableRedirectUris() {
-    return Stream.of(
-        "http://",
-        "https:///sso-callback",
-        "ftp://example.com/sso-callback",
-        "{baseScheme}:///sso-callback",
-        "{baseScheme}://not a host/sso-callback",
-        "{baseScheme}://:8080/sso-callback",
-        "{baseScheme}://{basePath}/sso-callback",
-        "{basePath}/sso-callback",
-        "https://example.com/sso-callback#fragment",
-        "{baseUrl}#fragment",
-        "{baseUrl}",
-        "https://example.com",
-        "{baseUrl}api/callback",
-        "https://example.com/{basePath}/sso-callback",
-        "{baseUrl}/{basePath}/sso-callback",
-        "{baseUrl}sso-callback",
-        "https://example.com:{basePort}/sso-callback",
-        "{baseScheme}://{baseHost}:{basePort}/sso-callback",
-        "{typo}/sso-callback",
-        "https://example.com/{typo}/sso-callback",
-        "{baseUrl}/sso/{typo}",
-        "https://example.com/sso;callback",
-        "https://example.com/sso%3bcallback",
-        "https://example.com/sso\\callback",
-        "https://example.com/sso%2ecallback",
-        "https://example.com/sso%00callback",
-        "https://example.com/sso%0acallback",
-        "https://example.com/sso%0dcallback",
-        "https://example.com/sso%2fcallback",
-        "https://example.com/sso%5ccallback",
-        "https://example.com/sso%25callback",
-        "https://example.com:0/sso-callback",
-        "https://example.com:65536/sso-callback");
-  }
-
   @ParameterizedTest(name = "{0}")
-  @MethodSource("usableRedirectUris")
+  @MethodSource("io.camunda.security.spring.oidc.RedirectUriSamples#usable")
   void shouldAcceptAnAbsoluteOrTemplatedRedirectUriWithoutNetwork(final String redirectUri) {
     final var oidc = explicitEndpointsWith(b -> b.redirectUri(redirectUri));
 
     // when / then a placeholder is only expanded per request, so it cannot be checked here
     assertThatNoException()
         .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null));
-  }
-
-  private static Stream<String> usableRedirectUris() {
-    return Stream.of(
-        "http://localhost/sso-callback",
-        "HTTPS://example.com/sso-callback",
-        "https://example.com/sso-callback?tenant=a",
-        "https://example.com/contextual/sso-callback",
-        "https://example.com/context",
-        "https://example.com/login/oauth2/code/{registrationId}",
-        "{baseUrl}/sso-callback",
-        "{baseScheme}://{baseHost}/sso-callback",
-        "{baseScheme}://{baseHost}{basePort}{basePath}/sso-callback",
-        "https://example.com{basePath}/{action}/sso-callback",
-        "{baseUrl}/orchestration/sso-callback",
-        "https://example.com{basePath}/orchestration/sso-callback",
-        "https://example.com:65535/sso-callback");
   }
 
   @ParameterizedTest(name = "{0}")
