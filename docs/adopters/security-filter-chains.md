@@ -956,7 +956,7 @@ CSL sends the IdP `{baseUrl}<basePath><route>` as the `post_logout_redirect_uri`
 
 The verbatim form deliberately skips the base path. That is what it is for: an OP such as Auth0 matches `post_logout_redirect_uri` against its *Allowed Logout URLs* exactly and allows wildcards only in the subdomain position, so a per-cluster path prefix produces a URL no entry can ever match — and Auth0 then rejects the whole end-session request with `invalid_request` rather than logging the user out. Naming a registerable URL is how a deployment keeps the redirect instead of dropping it.
 
-A template may use `{baseUrl}`, `{baseScheme}`, `{baseHost}`, `{basePort}`, `{basePath}` and `{registrationId}`. Any other placeholder, a value that is neither absolute nor a path nor a template, and CR/LF in the value are all rejected at startup. Setting `post-logout-redirect-enabled: false` alongside a URI wins — no parameter is sent — and is logged at `WARN`.
+A template may use `{baseUrl}`, `{baseScheme}`, `{baseHost}`, `{basePort}`, `{basePath}` and `{registrationId}`, but must still resolve to an absolute URL — so it has to start with `{baseUrl}` or carry an explicit scheme such as `{baseScheme}://{baseHost}`. `{basePath}/goodbye` is rejected even though `basePath` is supported, because it expands to a relative value and RP-Initiated Logout requires this parameter to be absolute. Any other placeholder, an unbalanced brace, an absolute value with no host, a value that is none of these forms, and CR/LF in the value are all rejected at startup. Setting `post-logout-redirect-enabled: false` alongside a URI wins — no parameter is sent — and is logged at `WARN`.
 
 Two IdPs in one deployment, behaving differently:
 

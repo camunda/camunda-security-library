@@ -205,6 +205,45 @@ class ScopedWebappSecurityChainBuilderTest {
   }
 
   /**
+   * A template that expands to a relative value is rejected, even though every placeholder in it is
+   * supported. RP-Initiated Logout requires {@code post_logout_redirect_uri} to be absolute, and
+   * Spring expands this one to {@code /physical-tenants/t1/goodbye} — so without this check the IdP
+   * rejects the logout at runtime rather than the deployment failing at startup.
+   */
+  @Test
+  void configuredTemplateThatExpandsToARelativeValueThrows() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> resolvedPostLogoutRedirectUri("", configuredUri("{basePath}/goodbye")))
+        .withMessageContaining("must be an absolute URL");
+  }
+
+  /** Same for a placeholder that carries no scheme of its own. */
+  @Test
+  void configuredTemplateWithHostButNoSchemeThrows() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> resolvedPostLogoutRedirectUri("", configuredUri("{baseHost}/logged-out")))
+        .withMessageContaining("must be an absolute URL");
+  }
+
+  /** And for a supported placeholder that is not location-bearing at all. */
+  @Test
+  void configuredTemplateStartingWithANonLocationPlaceholderThrows() {
+    assertThatIllegalArgumentException()
+        .isThrownBy(
+            () -> resolvedPostLogoutRedirectUri("", configuredUri("{registrationId}/goodbye")))
+        .withMessageContaining("must be an absolute URL");
+  }
+
+  /** A template spelling the scheme out explicitly still resolves absolute, so it is accepted. */
+  @Test
+  void configuredTemplateWithExplicitSchemeIsAccepted() {
+    assertThat(
+            resolvedPostLogoutRedirectUri(
+                SCOPE_PREFIX, configuredUri("{baseScheme}://{baseHost}/logged-out")))
+        .isEqualTo("{baseScheme}://{baseHost}/logged-out");
+  }
+
+  /**
    * A template is passed through too, so a host can opt out of the prefix while keeping baseUrl.
    */
   @Test

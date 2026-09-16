@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.security;
 
+import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.cors.NoOpCorsConfigurationSource;
@@ -59,7 +60,8 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
       final ObjectProvider<CorsConfigurationSource> corsSourceProvider,
       final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
       final ObjectProvider<OidcAuthenticationEntryPoint> oidcAuthenticationEntryPointProvider,
-      final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers) {
+      final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers,
+      final ObjectProvider<OidcProviderConfigurationPort> oidcProviderConfigurationPortProvider) {
     return new ScopedWebappSecurityChainBuilder(
         authFailureHandler,
         properties,
@@ -75,7 +77,8 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
         corsSourceProvider.getIfAvailable(NoOpCorsConfigurationSource::new),
         httpsRedirectCustomizers,
         oidcAuthenticationEntryPointProvider,
-        securityHeadersCustomizers);
+        securityHeadersCustomizers,
+        oidcProviderConfigurationPortProvider);
   }
 
   // Also declared in ScopedOidcInfrastructureConfiguration; provided here too so this configuration

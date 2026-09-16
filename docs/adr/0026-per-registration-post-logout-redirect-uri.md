@@ -59,10 +59,11 @@ makes the composed URL unregisterable at an OP that matches exactly, so opting o
 expressible. Unset falls back to the composed host route, so every existing deployment is unchanged.
 
 **Per-registration resolution.** `ScopedWebappSecurityChainBuilder` builds a `Map<String, String>`
-of registrationId → template from `ScopedClientRegistrationFactory#flatten` — the same
-registrationId-keyed map the chain's `ClientRegistrationRepository` is built from, covering the flat
-`oidc.*` block and every `providers.oidc.<id>` entry — and passes it to
-`CamundaOidcLogoutSuccessHandler`. `""` means "send no parameter for this registration", which is
+of registrationId → template and passes it to `CamundaOidcLogoutSuccessHandler`. The source is
+whatever the chain's own `ClientRegistrationRepository` is built from: `OidcProviderConfigurationPort`
+for the primary chain, and `ScopedClientRegistrationFactory#flatten` of the scope's own
+`AuthenticationConfiguration` for a scoped one. Both cover the flat `oidc.*` block and every
+`providers.oidc.<id>` entry. `""` means "send no parameter for this registration", which is
 how `post-logout-redirect-enabled=false` is expressed. `isPostLogoutRedirectEnabled`'s scope-wide
 `allMatch` fold is deleted.
 
@@ -77,7 +78,10 @@ chain-wide composed route via `setPostLogoutRedirectUri`.
 or LF, when its braces are unbalanced, when it names a template variable outside the six Spring
 populates (`baseUrl`, `baseScheme`, `baseHost`, `basePort`, `basePath`, `registrationId`), when a
 placeholder-free absolute value does not parse or carries no host, or when it is neither absolute nor
-a path nor a template. Validation runs before `post-logout-redirect-enabled` is consulted.
+a path nor a template that still resolves to an absolute URL. A template qualifies only if it starts
+with `{baseUrl}` or carries an explicit scheme — every placeholder being *supported* is not enough,
+since `{basePath}/goodbye` and `{registrationId}/goodbye` expand to relative values that
+RP-Initiated Logout forbids. Validation runs before `post-logout-redirect-enabled` is consulted.
 
 ### Why these particular boundaries
 
@@ -96,6 +100,16 @@ a path nor a template. Validation runs before `post-logout-redirect-enabled` is 
   delegate is a two-field object, so there is nothing to defer. Building eagerly removes a
   `computeIfAbsent`, a concurrency question, and any unbounded-growth question for an unknown
   registrationId.
+
+- **The map is sourced from whatever built the chain's registrations, not from the properties.**
+  For the primary chain that is `OidcProviderConfigurationPort`. Both the repository bean and the
+  port's default implementation are `@ConditionalOnMissingBean`, and
+  `OidcAuthenticationConfigurationRepository#initializeProviders` is `protected` for the purpose, so
+  a host that overrides either supplies its own registrationIds *and* its own `OidcConfiguration`
+  instances — post-logout settings included. Flattening `properties.getAuthentication()` instead
+  would silently ignore those settings, or key a configured value to a registrationId the repository
+  never issues. Scoped chains keep their explicit `AuthenticationConfiguration`, which is the scope's
+  equivalent source.
 
 - **A suppressed registration and an unknown one resolve differently, and the chain keeps its
   chain-wide default.** These look like the same "no entry" case and are not.

@@ -439,7 +439,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
 
   /** Each provider in a BYO-IdP scope carries its own landing URL. */
   @Test
-  void scopedOidcChainSendsEachProvidersOwnPostLogoutRedirectUri() {
+  void scopedOidcChainSendsEachProviderItsOwnPostLogoutRedirectUri() {
     postLogoutRunner(PostLogoutPerProviderUrisScopedConfig.class)
         .run(
             ctx ->
