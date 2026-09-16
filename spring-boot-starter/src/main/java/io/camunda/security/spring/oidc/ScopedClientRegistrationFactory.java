@@ -791,7 +791,7 @@ public final class ScopedClientRegistrationFactory {
               registrationId,
               value,
               "uses unsupported template variable {"
-                  + name
+                  + (name.matches("[A-Za-z][A-Za-z0-9]*") ? name : "?")
                   + "}; supported variables are "
                   + POST_LOGOUT_TEMPLATE_VARIABLES);
         }
