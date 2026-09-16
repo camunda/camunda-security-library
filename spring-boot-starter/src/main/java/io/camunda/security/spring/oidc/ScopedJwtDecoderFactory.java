@@ -53,9 +53,8 @@ public final class ScopedJwtDecoderFactory {
    * <p>The decoder that this method returns resolves the OIDC discovery document of the provider at
    * the first token decode, and not here. This method runs while the application builds the
    * security chain, and an identity provider it cannot reach must not stop the application context.
-   * {@link SupplierJwtDecoder} keeps the decoder after a successful build only, so the next request
-   * makes a new attempt after a failed one. A configuration error that needs no network access
-   * still causes a failure here, at the configuration it is in.
+   * A configuration error that needs no network access still causes a failure here, at the
+   * configuration it is in.
    *
    * @param authentication the authentication configuration describing the OIDC provider(s)
    * @return a {@link JwtDecoder} ready to verify tokens from the configured providers
