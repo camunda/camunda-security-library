@@ -837,6 +837,17 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
+  void shouldStartAndBuildAProviderThatConfiguresNoScope() {
+    // given a provider whose scope list was unset rather than filled
+    final var providers = Map.of("oidc", explicitEndpointsWith(b -> b.scope(null)));
+
+    // when / then ClientRegistration.Builder#scope ignores a null list, so the registration builds
+    // with no scope and startup has nothing to reject
+    assertThatNoException().isThrownBy(() -> factory.validateWithoutNetwork(providers, null));
+    assertThat(factory.createFromProviderMap(providers).getFirst().getScopes()).isEmpty();
+  }
+
+  @Test
   void shouldRejectABlankClientAuthenticationMethodWithoutNetwork() {
     // given a provider whose client-authentication-method was blanked out
     final var oidc = explicitEndpointsWith(b -> b.clientAuthenticationMethod(""));
