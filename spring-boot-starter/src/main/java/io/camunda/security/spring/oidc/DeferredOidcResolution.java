@@ -13,6 +13,7 @@ import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -68,6 +69,28 @@ public final class DeferredOidcResolution {
       }
       throw failed;
     }
+  }
+
+  /**
+   * A supplier that calls {@code resolution} until it succeeds, and returns the result of that
+   * attempt from then on.
+   *
+   * <p>The supplier holds no lock while the resolution runs, unlike {@code SingletonSupplier}. A
+   * burst of requests for a provider the application cannot reach would otherwise wait one
+   * discovery timeout after another, and the request threads of the application would run out. Two
+   * callers therefore each make their own attempt, and the first result wins. A duplicate attempt
+   * on a reachable provider costs one discovery request.
+   */
+  public static <T> Supplier<T> memoizeOnSuccess(final Supplier<T> resolution) {
+    final var resolved = new AtomicReference<T>();
+    return () -> {
+      final var cached = resolved.get();
+      if (cached != null) {
+        return cached;
+      }
+      final var result = resolution.get();
+      return resolved.compareAndSet(null, result) ? result : resolved.get();
+    };
   }
 
   /**
