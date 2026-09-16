@@ -740,14 +740,31 @@ class ScopedClientRegistrationFactoryTest {
         "/physical-tenants//sso-callback",
         "/physical-tenants/./sso-callback",
         "/physical-tenants/../sso-callback",
-        "/physical-tenants/t%20a/sso-callback",
         "/physical-tenants/t%zz/sso-callback"
       })
   void shouldRejectAScopedRedirectPathTheDeploymentCannotServe(final String scopedPath) {
-    // given a scope whose base path is valid per BasePathSyntax but carries a blocked form
+    // given a scope whose base path is valid per BasePathSyntax but yields a callback no chain is
+    // asked about: a form the default firewall blocks, a non-normalized segment, or no URL at all
     final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
 
     // when / then the scoped chain would send the IdP a callback no chain is ever asked about
+    assertThatThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), scopedPath))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(scopedPath);
+  }
+
+  @Test
+  void shouldRejectAScopedRedirectPathWhoseEncodingTheEndpointAndTheCallbackDisagreeOn() {
+    // given a scope whose base path carries an encoded space — one the default firewall allows
+    final var scopedPath = "/physical-tenants/t%20a/sso-callback";
+    final var firewall = new StrictHttpFirewall();
+    final var request = new MockHttpServletRequest("GET", scopedPath);
+    assertThatNoException().isThrownBy(() -> firewall.getFirewalledRequest(request));
+
+    // when / then it is still unusable, for the other reason: the endpoint pattern keeps the escape
+    // while the expanded callback path decodes it, so the two never match and the IdP would send
+    // the browser to a callback the scoped chain's redirection endpoint does not serve
+    final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
     assertThatThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), scopedPath))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining(scopedPath);
