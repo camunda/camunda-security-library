@@ -159,7 +159,7 @@ class ScopedWebappSecurityChainBuilderTest {
         .withMessageContaining("must start with '/'");
   }
 
-  // configured post-logout-redirect-uri: per-registration override (ADR-0024)
+  // configured post-logout-redirect-uri: per-registration override (ADR-0025)
 
   private static String resolvedPostLogoutRedirectUri(
       final String prefix, final OidcConfiguration.Builder oidc) {

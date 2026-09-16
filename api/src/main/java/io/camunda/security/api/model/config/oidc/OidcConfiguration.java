@@ -382,7 +382,7 @@ public class OidcConfiguration {
    * #isPostLogoutRedirectEnabled()} can only drop it.
    *
    * <p>Resolved per client registration, so each IdP in a multi-provider deployment can carry its
-   * own value (or none). See ADR-0024.
+   * own value (or none). See ADR-0025.
    */
   public String getPostLogoutRedirectUri() {
     return postLogoutRedirectUri;

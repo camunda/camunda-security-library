@@ -43,13 +43,13 @@ import org.springframework.web.util.UriComponentsBuilder;
  *       to the provider's end-session endpoint when available, so the IdP can terminate the right
  *       session for users with multiple active identities.
  *   <li>Resolves the {@code post_logout_redirect_uri} per client registration, so each IdP in a
- *       multi-provider deployment can carry its own landing URL or send none at all (ADR-0024).
+ *       multi-provider deployment can carry its own landing URL or send none at all (ADR-0025).
  * </ul>
  *
  * <p>The same-origin check applies to the {@code Referer}-derived URL stashed on the session under
  * {@link #POST_LOGOUT_REDIRECT_ATTRIBUTE}, which the host replays after logout — not to the {@code
  * post_logout_redirect_uri} sent to the IdP. That one is deployment configuration and is allowed to
- * point off-host, which is the point of ADR-0024: an account page on another host is often the only
+ * point off-host, which is the point of ADR-0025: an account page on another host is often the only
  * URL a strict OP will accept.
  *
  * <p>Resolution order for {@code post_logout_redirect_uri}: a registration named in the
@@ -132,7 +132,7 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
   /**
    * A handler with no per-registration overrides: every registration uses whatever the inherited
    * {@link OidcClientInitiatedLogoutSuccessHandler#setPostLogoutRedirectUri} is set to, which is
-   * the behaviour this class had before ADR-0024.
+   * the behaviour this class had before ADR-0025.
    */
   public CamundaOidcLogoutSuccessHandler(
       final ClientRegistrationRepository clientRegistrationRepository) {
