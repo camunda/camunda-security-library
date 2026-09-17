@@ -294,6 +294,60 @@ class OidcBeansConfigurationJwtDecoderTest {
         "camunda.security.authentication.oidc.jwk-set-uri=" + server.jwksUri());
   }
 
+  @Test
+  void shouldNotApplyTheAdditionalJwkSetUrisOfAProviderThatDoesNotVerifyTheIssuer()
+      throws Exception {
+    // given two providers of one issuer, where the provider that does not verify its tokens is the
+    // one that adds a key set
+    try (final var verifying = OidcTestServer.startRsa("verifying");
+        final var other = OidcTestServer.startRsa("other")) {
+      final var issuerUri = verifying.issuerUri();
+      runner
+          .withPropertyValues(
+              "camunda.security.authentication.providers.oidc.provider-a.client-id=a-client",
+              "camunda.security.authentication.providers.oidc.provider-a.redirect-uri="
+                  + "{baseUrl}/login/oauth2/code/{registrationId}",
+              "camunda.security.authentication.providers.oidc.provider-a.issuer-uri=" + issuerUri,
+              "camunda.security.authentication.providers.oidc.provider-a.authorization-uri="
+                  + issuerUri
+                  + "/auth",
+              "camunda.security.authentication.providers.oidc.provider-a.token-uri="
+                  + issuerUri
+                  + "/token",
+              "camunda.security.authentication.providers.oidc.provider-a.jwk-set-uri="
+                  + verifying.jwksUri(),
+              "camunda.security.authentication.providers.oidc.provider-b.client-id=b-client",
+              "camunda.security.authentication.providers.oidc.provider-b.redirect-uri="
+                  + "{baseUrl}/login/oauth2/code/{registrationId}",
+              "camunda.security.authentication.providers.oidc.provider-b.issuer-uri=" + issuerUri,
+              "camunda.security.authentication.providers.oidc.provider-b.authorization-uri="
+                  + issuerUri
+                  + "/auth",
+              "camunda.security.authentication.providers.oidc.provider-b.token-uri="
+                  + issuerUri
+                  + "/token",
+              "camunda.security.authentication.providers.oidc.provider-b.jwk-set-uri="
+                  + verifying.jwksUri(),
+              "camunda.security.authentication.providers.oidc.provider-b.additional-jwk-set-uris[0]="
+                  + other.jwksUri())
+          .run(
+              ctx -> {
+                assertThat(ctx).hasNotFailed();
+                final var decoder = ctx.getBean(JwtDecoder.class);
+
+                // then the keys of the provider that owns the issuer decode its tokens
+                assertThat(decoder.decode(verifying.sign(issuerUri)).getSubject())
+                    .isEqualTo("alice");
+
+                // and the key set of the other provider does not, although it is configured as an
+                // additional one for the same issuer
+                final var tokenOfTheOtherKeySet = other.sign(issuerUri);
+                assertThatThrownBy(() -> decoder.decode(tokenOfTheOtherKeySet))
+                    .isInstanceOf(JwtException.class);
+              });
+    }
+  }
+
   private static String tokenWithIssuer(final String issuer) {
     final var header =
         Base64.getUrlEncoder()

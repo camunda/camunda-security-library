@@ -9,6 +9,10 @@ package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
@@ -17,6 +21,7 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -205,6 +210,74 @@ class OidcClaimsProviderConfigurationTest {
               assertThat(ctx.getBean(OidcClaimsProvider.class))
                   .isInstanceOf(CachingOidcClaimsProvider.class);
             });
+  }
+
+  @Test
+  void warnsAndKeepsTheUserInfoEndpointOfTheFirstRegistrationOfASharedIssuer() {
+    // given a repository whose two registrations declare the same issuer with their own endpoints
+    final var appender = attachAppender();
+    try {
+      new ApplicationContextRunner()
+          .withPropertyValues(
+              "camunda.security.authentication.method=oidc",
+              "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
+          .withUserConfiguration(SharedIssuerClientRegistrationRepository.class)
+          .withUserConfiguration(StubObjectMapper.class)
+          .withConfiguration(
+              AutoConfigurations.of(
+                  CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class))
+          .run(ctx -> assertThat(ctx).hasNotFailed());
+
+      // then the first registration owns the issuer, as it does for the decoder, and the operator
+      // reads which endpoint augmentation therefore never calls
+      assertThat(appender.list)
+          .anySatisfy(
+              event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                assertThat(event.getFormattedMessage())
+                    .contains("https://shared.example")
+                    .contains("'owner' wins")
+                    .contains("of 'loser' is ignored");
+              });
+    } finally {
+      detachAppender(appender);
+    }
+  }
+
+  private static ListAppender<ILoggingEvent> attachAppender() {
+    final var logger = (Logger) LoggerFactory.getLogger(OidcClaimsProviderConfiguration.class);
+    final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    appender.start();
+    logger.addAppender(appender);
+    return appender;
+  }
+
+  private static void detachAppender(final ListAppender<ILoggingEvent> appender) {
+    ((Logger) LoggerFactory.getLogger(OidcClaimsProviderConfiguration.class))
+        .detachAppender(appender);
+  }
+
+  @Configuration
+  static class SharedIssuerClientRegistrationRepository {
+    @Bean
+    ClientRegistrationRepository clientRegistrationRepository() {
+      return new InMemoryClientRegistrationRepository(
+          sharedIssuerRegistration("owner", "https://shared.example/owner/userinfo"),
+          sharedIssuerRegistration("loser", "https://shared.example/loser/userinfo"));
+    }
+
+    private static ClientRegistration sharedIssuerRegistration(
+        final String registrationId, final String userInfoUri) {
+      return ClientRegistration.withRegistrationId(registrationId)
+          .clientId("client-" + registrationId)
+          .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+          .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+          .authorizationUri("https://shared.example/oauth2/authorize")
+          .tokenUri("https://shared.example/oauth2/token")
+          .userInfoUri(userInfoUri)
+          .issuerUri("https://shared.example")
+          .build();
+    }
   }
 
   @Configuration

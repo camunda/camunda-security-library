@@ -30,6 +30,10 @@ import org.springframework.security.oauth2.jwt.Jwt;
  * <p>If the issuer is not recognized, the validation fails with an {@code invalid_token} error.
  *
  * <p>This allows support for multiple issuers in multi-tenant OIDC setups.
+ *
+ * <p>Where two registrations declare the same issuer, the validator takes the validation rules of
+ * the registration that {@link IssuerOwnership} names the owner of that issuer, and warns about the
+ * rules it therefore does not apply.
  */
 public class IssuerAwareTokenValidator implements OAuth2TokenValidator<Jwt> {
 
@@ -37,14 +41,15 @@ public class IssuerAwareTokenValidator implements OAuth2TokenValidator<Jwt> {
   private static final String CLAIM_ISSUER = "iss";
   private static final String OAUTH2_ERROR_DESCRIPTION = "Token issuer '%s' is not trusted";
 
-  private final List<ClientRegistration> clientRegistrations;
+  private final Map<String, ClientRegistration> registrationsByIssuer;
   private final TokenValidatorFactory tokenValidatorFactory;
   private final Map<String, OAuth2TokenValidator<Jwt>> validators;
 
   public IssuerAwareTokenValidator(
       final List<ClientRegistration> clientRegistrations,
       final TokenValidatorFactory tokenValidatorFactory) {
-    this.clientRegistrations = clientRegistrations;
+    registrationsByIssuer =
+        IssuerOwnership.byIssuer(clientRegistrations, LOG, "the token validation rules");
     this.tokenValidatorFactory = tokenValidatorFactory;
     validators = new ConcurrentHashMap<>();
   }
@@ -80,13 +85,10 @@ public class IssuerAwareTokenValidator implements OAuth2TokenValidator<Jwt> {
   }
 
   protected ClientRegistration getClientRegistrationByIssuer(final String issuer) {
-    return clientRegistrations.stream()
-        .filter(c -> issuer.equals(c.getProviderDetails().getIssuerUri()))
-        .findFirst()
-        .orElseGet(
-            () -> {
-              LOG.debug("No matching client registration found for issuer uri {}", issuer);
-              return null;
-            });
+    final var registration = registrationsByIssuer.get(issuer);
+    if (registration == null) {
+      LOG.debug("No matching client registration found for issuer uri {}", issuer);
+    }
+    return registration;
   }
 }
