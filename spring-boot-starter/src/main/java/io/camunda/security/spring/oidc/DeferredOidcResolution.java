@@ -38,6 +38,7 @@ public final class DeferredOidcResolution {
   private static final Logger LOG = LoggerFactory.getLogger(DeferredOidcResolution.class);
   private static final long WARN_INTERVAL_NANOS = Duration.ofMinutes(1).toNanos();
   private static final Map<String, AtomicLong> LAST_WARN_NANOS = new ConcurrentHashMap<>();
+  private static final ThreadLocal<Nesting> NESTING = ThreadLocal.withInitial(Nesting::new);
 
   private DeferredOidcResolution() {}
 
@@ -45,25 +46,46 @@ public final class DeferredOidcResolution {
    * Calls {@code resolution}. If it throws a {@link RuntimeException}, the method writes a log
    * entry and throws the exception again.
    *
+   * <p>One resolution can run inside another one. The decoder of a cluster resolves the
+   * registrations of the repository, and each of those lookups is a resolution of its own. Only the
+   * innermost step reports such a failure, because it names the provider that failed. The outer
+   * steps write it at debug level, and they take no rate-limit state, so one failure costs one
+   * warning.
+   *
    * @param subject what the step resolves. The log message names it, and the rate limit counts per
    *     subject (for example {@code client registration 'camunda' (issuer
    *     https://idp/realms/camunda)}).
    */
   public static <T> T resolve(final String subject, final Supplier<T> resolution) {
+    final var nesting = NESTING.get();
+    nesting.depth++;
     try {
       return resolution.get();
     } catch (final RuntimeException failed) {
-      if (shouldWarn(subject)) {
-        LOG.warn(
-            "Failed to resolve {}. This request is rejected, and the next request makes a new"
-                + " attempt. An unreachable identity provider therefore needs no restart, and a"
-                + " configuration error repeats until the configuration changes.",
-            subject,
-            failed);
-      } else {
+      if (nesting.reported == failed) {
         LOG.debug("Failed to resolve {}.", subject, failed);
+      } else {
+        nesting.reported = failed;
+        report(subject, failed);
       }
       throw failed;
+    } finally {
+      if (--nesting.depth == 0) {
+        NESTING.remove();
+      }
+    }
+  }
+
+  private static void report(final String subject, final RuntimeException failed) {
+    if (shouldWarn(subject)) {
+      LOG.warn(
+          "Failed to resolve {}. This request is rejected, and the next request makes a new"
+              + " attempt. An unreachable identity provider therefore needs no restart, and a"
+              + " configuration error repeats until the configuration changes.",
+          subject,
+          failed);
+    } else {
+      LOG.debug("Failed to resolve {}.", subject, failed);
     }
   }
 
@@ -164,5 +186,11 @@ public final class DeferredOidcResolution {
     final var lastWarn = trackedSubject(subject, now);
     final long previous = lastWarn.get();
     return now - previous >= WARN_INTERVAL_NANOS && lastWarn.compareAndSet(previous, now);
+  }
+
+  /** The resolutions that run on one thread, and the failure the innermost one reported. */
+  private static final class Nesting {
+    private int depth;
+    private RuntimeException reported;
   }
 }

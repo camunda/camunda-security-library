@@ -248,6 +248,38 @@ final class DeferredOidcResolutionTest {
         .isEqualTo("'discovered' (issuer https://idp.example.com/realms/camunda), 'explicit'");
   }
 
+  @Test
+  void shouldReportANestedFailureOnceAtTheStepThatNamesTheProvider() {
+    // given an outer resolution, as a decoder makes over the registrations of a repository
+    final var inner = "inner-" + UUID.randomUUID();
+
+    // when the inner step fails
+    try {
+      DeferredOidcResolution.resolve(
+          subject,
+          () ->
+              DeferredOidcResolution.resolve(
+                  inner,
+                  () -> {
+                    throw new IllegalStateException("issuer unreachable");
+                  }));
+    } catch (final IllegalStateException expected) {
+      // rethrown unchanged
+    }
+
+    // then one warning names the inner subject, and the outer step takes no rate-limit state
+    assertThat(eventsAt(Level.WARN))
+        .singleElement()
+        .satisfies(event -> assertThat(event.getFormattedMessage()).contains(inner));
+    assertThat(eventsAt(Level.DEBUG))
+        .singleElement()
+        .satisfies(event -> assertThat(event.getFormattedMessage()).contains(subject));
+
+    // and the outer step spent no rate-limit state, so its own failure still warns
+    failOnce(subject);
+    assertThat(eventsAt(Level.WARN)).hasSize(2);
+  }
+
   private void failOnce(final String logSubject) {
     try {
       DeferredOidcResolution.resolve(
