@@ -109,7 +109,7 @@ class IssuerAwareTokenValidatorTest {
                 assertThat(event.getFormattedMessage())
                     .contains(issuer)
                     .contains("'owner' wins")
-                    .contains("ignore the token validation rules of 'loser'");
+                    .contains("ignore the keys and the token validation rules of 'loser'");
               });
     } finally {
       detachAppender(appender);
@@ -130,7 +130,7 @@ class IssuerAwareTokenValidatorTest {
   }
 
   private static ListAppender<ILoggingEvent> attachAppender() {
-    final var logger = (Logger) LoggerFactory.getLogger(IssuerAwareTokenValidator.class);
+    final var logger = (Logger) LoggerFactory.getLogger(IssuerRegistrations.class);
     final ListAppender<ILoggingEvent> appender = new ListAppender<>();
     appender.start();
     logger.addAppender(appender);
@@ -138,7 +138,7 @@ class IssuerAwareTokenValidatorTest {
   }
 
   private static void detachAppender(final ListAppender<ILoggingEvent> appender) {
-    ((Logger) LoggerFactory.getLogger(IssuerAwareTokenValidator.class)).detachAppender(appender);
+    ((Logger) LoggerFactory.getLogger(IssuerRegistrations.class)).detachAppender(appender);
   }
 
   private static Jwt createJwtWithIssuer(final String issuer) {

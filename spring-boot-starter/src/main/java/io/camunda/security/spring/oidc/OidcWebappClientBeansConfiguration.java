@@ -9,6 +9,7 @@ package io.camunda.security.spring.oidc;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
+import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.security.ProtectedOidcWebappCondition;
 import java.util.ArrayList;
 import java.util.List;
@@ -72,22 +73,41 @@ public class OidcWebappClientBeansConfiguration {
    * discovery, so {@link DeferredJwtDecoder} builds the decoder at the first token decode. An
    * unreachable identity provider must not stop the application context.
    *
+   * <p>A {@link LazyClientRegistrationRepository} gives the decoder the registration of one issuer
+   * at a time. An identity provider that does not answer then fails the tokens of its own issuer,
+   * and the tokens of the providers that answer keep their response. The issuers come from the
+   * configuration of that repository, and not from the configuration of the library, because a host
+   * can wire such a repository over another set of providers, under the same registrationIds. A
+   * token would otherwise reach the keys of a registration that declares another issuer.
+   *
+   * <p>Any other repository of the host application can hold registrations that no configuration of
+   * the library describes, so the decoder reads the whole repository in that case, and one provider
+   * that does not answer fails every token.
+   *
    * <p>The issuer requirement of the issuer-aware decoder needs no network access, so the method
-   * checks it here, and a configuration error still stops the start. The check covers a repository
-   * that resolves the configured providers only, because another repository can hold another set of
-   * registrations.
+   * checks it here, and a configuration error still stops the start. The check covers the providers
+   * the decoder routes by, for the same reason.
    */
   @Bean
   @ConditionalOnMissingBean
   public JwtDecoder jwtDecoder(
       final ClientRegistrationRepository clientRegistrationRepository,
       final OidcProviderConfigurationPort oidcProviderConfigurationPort,
-      final OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory) {
-    final var providers = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
+      final OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory,
+      final CamundaSecurityLibraryProperties properties) {
     requireIterable(clientRegistrationRepository);
-    if (holdsTheConfiguredProviders(clientRegistrationRepository, providers)) {
+    if (clientRegistrationRepository instanceof final LazyClientRegistrationRepository lazy) {
+      final var providers = lazy.providers();
       oidcAccessTokenDecoderFactory.validateProvidersHaveIssuer(providers);
+      return new DeferredJwtDecoder(
+          () ->
+              DeferredOidcResolution.resolve(
+                  decoderSubject(lazy),
+                  () ->
+                      oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
+                          providers, lazy::findByRegistrationId)));
     }
+    final var providers = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
     return new DeferredJwtDecoder(
         () ->
             DeferredOidcResolution.resolve(
@@ -107,19 +127,6 @@ public class OidcWebappClientBeansConfiguration {
         + (repository instanceof final LazyClientRegistrationRepository lazy
             ? "for provider(s) " + lazy.providerDescriptions()
             : "of the ClientRegistrationRepository of the host application");
-  }
-
-  /**
-   * Whether the repository resolves the configured providers, and nothing else. The class of the
-   * repository alone does not say so: a host can wire a {@link LazyClientRegistrationRepository} of
-   * its own, over another set of providers. The registrationIds answer from the configuration, so
-   * the comparison needs no network access.
-   */
-  private static boolean holdsTheConfiguredProviders(
-      final ClientRegistrationRepository repository,
-      final Map<String, OidcConfiguration> providers) {
-    return repository instanceof final LazyClientRegistrationRepository lazy
-        && lazy.registrationIds().equals(providers.keySet());
   }
 
   /**

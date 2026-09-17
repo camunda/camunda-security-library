@@ -19,6 +19,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.BadJwtException;
+import org.springframework.security.oauth2.jwt.JwtException;
 
 /**
  * Unit tests for {@link ScopedJwtDecoderFactory}. Exercises the single-provider and multi-provider
@@ -276,6 +277,66 @@ final class ScopedJwtDecoderFactoryTest {
   }
 
   // ---------------------------------------------------------------------------
+  // One provider that does not answer
+  // ---------------------------------------------------------------------------
+
+  @Test
+  void shouldDecodeTheTokenOfAProviderThatAnswersWhileAnotherProviderDoesNot() throws Exception {
+    // given two providers that each need OIDC discovery, and one of them does not answer
+    serverA = OidcTestServer.startRsa("key-a");
+    serverB = OidcTestServer.startRsa("key-b");
+    final var providers = discoveredProviders(serverA, serverB);
+    final var factory = factoryFor(providers);
+    final var decoder = factory.buildIssuerAwareDecoder(auth(providers));
+    serverB.failNextDiscoveryRequests(Integer.MAX_VALUE);
+
+    // when a token of the provider that answers arrives
+    final var jwt = decoder.decode(serverA.sign(serverA.issuerUri()));
+
+    // then it decodes, because the decoder resolves the issuer of the token alone
+    assertThat(jwt.getSubject()).isEqualTo("alice");
+    assertThat(serverB.discoveryRequestCount()).isZero();
+  }
+
+  @Test
+  void shouldFailTheTokenOfAProviderThatDoesNotAnswerAsAServerError() throws Exception {
+    // given two providers that each need OIDC discovery, and one of them does not answer
+    serverA = OidcTestServer.startRsa("key-a");
+    serverB = OidcTestServer.startRsa("key-b");
+    final var providers = discoveredProviders(serverA, serverB);
+    final var factory = factoryFor(providers);
+    final var decoder = factory.buildIssuerAwareDecoder(auth(providers));
+    serverB.failNextDiscoveryRequests(Integer.MAX_VALUE);
+    final var tokenOfB = serverB.sign(serverB.issuerUri());
+
+    // when / then the provider is the reason and not the token, so the chain answers with a server
+    // error, as it does for a JWKS outage, and not with a refused credential
+    assertThatThrownBy(() -> decoder.decode(tokenOfB))
+        .isInstanceOf(JwtException.class)
+        .isNotInstanceOf(BadJwtException.class)
+        .hasMessageContaining(serverB.issuerUri());
+  }
+
+  @Test
+  void shouldDecodeTheTokenOfAProviderThatAnswersAgain() throws Exception {
+    // given a provider whose discovery failed for one token
+    serverA = OidcTestServer.startRsa("key-a");
+    serverB = OidcTestServer.startRsa("key-b");
+    final var providers = discoveredProviders(serverA, serverB);
+    final var factory = factoryFor(providers);
+    final var decoder = factory.buildIssuerAwareDecoder(auth(providers));
+    serverB.failNextDiscoveryRequests(1);
+    final var tokenOfB = serverB.sign(serverB.issuerUri());
+    assertThatThrownBy(() -> decoder.decode(tokenOfB)).isInstanceOf(JwtException.class);
+
+    // when the provider answers again, on the same decoder
+    final var jwt = decoder.decode(tokenOfB);
+
+    // then the next token of that issuer decodes, and the deployment needs no restart
+    assertThat(jwt.getSubject()).isEqualTo("alice");
+  }
+
+  // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
 
@@ -286,6 +347,32 @@ final class ScopedJwtDecoderFactoryTest {
     oidc.setRegistrationId(registrationId);
     auth.setOidc(oidc);
     return auth;
+  }
+
+  /**
+   * A provider that sets its issuer-uri alone, so a registration of it needs OIDC discovery. The
+   * other helpers set explicit endpoints, which need no network access at all.
+   */
+  private static OidcConfiguration discoveredProvider(
+      final OidcTestServer server, final String clientId) {
+    return OidcConfiguration.builder()
+        .clientId(clientId)
+        .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+        .issuerUri(server.issuerUri())
+        .build();
+  }
+
+  private static Map<String, OidcConfiguration> discoveredProviders(
+      final OidcTestServer a, final OidcTestServer b) {
+    return Map.of(
+        "provider-a", discoveredProvider(a, "client-a"),
+        "provider-b", discoveredProvider(b, "client-b"));
+  }
+
+  private static AuthenticationConfiguration auth(final Map<String, OidcConfiguration> providers) {
+    final var authentication = new AuthenticationConfiguration();
+    authentication.getProviders().getOidc().putAll(providers);
+    return authentication;
   }
 
   private static AuthenticationConfiguration twoProviderAuth(

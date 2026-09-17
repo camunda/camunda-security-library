@@ -77,6 +77,15 @@ public final class LazyClientRegistrationRepository
   }
 
   /**
+   * The provider configuration this repository resolves, keyed by registrationId. A caller that
+   * routes a token to one registration takes the issuers from here, so the route and the
+   * registration it reaches describe the same provider. Resolves nothing.
+   */
+  public Map<String, OidcConfiguration> providers() {
+    return providers;
+  }
+
+  /**
    * The display name that a resolved {@link ClientRegistration} carries, for each registrationId,
    * from the configuration alone. The method takes the configured {@code client-name}. If the
    * configuration sets none, it takes the issuer-uri, which is the name {@link

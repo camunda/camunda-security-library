@@ -18,10 +18,13 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.KeySourceException;
 import com.nimbusds.jose.proc.JWSKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.JWTClaimsSet;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -100,11 +103,62 @@ class IssuerAwareJWSKeySelectorTest {
                 assertThat(event.getFormattedMessage())
                     .contains(issuer)
                     .contains("'owner' wins")
-                    .contains("ignore the JWK Set URI of 'loser'");
+                    .contains("ignore the keys and the token validation rules of 'loser'");
               });
     } finally {
       detachAppender(appender);
     }
+  }
+
+  @Test
+  void shouldThrowKeySourceExceptionWhenTheProviderOfTheIssuerCannotBeResolved() {
+    // given a configured provider that does not answer
+    final var registrations =
+        IssuerRegistrations.ofConfiguration(
+            Map.of("provider-a", providerWithIssuer("https://known-issuer")),
+            registrationId -> {
+              throw new IllegalArgumentException("unreachable");
+            });
+    final var selector =
+        new IssuerAwareJWSKeySelector(registrations, jwsKeySelectorFactory, Map.of());
+    final var claims = new JWTClaimsSet.Builder().issuer("https://known-issuer").build();
+    final var header = new JWSHeader(JWSAlgorithm.RS256);
+
+    // when / then the provider is the reason and not the token, so the failure keeps the plain
+    // KeySourceException, which the caller answers with a server error, and the marker subtype
+    // stays with the tokens of an issuer no provider declares
+    assertThatThrownBy(() -> selector.selectKeys(header, claims, null))
+        .isInstanceOf(KeySourceException.class)
+        .isNotInstanceOf(BadJwtKeySourceException.class)
+        .hasMessageContaining("https://known-issuer");
+  }
+
+  @Test
+  void shouldThrowKeySourceExceptionWhenTheRegistrationGivesNoJwkSetUri() {
+    // given a registration of the issuer that carries no jwk-set-uri
+    when(clientRegistration.getProviderDetails()).thenReturn(providerDetails);
+    when(providerDetails.getIssuerUri()).thenReturn("https://known-issuer");
+    when(jwsKeySelectorFactory.createJWSKeySelector(null, null))
+        .thenThrow(new IllegalArgumentException("Missing or empty 'jwkSetUri'"));
+    final var selector =
+        new IssuerAwareJWSKeySelector(List.of(clientRegistration), jwsKeySelectorFactory);
+    final var claims = new JWTClaimsSet.Builder().issuer("https://known-issuer").build();
+    final var header = new JWSHeader(JWSAlgorithm.RS256);
+
+    // when / then the registration is the reason and not the token, so the failure keeps the
+    // exception type the decoder declares, and the plain one, which answers with a server error
+    assertThatThrownBy(() -> selector.selectKeys(header, claims, null))
+        .isInstanceOf(KeySourceException.class)
+        .isNotInstanceOf(BadJwtKeySourceException.class)
+        .hasMessageContaining("https://known-issuer");
+  }
+
+  private static OidcConfiguration providerWithIssuer(final String issuerUri) {
+    return OidcConfiguration.builder()
+        .clientId("client")
+        .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+        .issuerUri(issuerUri)
+        .build();
   }
 
   private static ClientRegistration registration(
@@ -121,7 +175,7 @@ class IssuerAwareJWSKeySelectorTest {
   }
 
   private static ListAppender<ILoggingEvent> attachAppender() {
-    final var logger = (Logger) LoggerFactory.getLogger(IssuerAwareJWSKeySelector.class);
+    final var logger = (Logger) LoggerFactory.getLogger(IssuerRegistrations.class);
     final ListAppender<ILoggingEvent> appender = new ListAppender<>();
     appender.start();
     logger.addAppender(appender);
@@ -129,6 +183,6 @@ class IssuerAwareJWSKeySelectorTest {
   }
 
   private static void detachAppender(final ListAppender<ILoggingEvent> appender) {
-    ((Logger) LoggerFactory.getLogger(IssuerAwareJWSKeySelector.class)).detachAppender(appender);
+    ((Logger) LoggerFactory.getLogger(IssuerRegistrations.class)).detachAppender(appender);
   }
 }
