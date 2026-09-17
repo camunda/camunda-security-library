@@ -332,6 +332,12 @@
       "defaultValue": true
     },
     {
+      "name": "camunda.security.authentication.oidc.post-logout-redirect-uri",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "description": "The post_logout_redirect_uri to send on RP-initiated logout, overriding the URL composed from the host's post-logout route. A value starting with '/' is a path resolved against this chain's base URL and base path; any other value is a URI template passed through untouched, so an absolute https:// URL or one using {baseUrl} does not pick up the base path. Unset by default. Resolved per OIDC provider."
+    },
+    {
       "name": "camunda.security.authentication.oidc.prefer-id-token-claims",
       "type": "java.lang.Boolean",
       "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",

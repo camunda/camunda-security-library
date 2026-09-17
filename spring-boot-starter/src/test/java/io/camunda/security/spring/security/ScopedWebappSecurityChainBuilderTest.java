@@ -12,6 +12,7 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -24,6 +25,8 @@ import org.springframework.security.oauth2.core.AuthorizationGrantType;
 class ScopedWebappSecurityChainBuilderTest {
 
   private static final String PRIMARY_AUTH_BASE_URI = "/oauth2/authorization";
+  private static final String COMPOSED_DEFAULT = "{baseUrl}/post-logout";
+  private static final String SCOPE_PREFIX = "/physical-tenants/t1";
 
   private static ClientRegistration registration(final String id) {
     return ClientRegistration.withRegistrationId(id)
@@ -154,6 +157,74 @@ class ScopedWebappSecurityChainBuilderTest {
                 ScopedWebappSecurityChainBuilder.postLogoutRedirectUri(
                     "", Optional.of("post-logout")))
         .withMessageContaining("must start with '/'");
+  }
+
+  // configured post-logout-redirect-uri: composition (ADR-0026)
+  //
+  // Only the resolution of an already-valid value lives here. Rejecting a malformed one is
+  // ScopedClientRegistrationFactory's job now, and ScopedClientRegistrationFactoryTest covers it.
+
+  private static String resolvedPostLogoutRedirectUri(
+      final String prefix, final OidcConfiguration.Builder oidc) {
+    return ScopedWebappSecurityChainBuilder.postLogoutRedirectUri(
+        "oidc", oidc.build(), prefix, COMPOSED_DEFAULT);
+  }
+
+  private static OidcConfiguration.Builder configuredUri(final String uri) {
+    return OidcConfiguration.builder().postLogoutRedirectUri(uri);
+  }
+
+  /** Nothing configured: the host's composed route is used, exactly as before the property. */
+  @Test
+  void unsetConfiguredUriFallsBackToTheHostRoute() {
+    assertThat(resolvedPostLogoutRedirectUri("", OidcConfiguration.builder()))
+        .isEqualTo(COMPOSED_DEFAULT);
+  }
+
+  /** A blank value is treated as unset rather than as "send an empty parameter". */
+  @Test
+  void blankConfiguredUriFallsBackToTheHostRoute() {
+    assertThat(resolvedPostLogoutRedirectUri("", configuredUri("  "))).isEqualTo(COMPOSED_DEFAULT);
+  }
+
+  /** A configured path overrides the host route but still resolves under the scope. */
+  @Test
+  void configuredPathIsComposedUnderTheScopePrefix() {
+    assertThat(resolvedPostLogoutRedirectUri(SCOPE_PREFIX, configuredUri("/goodbye")))
+        .isEqualTo("{baseUrl}" + SCOPE_PREFIX + "/goodbye");
+  }
+
+  /**
+   * An absolute URL is passed through untouched — in particular it does <em>not</em> pick up the
+   * scope prefix, which is the whole reason the property exists: the prefix is what makes the
+   * composed URL impossible to register at an OP that matches the parameter exactly.
+   */
+  @Test
+  void configuredAbsoluteUriIsReturnedVerbatimWithoutThePrefix() {
+    assertThat(
+            resolvedPostLogoutRedirectUri(
+                SCOPE_PREFIX, configuredUri("https://accounts.example.com/logged-out")))
+        .isEqualTo("https://accounts.example.com/logged-out");
+  }
+
+  /**
+   * A template is passed through too, so a host can opt out of the prefix while keeping baseUrl.
+   */
+  @Test
+  void configuredTemplateIsReturnedVerbatimWithoutThePrefix() {
+    assertThat(resolvedPostLogoutRedirectUri(SCOPE_PREFIX, configuredUri("{baseUrl}/post-logout")))
+        .isEqualTo("{baseUrl}/post-logout");
+  }
+
+  /** Disabling the redirect beats a configured URI; the operator's kill switch is the stronger. */
+  @Test
+  void disabledRegistrationSendsNothingEvenWithAConfiguredUri() {
+    assertThat(
+            resolvedPostLogoutRedirectUri(
+                "",
+                configuredUri("https://accounts.example.com/logged-out")
+                    .postLogoutRedirectEnabled(false)))
+        .isEmpty();
   }
 
   @Test

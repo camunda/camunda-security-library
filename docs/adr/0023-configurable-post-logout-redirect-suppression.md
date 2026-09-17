@@ -1,5 +1,5 @@
 ---
-status: Accepted
+status: Superseded by ADR-0026
 ---
 
 # ADR-0023: Suppress `post_logout_redirect_uri` by configuration for IdPs that cannot register it
@@ -8,7 +8,9 @@ status: Accepted
 
 ## Status
 
-Accepted
+Superseded by [ADR-0026](0026-per-registration-post-logout-redirect-uri.md), which keeps this
+property but makes it resolve per client registration rather than per scope, and adds a
+configurable `post-logout-redirect-uri` alongside it.
 
 ## Context
 

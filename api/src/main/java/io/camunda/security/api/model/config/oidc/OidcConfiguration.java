@@ -69,6 +69,7 @@ public class OidcConfiguration {
   private Duration clockSkew = DEFAULT_CLOCK_SKEW;
   private boolean idpLogoutEnabled = DEFAULT_IDP_LOGOUT_ENABLED;
   private boolean postLogoutRedirectEnabled = DEFAULT_POST_LOGOUT_REDIRECT_ENABLED;
+  private String postLogoutRedirectUri;
   private boolean userInfoEnabled = DEFAULT_USER_INFO_ENABLED;
   private OidcUserInfoAugmentationConfiguration userInfoAugmentation =
       new OidcUserInfoAugmentationConfiguration();
@@ -353,6 +354,44 @@ public class OidcConfiguration {
     this.postLogoutRedirectEnabled = postLogoutRedirectEnabled;
   }
 
+  /**
+   * The {@code post_logout_redirect_uri} to submit on this provider's RP-initiated logout request,
+   * overriding the value CSL composes from the host's post-logout route. Unset by default, meaning
+   * the composed value is used.
+   *
+   * <p>How the value is read depends on its first character:
+   *
+   * <ul>
+   *   <li>Starting with {@code /} — a path, resolved against the chain it belongs to exactly as the
+   *       host's own route is: {@code {baseUrl}} + the chain's base path + this path. Use it to
+   *       land somewhere other than the host's post-logout route while keeping per-scope
+   *       resolution.
+   *   <li>Anything else — a URI template passed to Spring Security untouched, so an absolute {@code
+   *       https://…} URL or a template such as {@code {baseUrl}/post-logout} both work. Spring
+   *       expands {@code {baseUrl}}, {@code {baseScheme}}, {@code {baseHost}}, {@code {basePort}},
+   *       {@code {basePath}} and {@code {registrationId}}. Notably this form does <em>not</em> pick
+   *       up the chain's base path, which is the point: it is how a deployment served under a
+   *       per-cluster prefix asks for a URL its IdP can actually have registered.
+   * </ul>
+   *
+   * <p>Auth0 is the motivating case. It matches {@code post_logout_redirect_uri} against its
+   * "Allowed Logout URLs" exactly, accepting wildcards only in the subdomain position and never in
+   * the path, so the per-cluster URL CSL composes by default can never match an entry — and Auth0
+   * answers the whole end-session request with {@code invalid_request} rather than logging the user
+   * out. Setting a registerable URL here fixes that while keeping the redirect, where {@link
+   * #isPostLogoutRedirectEnabled()} can only drop it.
+   *
+   * <p>Resolved per client registration, so each IdP in a multi-provider deployment can carry its
+   * own value (or none). See ADR-0026.
+   */
+  public String getPostLogoutRedirectUri() {
+    return postLogoutRedirectUri;
+  }
+
+  public void setPostLogoutRedirectUri(final String postLogoutRedirectUri) {
+    this.postLogoutRedirectUri = postLogoutRedirectUri;
+  }
+
   public boolean isUserInfoEnabled() {
     return userInfoEnabled;
   }
@@ -427,6 +466,7 @@ public class OidcConfiguration {
         || currentAssertionConfiguration.getKidCase() != null
         || !DEFAULT_CLOCK_SKEW.equals(clockSkew)
         || postLogoutRedirectEnabled != DEFAULT_POST_LOGOUT_REDIRECT_ENABLED
+        || postLogoutRedirectUri != null
         || diagnostics.isEnabled();
   }
 
@@ -464,6 +504,7 @@ public class OidcConfiguration {
     private Duration clockSkew = DEFAULT_CLOCK_SKEW;
     private boolean idpLogoutEnabled = DEFAULT_IDP_LOGOUT_ENABLED;
     private boolean postLogoutRedirectEnabled = DEFAULT_POST_LOGOUT_REDIRECT_ENABLED;
+    private String postLogoutRedirectUri;
     private boolean userInfoEnabled = DEFAULT_USER_INFO_ENABLED;
     private OidcUserInfoAugmentationConfiguration userInfoAugmentation =
         new OidcUserInfoAugmentationConfiguration();
@@ -611,6 +652,11 @@ public class OidcConfiguration {
       return this;
     }
 
+    public Builder postLogoutRedirectUri(final String postLogoutRedirectUri) {
+      this.postLogoutRedirectUri = postLogoutRedirectUri;
+      return this;
+    }
+
     public Builder userInfoEnabled(final boolean userInfoEnabled) {
       this.userInfoEnabled = userInfoEnabled;
       return this;
@@ -652,6 +698,7 @@ public class OidcConfiguration {
       config.setClockSkew(clockSkew);
       config.setIdpLogoutEnabled(idpLogoutEnabled);
       config.setPostLogoutRedirectEnabled(postLogoutRedirectEnabled);
+      config.setPostLogoutRedirectUri(postLogoutRedirectUri);
       config.setUserInfoEnabled(userInfoEnabled);
       config.setUserInfoAugmentation(userInfoAugmentation);
       config.setDiagnostics(diagnostics);

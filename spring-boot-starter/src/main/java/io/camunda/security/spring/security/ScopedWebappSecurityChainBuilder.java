@@ -17,6 +17,7 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.filter.AdminUserCheckFilter;
@@ -31,11 +32,14 @@ import io.camunda.security.spring.oidc.LazyClientRegistrationRepository;
 import io.camunda.security.spring.oidc.OidcRedirectionEndpoint;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
+import io.camunda.security.spring.oidc.UrlRedaction;
 import io.camunda.security.spring.scope.BasePaths;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import io.camunda.security.spring.spi.OidcAuthenticationEntryPoint;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -83,6 +87,13 @@ import org.springframework.web.cors.CorsConfigurationSource;
  * <p>Shared collaborators (handlers, providers, properties, pathPort) are constructor-injected and
  * held as fields, mirroring {@code ScopedApiSecurityChainBuilder}. Per-invocation inputs (the
  * cluster OAuth2 stack and the {@link HttpSecurity} instance) remain method parameters.
+ *
+ * <p>The constructor is Spring-wired and is not a stable extension point: it has taken a new
+ * collaborator each time the chain gained one (#529, #541, #625), always by extending the single
+ * signature rather than by adding an overload. A host obtains this bean from the context — {@link
+ * ScopedWebappSecurityChainBuilderConfiguration} is the only place in the library that constructs
+ * it — and calls {@link #buildOidcWebappChain} or {@link #buildScopedWebappChain} on it. Those two
+ * methods are the surface a host binds to.
  */
 public final class ScopedWebappSecurityChainBuilder {
 
@@ -104,6 +115,7 @@ public final class ScopedWebappSecurityChainBuilder {
   private final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers;
   private final ObjectProvider<OidcAuthenticationEntryPoint> oidcAuthenticationEntryPointProvider;
   private final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers;
+  private final ObjectProvider<OidcProviderConfigurationPort> oidcProviderConfigurationPortProvider;
 
   public ScopedWebappSecurityChainBuilder(
       final AuthFailureHandler authFailureHandler,
@@ -120,7 +132,8 @@ public final class ScopedWebappSecurityChainBuilder {
       final CorsConfigurationSource corsSource,
       final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
       final ObjectProvider<OidcAuthenticationEntryPoint> oidcAuthenticationEntryPointProvider,
-      final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers) {
+      final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers,
+      final ObjectProvider<OidcProviderConfigurationPort> oidcProviderConfigurationPortProvider) {
     this.authFailureHandler = authFailureHandler;
     this.properties = properties;
     this.pathPort = pathPort;
@@ -136,6 +149,7 @@ public final class ScopedWebappSecurityChainBuilder {
     this.httpsRedirectCustomizers = httpsRedirectCustomizers;
     this.oidcAuthenticationEntryPointProvider = oidcAuthenticationEntryPointProvider;
     this.securityHeadersCustomizers = securityHeadersCustomizers;
+    this.oidcProviderConfigurationPortProvider = oidcProviderConfigurationPortProvider;
   }
 
   /**
@@ -245,9 +259,7 @@ public final class ScopedWebappSecurityChainBuilder {
                       .invalidateHttpSession(true);
                   logout.logoutSuccessHandler(
                       oidcLogoutSuccessHandler(
-                          clientRegistrationRepository,
-                          "",
-                          isPostLogoutRedirectEnabled(clusterAuthentication())));
+                          clientRegistrationRepository, "", primaryOidcSources()));
                 });
 
     // Heartbeat is installed first among AuthorizationFilter-anchored filters (insertion order is
@@ -514,52 +526,165 @@ public final class ScopedWebappSecurityChainBuilder {
   }
 
   /**
-   * Whether every OIDC provider configured for the scope accepts {@code post_logout_redirect_uri}.
+   * The {@code post_logout_redirect_uri} template to send for each OIDC registration in the scope,
+   * where {@code ""} means "send none for this registration".
    *
-   * <p>A chain shares one {@link CamundaOidcLogoutSuccessHandler} across every registration in the
-   * scope — the flat {@code oidc.*} block and any {@code providers.oidc.<id>} entries alike (see
-   * {@link ScopedClientRegistrationFactory#flatten}) — so the flag can only be applied per scope,
-   * not per registration (ADR-0023). Reading it off {@code authentication.getOidc()} alone would
-   * silently ignore any provider declared only under {@code providers.oidc.*}, so this flattens the
-   * same way the registrations themselves are built and disables the redirect for the whole scope
-   * when any configured provider disables it — a single strict IdP among several still gets its
-   * rejection avoided.
+   * <p>Built from {@link ScopedClientRegistrationFactory#flatten} — the same registrationId-keyed
+   * map the chain's {@link ClientRegistrationRepository} is built from, covering the flat {@code
+   * oidc.*} block and every {@code providers.oidc.<id>} entry — so a deployment with several IdPs
+   * gets each one's own answer. Reading {@code authentication.getOidc()} alone would silently
+   * ignore any provider declared only under {@code providers.oidc.*}.
+   *
+   * <p>The map is total over the scope's registrations, so the handler never has to fall back to a
+   * chain-wide default: whatever it finds for a registrationId is that registration's final answer.
+   *
+   * <p>ADR-0026. This replaced a single per-scope boolean, which forced one strict IdP to strip the
+   * redirect from every other IdP in the scope (ADR-0023).
    */
-  private boolean isPostLogoutRedirectEnabled(final AuthenticationConfiguration authentication) {
-    return scopedClientRegistrationFactory.flatten(authentication).values().stream()
-        .allMatch(OidcConfiguration::isPostLogoutRedirectEnabled);
+  private Map<String, String> postLogoutRedirectUris(
+      final Map<String, OidcConfiguration> sources, final String prefix) {
+    // The factory validates these when it builds the registrations, which is the usual path. A host
+    // that replaces the ClientRegistrationRepository bean bypasses that, and this handler is still
+    // configured from the provider map — so the map actually consumed is validated here too. The
+    // rules live in one place; this only calls them.
+    scopedClientRegistrationFactory.validatePostLogoutRedirectUris(sources);
+    final var composedDefault = composedPostLogoutRedirectUri(prefix);
+    final Map<String, String> redirectUris = new LinkedHashMap<>();
+    sources.forEach(
+        (registrationId, oidc) ->
+            redirectUris.put(
+                registrationId,
+                postLogoutRedirectUri(registrationId, oidc, prefix, composedDefault)));
+    return redirectUris;
   }
 
   /**
-   * Builds the chain's logout success handler.
+   * The provider configurations backing the primary chain, taken from the same source its {@link
+   * ClientRegistrationRepository} is built from.
    *
-   * <p>{@code postLogoutRedirectEnabled} reflects the scope the chain belongs to — the cluster's
-   * for the primary chain, the tenant's for a scoped one (see {@link
-   * #isPostLogoutRedirectEnabled(AuthenticationConfiguration)}) — so a scoped chain pointing at its
-   * own IdP(s) reads their post-logout capability, matching how its registration and end-session
-   * endpoint are already resolved per scope.
+   * <p>{@code OidcWebappClientBeansConfiguration#clientRegistrationRepository} builds the primary
+   * repository from {@link OidcProviderConfigurationPort}, and both that bean and the port's
+   * default implementation are {@code @ConditionalOnMissingBean} — {@code
+   * OidcAuthenticationConfigurationRepository#initializeProviders} is even {@code protected} for
+   * the purpose. A host that overrides either supplies its own registrationIds <em>and</em> its own
+   * {@link OidcConfiguration} instances, post-logout settings included. Flattening the library
+   * properties instead would silently ignore those settings, or worse, key a configured value to a
+   * registrationId the repository never issues.
+   *
+   * <p>Falls back to the cluster properties when no port is present, which is what the port's own
+   * default implementation resolves to anyway.
+   *
+   * <p>The registrationId is the join key, and that is the whole contract. A host may replace only
+   * the {@link ClientRegistrationRepository} bean and leave the port at its default, in which case
+   * a registration whose id also appears in the port's map takes that entry's post-logout settings
+   * — the operator keyed configuration to that id, so honouring it is the point. An id that means
+   * two different providers in the two sources is contradictory configuration rather than something
+   * CSL can detect: a repository need not be {@code Iterable} (see {@code LoginLinksBuilder}), so
+   * the two sets cannot be compared in general, and matching ids would not prove common provenance
+   * anyway. An id absent from the map keeps the chain-wide default.
    */
-  private LogoutSuccessHandler oidcLogoutSuccessHandler(
-      final ClientRegistrationRepository repo,
+  private Map<String, OidcConfiguration> primaryOidcSources() {
+    final var port = oidcProviderConfigurationPortProvider.getIfAvailable();
+    return port != null
+        ? port.getOidcAuthenticationConfigurations()
+        : scopedClientRegistrationFactory.flatten(clusterAuthentication());
+  }
+
+  /**
+   * One provider's {@code post_logout_redirect_uri} template, or {@code ""} to send none.
+   *
+   * <p>Composition only. The value's shape was already vetted at startup by {@link
+   * ScopedClientRegistrationFactory}, which validates every OIDC provider block in one place
+   * (ADR-0026), so this decides where an already-legal value resolves, not whether it is legal.
+   *
+   * <p>A value starting with {@code /} is a path and resolves against this chain just as the host's
+   * own route does, keeping per-scope resolution. Anything else is a URI template handed to Spring
+   * untouched, and deliberately does <em>not</em> pick up the chain's base path: a deployment
+   * served under a per-cluster prefix needs a URL its IdP can have registered, and the prefix is
+   * exactly what makes the composed one unregisterable at an OP like Auth0.
+   *
+   * <p>{@code post-logout-redirect-enabled=false} wins over a configured URI. An operator with both
+   * set is saying "this IdP rejects the parameter", which is the more specific statement; sending
+   * the URI anyway would resurrect the very rejection the flag exists to avoid. It is logged,
+   * because silently ignoring an explicitly configured value is otherwise an afternoon lost.
+   */
+  // Package-private for unit testing, like postLogoutRedirectUri(String, Optional) above.
+  static String postLogoutRedirectUri(
+      final String registrationId,
+      final OidcConfiguration oidc,
       final String prefix,
-      final boolean postLogoutRedirectEnabled) {
-    final var handler = new CamundaOidcLogoutSuccessHandler(repo);
-    // A deployment whose IdP cannot register the resulting URL turns this off, and the end-session
-    // request goes out with no post_logout_redirect_uri at all. Checked before the route is read
-    // so the host's declaration is simply unused, rather than having to be blanked to suppress it.
-    if (!postLogoutRedirectEnabled) {
-      LOG.debug(
-          "post_logout_redirect_uri is disabled; the IdP will apply its own post-logout default.");
-      return handler;
+      final String composedDefault) {
+    final var configured = oidc.getPostLogoutRedirectUri();
+    final var value = StringUtils.hasText(configured) ? configured.trim() : null;
+    if (!oidc.isPostLogoutRedirectEnabled()) {
+      if (value != null) {
+        // The registrationId locates the offending configuration on its own, so the value itself
+        // adds nothing here and is left out rather than redacted.
+        LOG.warn(
+            "OIDC registration '{}' sets both post-logout-redirect-uri and "
+                + "post-logout-redirect-enabled=false; the configured URI is ignored and no "
+                + "post_logout_redirect_uri will be sent. Remove one of the two to make the intent "
+                + "unambiguous.",
+            registrationId);
+      }
+      return "";
     }
+    if (value == null) {
+      return composedDefault;
+    }
+    return value.startsWith("/") ? "{baseUrl}" + prefix + value : value;
+  }
+
+  /** The host-declared route, composed against the chain, used when nothing is configured. */
+  private String composedPostLogoutRedirectUri(final String prefix) {
     final var route =
         Objects.requireNonNull(
             pathPort.postLogoutRedirectPath(),
             "SecurityPathPort#postLogoutRedirectPath() must not return null; "
                 + "return Optional.empty() to send no post_logout_redirect_uri");
-    final var uri = postLogoutRedirectUri(prefix, route);
-    if (!uri.isEmpty()) {
-      handler.setPostLogoutRedirectUri(uri);
+    return postLogoutRedirectUri(prefix, route);
+  }
+
+  /**
+   * Builds the chain's logout success handler, resolving {@code post_logout_redirect_uri} per
+   * registration.
+   *
+   * <p>{@code authentication} is the scope the chain belongs to — the cluster's for the primary
+   * chain, the tenant's for a scoped one — so a scoped chain pointing at its own IdP(s) reads their
+   * post-logout configuration, matching how its registrations and end-session endpoints are already
+   * resolved per scope.
+   */
+  private LogoutSuccessHandler oidcLogoutSuccessHandler(
+      final ClientRegistrationRepository repo,
+      final String prefix,
+      final Map<String, OidcConfiguration> sources) {
+    final var redirectUris = postLogoutRedirectUris(sources, prefix);
+    final var handler = new CamundaOidcLogoutSuccessHandler(repo, redirectUris);
+    // The chain-wide default still has to be set, for registrations the map does not cover. A host
+    // may supply its own ClientRegistrationRepository — CSL's default bean is
+    // @ConditionalOnMissingBean
+    // — holding registrations that never appear under camunda.security.authentication.*. Those are
+    // absent from the map, and before ADR-0026 they got this composed route like everyone else;
+    // leaving it unset would silently drop their post_logout_redirect_uri.
+    final var composedDefault = composedPostLogoutRedirectUri(prefix);
+    if (!composedDefault.isEmpty()) {
+      handler.setPostLogoutRedirectUri(composedDefault);
+    }
+    if (LOG.isDebugEnabled()) {
+      redirectUris.forEach(
+          (registrationId, uri) -> {
+            if (uri.isEmpty()) {
+              LOG.debug(
+                  "post_logout_redirect_uri is disabled for OIDC registration '{}'; "
+                      + "the IdP will apply its own post-logout default.",
+                  registrationId);
+            } else {
+              LOG.debug(
+                  "OIDC registration '{}' will send post_logout_redirect_uri '{}'.",
+                  registrationId,
+                  UrlRedaction.redact(uri));
+            }
+          });
     }
     return handler;
   }
@@ -777,7 +902,7 @@ public final class ScopedWebappSecurityChainBuilder {
                       oidcLogoutSuccessHandler(
                           clientRegistrationRepository,
                           prefix,
-                          isPostLogoutRedirectEnabled(authentication)));
+                          scopedClientRegistrationFactory.flatten(authentication)));
                 });
 
     // Installed first among AuthorizationFilter-anchored filters (see buildOidcWebappChain) so a
