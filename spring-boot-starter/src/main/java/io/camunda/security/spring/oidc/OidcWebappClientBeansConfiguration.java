@@ -84,6 +84,7 @@ public class OidcWebappClientBeansConfiguration {
       final OidcProviderConfigurationPort oidcProviderConfigurationPort,
       final OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory) {
     final var providers = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
+    requireIterable(clientRegistrationRepository);
     if (clientRegistrationRepository instanceof LazyClientRegistrationRepository) {
       oidcAccessTokenDecoderFactory.validateProvidersHaveIssuer(providers);
     }
@@ -110,15 +111,24 @@ public class OidcWebappClientBeansConfiguration {
             : "of the ClientRegistrationRepository of the host application");
   }
 
-  @SuppressWarnings("unchecked")
-  private static List<ClientRegistration> iterableRegistrations(
-      final ClientRegistrationRepository repository) {
+  /**
+   * Rejects a repository the decoder cannot read. The shape of a repository needs no network
+   * access, so the method runs while the application builds the decoder, and a host that wires a
+   * repository of the wrong shape learns it at the start.
+   */
+  private static void requireIterable(final ClientRegistrationRepository repository) {
     if (!(repository instanceof Iterable)) {
       throw new IllegalStateException(
           "The library's default JwtDecoder requires ClientRegistrationRepository to implement"
               + " Iterable<ClientRegistration> so it can enumerate all providers. Register a"
               + " custom @Bean JwtDecoder if you are using a non-iterable repository.");
     }
+  }
+
+  @SuppressWarnings("unchecked")
+  private static List<ClientRegistration> iterableRegistrations(
+      final ClientRegistrationRepository repository) {
+    requireIterable(repository);
     final var result = new ArrayList<ClientRegistration>();
     ((Iterable<ClientRegistration>) repository).forEach(result::add);
     return result;

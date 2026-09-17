@@ -422,6 +422,20 @@ class OidcBeansConfigurationJwtDecoderTest {
   }
 
   /** Stubs OIDC infrastructure beans other than {@link JwtDecoder}. */
+  @Test
+  void shouldFailAtStartupWhenAHostRepositoryIsNotIterable() {
+    // given a host repository the default decoder cannot read, which needs no network to detect
+    runner
+        .withUserConfiguration(NonIterableRegistrationRepository.class)
+        .run(
+            ctx ->
+                assertThat(ctx)
+                    .getFailure()
+                    .rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("Iterable<ClientRegistration>"));
+  }
+
   @Configuration
   static class StubOidcInfrastructure {
 
@@ -466,6 +480,16 @@ class OidcBeansConfigurationJwtDecoderTest {
     ClientRegistrationRepository clientRegistrationRepository() {
       return new InMemoryClientRegistrationRepository(
           testRegistration("keycloak", "https://kc.example.com/jwks", "https://kc.example.com"));
+    }
+  }
+
+  /** A host repository of a shape the default decoder cannot read. */
+  @Configuration
+  static class NonIterableRegistrationRepository {
+
+    @Bean
+    ClientRegistrationRepository clientRegistrationRepository() {
+      return registrationId -> null;
     }
   }
 
