@@ -522,7 +522,7 @@ Inbound and outbound ports are CSL boundaries; concrete transport adapters on bo
 
 #### 5.4.1 Property-driven runtime mode switching
 
-The same library core is reused in all deployments. **In every runtime mode, AuthN and AuthZ enforcement is designed to be always active** — the library always configures a Spring Security filter chain to authenticate inbound requests and enforce scope-aware authorization decisions (for what is enforced today, see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance)). What differs per mode is which additional capabilities (authoring, policy propagation dispatch, engine projection) are switched on.
+The same library core is reused in all deployments. **In every runtime mode, AuthN and AuthZ enforcement is always active** — the library always configures a Spring Security filter chain to authenticate inbound requests and enforce scope-aware authorization decisions (for what is enforced today, see [rollout status](./02-current-state.md#21-rollout-status-at-a-glance)). What differs per mode is which additional capabilities (authoring, policy propagation dispatch, engine projection) are switched on.
 
 Mode activation is property-driven via Spring Boot conditions (`@ConditionalOnProperty`, or a small custom `@Conditional` when multiple properties contribute to the decision), not via Spring profiles.
 
