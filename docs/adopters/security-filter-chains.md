@@ -276,6 +276,14 @@ camunda:
 
 The flat shape stays supported indefinitely — there is no deprecation. Migrate when adding a second provider, or stay on the flat shape if a single IdP is all the host needs.
 
+#### One registration per issuer
+
+A token carries its provider in the `iss` claim alone, so one provider can own an issuer. Where two registrations declare the same `issuer-uri`, the first of them owns it, and the second contributes nothing to the handling of that issuer's tokens: not its `jwk-set-uri` and `additional-jwk-set-uris`, not its `audiences` and validation rules, not its `username-claim`, `client-id-claim` and `prefer-username-claim`, and not its UserInfo endpoint. Every step of a request reads the same owner, so a token is verified, validated and mapped by one provider, and the library logs a `WARN` per step that names the issuer, the owning registration id and the one it ignores.
+
+The owner is the first registration in the order of the configuration, which puts the flat `oidc.*` block before the `providers.oidc.*` entries, and the provider entries in the order the configuration declares them.
+
+Two app registrations of one IdP tenant therefore need one CSL provider entry, not two. Where they differ only in their signing keys, add the second key set to the owning entry with `additional-jwk-set-uris`; where they differ in their audiences, list each audience in the `audiences` of the owning entry. A difference in claim names or UserInfo endpoint cannot be expressed, because those are read per issuer.
+
 #### Resource-server `JwtDecoder` selection
 
 The library ships a single `JwtDecoder` bean that automatically selects the appropriate validation strategy based on the number of configured OIDC providers:
@@ -283,7 +291,7 @@ The library ships a single `JwtDecoder` bean that automatically selects the appr
 - **Single provider** (flat `oidc.*` block or single `providers.oidc.<id>` entry): a single-issuer `NimbusJwtDecoder` is built from the registration's JWK set URI. Behaviour is identical to prior releases — no configuration change required.
 - **Multiple providers** (two or more entries across flat and providers shapes): an **issuer-aware** decoder is built. When a token arrives, the library reads its `iss` claim and routes key selection and validation to the matching registration. A token whose `iss` matches no configured provider fails with a `BadJwtException` whose message matches `"Unknown issuer '<iss>'. No matching client registration found."`. All provider registrations must have an `issuer-uri` configured; startup fails with a message listing any offending registration ids otherwise.
 
-For the issuer-aware path, per-provider `audiences` and `additional-jwk-set-uris` are honoured independently — a token from provider A is validated against A's audience list and A's JWK set URIs only.
+For the issuer-aware path, per-provider `audiences` and `additional-jwk-set-uris` are honoured independently — a token from provider A is validated against A's audience list and A's JWK set URIs only. This holds as long as each provider declares its own issuer; see [One registration per issuer](#one-registration-per-issuer).
 
 A host-supplied `@Bean JwtDecoder` continues to take precedence via `@ConditionalOnMissingBean`. The library's default `JWSKeySelectorFactory`, `TokenValidatorFactory`, and `OidcAccessTokenDecoderFactory` beans are also overridable independently.
 
