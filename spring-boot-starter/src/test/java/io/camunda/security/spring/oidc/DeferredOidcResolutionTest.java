@@ -262,6 +262,28 @@ final class DeferredOidcResolutionTest {
   }
 
   @Test
+  void shouldRejectAMissingSubject() {
+    // then the argument is named, and not the rate limit that reads it while reporting a failure
+    assertThatThrownBy(
+            () ->
+                DeferredOidcResolution.resolve(
+                    null,
+                    () -> {
+                      throw new IllegalStateException("unreachable");
+                    }))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessage("subject must not be null");
+  }
+
+  @Test
+  void shouldRejectAMissingResolution() {
+    // then the wiring error names the argument, and not a later call of the supplier
+    assertThatThrownBy(() -> DeferredOidcResolution.memoizeOnSuccess(null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessage("resolution must not be null");
+  }
+
+  @Test
   void shouldRejectAResolutionThatGivesNull() {
     // given a resolution that gives no value, which the supplier cannot keep
     final var supplier = DeferredOidcResolution.memoizeOnSuccess(() -> null);

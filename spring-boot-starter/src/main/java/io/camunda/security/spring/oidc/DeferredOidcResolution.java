@@ -54,9 +54,12 @@ public final class DeferredOidcResolution {
    *
    * @param subject what the step resolves. The log message names it, and the rate limit counts per
    *     subject (for example {@code client registration 'camunda' (issuer
-   *     https://idp/realms/camunda)}).
+   *     https://idp/realms/camunda)}). A missing subject is rejected, because the rate limit would
+   *     throw over the failure the method reports.
    */
   public static <T> T resolve(final String subject, final Supplier<T> resolution) {
+    Objects.requireNonNull(subject, "subject must not be null");
+    Objects.requireNonNull(resolution, "resolution must not be null");
     final var nesting = NESTING.get();
     nesting.depth++;
     try {
@@ -102,6 +105,7 @@ public final class DeferredOidcResolution {
    *     such a result, and would run the resolution again at each call.
    */
   public static <T> Supplier<T> memoizeOnSuccess(final Supplier<T> resolution) {
+    Objects.requireNonNull(resolution, "resolution must not be null");
     final var resolved = new AtomicReference<T>();
     return () -> {
       final var cached = resolved.get();
