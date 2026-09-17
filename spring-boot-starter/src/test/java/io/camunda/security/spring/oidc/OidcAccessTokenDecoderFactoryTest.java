@@ -178,7 +178,7 @@ class OidcAccessTokenDecoderFactoryTest {
                 assertThat(event.getFormattedMessage())
                     .contains(issuer)
                     .contains("'owner' wins")
-                    .contains("the additional JWK Set URIs of 'loser' is ignored");
+                    .contains("ignore the additional JWK Set URIs of 'loser'");
               });
     } finally {
       detachAppender(appender);

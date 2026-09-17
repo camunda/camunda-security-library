@@ -100,7 +100,7 @@ class IssuerAwareJWSKeySelectorTest {
                 assertThat(event.getFormattedMessage())
                     .contains(issuer)
                     .contains("'owner' wins")
-                    .contains("of 'loser' is ignored");
+                    .contains("ignore the JWK Set URI of 'loser'");
               });
     } finally {
       detachAppender(appender);

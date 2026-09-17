@@ -115,8 +115,7 @@ public class OidcClaimsProviderConfiguration {
    *     mapping must be derivable; failing here makes the non-iterable repository the explicit
    *     cause rather than surfacing later as a generic "no mapping" error
    */
-  private static Map<String, String> buildUserInfoUriByIssuer(
-      final ClientRegistrationRepository repo) {
+  static Map<String, String> buildUserInfoUriByIssuer(final ClientRegistrationRepository repo) {
     if (!(repo instanceof Iterable)) {
       throw new IllegalStateException(
           "UserInfo augmentation is enabled but the ClientRegistrationRepository is not iterable, so"

@@ -211,7 +211,7 @@ final class ScopedOidcClaimsProviderFactoryTest {
                 assertThat(event.getFormattedMessage())
                     .contains(issuer)
                     .contains("'owner' wins")
-                    .contains("of 'loser' is ignored");
+                    .contains("ignore the UserInfo endpoint of 'loser'");
               });
     } finally {
       detachAppender(appender);

@@ -193,9 +193,26 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
               "camunda.security.authentication.oidc.issuer-uri=" + DEFAULT_ISSUER,
               "camunda.security.authentication.providers.oidc.web.client-id=web-client",
               "camunda.security.authentication.providers.oidc.web.issuer-uri=https://shared.example.com",
+              "camunda.security.authentication.providers.oidc.web.username-claim=web_user",
+              "camunda.security.authentication.providers.oidc.web.prefer-username-claim=true",
               "camunda.security.authentication.providers.oidc.backend.client-id=backend-client",
-              "camunda.security.authentication.providers.oidc.backend.issuer-uri=https://shared.example.com")
-          .run(ctx -> assertThat(byIssuer(ctx)).containsKey("https://shared.example.com"));
+              "camunda.security.authentication.providers.oidc.backend.issuer-uri=https://shared.example.com",
+              "camunda.security.authentication.providers.oidc.backend.username-claim=backend_user",
+              "camunda.security.authentication.providers.oidc.backend.prefer-username-claim=true")
+          .run(
+              ctx -> {
+                // A token of the shared issuer carries both usernames, so the claim the converter
+                // reads names the registration it was built from.
+                final var converter = byIssuer(ctx).get("https://shared.example.com");
+                assertThat(converter).isNotNull();
+                final var authentication =
+                    converter.convert(
+                        Map.of(
+                            "iss", "https://shared.example.com",
+                            "web_user", "web-alice",
+                            "backend_user", "backend-bob"));
+                assertThat(authentication.authenticatedUsername()).isEqualTo("web-alice");
+              });
       // "web" is configured before "backend", and the decoder of the same deployment reads that
       // order too, so the converter of a token comes from the provider that verified it.
       assertThat(appender.list)
@@ -205,7 +222,7 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
                 assertThat(event.getFormattedMessage())
                     .contains("https://shared.example.com")
                     .contains("'web' wins")
-                    .contains("of 'backend' is ignored");
+                    .contains("ignore the claim configuration of 'backend'");
               });
     } finally {
       detachAppender(appender);
