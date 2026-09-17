@@ -9,7 +9,6 @@ package io.camunda.security.spring.oidc;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.time.Duration;
-import java.util.Comparator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -140,7 +139,10 @@ public final class DeferredOidcResolution {
 
   /**
    * The rate-limit state of a subject. A known subject needs no lock. A new subject enters the
-   * state under a lock, because the limit holds only while one thread at a time adds an entry.
+   * state under a lock, because the limit holds only while one thread at a time adds an entry. A
+   * host that gives a new subject for each scope could pass the limit inside one interval, so the
+   * state is dropped as a whole at the limit. Each subject that still fails then warns once more
+   * than the interval allows, which is the cost of the bound.
    */
   private static AtomicLong trackedSubject(final String subject, final long now) {
     final var tracked = LAST_WARN_NANOS.get(subject);
@@ -149,7 +151,9 @@ public final class DeferredOidcResolution {
     }
     synchronized (LAST_WARN_NANOS) {
       removeIdleSubjects(now);
-      dropLeastRecentSubjects();
+      if (LAST_WARN_NANOS.size() >= MAX_TRACKED_SUBJECTS) {
+        LAST_WARN_NANOS.clear();
+      }
       return LAST_WARN_NANOS.computeIfAbsent(
           subject, key -> new AtomicLong(now - WARN_INTERVAL_NANOS - 1));
     }
@@ -161,24 +165,6 @@ public final class DeferredOidcResolution {
    */
   static void removeIdleSubjects(final long now) {
     LAST_WARN_NANOS.values().removeIf(lastWarn -> now - lastWarn.get() >= WARN_INTERVAL_NANOS);
-  }
-
-  /**
-   * Drops the subject that warned least recently, until the state is below the limit. A host that
-   * gives a new subject for each scope could otherwise pass the limit inside one interval. A
-   * dropped subject permits one warning more than the interval allows, which is the cost of the
-   * bound.
-   */
-  private static void dropLeastRecentSubjects() {
-    while (LAST_WARN_NANOS.size() >= MAX_TRACKED_SUBJECTS) {
-      final var leastRecent =
-          LAST_WARN_NANOS.entrySet().stream()
-              .min(Comparator.comparingLong(subject -> subject.getValue().get()))
-              .orElse(null);
-      if (leastRecent == null || LAST_WARN_NANOS.remove(leastRecent.getKey()) == null) {
-        return;
-      }
-    }
   }
 
   /** The number of subjects the rate limit holds state for. */
