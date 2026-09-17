@@ -34,7 +34,7 @@ Outcome: Cluster policies, including Physical Tenant- and Tenant-specific permis
   2. Admin associates the client with one or more tenants and assigns roles or groups appropriate for the worker.
   3. Admin configures mapping rules (if needed) so that the client's token claims map to the desired roles and tenants.
   4. Developer configures the worker application to request tokens from the Enterprise IdP using the client credentials.
-  5. At runtime, the worker calls the OC APIs with those tokens; OC's Camunda Security Library validates the token against the IdP, derives permissions from the policy model, and enforces them for each request — shipped, one evaluator for both the gateway/search layer and the engine, see [ADR-0014](./adr/0014-unified-authz-framework-in-core.md).
+  5. At runtime, the worker calls the OC APIs with those tokens; OC's Camunda Security Library validates the token against the IdP, derives permissions from the policy model, and enforces them for each request — shipped, one evaluator for both the gateway/search layer and the engine (see [ADR-0014](./adr/0014-unified-authz-framework-in-core.md) and [rollout status](./architecture/02-current-state.md#21-rollout-status-at-a-glance)).
 
 Outcome: The worker runs with the minimum required permissions derived from the unified policy model; there is no ad-hoc, engine-specific authorization logic.
 
@@ -53,7 +53,7 @@ describes is the design target, not yet implemented — see
   1. User signs into the Hub UI via the Enterprise IdP.
   2. Hub Camunda Security Library authenticates the user; role/group/tenant derivation for authorization is still performed by Management Identity today.
   3. User creates or edits models, deploys them to a target Orchestration Cluster or environment.
-  4. When the user opens the OC UI for that cluster, they authenticate via the same Enterprise IdP; OC's Camunda Security Library derives roles/tenants from the token and evaluates authorization — shipped for OC (see [ADR-0014](./adr/0014-unified-authz-framework-in-core.md)). Whether these roles/tenants are "the same or related" to Hub's depends on the not-yet-implemented Hub → OC policy distribution.
+  4. When the user opens the OC UI for that cluster, they authenticate via the same Enterprise IdP; OC's Camunda Security Library derives roles/tenants from the token and evaluates authorization — shipped for OC (see [ADR-0014](./adr/0014-unified-authz-framework-in-core.md) and [rollout status](./architecture/02-current-state.md#21-rollout-status-at-a-glance)). Whether these roles/tenants are "the same or related" to Hub's depends on the not-yet-implemented Hub → OC policy distribution.
   5. In the OC UI, the user can only see and act on data allowed by their tenant- and role-based authorizations (for example, only instances in `retail` tenant, only tasks assigned to their team).
 
 Outcome (target): The user experiences a consistent identity across Hub and OC: one Enterprise IdP login, one conceptual set of roles and tenants, and predictable access in both management and execution plane UIs.
