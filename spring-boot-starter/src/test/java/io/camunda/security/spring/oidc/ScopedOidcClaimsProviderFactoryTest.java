@@ -12,10 +12,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
@@ -24,13 +20,11 @@ import io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfigu
 import java.net.http.HttpClient;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 
@@ -50,15 +44,13 @@ final class ScopedOidcClaimsProviderFactoryTest {
 
   @InjectMocks private ScopedOidcClaimsProviderFactory factory;
 
-  // Augmentation enabled → augmenting provider, built on first claims lookup
+  // Augmentation enabled → CachingOidcClaimsProvider
   @Test
-  void shouldBuildDeferredCachingProviderWhenAugmentationEnabled() {
+  void shouldBuildCachingProviderWhenAugmentationEnabled() {
     final var authentication =
         authEnabled("https://idp.example.com", "https://idp.example.com/userinfo");
-    final var providers = Map.of("oidc", authentication.getOidc());
 
-    when(clientRegistrationFactory.flatten(authentication)).thenReturn(providers);
-    when(clientRegistrationFactory.createWithoutLoginRoutes(providers))
+    when(clientRegistrationFactory.createWithoutLoginRoutes(authentication))
         .thenReturn(
             List.of(
                 registrationWithUserInfo(
@@ -66,9 +58,7 @@ final class ScopedOidcClaimsProviderFactoryTest {
 
     final OidcClaimsProvider provider = factory.buildClaimsProvider(authentication);
 
-    assertThat(provider).isInstanceOf(DeferredOidcClaimsProvider.class);
-    verifyNoInteractions(httpClient);
-    assertThat(claimsForUnaugmentedToken(provider)).containsEntry("iss", "https://idp.example.com");
+    assertThat(provider).isInstanceOf(CachingOidcClaimsProvider.class);
   }
 
   // Augmentation disabled → NoopOidcClaimsProvider (no network calls made)
@@ -109,68 +99,18 @@ final class ScopedOidcClaimsProviderFactoryTest {
     verifyNoInteractions(clientRegistrationFactory, httpClient);
   }
 
-  // Augmentation enabled but no provider exposes a userInfoUri → fails on first claims lookup
+  // Augmentation enabled but no provider exposes a userInfoUri → fail fast (config mismatch)
   @Test
-  void shouldThrowOnFirstLookupWhenAugmentationEnabledButNoUserInfoEndpoint() {
+  void shouldThrowWhenAugmentationEnabledButNoUserInfoEndpoint() {
     final var authentication = authEnabled("https://idp.example.com", null);
-    final var providers = Map.of("oidc", authentication.getOidc());
 
     // Provider resolves but has no userInfoUri — augmentation could never run.
-    when(clientRegistrationFactory.flatten(authentication)).thenReturn(providers);
-    when(clientRegistrationFactory.createWithoutLoginRoutes(providers))
+    when(clientRegistrationFactory.createWithoutLoginRoutes(authentication))
         .thenReturn(List.of(registrationWithoutUserInfo("oidc", "https://idp.example.com")));
 
-    final OidcClaimsProvider provider = factory.buildClaimsProvider(authentication);
-
-    assertThatThrownBy(() -> claimsForUnaugmentedToken(provider))
+    assertThatThrownBy(() -> factory.buildClaimsProvider(authentication))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("userInfoUri");
-  }
-
-  @Test
-  void shouldNameTheScopeAndTheProviderWhenTheClaimsMappingCannotBeBuilt() {
-    // given a scoped provider whose registration exposes no userInfoUri, so the deferred build of
-    // the mapping fails at the first claims lookup
-    final var basePath = "/physical-tenants/" + UUID.randomUUID();
-    final var authentication = authEnabled("https://idp.example.com", null);
-    final var providers = Map.of("oidc", authentication.getOidc());
-    when(clientRegistrationFactory.flatten(authentication)).thenReturn(providers);
-    when(clientRegistrationFactory.createWithoutLoginRoutes(providers))
-        .thenReturn(List.of(registrationWithoutUserInfo("oidc", "https://idp.example.com")));
-    final var provider = factory.buildClaimsProvider(authentication, "basePath=" + basePath);
-    final var appender = captureResolutionLogs();
-
-    // when
-    try {
-      assertThatThrownBy(() -> claimsForUnaugmentedToken(provider))
-          .isInstanceOf(IllegalStateException.class);
-    } finally {
-      releaseResolutionLogs(appender);
-    }
-
-    // then the WARN tells the operator which provider and which scope the failure belongs to, so
-    // two scopes that configure the same provider stay distinguishable
-    assertThat(appender.list)
-        .filteredOn(event -> event.getLevel() == Level.WARN)
-        .singleElement()
-        .satisfies(
-            event ->
-                assertThat(event.getFormattedMessage())
-                    .contains("'oidc'")
-                    .contains("https://idp.example.com")
-                    .contains("basePath=" + basePath));
-  }
-
-  private static ListAppender<ILoggingEvent> captureResolutionLogs() {
-    final var appender = new ListAppender<ILoggingEvent>();
-    appender.start();
-    ((Logger) LoggerFactory.getLogger(DeferredOidcResolution.class)).addAppender(appender);
-    return appender;
-  }
-
-  private static void releaseResolutionLogs(final ListAppender<ILoggingEvent> appender) {
-    ((Logger) LoggerFactory.getLogger(DeferredOidcResolution.class)).detachAppender(appender);
-    appender.stop();
   }
 
   // Augmentation enabled but no OIDC provider resolves → fail fast (broken config)
@@ -179,23 +119,13 @@ final class ScopedOidcClaimsProviderFactoryTest {
     final var authentication =
         authEnabled("https://idp.example.com", "https://idp.example.com/userinfo");
 
-    // No OIDC provider is configured for this scope — a broken config, mirroring
-    // ScopedJwtDecoderFactory. A config error needs no network access, so it still fails where the
-    // chain is built rather than on the first request.
-    when(clientRegistrationFactory.flatten(authentication)).thenReturn(Map.of());
+    // No OIDC provider resolves for this scope — a broken config, mirroring
+    // ScopedJwtDecoderFactory.
+    when(clientRegistrationFactory.createWithoutLoginRoutes(authentication)).thenReturn(List.of());
 
     assertThatThrownBy(() -> factory.buildClaimsProvider(authentication))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("declares no OIDC provider");
-  }
-
-  /**
-   * Runs a claims lookup that forces the deferred delegate to be built but performs no UserInfo
-   * call: the token carries no {@code openid} scope, so an augmenting provider returns the claims
-   * unchanged.
-   */
-  private static Map<String, Object> claimsForUnaugmentedToken(final OidcClaimsProvider provider) {
-    return provider.claimsFor(Map.of("iss", "https://idp.example.com"), "token");
   }
 
   // buildUserInfoUriByIssuer helper

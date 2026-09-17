@@ -8,23 +8,15 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.context.OidcClaimsProvider;
-import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import java.net.http.HttpClient;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.UUID;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
@@ -75,14 +67,12 @@ class OidcClaimsProviderConfigurationTest {
             ctx -> {
               assertThat(ctx).hasSingleBean(OidcClaimsProvider.class);
               assertThat(ctx.getBean(OidcClaimsProvider.class))
-                  .isInstanceOf(DeferredOidcClaimsProvider.class);
-              assertThat(claimsForUnaugmentedToken(ctx.getBean(OidcClaimsProvider.class)))
-                  .containsEntry("iss", "https://idp-a.example");
+                  .isInstanceOf(CachingOidcClaimsProvider.class);
             });
   }
 
   @Test
-  void cachingProviderFailsOnFirstLookupWhenNoUserInfoUriResolved() {
+  void cachingProviderFailsFastWhenNoUserInfoUriResolved() {
     // Augmentation enabled but no ClientRegistration exposes a userInfoUri — a config mismatch that
     // must fail loudly so the operator notices, rather than silently running without augmentation.
     runner
@@ -90,86 +80,16 @@ class OidcClaimsProviderConfigurationTest {
             "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
         .run(
             ctx -> {
-              assertThat(ctx).hasNotFailed();
-              assertThatThrownBy(
-                      () -> claimsForUnaugmentedToken(ctx.getBean(OidcClaimsProvider.class)))
-                  .isInstanceOf(IllegalStateException.class);
+              assertThat(ctx).hasFailed();
+              assertThat(ctx).getFailure().hasRootCauseInstanceOf(IllegalStateException.class);
             });
   }
 
   @Test
-  void shouldNameTheProviderWhenTheClusterLevelMappingCannotBeBuilt() {
-    // given a lazy repository whose only provider exposes no userInfoUri, so the deferred build of
-    // the cluster-level mapping fails at the first claims lookup
-    final var registrationId = "idp-" + UUID.randomUUID();
-    new ApplicationContextRunner()
-        .withPropertyValues(
-            "camunda.security.authentication.method=oidc",
-            "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
-        .withBean(
-            ClientRegistrationRepository.class,
-            () ->
-                new LazyClientRegistrationRepository(
-                    new ScopedClientRegistrationFactory(),
-                    Map.of(registrationId, providerWithExplicitEndpoints())))
-        .withUserConfiguration(StubObjectMapper.class)
-        .withConfiguration(
-            AutoConfigurations.of(
-                CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class))
-        .run(
-            ctx -> {
-              final var appender = captureResolutionLogs();
-
-              // when
-              try {
-                assertThatThrownBy(
-                        () -> claimsForUnaugmentedToken(ctx.getBean(OidcClaimsProvider.class)))
-                    .isInstanceOf(IllegalStateException.class);
-              } finally {
-                releaseResolutionLogs(appender);
-              }
-
-              // then the WARN names the provider, so an operator of a deployment with several
-              // identity providers sees which one the failure belongs to
-              assertThat(appender.list)
-                  .filteredOn(event -> event.getLevel() == Level.WARN)
-                  .singleElement()
-                  .satisfies(
-                      event ->
-                          assertThat(event.getFormattedMessage())
-                              .contains("'" + registrationId + "'"));
-            });
-  }
-
-  private static OidcConfiguration providerWithExplicitEndpoints() {
-    // Explicit endpoints and no issuer-uri keep the resolution offline: the registration builds
-    // without OIDC discovery, and it carries no userInfoUri.
-    return OidcConfiguration.builder()
-        .clientId("client-id")
-        .redirectUri("{baseUrl}/sso-callback")
-        .authorizationUri("https://idp-a.example/auth")
-        .tokenUri("https://idp-a.example/token")
-        .jwkSetUri("https://idp-a.example/jwks")
-        .build();
-  }
-
-  private static ListAppender<ILoggingEvent> captureResolutionLogs() {
-    final var appender = new ListAppender<ILoggingEvent>();
-    appender.start();
-    ((Logger) LoggerFactory.getLogger(DeferredOidcResolution.class)).addAppender(appender);
-    return appender;
-  }
-
-  private static void releaseResolutionLogs(final ListAppender<ILoggingEvent> appender) {
-    ((Logger) LoggerFactory.getLogger(DeferredOidcResolution.class)).detachAppender(appender);
-    appender.stop();
-  }
-
-  @Test
-  void cachingProviderFailsOnFirstLookupWhenRepositoryNotIterable() {
+  void cachingProviderFailsFastWhenRepositoryNotIterable() {
     // A non-iterable ClientRegistrationRepository cannot yield a per-issuer mapping; with
-    // augmentation enabled this must name the non-iterable repository as the cause rather than
-    // emit a WARN and then a generic "no mapping" error.
+    // augmentation enabled this must fail fast at the source rather than emit a WARN and then a
+    // generic "no mapping" error.
     new ApplicationContextRunner()
         .withPropertyValues(
             "camunda.security.authentication.method=oidc",
@@ -181,11 +101,8 @@ class OidcClaimsProviderConfigurationTest {
                 CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class))
         .run(
             ctx -> {
-              assertThat(ctx).hasNotFailed();
-              assertThatThrownBy(
-                      () -> claimsForUnaugmentedToken(ctx.getBean(OidcClaimsProvider.class)))
-                  .isInstanceOf(IllegalStateException.class)
-                  .hasMessageContaining("not iterable");
+              assertThat(ctx).hasFailed();
+              assertThat(ctx).getFailure().hasRootCauseInstanceOf(IllegalStateException.class);
             });
   }
 
@@ -285,18 +202,9 @@ class OidcClaimsProviderConfigurationTest {
             ctx -> {
               assertThat(ctx).hasNotFailed();
               assertThat(ctx).hasSingleBean(OidcClaimsProvider.class);
-              assertThat(claimsForUnaugmentedToken(ctx.getBean(OidcClaimsProvider.class)))
-                  .containsEntry("iss", "https://idp-a.example");
+              assertThat(ctx.getBean(OidcClaimsProvider.class))
+                  .isInstanceOf(CachingOidcClaimsProvider.class);
             });
-  }
-
-  /**
-   * Runs a claims lookup that forces the deferred delegate to be built but performs no UserInfo
-   * call: the token carries no {@code openid} scope, so an augmenting provider returns the claims
-   * unchanged.
-   */
-  private static Map<String, Object> claimsForUnaugmentedToken(final OidcClaimsProvider provider) {
-    return provider.claimsFor(Map.of("iss", "https://idp-a.example"), "token");
   }
 
   @Configuration
