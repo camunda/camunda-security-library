@@ -130,8 +130,8 @@ public class OidcBeansConfiguration {
                   contextPropagator);
       if (byIssuer.putIfAbsent(issuerUri, converter) != null) {
         LOG.warn(
-            "Issuer '{}' is claimed by multiple OIDC registrations: '{}' wins, claim config of"
-                + " '{}' is ignored.",
+            "Issuer '{}' is claimed by multiple OIDC registrations: '{}' wins, and the tokens of"
+                + " that issuer ignore the claim configuration of '{}'.",
             issuerUri,
             winningRegistrationIdByIssuer.get(issuerUri),
             registrationId);

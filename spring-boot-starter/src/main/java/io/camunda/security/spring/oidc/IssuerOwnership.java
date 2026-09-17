@@ -48,8 +48,8 @@ final class IssuerOwnership {
       final var owner = owners.putIfAbsent(issuerUri, registration);
       if (owner != null) {
         log.warn(
-            "Issuer '{}' is claimed by multiple OIDC registrations: '{}' wins, {} of '{}' is"
-                + " ignored.",
+            "Issuer '{}' is claimed by multiple OIDC registrations: '{}' wins, and the tokens of"
+                + " that issuer ignore {} of '{}'.",
             issuerUri,
             owner.getRegistrationId(),
             ignoredConfiguration,

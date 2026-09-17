@@ -109,7 +109,7 @@ class IssuerAwareTokenValidatorTest {
                 assertThat(event.getFormattedMessage())
                     .contains(issuer)
                     .contains("'owner' wins")
-                    .contains("of 'loser' is ignored");
+                    .contains("ignore the token validation rules of 'loser'");
               });
     } finally {
       detachAppender(appender);

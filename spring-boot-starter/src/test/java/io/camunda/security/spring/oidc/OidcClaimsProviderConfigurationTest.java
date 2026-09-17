@@ -8,6 +8,7 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -228,8 +229,13 @@ class OidcClaimsProviderConfigurationTest {
                   CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class))
           .run(ctx -> assertThat(ctx).hasNotFailed());
 
-      // then the first registration owns the issuer, as it does for the decoder, and the operator
-      // reads which endpoint augmentation therefore never calls
+      // then augmentation calls the endpoint of the registration the decoder reads, and the
+      // operator reads which endpoint it therefore never calls
+      assertThat(
+              OidcClaimsProviderConfiguration.buildUserInfoUriByIssuer(
+                  SharedIssuerClientRegistrationRepository.sharedIssuerRepository()))
+          .containsExactly(
+              entry("https://shared.example", "https://shared.example/owner/userinfo"));
       assertThat(appender.list)
           .anySatisfy(
               event -> {
@@ -237,7 +243,7 @@ class OidcClaimsProviderConfigurationTest {
                 assertThat(event.getFormattedMessage())
                     .contains("https://shared.example")
                     .contains("'owner' wins")
-                    .contains("of 'loser' is ignored");
+                    .contains("ignore the UserInfo endpoint of 'loser'");
               });
     } finally {
       detachAppender(appender);
@@ -261,6 +267,10 @@ class OidcClaimsProviderConfigurationTest {
   static class SharedIssuerClientRegistrationRepository {
     @Bean
     ClientRegistrationRepository clientRegistrationRepository() {
+      return sharedIssuerRepository();
+    }
+
+    static ClientRegistrationRepository sharedIssuerRepository() {
       return new InMemoryClientRegistrationRepository(
           sharedIssuerRegistration("owner", "https://shared.example/owner/userinfo"),
           sharedIssuerRegistration("loser", "https://shared.example/loser/userinfo"));
