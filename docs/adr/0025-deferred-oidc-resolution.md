@@ -9,12 +9,13 @@ status: Accepted
 ## Status
 
 Accepted. Supersedes the resolution lifecycle of
-[ADR-0006](0006-multi-idp-oidc-configuration.md), see [Supersedes](#supersedes). Every other
-decision of that record stays in force.
+[ADR-0006](0006-multi-idp-oidc-configuration.md) and
+[ADR-0007](0007-oidc-user-info-enabled-toggle.md), see [Supersedes](#supersedes). Every other
+decision of both records stays in force.
 
 ## Context
 
-ADR-0006 resolved OIDC discovery while the application context started. An identity provider
+Both records resolved OIDC discovery while the application context started. An identity provider
 that did not answer therefore stopped the start, for 30 seconds per provider, because Spring's
 `ClientRegistrations` gives no hook to shorten that timeout. One unreachable provider stopped a
 cluster with several providers, and it stopped requests that need no provider. Recovery needed a
@@ -27,11 +28,12 @@ serve?
 ## Decision
 
 Each resolution step that needs the network runs at its first use: `LazyClientRegistrationRepository`
-per registration lookup, `DeferredJwtDecoder` per decoder. `DeferredOidcResolution` runs each step,
-throws the original failure again, and rate-limits the warning to one per minute for each resolution
-subject. A registration lookup names the provider and the scope; a decoder names every provider it
-covers, because it reads the repository as a whole. A resolution that runs inside another one
-reports the failure once, at the step that names the provider.
+per registration lookup, `DeferredJwtDecoder` per decoder, `DeferredOidcClaimsProvider` per UserInfo
+mapping. `DeferredOidcResolution` runs each step, throws the original failure again, and rate-limits
+the warning to one per minute for each resolution subject. A registration lookup names the provider
+and the scope; a decoder and a UserInfo mapping name every provider they cover, because they read
+the repository as a whole. A resolution that runs inside another one reports the failure once, at
+the step that names the provider.
 
 A step keeps its result after a successful attempt only, and holds no lock across the attempt. A
 lock would hold each other caller for the complete timeout of the attempt that runs, and the request
@@ -47,6 +49,8 @@ providers.
 |---|---|---|
 | The provider map is wrapped in an `InMemoryClientRegistrationRepository` | ADR-0006 | `LazyClientRegistrationRepository`, which is iterable as the decoder switch requires |
 | A registration that resolves no JWK Set URI fails at startup | ADR-0006 | The same failure reaches the first token decode |
+| The claims provider builds the `issuer → userInfoUri` map at construction time | ADR-0007 | It builds the map at the first claims lookup |
+| An augmentation config that can never augment fails fast at construction time | ADR-0007 | It fails each request that needs augmented claims |
 
 ## Consequences
 
