@@ -280,6 +280,17 @@ final class DeferredOidcResolutionTest {
     assertThat(eventsAt(Level.WARN)).hasSize(2);
   }
 
+  @Test
+  void shouldRejectAResolutionThatGivesNull() {
+    // given a resolution that gives no value, which the supplier cannot keep
+    final var supplier = DeferredOidcResolution.memoizeOnSuccess(() -> null);
+
+    // then each call reports the defect instead of resolving again in silence
+    assertThatThrownBy(supplier::get)
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("must not give null");
+  }
+
   private void failOnce(final String logSubject) {
     try {
       DeferredOidcResolution.resolve(

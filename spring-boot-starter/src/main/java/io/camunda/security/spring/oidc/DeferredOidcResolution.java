@@ -11,6 +11,7 @@ import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -97,6 +98,9 @@ public final class DeferredOidcResolution {
    * of requests for an unreachable provider would otherwise wait one discovery timeout after
    * another, and the request threads would run out. Each caller therefore makes its own attempt,
    * and the first result wins.
+   *
+   * @throws NullPointerException if the resolution gives {@code null}. The supplier cannot keep
+   *     such a result, and would run the resolution again at each call.
    */
   public static <T> Supplier<T> memoizeOnSuccess(final Supplier<T> resolution) {
     final var resolved = new AtomicReference<T>();
@@ -105,7 +109,8 @@ public final class DeferredOidcResolution {
       if (cached != null) {
         return cached;
       }
-      final var result = resolution.get();
+      final var result =
+          Objects.requireNonNull(resolution.get(), "an OIDC resolution must not give null");
       return resolved.compareAndSet(null, result) ? result : resolved.get();
     };
   }
