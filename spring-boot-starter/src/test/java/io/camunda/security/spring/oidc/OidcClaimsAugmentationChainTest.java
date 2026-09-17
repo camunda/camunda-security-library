@@ -8,6 +8,7 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -28,6 +29,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.authentication.AuthenticationServiceException;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
@@ -95,5 +98,36 @@ class OidcClaimsAugmentationChainTest {
               assertThat(event.getLevel()).isEqualTo(Level.ERROR);
               assertThat(event.getFormattedMessage()).contains(ISSUER);
             });
+  }
+
+  @Test
+  void failedMappingBuildIsNotClassifiedAsAnInvalidToken() {
+    // given a deferred provider whose mapping build fails as OIDC discovery of an unreachable
+    // issuer fails, wired into the real converter
+    final var deferred =
+        new DeferredOidcClaimsProvider(
+            "the mapping",
+            () -> {
+              throw new IllegalArgumentException("Unable to resolve the Configuration");
+            });
+    final var deferredConverter =
+        new OidcTokenAuthenticationConverter(tokenClaimsConverter, deferred);
+    final Jwt jwt =
+        Jwt.withTokenValue("bearer-token")
+            .header("alg", "RS256")
+            .claim("iss", ISSUER)
+            .claim("sub", "alice")
+            .build();
+
+    // when
+    final var authenticationToken = new JwtAuthenticationToken(jwt);
+
+    // then the request is not refused as a bad credential: the converter classifies an
+    // IllegalArgumentException as invalid_token (401), while Spring Security's
+    // AuthenticationEntryPointFailureHandler rethrows an AuthenticationServiceException, which
+    // leaves the request with a server error (500)
+    assertThatThrownBy(() -> deferredConverter.convert(authenticationToken))
+        .isInstanceOf(AuthenticationServiceException.class)
+        .isNotInstanceOf(OAuth2AuthenticationException.class);
   }
 }

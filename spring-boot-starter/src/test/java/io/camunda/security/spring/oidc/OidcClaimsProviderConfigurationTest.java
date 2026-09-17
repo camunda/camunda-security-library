@@ -8,6 +8,7 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.entry;
 
 import ch.qos.logback.classic.Level;
@@ -16,23 +17,30 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.context.OidcClaimsProvider;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 
 class OidcClaimsProviderConfigurationTest {
+
+  // A port nothing listens on, so a discovery request fails without a timeout.
+  private static final String UNREACHABLE_ISSUER_URI = "http://127.0.0.1:1/realms/camunda";
 
   private final ApplicationContextRunner runner =
       new ApplicationContextRunner()
@@ -73,12 +81,14 @@ class OidcClaimsProviderConfigurationTest {
             ctx -> {
               assertThat(ctx).hasSingleBean(OidcClaimsProvider.class);
               assertThat(ctx.getBean(OidcClaimsProvider.class))
-                  .isInstanceOf(CachingOidcClaimsProvider.class);
+                  .isInstanceOf(DeferredOidcClaimsProvider.class);
+              assertThat(claimsForUnaugmentedToken(ctx.getBean(OidcClaimsProvider.class)))
+                  .containsEntry("iss", "https://idp-a.example");
             });
   }
 
   @Test
-  void cachingProviderFailsFastWhenNoUserInfoUriResolved() {
+  void cachingProviderFailsOnFirstLookupWhenNoUserInfoUriResolved() {
     // Augmentation enabled but no ClientRegistration exposes a userInfoUri — a config mismatch that
     // must fail loudly so the operator notices, rather than silently running without augmentation.
     runner
@@ -86,16 +96,258 @@ class OidcClaimsProviderConfigurationTest {
             "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
         .run(
             ctx -> {
-              assertThat(ctx).hasFailed();
-              assertThat(ctx).getFailure().hasRootCauseInstanceOf(IllegalStateException.class);
+              assertThat(ctx).hasNotFailed();
+              assertThatThrownBy(
+                      () -> claimsForUnaugmentedToken(ctx.getBean(OidcClaimsProvider.class)))
+                  .isInstanceOf(AuthenticationServiceException.class)
+                  .hasRootCauseInstanceOf(IllegalStateException.class);
             });
   }
 
   @Test
-  void cachingProviderFailsFastWhenRepositoryNotIterable() {
-    // A non-iterable ClientRegistrationRepository cannot yield a per-issuer mapping; with
-    // augmentation enabled this must fail fast at the source rather than emit a WARN and then a
-    // generic "no mapping" error.
+  void shouldAugmentTheTokenOfTheProviderThatAnswersWhileAnotherProviderDoesNot() throws Exception {
+    // given two configured providers, of which one does not answer a discovery request
+    final var answering = "idp-" + UUID.randomUUID();
+    final var silent = "idp-" + UUID.randomUUID();
+    try (final var server = OidcTestServer.startRsa("kid-a")) {
+      final var providers =
+          Map.of(
+              answering,
+              OidcConfiguration.builder()
+                  .clientId("client-id")
+                  .redirectUri("{baseUrl}/sso-callback")
+                  .issuerUri(server.issuerUri())
+                  // the discovery document of the test server declares no UserInfo endpoint
+                  .userInfoUri(server.issuerUri() + "/userinfo")
+                  .build(),
+              silent,
+              OidcConfiguration.builder()
+                  .clientId("client-id")
+                  .redirectUri("{baseUrl}/sso-callback")
+                  .issuerUri(UNREACHABLE_ISSUER_URI)
+                  .build());
+      new ApplicationContextRunner()
+          .withBean(ScopedClientRegistrationFactory.class, ScopedClientRegistrationFactory::new)
+          .withPropertyValues(
+              "camunda.security.authentication.method=oidc",
+              "camunda.security.authentication.oidc.user-info-augmentation.enabled=true",
+              "camunda.security.authentication.providers.oidc." + answering + ".client-id=id",
+              "camunda.security.authentication.providers.oidc."
+                  + answering
+                  + ".redirect-uri={baseUrl}/sso-callback",
+              "camunda.security.authentication.providers.oidc."
+                  + answering
+                  + ".issuer-uri="
+                  + server.issuerUri(),
+              "camunda.security.authentication.providers.oidc."
+                  + answering
+                  + ".user-info-uri="
+                  + server.issuerUri()
+                  + "/userinfo",
+              "camunda.security.authentication.providers.oidc." + silent + ".client-id=id",
+              "camunda.security.authentication.providers.oidc."
+                  + silent
+                  + ".redirect-uri={baseUrl}/sso-callback",
+              "camunda.security.authentication.providers.oidc."
+                  + silent
+                  + ".issuer-uri="
+                  + UNREACHABLE_ISSUER_URI)
+          .withBean(
+              ClientRegistrationRepository.class,
+              () ->
+                  new LazyClientRegistrationRepository(
+                      new ScopedClientRegistrationFactory(), providers))
+          .withUserConfiguration(StubObjectMapper.class)
+          .withConfiguration(
+              AutoConfigurations.of(
+                  CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class))
+          .run(
+              ctx -> {
+                final var provider = ctx.getBean(OidcClaimsProvider.class);
+
+                // when a token of each issuer asks for augmented claims
+                // then the token of the provider that answers keeps its response, and the token of
+                // the silent provider fails as a server error
+                assertThat(claimsForAugmentedToken(provider, server.issuerUri()))
+                    .containsEntry("iss", server.issuerUri());
+                assertThatThrownBy(() -> claimsForAugmentedToken(provider, UNREACHABLE_ISSUER_URI))
+                    .isInstanceOf(AuthenticationServiceException.class);
+              });
+    }
+  }
+
+  @Test
+  void shouldNameTheProviderWhenTheClusterLevelMappingCannotBeBuilt() {
+    // given a lazy repository whose only provider does not answer, so the resolution of its
+    // UserInfo endpoint fails at the first claims lookup of its issuer
+    final var registrationId = "idp-" + UUID.randomUUID();
+    new ApplicationContextRunner()
+        .withBean(ScopedClientRegistrationFactory.class, ScopedClientRegistrationFactory::new)
+        .withPropertyValues(
+            "camunda.security.authentication.method=oidc",
+            "camunda.security.authentication.oidc.user-info-augmentation.enabled=true",
+            // the repository below resolves this provider, so the subject of the mapping may name
+            // it
+            "camunda.security.authentication.providers.oidc." + registrationId + ".client-id=id",
+            "camunda.security.authentication.providers.oidc."
+                + registrationId
+                + ".redirect-uri={baseUrl}/sso-callback",
+            "camunda.security.authentication.providers.oidc."
+                + registrationId
+                + ".issuer-uri="
+                + UNREACHABLE_ISSUER_URI)
+        .withBean(
+            ClientRegistrationRepository.class,
+            () ->
+                new LazyClientRegistrationRepository(
+                    new ScopedClientRegistrationFactory(),
+                    Map.of(registrationId, providerWithUnreachableIssuer())))
+        .withUserConfiguration(StubObjectMapper.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class))
+        .run(
+            ctx -> {
+              final var appender = captureResolutionLogs();
+
+              // when
+              try {
+                assertThatThrownBy(
+                        () ->
+                            claimsForAugmentedToken(
+                                ctx.getBean(OidcClaimsProvider.class), UNREACHABLE_ISSUER_URI))
+                    .isInstanceOf(AuthenticationServiceException.class);
+              } finally {
+                releaseResolutionLogs(appender);
+              }
+
+              // then the WARN names the provider, so an operator of a deployment with several
+              // identity providers sees which one the failure belongs to
+              assertThat(appender.list)
+                  .filteredOn(event -> event.getLevel() == Level.WARN)
+                  .singleElement()
+                  .satisfies(
+                      event ->
+                          assertThat(event.getFormattedMessage())
+                              .contains("'" + registrationId + "'"));
+            });
+  }
+
+  @Test
+  void shouldNameTheHostWhenTheLibraryCannotReadItsRepositoryPerIssuer() {
+    // given a host repository that is not of the library's lazy type, holding a registration with
+    // no UserInfo endpoint
+    final var registrationId = "idp-" + UUID.randomUUID();
+    new ApplicationContextRunner()
+        .withPropertyValues(
+            "camunda.security.authentication.method=oidc",
+            "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
+        .withBean(
+            ClientRegistrationRepository.class,
+            () ->
+                new InMemoryClientRegistrationRepository(
+                    registrationWithoutUserInfo(registrationId)))
+        .withUserConfiguration(StubObjectMapper.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class))
+        .run(
+            ctx -> {
+              final var appender = captureResolutionLogs();
+
+              // when
+              try {
+                assertThatThrownBy(
+                        () -> claimsForUnaugmentedToken(ctx.getBean(OidcClaimsProvider.class)))
+                    .isInstanceOf(AuthenticationServiceException.class);
+              } finally {
+                releaseResolutionLogs(appender);
+              }
+
+              // then the WARN leaves the subject with the host, because such a repository can hold
+              // registrations that no configuration of the library describes
+              assertThat(appender.list)
+                  .filteredOn(event -> event.getLevel() == Level.WARN)
+                  .singleElement()
+                  .satisfies(
+                      event ->
+                          assertThat(event.getFormattedMessage())
+                              .contains("of the ClientRegistrationRepository of the host")
+                              .doesNotContain(registrationId));
+            });
+  }
+
+  @Test
+  void shouldActivateWithoutAClientRegistrationFactoryBean() {
+    // given a host that imports this configuration alone, with a repository of its own and no
+    // factory bean of the library
+    final var registrationId = "idp-" + UUID.randomUUID();
+    new ApplicationContextRunner()
+        .withPropertyValues(
+            "camunda.security.authentication.method=oidc",
+            "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
+        .withBean(
+            ClientRegistrationRepository.class,
+            () ->
+                new LazyClientRegistrationRepository(
+                    new ScopedClientRegistrationFactory(),
+                    Map.of(registrationId, providerWithUnreachableIssuer())))
+        .withUserConfiguration(StubObjectMapper.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class))
+        .run(
+            ctx -> {
+              // then the provider still registers, because the repository it reads carries the
+              // providers, and it resolves them itself
+              assertThat(ctx).hasNotFailed();
+              assertThat(ctx.getBean(OidcClaimsProvider.class))
+                  .isInstanceOf(CachingOidcClaimsProvider.class);
+              assertThat(ctx).doesNotHaveBean(ScopedClientRegistrationFactory.class);
+            });
+  }
+
+  private static OidcConfiguration providerWithUnreachableIssuer() {
+    return OidcConfiguration.builder()
+        .clientId("client-id")
+        .redirectUri("{baseUrl}/sso-callback")
+        .issuerUri(UNREACHABLE_ISSUER_URI)
+        .build();
+  }
+
+  private static ClientRegistration registrationWithoutUserInfo(final String registrationId) {
+    // A resolved registration with no userInfoUri, so the mapping of the whole repository stays
+    // empty and the first claims lookup fails.
+    return ClientRegistration.withRegistrationId(registrationId)
+        .clientId("client-id")
+        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+        .redirectUri("{baseUrl}/sso-callback")
+        .authorizationUri("https://idp-a.example/auth")
+        .tokenUri("https://idp-a.example/token")
+        .jwkSetUri("https://idp-a.example/jwks")
+        .issuerUri("https://idp-a.example")
+        .build();
+  }
+
+  private static ListAppender<ILoggingEvent> captureResolutionLogs() {
+    final var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    ((Logger) LoggerFactory.getLogger(DeferredOidcResolution.class)).addAppender(appender);
+    // The rate limit counts per subject, and two tests can fail over the same subject, so a
+    // warning of another test would otherwise take the one warning of this interval.
+    DeferredOidcResolution.removeIdleSubjects(System.nanoTime() + Duration.ofMinutes(2).toNanos());
+    return appender;
+  }
+
+  private static void releaseResolutionLogs(final ListAppender<ILoggingEvent> appender) {
+    ((Logger) LoggerFactory.getLogger(DeferredOidcResolution.class)).detachAppender(appender);
+    appender.stop();
+  }
+
+  @Test
+  void contextFailsToStartWhenRepositoryNotIterable() {
+    // The shape of a repository needs no discovery, so a host that wires a non-iterable repository
+    // learns it while the application starts, and not at the first claims lookup.
     new ApplicationContextRunner()
         .withPropertyValues(
             "camunda.security.authentication.method=oidc",
@@ -106,10 +358,13 @@ class OidcClaimsProviderConfigurationTest {
             AutoConfigurations.of(
                 CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class))
         .run(
-            ctx -> {
-              assertThat(ctx).hasFailed();
-              assertThat(ctx).getFailure().hasRootCauseInstanceOf(IllegalStateException.class);
-            });
+            ctx ->
+                assertThat(ctx)
+                    .hasFailed()
+                    .getFailure()
+                    .rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("not iterable"));
   }
 
   @Test
@@ -208,8 +463,8 @@ class OidcClaimsProviderConfigurationTest {
             ctx -> {
               assertThat(ctx).hasNotFailed();
               assertThat(ctx).hasSingleBean(OidcClaimsProvider.class);
-              assertThat(ctx.getBean(OidcClaimsProvider.class))
-                  .isInstanceOf(CachingOidcClaimsProvider.class);
+              assertThat(claimsForUnaugmentedToken(ctx.getBean(OidcClaimsProvider.class)))
+                  .containsEntry("iss", "https://idp-a.example");
             });
   }
 
@@ -261,6 +516,24 @@ class OidcClaimsProviderConfigurationTest {
   private static void detachAppender(final ListAppender<ILoggingEvent> appender) {
     ((Logger) LoggerFactory.getLogger(OidcClaimsProviderConfiguration.class))
         .detachAppender(appender);
+  }
+
+  /**
+   * Runs a claims lookup that forces the deferred delegate to be built but performs no UserInfo
+   * call: the token carries no {@code openid} scope, so an augmenting provider returns the claims
+   * unchanged.
+   */
+  private static Map<String, Object> claimsForUnaugmentedToken(final OidcClaimsProvider provider) {
+    return provider.claimsFor(Map.of("iss", "https://idp-a.example"), "token");
+  }
+
+  /**
+   * Runs a claims lookup that needs augmented claims, and therefore the UserInfo endpoint of {@code
+   * issuer}.
+   */
+  private static Map<String, Object> claimsForAugmentedToken(
+      final OidcClaimsProvider provider, final String issuer) {
+    return provider.claimsFor(Map.of("iss", issuer, "scope", "openid", "sub", "user"), "token");
   }
 
   @Configuration

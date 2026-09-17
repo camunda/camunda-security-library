@@ -12,6 +12,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.Expiry;
 import com.github.benmanes.caffeine.cache.Ticker;
 import io.camunda.security.api.context.OidcClaimsProvider;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfiguration;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
@@ -19,9 +20,16 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.authentication.AuthenticationServiceException;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.util.StringUtils;
 
 /**
  * {@link OidcClaimsProvider} that enriches JWT claims with additional claims from the OIDC UserInfo
@@ -41,7 +49,7 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
   private static final Logger LOG = LoggerFactory.getLogger(CachingOidcClaimsProvider.class);
 
   private final OidcUserInfoFetcher fetcher;
-  private final Map<String, String> userInfoUriByIssuer;
+  private final Function<String, String> userInfoUriByIssuer;
   private final Cache<String, Map<String, Object>> cache;
   private final MeterRegistry meterRegistry; // nullable — metrics are optional
   private final long cacheTtlNanos;
@@ -50,6 +58,14 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
   CachingOidcClaimsProvider(
       final OidcUserInfoFetcher fetcher,
       final Map<String, String> userInfoUriByIssuer,
+      final OidcUserInfoAugmentationConfiguration config,
+      final MeterRegistry meterRegistry) {
+    this(fetcher, userInfoUriByIssuer, config, meterRegistry, Ticker.systemTicker());
+  }
+
+  CachingOidcClaimsProvider(
+      final OidcUserInfoFetcher fetcher,
+      final Function<String, String> userInfoUriByIssuer,
       final OidcUserInfoAugmentationConfiguration config,
       final MeterRegistry meterRegistry) {
     this(fetcher, userInfoUriByIssuer, config, meterRegistry, Ticker.systemTicker());
@@ -65,8 +81,21 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
       final OidcUserInfoAugmentationConfiguration config,
       final MeterRegistry meterRegistry,
       final Ticker ticker) {
+    this(fetcher, Map.copyOf(userInfoUriByIssuer)::get, config, meterRegistry, ticker);
+  }
+
+  /**
+   * Package-private — for tests only. Accepts a custom {@link Ticker} to enable virtual-time TTL
+   * testing.
+   */
+  CachingOidcClaimsProvider(
+      final OidcUserInfoFetcher fetcher,
+      final Function<String, String> userInfoUriByIssuer,
+      final OidcUserInfoAugmentationConfiguration config,
+      final MeterRegistry meterRegistry,
+      final Ticker ticker) {
     this.fetcher = fetcher;
-    this.userInfoUriByIssuer = Map.copyOf(userInfoUriByIssuer);
+    this.userInfoUriByIssuer = userInfoUriByIssuer;
     this.meterRegistry = meterRegistry;
     this.cacheTtlNanos =
         Objects.requireNonNull(config.getCacheTtl(), "cache-ttl must not be null").toNanos();
@@ -137,6 +166,88 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
     return new CachingOidcClaimsProvider(fetcher, userInfoUriByIssuer, config, meterRegistry);
   }
 
+  /**
+   * A source of UserInfo endpoints for wiring that resolves one issuer at a time, through {@code
+   * registrations}. An identity provider that does not answer therefore fails the tokens of its own
+   * issuer only, and the tokens of the other providers keep their augmentation.
+   *
+   * <p>An issuer that no provider declares yields no endpoint, and its token passes unaugmented, as
+   * an unmapped issuer does under {@link #forConfiguredMappings(OidcUserInfoFetcher, Map,
+   * OidcUserInfoAugmentationConfiguration, MeterRegistry)}. A provider that turns UserInfo off
+   * yields none either, because that is what the flag asks for.
+   *
+   * <p>A provider that is expected to expose an endpoint, and exposes none, fails the tokens of its
+   * issuer. Augmentation is enabled for it, so its claims would silently lose the attributes the
+   * authorization of the request needs.
+   *
+   * <p>A failure of the resolution, and a missing endpoint, report a failure of the server, and not
+   * a refused credential. Discovery reports an unreachable issuer as an {@link
+   * IllegalArgumentException}, which {@link
+   * io.camunda.security.spring.converter.OidcTokenAuthenticationConverter} answers with {@code
+   * invalid_token}. The token is not the reason, so {@link AuthenticationServiceException} keeps
+   * the classification, as {@link DeferredOidcClaimsProvider} does for a whole mapping.
+   *
+   * @throws IllegalStateException if no provider can ever yield an endpoint, which needs no network
+   *     access to see: a provider yields one only when it declares an issuer-uri, to which the
+   *     endpoint answers, and when UserInfo is enabled for it. Such a configuration stops the
+   *     start, as {@link #forConfiguredMappings(OidcUserInfoFetcher, Map,
+   *     OidcUserInfoAugmentationConfiguration, MeterRegistry)} stops the first request.
+   */
+  static Function<String, String> userInfoUriByIssuer(
+      final IssuerRegistrations registrations, final Map<String, OidcConfiguration> providers) {
+    final var issuersWithUserInfo = issuersWithUserInfo(providers);
+    if (issuersWithUserInfo.isEmpty()) {
+      throw new IllegalStateException(
+          "UserInfo augmentation is enabled but no OIDC provider can yield an issuer→userInfoUri"
+              + " mapping, so no claims can be augmented — the setup would silently run without"
+              + " augmentation. A provider yields a mapping only when it declares an issuer-uri AND"
+              + " UserInfo is enabled for it"
+              + " (camunda.security.authentication.oidc.user-info-enabled=true, the default, or the"
+              + " per-provider camunda.security.authentication.providers.oidc.<id>.user-info-enabled"
+              + " flag in multi-provider setups). Give each provider an issuer-uri, or disable"
+              + " userinfo augmentation.");
+    }
+    return issuer -> {
+      final ClientRegistration registration;
+      try {
+        registration = registrations.forIssuer(issuer);
+      } catch (final AuthenticationException alreadyClassified) {
+        throw alreadyClassified;
+      } catch (final RuntimeException unresolved) {
+        throw new AuthenticationServiceException(
+            "Failed to resolve the UserInfo endpoint of issuer '%s': %s"
+                .formatted(issuer, unresolved.getMessage()),
+            unresolved);
+      }
+      if (registration == null) {
+        return null;
+      }
+      final var userInfoUri = registration.getProviderDetails().getUserInfoEndpoint().getUri();
+      if (!StringUtils.hasText(userInfoUri) && issuersWithUserInfo.contains(issuer)) {
+        throw new AuthenticationServiceException(
+            ("UserInfo augmentation is enabled for issuer '%s' but the provider exposes no"
+                    + " userInfoUri, so its claims cannot be augmented. Ensure the discovery"
+                    + " document of the issuer includes a userinfo_endpoint, or configure"
+                    + " user-info-uri explicitly, or turn UserInfo off for the provider"
+                    + " (user-info-enabled=false).")
+                .formatted(issuer));
+      }
+      return userInfoUri;
+    };
+  }
+
+  /**
+   * The issuers of the providers that are expected to expose a UserInfo endpoint. The configuration
+   * answers it, so the call needs no network access.
+   */
+  private static Set<String> issuersWithUserInfo(final Map<String, OidcConfiguration> providers) {
+    return providers.values().stream()
+        .filter(OidcConfiguration::isUserInfoEnabled)
+        .map(OidcConfiguration::getIssuerUri)
+        .filter(StringUtils::hasText)
+        .collect(Collectors.toSet());
+  }
+
   @Override
   public Map<String, Object> claimsFor(
       final Map<String, Object> jwtClaims, final String tokenValue) {
@@ -155,7 +266,7 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
       return jwtClaims;
     }
 
-    final String userInfoUri = userInfoUriByIssuer.get(issuer);
+    final String userInfoUri = userInfoUriByIssuer.apply(issuer);
 
     if (userInfoUri == null || userInfoUri.isBlank()) {
       LOG.debug(
