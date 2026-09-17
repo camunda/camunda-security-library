@@ -30,7 +30,10 @@ serve?
 Each resolution step that needs the network runs at its first use: `LazyClientRegistrationRepository`
 per registration lookup, `DeferredJwtDecoder` per decoder, `DeferredOidcClaimsProvider` per UserInfo
 mapping. `DeferredOidcResolution` runs each step, throws the original failure again, and rate-limits
-the warning to one per minute for each provider and scope.
+the warning to one per minute for each resolution subject. A registration lookup names the provider
+and the scope; a decoder and a UserInfo mapping name every provider they cover, because they read
+the repository as a whole. A resolution that runs inside another one reports the failure once, at
+the step that names the provider.
 
 A step keeps its result after a successful attempt only, and holds no lock across the attempt. A
 lock would hold each other caller for the complete timeout of the attempt that runs, and the request

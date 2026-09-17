@@ -315,7 +315,7 @@ The default `JwtDecoder` queries the primary `jwk-set-uri` first, then each entr
 
 Two constraints to be aware of:
 
-- **A resolvable `jwk-set-uri` is required.** Set `jwk-set-uri` explicitly, or set `issuer-uri` so OIDC discovery populates it. A provider that resolves neither fails with `OIDC Provider '<id>' is missing a valid 'jwk-set-uri'. Issuer URI: <issuer>` at the first token decode. The decoder is built on first use, so an identity provider CSL cannot reach at startup does not stop the application context.
+- **A resolvable `jwk-set-uri` is required.** Set `jwk-set-uri` explicitly, or set `issuer-uri` so OIDC discovery populates it. A provider that resolves neither fails with `OIDC Provider '<id>' is missing a valid 'jwk-set-uri'. Issuer URI: <issuer>` at the first token decode. The decoder is built on first use, so an identity provider that CSL cannot reach at startup does not stop the application context.
 - **`kid` collision precedence.** If two JWK Sets publish a key with the same `kid` (unlikely in practice), the primary `jwk-set-uri` wins because it is queried first. Reorder `additional-jwk-set-uris` to change precedence among the additional URIs.
 
 See [ADR-0006](../adr/0006-multi-idp-oidc-configuration.md) for the design rationale, the choice of composite `JWKSource` over Spring's `JwtIssuerAuthenticationManagerResolver`, and the lazy failure model, and [ADR-0025](../adr/0025-deferred-oidc-resolution.md) for the first-use resolution lifecycle.
