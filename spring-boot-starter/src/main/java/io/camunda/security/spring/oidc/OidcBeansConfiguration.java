@@ -14,8 +14,6 @@ import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.converter.TokenClaimsConvertersByIssuer;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -95,9 +93,10 @@ public class OidcBeansConfiguration {
    * MembershipResolutionContextPropagator} live; backing off avoids a fatal wiring failure when
    * they're absent.
    *
-   * <p>Dedup order (flat entry first, then alphabetical) is forced explicitly because {@code
-   * getOidcAuthenticationConfigurations()}'s {@code Map.copyOf} has a JVM-salted iteration order —
-   * two registrations sharing an issuer would otherwise resolve inconsistently across restarts.
+   * <p>Two registrations that share an issuer resolve by the order of {@code
+   * getOidcAuthenticationConfigurations()}, which is the order of the configuration with the flat
+   * block first. The decoder of the same deployment reads that order as well, so the converter of a
+   * token comes from the provider that verified it.
    */
   @Bean
   @ConditionalOnBean({MembershipPort.class, LazyTokenClaimsConverter.class})
@@ -114,8 +113,7 @@ public class OidcBeansConfiguration {
     final var configurations = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
     final Map<String, LazyTokenClaimsConverter> byIssuer = new LinkedHashMap<>();
     final Map<String, String> winningRegistrationIdByIssuer = new LinkedHashMap<>();
-    for (final var registrationId :
-        orderedByFlatEntryFirst(configurations, flatOidcConfiguration)) {
+    for (final var registrationId : configurations.keySet()) {
       final var config = configurations.get(registrationId);
       final var issuerUri = config.getIssuerUri();
       if (issuerUri == null || issuerUri.isBlank()) {
@@ -142,27 +140,5 @@ public class OidcBeansConfiguration {
       }
     }
     return new TokenClaimsConvertersByIssuer(byIssuer);
-  }
-
-  /**
-   * Flat-block registration first (identified by reference, since its key can collide with a
-   * provider id), then the rest alphabetically — {@code Map.copyOf}'s iteration order isn't
-   * something a dedup winner can safely depend on.
-   */
-  private static List<String> orderedByFlatEntryFirst(
-      final Map<String, OidcConfiguration> configurations,
-      final OidcConfiguration flatOidcConfiguration) {
-    final List<String> ordered = new ArrayList<>(configurations.keySet());
-    Collections.sort(ordered);
-    configurations.entrySet().stream()
-        .filter(entry -> entry.getValue() == flatOidcConfiguration)
-        .map(Map.Entry::getKey)
-        .findFirst()
-        .ifPresent(
-            flatKey -> {
-              ordered.remove(flatKey);
-              ordered.addFirst(flatKey);
-            });
-    return ordered;
   }
 }

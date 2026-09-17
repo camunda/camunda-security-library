@@ -184,7 +184,7 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
   }
 
   @Test
-  void warnsAndKeepsAlphabeticallyFirstConverterWhenTwoRegistrationsShareAnIssuer() {
+  void warnsAndKeepsTheFirstConfiguredConverterWhenTwoRegistrationsShareAnIssuer() {
     final ListAppender<ILoggingEvent> appender = attachAppender();
     try {
       runner
@@ -196,15 +196,16 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
               "camunda.security.authentication.providers.oidc.backend.client-id=backend-client",
               "camunda.security.authentication.providers.oidc.backend.issuer-uri=https://shared.example.com")
           .run(ctx -> assertThat(byIssuer(ctx)).containsKey("https://shared.example.com"));
-      // "backend" sorts before "web"; neither is the flat entry, so alphabetical order decides.
+      // "web" is configured before "backend", and the decoder of the same deployment reads that
+      // order too, so the converter of a token comes from the provider that verified it.
       assertThat(appender.list)
           .anySatisfy(
               event -> {
                 assertThat(event.getLevel()).isEqualTo(Level.WARN);
                 assertThat(event.getFormattedMessage())
                     .contains("https://shared.example.com")
-                    .contains("'backend'")
-                    .contains("'web'");
+                    .contains("'web' wins")
+                    .contains("of 'backend' is ignored");
               });
     } finally {
       detachAppender(appender);
@@ -212,9 +213,9 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
   }
 
   @Test
-  void keepsFlatEntryConverterWhenItSharesAnIssuerWithAnAlphabeticallyEarlierProvider() {
-    // "aaa-provider" sorts before the flat entry's registration id ("oidc"), but the flat entry
-    // must still win the dedup: it's identified by reference, not by sort order.
+  void keepsFlatEntryConverterWhenAProviderSharesItsIssuer() {
+    // The merge places the flat block before the provider blocks, so the flat entry owns the
+    // issuer it shares with a provider.
     runner
         .withPropertyValues(
             "camunda.security.authentication.oidc.client-id=default-client",
