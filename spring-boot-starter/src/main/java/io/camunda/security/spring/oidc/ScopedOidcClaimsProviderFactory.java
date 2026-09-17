@@ -10,39 +10,32 @@ package io.camunda.security.spring.oidc;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpClient;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.util.StringUtils;
 
 /**
- * Entry point for building an {@link OidcClaimsProvider} from a single {@link
- * AuthenticationConfiguration}. Parallels {@link ScopedJwtDecoderFactory}: derives
- * issuer→userInfoUri from the config's {@link ClientRegistration}s via {@link
- * ScopedClientRegistrationFactory}. When augmentation is enabled on the config it builds a {@link
- * CachingOidcClaimsProvider}, failing fast if the config declares no OIDC provider or none exposes
- * a userInfoUri; when augmentation is disabled it returns a {@link NoopOidcClaimsProvider}.
+ * Builds an {@link OidcClaimsProvider} from a single {@link AuthenticationConfiguration}. The
+ * counterpart of {@link ScopedJwtDecoderFactory} for UserInfo claims: it takes the UserInfo
+ * endpoint of an issuer from the {@link ClientRegistration}s of that configuration, through {@link
+ * ScopedClientRegistrationFactory}.
+ *
+ * <p>The per-scope configuration decides whether augmentation runs, through {@code
+ * oidc.userInfoAugmentation}, and not the global {@link
+ * io.camunda.security.spring.CamundaSecurityLibraryProperties}. Each scope therefore controls its
+ * own augmentation, which a physical tenant needs.
  *
  * <p>This factory builds its registrations with {@link
  * ScopedClientRegistrationFactory#createWithoutLoginRoutes}, as the sibling factory does.
  * Augmentation reads the issuer and the UserInfo endpoint of a registration for each request, and
  * it redirects no browser. It therefore also runs on a scope whose redirect-uri or registration id
  * serves no login route.
- *
- * <p>Augmentation enabled-flag and cache settings are read from the per-scope {@link
- * AuthenticationConfiguration} (via {@code oidc.userInfoAugmentation}), not from the global {@link
- * io.camunda.security.spring.CamundaSecurityLibraryProperties}. This ensures that each scope's
- * augmentation behaviour is determined by its own configuration, enabling per-physical-tenant
- * control.
  */
 public final class ScopedOidcClaimsProviderFactory {
-
-  private static final Logger LOG = LoggerFactory.getLogger(ScopedOidcClaimsProviderFactory.class);
 
   private final ScopedClientRegistrationFactory clientRegistrationFactory;
   private final OidcUserInfoHttpClient userInfoHttpClient;
@@ -69,62 +62,82 @@ public final class ScopedOidcClaimsProviderFactory {
   }
 
   /**
-   * Builds an {@link OidcClaimsProvider} for the given {@link AuthenticationConfiguration}.
+   * Builds an {@link OidcClaimsProvider} for one {@link AuthenticationConfiguration}. A
+   * configuration that sets no {@code oidc.userInfoAugmentation}, or disables it, gets a {@link
+   * NoopOidcClaimsProvider}.
    *
-   * <p>Returns a {@link CachingOidcClaimsProvider} when augmentation is enabled on the config —
-   * that is, {@code authentication.getOidc().getUserInfoAugmentation()} is non-null and its {@code
-   * isEnabled()} is {@code true} — with an issuer→userInfoUri map derived from the config's OIDC
-   * providers. A null augmentation config is treated as disabled; in that case (or when not
-   * enabled) returns a {@link NoopOidcClaimsProvider}.
+   * <p>The UserInfo endpoint of an issuer comes from a resolved {@link ClientRegistration}, which
+   * OIDC discovery resolves. The provider resolves the provider of one issuer at the first claims
+   * lookup that carries it, so the application makes no network request while it builds the chain,
+   * and a provider that does not answer fails the augmentation of the tokens of its own issuer
+   * alone. See {@link IssuerRegistrations}.
    *
-   * @param authentication the per-scope authentication configuration; must not be {@code null}
-   * @return an {@link OidcClaimsProvider} appropriate for the given config
-   * @throws IllegalStateException if augmentation is enabled but the config declares no OIDC
-   *     provider, or declares providers none of which exposes a userInfoUri — both are config
-   *     mismatches that would leave the scope silently un-augmented (the provider-less case mirrors
-   *     {@link ScopedJwtDecoderFactory}, which also rejects a provider-less OIDC scope)
+   * @throws IllegalStateException if augmentation is enabled and the configuration declares no OIDC
+   *     provider, or a provider block is incomplete. Such a configuration would leave the scope
+   *     without augmentation and report nothing.
    */
   public OidcClaimsProvider buildClaimsProvider(final AuthenticationConfiguration authentication) {
+    return buildClaimsProvider(authentication, null);
+  }
+
+  /**
+   * As {@link #buildClaimsProvider(AuthenticationConfiguration)}. A failure log of the claims
+   * provider also names the scope the provider belongs to, and the rate limit of that log counts
+   * per scope.
+   *
+   * @param scopeDescription the name a log message gives to the scope (for example {@code
+   *     basePath=/physical-tenants/t1}), or {@code null} for the unscoped text
+   */
+  public OidcClaimsProvider buildClaimsProvider(
+      final AuthenticationConfiguration authentication, final String scopeDescription) {
     Objects.requireNonNull(authentication, "authentication must not be null");
     final var augmentation = authentication.getOidc().getUserInfoAugmentation();
     if (augmentation == null || !augmentation.isEnabled()) {
       return new NoopOidcClaimsProvider();
     }
 
-    final List<ClientRegistration> registrations =
-        clientRegistrationFactory.createWithoutLoginRoutes(authentication);
-    if (registrations.isEmpty()) {
+    final var providers = clientRegistrationFactory.flatten(authentication);
+    if (providers.isEmpty()) {
       throw new IllegalStateException(
           "UserInfo augmentation is enabled for the scope but its AuthenticationConfiguration"
               + " declares no OIDC provider, so a claims provider cannot be built. Either configure"
               + " an OIDC provider (oidc.client-id + issuer-uri / explicit endpoints, or one or more"
-              + " providers.oidc.<id> entries) or disable userinfo augmentation for this scope."
-              + " This mirrors ScopedJwtDecoderFactory, which also rejects a provider-less OIDC"
-              + " scope.");
+              + " providers.oidc.<id> entries) or disable userinfo augmentation for this scope.");
     }
-    final Map<String, String> uriByIssuer = buildUserInfoUriByIssuer(registrations);
-    return CachingOidcClaimsProvider.forConfiguredMappings(
-        userInfoHttpClient, uriByIssuer, augmentation, meterRegistry);
+    clientRegistrationFactory.validateWithoutLoginRoutes(providers);
+    return new CachingOidcClaimsProvider(
+        userInfoHttpClient,
+        CachingOidcClaimsProvider.userInfoUriByIssuer(
+            IssuerRegistrations.ofConfiguration(
+                providers,
+                registrationId -> resolve(providers, registrationId, scopeDescription),
+                "the UserInfo endpoint"),
+            providers),
+        augmentation,
+        meterRegistry);
   }
 
   /**
-   * Extracts the issuer→userInfoUri map from a list of {@link ClientRegistration}s. Registrations
-   * without both an issuerUri and a userInfoUri are silently skipped. Where two registrations
-   * declare the same issuer, the map holds the endpoint of the registration that {@link
-   * IssuerOwnership} names the owner of that issuer, which is the registration the decoder of the
-   * same scope reads.
+   * Resolves one provider of the scope. A failure names that provider, and the scope it serves, so
+   * the rate limit of the report counts per provider and per scope.
    */
-  static Map<String, String> buildUserInfoUriByIssuer(
-      final List<ClientRegistration> registrations) {
-    final Map<String, String> map = new LinkedHashMap<>();
-    IssuerOwnership.byIssuer(registrations, LOG, "the UserInfo endpoint")
-        .forEach(
-            (issuerUri, owner) -> {
-              final var userInfoUri = owner.getProviderDetails().getUserInfoEndpoint().getUri();
-              if (userInfoUri != null && !userInfoUri.isBlank()) {
-                map.put(issuerUri, userInfoUri);
-              }
-            });
-    return map;
+  private ClientRegistration resolve(
+      final Map<String, OidcConfiguration> providers,
+      final String registrationId,
+      final String scopeDescription) {
+    final var config = providers.get(registrationId);
+    return DeferredOidcResolution.resolve(
+        claimsSubject(registrationId, config, scopeDescription),
+        () ->
+            clientRegistrationFactory
+                .createWithoutLoginRoutes(Map.of(registrationId, config))
+                .getFirst());
+  }
+
+  private static String claimsSubject(
+      final String registrationId, final OidcConfiguration config, final String scopeDescription) {
+    return "the UserInfo endpoint of provider "
+        + DeferredOidcResolution.describeProvider(registrationId, config)
+        + (StringUtils.hasText(scopeDescription) ? " for " + scopeDescription : "");
   }
 }

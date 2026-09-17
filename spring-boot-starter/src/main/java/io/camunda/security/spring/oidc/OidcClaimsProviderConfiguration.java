@@ -29,8 +29,9 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 
 /**
- * Registers the {@link OidcClaimsProvider} bean: either a {@link CachingOidcClaimsProvider} when
- * {@code camunda.security.authentication.oidc.user-info-augmentation.enabled=true}, or a {@link
+ * Registers the {@link OidcClaimsProvider} bean: either a {@link CachingOidcClaimsProvider} that
+ * resolves the UserInfo endpoint of an issuer at the first claims lookup that needs it when {@code
+ * camunda.security.authentication.oidc.user-info-augmentation.enabled=true}, or a {@link
  * NoopOidcClaimsProvider} otherwise. A host-supplied {@link OidcClaimsProvider} bean suppresses
  * both via {@link ConditionalOnMissingBean}.
  *
@@ -71,6 +72,23 @@ public class OidcClaimsProviderConfiguration {
    * OIDC host that disables the webapp chain and enables UserInfo augmentation without supplying
    * its own {@link ClientRegistrationRepository} or {@link OidcClaimsProvider} therefore gets no
    * UserInfo-augmenting default from CSL.
+   *
+   * <p>To read the UserInfo URI of a provider is to make OIDC discovery, so the provider resolves
+   * it at the first claims lookup that needs it.
+   *
+   * <p>A {@link LazyClientRegistrationRepository} gives the provider the UserInfo endpoint of one
+   * issuer at a time. An identity provider that does not answer then fails the augmentation of the
+   * tokens of its own issuer, and the tokens of the providers that answer keep theirs. The issuers
+   * come from the configuration of that repository, so an endpoint belongs to the provider that
+   * declares the issuer of the token, whoever built the repository.
+   *
+   * <p>Any other repository of the host application can hold registrations that no configuration of
+   * the library describes, so the mapping reads the whole repository in that case, and one provider
+   * that does not answer fails the augmentation of every token. See {@link
+   * DeferredOidcClaimsProvider}.
+   *
+   * <p>The mapping needs a repository it can read, and the shape of a repository needs no network
+   * access, so the method checks it here, and a configuration error still stops the start.
    */
   @Bean
   @ConditionalOnProperty(
@@ -84,13 +102,28 @@ public class OidcClaimsProviderConfiguration {
       final ObjectMapper objectMapper,
       @Qualifier("oidcUserInfoHttpClient") final HttpClient httpClient,
       @Autowired(required = false) final MeterRegistry meterRegistry) {
+    requireIterable(clientRegistrationRepository);
     final var augmentation = properties.getAuthentication().getOidc().getUserInfoAugmentation();
-    final Map<String, String> uriByIssuer = buildUserInfoUriByIssuer(clientRegistrationRepository);
-    return CachingOidcClaimsProvider.forConfiguredMappings(
-        new OidcUserInfoHttpClient(httpClient, objectMapper),
-        uriByIssuer,
-        augmentation,
-        meterRegistry);
+    final var fetcher = new OidcUserInfoHttpClient(httpClient, objectMapper);
+    if (clientRegistrationRepository instanceof final LazyClientRegistrationRepository lazy) {
+      final var providers = lazy.providers();
+      return new CachingOidcClaimsProvider(
+          fetcher,
+          CachingOidcClaimsProvider.userInfoUriByIssuer(
+              IssuerRegistrations.ofConfiguration(
+                  providers, lazy::findByRegistrationId, "the UserInfo endpoint"),
+              providers),
+          augmentation,
+          meterRegistry);
+    }
+    return new DeferredOidcClaimsProvider(
+        userInfoMappingSubject(),
+        () ->
+            CachingOidcClaimsProvider.forConfiguredMappings(
+                fetcher,
+                buildUserInfoUriByIssuer(clientRegistrationRepository),
+                augmentation,
+                meterRegistry));
   }
 
   @Bean
@@ -104,18 +137,21 @@ public class OidcClaimsProviderConfiguration {
   }
 
   /**
-   * Builds the per-issuer UserInfo URI map from the resolved {@link ClientRegistration}s. Requires
-   * the repository to be iterable (the default {@link
-   * org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository}
-   * is). Where two registrations declare the same issuer, the map holds the endpoint of the
-   * registration that {@link IssuerOwnership} names the owner of that issuer, which is the
-   * registration the decoder reads.
-   *
-   * @throws IllegalStateException if the repository is not iterable — augmentation is enabled, so a
-   *     mapping must be derivable; failing here makes the non-iterable repository the explicit
-   *     cause rather than surfacing later as a generic "no mapping" error
+   * Names the mapping and the repository it reads. Only a repository the library cannot read per
+   * issuer reaches this step, and such a repository belongs to the host application, which is what
+   * the subject says.
    */
-  static Map<String, String> buildUserInfoUriByIssuer(final ClientRegistrationRepository repo) {
+  private static String userInfoMappingSubject() {
+    return "the per-issuer UserInfo endpoint mapping of the ClientRegistrationRepository of the"
+        + " host application";
+  }
+
+  /**
+   * Rejects a repository the mapping cannot read. The shape of a repository needs no network
+   * access, so the method runs while the application builds the bean, and a host that wires a
+   * repository of the wrong shape learns it at the start.
+   */
+  private static void requireIterable(final ClientRegistrationRepository repo) {
     if (!(repo instanceof Iterable)) {
       throw new IllegalStateException(
           "UserInfo augmentation is enabled but the ClientRegistrationRepository is not iterable, so"
@@ -124,6 +160,16 @@ public class OidcClaimsProviderConfiguration {
               + " augmentation"
               + " (camunda.security.authentication.oidc.user-info-augmentation.enabled=false).");
     }
+  }
+
+  /**
+   * Builds the per-issuer UserInfo URI map from the resolved {@link ClientRegistration}s. Reading a
+   * registration resolves it, so this method runs inside the deferred provider only. Where two
+   * registrations declare the same issuer, the map holds the endpoint of the registration that
+   * {@link IssuerOwnership} names the owner of that issuer, which is the registration the decoder
+   * reads.
+   */
+  static Map<String, String> buildUserInfoUriByIssuer(final ClientRegistrationRepository repo) {
     final List<ClientRegistration> registrations = new ArrayList<>();
     for (final Object item : (Iterable<?>) repo) {
       if (item instanceof final ClientRegistration reg) {

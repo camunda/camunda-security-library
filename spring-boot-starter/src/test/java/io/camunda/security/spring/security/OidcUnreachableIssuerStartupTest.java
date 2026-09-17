@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.context.CamundaSecurityScopeProvider;
+import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.AuthenticationMethod;
 import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
@@ -21,6 +22,7 @@ import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
+import io.camunda.security.spring.oidc.OidcClaimsProviderConfiguration;
 import io.camunda.security.spring.oidc.OidcTestServer;
 import io.camunda.security.spring.oidc.OidcWebappClientBeansConfiguration;
 import io.camunda.security.spring.oidc.ScopedJwtDecoderFactory;
@@ -30,6 +32,7 @@ import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -38,6 +41,7 @@ import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -290,6 +294,43 @@ class OidcUnreachableIssuerStartupTest {
     return authentication;
   }
 
+  @Test
+  void shouldStartWithUserInfoAugmentationWhileTheIssuerIsUnreachable() {
+    new WebApplicationContextRunner()
+        .withUserConfiguration(ObjectMapperConfig.class, StubPaths.class, OidcClaimsBeans.class)
+        .withConfiguration(AutoConfigurations.of(CamundaSecurityConfiguration.class))
+        .withPropertyValues(
+            "camunda.security.authentication.method=oidc",
+            "camunda.security.authentication.oidc.client-id=test-client",
+            "camunda.security.authentication.oidc.client-secret=secret",
+            "camunda.security.authentication.oidc.redirect-uri=http://localhost/sso-callback",
+            "camunda.security.authentication.oidc.issuer-uri=" + UNREACHABLE_ISSUER_URI,
+            "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
+        .run(
+            ctx -> {
+              // given a context that builds the claims provider without a discovery request
+              assertThat(ctx).hasNotFailed();
+              final var provider = ctx.getBean(OidcClaimsProvider.class);
+
+              // when the first claims lookup of the unreachable issuer resolves its UserInfo
+              // endpoint
+              // then it fails, and the next lookup makes a new attempt
+              assertThatThrownBy(() -> claimsForAugmentedToken(provider))
+                  .isInstanceOf(RuntimeException.class);
+              assertThatThrownBy(() -> claimsForAugmentedToken(provider))
+                  .isInstanceOf(RuntimeException.class);
+            });
+  }
+
+  /**
+   * Runs a claims lookup that needs augmented claims, and therefore the UserInfo endpoint of the
+   * unreachable issuer.
+   */
+  private static Map<String, Object> claimsForAugmentedToken(final OidcClaimsProvider provider) {
+    return provider.claimsFor(
+        Map.of("iss", UNREACHABLE_ISSUER_URI, "scope", "openid", "sub", "alice"), "token");
+  }
+
   private static WebApplicationContextRunner runnerFor(final String issuerUri) {
     return new WebApplicationContextRunner()
         .withUserConfiguration(ObjectMapperConfig.class, StubPaths.class)
@@ -348,6 +389,17 @@ class OidcUnreachableIssuerStartupTest {
           "X-CSRF-TOKEN-physical-tenants-t1");
     }
   }
+
+  // The same order as CamundaSecurityAutoConfiguration imports these, because the claims provider
+  // backs off without a ClientRegistrationRepository.
+  @Configuration
+  @Import({
+    OidcBeansConfiguration.class,
+    ScopedOidcInfrastructureConfiguration.class,
+    OidcWebappClientBeansConfiguration.class,
+    OidcClaimsProviderConfiguration.class
+  })
+  static class OidcClaimsBeans {}
 
   @Configuration
   static class StubPaths {

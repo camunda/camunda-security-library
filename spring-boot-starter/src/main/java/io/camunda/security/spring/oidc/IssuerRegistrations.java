@@ -75,8 +75,22 @@ public final class IssuerRegistrations {
   public static IssuerRegistrations ofConfiguration(
       final Map<String, OidcConfiguration> providers,
       final Function<String, ClientRegistration> resolveByRegistrationId) {
+    return ofConfiguration(providers, resolveByRegistrationId, IGNORED_CONFIGURATION);
+  }
+
+  /**
+   * As {@link #ofConfiguration(Map, Function)}, for a step that reads something else of the owning
+   * provider than the keys and the validation rules.
+   *
+   * @param ignoredConfiguration what the step reads, in the wording of the warning that names the
+   *     provider of a duplicated issuer it therefore ignores
+   */
+  public static IssuerRegistrations ofConfiguration(
+      final Map<String, OidcConfiguration> providers,
+      final Function<String, ClientRegistration> resolveByRegistrationId,
+      final String ignoredConfiguration) {
     return new IssuerRegistrations(
-        IssuerOwnership.registrationIdByIssuer(providers, LOG, IGNORED_CONFIGURATION),
+        IssuerOwnership.registrationIdByIssuer(providers, LOG, ignoredConfiguration),
         resolveByRegistrationId);
   }
 
