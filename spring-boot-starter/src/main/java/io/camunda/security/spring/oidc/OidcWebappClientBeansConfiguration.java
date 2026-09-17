@@ -73,8 +73,8 @@ public class OidcWebappClientBeansConfiguration {
    * unreachable identity provider must not stop the application context.
    *
    * <p>The issuer requirement of the issuer-aware decoder needs no network access, so the method
-   * checks it here, and a configuration error still stops the start. The check covers the
-   * repository of the library only, because a host repository can hold another set of
+   * checks it here, and a configuration error still stops the start. The check covers a repository
+   * that resolves the configured providers only, because another repository can hold another set of
    * registrations.
    */
   @Bean
@@ -85,30 +85,41 @@ public class OidcWebappClientBeansConfiguration {
       final OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory) {
     final var providers = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
     requireIterable(clientRegistrationRepository);
-    if (clientRegistrationRepository instanceof LazyClientRegistrationRepository) {
+    if (holdsTheConfiguredProviders(clientRegistrationRepository, providers)) {
       oidcAccessTokenDecoderFactory.validateProvidersHaveIssuer(providers);
     }
     return new DeferredJwtDecoder(
         () ->
             DeferredOidcResolution.resolve(
-                decoderSubject(clientRegistrationRepository, providers),
+                decoderSubject(clientRegistrationRepository),
                 () ->
                     oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
                         iterableRegistrations(clientRegistrationRepository), providers)));
   }
 
   /**
-   * Names the decoder and the providers it covers. A host repository holds registrations that the
-   * configuration of the library does not describe, so the subject names the host instead of
-   * providers the failure may not concern.
+   * Names the decoder and the providers it covers. The names come from the repository, because a
+   * host repository holds registrations that the configuration of the library does not describe. A
+   * repository that gives no names leaves the subject with the host.
    */
-  private static String decoderSubject(
+  private static String decoderSubject(final ClientRegistrationRepository repository) {
+    return "the OIDC access-token decoder "
+        + (repository instanceof final LazyClientRegistrationRepository lazy
+            ? "for provider(s) " + lazy.providerDescriptions()
+            : "of the ClientRegistrationRepository of the host application");
+  }
+
+  /**
+   * Whether the repository resolves the configured providers, and nothing else. The class of the
+   * repository alone does not say so: a host can wire a {@link LazyClientRegistrationRepository} of
+   * its own, over another set of providers. The registrationIds answer from the configuration, so
+   * the comparison needs no network access.
+   */
+  private static boolean holdsTheConfiguredProviders(
       final ClientRegistrationRepository repository,
       final Map<String, OidcConfiguration> providers) {
-    return "the OIDC access-token decoder "
-        + (repository instanceof LazyClientRegistrationRepository
-            ? "for provider(s) " + DeferredOidcResolution.describeProviders(providers)
-            : "of the ClientRegistrationRepository of the host application");
+    return repository instanceof final LazyClientRegistrationRepository lazy
+        && lazy.registrationIds().equals(providers.keySet());
   }
 
   /**

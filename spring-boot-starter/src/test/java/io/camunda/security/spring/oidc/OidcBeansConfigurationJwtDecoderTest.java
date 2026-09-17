@@ -11,9 +11,11 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -436,6 +438,33 @@ class OidcBeansConfigurationJwtDecoderTest {
                     .hasMessageContaining("Iterable<ClientRegistration>"));
   }
 
+  @Test
+  void shouldStartWhenAHostLazyRepositoryHoldsOtherProvidersThanTheProviderMap() {
+    // given a host repository of the library's lazy type, over a provider the configuration does
+    // not describe, while the provider map sets no issuer-uri for one of its two providers
+    runner
+        .withUserConfiguration(HostLazyRegistrationRepository.class)
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.keycloak.client-id=kc-client",
+            "camunda.security.authentication.providers.oidc.keycloak.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.providers.oidc.keycloak.issuer-uri=https://kc.example.com",
+            "camunda.security.authentication.providers.oidc.keycloak.authorization-uri=https://kc.example.com/auth",
+            "camunda.security.authentication.providers.oidc.keycloak.token-uri=https://kc.example.com/token",
+            "camunda.security.authentication.providers.oidc.keycloak.jwk-set-uri=https://kc.example.com/jwks",
+            "camunda.security.authentication.providers.oidc.azure.client-id=az-client",
+            "camunda.security.authentication.providers.oidc.azure.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.providers.oidc.azure.authorization-uri=https://az.example.com/auth",
+            "camunda.security.authentication.providers.oidc.azure.token-uri=https://az.example.com/token",
+            "camunda.security.authentication.providers.oidc.azure.jwk-set-uri=https://az.example.com/jwks")
+        // the registrations of the host repository are its own, so the requirement of the
+        // issuer-aware decoder belongs to them, and not to the provider map of the library
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              assertThat(ctx).hasSingleBean(JwtDecoder.class);
+            });
+  }
+
   @Configuration
   static class StubOidcInfrastructure {
 
@@ -480,6 +509,27 @@ class OidcBeansConfigurationJwtDecoderTest {
     ClientRegistrationRepository clientRegistrationRepository() {
       return new InMemoryClientRegistrationRepository(
           testRegistration("keycloak", "https://kc.example.com/jwks", "https://kc.example.com"));
+    }
+  }
+
+  /**
+   * A host repository of the library's lazy type, over its own provider. Used to show that the
+   * library reads the provider map only for a repository that resolves the configured providers.
+   */
+  @Configuration
+  static class HostLazyRegistrationRepository {
+
+    @Bean
+    ClientRegistrationRepository clientRegistrationRepository() {
+      final var provider = new OidcConfiguration();
+      provider.setClientId("host-client");
+      provider.setIssuerUri("https://host.example.com");
+      provider.setAuthorizationUri("https://host.example.com/auth");
+      provider.setTokenUri("https://host.example.com/token");
+      provider.setJwkSetUri("https://host.example.com/jwks");
+      provider.setRedirectUri("{baseUrl}/login/oauth2/code/{registrationId}");
+      return new LazyClientRegistrationRepository(
+          new ScopedClientRegistrationFactory(), Map.of("host", provider));
     }
   }
 
