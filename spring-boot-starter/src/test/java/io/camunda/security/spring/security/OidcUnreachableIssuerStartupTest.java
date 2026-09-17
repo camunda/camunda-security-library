@@ -68,6 +68,7 @@ class OidcUnreachableIssuerStartupTest {
   private static final String OIDC_CHAIN_BEAN = "oidcWebappSecurityFilterChain";
 
   private static final String SCOPE_BASE_PATH = "/physical-tenants/t1";
+  private static final String OTHER_SCOPE_BASE_PATH = "/physical-tenants/t2";
   private static final String SCOPE_CHAIN_BEAN = "scopedOidcChain";
 
   /** Nothing listens on port 1, so discovery fails immediately rather than waiting on a timeout. */
@@ -193,8 +194,8 @@ class OidcUnreachableIssuerStartupTest {
                       "basePath=" + SCOPE_BASE_PATH);
               final var healthy =
                   decoders.buildIssuerAwareDecoder(
-                      scopedAuthentication("healthy", server.issuerUri()),
-                      "basePath=/physical-tenants/t2");
+                      scopedAuthentication("healthy", server.issuerUri(), OTHER_SCOPE_BASE_PATH),
+                      "basePath=" + OTHER_SCOPE_BASE_PATH);
 
               // One scope's unreachable provider is that scope's problem: the other scope gets as
               // far as rejecting the token itself.
@@ -270,6 +271,12 @@ class OidcUnreachableIssuerStartupTest {
 
   private static AuthenticationConfiguration scopedAuthentication(
       final String registrationId, final String issuerUri) {
+    return scopedAuthentication(registrationId, issuerUri, SCOPE_BASE_PATH);
+  }
+
+  /** The redirect-uri carries the base path of the scope, as a scoped chain configures it. */
+  private static AuthenticationConfiguration scopedAuthentication(
+      final String registrationId, final String issuerUri, final String basePath) {
     final var authentication = new AuthenticationConfiguration();
     authentication.setMethod(AuthenticationMethod.OIDC);
     final var providers = new OidcProvidersConfiguration();
@@ -279,7 +286,7 @@ class OidcUnreachableIssuerStartupTest {
         OidcConfiguration.builder()
             .clientId("client-" + registrationId)
             .clientSecret("secret")
-            .redirectUri("{baseUrl}" + SCOPE_BASE_PATH + "/sso-callback")
+            .redirectUri("{baseUrl}" + basePath + "/sso-callback")
             .issuerUri(issuerUri)
             .build());
     providers.setOidc(byId);
