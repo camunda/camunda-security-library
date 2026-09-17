@@ -10,6 +10,8 @@ package io.camunda.security.spring.oidc;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -46,15 +48,19 @@ public class OidcAuthenticationConfigurationRepository implements OidcProviderCo
   /**
    * Returns an immutable map of all OIDC authentication configurations keyed by registration ID.
    *
-   * <p>This method returns a defensive copy of the internal providers map via {@link Map#copyOf}.
-   * The returned map is structurally immutable and cannot be modified by callers. The contained
-   * {@link OidcConfiguration} instances are shared references and may still be mutable.
+   * <p>The map keeps the order of the configuration, with the flat block first, which is the order
+   * of the merge. Where two providers declare the same issuer, the steps of a request take the
+   * first of them, so the order decides which provider owns that issuer and the map must not
+   * scramble it.
+   *
+   * <p>The returned map is a defensive copy and cannot be modified by callers. The contained {@link
+   * OidcConfiguration} instances are shared references and may still be mutable.
    *
    * @return an immutable map of registration IDs to {@link OidcConfiguration} objects; never {@code
    *     null}
    */
   @Override
   public Map<String, OidcConfiguration> getOidcAuthenticationConfigurations() {
-    return Map.copyOf(providers);
+    return Collections.unmodifiableMap(new LinkedHashMap<>(providers));
   }
 }

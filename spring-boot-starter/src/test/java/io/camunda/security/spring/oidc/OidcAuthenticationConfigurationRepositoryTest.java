@@ -104,6 +104,36 @@ class OidcAuthenticationConfigurationRepositoryTest {
   }
 
   @Test
+  void shouldHandOutTheProvidersInTheOrderOfTheConfiguration() {
+    // given two providers whose keys do not sort in the order the configuration declares them,
+    // and a flat block that the merge places first
+    final var flat = new OidcConfiguration();
+    flat.setClientId("flatClient");
+    flat.setIssuerUri("https://flat.example.com");
+    properties.getAuthentication().setOidc(flat);
+
+    final var web = new OidcConfiguration();
+    web.setClientId("webClient");
+    web.setIssuerUri("https://shared.example.com");
+    final var backend = new OidcConfiguration();
+    backend.setClientId("backendClient");
+    backend.setIssuerUri("https://shared.example.com");
+    final var providers = new OidcProvidersConfiguration();
+    providers.getOidc().put("web", web);
+    providers.getOidc().put("backend", backend);
+    properties.getAuthentication().setProviders(providers);
+
+    // when
+    final var repo =
+        new OidcAuthenticationConfigurationRepository(
+            properties, new ScopedClientRegistrationFactory());
+
+    // then the order decides which provider owns the shared issuer, so it must survive the copy
+    assertThat(repo.getOidcAuthenticationConfigurations().keySet())
+        .containsExactly("oidc", "web", "backend");
+  }
+
+  @Test
   void shouldReturnConfigByRegistrationId() {
     final var oidc = new OidcConfiguration();
     oidc.setClientId("client1");
