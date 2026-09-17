@@ -29,8 +29,14 @@ public interface OidcProviderConfigurationPort {
    * mutated. Attempts to modify the returned map will throw {@link UnsupportedOperationException}.
    * Callers should treat this map as read-only.
    *
-   * @return an immutable map of registration IDs to {@link OidcConfiguration} objects; never {@code
-   *     null}, may be empty
+   * <p>The map iterates in the order of the configuration: the flat {@code oidc.*} block first,
+   * then the {@code providers.oidc.*} entries as the configuration declares them. Where two
+   * registrations declare one issuer-uri, the first of them owns that issuer, and an implementation
+   * that iterates in another order gives the claim settings of one registration to the tokens that
+   * another registration verifies.
+   *
+   * @return an immutable map of registration IDs to {@link OidcConfiguration} objects, in the order
+   *     of the configuration; never {@code null}, may be empty
    */
   Map<String, OidcConfiguration> getOidcAuthenticationConfigurations();
 }

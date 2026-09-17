@@ -50,10 +50,11 @@ converter built from that provider's claim settings.
   registration id is configurable (`oidc.registration-id`), and a `providers.oidc.*` entry can reuse
   the default key and overwrite the flat entry in the merged map — a key-based check can silently
   rebuild a converter, or reuse the wrong one, for either misconfiguration.
-- **Deterministic dedup order.** `getOidcAuthenticationConfigurations()` returns a `Map.copyOf`,
-  whose iteration order is JVM-salted, so when two registrations share an issuer, which one's claim
-  config wins is fixed explicitly (flat entry first, then registration ids alphabetically) instead
-  of depending on that map's iteration order.
+- **Deterministic dedup order.** When two registrations share an issuer, the first of them in
+  the order of the configuration owns it, which is the same winner every other issuer-keyed
+  lookup of a request picks. `getOidcAuthenticationConfigurations()` therefore hands out the
+  configurations in that order — the flat `oidc.*` block first, then the `providers.oidc.*`
+  entries as the configuration declares them — and this map follows it.
 - **Optional collaborator, not a hard dependency.** The two-argument `OidcTokenAuthenticationConverter`
   constructor is preserved, and the bean backs off via `@ConditionalOnBean` when
   `LazyTokenClaimsConverter` is absent — the documented `@Import(OidcBeansConfiguration.class)`
