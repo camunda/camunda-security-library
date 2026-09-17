@@ -25,6 +25,14 @@ class DeferredJwtDecoderTest {
       Jwt.withTokenValue("token").header("alg", "RS256").claim("sub", "alice").build();
 
   @Test
+  void shouldRejectAMissingDelegateSupplier() {
+    // then the wiring error names the argument, and not a later decode
+    assertThatThrownBy(() -> new DeferredJwtDecoder(null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessage("delegateSupplier must not be null");
+  }
+
+  @Test
   void shouldKeepTheDelegateAfterASuccessfulBuild() {
     // given
     final var builds = new AtomicInteger();

@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.oidc;
 
+import java.util.Objects;
 import java.util.function.Supplier;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -25,6 +26,7 @@ public final class DeferredJwtDecoder implements JwtDecoder {
   private final Supplier<JwtDecoder> delegate;
 
   public DeferredJwtDecoder(final Supplier<JwtDecoder> delegateSupplier) {
+    Objects.requireNonNull(delegateSupplier, "delegateSupplier must not be null");
     delegate = DeferredOidcResolution.memoizeOnSuccess(() -> build(delegateSupplier));
   }
 
