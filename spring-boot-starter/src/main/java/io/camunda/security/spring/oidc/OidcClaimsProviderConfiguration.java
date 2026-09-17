@@ -25,9 +25,8 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 
 /**
- * Registers the {@link OidcClaimsProvider} bean: either a {@link DeferredOidcClaimsProvider} that
- * builds a {@link CachingOidcClaimsProvider} at the first claims lookup when {@code
- * camunda.security.authentication.oidc.user-info-augmentation.enabled=true}, or a {@link
+ * Registers the {@link OidcClaimsProvider} bean: either a {@link CachingOidcClaimsProvider} when
+ * {@code camunda.security.authentication.oidc.user-info-augmentation.enabled=true}, or a {@link
  * NoopOidcClaimsProvider} otherwise. A host-supplied {@link OidcClaimsProvider} bean suppresses
  * both via {@link ConditionalOnMissingBean}.
  *
@@ -66,9 +65,6 @@ public class OidcClaimsProviderConfiguration {
    * OIDC host that disables the webapp chain and enables UserInfo augmentation without supplying
    * its own {@link ClientRegistrationRepository} or {@link OidcClaimsProvider} therefore gets no
    * UserInfo-augmenting default from CSL.
-   *
-   * <p>To read the UserInfo URIs from the repository is to make OIDC discovery, so the provider
-   * builds the mapping at the first claims lookup. See {@link DeferredOidcClaimsProvider}.
    */
   @Bean
   @ConditionalOnProperty(
@@ -83,14 +79,12 @@ public class OidcClaimsProviderConfiguration {
       @Qualifier("oidcUserInfoHttpClient") final HttpClient httpClient,
       @Autowired(required = false) final MeterRegistry meterRegistry) {
     final var augmentation = properties.getAuthentication().getOidc().getUserInfoAugmentation();
-    return new DeferredOidcClaimsProvider(
-        userInfoMappingSubject(clientRegistrationRepository),
-        () ->
-            CachingOidcClaimsProvider.forConfiguredMappings(
-                new OidcUserInfoHttpClient(httpClient, objectMapper),
-                buildUserInfoUriByIssuer(clientRegistrationRepository),
-                augmentation,
-                meterRegistry));
+    final Map<String, String> uriByIssuer = buildUserInfoUriByIssuer(clientRegistrationRepository);
+    return CachingOidcClaimsProvider.forConfiguredMappings(
+        new OidcUserInfoHttpClient(httpClient, objectMapper),
+        uriByIssuer,
+        augmentation,
+        meterRegistry);
   }
 
   @Bean
@@ -104,20 +98,10 @@ public class OidcClaimsProviderConfiguration {
   }
 
   /**
-   * Names the mapping and the providers it covers. A host repository holds registrations that the
-   * configuration of the library does not describe, so the subject names the host instead of
-   * providers the failure may not concern.
-   */
-  private static String userInfoMappingSubject(final ClientRegistrationRepository repo) {
-    return "the per-issuer UserInfo endpoint mapping "
-        + (repo instanceof final LazyClientRegistrationRepository lazy
-            ? "for provider(s) " + lazy.providerDescriptions()
-            : "of the ClientRegistrationRepository of the host application");
-  }
-
-  /**
    * Builds the per-issuer UserInfo URI map from the resolved {@link ClientRegistration}s. Requires
-   * the repository to be iterable (the default {@link LazyClientRegistrationRepository} is).
+   * the repository to be iterable (the default {@link
+   * org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository}
+   * is).
    *
    * @throws IllegalStateException if the repository is not iterable — augmentation is enabled, so a
    *     mapping must be derivable; failing here makes the non-iterable repository the explicit
