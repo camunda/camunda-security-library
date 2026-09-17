@@ -10,16 +10,33 @@ package io.camunda.security.spring.oidc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.nimbusds.jose.KeySourceException;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.io.IOException;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 
+@ExtendWith(MockitoExtension.class)
 class OidcAccessTokenDecoderFactoryTest {
+
+  @Mock private JWSKeySelectorFactory jwsKeySelectorFactory;
+  @Mock private TokenValidatorFactory tokenValidatorFactory;
 
   @Test
   void wrapMapsBadJwtKeySourceCausedJwtExceptionToBadJwtException() {
@@ -130,5 +147,73 @@ class OidcAccessTokenDecoderFactoryTest {
     final var wrapped = OidcAccessTokenDecoderFactory.wrapKeySourceFailuresAsBadJwt(delegate);
 
     assertThatThrownBy(() -> wrapped.decode("any-token")).isSameAs(jwtException);
+  }
+
+  @Test
+  void shouldTakeTheAdditionalJwkSetUrisOfTheFirstRegistrationOfASharedIssuerAndWarn() {
+    // given two registrations of one issuer, and additional key sets on each of them
+    final var issuer = "https://shared-issuer";
+    final var registrations =
+        List.of(
+            registration("owner", issuer, "https://owner/jwks"),
+            registration("loser", issuer, "https://loser/jwks"));
+    final var providers =
+        Map.of(
+            "owner", providerConfiguration(issuer, "https://owner/extra-jwks"),
+            "loser", providerConfiguration(issuer, "https://loser/extra-jwks"));
+    final var factory =
+        new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
+    final var appender = attachAppender();
+
+    try {
+      // when
+      assertThat(factory.selectAccessTokenDecoder(registrations, providers)).isNotNull();
+
+      // then the operator reads that the key sets of the second registration verify no token of
+      // that issuer, which would otherwise let it sign tokens the decoder accepts
+      assertThat(appender.list)
+          .anySatisfy(
+              event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                assertThat(event.getFormattedMessage())
+                    .contains(issuer)
+                    .contains("'owner' wins")
+                    .contains("the additional JWK Set URIs of 'loser' is ignored");
+              });
+    } finally {
+      detachAppender(appender);
+    }
+  }
+
+  private static ClientRegistration registration(
+      final String registrationId, final String issuerUri, final String jwkSetUri) {
+    return ClientRegistration.withRegistrationId(registrationId)
+        .clientId("client-" + registrationId)
+        .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+        .tokenUri(issuerUri + "/token")
+        .jwkSetUri(jwkSetUri)
+        .issuerUri(issuerUri)
+        .build();
+  }
+
+  private static OidcConfiguration providerConfiguration(
+      final String issuerUri, final String additionalJwkSetUri) {
+    final var configuration = new OidcConfiguration();
+    configuration.setIssuerUri(issuerUri);
+    configuration.setAdditionalJwkSetUris(List.of(additionalJwkSetUri));
+    return configuration;
+  }
+
+  private static ListAppender<ILoggingEvent> attachAppender() {
+    final var logger = (Logger) LoggerFactory.getLogger(OidcAccessTokenDecoderFactory.class);
+    final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    appender.start();
+    logger.addAppender(appender);
+    return appender;
+  }
+
+  private static void detachAppender(final ListAppender<ILoggingEvent> appender) {
+    ((Logger) LoggerFactory.getLogger(OidcAccessTokenDecoderFactory.class))
+        .detachAppender(appender);
   }
 }

@@ -282,6 +282,8 @@ A token carries its provider in the `iss` claim alone, so one provider can own a
 
 The owner is the first registration in the order of the configuration, which puts the flat `oidc.*` block before the `providers.oidc.*` entries, and the provider entries in the order the configuration declares them.
 
+The rule applies inside one scope. Each scope builds its own registrations, so an issuer that a scoped chain declares is owned within that chain alone, and the same issuer in another scope is unaffected.
+
 Two app registrations of one IdP tenant therefore need one CSL provider entry, not two. Where they differ only in their signing keys, add the second key set to the owning entry with `additional-jwk-set-uris`; where they differ in their audiences, list each audience in the `audiences` of the owning entry. A difference in claim names or UserInfo endpoint cannot be expressed, because those are read per issuer.
 
 #### Resource-server `JwtDecoder` selection

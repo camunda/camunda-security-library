@@ -13,6 +13,10 @@ import static org.assertj.core.api.Assertions.entry;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
@@ -26,6 +30,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 
@@ -180,9 +185,8 @@ final class ScopedOidcClaimsProviderFactoryTest {
     return authentication;
   }
 
-  /** Builds a {@link ClientRegistration} with both issuerUri and userInfoUri set. */
   @Test
-  void shouldKeepTheUserInfoEndpointOfTheFirstRegistrationOfASharedIssuer() {
+  void shouldKeepTheUserInfoEndpointOfTheFirstRegistrationOfASharedIssuerAndWarn() {
     // given two registrations of one issuer, each with its own UserInfo endpoint
     final var issuer = "https://shared.example.com";
     final var registrations =
@@ -190,13 +194,44 @@ final class ScopedOidcClaimsProviderFactoryTest {
             registrationWithUserInfo("owner", issuer, issuer + "/owner/userinfo"),
             registrationWithUserInfo("loser", issuer, issuer + "/loser/userinfo"));
 
-    // when
-    final var uriByIssuer = ScopedOidcClaimsProviderFactory.buildUserInfoUriByIssuer(registrations);
+    final var appender = attachAppender();
 
-    // then augmentation calls the endpoint of the registration the decoder of the scope reads
-    assertThat(uriByIssuer).containsExactly(entry(issuer, issuer + "/owner/userinfo"));
+    try {
+      // when
+      final var uriByIssuer =
+          ScopedOidcClaimsProviderFactory.buildUserInfoUriByIssuer(registrations);
+
+      // then augmentation calls the endpoint of the registration the decoder of the scope reads,
+      // and the operator reads which endpoint it therefore never calls
+      assertThat(uriByIssuer).containsExactly(entry(issuer, issuer + "/owner/userinfo"));
+      assertThat(appender.list)
+          .anySatisfy(
+              event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                assertThat(event.getFormattedMessage())
+                    .contains(issuer)
+                    .contains("'owner' wins")
+                    .contains("of 'loser' is ignored");
+              });
+    } finally {
+      detachAppender(appender);
+    }
   }
 
+  private static ListAppender<ILoggingEvent> attachAppender() {
+    final var logger = (Logger) LoggerFactory.getLogger(ScopedOidcClaimsProviderFactory.class);
+    final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    appender.start();
+    logger.addAppender(appender);
+    return appender;
+  }
+
+  private static void detachAppender(final ListAppender<ILoggingEvent> appender) {
+    ((Logger) LoggerFactory.getLogger(ScopedOidcClaimsProviderFactory.class))
+        .detachAppender(appender);
+  }
+
+  /** Builds a {@link ClientRegistration} with both issuerUri and userInfoUri set. */
   private static ClientRegistration registrationWithUserInfo(
       final String registrationId, final String issuerUri, final String userInfoUri) {
     return ClientRegistration.withRegistrationId(registrationId)
