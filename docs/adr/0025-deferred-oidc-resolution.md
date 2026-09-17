@@ -20,11 +20,11 @@ An identity provider that starts beside the cluster, or that is behind a proxy t
 
 Each resolution step that needs the network runs at its first use: `LazyClientRegistrationRepository` per registration lookup, `DeferredJwtDecoder` per decoder, `DeferredOidcClaimsProvider` per UserInfo mapping. `DeferredOidcResolution` runs each step, throws the original failure again, and rate-limits the warning to one per minute for each resolution subject. A registration lookup names the provider and the scope; a step that reads a repository of the host application names every provider it covers, because it reads that repository as a whole. A resolution that runs inside another one reports the failure once, at the step that names the provider.
 
-A step resolves what the token needs, and not every provider the configuration describes: the access-token decoder of several providers resolves the provider of the issuer the token carries. A provider that does not answer therefore fails the tokens of its own issuer alone. Where two providers declare the same issuer, one order decides for every stage of a request, so a token is verified and mapped by the same provider.
+A step resolves what the token needs, and not every provider the configuration describes: a decoder of several providers resolves the provider of the issuer the token carries, and UserInfo augmentation resolves the endpoint of that issuer. A provider that does not answer therefore fails the tokens of its own issuer alone. Where two providers declare the same issuer, one order decides for every stage of a request, so a token is verified and mapped by the same provider.
 
 A step keeps its result after a successful attempt only, and holds no lock across the attempt. A lock would hold each other caller for the complete timeout of the attempt that runs, and the request threads would run out. Two callers therefore each make their own attempt, and the first result wins.
 
-A configuration error that needs no network still stops the start: the repository validates each provider block, and the cluster decoder checks the issuer requirement of a deployment with several providers.
+A configuration error that needs no network still stops the start: the repository validates each provider block, the cluster decoder checks the issuer requirement of a deployment with several providers, and augmentation checks that some provider can name an issuer whose claims it augments.
 
 ## Supersedes
 
@@ -32,8 +32,8 @@ A configuration error that needs no network still stops the start: the repositor
 |---|---|---|
 | The provider map is wrapped in an `InMemoryClientRegistrationRepository` | ADR-0006 | `LazyClientRegistrationRepository`, which is iterable as the decoder switch requires |
 | A registration that resolves no JWK Set URI fails at startup | ADR-0006 | The same failure reaches the first token decode |
-| The claims provider builds the `issuer → userInfoUri` map at construction time | ADR-0007 | It builds the map at the first claims lookup |
-| An augmentation config that can never augment fails fast at construction time | ADR-0007 | It fails each request that needs augmented claims |
+| The claims provider builds the `issuer → userInfoUri` map at construction time | ADR-0007 | It resolves the endpoint of an issuer at the first claims lookup that carries it |
+| An augmentation config that can never augment fails fast at construction time | ADR-0007 | A configuration that no provider can augment still stops the start, while a single provider that exposes no endpoint fails the claims lookups of its own issuer |
 
 ## Consequences
 
