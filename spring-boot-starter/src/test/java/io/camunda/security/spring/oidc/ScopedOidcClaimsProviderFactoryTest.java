@@ -9,6 +9,7 @@ package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.entry;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -180,6 +181,22 @@ final class ScopedOidcClaimsProviderFactoryTest {
   }
 
   /** Builds a {@link ClientRegistration} with both issuerUri and userInfoUri set. */
+  @Test
+  void shouldKeepTheUserInfoEndpointOfTheFirstRegistrationOfASharedIssuer() {
+    // given two registrations of one issuer, each with its own UserInfo endpoint
+    final var issuer = "https://shared.example.com";
+    final var registrations =
+        List.of(
+            registrationWithUserInfo("owner", issuer, issuer + "/owner/userinfo"),
+            registrationWithUserInfo("loser", issuer, issuer + "/loser/userinfo"));
+
+    // when
+    final var uriByIssuer = ScopedOidcClaimsProviderFactory.buildUserInfoUriByIssuer(registrations);
+
+    // then augmentation calls the endpoint of the registration the decoder of the scope reads
+    assertThat(uriByIssuer).containsExactly(entry(issuer, issuer + "/owner/userinfo"));
+  }
+
   private static ClientRegistration registrationWithUserInfo(
       final String registrationId, final String issuerUri, final String userInfoUri) {
     return ClientRegistration.withRegistrationId(registrationId)

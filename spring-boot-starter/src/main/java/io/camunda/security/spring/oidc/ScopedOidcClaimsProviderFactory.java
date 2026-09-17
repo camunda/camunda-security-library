@@ -12,10 +12,12 @@ import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpClient;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 
 /**
@@ -39,6 +41,8 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
  * control.
  */
 public final class ScopedOidcClaimsProviderFactory {
+
+  private static final Logger LOG = LoggerFactory.getLogger(ScopedOidcClaimsProviderFactory.class);
 
   private final ScopedClientRegistrationFactory clientRegistrationFactory;
   private final OidcUserInfoHttpClient userInfoHttpClient;
@@ -105,21 +109,22 @@ public final class ScopedOidcClaimsProviderFactory {
 
   /**
    * Extracts the issuer→userInfoUri map from a list of {@link ClientRegistration}s. Registrations
-   * without both an issuerUri and a userInfoUri are silently skipped.
+   * without both an issuerUri and a userInfoUri are silently skipped. Where two registrations
+   * declare the same issuer, the map holds the endpoint of the registration that {@link
+   * IssuerOwnership} names the owner of that issuer, which is the registration the decoder of the
+   * same scope reads.
    */
   static Map<String, String> buildUserInfoUriByIssuer(
       final List<ClientRegistration> registrations) {
-    final Map<String, String> map = new HashMap<>();
-    for (final ClientRegistration reg : registrations) {
-      final String issuerUri = reg.getProviderDetails().getIssuerUri();
-      final String userInfoUri = reg.getProviderDetails().getUserInfoEndpoint().getUri();
-      if (issuerUri != null
-          && !issuerUri.isBlank()
-          && userInfoUri != null
-          && !userInfoUri.isBlank()) {
-        map.put(issuerUri, userInfoUri);
-      }
-    }
+    final Map<String, String> map = new LinkedHashMap<>();
+    IssuerOwnership.byIssuer(registrations, LOG, "the UserInfo endpoint")
+        .forEach(
+            (issuerUri, owner) -> {
+              final var userInfoUri = owner.getProviderDetails().getUserInfoEndpoint().getUri();
+              if (userInfoUri != null && !userInfoUri.isBlank()) {
+                map.put(issuerUri, userInfoUri);
+              }
+            });
     return map;
   }
 }

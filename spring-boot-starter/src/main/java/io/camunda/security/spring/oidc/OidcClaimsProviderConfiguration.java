@@ -12,8 +12,12 @@ import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpClient;
-import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -37,6 +41,8 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 @Configuration
 @ConditionalOnProperty(name = "camunda.security.authentication.method", havingValue = "oidc")
 public class OidcClaimsProviderConfiguration {
+
+  private static final Logger LOG = LoggerFactory.getLogger(OidcClaimsProviderConfiguration.class);
 
   /**
    * JDK HTTP client used by {@link CachingOidcClaimsProvider} to call the IdP's UserInfo endpoint.
@@ -101,7 +107,9 @@ public class OidcClaimsProviderConfiguration {
    * Builds the per-issuer UserInfo URI map from the resolved {@link ClientRegistration}s. Requires
    * the repository to be iterable (the default {@link
    * org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository}
-   * is).
+   * is). Where two registrations declare the same issuer, the map holds the endpoint of the
+   * registration that {@link IssuerOwnership} names the owner of that issuer, which is the
+   * registration the decoder reads.
    *
    * @throws IllegalStateException if the repository is not iterable — augmentation is enabled, so a
    *     mapping must be derivable; failing here makes the non-iterable repository the explicit
@@ -117,20 +125,21 @@ public class OidcClaimsProviderConfiguration {
               + " augmentation"
               + " (camunda.security.authentication.oidc.user-info-augmentation.enabled=false).");
     }
-    final Map<String, String> map = new HashMap<>();
+    final List<ClientRegistration> registrations = new ArrayList<>();
     for (final Object item : (Iterable<?>) repo) {
-      if (!(item instanceof final ClientRegistration reg)) {
-        continue;
-      }
-      final String issuerUri = reg.getProviderDetails().getIssuerUri();
-      final String userInfoUri = reg.getProviderDetails().getUserInfoEndpoint().getUri();
-      if (issuerUri != null
-          && !issuerUri.isBlank()
-          && userInfoUri != null
-          && !userInfoUri.isBlank()) {
-        map.put(issuerUri, userInfoUri);
+      if (item instanceof final ClientRegistration reg) {
+        registrations.add(reg);
       }
     }
+    final Map<String, String> map = new LinkedHashMap<>();
+    IssuerOwnership.byIssuer(registrations, LOG, "the UserInfo endpoint")
+        .forEach(
+            (issuerUri, owner) -> {
+              final var userInfoUri = owner.getProviderDetails().getUserInfoEndpoint().getUri();
+              if (userInfoUri != null && !userInfoUri.isBlank()) {
+                map.put(issuerUri, userInfoUri);
+              }
+            });
     return map;
   }
 }

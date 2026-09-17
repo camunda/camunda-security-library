@@ -19,10 +19,10 @@ import com.nimbusds.jwt.proc.DefaultJWTProcessor;
 import com.nimbusds.jwt.proc.JWTProcessor;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -499,8 +499,12 @@ public class OidcAccessTokenDecoderFactory {
 
   /**
    * Builds a map of issuer URI to additional JWK Set URIs from the given registrations and provider
-   * configuration. Only registrations with a non-empty {@code additional-jwk-set-uris} list and a
-   * non-blank {@code issuerUri} contribute an entry.
+   * configuration. Only the registration that owns an issuer contributes its {@code
+   * additional-jwk-set-uris}, and only when the list holds a URI.
+   *
+   * <p>The owner is read before the URIs, so a second registration of an issuer adds no key set to
+   * the registration that verifies the tokens of that issuer. Reading the URIs first would let a
+   * token signed by the keys of the losing registration verify against the owner.
    *
    * @param registrations the list of client registrations
    * @param providers the provider configuration map keyed by registrationId
@@ -509,19 +513,19 @@ public class OidcAccessTokenDecoderFactory {
   private static Map<String, List<String>> buildAdditionalJwkSetUrisByIssuer(
       final List<ClientRegistration> registrations,
       final Map<String, OidcConfiguration> providers) {
-    return registrations.stream()
-        .filter(
-            reg -> {
-              final var config = providers.get(reg.getRegistrationId());
-              return config != null
-                  && config.getAdditionalJwkSetUris() != null
-                  && config.getAdditionalJwkSetUris().stream().anyMatch(StringUtils::hasText)
-                  && StringUtils.hasText(reg.getProviderDetails().getIssuerUri());
-            })
-        .collect(
-            Collectors.toMap(
-                reg -> reg.getProviderDetails().getIssuerUri(),
-                reg -> providers.get(reg.getRegistrationId()).getAdditionalJwkSetUris(),
-                (a, b) -> a));
+    final Map<String, List<String>> urisByIssuer = new LinkedHashMap<>();
+    IssuerOwnership.byIssuer(registrations, LOG, "the additional JWK Set URIs")
+        .forEach(
+            (issuerUri, owner) -> {
+              final var config = providers.get(owner.getRegistrationId());
+              if (config == null || config.getAdditionalJwkSetUris() == null) {
+                return;
+              }
+              final var additionalUris = config.getAdditionalJwkSetUris();
+              if (additionalUris.stream().anyMatch(StringUtils::hasText)) {
+                urisByIssuer.put(issuerUri, additionalUris);
+              }
+            });
+    return urisByIssuer;
   }
 }

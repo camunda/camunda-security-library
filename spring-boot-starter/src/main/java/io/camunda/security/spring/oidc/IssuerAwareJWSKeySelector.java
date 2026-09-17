@@ -18,6 +18,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 
 /**
@@ -26,15 +28,20 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
  *
  * <p>This is used to support multi-tenant setups where each identity provider (issuer) may have its
  * own JWK Set URI for verifying token signatures.
+ *
+ * <p>Where two registrations declare the same issuer, the selector takes the keys of the
+ * registration that {@link IssuerOwnership} names the owner of that issuer, and warns about the
+ * keys it therefore does not read.
  */
 public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelector<SecurityContext> {
 
+  private static final Logger LOG = LoggerFactory.getLogger(IssuerAwareJWSKeySelector.class);
   private static final String ERROR_UNKNOWN_ISSUER =
       "Unknown issuer '%s'. No matching client registration found.";
   private static final String ERROR_MISSING_ISSUER =
       "Missing or empty 'iss' (issuer) claim in JWT.";
 
-  private final List<ClientRegistration> clientRegistrations;
+  private final Map<String, ClientRegistration> registrationsByIssuer;
   private final JWSKeySelectorFactory jwsKeySelectorFactory;
   private final Map<String, List<String>> additionalJwkSetUrisByIssuer;
   private final Map<String, JWSKeySelector<SecurityContext>> selectors;
@@ -49,7 +56,7 @@ public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelecto
       final List<ClientRegistration> clientRegistrations,
       final JWSKeySelectorFactory jwsKeySelectorFactory,
       final Map<String, List<String>> additionalJwkSetUrisByIssuer) {
-    this.clientRegistrations = List.copyOf(clientRegistrations);
+    registrationsByIssuer = IssuerOwnership.byIssuer(clientRegistrations, LOG, "the JWK Set URI");
     this.jwsKeySelectorFactory = jwsKeySelectorFactory;
     this.additionalJwkSetUrisByIssuer =
         additionalJwkSetUrisByIssuer != null
@@ -93,10 +100,11 @@ public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelecto
    * @return the matching client registration, or {@code null} if not found
    */
   private ClientRegistration getClientRegistrationByIssuer(final String issuer) {
-    return clientRegistrations.stream()
-        .filter(c -> issuer.equals(c.getProviderDetails().getIssuerUri()))
-        .findFirst()
-        .orElseThrow(() -> new IllegalArgumentException(ERROR_UNKNOWN_ISSUER.formatted(issuer)));
+    final var registration = registrationsByIssuer.get(issuer);
+    if (registration == null) {
+      throw new IllegalArgumentException(ERROR_UNKNOWN_ISSUER.formatted(issuer));
+    }
+    return registration;
   }
 
   /**
