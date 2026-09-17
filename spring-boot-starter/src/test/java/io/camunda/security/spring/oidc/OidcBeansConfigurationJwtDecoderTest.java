@@ -42,6 +42,25 @@ import org.springframework.security.oauth2.jwt.JwtException;
  */
 class OidcBeansConfigurationJwtDecoderTest {
 
+  /**
+   * Two providers, of which azure sets no issuer-uri. The issuer-aware decoder needs one issuer per
+   * provider, so this configuration separates the repositories that the requirement applies to from
+   * those it does not.
+   */
+  private static final String[] TWO_PROVIDERS_ONE_WITHOUT_ISSUER_URI = {
+    "camunda.security.authentication.providers.oidc.keycloak.client-id=kc-client",
+    "camunda.security.authentication.providers.oidc.keycloak.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+    "camunda.security.authentication.providers.oidc.keycloak.issuer-uri=https://kc.example.com",
+    "camunda.security.authentication.providers.oidc.keycloak.authorization-uri=https://kc.example.com/auth",
+    "camunda.security.authentication.providers.oidc.keycloak.token-uri=https://kc.example.com/token",
+    "camunda.security.authentication.providers.oidc.keycloak.jwk-set-uri=https://kc.example.com/jwks",
+    "camunda.security.authentication.providers.oidc.azure.client-id=az-client",
+    "camunda.security.authentication.providers.oidc.azure.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+    "camunda.security.authentication.providers.oidc.azure.authorization-uri=https://az.example.com/auth",
+    "camunda.security.authentication.providers.oidc.azure.token-uri=https://az.example.com/token",
+    "camunda.security.authentication.providers.oidc.azure.jwk-set-uri=https://az.example.com/jwks"
+  };
+
   private static OidcTestServer server;
 
   private final ApplicationContextRunner runner =
@@ -148,18 +167,7 @@ class OidcBeansConfigurationJwtDecoderTest {
   void shouldFailAtStartupWhenOneOfSeveralProvidersSetsNoIssuerUri() {
     // given two providers, one of them configured with explicit endpoints and no issuer-uri
     runner
-        .withPropertyValues(
-            "camunda.security.authentication.providers.oidc.keycloak.client-id=kc-client",
-            "camunda.security.authentication.providers.oidc.keycloak.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
-            "camunda.security.authentication.providers.oidc.keycloak.issuer-uri=https://kc.example.com",
-            "camunda.security.authentication.providers.oidc.keycloak.authorization-uri=https://kc.example.com/auth",
-            "camunda.security.authentication.providers.oidc.keycloak.token-uri=https://kc.example.com/token",
-            "camunda.security.authentication.providers.oidc.keycloak.jwk-set-uri=https://kc.example.com/jwks",
-            "camunda.security.authentication.providers.oidc.azure.client-id=az-client",
-            "camunda.security.authentication.providers.oidc.azure.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
-            "camunda.security.authentication.providers.oidc.azure.authorization-uri=https://az.example.com/auth",
-            "camunda.security.authentication.providers.oidc.azure.token-uri=https://az.example.com/token",
-            "camunda.security.authentication.providers.oidc.azure.jwk-set-uri=https://az.example.com/jwks")
+        .withPropertyValues(TWO_PROVIDERS_ONE_WITHOUT_ISSUER_URI)
         // the issuer-aware decoder routes tokens by their issuer, so it needs one per provider;
         // that needs no discovery to see, so it must not wait for the first token decode
         .run(
@@ -176,18 +184,7 @@ class OidcBeansConfigurationJwtDecoderTest {
     // no issuer-uri for one of its two providers
     runner
         .withUserConfiguration(SingleRegistrationRepository.class)
-        .withPropertyValues(
-            "camunda.security.authentication.providers.oidc.keycloak.client-id=kc-client",
-            "camunda.security.authentication.providers.oidc.keycloak.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
-            "camunda.security.authentication.providers.oidc.keycloak.issuer-uri=https://kc.example.com",
-            "camunda.security.authentication.providers.oidc.keycloak.authorization-uri=https://kc.example.com/auth",
-            "camunda.security.authentication.providers.oidc.keycloak.token-uri=https://kc.example.com/token",
-            "camunda.security.authentication.providers.oidc.keycloak.jwk-set-uri=https://kc.example.com/jwks",
-            "camunda.security.authentication.providers.oidc.azure.client-id=az-client",
-            "camunda.security.authentication.providers.oidc.azure.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
-            "camunda.security.authentication.providers.oidc.azure.authorization-uri=https://az.example.com/auth",
-            "camunda.security.authentication.providers.oidc.azure.token-uri=https://az.example.com/token",
-            "camunda.security.authentication.providers.oidc.azure.jwk-set-uri=https://az.example.com/jwks")
+        .withPropertyValues(TWO_PROVIDERS_ONE_WITHOUT_ISSUER_URI)
         // the provider map describes registrations the library did not build, so the requirement of
         // the issuer-aware decoder belongs to the registrations of the host repository, and the
         // decoder checks those at the first token decode
@@ -444,18 +441,7 @@ class OidcBeansConfigurationJwtDecoderTest {
     // not describe, while the provider map sets no issuer-uri for one of its two providers
     runner
         .withUserConfiguration(HostLazyRegistrationRepository.class)
-        .withPropertyValues(
-            "camunda.security.authentication.providers.oidc.keycloak.client-id=kc-client",
-            "camunda.security.authentication.providers.oidc.keycloak.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
-            "camunda.security.authentication.providers.oidc.keycloak.issuer-uri=https://kc.example.com",
-            "camunda.security.authentication.providers.oidc.keycloak.authorization-uri=https://kc.example.com/auth",
-            "camunda.security.authentication.providers.oidc.keycloak.token-uri=https://kc.example.com/token",
-            "camunda.security.authentication.providers.oidc.keycloak.jwk-set-uri=https://kc.example.com/jwks",
-            "camunda.security.authentication.providers.oidc.azure.client-id=az-client",
-            "camunda.security.authentication.providers.oidc.azure.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
-            "camunda.security.authentication.providers.oidc.azure.authorization-uri=https://az.example.com/auth",
-            "camunda.security.authentication.providers.oidc.azure.token-uri=https://az.example.com/token",
-            "camunda.security.authentication.providers.oidc.azure.jwk-set-uri=https://az.example.com/jwks")
+        .withPropertyValues(TWO_PROVIDERS_ONE_WITHOUT_ISSUER_URI)
         // the registrations of the host repository are its own, so the requirement of the
         // issuer-aware decoder belongs to them, and not to the provider map of the library
         .run(
