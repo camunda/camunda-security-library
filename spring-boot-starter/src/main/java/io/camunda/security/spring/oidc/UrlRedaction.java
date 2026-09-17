@@ -16,6 +16,10 @@ package io.camunda.security.spring.oidc;
  * logging rules forbid either at any level. Scheme, host and path survive, which is what identifies
  * the endpoint and locates a typo — the reason for naming the value at all.
  *
+ * <p>A value does not have to be well-formed to carry a credential, and the messages that quote one
+ * are mostly quoting something that was <em>rejected</em>. User-info is therefore found by shape
+ * rather than by parsing: see {@link #authorityStart}.
+ *
  * <p>A fragment keeps its {@code '#'} and loses its contents. Several of these messages exist
  * <em>because</em> a value carries a fragment — a redirect URI and a post-logout redirect URI may
  * both have none — so removing it entirely would hide the very thing the operator has to go and
@@ -53,9 +57,6 @@ public final class UrlRedaction {
 
   private static String withoutUserInfo(final String url) {
     final var authorityStart = authorityStart(url);
-    if (authorityStart < 0) {
-      return url;
-    }
     final var authorityEnd = endOfAuthority(url, authorityStart);
     // lastIndexOf so a '@' in the credentials themselves does not end the user-info early.
     final var at = url.lastIndexOf('@', authorityEnd - 1);
@@ -76,19 +77,27 @@ public final class UrlRedaction {
   }
 
   /**
-   * Where the authority begins, or {@code -1} when the value has none.
+   * Where the authority begins.
    *
-   * <p>A scheme-relative {@code //host/path} is an authority too. It reaches these messages — an
-   * {@code issuer-uri} of {@code //user:password@idp.example.com/realm} is rejected for not being
-   * absolute, and the rejection quotes it — so recognising only {@code "://"} would let exactly the
-   * credentials this class exists to hide through.
+   * <p>Three forms reach these messages, and all three can carry credentials. {@code
+   * scheme://user:pw@host} is the obvious one. A scheme-relative {@code //user:pw@host/path} is an
+   * authority too. So is a value that has lost its scheme altogether — {@code
+   * user:pw@idp.example.com/token}, an {@code issuer-uri} typed without its {@code https://}, which
+   * {@code URI} happily parses as scheme {@code user}, which {@code requireAbsoluteHttpUrl} then
+   * rejects, and which the rejection quotes.
+   *
+   * <p>The last form has no delimiter to find, so the value is treated as beginning with its
+   * authority. That costs nothing when there is none: {@link #withoutUserInfo} looks for an {@code
+   * '@'} before the first {@code '/'}, {@code '?'} or {@code '#'} and leaves the value alone when
+   * there is not one, so a path like {@code /goodbye} and a bare word like {@code goodbye} pass
+   * through untouched.
    */
   private static int authorityStart(final String url) {
     final var schemeEnd = url.indexOf("://");
     if (schemeEnd >= 0) {
       return schemeEnd + 3;
     }
-    return url.startsWith("//") ? 2 : -1;
+    return url.startsWith("//") ? 2 : 0;
   }
 
   /** Keeps the {@code '#'} so the message can still point at it, drops what it carries. */

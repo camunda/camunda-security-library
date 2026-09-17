@@ -39,6 +39,19 @@ class UrlRedactionTest {
         .isEqualTo("//…@idp.example.com/realm");
   }
 
+  /**
+   * A value that lost its scheme still has user-info. {@code URI} parses this as scheme {@code
+   * user}, so {@code requireAbsoluteHttpUrl} rejects it for the wrong scheme and the rejection
+   * quotes it — with no {@code "://"} or leading {@code "//"} to find, the credential used to ride
+   * along verbatim. This is the shape an {@code issuer-uri} takes when its {@code https://} is
+   * missing.
+   */
+  @Test
+  void shouldRemoveUserInfoFromASchemelessAuthority() {
+    assertThat(UrlRedaction.redact("user:secret@idp.example.com/token"))
+        .isEqualTo("…@idp.example.com/token");
+  }
+
   /** A single leading slash is a path, not an authority. */
   @Test
   void shouldLeaveARootRelativePathAlone() {

@@ -422,7 +422,7 @@ class CamundaOidcLogoutSuccessHandlerTest {
 
   /**
    * The behaviour this whole change exists for: two IdPs in one chain, each told to send the
-   * browser somewhere different. Before ADR-0025 one handler served the chain, so both got whatever
+   * browser somewhere different. Before ADR-0026 one handler served the chain, so both got whatever
    * the last-written template said.
    */
   @Test
@@ -545,7 +545,7 @@ class CamundaOidcLogoutSuccessHandlerTest {
   }
 
   /**
-   * The one-argument constructor keeps the pre-ADR-0025 contract: no per-registration overrides,
+   * The one-argument constructor keeps the pre-ADR-0026 contract: no per-registration overrides,
    * behaviour governed entirely by the inherited setter.
    */
   @Test

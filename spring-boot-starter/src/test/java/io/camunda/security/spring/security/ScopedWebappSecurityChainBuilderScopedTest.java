@@ -394,7 +394,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
    * A multi-provider scope where one provider disables {@code post-logout-redirect-enabled} and the
    * other leaves it at its default: the strict IdP loses the parameter, the other keeps it.
    *
-   * <p>This is the behaviour ADR-0023 could not offer and ADR-0025 introduces. Under ADR-0023 one
+   * <p>This is the behaviour ADR-0023 could not offer and ADR-0026 introduces. Under ADR-0023 one
    * handler served the whole chain, so the flag was AND-ed across every provider in the scope and a
    * single strict IdP silently stripped the redirect from all the others — the exact case a BYO-IdP
    * deployment hits.
@@ -532,7 +532,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
    * The chain's {@code post_logout_redirect_uri} template per registrationId, where {@code ""}
    * means "send none for that registration". Read off {@link CamundaOidcLogoutSuccessHandler}
    * rather than the {@code postLogoutRedirectUri} field on Spring's base class, which CSL no longer
-   * sets — a chain resolves the value per registration now (ADR-0025), so there is no single
+   * sets — a chain resolves the value per registration now (ADR-0026), so there is no single
    * chain-wide value left to read.
    */
   @SuppressWarnings("unchecked")

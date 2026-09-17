@@ -576,7 +576,7 @@ public final class ScopedClientRegistrationFactory {
    * the template on the logout request itself, so an unexpandable value throws from inside {@code
    * buildAndExpand} on the one request a user cannot usefully retry — long after the typo shipped.
    *
-   * <p>See ADR-0025.
+   * <p>See ADR-0026.
    */
   /**
    * Validates only the {@code post-logout-redirect-uri} of each provider.

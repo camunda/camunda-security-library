@@ -1105,7 +1105,7 @@ class ScopedClientRegistrationFactoryTest {
    * Creates an {@link OidcConfiguration} with explicit endpoints, letting the caller replace one of
    * them.
    */
-  // post-logout-redirect-uri (ADR-0025)
+  // post-logout-redirect-uri (ADR-0026)
   //
   // Validated here, with every other OIDC provider-block check, rather than where the value is
   // consumed. ScopedWebappSecurityChainBuilder only composes an already-valid value against its
@@ -1290,6 +1290,28 @@ class ScopedClientRegistrationFactoryTest {
    * inside {@code buildAndExpand} on the logout request itself — a 500 on the one request a user
    * cannot usefully retry.
    */
+  /**
+   * Every property routed through {@code requireAbsoluteHttpUrl} quotes the value it rejects, so a
+   * scheme-less one must be redacted there too — not only for post-logout.
+   */
+  @Test
+  void shouldRedactCredentialsFromASchemelessEndpointUrl() {
+    assertThatThrownBy(
+            () ->
+                factory.validateWithoutNetwork(
+                    Map.of(
+                        "oidc",
+                        OidcConfiguration.builder()
+                            .clientId("my-client")
+                            .redirectUri("{baseUrl}/sso-callback")
+                            .issuerUri("user:secret@idp.example.com/realm")
+                            .build()),
+                    null))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageNotContaining("secret")
+        .hasMessageContaining("idp.example.com");
+  }
+
   @Test
   void shouldRejectAPostLogoutRedirectUriWithAnUnsupportedTemplateVariable() {
     assertPostLogoutRedirectUriRejected("{baseUrl}/{tenantId}")

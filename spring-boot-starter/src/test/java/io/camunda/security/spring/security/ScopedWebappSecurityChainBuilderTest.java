@@ -159,7 +159,7 @@ class ScopedWebappSecurityChainBuilderTest {
         .withMessageContaining("must start with '/'");
   }
 
-  // configured post-logout-redirect-uri: composition (ADR-0025)
+  // configured post-logout-redirect-uri: composition (ADR-0026)
   //
   // Only the resolution of an already-valid value lives here. Rejecting a malformed one is
   // ScopedClientRegistrationFactory's job now, and ScopedClientRegistrationFactoryTest covers it.

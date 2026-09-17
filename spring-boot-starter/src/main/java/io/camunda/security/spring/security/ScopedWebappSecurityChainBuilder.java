@@ -538,7 +538,7 @@ public final class ScopedWebappSecurityChainBuilder {
    * <p>The map is total over the scope's registrations, so the handler never has to fall back to a
    * chain-wide default: whatever it finds for a registrationId is that registration's final answer.
    *
-   * <p>ADR-0025. This replaced a single per-scope boolean, which forced one strict IdP to strip the
+   * <p>ADR-0026. This replaced a single per-scope boolean, which forced one strict IdP to strip the
    * redirect from every other IdP in the scope (ADR-0023).
    */
   private Map<String, String> postLogoutRedirectUris(
@@ -595,7 +595,7 @@ public final class ScopedWebappSecurityChainBuilder {
    *
    * <p>Composition only. The value's shape was already vetted at startup by {@link
    * ScopedClientRegistrationFactory}, which validates every OIDC provider block in one place
-   * (ADR-0025), so this decides where an already-legal value resolves, not whether it is legal.
+   * (ADR-0026), so this decides where an already-legal value resolves, not whether it is legal.
    *
    * <p>A value starting with {@code /} is a path and resolves against this chain just as the host's
    * own route does, keeping per-scope resolution. Anything else is a URI template handed to Spring
@@ -664,7 +664,7 @@ public final class ScopedWebappSecurityChainBuilder {
     // may supply its own ClientRegistrationRepository — CSL's default bean is
     // @ConditionalOnMissingBean
     // — holding registrations that never appear under camunda.security.authentication.*. Those are
-    // absent from the map, and before ADR-0025 they got this composed route like everyone else;
+    // absent from the map, and before ADR-0026 they got this composed route like everyone else;
     // leaving it unset would silently drop their post_logout_redirect_uri.
     final var composedDefault = composedPostLogoutRedirectUri(prefix);
     if (!composedDefault.isEmpty()) {
