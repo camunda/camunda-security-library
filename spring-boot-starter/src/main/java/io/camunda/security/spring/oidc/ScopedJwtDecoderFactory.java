@@ -11,6 +11,7 @@ import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.util.List;
 import java.util.Map;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.util.StringUtils;
 
@@ -49,11 +50,12 @@ public final class ScopedJwtDecoderFactory {
    * audiences each validate tokens against their own audience list rather than a global
    * singleton's.
    *
-   * <p>The decoder that this method returns resolves the OIDC discovery document of the provider at
-   * the first token decode, and not here. This method runs while the application builds the
-   * security chain, and an identity provider it cannot reach must not stop the application context.
-   * A configuration error that needs no network access still causes a failure here, at the
-   * configuration it is in.
+   * <p>The decoder that this method returns resolves the OIDC discovery document of a provider at
+   * the first token of that provider's issuer, and not here. This method runs while the application
+   * builds the security chain, and an identity provider it cannot reach must not stop the
+   * application context. A provider that does not answer later fails the tokens of its own issuer,
+   * and leaves the tokens of the other providers of the scope untouched. A configuration error that
+   * needs no network access still causes a failure here, at the configuration it is in.
    *
    * @param authentication the authentication configuration describing the OIDC provider(s)
    * @return a {@link JwtDecoder} ready to verify tokens from the configured providers
@@ -90,14 +92,39 @@ public final class ScopedJwtDecoderFactory {
             DeferredOidcResolution.resolve(
                 decoderSubject(providers, scopeDescription),
                 () -> {
-                  final var registrations =
-                      clientRegistrationFactory.createWithoutLoginRoutes(providers);
                   final var validatorFactory =
                       new TokenValidatorFactory(
                           providers, OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of());
                   return decoderFactory.selectAccessTokenDecoder(
-                      registrations, providers, validatorFactory);
+                      providers,
+                      registrationId -> resolve(providers, registrationId, scopeDescription),
+                      validatorFactory);
                 }));
+  }
+
+  /**
+   * Resolves the registration of one provider of the scope. The decoder asks for the provider of
+   * the issuer a token carries, so a provider that does not answer fails the tokens of its own
+   * issuer, and the report names that provider and the scope.
+   */
+  private ClientRegistration resolve(
+      final Map<String, OidcConfiguration> providers,
+      final String registrationId,
+      final String scopeDescription) {
+    final var config = providers.get(registrationId);
+    return DeferredOidcResolution.resolve(
+        registrationSubject(registrationId, config, scopeDescription),
+        () ->
+            clientRegistrationFactory
+                .createWithoutLoginRoutes(Map.of(registrationId, config))
+                .getFirst());
+  }
+
+  private static String registrationSubject(
+      final String registrationId, final OidcConfiguration config, final String scopeDescription) {
+    return "OIDC client registration "
+        + DeferredOidcResolution.describeProvider(registrationId, config)
+        + (StringUtils.hasText(scopeDescription) ? " for " + scopeDescription : "");
   }
 
   private static String decoderSubject(

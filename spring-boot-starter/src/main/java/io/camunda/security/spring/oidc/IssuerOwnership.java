@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.oidc;
 
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -47,9 +48,8 @@ final class IssuerOwnership {
       }
       final var owner = owners.putIfAbsent(issuerUri, registration);
       if (owner != null) {
-        log.warn(
-            "Issuer '{}' is claimed by multiple OIDC registrations: '{}' wins, and the tokens of"
-                + " that issuer ignore {} of '{}'.",
+        warn(
+            log,
             issuerUri,
             owner.getRegistrationId(),
             ignoredConfiguration,
@@ -57,5 +57,48 @@ final class IssuerOwnership {
       }
     }
     return owners;
+  }
+
+  /**
+   * As {@link #byIssuer(Iterable, Logger, String)}, for a step that decides the owner before any
+   * registration is resolved.
+   *
+   * @param providers the provider configuration of one scope, keyed by registrationId, in the order
+   *     of the configuration
+   * @return the registrationId of the owning provider per issuer; a provider without an {@code
+   *     issuer-uri} contributes no entry
+   */
+  static Map<String, String> registrationIdByIssuer(
+      final Map<String, OidcConfiguration> providers,
+      final Logger log,
+      final String ignoredConfiguration) {
+    final Map<String, String> owners = new LinkedHashMap<>();
+    providers.forEach(
+        (registrationId, configuration) -> {
+          final var issuerUri = configuration.getIssuerUri();
+          if (!StringUtils.hasText(issuerUri)) {
+            return;
+          }
+          final var owner = owners.putIfAbsent(issuerUri, registrationId);
+          if (owner != null) {
+            warn(log, issuerUri, owner, ignoredConfiguration, registrationId);
+          }
+        });
+    return owners;
+  }
+
+  private static void warn(
+      final Logger log,
+      final String issuerUri,
+      final String owner,
+      final String ignoredConfiguration,
+      final String ignored) {
+    log.warn(
+        "Issuer '{}' is claimed by multiple OIDC registrations: '{}' wins, and the tokens of that"
+            + " issuer ignore {} of '{}'.",
+        issuerUri,
+        owner,
+        ignoredConfiguration,
+        ignored);
   }
 }

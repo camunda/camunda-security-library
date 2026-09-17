@@ -31,6 +31,7 @@ import org.springframework.security.oauth2.client.web.HttpSessionOAuth2Authorize
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
+import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 
@@ -51,6 +52,24 @@ class OidcBeansConfigurationJwtDecoderTest {
     "camunda.security.authentication.providers.oidc.keycloak.client-id=kc-client",
     "camunda.security.authentication.providers.oidc.keycloak.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
     "camunda.security.authentication.providers.oidc.keycloak.issuer-uri=https://kc.example.com",
+    "camunda.security.authentication.providers.oidc.keycloak.authorization-uri=https://kc.example.com/auth",
+    "camunda.security.authentication.providers.oidc.keycloak.token-uri=https://kc.example.com/token",
+    "camunda.security.authentication.providers.oidc.keycloak.jwk-set-uri=https://kc.example.com/jwks",
+    "camunda.security.authentication.providers.oidc.azure.client-id=az-client",
+    "camunda.security.authentication.providers.oidc.azure.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+    "camunda.security.authentication.providers.oidc.azure.authorization-uri=https://az.example.com/auth",
+    "camunda.security.authentication.providers.oidc.azure.token-uri=https://az.example.com/token",
+    "camunda.security.authentication.providers.oidc.azure.jwk-set-uri=https://az.example.com/jwks"
+  };
+
+  /**
+   * Two providers that set explicit endpoints and no issuer-uri, so the library configuration
+   * accepts no token of its own. A repository that carries the issuers is the only source of a
+   * route.
+   */
+  private static final String[] TWO_PROVIDERS_WITHOUT_ISSUER_URI = {
+    "camunda.security.authentication.providers.oidc.keycloak.client-id=kc-client",
+    "camunda.security.authentication.providers.oidc.keycloak.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
     "camunda.security.authentication.providers.oidc.keycloak.authorization-uri=https://kc.example.com/auth",
     "camunda.security.authentication.providers.oidc.keycloak.token-uri=https://kc.example.com/token",
     "camunda.security.authentication.providers.oidc.keycloak.jwk-set-uri=https://kc.example.com/jwks",
@@ -281,6 +300,95 @@ class OidcBeansConfigurationJwtDecoderTest {
                   .isInstanceOf(IllegalArgumentException.class)
                   .hasMessageContaining("jwk-set-uri");
             });
+  }
+
+  @Test
+  void shouldDecodeTheTokenOfAProviderThatAnswersWhileAnotherProviderDoesNot() throws Exception {
+    // given two providers that each need OIDC discovery, and one of them does not answer
+    try (final var answering = OidcTestServer.startRsa("answering");
+        final var silent = OidcTestServer.startRsa("silent")) {
+      silent.failNextDiscoveryRequests(Integer.MAX_VALUE);
+      runner
+          .withPropertyValues(discoveredProviders(answering, silent))
+          .run(
+              ctx -> {
+                assertThat(ctx).hasNotFailed();
+                final var decoder = ctx.getBean(JwtDecoder.class);
+
+                // then a token of the provider that answers decodes, because the decoder resolves
+                // the issuer of the token alone
+                final var jwt = decoder.decode(answering.sign(answering.issuerUri()));
+                assertThat(jwt.getSubject()).isEqualTo("alice");
+
+                // and the token of the other provider is the only one that fails, as a server error
+                final var tokenOfTheSilentProvider = silent.sign(silent.issuerUri());
+                assertThatThrownBy(() -> decoder.decode(tokenOfTheSilentProvider))
+                    .isInstanceOf(JwtException.class)
+                    .isNotInstanceOf(BadJwtException.class)
+                    .hasMessageContaining(silent.issuerUri());
+              });
+    }
+  }
+
+  @Test
+  void shouldRouteATokenByTheIssuersOfAHostLazyRepository() throws Exception {
+    // given a host repository of the library's lazy type that holds its own providers under the
+    // registrationIds of the library configuration, which declares no issuer-uri at all
+    try (final var alpha = OidcTestServer.startRsa("alpha");
+        final var beta = OidcTestServer.startRsa("beta")) {
+      runner
+          .withPropertyValues(TWO_PROVIDERS_WITHOUT_ISSUER_URI)
+          .withBean(
+              ClientRegistrationRepository.class,
+              () ->
+                  new LazyClientRegistrationRepository(
+                      new ScopedClientRegistrationFactory(),
+                      Map.of(
+                          "keycloak",
+                          hostProvider(alpha.issuerUri()),
+                          "azure",
+                          hostProvider(beta.issuerUri()))))
+          .run(
+              ctx -> {
+                assertThat(ctx).hasNotFailed();
+                final var decoder = ctx.getBean(JwtDecoder.class);
+
+                // then each token reaches the keys of the registration that declares its issuer,
+                // because the routes come from the repository and not from the library
+                // configuration
+                assertThat(decoder.decode(alpha.sign(alpha.issuerUri())).getSubject())
+                    .isEqualTo("alice");
+                assertThat(decoder.decode(beta.sign(beta.issuerUri())).getSubject())
+                    .isEqualTo("alice");
+              });
+    }
+  }
+
+  private static OidcConfiguration hostProvider(final String issuerUri) {
+    final var provider = new OidcConfiguration();
+    provider.setClientId("host-client");
+    provider.setIssuerUri(issuerUri);
+    provider.setRedirectUri("{baseUrl}/login/oauth2/code/{registrationId}");
+    return provider;
+  }
+
+  /**
+   * Two providers that set their issuer-uri alone, so a registration of either needs OIDC
+   * discovery. The other tests set explicit endpoints, which need no network access at all.
+   */
+  private static String[] discoveredProviders(
+      final OidcTestServer answering, final OidcTestServer silent) {
+    return new String[] {
+      "camunda.security.authentication.providers.oidc.answering.client-id=answering-client",
+      "camunda.security.authentication.providers.oidc.answering.redirect-uri="
+          + "{baseUrl}/login/oauth2/code/{registrationId}",
+      "camunda.security.authentication.providers.oidc.answering.issuer-uri="
+          + answering.issuerUri(),
+      "camunda.security.authentication.providers.oidc.silent.client-id=silent-client",
+      "camunda.security.authentication.providers.oidc.silent.redirect-uri="
+          + "{baseUrl}/login/oauth2/code/{registrationId}",
+      "camunda.security.authentication.providers.oidc.silent.issuer-uri=" + silent.issuerUri()
+    };
   }
 
   /** Returns a runner configured against the live {@link OidcTestServer} for full-decode tests. */

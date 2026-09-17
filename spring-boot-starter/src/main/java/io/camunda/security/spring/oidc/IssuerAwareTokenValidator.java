@@ -18,6 +18,7 @@ import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtException;
 
 /**
  * A custom {@link OAuth2TokenValidator} implementation that validates a {@link Jwt} based on the
@@ -31,9 +32,10 @@ import org.springframework.security.oauth2.jwt.Jwt;
  *
  * <p>This allows support for multiple issuers in multi-tenant OIDC setups.
  *
- * <p>Where two registrations declare the same issuer, the validator takes the validation rules of
- * the registration that {@link IssuerOwnership} names the owner of that issuer, and warns about the
- * rules it therefore does not apply.
+ * <p>The validator takes the registration of the issuer from {@link IssuerRegistrations}, so a
+ * provider that does not answer fails the tokens of its own issuer only. The key selector of the
+ * same decoder resolved the registration already, and shares its result through that instance, so
+ * the validation of a token whose signature verified resolves nothing.
  */
 public class IssuerAwareTokenValidator implements OAuth2TokenValidator<Jwt> {
 
@@ -41,15 +43,20 @@ public class IssuerAwareTokenValidator implements OAuth2TokenValidator<Jwt> {
   private static final String CLAIM_ISSUER = "iss";
   private static final String OAUTH2_ERROR_DESCRIPTION = "Token issuer '%s' is not trusted";
 
-  private final Map<String, ClientRegistration> registrationsByIssuer;
+  private final IssuerRegistrations issuerRegistrations;
   private final TokenValidatorFactory tokenValidatorFactory;
   private final Map<String, OAuth2TokenValidator<Jwt>> validators;
 
   public IssuerAwareTokenValidator(
       final List<ClientRegistration> clientRegistrations,
       final TokenValidatorFactory tokenValidatorFactory) {
-    registrationsByIssuer =
-        IssuerOwnership.byIssuer(clientRegistrations, LOG, "the token validation rules");
+    this(IssuerRegistrations.ofResolved(clientRegistrations), tokenValidatorFactory);
+  }
+
+  public IssuerAwareTokenValidator(
+      final IssuerRegistrations issuerRegistrations,
+      final TokenValidatorFactory tokenValidatorFactory) {
+    this.issuerRegistrations = issuerRegistrations;
     this.tokenValidatorFactory = tokenValidatorFactory;
     validators = new ConcurrentHashMap<>();
   }
@@ -84,8 +91,20 @@ public class IssuerAwareTokenValidator implements OAuth2TokenValidator<Jwt> {
         issuer, k -> tokenValidatorFactory.createTokenValidator(clientRegistration));
   }
 
+  /**
+   * @throws JwtException if the resolution of the registration fails. The token is not the reason,
+   *     so this keeps the classification of a server error, as the key selector of the decoder
+   *     gives such a failure.
+   */
   protected ClientRegistration getClientRegistrationByIssuer(final String issuer) {
-    final var registration = registrationsByIssuer.get(issuer);
+    final ClientRegistration registration;
+    try {
+      registration = issuerRegistrations.forIssuer(issuer);
+    } catch (final RuntimeException unresolved) {
+      throw new JwtException(
+          "Failed to resolve the client registration of issuer '%s'.".formatted(issuer),
+          unresolved);
+    }
     if (registration == null) {
       LOG.debug("No matching client registration found for issuer uri {}", issuer);
     }
