@@ -18,7 +18,9 @@ An identity provider that starts beside the cluster, or that is behind a proxy t
 
 ## Decision
 
-Each resolution step that needs the network runs at its first use: `LazyClientRegistrationRepository` per registration lookup, `DeferredJwtDecoder` per decoder, `DeferredOidcClaimsProvider` per UserInfo mapping. `DeferredOidcResolution` runs each step, throws the original failure again, and rate-limits the warning to one per minute for each resolution subject. A registration lookup names the provider and the scope; a decoder and a UserInfo mapping name every provider they cover, because they read the repository as a whole. A resolution that runs inside another one reports the failure once, at the step that names the provider.
+Each resolution step that needs the network runs at its first use: `LazyClientRegistrationRepository` per registration lookup, `DeferredJwtDecoder` per decoder, `DeferredOidcClaimsProvider` per UserInfo mapping. `DeferredOidcResolution` runs each step, throws the original failure again, and rate-limits the warning to one per minute for each resolution subject. A registration lookup names the provider and the scope; a step that reads a repository of the host application names every provider it covers, because it reads that repository as a whole. A resolution that runs inside another one reports the failure once, at the step that names the provider.
+
+A step resolves what the token needs, and not every provider the configuration describes: the access-token decoder of several providers resolves the provider of the issuer the token carries. A provider that does not answer therefore fails the tokens of its own issuer alone. Where two providers declare the same issuer, one order decides for every stage of a request, so a token is verified and mapped by the same provider.
 
 A step keeps its result after a successful attempt only, and holds no lock across the attempt. A lock would hold each other caller for the complete timeout of the attempt that runs, and the request threads would run out. Two callers therefore each make their own attempt, and the first result wins.
 
@@ -36,11 +38,13 @@ A configuration error that needs no network still stops the start: the repositor
 ## Consequences
 
 - A cluster starts while a provider is unreachable, serves every request that needs no such provider, and recovers without a restart.
-- An unreachable provider costs the discovery timeout per request, instead of once per start. The rate limit keeps the log readable, and it holds state for a bounded number of subjects.
+- A cluster with several providers serves the tokens of every provider that answers, while another provider is unreachable.
+- An unreachable provider costs the discovery timeout to the requests that need it, instead of once per start. The rate limit keeps the log readable, and it holds state for a bounded number of subjects.
 - A failure that only the network detects reaches the operator as a warning, and not as a failed start. The warning names the provider, its issuer and the scope for that reason.
 
 ## Alternatives considered
 
 - **Shorten the discovery timeout.** Rejected. The only hook is `ClientRegistrations.fromOidcConfiguration(Map)`, which moves discovery and its error handling into the library, and the start still fails.
 - **Retry in the background.** Rejected. The application would serve requests with a chain that is not ready, and each retry needs its own failure model.
+- **Resolve the whole repository at the first token, and drop the providers that fail.** Rejected. A token of a dropped provider would read as a refused credential, and the operator would see an authentication failure instead of an outage.
 - **Resolve once under a single-flight lock.** Rejected. A burst of requests for an unreachable provider exhausts the request threads. A duplicate attempt costs one discovery request.
