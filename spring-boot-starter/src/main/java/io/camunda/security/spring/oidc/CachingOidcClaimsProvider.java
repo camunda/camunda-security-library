@@ -235,23 +235,34 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
         .collect(Collectors.toSet());
   }
 
-  @Override
-  public Map<String, Object> claimsFor(
-      final Map<String, Object> jwtClaims, final String tokenValue) {
+  /**
+   * Whether the UserInfo endpoint of an issuer can augment this token at all. The configuration of
+   * no provider takes part in the answer, so a caller can ask it before it resolves an endpoint.
+   */
+  static boolean canAugment(final Map<String, Object> jwtClaims, final String tokenValue) {
     if (tokenValue == null || tokenValue.isBlank()) {
       LOG.debug("Token value is absent; returning JWT claims unchanged");
-      return jwtClaims;
+      return false;
     }
     final String issuer = jwtClaims.get("iss") instanceof final String s ? s : null;
     if (issuer == null) {
       LOG.debug("JWT has no 'iss' claim; returning JWT claims unchanged");
-      return jwtClaims;
+      return false;
     }
-
     if (!hasOpenidScope(jwtClaims)) {
       LOG.debug("JWT for issuer '{}' has no openid scope; skipping UserInfo augmentation", issuer);
+      return false;
+    }
+    return true;
+  }
+
+  @Override
+  public Map<String, Object> claimsFor(
+      final Map<String, Object> jwtClaims, final String tokenValue) {
+    if (!canAugment(jwtClaims, tokenValue)) {
       return jwtClaims;
     }
+    final String issuer = (String) jwtClaims.get("iss");
 
     final String userInfoUri = userInfoUriByIssuer.apply(issuer);
 

@@ -271,8 +271,8 @@ final class ScopedOidcClaimsProviderFactoryTest {
   }
 
   /**
-   * Runs a claims lookup that builds the deferred delegate but calls no UserInfo endpoint, because
-   * the token carries no {@code openid} scope.
+   * Runs a claims lookup that needs no augmentation, because the token carries no {@code openid}
+   * scope.
    */
   private static Map<String, Object> claimsForUnaugmentedToken(final OidcClaimsProvider provider) {
     return provider.claimsFor(Map.of("iss", "https://idp.example.com"), "token");
