@@ -21,17 +21,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 
 /**
- * A {@link JWSKeySelector} implementation that dynamically selects the appropriate key selector
- * based on the {@code iss} (issuer) claim in a JWT.
+ * Selects the verification keys of a token by its {@code iss} claim, so each identity provider of a
+ * multi-tenant setup verifies its own tokens with its own JWK Set URI.
  *
- * <p>This is used to support multi-tenant setups where each identity provider (issuer) may have its
- * own JWK Set URI for verifying token signatures.
- *
- * <p>The selector takes the registration of the issuer from {@link IssuerRegistrations}, which
- * resolves it at the first token of that issuer. A provider that does not answer therefore fails
- * the tokens of its own issuer only, and such a failure keeps the {@link KeySourceException}
- * classification, so the resource server answers with a server error. A token of an issuer that no
- * provider declares is a refused credential instead, see {@link BadJwtKeySourceException}.
+ * <p>{@link IssuerRegistrations} resolves the registration of an issuer at the first token of that
+ * issuer. A provider that does not answer therefore fails the tokens of its own issuer only, as a
+ * {@link KeySourceException}, which the resource server answers with a server error. A token of an
+ * issuer that no provider declares is a refused credential instead, see {@link
+ * BadJwtKeySourceException}.
  */
 public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelector<SecurityContext> {
 
@@ -97,10 +94,9 @@ public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelecto
   }
 
   /**
-   * The key selector of {@code issuer}, kept after a successful resolution only. The selector is
-   * not built under the lock of a map entry, because the resolution of the registration can hold a
-   * request thread for the discovery timeout of the provider, and the tokens of the other issuers
-   * must keep their answer meanwhile.
+   * The key selector of {@code issuer}, kept after a successful resolution only. The resolution
+   * runs outside the lock of a map entry, because it can hold a request thread for the discovery
+   * timeout of the provider, and the tokens of the other issuers must keep their answer meanwhile.
    */
   private JWSKeySelector<SecurityContext> keySelectorFor(final String issuer)
       throws KeySourceException {
@@ -114,16 +110,12 @@ public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelecto
   }
 
   /**
-   * Finds the {@link ClientRegistration} that matches the given issuer URI, and resolves it where
-   * that needs OIDC discovery.
+   * The registration of {@code issuer}, resolved where that needs OIDC discovery.
    *
-   * @throws BadJwtKeySourceException if no configured provider declares the issuer. This is a fault
-   *     of the token, and the marker subtype lets {@link OidcAccessTokenDecoderFactory} map it to a
-   *     {@link org.springframework.security.oauth2.jwt.BadJwtException}, and therefore to 401
-   *     {@code invalid_token}.
-   * @throws KeySourceException if the resolution of the registration fails. This is a fault of the
-   *     infrastructure, so the plain base type keeps the mapping to a server error, as a JWKS
-   *     outage does.
+   * @throws BadJwtKeySourceException if no configured provider declares the issuer. The token is
+   *     the reason, so the marker subtype gives 401 {@code invalid_token}.
+   * @throws KeySourceException if the resolution fails. The infrastructure is the reason, so the
+   *     base type keeps the server error, as a JWKS outage does.
    */
   private ClientRegistration getClientRegistrationByIssuer(final String issuer)
       throws KeySourceException {
@@ -140,12 +132,8 @@ public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelecto
   }
 
   /**
-   * Creates a {@link JWSKeySelector} for the given issuer.
-   *
-   * @param issuer the issuer URI
-   * @return a key selector for the issuer
    * @throws KeySourceException if the registration of the issuer gives no usable JWK Set URI. The
-   *     token is not the reason, so the plain base type keeps the mapping to a server error.
+   *     token is not the reason, so the base type keeps the server error.
    */
   private JWSKeySelector<SecurityContext> createJWSKeySelector(final String issuer)
       throws KeySourceException {

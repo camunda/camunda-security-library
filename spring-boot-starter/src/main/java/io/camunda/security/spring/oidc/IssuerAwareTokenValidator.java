@@ -32,10 +32,9 @@ import org.springframework.security.oauth2.jwt.JwtException;
  *
  * <p>This allows support for multiple issuers in multi-tenant OIDC setups.
  *
- * <p>The validator takes the registration of the issuer from {@link IssuerRegistrations}, so a
- * provider that does not answer fails the tokens of its own issuer only. The key selector of the
- * same decoder resolved the registration already, and shares its result through that instance, so
- * the validation of a token whose signature verified resolves nothing.
+ * <p>{@link IssuerRegistrations} resolves the registration of an issuer, so a provider that does
+ * not answer fails the tokens of its own issuer only. The key selector of the same decoder shares
+ * its result through that instance, so the validation of a verified token resolves nothing.
  */
 public class IssuerAwareTokenValidator implements OAuth2TokenValidator<Jwt> {
 
@@ -93,8 +92,7 @@ public class IssuerAwareTokenValidator implements OAuth2TokenValidator<Jwt> {
 
   /**
    * @throws JwtException if the resolution of the registration fails. The token is not the reason,
-   *     so this keeps the classification of a server error, as the key selector of the decoder
-   *     gives such a failure.
+   *     so this keeps the server error that the key selector of the decoder gives.
    */
   protected ClientRegistration getClientRegistrationByIssuer(final String issuer) {
     final ClientRegistration registration;

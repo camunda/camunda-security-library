@@ -78,8 +78,8 @@ public final class LazyClientRegistrationRepository
 
   /**
    * The provider configuration this repository resolves, keyed by registrationId. A caller that
-   * routes a token to one registration takes the issuers from here, so the route and the
-   * registration it reaches describe the same provider. Resolves nothing.
+   * routes a token by issuer takes the issuers from here, so the route and the registration it
+   * reaches describe one provider. Resolves nothing.
    */
   public Map<String, OidcConfiguration> providers() {
     return providers;

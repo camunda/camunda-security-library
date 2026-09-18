@@ -74,19 +74,18 @@ public class OidcWebappClientBeansConfiguration {
    * unreachable identity provider must not stop the application context.
    *
    * <p>A {@link LazyClientRegistrationRepository} gives the decoder the registration of one issuer
-   * at a time. An identity provider that does not answer then fails the tokens of its own issuer,
-   * and the tokens of the providers that answer keep their response. The issuers come from the
-   * configuration of that repository, and not from the configuration of the library, because a host
-   * can wire such a repository over another set of providers, under the same registrationIds. A
-   * token would otherwise reach the keys of a registration that declares another issuer.
+   * at a time, so an identity provider that does not answer fails the tokens of its own issuer
+   * only. The issuers come from the configuration of that repository, and not from the
+   * configuration of the library, because a host can wire such a repository over another set of
+   * providers, under the same registrationIds. A token would otherwise reach the keys of a
+   * registration that declares another issuer.
    *
    * <p>Any other repository of the host application can hold registrations that no configuration of
-   * the library describes, so the decoder reads the whole repository in that case, and one provider
-   * that does not answer fails every token.
+   * the library describes, so the decoder reads it as a whole, and one provider that does not
+   * answer fails every token.
    *
-   * <p>The issuer requirement of the issuer-aware decoder needs no network access, so the method
-   * checks it here, and a configuration error still stops the start. The check covers the providers
-   * the decoder routes by, for the same reason.
+   * <p>The issuer requirement needs no network access, so the method checks it here, on the
+   * providers the decoder routes by, and a configuration error still stops the start.
    */
   @Bean
   @ConditionalOnMissingBean

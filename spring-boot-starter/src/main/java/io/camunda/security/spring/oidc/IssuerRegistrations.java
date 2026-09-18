@@ -24,20 +24,19 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
  * org.springframework.security.oauth2.jwt.JwtDecoder} verifies tokens against, addressed by the
  * {@code iss} claim of a token.
  *
- * <p>{@link #ofConfiguration(Map, Function)} keys the registrations by the configured issuer-uri,
- * so an issuer is looked up without network access, and the registration of that issuer alone is
- * resolved at the first token that carries it. An identity provider that does not answer therefore
- * fails the tokens of its own issuer alone, and leaves the tokens of the other providers untouched.
- * Two providers can declare the same issuer, and the first of them in the iteration order of the
- * provider map then verifies its tokens, see {@link IssuerOwnership}.
+ * <p>{@link #ofConfiguration(Map, Function)} keys the issuers from the configuration, so a lookup
+ * needs no network access, and resolves the registration of one issuer at the first token that
+ * carries it. An identity provider that does not answer therefore fails the tokens of its own
+ * issuer alone. Where two providers declare one issuer, the first of them owns it, see {@link
+ * IssuerOwnership}.
  *
  * <p>{@link #ofResolved(List)} takes registrations that a caller resolved already, for a host that
  * supplies its own repository.
  *
  * <p>A registration is kept after a successful resolution only, so the next token of that issuer
- * makes a new attempt after a failed one. Two tokens of the same issuer can resolve it at the same
- * time, because a single-flight lock would hold one request thread for the complete discovery
- * timeout of the other attempt. The first result wins.
+ * makes a new attempt. Two tokens of one issuer can resolve it at the same time, because a
+ * single-flight lock would hold one request thread for the discovery timeout of the other attempt.
+ * The first result wins.
  */
 public final class IssuerRegistrations {
 
@@ -69,8 +68,7 @@ public final class IssuerRegistrations {
    * such a configuration of several providers while the application starts.
    *
    * @param providers the provider configuration, keyed by registrationId, in the order of the
-   *     configuration: where two providers declare the same issuer, {@link IssuerOwnership} gives
-   *     it to the first of them
+   *     configuration, which gives an issuer of two providers to the first of them
    * @param resolveByRegistrationId gives the registration of a registrationId, and makes OIDC
    *     discovery where the provider needs it
    */
@@ -93,12 +91,12 @@ public final class IssuerRegistrations {
 
   /**
    * The registration of {@code issuer}, or {@code null} when no configured provider declares that
-   * issuer. A caller answers such a token as a refused credential, and not as a server error.
+   * issuer. Such a token is a refused credential, and not a server error.
    *
    * @throws IllegalStateException if a provider declares the issuer, and its resolution gives no
-   *     registration. The token names an accepted issuer, so the repository is the reason, and a
-   *     caller must not read the token as the refused credential of an unknown issuer.
-   * @throws RuntimeException what the resolution of the registration throws, such as the {@link
+   *     registration. The repository is then the reason, so a caller must not read the token as the
+   *     credential of an unknown issuer.
+   * @throws RuntimeException what the resolution throws, such as the {@link
    *     IllegalArgumentException} that OIDC discovery of an unreachable issuer gives
    */
   public ClientRegistration forIssuer(final String issuer) {
