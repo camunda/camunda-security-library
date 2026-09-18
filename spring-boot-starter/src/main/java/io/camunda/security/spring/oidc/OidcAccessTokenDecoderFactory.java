@@ -127,18 +127,17 @@ public class OidcAccessTokenDecoderFactory {
   }
 
   /**
-   * Creates a {@link JwtDecoder} that supports multiple OIDC Providers, and takes the registration
-   * of an issuer from {@code issuerRegistrations} at the first token of that issuer.
+   * Creates a {@link JwtDecoder} for several OIDC providers, which takes the registration of an
+   * issuer from {@code issuerRegistrations} at the first token of that issuer.
    *
    * <p>The decoder itself resolves nothing, so a provider that does not answer fails the tokens of
-   * its own issuer, and the tokens of the providers that answer keep their response. This is why
-   * the issuer requirement is checked on the configuration, see {@link
-   * #validateProvidersHaveIssuer(Map)}, and not on resolved registrations.
+   * its own issuer only. This is why {@link #validateProvidersHaveIssuer(Map)} checks the issuer
+   * requirement on the configuration, and not on resolved registrations.
    *
    * @param issuerRegistrations the accepted issuers and the registrations behind them
-   * @param additionalJwkSetUrisByIssuer a map of issuer URI to additional JWK Set URIs
-   * @param validatorFactory the {@link TokenValidatorFactory} to use for building token validators
-   * @return a {@link JwtDecoder} capable of handling multiple issuers
+   * @param additionalJwkSetUrisByIssuer additional JWK Set URIs per issuer URI
+   * @param validatorFactory builds the token validators
+   * @return a decoder for several issuers
    */
   public JwtDecoder createIssuerAwareAccessTokenDecoder(
       final IssuerRegistrations issuerRegistrations,
@@ -154,26 +153,22 @@ public class OidcAccessTokenDecoderFactory {
   }
 
   /**
-   * Selects between a single-issuer and an issuer-aware multi-issuer {@link JwtDecoder} on the
-   * provider configuration, and resolves the registration of a provider at the first token that
-   * needs it.
+   * Selects a single-issuer or an issuer-aware {@link JwtDecoder} on the provider configuration,
+   * and resolves the registration of a provider at the first token that needs it.
    *
    * <p>Unlike {@link #selectAccessTokenDecoder(List, Map, TokenValidatorFactory)}, this method
-   * takes no resolved registrations. A deployment of several providers therefore reaches an
-   * unreachable identity provider through the tokens of that provider alone. A deployment of one
-   * provider resolves it here, because a single-issuer decoder needs its JWK Set URI; the caller
-   * defers that step through {@link DeferredJwtDecoder}.
+   * takes no resolved registrations. An unreachable identity provider therefore fails the tokens of
+   * its own issuer only. A deployment of one provider resolves it here, because a single-issuer
+   * decoder needs its JWK Set URI; the caller defers that step through {@link DeferredJwtDecoder}.
    *
-   * @param providersById the provider configuration keyed by registrationId; must not be empty, and
-   *     iterates in the order of the configuration, which decides between two providers of the same
-   *     issuer, see {@link IssuerOwnership}
+   * @param providersById the provider configuration keyed by registrationId, in the order of the
+   *     configuration, which gives an issuer of two providers to the first of them
    * @param resolveByRegistrationId gives the registration of a registrationId
-   * @param validatorFactory the {@link TokenValidatorFactory} to use for building token validators
-   * @return a {@link JwtDecoder} appropriate for the given configuration
+   * @return a decoder for the given configuration
    * @throws IllegalStateException if {@code providersById} is empty, or the resolution of a
    *     configured provider gives no registration
-   * @throws IllegalArgumentException if the configuration holds more than one provider and one of
-   *     them sets no issuer-uri, see {@link #validateProvidersHaveIssuer(Map)}
+   * @throws IllegalArgumentException if several providers are configured and one of them sets no
+   *     issuer-uri, see {@link #validateProvidersHaveIssuer(Map)}
    */
   public JwtDecoder selectAccessTokenDecoder(
       final Map<String, OidcConfiguration> providersById,
@@ -477,11 +472,7 @@ public class OidcAccessTokenDecoderFactory {
 
   /**
    * Creates a {@link ConfigurableJWTProcessor} that takes the keys of an issuer from {@code
-   * issuerRegistrations}, and supports additional JWK Set URIs per issuer.
-   *
-   * @param issuerRegistrations the accepted issuers and the registrations behind them
-   * @param additionalJwkSetUrisByIssuer a map of issuer URI to additional JWK Set URIs
-   * @return a configured JWT processor
+   * issuerRegistrations}, with additional JWK Set URIs per issuer.
    */
   protected ConfigurableJWTProcessor<SecurityContext> createIssuerAwareJwtProcessor(
       final IssuerRegistrations issuerRegistrations,
@@ -565,10 +556,6 @@ public class OidcAccessTokenDecoderFactory {
   /**
    * Creates a {@link Jwt} validator that takes the registration of an issuer from {@code
    * issuerRegistrations}.
-   *
-   * @param issuerRegistrations the accepted issuers and the registrations behind them
-   * @param validatorFactory the {@link TokenValidatorFactory} to use
-   * @return a token validator aware of multiple issuers
    */
   protected OAuth2TokenValidator<Jwt> createIssuerAwareJwtValidator(
       final IssuerRegistrations issuerRegistrations, final TokenValidatorFactory validatorFactory) {
@@ -610,12 +597,8 @@ public class OidcAccessTokenDecoderFactory {
   }
 
   /**
-   * Builds a map of issuer URI to additional JWK Set URIs from the provider configuration alone,
-   * for a decoder that resolves its registrations at the first token of an issuer.
-   *
-   * @param providers the provider configuration map keyed by registrationId, in the order of the
-   *     configuration
-   * @return a map of issuer URI to additional JWK Set URIs; empty if none configured
+   * The additional JWK Set URIs per issuer URI, from the provider configuration alone, for a
+   * decoder that resolves its registrations at the first token of an issuer.
    */
   private static Map<String, List<String>> buildAdditionalJwkSetUrisByIssuer(
       final Map<String, OidcConfiguration> providers) {
