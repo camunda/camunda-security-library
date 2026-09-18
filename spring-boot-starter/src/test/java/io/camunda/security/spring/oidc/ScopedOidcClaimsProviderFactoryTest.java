@@ -357,6 +357,53 @@ final class ScopedOidcClaimsProviderFactoryTest {
     }
   }
 
+  @Test
+  void shouldPassASharedIssuerUnaugmentedWhenItsOwningProviderTurnsUserInfoOff() {
+    // given two providers of one issuer, of which only the ignored second one enables UserInfo
+    final var shared = "https://shared.example.com";
+    final var authentication = authEnabled(shared, null);
+    final var owner = authentication.getOidc();
+    owner.setUserInfoEnabled(false);
+    final var loser = authEnabled(shared, shared + "/loser/userinfo").getOidc();
+    // a second issuer keeps augmentation meaningful for the scope
+    final var other =
+        authEnabled("https://other.example", "https://other.example/userinfo").getOidc();
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put("owner", owner);
+    providers.put("loser", loser);
+    providers.put("other", other);
+    when(clientRegistrationFactory.flatten(authentication)).thenReturn(providers);
+    when(clientRegistrationFactory.createWithoutLoginRoutes(Map.of("owner", owner)))
+        .thenReturn(List.of(registrationWithoutUserInfo("owner", shared)));
+    final var provider = factory.buildClaimsProvider(authentication);
+
+    // when a token of the shared issuer is augmented
+    // then the flag of the owning provider answers for the issuer, so the token passes unaugmented
+    // instead of failing over an endpoint the augmentation never asked for
+    assertThat(claimsForAugmentedToken(provider, shared)).containsEntry("iss", shared);
+  }
+
+  @Test
+  void shouldThrowWhenOnlyAnIgnoredDuplicateEnablesUserInfo() {
+    // given one issuer whose owning provider turns UserInfo off, and an ignored duplicate that
+    // enables it
+    final var shared = "https://shared.example.com";
+    final var authentication = authEnabled(shared, null);
+    final var owner = authentication.getOidc();
+    owner.setUserInfoEnabled(false);
+    final var loser = authEnabled(shared, shared + "/loser/userinfo").getOidc();
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put("owner", owner);
+    providers.put("loser", loser);
+    when(clientRegistrationFactory.flatten(authentication)).thenReturn(providers);
+
+    // then the duplicate rescues nothing, because its registration reaches no request, so the
+    // contradiction stops the chain as a single disabled provider does
+    assertThatThrownBy(() -> factory.buildClaimsProvider(authentication))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("no OIDC provider can yield");
+  }
+
   private static ListAppender<ILoggingEvent> attachAppender() {
     final var logger = (Logger) LoggerFactory.getLogger(IssuerRegistrations.class);
     final ListAppender<ILoggingEvent> appender = new ListAppender<>();

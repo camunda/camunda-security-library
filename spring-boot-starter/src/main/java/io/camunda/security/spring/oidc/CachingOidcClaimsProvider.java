@@ -182,7 +182,7 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
    */
   static Function<String, String> userInfoUriByIssuer(
       final IssuerRegistrations registrations, final Map<String, OidcConfiguration> providers) {
-    final var issuersWithUserInfo = issuersWithUserInfo(providers);
+    final var issuersWithUserInfo = issuersWithUserInfo(registrations, providers);
     if (issuersWithUserInfo.isEmpty()) {
       throw new IllegalStateException(
           "UserInfo augmentation is enabled but no OIDC provider can yield an issuer→userInfoUri"
@@ -224,14 +224,19 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
   }
 
   /**
-   * The issuers of the providers that must expose a UserInfo endpoint. The configuration answers
-   * this, so the call needs no network access.
+   * The issuers whose owning provider must expose a UserInfo endpoint. The owner answers for its
+   * issuer, because {@code registrations} resolves the registration of that provider alone, and the
+   * UserInfo flag of an ignored duplicate reaches no request. The configuration answers this, so
+   * the call needs no network access.
    */
-  private static Set<String> issuersWithUserInfo(final Map<String, OidcConfiguration> providers) {
-    return providers.values().stream()
-        .filter(OidcConfiguration::isUserInfoEnabled)
-        .map(OidcConfiguration::getIssuerUri)
-        .filter(StringUtils::hasText)
+  private static Set<String> issuersWithUserInfo(
+      final IssuerRegistrations registrations, final Map<String, OidcConfiguration> providers) {
+    return registrations.issuers().stream()
+        .filter(
+            issuer -> {
+              final var owner = providers.get(registrations.resolutionKeyOf(issuer));
+              return owner != null && owner.isUserInfoEnabled();
+            })
         .collect(Collectors.toSet());
   }
 
