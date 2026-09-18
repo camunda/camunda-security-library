@@ -23,6 +23,9 @@ import org.springframework.security.core.AuthenticationException;
  *
  * <p>A lookup after a failed build throws {@link AuthenticationServiceException}, so the chain
  * answers with a server error and not with a refused credential.
+ *
+ * <p>A token that augmentation cannot enrich passes unchanged, and builds no delegate. A request
+ * that needs no augmentation therefore also succeeds while the identity provider is unreachable.
  */
 public final class DeferredOidcClaimsProvider implements OidcClaimsProvider {
 
@@ -42,6 +45,9 @@ public final class DeferredOidcClaimsProvider implements OidcClaimsProvider {
   @Override
   public Map<String, Object> claimsFor(
       final Map<String, Object> jwtClaims, final String tokenValue) {
+    if (!CachingOidcClaimsProvider.canAugment(jwtClaims, tokenValue)) {
+      return jwtClaims;
+    }
     return DeferredOidcResolution.resolve(subject, delegate).claimsFor(jwtClaims, tokenValue);
   }
 

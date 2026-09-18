@@ -98,7 +98,9 @@ class OidcClaimsProviderConfigurationTest {
             ctx -> {
               assertThat(ctx).hasNotFailed();
               assertThatThrownBy(
-                      () -> claimsForUnaugmentedToken(ctx.getBean(OidcClaimsProvider.class)))
+                      () ->
+                          claimsForAugmentedToken(
+                              ctx.getBean(OidcClaimsProvider.class), "https://idp-a.example"))
                   .isInstanceOf(AuthenticationServiceException.class)
                   .hasRootCauseInstanceOf(IllegalStateException.class);
             });
@@ -258,7 +260,9 @@ class OidcClaimsProviderConfigurationTest {
               // when
               try {
                 assertThatThrownBy(
-                        () -> claimsForUnaugmentedToken(ctx.getBean(OidcClaimsProvider.class)))
+                        () ->
+                            claimsForAugmentedToken(
+                                ctx.getBean(OidcClaimsProvider.class), "https://idp-a.example"))
                     .isInstanceOf(AuthenticationServiceException.class);
               } finally {
                 releaseResolutionLogs(appender);
@@ -519,8 +523,8 @@ class OidcClaimsProviderConfigurationTest {
   }
 
   /**
-   * Runs a claims lookup that builds the deferred delegate but calls no UserInfo endpoint, because
-   * the token carries no {@code openid} scope.
+   * Runs a claims lookup that needs no augmentation, because the token carries no {@code openid}
+   * scope. Such a lookup builds no deferred delegate.
    */
   private static Map<String, Object> claimsForUnaugmentedToken(final OidcClaimsProvider provider) {
     return provider.claimsFor(Map.of("iss", "https://idp-a.example"), "token");

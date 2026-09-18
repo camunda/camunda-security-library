@@ -21,7 +21,8 @@ import org.springframework.security.authentication.AuthenticationServiceExceptio
 
 class DeferredOidcClaimsProviderTest {
 
-  private static final Map<String, Object> JWT_CLAIMS = Map.of("sub", "alice");
+  private static final Map<String, Object> JWT_CLAIMS =
+      Map.of("iss", "https://idp.example", "scope", "openid", "sub", "alice");
   private static final Map<String, Object> AUGMENTED_CLAIMS =
       Map.of("sub", "alice", "groups", "admin");
 
@@ -112,6 +113,27 @@ class DeferredOidcClaimsProviderTest {
     assertThatThrownBy(() -> provider.claimsFor(JWT_CLAIMS, "token"))
         .isInstanceOf(AuthenticationServiceException.class)
         .hasCause(unreachable);
+  }
+
+  @Test
+  void shouldPassAnUnaugmentableTokenWithoutBuildingTheDelegate() {
+    // given a token that carries no openid scope, which no UserInfo endpoint can enrich
+    final var builds = new AtomicInteger();
+    final var provider =
+        new DeferredOidcClaimsProvider(
+            "the mapping",
+            () -> {
+              builds.incrementAndGet();
+              throw new IllegalStateException("unreachable");
+            });
+
+    // when
+    final var claims =
+        provider.claimsFor(Map.of("iss", "https://idp.example", "sub", "alice"), "token");
+
+    // then the request succeeds while the provider is unreachable, because it needs no augmentation
+    assertThat(claims).isEqualTo(Map.of("iss", "https://idp.example", "sub", "alice"));
+    assertThat(builds).hasValue(0);
   }
 
   private static OidcClaimsProvider augmentingProvider() {

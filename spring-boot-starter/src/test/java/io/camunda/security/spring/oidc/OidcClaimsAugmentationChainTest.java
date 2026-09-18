@@ -116,6 +116,7 @@ class OidcClaimsAugmentationChainTest {
         Jwt.withTokenValue("bearer-token")
             .header("alg", "RS256")
             .claim("iss", ISSUER)
+            .claim("scope", "openid")
             .claim("sub", "alice")
             .build();
 
