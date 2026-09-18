@@ -23,6 +23,7 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -112,6 +113,9 @@ class OidcClaimsProviderConfigurationTest {
     final var answering = "idp-" + UUID.randomUUID();
     final var silent = "idp-" + UUID.randomUUID();
     try (final var server = OidcTestServer.startRsa("kid-a")) {
+      // the discovery document of the test server declares no UserInfo endpoint, so the
+      // configuration names it, and the endpoint adds a claim the assertion below looks for
+      server.serveUserInfo("{\"sub\":\"user\",\"groups\":[\"analysts\"]}");
       final var providers =
           Map.of(
               answering,
@@ -119,7 +123,6 @@ class OidcClaimsProviderConfigurationTest {
                   .clientId("client-id")
                   .redirectUri("{baseUrl}/sso-callback")
                   .issuerUri(server.issuerUri())
-                  // the discovery document of the test server declares no UserInfo endpoint
                   .userInfoUri(server.issuerUri() + "/userinfo")
                   .build(),
               silent,
@@ -168,10 +171,11 @@ class OidcClaimsProviderConfigurationTest {
                 final var provider = ctx.getBean(OidcClaimsProvider.class);
 
                 // when a token of each issuer asks for augmented claims
-                // then the token of the provider that answers keeps its response, and the token of
-                // the silent provider fails as a server error
+                // then the token of the provider that answers carries the claims of its UserInfo
+                // endpoint, and the token of the silent provider fails as a server error
                 assertThat(claimsForAugmentedToken(provider, server.issuerUri()))
-                    .containsEntry("iss", server.issuerUri());
+                    .containsEntry("iss", server.issuerUri())
+                    .containsEntry("groups", List.of("analysts"));
                 assertThatThrownBy(() -> claimsForAugmentedToken(provider, UNREACHABLE_ISSUER_URI))
                     .isInstanceOf(AuthenticationServiceException.class);
               });

@@ -370,6 +370,14 @@ public final class OidcTestServer implements AutoCloseable {
   }
 
   /**
+   * Serves {@code json} at {@code /userinfo}, so a test of claims augmentation asserts a claim the
+   * endpoint adds, and not the absence of a failure.
+   */
+  public void serveUserInfo(final String json) {
+    registerJsonContext(server, "/userinfo", json);
+  }
+
+  /**
    * Serves the discovery document, counting every request so tests can assert how many times an
    * issuer was fetched. Separate from {@link #registerJsonContext} so {@code /jwks} stays
    * uncounted.
