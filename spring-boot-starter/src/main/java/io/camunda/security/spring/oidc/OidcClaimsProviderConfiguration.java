@@ -29,11 +29,15 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 
 /**
- * Registers the {@link OidcClaimsProvider} bean: either a {@link CachingOidcClaimsProvider} that
- * resolves the UserInfo endpoint of an issuer at the first claims lookup that needs it when {@code
+ * Registers the {@link OidcClaimsProvider} bean: an augmenting provider when {@code
  * camunda.security.authentication.oidc.user-info-augmentation.enabled=true}, or a {@link
  * NoopOidcClaimsProvider} otherwise. A host-supplied {@link OidcClaimsProvider} bean suppresses
  * both via {@link ConditionalOnMissingBean}.
+ *
+ * <p>The augmenting provider is a {@link CachingOidcClaimsProvider} that resolves the UserInfo
+ * endpoint of one issuer at the first claims lookup that carries it, or a {@link
+ * DeferredOidcClaimsProvider} over the whole repository of the host application, which cannot be
+ * read per issuer.
  *
  * <p>The two beans carry mutually exclusive {@code @ConditionalOnProperty} conditions ({@code
  * enabled=true} vs {@code enabled=false, matchIfMissing=true}), so registration is deterministic
