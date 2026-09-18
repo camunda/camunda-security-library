@@ -58,6 +58,9 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write  # mint GitHub OIDC token for Vault JWT auth
     concurrency:
       group: deploy-snapshot-${{ github.ref }}
       cancel-in-progress: false
@@ -75,8 +78,9 @@ jobs:
         uses: ./.github/actions/create-maven-setting-file
         with:
           VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
-          VAULT_ROLE_ID: ${{ secrets.VAULT_ROLE_ID }}
-          VAULT_SECRET_ID: ${{ secrets.VAULT_SECRET_ID }}
+          VAULT_JWT_ROLE: ${{ secrets.VAULT_JWT_ROLE }}
+          VAULT_JWT_PATH: ${{ secrets.VAULT_JWT_PATH }}
+          VAULT_JWT_AUDIENCE: ${{ secrets.VAULT_JWT_AUDIENCE }}
 
       - name: Deploy SNAPSHOT
         run: ./mvnw --batch-mode --no-transfer-progress -DskipTests deploy
