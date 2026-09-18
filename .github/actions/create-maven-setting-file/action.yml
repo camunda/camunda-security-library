@@ -1,5 +1,5 @@
 name: Create Maven settings.xml file
-description: Create Maven settings.xml file (requires VAULT_ADDR, VAULT_JWT_ROLE, VAULT_JWT_PATH, VAULT_JWT_AUDIENCE inputs)
+description: "Create Maven settings.xml file (requires VAULT_ADDR, VAULT_JWT_ROLE, VAULT_JWT_PATH, VAULT_JWT_AUDIENCE inputs; the calling job must grant id-token: write)"
 inputs:
   VAULT_ADDR:
     description: Vault address
