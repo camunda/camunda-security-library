@@ -194,39 +194,50 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
               + " flag in multi-provider setups). Give each provider an issuer-uri, or disable"
               + " userinfo augmentation.");
     }
-    return issuer -> {
-      if (!issuersWithUserInfo.contains(issuer)) {
-        // An unknown issuer, and an issuer whose owner disables UserInfo, need no endpoint. To
-        // answer them here keeps their tokens up while their provider is unreachable, because the
-        // resolution below makes OIDC discovery.
-        return null;
-      }
-      final ClientRegistration registration;
-      try {
-        registration = registrations.forIssuer(issuer);
-      } catch (final AuthenticationException alreadyClassified) {
-        throw alreadyClassified;
-      } catch (final RuntimeException unresolved) {
-        throw new AuthenticationServiceException(
-            "Failed to resolve the UserInfo endpoint of issuer '%s': %s"
-                .formatted(issuer, unresolved.getMessage()),
-            unresolved);
-      }
-      if (registration == null) {
-        return null;
-      }
-      final var userInfoUri = registration.getProviderDetails().getUserInfoEndpoint().getUri();
-      if (!StringUtils.hasText(userInfoUri)) {
-        throw new AuthenticationServiceException(
-            ("UserInfo augmentation is enabled for issuer '%s' but the provider exposes no"
-                    + " userInfoUri, so its claims cannot be augmented. Ensure the discovery"
-                    + " document of the issuer includes a userinfo_endpoint, or configure"
-                    + " user-info-uri explicitly, or turn UserInfo off for the provider"
-                    + " (user-info-enabled=false).")
-                .formatted(issuer));
-      }
-      return userInfoUri;
-    };
+    return issuer -> userInfoUriOf(issuer, registrations, issuersWithUserInfo);
+  }
+
+  /**
+   * The UserInfo endpoint of {@code issuer}, or {@code null} where the token passes unaugmented.
+   *
+   * @throws AuthenticationServiceException if the resolution fails, or the provider of the issuer
+   *     exposes no endpoint. Both are server errors, because the token is not the reason.
+   */
+  private static String userInfoUriOf(
+      final String issuer,
+      final IssuerRegistrations registrations,
+      final Set<String> issuersWithUserInfo) {
+    if (!issuersWithUserInfo.contains(issuer)) {
+      // An unknown issuer, and an issuer whose owner disables UserInfo, need no endpoint. To
+      // answer them here keeps their tokens up while their provider is unreachable, because the
+      // resolution below makes OIDC discovery.
+      return null;
+    }
+    final ClientRegistration registration;
+    try {
+      registration = registrations.forIssuer(issuer);
+    } catch (final AuthenticationException alreadyClassified) {
+      throw alreadyClassified;
+    } catch (final RuntimeException unresolved) {
+      throw new AuthenticationServiceException(
+          "Failed to resolve the UserInfo endpoint of issuer '%s': %s"
+              .formatted(issuer, unresolved.getMessage()),
+          unresolved);
+    }
+    if (registration == null) {
+      return null;
+    }
+    final var userInfoUri = registration.getProviderDetails().getUserInfoEndpoint().getUri();
+    if (!StringUtils.hasText(userInfoUri)) {
+      throw new AuthenticationServiceException(
+          ("UserInfo augmentation is enabled for issuer '%s' but the provider exposes no"
+                  + " userInfoUri, so its claims cannot be augmented. Ensure the discovery"
+                  + " document of the issuer includes a userinfo_endpoint, or configure"
+                  + " user-info-uri explicitly, or turn UserInfo off for the provider"
+                  + " (user-info-enabled=false).")
+              .formatted(issuer));
+    }
+    return userInfoUri;
   }
 
   /**
