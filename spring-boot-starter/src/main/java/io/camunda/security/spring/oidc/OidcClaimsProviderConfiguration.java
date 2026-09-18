@@ -79,9 +79,9 @@ public class OidcClaimsProviderConfiguration {
    * <p>A {@link LazyClientRegistrationRepository} declares the issuer of each registration, so the
    * provider resolves one issuer at a time, and an identity provider that does not answer fails the
    * tokens of its own issuer only. Any other repository of the host application can hold
-   * registrations that no configuration of the library describes. The provider reads the whole
-   * repository in that case, and one identity provider that does not answer fails the augmentation
-   * of every token. See {@link DeferredOidcClaimsProvider}.
+   * registrations that no configuration of the library describes, so the provider reads it as a
+   * whole, and one identity provider that does not answer fails the augmentation of every token.
+   * See {@link DeferredOidcClaimsProvider}.
    *
    * @throws IllegalStateException if the mapping cannot read the repository. The shape of a
    *     repository needs no network access, so such a configuration error stops the start.

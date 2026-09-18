@@ -138,8 +138,8 @@ public final class IssuerRegistrations {
   /**
    * The key that {@link #forIssuer(String)} resolves {@code issuer} through: the registrationId of
    * the provider that owns the issuer, or the issuer itself for resolved registrations. A caller
-   * that reads more of the configuration of that provider asks here, so it reads the provider whose
-   * registration this class resolves, and not that of an ignored duplicate.
+   * that reads more of the configuration of the owner asks here, and therefore skips the
+   * configuration of an ignored duplicate.
    */
   String resolutionKeyOf(final String issuer) {
     return resolutionKeyByIssuer.get(issuer);

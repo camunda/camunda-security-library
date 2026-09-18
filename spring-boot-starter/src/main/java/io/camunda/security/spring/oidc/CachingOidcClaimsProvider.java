@@ -167,15 +167,13 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
   }
 
   /**
-   * Resolves the endpoint of one issuer at a time, through {@code registrations}. An identity
-   * provider that does not answer therefore fails the tokens of its own issuer only.
+   * Resolves the endpoint of one issuer at a time, through {@code registrations}, so an identity
+   * provider that does not answer fails the tokens of its own issuer only.
    *
    * <p>An unknown issuer, and a provider that disables UserInfo, give no endpoint, and the token
    * passes unaugmented. A provider that enables UserInfo and exposes no endpoint fails its tokens,
-   * because the claims would otherwise lose the attributes that authorization needs.
-   *
-   * <p>A failed resolution, and a missing endpoint, report a failure of the server and not a
-   * refused credential, because the token is not the reason.
+   * because the claims would otherwise lose the attributes that authorization needs. Such a
+   * failure, and a failed resolution, are server errors, because the token is not the reason.
    *
    * @throws IllegalStateException if no provider can ever give an endpoint. The configuration shows
    *     this, so such a setup stops the start instead of running without augmentation.
@@ -225,9 +223,9 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
 
   /**
    * The issuers whose owning provider must expose a UserInfo endpoint. The owner answers for its
-   * issuer, because {@code registrations} resolves the registration of that provider alone, and the
-   * UserInfo flag of an ignored duplicate reaches no request. The configuration answers this, so
-   * the call needs no network access.
+   * issuer, because {@code registrations} resolves the registration of that provider alone, and a
+   * request reads no UserInfo flag of an ignored duplicate. The configuration gives the answer, so
+   * the method needs no network access.
    */
   private static Set<String> issuersWithUserInfo(
       final IssuerRegistrations registrations, final Map<String, OidcConfiguration> providers) {
@@ -241,8 +239,8 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
   }
 
   /**
-   * Whether the UserInfo endpoint of an issuer can augment this token at all. The configuration of
-   * no provider takes part in the answer, so a caller can ask it before it resolves an endpoint.
+   * Whether a UserInfo endpoint can augment this token at all. No provider configuration takes part
+   * in the answer, so a caller asks this before it resolves an endpoint.
    */
   static boolean canAugment(final Map<String, Object> jwtClaims, final String tokenValue) {
     if (tokenValue == null || tokenValue.isBlank()) {

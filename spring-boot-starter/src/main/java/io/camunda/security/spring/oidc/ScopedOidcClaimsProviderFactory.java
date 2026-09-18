@@ -64,9 +64,9 @@ public final class ScopedOidcClaimsProviderFactory {
    *
    * <p>The UserInfo endpoint of an issuer comes from a {@link ClientRegistration}, which OIDC
    * discovery resolves. The claims provider resolves the registration of one issuer at the first
-   * claims lookup that carries that issuer. The application therefore makes no network request
-   * while it builds the chain, and an identity provider that does not answer fails the tokens of
-   * its own issuer only. See {@link IssuerRegistrations}.
+   * claims lookup that carries it, so the application makes no network request while it builds the
+   * chain, and an identity provider that does not answer fails the tokens of its own issuer only.
+   * See {@link IssuerRegistrations}.
    *
    * @throws IllegalStateException if augmentation is enabled and the configuration declares no OIDC
    *     provider, or a provider block is incomplete. Such a configuration would leave the scope
