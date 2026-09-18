@@ -1,14 +1,17 @@
 name: Create Maven settings.xml file
-description: Create Maven settings.xml file (requires VAULT_ADDR, VAULT_ROLE_ID, VAULT_SECRET_ID inputs)
+description: "Create Maven settings.xml file (requires VAULT_ADDR, VAULT_JWT_ROLE, VAULT_JWT_PATH, VAULT_JWT_AUDIENCE inputs; the calling job must grant id-token: write)"
 inputs:
   VAULT_ADDR:
     description: Vault address
     required: true
-  VAULT_ROLE_ID:
-    description: Vault AppRole role ID
+  VAULT_JWT_ROLE:
+    description: Vault JWT role
     required: true
-  VAULT_SECRET_ID:
-    description: Vault AppRole secret ID
+  VAULT_JWT_PATH:
+    description: Vault JWT auth mount path
+    required: true
+  VAULT_JWT_AUDIENCE:
+    description: Vault JWT audience
     required: true
   MAVEN_CENTRAL_DEPLOYMENT_USR:
     description: Maven Central deployment username (optional, only needed for publishing to Central)
@@ -26,9 +29,10 @@ runs:
       uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4.0.0
       with:
         url: ${{ inputs.VAULT_ADDR }}
-        method: approle
-        roleId: ${{ inputs.VAULT_ROLE_ID }}
-        secretId: ${{ inputs.VAULT_SECRET_ID }}
+        method: jwt
+        role: ${{ inputs.VAULT_JWT_ROLE }}
+        path: ${{ inputs.VAULT_JWT_PATH }}
+        jwtGithubAudience: ${{ inputs.VAULT_JWT_AUDIENCE }}
         exportEnv: false # we rely on step outputs, no need for environment variables
         secrets: |
           secret/data/github.com/organizations/camunda NEXUS_USR;
