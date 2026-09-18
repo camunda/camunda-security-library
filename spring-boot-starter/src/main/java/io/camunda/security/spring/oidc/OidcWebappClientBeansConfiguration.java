@@ -9,7 +9,6 @@ package io.camunda.security.spring.oidc;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
-import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.security.ProtectedOidcWebappCondition;
 import java.util.ArrayList;
 import java.util.List;
@@ -92,8 +91,7 @@ public class OidcWebappClientBeansConfiguration {
   public JwtDecoder jwtDecoder(
       final ClientRegistrationRepository clientRegistrationRepository,
       final OidcProviderConfigurationPort oidcProviderConfigurationPort,
-      final OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory,
-      final CamundaSecurityLibraryProperties properties) {
+      final OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory) {
     requireIterable(clientRegistrationRepository);
     if (clientRegistrationRepository instanceof final LazyClientRegistrationRepository lazy) {
       final var providers = lazy.providers();
