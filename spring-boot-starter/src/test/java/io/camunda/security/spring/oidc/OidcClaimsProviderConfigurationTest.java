@@ -519,9 +519,8 @@ class OidcClaimsProviderConfigurationTest {
   }
 
   /**
-   * Runs a claims lookup that forces the deferred delegate to be built but performs no UserInfo
-   * call: the token carries no {@code openid} scope, so an augmenting provider returns the claims
-   * unchanged.
+   * Runs a claims lookup that builds the deferred delegate but calls no UserInfo endpoint, because
+   * the token carries no {@code openid} scope.
    */
   private static Map<String, Object> claimsForUnaugmentedToken(final OidcClaimsProvider provider) {
     return provider.claimsFor(Map.of("iss", "https://idp-a.example"), "token");

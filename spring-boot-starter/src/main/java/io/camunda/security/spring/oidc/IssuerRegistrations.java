@@ -79,8 +79,8 @@ public final class IssuerRegistrations {
   }
 
   /**
-   * As {@link #ofConfiguration(Map, Function)}, for a step that reads something else of the owning
-   * provider than the keys and the validation rules.
+   * As {@link #ofConfiguration(Map, Function)}, for a step that reads another part of the
+   * configuration of the owning provider.
    *
    * @param ignoredConfiguration what the step reads, in the wording of the warning that names the
    *     provider of a duplicated issuer it therefore ignores

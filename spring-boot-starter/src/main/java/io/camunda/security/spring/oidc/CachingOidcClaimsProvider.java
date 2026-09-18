@@ -167,31 +167,18 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
   }
 
   /**
-   * A source of UserInfo endpoints for wiring that resolves one issuer at a time, through {@code
-   * registrations}. An identity provider that does not answer therefore fails the tokens of its own
-   * issuer only, and the tokens of the other providers keep their augmentation.
+   * Resolves the endpoint of one issuer at a time, through {@code registrations}. An identity
+   * provider that does not answer therefore fails the tokens of its own issuer only.
    *
-   * <p>An issuer that no provider declares yields no endpoint, and its token passes unaugmented, as
-   * an unmapped issuer does under {@link #forConfiguredMappings(OidcUserInfoFetcher, Map,
-   * OidcUserInfoAugmentationConfiguration, MeterRegistry)}. A provider that turns UserInfo off
-   * yields none either, because that is what the flag asks for.
+   * <p>An unknown issuer, and a provider that disables UserInfo, give no endpoint, and the token
+   * passes unaugmented. A provider that enables UserInfo and exposes no endpoint fails its tokens,
+   * because the claims would otherwise lose the attributes that authorization needs.
    *
-   * <p>A provider that is expected to expose an endpoint, and exposes none, fails the tokens of its
-   * issuer. Augmentation is enabled for it, so its claims would silently lose the attributes the
-   * authorization of the request needs.
+   * <p>A failed resolution, and a missing endpoint, report a failure of the server and not a
+   * refused credential, because the token is not the reason.
    *
-   * <p>A failure of the resolution, and a missing endpoint, report a failure of the server, and not
-   * a refused credential. Discovery reports an unreachable issuer as an {@link
-   * IllegalArgumentException}, which {@link
-   * io.camunda.security.spring.converter.OidcTokenAuthenticationConverter} answers with {@code
-   * invalid_token}. The token is not the reason, so {@link AuthenticationServiceException} keeps
-   * the classification, as {@link DeferredOidcClaimsProvider} does for a whole mapping.
-   *
-   * @throws IllegalStateException if no provider can ever yield an endpoint, which needs no network
-   *     access to see: a provider yields one only when it declares an issuer-uri, to which the
-   *     endpoint answers, and when UserInfo is enabled for it. Such a configuration stops the
-   *     start, as {@link #forConfiguredMappings(OidcUserInfoFetcher, Map,
-   *     OidcUserInfoAugmentationConfiguration, MeterRegistry)} stops the first request.
+   * @throws IllegalStateException if no provider can ever give an endpoint. The configuration shows
+   *     this, so such a setup stops the start instead of running without augmentation.
    */
   static Function<String, String> userInfoUriByIssuer(
       final IssuerRegistrations registrations, final Map<String, OidcConfiguration> providers) {
@@ -237,8 +224,8 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
   }
 
   /**
-   * The issuers of the providers that are expected to expose a UserInfo endpoint. The configuration
-   * answers it, so the call needs no network access.
+   * The issuers of the providers that must expose a UserInfo endpoint. The configuration answers
+   * this, so the call needs no network access.
    */
   private static Set<String> issuersWithUserInfo(final Map<String, OidcConfiguration> providers) {
     return providers.values().stream()

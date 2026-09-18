@@ -64,31 +64,23 @@ public class OidcClaimsProviderConfiguration {
   }
 
   /**
-   * Requires session-scoped OAuth2 client-registration infrastructure ({@link
-   * ClientRegistrationRepository}) to resolve the per-issuer UserInfo URIs, so this bean only
-   * activates when the webapp chain is enabled ({@code
-   * camunda.security.authentication.webapp-enabled} is not {@code false}); that repository bean is
-   * only registered in that case (see {@link OidcWebappClientBeansConfiguration}). A bearer-only
-   * OIDC host that disables the webapp chain and enables UserInfo augmentation without supplying
-   * its own {@link ClientRegistrationRepository} or {@link OidcClaimsProvider} therefore gets no
-   * UserInfo-augmenting default from CSL.
+   * The per-issuer UserInfo URIs come from a {@link ClientRegistrationRepository}, which only the
+   * webapp chain registers (see {@link OidcWebappClientBeansConfiguration}). A bearer-only host
+   * that enables augmentation must therefore supply its own {@link ClientRegistrationRepository} or
+   * {@link OidcClaimsProvider}.
    *
-   * <p>To read the UserInfo URI of a provider is to make OIDC discovery, so the provider resolves
-   * it at the first claims lookup that needs it.
+   * <p>To read the UserInfo URI of a provider is to make OIDC discovery. The provider resolves the
+   * URI at the first claims lookup that needs it, and not while the application starts.
    *
-   * <p>A {@link LazyClientRegistrationRepository} gives the provider the UserInfo endpoint of one
-   * issuer at a time. An identity provider that does not answer then fails the augmentation of the
-   * tokens of its own issuer, and the tokens of the providers that answer keep theirs. The issuers
-   * come from the configuration of that repository, so an endpoint belongs to the provider that
-   * declares the issuer of the token, whoever built the repository.
+   * <p>A {@link LazyClientRegistrationRepository} declares the issuer of each registration, so the
+   * provider resolves one issuer at a time, and an identity provider that does not answer fails the
+   * tokens of its own issuer only. Any other repository of the host application can hold
+   * registrations that no configuration of the library describes. The provider reads the whole
+   * repository in that case, and one identity provider that does not answer fails the augmentation
+   * of every token. See {@link DeferredOidcClaimsProvider}.
    *
-   * <p>Any other repository of the host application can hold registrations that no configuration of
-   * the library describes, so the mapping reads the whole repository in that case, and one provider
-   * that does not answer fails the augmentation of every token. See {@link
-   * DeferredOidcClaimsProvider}.
-   *
-   * <p>The mapping needs a repository it can read, and the shape of a repository needs no network
-   * access, so the method checks it here, and a configuration error still stops the start.
+   * @throws IllegalStateException if the mapping cannot read the repository. The shape of a
+   *     repository needs no network access, so such a configuration error stops the start.
    */
   @Bean
   @ConditionalOnProperty(
@@ -136,11 +128,7 @@ public class OidcClaimsProviderConfiguration {
     return new NoopOidcClaimsProvider();
   }
 
-  /**
-   * Names the mapping and the repository it reads. Only a repository the library cannot read per
-   * issuer reaches this step, and such a repository belongs to the host application, which is what
-   * the subject says.
-   */
+  /** Names the mapping, and the repository of the host application it reads, for a failure log. */
   private static String userInfoMappingSubject() {
     return "the per-issuer UserInfo endpoint mapping of the ClientRegistrationRepository of the"
         + " host application";
@@ -148,8 +136,7 @@ public class OidcClaimsProviderConfiguration {
 
   /**
    * Rejects a repository the mapping cannot read. The shape of a repository needs no network
-   * access, so the method runs while the application builds the bean, and a host that wires a
-   * repository of the wrong shape learns it at the start.
+   * access, so a host that wires a repository of the wrong shape learns this at the start.
    */
   private static void requireIterable(final ClientRegistrationRepository repo) {
     if (!(repo instanceof Iterable)) {
@@ -163,11 +150,9 @@ public class OidcClaimsProviderConfiguration {
   }
 
   /**
-   * Builds the per-issuer UserInfo URI map from the resolved {@link ClientRegistration}s. Reading a
-   * registration resolves it, so this method runs inside the deferred provider only. Where two
-   * registrations declare the same issuer, the map holds the endpoint of the registration that
-   * {@link IssuerOwnership} names the owner of that issuer, which is the registration the decoder
-   * reads.
+   * Maps each issuer to the UserInfo endpoint of the registration that {@link IssuerOwnership}
+   * gives that issuer, which is the registration the decoder also reads. To read a {@link
+   * ClientRegistration} is to resolve it, so the deferred provider alone calls this method.
    */
   static Map<String, String> buildUserInfoUriByIssuer(final ClientRegistrationRepository repo) {
     final List<ClientRegistration> registrations = new ArrayList<>();
