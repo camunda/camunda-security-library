@@ -19,8 +19,7 @@ import org.springframework.security.core.AuthenticationException;
  * delegate after a successful build only.
  *
  * <p>The delegate needs the UserInfo URI of each issuer, which OIDC discovery resolves. That
- * request must not run while the application starts. See {@link
- * DeferredOidcResolution#memoizeOnSuccess(Supplier)}.
+ * request must not run while the application starts.
  *
  * <p>A lookup after a failed build throws {@link AuthenticationServiceException}, so the chain
  * answers with a server error and not with a refused credential.
@@ -31,8 +30,7 @@ public final class DeferredOidcClaimsProvider implements OidcClaimsProvider {
   private final String subject;
 
   /**
-   * @param subject what the delegate resolves. A failure log names it, see {@link
-   *     DeferredOidcResolution#resolve(String, Supplier)}.
+   * @param subject what the delegate resolves. A failure log names the subject.
    */
   public DeferredOidcClaimsProvider(
       final String subject, final Supplier<OidcClaimsProvider> delegate) {
@@ -48,12 +46,9 @@ public final class DeferredOidcClaimsProvider implements OidcClaimsProvider {
   }
 
   /**
-   * Reports a failed build as a failure of the server, and not as a refused credential. Discovery
-   * reports an unreachable issuer as an {@link IllegalArgumentException}, which {@link
-   * io.camunda.security.spring.converter.OidcTokenAuthenticationConverter} answers with {@code
-   * invalid_token}. The token is not the reason, so the build failure keeps the classification of
-   * {@link AuthenticationServiceException}, which Spring Security reports as a server error, as
-   * {@link DeferredJwtDecoder} does on the decoder side.
+   * Reports a failed build as a failure of the server, and not as a refused credential, because the
+   * token is not the reason. An unreachable issuer would otherwise reach the caller as {@code
+   * invalid_token}, as {@link DeferredJwtDecoder} also prevents on the decoder side.
    */
   private static OidcClaimsProvider build(final Supplier<OidcClaimsProvider> delegate) {
     try {

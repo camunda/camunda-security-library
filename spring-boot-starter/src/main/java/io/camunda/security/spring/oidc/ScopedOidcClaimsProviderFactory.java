@@ -19,21 +19,17 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.util.StringUtils;
 
 /**
- * Builds an {@link OidcClaimsProvider} from a single {@link AuthenticationConfiguration}. The
- * counterpart of {@link ScopedJwtDecoderFactory} for UserInfo claims: it takes the UserInfo
- * endpoint of an issuer from the {@link ClientRegistration}s of that configuration, through {@link
- * ScopedClientRegistrationFactory}.
+ * Builds an {@link OidcClaimsProvider} from a single {@link AuthenticationConfiguration}, as {@link
+ * ScopedJwtDecoderFactory} builds a decoder.
  *
  * <p>The per-scope configuration decides whether augmentation runs, through {@code
  * oidc.userInfoAugmentation}, and not the global {@link
  * io.camunda.security.spring.CamundaSecurityLibraryProperties}. Each scope therefore controls its
  * own augmentation, which a physical tenant needs.
  *
- * <p>This factory builds its registrations with {@link
- * ScopedClientRegistrationFactory#createWithoutLoginRoutes}, as the sibling factory does.
- * Augmentation reads the issuer and the UserInfo endpoint of a registration for each request, and
- * it redirects no browser. It therefore also runs on a scope whose redirect-uri or registration id
- * serves no login route.
+ * <p>Augmentation redirects no browser, so this factory builds its registrations with {@link
+ * ScopedClientRegistrationFactory#createWithoutLoginRoutes}. Augmentation then also runs on a scope
+ * that serves no login route.
  */
 public final class ScopedOidcClaimsProviderFactory {
 
@@ -66,11 +62,11 @@ public final class ScopedOidcClaimsProviderFactory {
    * configuration that sets no {@code oidc.userInfoAugmentation}, or disables it, gets a {@link
    * NoopOidcClaimsProvider}.
    *
-   * <p>The UserInfo endpoint of an issuer comes from a resolved {@link ClientRegistration}, which
-   * OIDC discovery resolves. The provider resolves the provider of one issuer at the first claims
-   * lookup that carries it, so the application makes no network request while it builds the chain,
-   * and a provider that does not answer fails the augmentation of the tokens of its own issuer
-   * alone. See {@link IssuerRegistrations}.
+   * <p>The UserInfo endpoint of an issuer comes from a {@link ClientRegistration}, which OIDC
+   * discovery resolves. The claims provider resolves the registration of one issuer at the first
+   * claims lookup that carries that issuer. The application therefore makes no network request
+   * while it builds the chain, and an identity provider that does not answer fails the tokens of
+   * its own issuer only. See {@link IssuerRegistrations}.
    *
    * @throws IllegalStateException if augmentation is enabled and the configuration declares no OIDC
    *     provider, or a provider block is incomplete. Such a configuration would leave the scope
@@ -81,9 +77,8 @@ public final class ScopedOidcClaimsProviderFactory {
   }
 
   /**
-   * As {@link #buildClaimsProvider(AuthenticationConfiguration)}. A failure log of the claims
-   * provider also names the scope the provider belongs to, and the rate limit of that log counts
-   * per scope.
+   * As {@link #buildClaimsProvider(AuthenticationConfiguration)}, but a failure log also names the
+   * scope, and the rate limit of that log counts per scope.
    *
    * @param scopeDescription the name a log message gives to the scope (for example {@code
    *     basePath=/physical-tenants/t1}), or {@code null} for the unscoped text
@@ -118,8 +113,8 @@ public final class ScopedOidcClaimsProviderFactory {
   }
 
   /**
-   * Resolves one provider of the scope. A failure names that provider, and the scope it serves, so
-   * the rate limit of the report counts per provider and per scope.
+   * Resolves one provider of the scope. A failure log names the provider and the scope, so the rate
+   * limit of the log counts per provider and per scope.
    */
   private ClientRegistration resolve(
       final Map<String, OidcConfiguration> providers,

@@ -271,9 +271,8 @@ final class ScopedOidcClaimsProviderFactoryTest {
   }
 
   /**
-   * Runs a claims lookup that forces the deferred delegate to be built but performs no UserInfo
-   * call: the token carries no {@code openid} scope, so an augmenting provider returns the claims
-   * unchanged.
+   * Runs a claims lookup that builds the deferred delegate but calls no UserInfo endpoint, because
+   * the token carries no {@code openid} scope.
    */
   private static Map<String, Object> claimsForUnaugmentedToken(final OidcClaimsProvider provider) {
     return provider.claimsFor(Map.of("iss", "https://idp.example.com"), "token");
@@ -281,8 +280,7 @@ final class ScopedOidcClaimsProviderFactoryTest {
 
   /**
    * Runs a claims lookup that needs augmented claims, and therefore the UserInfo endpoint of {@code
-   * issuer}. The fetch itself reaches a mocked HTTP client, so the lookup returns the claims
-   * unchanged, and the resolution of the provider is what the test observes.
+   * issuer}. A mocked HTTP client answers the fetch, so the test observes the resolution alone.
    */
   private static Map<String, Object> claimsForAugmentedToken(
       final OidcClaimsProvider provider, final String issuer) {
