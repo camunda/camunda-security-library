@@ -170,10 +170,12 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
    * Resolves the endpoint of one issuer at a time, through {@code registrations}, so an identity
    * provider that does not answer fails the tokens of its own issuer only.
    *
-   * <p>An unknown issuer, and a provider that disables UserInfo, give no endpoint, and the token
-   * passes unaugmented. A provider that enables UserInfo and exposes no endpoint fails its tokens,
-   * because the claims would otherwise lose the attributes that authorization needs. Such a
-   * failure, and a failed resolution, are server errors, because the token is not the reason.
+   * <p>An unknown issuer, and an issuer whose owner disables UserInfo, give no endpoint, and the
+   * token passes unaugmented. The configuration answers them, so their tokens also stay up while
+   * their provider is unreachable. A provider that enables UserInfo and exposes no endpoint fails
+   * its tokens, because the claims would otherwise lose the attributes that authorization needs.
+   * Such a failure, and a failed resolution, are server errors, because the token is not the
+   * reason.
    *
    * @throws IllegalStateException if no provider can ever give an endpoint. The configuration shows
    *     this, so such a setup stops the start instead of running without augmentation.
@@ -193,6 +195,12 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
               + " userinfo augmentation.");
     }
     return issuer -> {
+      if (!issuersWithUserInfo.contains(issuer)) {
+        // An unknown issuer, and an issuer whose owner disables UserInfo, need no endpoint. To
+        // answer them here keeps their tokens up while their provider is unreachable, because the
+        // resolution below makes OIDC discovery.
+        return null;
+      }
       final ClientRegistration registration;
       try {
         registration = registrations.forIssuer(issuer);
@@ -208,7 +216,7 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
         return null;
       }
       final var userInfoUri = registration.getProviderDetails().getUserInfoEndpoint().getUri();
-      if (!StringUtils.hasText(userInfoUri) && issuersWithUserInfo.contains(issuer)) {
+      if (!StringUtils.hasText(userInfoUri)) {
         throw new AuthenticationServiceException(
             ("UserInfo augmentation is enabled for issuer '%s' but the provider exposes no"
                     + " userInfoUri, so its claims cannot be augmented. Ensure the discovery"

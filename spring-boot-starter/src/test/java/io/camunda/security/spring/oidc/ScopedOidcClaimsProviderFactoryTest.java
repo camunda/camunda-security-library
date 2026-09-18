@@ -373,14 +373,14 @@ final class ScopedOidcClaimsProviderFactoryTest {
     providers.put("loser", loser);
     providers.put("other", other);
     when(clientRegistrationFactory.flatten(authentication)).thenReturn(providers);
-    when(clientRegistrationFactory.createWithoutLoginRoutes(Map.of("owner", owner)))
-        .thenReturn(List.of(registrationWithoutUserInfo("owner", shared)));
     final var provider = factory.buildClaimsProvider(authentication);
 
     // when a token of the shared issuer is augmented
     // then the flag of the owning provider answers for the issuer, so the token passes unaugmented
     // instead of failing over an endpoint the augmentation never asked for
     assertThat(claimsForAugmentedToken(provider, shared)).containsEntry("iss", shared);
+    // and the configuration answers alone, so such a token also survives an outage of that provider
+    verify(clientRegistrationFactory, never()).createWithoutLoginRoutes(anyMap());
   }
 
   @Test
