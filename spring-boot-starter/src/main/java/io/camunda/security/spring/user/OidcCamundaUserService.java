@@ -32,16 +32,15 @@ import org.springframework.security.oauth2.server.resource.authentication.Abstra
  * active {@link CamundaAuthentication} and the OIDC principal carried in the Spring Security
  * context, and returns the access (or id) token via {@link OAuth2AuthorizedClientRepository}.
  *
- * <p>The default <strong>does not</strong> resolve tenant display names, SaaS metadata, or {@code
- * c8Links}; those values are left empty because CSL has no contract for them. Authorized components
- * come from the host-provided {@link AuthorizedComponentsPort} (in OC, the adapter delegates to
- * {@code ResourceAccessProvider}); when no adapter is registered, the configuration falls back to
- * an empty-list bean.
+ * <p>The default <strong>does not</strong> resolve tenant display names or SaaS metadata; those
+ * values are left empty because CSL has no contract for them. Authorized components come from the
+ * host-provided {@link AuthorizedComponentsPort} (in OC, the adapter delegates to {@code
+ * ResourceAccessProvider}); when no adapter is registered, the configuration falls back to an
+ * empty-list bean.
  */
 public class OidcCamundaUserService implements CamundaUserPort {
 
   private static final String SALES_PLAN_TYPE = "";
-  private static final Map<String, String> C8_LINKS = Map.of();
   private static final JsonStringEncoder JSON_STRING_ENCODER = JsonStringEncoder.getInstance();
 
   private final CamundaAuthenticationProvider authenticationProvider;
@@ -82,7 +81,7 @@ public class OidcCamundaUserService implements CamundaUserPort {
   }
 
   /**
-   * Wraps the raw token in a JSON string literal (escaped + surrounded by quotes) so the {@code
+   * Wraps the raw token in a JSON string literal (escaped and surrounded by quotes) so the {@code
    * /v2/authentication/me/token} response body stays byte-identical to OC's pre-migration {@code
    * Json.createValue(token).toString()} behaviour. The endpoint declares {@code application/json},
    * so the body must be a valid JSON value, not raw text.
@@ -105,7 +104,6 @@ public class OidcCamundaUserService implements CamundaUserPort {
         authentication.authenticatedGroupIds(),
         authentication.authenticatedRoleIds(),
         SALES_PLAN_TYPE,
-        C8_LINKS,
         true);
   }
 
