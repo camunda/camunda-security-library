@@ -322,7 +322,13 @@ class DefaultAndScopedSessionRegressionTest {
     port.resolve(username, encoder.encode(rawPassword));
   }
 
-  /** Drives a real form login and returns the session cookie it commits. */
+  /**
+   * Drives a real form login and returns the session cookie it commits. Login now requires a valid
+   * CSRF token unconditionally (camunda/security-testing-findings#281), so this first performs a
+   * GET against {@code loginUrl} to obtain one exactly as a real login form does: the CSRF cookie
+   * set on that response and the (BREACH-masked) token from the {@code X-CSRF-TOKEN} response
+   * header are both carried over onto the POST.
+   */
   private static jakarta.servlet.http.Cookie logIn(
       final FilterChainProxy proxy,
       final String loginUrl,
@@ -330,9 +336,20 @@ class DefaultAndScopedSessionRegressionTest {
       final String password,
       final String expectedCookieName)
       throws Exception {
+    final var csrfGetRequest = new MockHttpServletRequest("GET", loginUrl);
+    final var csrfGetResponse = new MockHttpServletResponse();
+    proxy.doFilter(csrfGetRequest, csrfGetResponse, new MockFilterChain());
+    final var csrfToken =
+        csrfGetResponse.getHeader(CamundaSecurityFilterChainConstants.X_CSRF_TOKEN);
+    assertThat(csrfToken)
+        .as("GET " + loginUrl + " must issue a CSRF token for the login form to echo back")
+        .isNotNull();
+
     final var request = new MockHttpServletRequest("POST", loginUrl);
     request.setParameter("username", username);
     request.setParameter("password", password);
+    request.setCookies(csrfGetResponse.getCookies());
+    request.addHeader(CamundaSecurityFilterChainConstants.X_CSRF_TOKEN, csrfToken);
     final var response = new MockHttpServletResponse();
     proxy.doFilter(request, response, new MockFilterChain());
 

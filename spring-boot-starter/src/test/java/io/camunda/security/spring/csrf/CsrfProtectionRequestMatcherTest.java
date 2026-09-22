@@ -19,6 +19,9 @@ class CsrfProtectionRequestMatcherTest {
   private final CsrfProtectionRequestMatcher matcher =
       new CsrfProtectionRequestMatcher(Set.of("/login", "/logout", "/v1/**"));
 
+  private final CsrfProtectionRequestMatcher enforcingMatcher =
+      new CsrfProtectionRequestMatcher(Set.of("/logout"), Set.of("/login"));
+
   @Test
   void shouldNotMatchGetRequests() {
     final var request = createRequest("GET", "/api/data");
@@ -95,6 +98,33 @@ class CsrfProtectionRequestMatcherTest {
     request.addHeader(
         "Referer",
         "https://hel-1.operate.ultrawombat.com:12345/00000000-0000-0000-0000-000000000000/swagger-ui/index.html");
+    assertThat(matcher.matches(request)).isFalse();
+  }
+
+  @Test
+  void shouldMatchEnforcedPathWithoutSession() {
+    // login CSRF (camunda/security-testing-findings#281): must be protected even pre-session
+    final var request = createRequest("POST", "/login");
+    assertThat(enforcingMatcher.matches(request)).isTrue();
+  }
+
+  @Test
+  void shouldMatchEnforcedPathWithSession() {
+    final var request = createRequest("POST", "/login");
+    request.setSession(new MockHttpSession());
+    assertThat(enforcingMatcher.matches(request)).isTrue();
+  }
+
+  @Test
+  void shouldNotMatchEnforcedPathForSafeMethod() {
+    final var request = createRequest("GET", "/login");
+    assertThat(enforcingMatcher.matches(request)).isFalse();
+  }
+
+  @Test
+  void shouldPreferAllowedPathOverEnforcedPathOnConflict() {
+    final var matcher = new CsrfProtectionRequestMatcher(Set.of("/login"), Set.of("/login"));
+    final var request = createRequest("POST", "/login");
     assertThat(matcher.matches(request)).isFalse();
   }
 

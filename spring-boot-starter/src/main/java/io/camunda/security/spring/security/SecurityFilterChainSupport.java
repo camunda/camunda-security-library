@@ -48,13 +48,15 @@ public final class SecurityFilterChainSupport {
   private SecurityFilterChainSupport() {}
 
   /**
-   * Computes the set of paths exempt from CSRF protection. The unprefixed {@code /login} and {@code
-   * /logout} constants are always included (primary/global chain behaviour). When {@code
-   * cookiePath} is non-null and non-blank it identifies a per-scope basePath (e.g. {@code
-   * /physical-tenants/t1}); in that case the prefixed variants {@code basePath/login} and {@code
-   * basePath/logout} are also added so that CSRF exemption on scoped chains is consistent with the
-   * primary chain. Trailing slashes on {@code cookiePath} are stripped before concatenation to
-   * avoid double-slash paths.
+   * Computes the set of paths exempt from CSRF protection. The unprefixed {@code /logout} constant
+   * is always included (primary/global chain behaviour) — logging a session out carries no
+   * meaningful impact if forged cross-site, unlike logging one in. {@code /login} is deliberately
+   * <b>not</b> included here: see {@link #csrfEnforcedPaths} and
+   * camunda/security-testing-findings#281. When {@code cookiePath} is non-null and non-blank it
+   * identifies a per-scope basePath (e.g. {@code /physical-tenants/t1}); in that case the prefixed
+   * variant {@code basePath/logout} is also added so that CSRF exemption on scoped chains is
+   * consistent with the primary chain. Trailing slashes on {@code cookiePath} are stripped before
+   * concatenation to avoid double-slash paths.
    *
    * <p>Package-private for unit testing.
    */
@@ -65,17 +67,45 @@ public final class SecurityFilterChainSupport {
     final var allowedPaths = new HashSet<String>();
     allowedPaths.addAll(pathPort.unprotectedPaths());
     allowedPaths.addAll(pathPort.unprotectedApiPaths());
-    allowedPaths.add(LOGIN_URL);
     allowedPaths.add(LOGOUT_URL);
     allowedPaths.addAll(properties.getCsrf().getIgnoredPathPatterns());
 
     if (cookiePath != null && !cookiePath.isBlank()) {
       final var base = BasePaths.normalize(cookiePath, "cookiePath");
-      allowedPaths.add(base + LOGIN_URL);
       allowedPaths.add(base + LOGOUT_URL);
     }
 
     return allowedPaths;
+  }
+
+  /**
+   * Computes the set of paths that require a valid CSRF token unconditionally, even on a browser
+   * that holds no session yet. Only the login endpoint is enforced this way: it is the one
+   * state-changing, unauthenticated endpoint every webapp chain exposes, and skipping CSRF there
+   * lets a cross-site {@code POST /login} silently replace a victim's already-authenticated session
+   * with an attacker-controlled one (camunda/security-testing-findings#281). The generic "protect
+   * once a session exists" rule in {@link
+   * io.camunda.security.spring.csrf.CsrfProtectionRequestMatcher} is not enough here, because the
+   * attack's whole premise is that the victim's browser already has a session by the time the
+   * forged request lands.
+   *
+   * <p>The CSRF token itself is still obtainable by an anonymous visitor: {@link
+   * #csrfTokenResponseHeaderFilter()} issues one on {@code GET} to the login endpoint regardless of
+   * authentication state, via the cookie-backed, session-independent double-submit token
+   * repository.
+   *
+   * <p>Package-private for unit testing.
+   */
+  static Set<String> csrfEnforcedPaths(final String cookiePath) {
+    final var enforcedPaths = new HashSet<String>();
+    enforcedPaths.add(LOGIN_URL);
+
+    if (cookiePath != null && !cookiePath.isBlank()) {
+      final var base = BasePaths.normalize(cookiePath, "cookiePath");
+      enforcedPaths.add(base + LOGIN_URL);
+    }
+
+    return enforcedPaths;
   }
 
   public static CookieCsrfTokenRepository cookieCsrfTokenRepository(
@@ -163,6 +193,7 @@ public final class SecurityFilterChainSupport {
     }
 
     final var allowedPaths = csrfAllowedPaths(properties, pathPort, cookiePath);
+    final var enforcedPaths = csrfEnforcedPaths(cookiePath);
 
     final String resolvedCookiePath = resolveCookiePath(cookiePath);
     final CookieCsrfTokenRepository repo =
@@ -174,7 +205,8 @@ public final class SecurityFilterChainSupport {
     http.csrf(
         csrf ->
             csrf.csrfTokenRepository(csrfTokenRepository)
-                .requireCsrfProtectionMatcher(new CsrfProtectionRequestMatcher(allowedPaths)));
+                .requireCsrfProtectionMatcher(
+                    new CsrfProtectionRequestMatcher(allowedPaths, enforcedPaths)));
     http.addFilterAfter(csrfTokenResponseHeaderFilter(), CsrfFilter.class);
   }
 
@@ -237,9 +269,20 @@ public final class SecurityFilterChainSupport {
   }
 
   /**
-   * Filter that adds the CSRF token to the response header for authenticated GET requests and login
-   * POST responses. Browser-based clients read the token from the response header and include it on
-   * subsequent state-changing requests.
+   * Filter that adds the CSRF token to the response header for authenticated GET requests, and for
+   * any request to the login endpoint regardless of authentication state. Browser-based clients
+   * read the token from the response header (or the readable CSRF cookie the same repository sets)
+   * and include it on subsequent state-changing requests.
+   *
+   * <p>The login endpoint is special-cased: {@code buildBasicWebappChain}/{@code
+   * buildOidcWebappChain} both call {@code .anonymous(AbstractHttpConfigurer::disable)}, so an
+   * unauthenticated visitor has no {@code Authentication} at all (not even an anonymous one) to
+   * gate on. Since {@code POST /login} now requires a valid CSRF token unconditionally (see {@link
+   * SecurityFilterChainSupport#csrfEnforcedPaths}), a first-time, anonymous {@code GET} of the
+   * login page must still be able to obtain one — otherwise no legitimate login could ever succeed.
+   * Handing an anonymous visitor a CSRF token is safe: the token has no meaning on its own, and
+   * revealing it to whoever will submit the login form next is the intended behaviour of the
+   * double-submit pattern this repository implements.
    *
    * <p>The header must be written <b>before</b> dispatching the chain. {@link
    * HttpServletResponse#setHeader} is a no-op once the response is committed, and any downstream
@@ -264,17 +307,26 @@ public final class SecurityFilterChainSupport {
 
   private static void writeCsrfTokenHeaderIfApplicable(
       final HttpServletRequest request, final HttpServletResponse response) {
-    final Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-    if (auth == null || !auth.isAuthenticated()) {
-      return;
-    }
     final String path = request.getRequestURI();
     final String method = request.getMethod();
-    final boolean isGetOrLogin =
-        "GET".equalsIgnoreCase(method) || (path != null && path.contains(LOGIN_URL));
     final boolean isLogout = path != null && path.contains(LOGOUT_URL);
-    if (!isGetOrLogin || isLogout) {
+    if (isLogout) {
       return;
+    }
+    final boolean isLogin = path != null && path.contains(LOGIN_URL);
+    final boolean isGetOrLogin = "GET".equalsIgnoreCase(method) || isLogin;
+    if (!isGetOrLogin) {
+      return;
+    }
+    if (!isLogin) {
+      // Every other GET still requires an authenticated principal: the login endpoint is the only
+      // place an anonymous visitor is meant to receive a token, since it is the only
+      // unauthenticated
+      // endpoint a legitimate client must POST to (see csrfTokenResponseHeaderFilter() javadoc).
+      final Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+      if (auth == null || !auth.isAuthenticated()) {
+        return;
+      }
     }
     final CsrfToken token = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
     if (token != null) {

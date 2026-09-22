@@ -429,7 +429,9 @@ In this example, the library treats `groups` as the claim source for group mappi
 |---|---|---|---|
 | `enabled` | boolean | `true` | Toggles CSRF protection on the webapp chains. |
 | `cookie-http-only` | boolean | `false` | When `false`, the CSRF cookie is readable by browser-side JavaScript so it can echo the token. Flip to `true` only for API-only hosts. |
-| `ignored-path-patterns` | set&lt;string&gt; | empty | Ant-style patterns CSRF protection skips, in addition to the always-ignored unprotected paths and login/logout endpoints. |
+| `ignored-path-patterns` | set&lt;string&gt; | empty | Ant-style patterns CSRF protection skips, in addition to the always-ignored unprotected paths and the logout endpoint. |
+
+The login endpoint (`/login`, and its scoped `<basePath>/login` variants) always requires a valid CSRF token, even for a browser that holds no session yet — it cannot be exempted via `ignored-path-patterns`. Without this, a cross-site `POST /login` is otherwise indistinguishable from a legitimate one on a browser that already has an authenticated session, and silently replaces the victim's session with an attacker-controlled one (camunda/security-testing-findings#281). An anonymous `GET /login` still receives a CSRF token (via the same cookie/response-header mechanism used for authenticated requests) so a legitimate login can obtain one to submit back.
 
 ### `camunda.security.http-headers.*`
 

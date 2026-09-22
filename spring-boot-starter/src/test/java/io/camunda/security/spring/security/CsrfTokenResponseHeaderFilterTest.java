@@ -99,4 +99,36 @@ class CsrfTokenResponseHeaderFilterTest {
 
     assertThat(response.getHeader(X_CSRF_TOKEN)).isNull();
   }
+
+  @Test
+  void writesHeaderForUnauthenticatedLoginGet() throws Exception {
+    // Login CSRF protection (camunda/security-testing-findings#281) makes /login require a valid
+    // CSRF token unconditionally. Since .anonymous(disable) means an unauthenticated visitor has no
+    // Authentication at all, the login endpoint must still hand out a token so a legitimate login
+    // attempt can submit it back.
+    SecurityContextHolder.clearContext();
+
+    final var request = new MockHttpServletRequest("GET", "/login");
+    request.setAttribute(CsrfToken.class.getName(), TOKEN);
+    final var response = new MockHttpServletResponse();
+
+    SecurityFilterChainSupport.csrfTokenResponseHeaderFilter()
+        .doFilter(request, response, (req, res) -> {});
+
+    assertThat(response.getHeader(X_CSRF_TOKEN)).isEqualTo(TOKEN.getToken());
+  }
+
+  @Test
+  void writesHeaderForUnauthenticatedScopedLoginGet() throws Exception {
+    SecurityContextHolder.clearContext();
+
+    final var request = new MockHttpServletRequest("GET", "/physical-tenants/t1/login");
+    request.setAttribute(CsrfToken.class.getName(), TOKEN);
+    final var response = new MockHttpServletResponse();
+
+    SecurityFilterChainSupport.csrfTokenResponseHeaderFilter()
+        .doFilter(request, response, (req, res) -> {});
+
+    assertThat(response.getHeader(X_CSRF_TOKEN)).isEqualTo(TOKEN.getToken());
+  }
 }

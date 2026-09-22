@@ -24,12 +24,18 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
 /**
  * {@link RequestMatcher} that decides whether a request requires CSRF protection. Safe HTTP methods
  * (GET, HEAD, TRACE, OPTIONS) are always excluded, as are configured allowed paths and requests
- * originating from the Swagger UI.
+ * originating from the Swagger UI. Everything else requires protection only once a session already
+ * exists (a browser that never received a session cookie has nothing a cross-site request could
+ * ride on) — except {@code enforcedPaths}, which require a valid CSRF token unconditionally, even
+ * on the very first request of a session. The login endpoint is enforced this way: without it, an
+ * attacker's cross-site {@code POST /login} would still be exempt on a browser that already holds
+ * an authenticated session, silently swapping the victim's session for an attacker-controlled one
+ * (camunda/security-testing-findings#281).
  *
- * <p>Allowed paths are matched via Spring Security's {@link PathPatternRequestMatcher} (the default
- * in Spring Security 7) rather than a hand-rolled regex, so ant-style patterns ({@code /v1/**},
- * {@code /login}) are interpreted by the same engine that matches them everywhere else in the
- * security configuration.
+ * <p>Allowed and enforced paths are matched via Spring Security's {@link PathPatternRequestMatcher}
+ * (the default in Spring Security 7) rather than a hand-rolled regex, so ant-style patterns ({@code
+ * /v1/**}, {@code /login}) are interpreted by the same engine that matches them everywhere else in
+ * the security configuration.
  */
 public final class CsrfProtectionRequestMatcher implements RequestMatcher {
 
@@ -40,10 +46,20 @@ public final class CsrfProtectionRequestMatcher implements RequestMatcher {
   private static final RequestMatcher NEVER_MATCHES = request -> false;
 
   private final RequestMatcher allowedPathsMatcher;
+  private final RequestMatcher enforcedPathsMatcher;
 
   public CsrfProtectionRequestMatcher(final Set<String> allowedPaths) {
-    this.allowedPathsMatcher = buildAllowedPathsMatcher(allowedPaths);
-    LOG.debug("CSRF protection configuration - allowed paths: {}", allowedPaths);
+    this(allowedPaths, Set.of());
+  }
+
+  public CsrfProtectionRequestMatcher(
+      final Set<String> allowedPaths, final Set<String> enforcedPaths) {
+    this.allowedPathsMatcher = buildPathsMatcher(allowedPaths);
+    this.enforcedPathsMatcher = buildPathsMatcher(enforcedPaths);
+    LOG.debug(
+        "CSRF protection configuration - allowed paths: {}, enforced paths: {}",
+        allowedPaths,
+        enforcedPaths);
   }
 
   @Override
@@ -60,10 +76,14 @@ public final class CsrfProtectionRequestMatcher implements RequestMatcher {
       return false;
     }
 
+    if (enforcedPathsMatcher.matches(request)) {
+      return true;
+    }
+
     return request.getSession(false) != null;
   }
 
-  private static RequestMatcher buildAllowedPathsMatcher(final Set<String> paths) {
+  private static RequestMatcher buildPathsMatcher(final Set<String> paths) {
     if (paths == null || paths.isEmpty()) {
       return NEVER_MATCHES;
     }
