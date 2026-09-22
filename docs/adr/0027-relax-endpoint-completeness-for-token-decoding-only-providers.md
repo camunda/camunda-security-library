@@ -119,10 +119,16 @@ condition for which fields a provider block must supply:
 
 **Positive**
 
-- A provider configured for token decoding only —
+- A **single-provider** scope configured for token decoding only —
   `providers.oidc.<id>.jwk-set-uri=...` or the flat `oidc.jwk-set-uri=...` equivalent — needs no
   `client-id`, `authorization-uri`, `token-uri` or `redirect-uri`. `issuer-uri` alone (for discovery)
-  still works too.
+  still works too. This does not extend to a scope with two or more providers: `ScopedJwtDecoderFactory`
+  selects an issuer-aware decoder as soon as more than one provider is configured, and
+  `OidcAccessTokenDecoderFactory#validateProvidersHaveIssuer` then requires every provider in that
+  scope to declare `issuer-uri`, so the token can be routed to its provider by the `iss` claim —
+  `jwk-set-uri` alone is not sufficient there, for any provider in the scope. This relaxation is
+  therefore reachable only for a scope with exactly one OIDC provider (or a multi-provider scope
+  where every provider already sets `issuer-uri`).
 - The browser-login path is unchanged: same required fields, same named error messages, same grant
   type. Nothing about webapp/login behaviour was touched.
 - A side effect of the `flatten()` change surfaces a previously-silent misconfiguration: a flat block

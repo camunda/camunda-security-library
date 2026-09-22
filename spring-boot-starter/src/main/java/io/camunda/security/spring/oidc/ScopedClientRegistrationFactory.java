@@ -49,8 +49,12 @@ import org.springframework.web.util.pattern.PatternParseException;
  * <p><b>Endpoint completeness for token-decoding-only providers.</b> See <a
  * href="https://github.com/camunda/camunda-security-library/blob/main/docs/adr/0027-relax-endpoint-completeness-for-token-decoding-only-providers.md">ADR-0027</a>
  * for why a caller that never derives a browser login route from a provider block ({@link
- * LoginRouteChecks#SKIPPED}) requires only {@code issuer-uri} or {@code jwk-set-uri}, not {@code
- * client-id}, {@code authorization-uri} or {@code token-uri}.
+ * LoginRouteChecks#SKIPPED}) requires only {@code issuer-uri} or {@code jwk-set-uri} from that
+ * block, not {@code client-id}, {@code authorization-uri} or {@code token-uri}. This is a per-block
+ * rule only: a caller that decodes tokens across two or more providers in one scope still requires
+ * {@code issuer-uri} on every one of them, because it routes an incoming token to its provider by
+ * the token's {@code iss} claim ({@link
+ * OidcAccessTokenDecoderFactory#validateProvidersHaveIssuer}).
  */
 public final class ScopedClientRegistrationFactory {
 
