@@ -71,6 +71,19 @@ browser that holds no session yet, not only once a session already exists.
   first-time, anonymous visit to the login page still receives a token to
   echo back on the subsequent `POST /login` — otherwise no login, forged or
   legitimate, could ever succeed.
+- `SecurityFilterChainSupport#rejectUnprotectedPathOverlap` fails fast at
+  context startup if any `SecurityPathPort#unprotectedPaths()` entry would
+  also match an enforced login path. `BaseSecurityConfiguration`'s
+  unprotected-paths chain is always ordered first and unconditionally
+  disables CSRF for whatever it matches; Spring's `FilterChainProxy` routes
+  a matching request there and never reaches the webapp chain that actually
+  enforces CSRF, regardless of how correct that webapp chain's own matcher
+  is. Called both from `BaseSecurityConfiguration` (against the unscoped
+  `/login`) and from `applyCsrfConfiguration` itself (against whatever
+  `csrfEnforcedPaths` computed for that call — the primary `/login` again,
+  or a scope's `<basePath>/login`), because a scope's own base path is
+  arbitrary and host-decided, so only the call site that already resolved
+  it can validate against it.
 
 ### Why these particular boundaries
 
@@ -98,6 +111,18 @@ browser that holds no session yet, not only once a session already exists.
   introduce a new capability; it only extends token issuance to a state
   (anonymous, page not yet authenticated) the response-header filter
   previously didn't cover.
+- **Fail fast on an unprotected-path overlap, rather than excluding login
+  paths from that chain's matcher.** Also caught in review. Silently
+  filtering `/login` out of the unprotected-paths matcher would make
+  `SecurityPathPort#unprotectedPaths()` lie about what it declares — a host
+  reading its own config would see `/login` listed as unprotected while the
+  library quietly excluded it. An explicit `IllegalStateException` at
+  startup, naming the offending pattern, forces the host to either narrow
+  the pattern or accept that the login path is not exemptable, instead of
+  a difference between declared and actual behavior nobody notices until an
+  incident. This mirrors the library's existing convention of validating
+  configuration at startup (e.g. `ScopedClientRegistrationFactory`) rather
+  than tolerating it silently.
 
 ## Consequences
 

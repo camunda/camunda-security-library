@@ -27,6 +27,7 @@ import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.server.PathContainer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.core.Authentication;
@@ -41,6 +42,7 @@ import org.springframework.security.web.header.writers.CrossOriginResourcePolicy
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.pattern.PathPatternParser;
 
 /** Shared helpers for assembling CSL security filter chains. */
 public final class SecurityFilterChainSupport {
@@ -106,6 +108,44 @@ public final class SecurityFilterChainSupport {
     }
 
     return enforcedPaths;
+  }
+
+  /**
+   * Fails fast if any of {@code unprotectedPaths} would also match one of {@code enforcedPaths}
+   * (the login endpoint, unprefixed or under a scoped {@code basePath}). {@link
+   * BaseSecurityConfiguration}'s unprotected-paths chain is always checked first by Spring's {@code
+   * FilterChainProxy} and unconditionally disables CSRF for whatever it matches, so an overlapping
+   * declaration would route the login request there instead of the webapp chain that actually
+   * enforces CSRF on it — silently defeating the unconditional login-CSRF protection ADR-0027
+   * requires (camunda/security-testing-findings#281), for that one scope. Called once per chain
+   * build (primary and each scope) precisely because a scope's login path is only known once its
+   * {@code cookiePath}/{@code basePath} is resolved — {@code unprotectedPaths()} is a single,
+   * unscoped set the host declares once, and a scope's own base path is arbitrary, host-decided,
+   * and not enumerable up front.
+   */
+  static void rejectUnprotectedPathOverlap(
+      final Set<String> unprotectedPaths, final Set<String> enforcedPaths) {
+    for (final var enforcedPath : enforcedPaths) {
+      final var enforcedPathContainer = PathContainer.parsePath(enforcedPath);
+      final var offendingPattern =
+          unprotectedPaths.stream()
+              .filter(
+                  pattern ->
+                      PathPatternParser.defaultInstance
+                          .parse(pattern)
+                          .matches(enforcedPathContainer))
+              .findFirst();
+      if (offendingPattern.isPresent()) {
+        throw new IllegalStateException(
+            "SecurityPathPort#unprotectedPaths() declares '"
+                + offendingPattern.get()
+                + "', which matches the CSRF-enforced path '"
+                + enforcedPath
+                + "'. The login endpoint requires a valid CSRF token unconditionally"
+                + " (camunda/security-testing-findings#281) and must not be declared as, or"
+                + " overlap, an unprotected path — remove or narrow this pattern.");
+      }
+    }
   }
 
   public static CookieCsrfTokenRepository cookieCsrfTokenRepository(
@@ -194,6 +234,7 @@ public final class SecurityFilterChainSupport {
 
     final var allowedPaths = csrfAllowedPaths(properties, pathPort, cookiePath);
     final var enforcedPaths = csrfEnforcedPaths(cookiePath);
+    rejectUnprotectedPathOverlap(pathPort.unprotectedPaths(), enforcedPaths);
 
     final String resolvedCookiePath = resolveCookiePath(cookiePath);
     final CookieCsrfTokenRepository repo =

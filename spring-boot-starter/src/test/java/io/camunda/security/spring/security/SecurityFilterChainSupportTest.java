@@ -8,12 +8,15 @@
 package io.camunda.security.spring.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -356,5 +359,39 @@ final class SecurityFilterChainSupportTest {
         .contains("/physical-tenants/t1/login")
         .as("must not contain a double-slash path")
         .noneMatch(p -> p.contains("//"));
+  }
+
+  @Test
+  void rejectUnprotectedPathOverlapDoesNothingWhenNoOverlap() {
+    assertThatCode(
+            () ->
+                SecurityFilterChainSupport.rejectUnprotectedPathOverlap(
+                    Set.of("/error", "/actuator/**"), Set.of("/login")))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  void rejectUnprotectedPathOverlapRejectsExactLoginMatch() {
+    assertThatIllegalStateException()
+        .isThrownBy(
+            () ->
+                SecurityFilterChainSupport.rejectUnprotectedPathOverlap(
+                    Set.of("/login"), Set.of("/login")))
+        .withMessageContaining("/login");
+  }
+
+  @Test
+  void rejectUnprotectedPathOverlapRejectsScopedLoginPathReachableThroughABroaderPattern() {
+    // Regression for the exact bypass a reviewer flagged on PR #680 (camunda-security-library):
+    // "/physical-tenants/**" does not match the literal "/login", but it does match the scoped
+    // login path "/physical-tenants/t1/login" that a scoped chain actually enforces CSRF on.
+    final var enforcedPaths = SecurityFilterChainSupport.csrfEnforcedPaths("/physical-tenants/t1");
+
+    assertThatIllegalStateException()
+        .isThrownBy(
+            () ->
+                SecurityFilterChainSupport.rejectUnprotectedPathOverlap(
+                    Set.of("/physical-tenants/**"), enforcedPaths))
+        .withMessageContaining("/physical-tenants/t1/login");
   }
 }

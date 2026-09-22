@@ -21,13 +21,11 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
-import org.springframework.http.server.PathContainer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.util.pattern.PathPatternParser;
 
 /**
  * Always-on filter chains: unprotected paths (highest priority) and a catch-all deny chain (lowest
@@ -68,32 +66,19 @@ public class BaseSecurityConfiguration {
   }
 
   /**
-   * Fails fast if any declared unprotected path would also match the login endpoint. This chain is
-   * always ordered first ({@code ORDER_UNPROTECTED}) and unconditionally disables CSRF ({@code
-   * .csrf(AbstractHttpConfigurer::disable)}) for whatever it matches — Spring's {@code
+   * Fails fast if any declared unprotected path would also match the (unscoped) login endpoint.
+   * This chain is always ordered first ({@code ORDER_UNPROTECTED}) and unconditionally disables
+   * CSRF ({@code .csrf(AbstractHttpConfigurer::disable)}) for whatever it matches — Spring's {@code
    * FilterChainProxy} routes a matching request here and never reaches the webapp chain that
-   * actually enforces CSRF on {@code /login} (see {@link
-   * SecurityFilterChainSupport#csrfEnforcedPaths}). An overlapping declaration would therefore
-   * silently defeat the unconditional login-CSRF protection ADR-0027 requires
-   * (camunda/security-testing-findings#281), which is why this is rejected at startup rather than
-   * silently tolerated or filtered out of the matcher.
+   * actually enforces CSRF on {@code /login}. Delegates to {@link
+   * SecurityFilterChainSupport#rejectUnprotectedPathOverlap}, the same check every scoped chain
+   * runs (via {@link SecurityFilterChainSupport#applyCsrfConfiguration}) against its own scoped
+   * login path — that one only covers scopes as they are built, so this unscoped check still needs
+   * to run here for the primary login path, which no {@code applyCsrfConfiguration} call is
+   * guaranteed to validate if a host runs this bean without a primary webapp chain at all.
    */
   private static void rejectLoginPathOverlap(final Set<String> unprotectedPaths) {
-    final var loginPath = PathContainer.parsePath(LOGIN_URL);
-    final var offendingPattern =
-        unprotectedPaths.stream()
-            .filter(pattern -> PathPatternParser.defaultInstance.parse(pattern).matches(loginPath))
-            .findFirst();
-    if (offendingPattern.isPresent()) {
-      throw new IllegalStateException(
-          "SecurityPathPort#unprotectedPaths() declares '"
-              + offendingPattern.get()
-              + "', which matches the login endpoint ("
-              + LOGIN_URL
-              + "). The login endpoint requires a valid CSRF token unconditionally"
-              + " (camunda/security-testing-findings#281) and must not be declared as an"
-              + " unprotected path — remove or narrow this pattern.");
-    }
+    SecurityFilterChainSupport.rejectUnprotectedPathOverlap(unprotectedPaths, Set.of(LOGIN_URL));
   }
 
   /**
