@@ -27,10 +27,16 @@ that a victim who already has an authenticated browser session can be sent to
 an attacker-controlled page that auto-submits a cross-site
 `POST /login?username=attacker&password=...` form. Because `/login` was
 unconditionally exempt, Spring Security's `UsernamePasswordAuthenticationFilter`
-processed the forged credentials with no CSRF check, silently replacing the
-victim's session with one authenticated as the attacker. `SameSite=Lax` on the
-session cookie (CSL's default) does not stop this: a top-level form-POST
-navigation is exactly what `Lax` permits.
+processed the forged credentials with no CSRF check and authenticated the
+request as the attacker's account, returning a fresh `Set-Cookie:
+camunda-session=<new-attacker-session>`. `SameSite=Lax` on the session cookie
+(CSL's default) does not stop this: `SameSite` governs whether the browser
+*attaches* an existing cookie to an outgoing request, not whether it *accepts
+and stores* a `Set-Cookie` from the response — a `Set-Cookie` on a top-level
+navigation's response is honored by the browser regardless of the request's
+`SameSite` value or origin. The victim's browser overwrites its session cookie
+with the attacker's on the very response to the forged POST, whether or not
+its old cookie was attached to that POST in the first place.
 
 This is login CSRF (CWE-352): the attack's whole premise is that the victim
 *already has a session* by the time the forged request lands, which is

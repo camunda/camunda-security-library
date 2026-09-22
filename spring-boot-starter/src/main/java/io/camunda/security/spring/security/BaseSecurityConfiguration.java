@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.security;
 
+import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.LOGIN_URL;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_UNHANDLED;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_UNPROTECTED;
 
@@ -14,16 +15,19 @@ import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.cors.NoOpCorsConfigurationSource;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.Set;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.server.PathContainer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.util.pattern.PathPatternParser;
 
 /**
  * Always-on filter chains: unprotected paths (highest priority) and a catch-all deny chain (lowest
@@ -43,9 +47,11 @@ public class BaseSecurityConfiguration {
       final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
       final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers)
       throws Exception {
+    final var unprotectedPaths = pathPort.unprotectedPaths();
+    rejectLoginPathOverlap(unprotectedPaths);
     final var corsSource = corsSourceProvider.getIfAvailable(NoOpCorsConfigurationSource::new);
     final var filterChainBuilder =
-        http.securityMatcher(pathPort.unprotectedPaths().toArray(String[]::new))
+        http.securityMatcher(unprotectedPaths.toArray(String[]::new))
             .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
             .csrf(AbstractHttpConfigurer::disable)
             .formLogin(AbstractHttpConfigurer::disable)
@@ -59,6 +65,35 @@ public class BaseSecurityConfiguration {
         filterChainBuilder, securityHeadersCustomizers);
 
     return filterChainBuilder.build();
+  }
+
+  /**
+   * Fails fast if any declared unprotected path would also match the login endpoint. This chain is
+   * always ordered first ({@code ORDER_UNPROTECTED}) and unconditionally disables CSRF ({@code
+   * .csrf(AbstractHttpConfigurer::disable)}) for whatever it matches — Spring's {@code
+   * FilterChainProxy} routes a matching request here and never reaches the webapp chain that
+   * actually enforces CSRF on {@code /login} (see {@link
+   * SecurityFilterChainSupport#csrfEnforcedPaths}). An overlapping declaration would therefore
+   * silently defeat the unconditional login-CSRF protection ADR-0027 requires
+   * (camunda/security-testing-findings#281), which is why this is rejected at startup rather than
+   * silently tolerated or filtered out of the matcher.
+   */
+  private static void rejectLoginPathOverlap(final Set<String> unprotectedPaths) {
+    final var loginPath = PathContainer.parsePath(LOGIN_URL);
+    final var offendingPattern =
+        unprotectedPaths.stream()
+            .filter(pattern -> PathPatternParser.defaultInstance.parse(pattern).matches(loginPath))
+            .findFirst();
+    if (offendingPattern.isPresent()) {
+      throw new IllegalStateException(
+          "SecurityPathPort#unprotectedPaths() declares '"
+              + offendingPattern.get()
+              + "', which matches the login endpoint ("
+              + LOGIN_URL
+              + "). The login endpoint requires a valid CSRF token unconditionally"
+              + " (camunda/security-testing-findings#281) and must not be declared as an"
+              + " unprotected path — remove or narrow this pattern.");
+    }
   }
 
   /**
