@@ -122,10 +122,30 @@ class CsrfProtectionRequestMatcherTest {
   }
 
   @Test
-  void shouldPreferAllowedPathOverEnforcedPathOnConflict() {
+  void shouldPreferEnforcedPathOverAllowedPathOnConflict() {
+    // Enforcement must win: a host's ignored-path-patterns (or an over-broad unprotected path)
+    // must not be able to silently reopen the login-CSRF gap by matching the enforced path too.
     final var matcher = new CsrfProtectionRequestMatcher(Set.of("/login"), Set.of("/login"));
     final var request = createRequest("POST", "/login");
-    assertThat(matcher.matches(request)).isFalse();
+    assertThat(matcher.matches(request)).isTrue();
+  }
+
+  @Test
+  void shouldEnforceEvenWhenAWiderAllowedPatternAlsoMatches() {
+    // Regression for the exact bypass a reviewer flagged on PR #680: an allowed pattern
+    // (e.g. camunda.security.csrf.ignored-path-patterns) broad enough to also match the login
+    // path must not exempt it from enforcement.
+    final var matcher = new CsrfProtectionRequestMatcher(Set.of("/log*"), Set.of("/login"));
+    final var request = createRequest("POST", "/login");
+    assertThat(matcher.matches(request)).isTrue();
+  }
+
+  @Test
+  void shouldEnforceEvenWithSwaggerUiReferer() {
+    final var request = createRequest("POST", "/login");
+    request.setSession(new MockHttpSession());
+    request.addHeader("Referer", "http://localhost/swagger-ui/index.html");
+    assertThat(enforcingMatcher.matches(request)).isTrue();
   }
 
   private MockHttpServletRequest createRequest(final String method, final String servletPath) {

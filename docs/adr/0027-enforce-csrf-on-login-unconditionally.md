@@ -45,11 +45,11 @@ gap without breaking a legitimate, pre-session first login?
 browser that holds no session yet, not only once a session already exists.
 
 - `CsrfProtectionRequestMatcher` gains a second, independent path set,
-  `enforcedPaths`, checked after `allowedPaths` and the Swagger-UI carve-out
-  but before the generic "session exists" fallback: a match there returns
-  `true` immediately, regardless of session state. The single-arg constructor
-  is preserved (delegating to an empty `enforcedPaths` set) so existing
-  callers are unaffected.
+  `enforcedPaths`, checked immediately after the safe-methods check — ahead of
+  `allowedPaths` and the Swagger-UI carve-out, not after them: a match there
+  returns `true` immediately, regardless of session state, `allowedPaths`, or
+  the Swagger-UI referer. The single-arg constructor is preserved (delegating
+  to an empty `enforcedPaths` set) so existing callers are unaffected.
 - `SecurityFilterChainSupport#csrfAllowedPaths` no longer adds `LOGIN_URL` (or
   its scoped variant); a new `csrfEnforcedPaths` computes exactly the login
   path(s) and is passed to `CsrfProtectionRequestMatcher` alongside the
@@ -68,12 +68,18 @@ browser that holds no session yet, not only once a session already exists.
 
 ### Why these particular boundaries
 
-- **A second path set, not a removal + `else` branch on the existing one.**
-  `allowedPaths` (config-driven `ignored-path-patterns`, unprotected paths)
-  is checked *before* `enforcedPaths`, so a host that explicitly ignores a
-  pattern still wins — enforcement only fills the gap the old code left
-  for the login path specifically, it does not become un-overridable in a
-  way the rest of the matcher isn't.
+- **A second path set, checked ahead of `allowedPaths`, not a removal +
+  `else` branch on the existing one.** An earlier version of this change
+  checked `enforcedPaths` last, after `allowedPaths` and the Swagger-UI
+  carve-out — which meant a host's `camunda.security.csrf.ignored-path-patterns`
+  (or an over-broad `SecurityPathPort` unprotected path) could still match
+  `/login` and silently reopen the exact gap this ADR closes, since either
+  carve-out short-circuited to "no protection required" before enforcement
+  was ever considered. Caught in review on the PR implementing this ADR.
+  Enforcement is therefore checked first: nothing in `allowedPaths`, in
+  host-supplied `ignored-path-patterns`, or the Swagger-UI referer carve-out
+  can exempt an enforced path — only the safe-HTTP-methods check (GET, HEAD,
+  TRACE, OPTIONS) can, since those never mutate state regardless of path.
 - **`/logout` is left alone.** Forcing a logout cross-site has no
   confidentiality/integrity impact worth the added complexity of finding
   another token-issuance path for it; the reported finding and its impact

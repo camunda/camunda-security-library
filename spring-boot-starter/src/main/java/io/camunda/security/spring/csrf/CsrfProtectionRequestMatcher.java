@@ -23,14 +23,20 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
 
 /**
  * {@link RequestMatcher} that decides whether a request requires CSRF protection. Safe HTTP methods
- * (GET, HEAD, TRACE, OPTIONS) are always excluded, as are configured allowed paths and requests
- * originating from the Swagger UI. Everything else requires protection only once a session already
- * exists (a browser that never received a session cookie has nothing a cross-site request could
- * ride on) — except {@code enforcedPaths}, which require a valid CSRF token unconditionally, even
- * on the very first request of a session. The login endpoint is enforced this way: without it, an
- * attacker's cross-site {@code POST /login} would still be exempt on a browser that already holds
- * an authenticated session, silently swapping the victim's session for an attacker-controlled one
- * (camunda/security-testing-findings#281).
+ * (GET, HEAD, TRACE, OPTIONS) are always excluded. {@code enforcedPaths} are checked next and, for
+ * any other method, always require a valid CSRF token — even on the very first request of a
+ * session, and regardless of {@code allowedPaths} or the Swagger-UI carve-out below. The login
+ * endpoint is enforced this way: without it, an attacker's cross-site {@code POST /login} would
+ * still be exempt on a browser that already holds an authenticated session, silently swapping the
+ * victim's session for an attacker-controlled one (camunda/security-testing-findings#281).
+ * Enforcement is checked ahead of {@code allowedPaths} deliberately: a host's {@code
+ * camunda.security.csrf.ignored-path-patterns} (or a broadly-defined unprotected path from {@code
+ * SecurityPathPort}) must not be able to silently re-open that gap by happening to match the login
+ * path.
+ *
+ * <p>Everything else requires protection only once a session already exists (a browser that never
+ * received a session cookie has nothing a cross-site request could ride on) — configured allowed
+ * paths and requests originating from the Swagger UI are always excluded from that generic rule.
  *
  * <p>Allowed and enforced paths are matched via Spring Security's {@link PathPatternRequestMatcher}
  * (the default in Spring Security 7) rather than a hand-rolled regex, so ant-style patterns ({@code
@@ -68,16 +74,16 @@ public final class CsrfProtectionRequestMatcher implements RequestMatcher {
       return false;
     }
 
+    if (enforcedPathsMatcher.matches(request)) {
+      return true;
+    }
+
     if (allowedPathsMatcher.matches(request)) {
       return false;
     }
 
     if (isSwaggerUiReferer(request)) {
       return false;
-    }
-
-    if (enforcedPathsMatcher.matches(request)) {
-      return true;
     }
 
     return request.getSession(false) != null;
