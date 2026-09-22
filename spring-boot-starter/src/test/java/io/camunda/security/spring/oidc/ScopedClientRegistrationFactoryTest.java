@@ -425,6 +425,28 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
+  void shouldNotIncludeFlatBlockThatOnlySetsRedirectUriToMoveTheMountedCallback() {
+    // given a flat block that carries no client identity or endpoint of its own — its only
+    // purpose is to move the callback path the unscoped webapp chain mounts, while a
+    // providers.oidc entry supplies the actual registration (a documented, supported shape:
+    // "redirect-uri and the redirection endpoint" in the adopter guide)
+    final var auth = new AuthenticationConfiguration();
+    final var flat = new OidcConfiguration();
+    flat.setRedirectUri("{baseUrl}/custom-callback");
+    auth.setOidc(flat);
+    auth.getProviders()
+        .getOidc()
+        .put("foo", explicitEndpoints("foo-client", "https://foo.example.com"));
+
+    final var map = factory.flatten(auth);
+
+    // then the flat block contributes no registration of its own — only "foo" does — so building
+    // registrations from the map never demands a client-id nobody configured for it
+    assertThat(map).containsOnlyKeys("foo");
+    assertThatNoException().isThrownBy(() -> factory.createFromProviderMap(map));
+  }
+
+  @Test
   void shouldLetProviderOverwriteFlatInFlattenedMapOnCollision() {
     final var auth = new AuthenticationConfiguration();
     final var flat = explicitEndpoints("flat-client", "https://flat.example.com");

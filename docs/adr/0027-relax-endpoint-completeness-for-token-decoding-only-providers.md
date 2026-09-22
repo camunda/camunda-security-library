@@ -69,9 +69,18 @@ condition for which fields a provider block must supply:
   `ScopedWebappSecurityChainBuilder` and `ScopedClientRegistrationFactory` itself read those fields,
   both exclusively on the `ENFORCED` path.
 - **`flatten()`**'s gate for including the flat `oidc.*` block changes from
-  `StringUtils.hasText(clientId)` to `OidcConfiguration#isAnyPropertySet()`, so a flat block
-  configured purely for token decoding (for example, only `jwk-set-uri`) is recognized instead of
-  silently dropped. `providers.oidc.<id>.*` entries were never subject to this gate — they are
+  `StringUtils.hasText(clientId)` to a new private predicate, `namesAClientOrAnEndpoint` — true when
+  the block sets `client-id`, `issuer-uri`, `authorization-uri`, `token-uri` or `jwk-set-uri` — so a
+  flat block configured purely for token decoding (for example, only `jwk-set-uri`) is recognized
+  instead of silently dropped. `OidcConfiguration#isAnyPropertySet()` was tried first and reverted:
+  it is `true` for a flat block that sets only a callback- or logout-related property (`redirect-uri`,
+  `post-logout-redirect-uri`), and such a block is a documented, supported shape in its own right — it
+  moves the callback path the unscoped webapp chain mounts while `providers.oidc.<id>` entries supply
+  the actual registrations (see "redirect-uri and the redirection endpoint" in the adopter guide).
+  Gating on `isAnyPropertySet()` made that redirect-only block eligible for a registration of its own,
+  and `LazyClientRegistrationRepository`'s eager, constructor-time validation then rejected it for a
+  missing `client-id` nobody configured for it — turning a supported, existing configuration into a
+  startup failure. `providers.oidc.<id>.*` entries were never subject to either gate — they are
   included in the provider map unconditionally already.
 - A related fix travels with this change: `requireUsableScopes`'s probe registration — used only to
   validate that a configured scope contains no character a scope token disallows — stopped threading
@@ -98,11 +107,13 @@ condition for which fields a provider block must supply:
   provider — it must be able to locate its keys somehow. Only the two properties that exist for the
   login flow (`authorization-uri`, `token-uri`) stop being required; the property token decoding
   itself needs stays mandatory, with the same named, actionable error shape as before.
-- **Changing `flatten()`'s gate to `isAnyPropertySet()` rather than leaving it as `hasText(clientId)`**
-  because otherwise the flag-off-client-id relaxation would be invisible for the flat single-provider
-  config shape: a flat block with only `jwk-set-uri` set would be silently excluded from the provider
-  map before any validation ran, producing a confusing "at least one OIDC provider" error instead of
-  the intended, working configuration.
+- **Changing `flatten()`'s gate to `namesAClientOrAnEndpoint` rather than leaving it as
+  `hasText(clientId)`** because otherwise the client-id relaxation would be invisible for the flat
+  single-provider config shape: a flat block with only `jwk-set-uri` set would be silently excluded
+  from the provider map before any validation ran, producing a confusing "at least one OIDC provider"
+  error instead of the intended, working configuration. The gate deliberately does not use
+  `isAnyPropertySet()` — see "Why these particular boundaries" above for the regression that choice
+  caused and why a narrower, purpose-built predicate replaced it.
 
 ## Consequences
 

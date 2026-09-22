@@ -284,11 +284,15 @@ public final class ScopedClientRegistrationFactory {
   /**
    * Flattens an {@link AuthenticationConfiguration} into a provider map keyed by registrationId.
    * The flat {@code oidc.*} block contributes one entry under its {@link
-   * OidcConfiguration#getRegistrationId()} when {@link OidcConfiguration#isAnyPropertySet()} —
-   * {@code client-id} is not required, so a block configured for token decoding only (for example
-   * just {@code jwk-set-uri}) is still recognized as configured; provider entries from {@code
-   * providers.oidc.*} are put on top, so a colliding provider id overwrites the flat entry. This is
-   * the single authoritative implementation of the merge rule; {@link
+   * OidcConfiguration#getRegistrationId()} when {@link #namesAClientOrAnEndpoint} — {@code
+   * client-id} is not required on its own, so a block configured for token decoding only (for
+   * example just {@code jwk-set-uri}) is still recognized as configured. A flat block that sets
+   * only a callback- or logout-related property (for example {@code redirect-uri}, to move the
+   * callback path the unscoped webapp chain mounts, while {@code providers.oidc.*} entries supply
+   * the actual registrations — see "redirect-uri and the redirection endpoint" in the adopter
+   * guide) contributes no registration of its own. Provider entries from {@code providers.oidc.*}
+   * are put on top, so a colliding provider id overwrites the flat entry. This is the single
+   * authoritative implementation of the merge rule; {@link
    * OidcAuthenticationConfigurationRepository#initializeProviders} delegates here.
    *
    * @param authentication the authentication configuration to flatten; must not be {@code null}
@@ -298,11 +302,28 @@ public final class ScopedClientRegistrationFactory {
     Objects.requireNonNull(authentication, "authentication must not be null");
     final var flat = authentication.getOidc();
     final Map<String, OidcConfiguration> result = new LinkedHashMap<>();
-    if (flat.isAnyPropertySet()) {
+    if (namesAClientOrAnEndpoint(flat)) {
       result.put(flat.getRegistrationId(), flat);
     }
     result.putAll(authentication.getProviders().getOidc());
     return result;
+  }
+
+  /**
+   * Whether {@code oidc} names something a {@link ClientRegistration} is built from: a client
+   * identity, or a location to fetch keys from or discover other endpoints at. A callback- or
+   * logout-only property ({@code redirect-uri}, {@code post-logout-redirect-uri}, {@code
+   * end-session-endpoint-uri}, and the rest {@link OidcConfiguration#isAnyPropertySet()} also
+   * covers) does not, by itself, mean the block wants a registration of its own — it may only be
+   * moving where a chain mounts an endpoint, or where it sends a request derived from a
+   * registration a provider entry supplies instead.
+   */
+  private static boolean namesAClientOrAnEndpoint(final OidcConfiguration oidc) {
+    return StringUtils.hasText(oidc.getClientId())
+        || StringUtils.hasText(oidc.getIssuerUri())
+        || StringUtils.hasText(oidc.getAuthorizationUri())
+        || StringUtils.hasText(oidc.getTokenUri())
+        || StringUtils.hasText(oidc.getJwkSetUri());
   }
 
   /**
