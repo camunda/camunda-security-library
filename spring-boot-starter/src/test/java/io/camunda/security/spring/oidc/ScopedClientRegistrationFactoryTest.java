@@ -13,6 +13,10 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import jakarta.servlet.http.HttpServletRequest;
@@ -29,6 +33,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
@@ -769,6 +774,24 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
+  void shouldNotWarnWhenBuildingAJwkSetUriOnlyRegistrationWithoutLoginRoutes() {
+    // given the same decode-only provider — its grant type deliberately does not case-insensitively
+    // match any of Spring's predefined AuthorizationGrantType constants, so
+    // ClientRegistration.Builder#validateAuthorizationGrantTypes never logs its near-miss WARN for
+    // it
+    final var oidc = OidcConfiguration.builder().jwkSetUri("https://idp.example.com/jwks").build();
+    final var appender = captureClientRegistrationBuilderLogs();
+
+    try {
+      factory.createWithoutLoginRoutes(Map.of("oidc", oidc));
+    } finally {
+      releaseClientRegistrationBuilderLogs(appender);
+    }
+
+    assertThat(appender.list).noneMatch(event -> event.getLevel() == Level.WARN);
+  }
+
+  @Test
   void shouldIgnoreAMalformedUserInfoUriOfAProviderThatDisabledUserInfo() {
     // given a stale user-info-uri on a provider whose UserInfo lookup is switched off
     final var oidc = explicitEndpointsWith(b -> b.userInfoUri("not a URL").userInfoEnabled(false));
@@ -1452,6 +1475,19 @@ class ScopedClientRegistrationFactoryTest {
         .hasMessageNotContaining("secret")
         .hasMessageNotContaining("t=abc")
         .hasMessageContaining("accounts.example.com");
+  }
+
+  private static ListAppender<ILoggingEvent> captureClientRegistrationBuilderLogs() {
+    final var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    ((Logger) LoggerFactory.getLogger(ClientRegistration.Builder.class)).addAppender(appender);
+    return appender;
+  }
+
+  private static void releaseClientRegistrationBuilderLogs(
+      final ListAppender<ILoggingEvent> appender) {
+    ((Logger) LoggerFactory.getLogger(ClientRegistration.Builder.class)).detachAppender(appender);
+    appender.stop();
   }
 
   private static OidcConfiguration explicitEndpointsWith(

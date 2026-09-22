@@ -125,11 +125,13 @@ condition for which fields a provider block must supply:
   outside this library (`RESOURCE_SERVER_ONLY_GRANT_TYPE`). Anything that inspects
   `ClientRegistration.getAuthorizationGrantType()` outside the classes this ADR audited would see an
   unfamiliar value; this is accepted because no such code was found in the codebase or expected of
-  hosts, since the object is never exposed as a bean adopters wire login flows against.
-  `validateAuthorizationGrantTypes()` will log a Spring `WARN` about it not matching a
-  pre-defined constant on every such registration — an accepted, informational side effect.
-  `getRedirectUri()` remains set to whatever `resolveRedirectUri` computes even for `SKIPPED`
-  providers, since nothing downstream reads it there; it is not cleared for symmetry.
+  hosts, since the object is never exposed as a bean adopters wire login flows against. This does
+  not produce a Spring `WARN`: `Builder#validateAuthorizationGrantTypes()` only logs when a grant
+  type's *value* case-insensitively matches one of Spring's predefined constants without `.equals()`
+  matching it (a near-miss, e.g. wrong casing on a real grant type) — the marker's URN value matches
+  none of them, so the loop that would log never fires for it. `getRedirectUri()` remains set to
+  whatever `resolveRedirectUri` computes even for `SKIPPED` providers, since nothing downstream reads
+  it there; it is not cleared for symmetry.
 - CSL still builds a full `ClientRegistration` object for a resource-server-only provider, rather
   than adopting Spring's own no-client resource-server model
   (`NimbusJwtDecoder.withJwkSetUri(...)`/`JwtDecoders.fromIssuerLocation(...)`) directly. This keeps
