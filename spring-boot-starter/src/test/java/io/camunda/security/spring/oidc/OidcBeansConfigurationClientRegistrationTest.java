@@ -139,7 +139,10 @@ class OidcBeansConfigurationClientRegistrationTest {
   }
 
   @Test
-  void shouldIgnoreFlatBlockWhenClientIdIsAbsent() {
+  void shouldFailFastWhenFlatBlockConfiguresEndpointsButNoClientId() {
+    // A flat block that configures real endpoints is a configured block, not an absent one — a
+    // missing client-id on it is now reported as the actionable startup failure it always was for
+    // a providers.oidc.<id> entry, rather than the block being silently dropped.
     runner
         .withPropertyValues(
             "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
@@ -152,9 +155,12 @@ class OidcBeansConfigurationClientRegistrationTest {
             "camunda.security.authentication.providers.oidc.foo.jwk-set-uri=https://foo.example.com/jwks")
         .run(
             ctx -> {
-              final var repository = ctx.getBean(ClientRegistrationRepository.class);
-              assertThat(repository.findByRegistrationId("foo")).isNotNull();
-              assertThat(repository.findByRegistrationId("oidc")).isNull();
+              assertThat(ctx).hasFailed();
+              assertThat(ctx.getStartupFailure())
+                  .rootCause()
+                  .isInstanceOf(IllegalStateException.class)
+                  .hasMessageContaining("client-id")
+                  .hasMessageContaining("oidc.client-id");
             });
   }
 

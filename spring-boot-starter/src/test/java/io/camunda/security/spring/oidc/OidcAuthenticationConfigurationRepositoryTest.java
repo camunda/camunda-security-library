@@ -50,15 +50,30 @@ class OidcAuthenticationConfigurationRepositoryTest {
   }
 
   @Test
-  void shouldNotIncludeFlatBlockWhenClientIdBlank() {
-    final var oidc = new OidcConfiguration();
-    oidc.setClientId("");
-    properties.getAuthentication().setOidc(oidc);
+  void shouldNotIncludeFlatBlockWhenNoPropertyIsSet() {
+    // A default, untouched flat block — nothing to flatten.
+    properties.getAuthentication().setOidc(new OidcConfiguration());
 
     final var repo =
         new OidcAuthenticationConfigurationRepository(
             properties, new ScopedClientRegistrationFactory());
     assertThat(repo.getOidcAuthenticationConfigurations()).isEmpty();
+  }
+
+  @Test
+  void shouldIncludeFlatBlockConfiguredForApiOnlyAccessWithNoClientId() {
+    // A flat block configured for token decoding only — no client-id, no login flow.
+    final var oidc = new OidcConfiguration();
+    oidc.setJwkSetUri("https://issuer1.example.com/jwks");
+    properties.getAuthentication().setOidc(oidc);
+
+    final var repo =
+        new OidcAuthenticationConfigurationRepository(
+            properties, new ScopedClientRegistrationFactory());
+
+    assertThat(repo.getOidcAuthenticationConfigurations()).containsOnlyKeys("oidc");
+    assertThat(repo.getOidcAuthenticationConfigurations().get("oidc").getJwkSetUri())
+        .isEqualTo("https://issuer1.example.com/jwks");
   }
 
   @Test

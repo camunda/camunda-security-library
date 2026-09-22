@@ -406,6 +406,20 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
+  void shouldIncludeFlatBlockInFlattenedMapWhenOnlyJwkSetUriIsSet() {
+    // given a flat block configured for API-only access, with no client-id
+    final var auth = new AuthenticationConfiguration();
+    final var flat = OidcConfiguration.builder().jwkSetUri("https://idp.example.com/jwks").build();
+    flat.setRegistrationId("oidc");
+    auth.setOidc(flat);
+
+    final var map = factory.flatten(auth);
+
+    assertThat(map).containsOnlyKeys("oidc");
+    assertThat(map.get("oidc").getJwkSetUri()).isEqualTo("https://idp.example.com/jwks");
+  }
+
+  @Test
   void shouldLetProviderOverwriteFlatInFlattenedMapOnCollision() {
     final var auth = new AuthenticationConfiguration();
     final var flat = explicitEndpoints("flat-client", "https://flat.example.com");
@@ -724,6 +738,34 @@ class ScopedClientRegistrationFactoryTest {
     assertThatThrownBy(() -> factory.createFromProviderMap(providers))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("end-session-endpoint-uri");
+  }
+
+  @Test
+  void shouldBuildWithoutLoginRoutesGivenOnlyAJwkSetUri() {
+    // given a provider with no client-id, authorization-uri, token-uri or redirect-uri — none of
+    // which token decoding uses
+    final var oidc = OidcConfiguration.builder().jwkSetUri("https://idp.example.com/jwks").build();
+
+    // when a caller derives no login route from it
+    // then the fields a login flow would need are no reason to refuse to start, while a login
+    // path still rejects it for lacking them
+    assertThatNoException()
+        .isThrownBy(() -> factory.createWithoutLoginRoutes(Map.of("oidc", oidc)));
+    assertThatThrownBy(() -> factory.createFromProviderMap(Map.of("oidc", oidc)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("client-id");
+  }
+
+  @Test
+  void shouldRejectNeitherIssuerNorJwkSetUriWhenBuildingWithoutLoginRoutes() {
+    // given a provider with no client-id and no way to locate its keys either
+    final var oidc = OidcConfiguration.builder().build();
+
+    // when / then completeness is still required — just narrower than the login-route path
+    assertThatThrownBy(() -> factory.createWithoutLoginRoutes(Map.of("oidc", oidc)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("issuer-uri")
+        .hasMessageContaining("jwk-set-uri");
   }
 
   @Test

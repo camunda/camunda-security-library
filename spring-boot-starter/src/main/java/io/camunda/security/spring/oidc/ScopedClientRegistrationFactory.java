@@ -45,12 +45,31 @@ import org.springframework.web.util.pattern.PatternParseException;
  * fetch, not ten. A document is kept only if {@link ClientRegistrations#fromOidcConfiguration} can
  * read it back (see {@link #cacheDiscoveryDocument}); if it cannot, that issuer goes on fetching
  * once per registration.
+ *
+ * <p><b>Endpoint completeness for token-decoding-only providers.</b> See <a
+ * href="https://github.com/camunda/camunda-security-library/blob/main/docs/adr/0027-relax-endpoint-completeness-for-token-decoding-only-providers.md">ADR-0027</a>
+ * for why a caller that never derives a browser login route from a provider block ({@link
+ * LoginRouteChecks#SKIPPED}) requires only {@code issuer-uri} or {@code jwk-set-uri}, not {@code
+ * client-id}, {@code authorization-uri} or {@code token-uri}.
  */
 public final class ScopedClientRegistrationFactory {
 
   private static final Logger LOG = LoggerFactory.getLogger(ScopedClientRegistrationFactory.class);
 
   private static final String BASE_URL_PLACEHOLDER = "{baseUrl}";
+
+  /**
+   * The grant type set on a {@link ClientRegistration} built for a caller that decodes tokens only
+   * ({@link LoginRouteChecks#SKIPPED}) and never runs a client flow. {@link
+   * ClientRegistration.Builder#build()} only enforces {@code client-id}, {@code redirect-uri},
+   * {@code authorization-uri} and {@code token-uri} for {@link
+   * AuthorizationGrantType#AUTHORIZATION_CODE} and {@link
+   * AuthorizationGrantType#CLIENT_CREDENTIALS} — none of which token decoding needs. This value
+   * deliberately matches neither, so {@code build()} skips that validation; it is otherwise never
+   * read.
+   */
+  private static final AuthorizationGrantType RESOURCE_SERVER_ONLY_GRANT_TYPE =
+      new AuthorizationGrantType("urn:io.camunda:csl:oauth2-grant-type:resource-server-only");
 
   /**
    * The URI template variables Spring populates when it expands {@code post_logout_redirect_uri}.
@@ -265,9 +284,11 @@ public final class ScopedClientRegistrationFactory {
   /**
    * Flattens an {@link AuthenticationConfiguration} into a provider map keyed by registrationId.
    * The flat {@code oidc.*} block contributes one entry under its {@link
-   * OidcConfiguration#getRegistrationId()} when {@code clientId} is set; provider entries from
-   * {@code providers.oidc.*} are put on top, so a colliding provider id overwrites the flat entry.
-   * This is the single authoritative implementation of the merge rule; {@link
+   * OidcConfiguration#getRegistrationId()} when {@link OidcConfiguration#isAnyPropertySet()} —
+   * {@code client-id} is not required, so a block configured for token decoding only (for example
+   * just {@code jwk-set-uri}) is still recognized as configured; provider entries from {@code
+   * providers.oidc.*} are put on top, so a colliding provider id overwrites the flat entry. This is
+   * the single authoritative implementation of the merge rule; {@link
    * OidcAuthenticationConfigurationRepository#initializeProviders} delegates here.
    *
    * @param authentication the authentication configuration to flatten; must not be {@code null}
@@ -277,7 +298,7 @@ public final class ScopedClientRegistrationFactory {
     Objects.requireNonNull(authentication, "authentication must not be null");
     final var flat = authentication.getOidc();
     final Map<String, OidcConfiguration> result = new LinkedHashMap<>();
-    if (StringUtils.hasText(flat.getClientId())) {
+    if (flat.isAnyPropertySet()) {
       result.put(flat.getRegistrationId(), flat);
     }
     result.putAll(authentication.getProviders().getOidc());
@@ -343,7 +364,11 @@ public final class ScopedClientRegistrationFactory {
           if (loginRouteChecks == LoginRouteChecks.ENFORCED) {
             requireRegistrationIdAddressableByTheLoginRoute(registrationId);
           }
-          requireClientId(registrationId, oidc);
+          if (loginRouteChecks == LoginRouteChecks.ENFORCED) {
+            // A caller that mounts no client flow — token decoding only — never dereferences
+            // client-id, so a blank one is no reason to refuse to start there.
+            requireClientId(registrationId, oidc);
+          }
           requireClientAuthenticationMethod(registrationId, oidc);
           requireUsableScopes(registrationId, oidc);
           requireAbsoluteEndpointUrls(registrationId, oidc, loginRouteChecks);
@@ -353,7 +378,7 @@ public final class ScopedClientRegistrationFactory {
             // sole consumer of this value — the same reasoning that gates end-session-endpoint-uri.
             requirePostLogoutRedirectUri(registrationId, oidc);
           }
-          requireEndpointConfiguration(registrationId, oidc);
+          requireEndpointConfiguration(registrationId, oidc, loginRouteChecks);
           resolveRedirectUri(registrationId, oidc, scopedRedirectUriPath, loginRouteChecks);
         });
   }
@@ -457,8 +482,11 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * {@link ClientRegistration.Builder#build()} rejects a blank client-id. This check only moves
-   * that failure to startup, away from the first request that resolves the registration.
+   * For a caller that mounts the browser login chain, {@link ClientRegistration.Builder#build()}
+   * rejects a blank client-id too, via {@code AuthorizationGrantType.AUTHORIZATION_CODE}'s own
+   * validation — this check only moves that failure to startup, away from the first request that
+   * resolves the registration. A caller that decodes tokens only never runs this check at all; see
+   * {@code RESOURCE_SERVER_ONLY_GRANT_TYPE}.
    */
   private static void requireClientId(final String registrationId, final OidcConfiguration oidc) {
     if (!StringUtils.hasText(oidc.getClientId())) {
@@ -509,7 +537,9 @@ public final class ScopedClientRegistrationFactory {
     }
     try {
       ClientRegistration.withRegistrationId(registrationId)
-          .clientId(oidc.getClientId())
+          // A probe value: the real client-id may be blank for a caller that decodes tokens only,
+          // and this check is about the scope characters, not the client-id.
+          .clientId("probe-client")
           .redirectUri(BASE_URL_PLACEHOLDER)
           .authorizationUri("https://probe.invalid/auth")
           .tokenUri("https://probe.invalid/token")
@@ -952,19 +982,43 @@ public final class ScopedClientRegistrationFactory {
         + ".";
   }
 
+  /**
+   * A caller that mounts the browser login chain runs the authorization_code flow, which needs
+   * {@code authorization-uri} and {@code token-uri} — so that pair, or {@code issuer-uri} to
+   * discover them, is required. A caller that decodes tokens only never runs that flow: {@code
+   * jwk-set-uri} alone is enough to verify a signature, so {@code authorization-uri} and {@code
+   * token-uri} are not required from it.
+   */
   private static void requireEndpointConfiguration(
-      final String registrationId, final OidcConfiguration oidc) {
-    if (StringUtils.hasText(oidc.getIssuerUri())
-        || (StringUtils.hasText(oidc.getAuthorizationUri())
-            && StringUtils.hasText(oidc.getTokenUri())
-            && StringUtils.hasText(oidc.getJwkSetUri()))) {
+      final String registrationId,
+      final OidcConfiguration oidc,
+      final LoginRouteChecks loginRouteChecks) {
+    if (StringUtils.hasText(oidc.getIssuerUri())) {
+      return;
+    }
+    if (loginRouteChecks == LoginRouteChecks.ENFORCED) {
+      if (StringUtils.hasText(oidc.getAuthorizationUri())
+          && StringUtils.hasText(oidc.getTokenUri())
+          && StringUtils.hasText(oidc.getJwkSetUri())) {
+        return;
+      }
+      throw new IllegalStateException(
+          "Cannot build ClientRegistration '"
+              + registrationId
+              + "': set issuer-uri, or all of authorization-uri, token-uri, and jwk-set-uri,"
+              + " under camunda.security.authentication.oidc.* (flat) or"
+              + " camunda.security.authentication.providers.oidc."
+              + registrationId
+              + ".*");
+    }
+    if (StringUtils.hasText(oidc.getJwkSetUri())) {
       return;
     }
     throw new IllegalStateException(
         "Cannot build ClientRegistration '"
             + registrationId
-            + "': set issuer-uri, or all of authorization-uri, token-uri, and jwk-set-uri,"
-            + " under camunda.security.authentication.oidc.* (flat) or"
+            + "': set issuer-uri or jwk-set-uri, under"
+            + " camunda.security.authentication.oidc.* (flat) or"
             + " camunda.security.authentication.providers.oidc."
             + registrationId
             + ".*");
@@ -1006,13 +1060,16 @@ public final class ScopedClientRegistrationFactory {
     final var redirectUri =
         resolveRedirectUri(registrationId, oidc, scopedRedirectUriPath, loginRouteChecks);
     final ClientRegistration.Builder builder =
-        clientRegistrationBuilder(registrationId, oidc)
+        clientRegistrationBuilder(registrationId, oidc, loginRouteChecks)
             .registrationId(registrationId)
             .clientId(oidc.getClientId())
             .clientSecret(oidc.getClientSecret())
             .clientAuthenticationMethod(
                 new ClientAuthenticationMethod(oidc.getClientAuthenticationMethod()))
-            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .authorizationGrantType(
+                loginRouteChecks == LoginRouteChecks.ENFORCED
+                    ? AuthorizationGrantType.AUTHORIZATION_CODE
+                    : RESOURCE_SERVER_ONLY_GRANT_TYPE)
             .redirectUri(redirectUri)
             .scope(oidc.getScope());
     if (StringUtils.hasText(oidc.getClientName())) {
@@ -1243,14 +1300,16 @@ public final class ScopedClientRegistrationFactory {
    * camunda/camunda-security-library#233.
    */
   private ClientRegistration.Builder clientRegistrationBuilder(
-      final String registrationId, final OidcConfiguration oidc) {
+      final String registrationId,
+      final OidcConfiguration oidc,
+      final LoginRouteChecks loginRouteChecks) {
     final boolean hasIssuer = StringUtils.hasText(oidc.getIssuerUri());
     final ClientRegistration.Builder builder =
         hasIssuer
             ? discoveredBuilder(oidc.getIssuerUri()).registrationId(registrationId)
             : ClientRegistration.withRegistrationId(registrationId);
 
-    requireEndpointConfiguration(registrationId, oidc);
+    requireEndpointConfiguration(registrationId, oidc, loginRouteChecks);
 
     return applyExplicitEndpointOverrides(builder, oidc);
   }
