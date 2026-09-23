@@ -404,15 +404,13 @@ public class OidcConfiguration {
 
   /**
    * Whether a failed UserInfo fetch must fail login instead of degrading to ID-token-only claims.
-   * Defaults to {@code false} — the default {@link
-   * io.camunda.security.spring.oidc.FailSoftOidcUserService} degrades on a transport or
-   * audience-related failure and logs a WARN. Set {@code true} for a provider whose
-   * authorization-relevant claims (e.g. groups) are only ever available via UserInfo, so a silent
-   * degradation would be worse than a loud login failure.
+   * Defaults to {@code false}: {@link io.camunda.security.spring.oidc.FailSoftOidcUserService}
+   * degrades on a transport or audience failure and logs a WARN. Set {@code true} for a provider
+   * whose authorization-relevant claims (e.g. groups) are only available via UserInfo.
    *
-   * <p>Has no effect when {@link #isUserInfoEnabled()} is {@code false}: with the fetch disabled,
-   * login never attempts the call this flag is meant to make mandatory. {@code
-   * ScopedClientRegistrationFactory} rejects that combination at startup.
+   * <p>Has no effect when {@link #isUserInfoEnabled()} is {@code false} — login then never attempts
+   * the call this flag would make mandatory. {@code ScopedClientRegistrationFactory} rejects that
+   * combination at startup.
    */
   public boolean isUserInfoRequired() {
     return userInfoRequired;

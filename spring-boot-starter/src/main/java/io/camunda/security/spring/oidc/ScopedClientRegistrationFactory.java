@@ -972,12 +972,11 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * A provider cannot both disable the UserInfo fetch and require it to succeed: with {@code
-   * user-info-enabled=false}, {@code userInfoUri} is nulled on the built registration and login
-   * never attempts the call {@code user-info-required} is meant to make mandatory. Rejecting this
-   * combination at startup mirrors {@link CachingOidcClaimsProvider#forConfiguredMappings} failing
-   * fast on an analogous config-mismatch (ADR-0007) rather than letting the flag silently do
-   * nothing.
+   * A provider cannot both disable the UserInfo fetch ({@code user-info-enabled=false}, which nulls
+   * {@code userInfoUri}) and require it to succeed. Rejecting this combination at startup, rather
+   * than letting the flag silently do nothing, mirrors {@link
+   * CachingOidcClaimsProvider#forConfiguredMappings}'s fail-fast policy for the analogous
+   * config-mismatch.
    */
   private static void requireUserInfoRequiredConsistency(
       final String registrationId, final OidcConfiguration oidc) {

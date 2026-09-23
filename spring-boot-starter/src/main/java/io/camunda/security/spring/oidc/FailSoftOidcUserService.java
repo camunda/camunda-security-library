@@ -20,49 +20,34 @@ import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 
 /**
- * Default {@link OidcUserService} that degrades to ID-token-only claims when the IdP's {@code
- * /userinfo} endpoint rejects the app's access token, instead of failing login. See ADR-0028.
+ * Default {@link OidcUserService} that degrades to ID-token-only claims when the {@code /userinfo}
+ * call fails, instead of failing login. See ADR-0028.
  *
- * <p>Several IdPs issue an access token whose audience {@code /userinfo} does not accept, even
- * though the same token is exactly what Camunda needs for local JWT validation — Microsoft Entra
- * with the documented {@code <client-id>/.default} scope always, Auth0/Okta/PingFederate in common
- * audience-bound configurations. The delegate can also fail for a plain transport error, or a
- * malformed/non-JSON response body (e.g. an HTML error page from a misconfigured gateway in front
- * of the IdP) — {@code DefaultOAuth2UserService} maps all three to the same error code (see below),
- * and none of them yields any claims to validate, so none of them can be the OIDC S:5.3.2 violation
- * handled separately below. Spring Security's stock {@link OidcUserService} treats all of these as
- * fatal. This subclass mirrors the fail-open policy {@link CachingOidcClaimsProvider} already
- * applies on the resource-server augmentation path (ADR-0007): attempt the call, use it when it
- * succeeds, log a WARN and continue with ID-token-only claims when it fails.
+ * <p>Several IdPs reject the access token at {@code /userinfo} even though it's valid for local JWT
+ * validation — Microsoft Entra with the documented {@code <client-id>/.default} scope always,
+ * Auth0/Okta/PingFederate in common audience-bound setups. A transport error or malformed response
+ * fails the same way. {@code DefaultOAuth2UserService} maps all of these to the same {@code
+ * invalid_user_info_response} error code that {@link OidcUserService#loadUser} also uses for its
+ * OIDC S:5.3.2 sub-mismatch check, so the two cases can't be told apart by error code. Only the
+ * delegate fetch call is wrapped, in a private marker exception, making them structurally
+ * distinguishable instead: the sub-mismatch check runs after the delegate returns, so it can never
+ * be caught here.
  *
- * <p>The distinction between "the fetch itself failed" (fail-soft) and "the fetch succeeded but the
- * response fails OIDC S:5.3.2 sub validation" (still fatal — a token-substitution defense) cannot
- * be made by inspecting the caught {@link OAuth2AuthenticationException}: Spring Security gives
- * both the identical {@code invalid_user_info_response} error code. So only the delegate fetch call
- * is wrapped; a failure there is translated into a private marker exception, making it structurally
- * — not heuristically — distinguishable from the unwrapped sub-validation failure that {@link
- * OidcUserService#loadUser} throws afterward on a successful fetch.
+ * <p>A provider that cannot tolerate missing UserInfo claims (e.g. groups sourced only from
+ * UserInfo) sets {@code user-info-required=true}; this class then re-throws instead of degrading.
+ * This applies on token refresh too: Spring wires this bean into {@code
+ * OidcAuthorizedClientRefreshedEventListener}, so without the flag a UserInfo failure there would
+ * silently narrow a live session's claims instead of failing the refresh.
  *
- * <p>A provider that cannot tolerate missing UserInfo claims (for example, groups sourced only from
- * UserInfo) sets the per-provider {@code user-info-required} property; this class then re-throws
- * instead of degrading.
- *
- * <p>Logged at WARN without the original throwable: Spring Security's {@code OAuth2LoginConfigurer}
- * wires this same bean into {@code OidcAuthorizedClientRefreshedEventListener}, so for a
- * structurally-mismatched IdP this fires not just at login but on every access-token refresh — a
- * full stack trace there is log noise. The cause is still available at DEBUG. The same refresh-path
- * invocation is also why a provider whose authorization-relevant claims are available only via
- * UserInfo should set {@code user-info-required=true}: otherwise a transient fetch failure during a
- * live session's token refresh, not just at login, silently narrows that session to ID-token-only
- * claims instead of failing the refresh.
+ * <p>WARN logs omit the throwable (registration id + error code only) since this can fire on every
+ * refresh for a structurally broken IdP; the cause is at DEBUG.
  */
 public final class FailSoftOidcUserService extends OidcUserService {
 
   /**
-   * {@link ClientRegistration} provider-metadata key carrying the per-provider {@code
+   * {@link ClientRegistration} provider-metadata key for the per-provider {@code
    * user-info-required} flag, set by {@link ScopedClientRegistrationFactory#mergeProviderMetadata}.
-   * Absent — as for a registration built outside CSL, e.g. a host-supplied {@code
-   * ClientRegistrationRepository} — is treated as {@code false}: fail-soft is the default posture.
+   * Absent (e.g. a registration built outside CSL) is treated as {@code false}.
    */
   public static final String USER_INFO_REQUIRED_METADATA_KEY =
       "camunda.security.oidc.userInfoRequired";
@@ -70,11 +55,9 @@ public final class FailSoftOidcUserService extends OidcUserService {
   private static final Logger LOG = LoggerFactory.getLogger(FailSoftOidcUserService.class);
 
   /**
-   * Reproduces exactly what {@code user-info-enabled=false} already produces (ADR-0007).
-   * Deliberately a separate instance from {@code this}: it must always skip the UserInfo call,
-   * while {@code this} must attempt it on every request. Reusing {@code this} for the fallback (by
-   * flipping {@code retrieveUserInfo} on it directly) would either double the UserInfo call or
-   * silently disable it on the happy path.
+   * Reproduces exactly what {@code user-info-enabled=false} produces (ADR-0007). A separate
+   * instance from {@code this} on purpose: flipping {@code retrieveUserInfo} on {@code this}
+   * instead would double the UserInfo call or disable it on the happy path.
    */
   private final OidcUserService idTokenOnlyFallback = newIdTokenOnlyService();
 
@@ -130,14 +113,12 @@ public final class FailSoftOidcUserService extends OidcUserService {
   }
 
   /**
-   * Marks a failure of the wrapped UserInfo fetch, distinct from the unwrapped sub-validation
-   * {@link OAuth2AuthenticationException} that {@link OidcUserService#loadUser} throws afterward on
-   * a successful fetch. Private on purpose: nothing outside this class constructs or catches it,
-   * and no instance of it may ever leave {@link #loadUser}: the {@code user-info-required=true}
-   * branch above rethrows {@link #original}, never {@code this}. A plain {@code RuntimeException} —
-   * not an {@link OAuth2AuthenticationException} subclass — on purpose: that keeps this marker
-   * impossible to mistake for, or accidentally catch as, the exception type whose ambiguity
-   * motivated wrapping the delegate in the first place.
+   * Marks a failed UserInfo fetch, distinct from the sub-validation {@link
+   * OAuth2AuthenticationException} that {@link OidcUserService#loadUser} throws afterward on a
+   * successful fetch. Never escapes {@link #loadUser}: the {@code user-info-required=true} branch
+   * rethrows {@link #original}, never {@code this}. Extends {@code RuntimeException}, not {@link
+   * OAuth2AuthenticationException}, so it can't be mistaken for the type whose ambiguity motivated
+   * wrapping the delegate in the first place.
    */
   private static final class UserInfoFetchFailedException extends RuntimeException {
     private final OAuth2AuthenticationException original;
