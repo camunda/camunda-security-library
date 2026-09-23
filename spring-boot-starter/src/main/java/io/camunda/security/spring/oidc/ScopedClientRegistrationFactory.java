@@ -354,7 +354,12 @@ public final class ScopedClientRegistrationFactory {
             requirePostLogoutRedirectUri(registrationId, oidc);
           }
           requireEndpointConfiguration(registrationId, oidc);
-          requireUserInfoRequiredConsistency(registrationId, oidc);
+          if (loginRouteChecks == LoginRouteChecks.ENFORCED) {
+            // user-info-required only ever affects FailSoftOidcUserService on the browser login
+            // chain — a bearer-only scope never constructs one, so the flag is harmless there
+            // regardless of user-info-enabled or the resolved UserInfo endpoint.
+            requireUserInfoRequiredConsistency(registrationId, oidc);
+          }
           resolveRedirectUri(registrationId, oidc, scopedRedirectUriPath, loginRouteChecks);
         });
   }
@@ -1065,10 +1070,34 @@ public final class ScopedClientRegistrationFactory {
       builder.userInfoUri(null);
     }
     final var built = builder.build();
+    if (loginRouteChecks == LoginRouteChecks.ENFORCED) {
+      requireResolvedUserInfoEndpoint(registrationId, oidc, built);
+    }
     if (StringUtils.hasText(oidc.getIssuerUri())) {
       cacheDiscoveryDocument(oidc.getIssuerUri(), built);
     }
     return mergeProviderMetadata(built, oidc);
+  }
+
+  /**
+   * {@code userinfo_endpoint} is optional in an OIDC discovery document, so an issuer-uri provider
+   * can finish discovery with no UserInfo endpoint at all — the static check in {@link
+   * #requireUserInfoRequiredConsistency} only ever sees the manual-endpoints case, since resolving
+   * this one needs the network. Checked here, once the registration is built, so every route to an
+   * unreachable UserInfo endpoint is covered, not only the ones detectable without it.
+   */
+  private static void requireResolvedUserInfoEndpoint(
+      final String registrationId, final OidcConfiguration oidc, final ClientRegistration built) {
+    if (oidc.isUserInfoRequired()
+        && !StringUtils.hasText(built.getProviderDetails().getUserInfoEndpoint().getUri())) {
+      throw new IllegalStateException(
+          "Cannot build ClientRegistration '"
+              + registrationId
+              + "': user-info-required=true has no effect because this provider resolved no"
+              + " UserInfo endpoint to call — issuer discovery returned no userinfo_endpoint, or"
+              + " user-info-enabled/user-info-uri leave none configured. Configure a reachable"
+              + " UserInfo endpoint for this provider, or remove user-info-required.");
+    }
   }
 
   /**

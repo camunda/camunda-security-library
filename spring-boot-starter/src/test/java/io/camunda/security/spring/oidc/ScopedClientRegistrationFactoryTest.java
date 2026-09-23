@@ -787,6 +787,23 @@ class ScopedClientRegistrationFactoryTest {
         .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null));
   }
 
+  @Test
+  void shouldBuildWithoutLoginRoutesGivenUserInfoRequiredWithNoEffect() {
+    // given user-info-required=true combined with user-info-enabled=false — inert either way,
+    // since FailSoftOidcUserService only ever runs on the browser login chain
+    final var providers =
+        Map.of("oidc", explicitEndpointsWith(b -> b.userInfoRequired(true).userInfoEnabled(false)));
+
+    // when a caller mounts no login chain, and therefore never constructs a FailSoftOidcUserService
+    // then the flag having no effect is no reason to refuse to start, while a login path still
+    // rejects it
+    assertThatNoException().isThrownBy(() -> factory.createWithoutLoginRoutes(providers));
+    assertThatThrownBy(() -> factory.createFromProviderMap(providers))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("user-info-required")
+        .hasMessageContaining("user-info-enabled");
+  }
+
   private static Stream<Arguments> providersWithOneMalformedEndpointUrl() {
     return Stream.of(
         arguments("authorization-uri", explicitEndpointsWith(b -> b.authorizationUri("not a URL"))),

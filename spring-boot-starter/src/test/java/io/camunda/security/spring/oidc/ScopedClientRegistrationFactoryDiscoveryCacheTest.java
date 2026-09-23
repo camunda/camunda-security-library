@@ -8,6 +8,7 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
@@ -283,8 +284,10 @@ class ScopedClientRegistrationFactoryDiscoveryCacheTest {
   @ValueSource(booleans = {false, true})
   void shouldIsolateUserInfoRequiredFlagWhenSharingAnIssuer(final boolean reversed)
       throws Exception {
-    // given two providers on one issuer, one requiring UserInfo and one not
-    oidcServer = OidcTestServer.startDiscovery(DISCOVERY_TEMPLATE);
+    // given two providers on one issuer, one requiring UserInfo and one not. The discovery document
+    // must advertise userinfo_endpoint: requireResolvedUserInfoEndpoint now rejects
+    // user-info-required=true when discovery resolves none.
+    oidcServer = OidcTestServer.startDiscovery(DISCOVERY_TEMPLATE_WITH_USERINFO);
     final var issuer = oidcServer.issuerUri();
     final var byId =
         registrationsById(
@@ -300,6 +303,25 @@ class ScopedClientRegistrationFactoryDiscoveryCacheTest {
         .containsEntry(FailSoftOidcUserService.USER_INFO_REQUIRED_METADATA_KEY, true);
     assertThat(byId.get("idp-b").getProviderDetails().getConfigurationMetadata())
         .containsEntry(FailSoftOidcUserService.USER_INFO_REQUIRED_METADATA_KEY, false);
+  }
+
+  @Test
+  void shouldRejectUserInfoRequiredWhenDiscoveryResolvesNoUserInfoEndpoint() throws Exception {
+    // given an issuer whose discovery document advertises no userinfo_endpoint at all —
+    // userinfo_endpoint is optional in OIDC discovery, so this is not a malformed document
+    oidcServer = OidcTestServer.startDiscovery(DISCOVERY_TEMPLATE);
+    final var providers =
+        Map.of("myid", userInfoRequiredProvider("a", oidcServer.issuerUri(), true));
+
+    // when a caller mounts no login chain, and therefore never constructs a FailSoftOidcUserService
+    // then the flag resolving to nothing is no reason to refuse to start, while a login path still
+    // rejects it — requireUserInfoRequiredConsistency alone can't see this: it only runs before any
+    // network call, and userinfo_endpoint absence is only known after discovery
+    assertThatNoException().isThrownBy(() -> factory.createWithoutLoginRoutes(providers));
+    assertThatThrownBy(() -> factory.createFromProviderMap(providers))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("user-info-required")
+        .hasMessageContaining("UserInfo endpoint");
   }
 
   @ParameterizedTest(name = "reversed={0}")
