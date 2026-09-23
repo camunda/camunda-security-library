@@ -230,6 +230,37 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
   }
 
   @Test
+  void redactsCredentialsFromTheSharedIssuerWarning() {
+    // given two providers sharing a credential-bearing issuer — an issuer-uri check elsewhere is
+    // warn-only, not rejected, so such a value can survive to this pre-existing duplicate-issuer
+    // diagnostic, and it must be redacted here too, or the credential leaks into the log
+    final ListAppender<ILoggingEvent> appender = attachAppender();
+    try {
+      runner
+          .withPropertyValues(
+              "camunda.security.authentication.oidc.client-id=default-client",
+              "camunda.security.authentication.oidc.issuer-uri=" + DEFAULT_ISSUER,
+              "camunda.security.authentication.providers.oidc.web.client-id=web-client",
+              "camunda.security.authentication.providers.oidc.web.issuer-uri=https://user:s3cret@shared.example.com",
+              "camunda.security.authentication.providers.oidc.backend.client-id=backend-client",
+              "camunda.security.authentication.providers.oidc.backend.issuer-uri=https://user:s3cret@shared.example.com")
+          .run(ctx -> {});
+
+      assertThat(appender.list)
+          .anySatisfy(
+              event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                assertThat(event.getFormattedMessage())
+                    .doesNotContain("s3cret")
+                    .contains("'web' wins")
+                    .contains("ignore the claim configuration of 'backend'");
+              });
+    } finally {
+      detachAppender(appender);
+    }
+  }
+
+  @Test
   void keepsFlatEntryConverterWhenAProviderSharesItsIssuer() {
     // The merge places the flat block before the provider blocks, so the flat entry owns the
     // issuer it shares with a provider.

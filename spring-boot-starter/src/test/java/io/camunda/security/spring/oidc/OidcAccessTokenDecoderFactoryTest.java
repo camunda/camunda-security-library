@@ -207,6 +207,22 @@ class OidcAccessTokenDecoderFactoryTest {
   }
 
   @Test
+  void shouldNotCountABlankRegistrationIdTowardsTheIssuerRequirement() {
+    // given one real provider with an issuer-uri and a blank-registrationId leftover with none —
+    // the blank entry must not count towards the multi-provider issuer requirement, or a
+    // single-provider deployment aborts startup naming no provider at all
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    final var real = new OidcConfiguration();
+    real.setIssuerUri("https://idp-a.example");
+    providers.put("a", real);
+    providers.put(null, new OidcConfiguration());
+    final var factory =
+        new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
+
+    assertThatCode(() -> factory.validateProvidersHaveIssuer(providers)).doesNotThrowAnyException();
+  }
+
+  @Test
   void shouldUseTheSameFilteredProviderViewForJwkSetUrisAsForIssuerRegistrations() {
     // given a blank-registrationId provider and a valid one sharing an issuer, the blank one
     // first — before this fix, buildAdditionalJwkSetUrisByIssuer read the unfiltered map and could

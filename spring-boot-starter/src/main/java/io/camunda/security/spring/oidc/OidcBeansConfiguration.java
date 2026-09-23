@@ -129,10 +129,12 @@ public class OidcBeansConfiguration {
                   membershipPort,
                   contextPropagator);
       if (byIssuer.putIfAbsent(issuerUri, converter) != null) {
+        // Redacted: an issuer-uri check elsewhere is warn-only, not rejected, so a malformed,
+        // credential-bearing value can reach this diagnostic too.
         LOG.warn(
             "Issuer '{}' is claimed by multiple OIDC registrations: '{}' wins, and the tokens of"
                 + " that issuer ignore the claim configuration of '{}'.",
-            issuerUri,
+            UrlRedaction.redact(issuerUri),
             winningRegistrationIdByIssuer.get(issuerUri),
             registrationId);
       } else {

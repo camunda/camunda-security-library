@@ -235,11 +235,15 @@ public class OidcAccessTokenDecoderFactory {
    *     them sets no issuer-uri
    */
   public void validateProvidersHaveIssuer(final Map<String, OidcConfiguration> providersById) {
-    if (providersById.size() < 2) {
+    // A blank/null registrationId is warn-only elsewhere, not rejected — such an entry must not
+    // count towards the multi-provider check below, or it can trip a hard failure that names no
+    // provider at all for an entry the decoder has already decided to ignore.
+    final var withoutBlankIds = withoutBlankRegistrationIds(providersById);
+    if (withoutBlankIds.size() < 2) {
       return;
     }
     final var invalidProviders =
-        providersById.entrySet().stream()
+        withoutBlankIds.entrySet().stream()
             .filter(provider -> !StringUtils.hasText(provider.getValue().getIssuerUri()))
             .map(Map.Entry::getKey)
             .toList();

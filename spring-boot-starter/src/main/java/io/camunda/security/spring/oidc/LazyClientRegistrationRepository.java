@@ -142,7 +142,13 @@ public final class LazyClientRegistrationRepository
 
   @Override
   public Iterator<ClientRegistration> iterator() {
-    return providers.keySet().stream().map(this::findByRegistrationId).iterator();
+    // A blank/null registrationId is warn-only, not rejected — findByRegistrationId's resolved
+    // cache is a ConcurrentHashMap, which throws NullPointerException on get(null), so that entry
+    // must not reach it here either.
+    return providers.keySet().stream()
+        .filter(StringUtils::hasText)
+        .map(this::findByRegistrationId)
+        .iterator();
   }
 
   private String describe(final String registrationId, final OidcConfiguration config) {
