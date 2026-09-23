@@ -200,8 +200,8 @@ known at validation time. Both checks mirror
   not a breaking change.
 - A provider that genuinely needs UserInfo, for example one whose groups live only in UserInfo,
   keeps today's hard-failure behavior. It opts in with one property.
-- No change to `ScopedWebappSecurityChainBuilder`, `OidcWebappSecurityConfiguration`, or any
-  chain-building code. The fix adds one new default bean and one new metadata key.
+- No change to the chain-building behavior; `ScopedWebappSecurityChainBuilder` now widens its injected UserInfo service type so host beans of the documented generic shape are wired explicitly. `OidcWebappSecurityConfiguration` and the other chain-building behavior do not otherwise change.
+- The fix adds one new default bean and one new metadata key.
 
 **Negative / accepted trade-offs**
 
