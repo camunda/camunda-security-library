@@ -281,7 +281,13 @@ class ScopedClientRegistrationFactoryTest {
 
   @Test
   void metadataCarriesUserInfoRequiredFlagWhenSet() {
-    final var oidc = explicitEndpointsWith(b -> b.userInfoRequired(true));
+    // userInfoUri is required alongside userInfoRequired here: the manual-endpoints path (no
+    // issuer-uri) has no other way to resolve a UserInfo endpoint, and
+    // requireUserInfoRequiredConsistency
+    // rejects userInfoRequired=true when neither is set.
+    final var oidc =
+        explicitEndpointsWith(
+            b -> b.userInfoRequired(true).userInfoUri("https://idp.example.com/userinfo"));
 
     final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
 
@@ -309,6 +315,19 @@ class ScopedClientRegistrationFactoryTest {
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("user-info-required")
         .hasMessageContaining("user-info-enabled");
+  }
+
+  @Test
+  void rejectsUserInfoRequiredWithoutIssuerOrUserInfoUri() {
+    // Manual-endpoints provider (no issuer-uri) with no user-info-uri either: userInfoEnabled
+    // stays true, so the check above doesn't fire, but shouldRetrieveUserInfo will still never
+    // call UserInfo — the same silent no-op, reached a different way.
+    final var oidc = explicitEndpointsWith(b -> b.userInfoRequired(true));
+
+    assertThatThrownBy(() -> factory.createFromProviderMap(Map.of("myid", oidc)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("user-info-required")
+        .hasMessageContaining("user-info-uri");
   }
 
   // ---------------------------------------------------------------------------

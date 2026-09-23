@@ -992,6 +992,25 @@ public final class ScopedClientRegistrationFactory {
               + registrationId
               + ".*, or remove user-info-required.");
     }
+    // The manual-endpoints path (authorization-uri + token-uri + jwk-set-uri, no issuer-uri) can
+    // leave user-info-enabled=true with no user-info-uri configured either. shouldRetrieveUserInfo
+    // then returns false, so the flag is inert the same way as the check above, just via a
+    // provider that never resolves a UserInfo endpoint at all instead of one that's turned off. The
+    // issuer-uri path is not checked here: whether discovery yields a userinfo_endpoint isn't known
+    // without the network.
+    if (oidc.isUserInfoRequired()
+        && !StringUtils.hasText(oidc.getIssuerUri())
+        && !StringUtils.hasText(oidc.getUserInfoUri())) {
+      throw new IllegalStateException(
+          "Cannot build ClientRegistration '"
+              + registrationId
+              + "': user-info-required=true has no effect because no issuer-uri or user-info-uri"
+              + " is configured, so this provider never resolves a UserInfo endpoint to call. Set"
+              + " user-info-uri (or issuer-uri) under camunda.security.authentication.oidc.* (flat)"
+              + " or camunda.security.authentication.providers.oidc."
+              + registrationId
+              + ".*, or remove user-info-required.");
+    }
   }
 
   /**
@@ -1087,11 +1106,12 @@ public final class ScopedClientRegistrationFactory {
   /**
    * Adds this registration's own entries to the discovered metadata by build-then-rebuild, since
    * {@code providerConfigurationMetadata} replaces the map and would drop a discovered {@code
-   * end_session_endpoint}. The audiences key is always set, even when empty, because it is
-   * authoritative by presence; an explicit end-session endpoint wins.
+   * end_session_endpoint}. The audiences key and the {@link
+   * FailSoftOidcUserService#USER_INFO_REQUIRED_METADATA_KEY} key are always set, even when
+   * false/empty, because both are authoritative by presence; an explicit end-session endpoint wins.
    *
    * <p>The map is fresh per registration — the only reason registrations sharing an issuer cannot
-   * see each other's audiences.
+   * see each other's audiences or user-info-required flag.
    */
   private static ClientRegistration mergeProviderMetadata(
       final ClientRegistration built, final OidcConfiguration oidc) {

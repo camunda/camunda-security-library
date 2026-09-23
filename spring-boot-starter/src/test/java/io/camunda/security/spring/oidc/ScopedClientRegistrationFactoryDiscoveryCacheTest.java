@@ -281,6 +281,29 @@ class ScopedClientRegistrationFactoryDiscoveryCacheTest {
 
   @ParameterizedTest(name = "reversed={0}")
   @ValueSource(booleans = {false, true})
+  void shouldIsolateUserInfoRequiredFlagWhenSharingAnIssuer(final boolean reversed)
+      throws Exception {
+    // given two providers on one issuer, one requiring UserInfo and one not
+    oidcServer = OidcTestServer.startDiscovery(DISCOVERY_TEMPLATE);
+    final var issuer = oidcServer.issuerUri();
+    final var byId =
+        registrationsById(
+            bothOrders(
+                reversed,
+                userInfoRequiredProvider("a", issuer, true),
+                userInfoRequiredProvider("b", issuer, false)));
+
+    // then each registration's metadata carries only its own flag, in either build order — the
+    // same isolation shouldValidateEachRegistrationAgainstItsOwnAudiencesWhenSharingAnIssuer above
+    // pins for audiences.
+    assertThat(byId.get("idp-a").getProviderDetails().getConfigurationMetadata())
+        .containsEntry(FailSoftOidcUserService.USER_INFO_REQUIRED_METADATA_KEY, true);
+    assertThat(byId.get("idp-b").getProviderDetails().getConfigurationMetadata())
+        .containsEntry(FailSoftOidcUserService.USER_INFO_REQUIRED_METADATA_KEY, false);
+  }
+
+  @ParameterizedTest(name = "reversed={0}")
+  @ValueSource(booleans = {false, true})
   void shouldApplyJwkSetUriOverrideToOnlyTheRegistrationThatConfiguresIt(final boolean reversed)
       throws Exception {
     // given one provider overriding jwk-set-uri and one taking the discovered value
@@ -575,6 +598,16 @@ class ScopedClientRegistrationFactoryDiscoveryCacheTest {
         .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
         .issuerUri(issuerUri)
         .audiences(Set.of(audience))
+        .build();
+  }
+
+  private static OidcConfiguration userInfoRequiredProvider(
+      final String clientId, final String issuerUri, final boolean userInfoRequired) {
+    return OidcConfiguration.builder()
+        .clientId(clientId)
+        .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+        .issuerUri(issuerUri)
+        .userInfoRequired(userInfoRequired)
         .build();
   }
 
