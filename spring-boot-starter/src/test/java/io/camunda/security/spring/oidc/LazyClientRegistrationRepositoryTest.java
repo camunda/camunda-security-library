@@ -8,6 +8,7 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.entry;
 
@@ -160,7 +161,7 @@ final class LazyClientRegistrationRepositoryTest {
   }
 
   @Test
-  void shouldRejectAnIncompleteProviderWhenConstructed() {
+  void shouldWarnRatherThanFailOnAnIncompleteProviderWhenConstructed() {
     // given a provider with neither an issuer-uri nor a complete set of explicit endpoints
     final var incomplete =
         Map.of(
@@ -171,15 +172,13 @@ final class LazyClientRegistrationRepositoryTest {
                 .authorizationUri("https://idp.example.com/auth")
                 .build());
 
-    // when / then a configuration error needs no network access, so it still fails here
-    assertThatThrownBy(() -> newRepository(incomplete))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("issuer-uri");
+    // when / then the problem is logged, but does not stop the repository from being built
+    assertThatNoException().isThrownBy(() -> newRepository(incomplete));
   }
 
   @Test
-  void shouldRejectAProviderWithoutAClientIdWhenConstructed() {
-    // given a provider whose client-id is missing — ClientRegistration.Builder#build rejects it
+  void shouldWarnRatherThanFailOnAProviderWithoutAClientIdWhenConstructed() {
+    // given a provider whose client-id is missing
     final var withoutClientId =
         Map.of(
             "oidc",
@@ -188,10 +187,8 @@ final class LazyClientRegistrationRepositoryTest {
                 .issuerUri("https://idp.example.com/realms/camunda")
                 .build());
 
-    // when / then no network access is needed to see it, so it still fails here
-    assertThatThrownBy(() -> newRepository(withoutClientId))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("client-id");
+    // when / then the problem is logged, but does not stop the repository from being built
+    assertThatNoException().isThrownBy(() -> newRepository(withoutClientId));
   }
 
   @Test

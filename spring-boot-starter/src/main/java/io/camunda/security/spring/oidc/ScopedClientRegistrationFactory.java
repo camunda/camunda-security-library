@@ -45,6 +45,13 @@ import org.springframework.web.util.pattern.PatternParseException;
  * fetch, not ten. A document is kept only if {@link ClientRegistrations#fromOidcConfiguration} can
  * read it back (see {@link #cacheDiscoveryDocument}); if it cannot, that issuer goes on fetching
  * once per registration.
+ *
+ * <p><b>Validation never blocks startup.</b> A provider block that looks wrong — a bad URL, a
+ * missing field, an unusable redirect-uri — logs a {@code WARN} naming the provider and the
+ * problem, and the application starts regardless. Only Spring's own {@link
+ * ClientRegistration.Builder#build()} can actually exclude a provider, by throwing when it is
+ * resolved; that failure is per-registration and already deferred to first use (see {@link
+ * DeferredOidcResolution}), so one bad provider never takes down another.
  */
 public final class ScopedClientRegistrationFactory {
 
@@ -169,15 +176,12 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Creates one {@link ClientRegistration} for each entry in the provider map. The method uses the
-   * map key as the {@code registrationId}.
+   * Creates one {@link ClientRegistration} for each entry in the provider map, keyed by the map's
+   * registrationId. A provider block that looks wrong logs a warning (see {@link
+   * #validateWithoutNetwork}) rather than stopping the application.
    *
    * @param providers map of registrationId to {@link OidcConfiguration}; must not be {@code null}
    * @return an ordered list of {@link ClientRegistration} instances, one per map entry
-   * @throws IllegalStateException if any provider block fails one of the checks {@link
-   *     #validateWithoutNetwork} describes
-   * @throws IllegalArgumentException if a configured redirect-uri does not expand to a usable
-   *     callback URL
    */
   public List<ClientRegistration> createFromProviderMap(
       final Map<String, OidcConfiguration> providers) {
@@ -185,27 +189,16 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Creates one {@link ClientRegistration} for each entry in the provider map. If {@code
-   * scopedRedirectUriPath} is not null and not blank, the method replaces the {@code redirect_uri}
-   * of each registration with that path. The method validates the complete map with {@link
-   * #validateWithoutNetwork} first. It therefore reports an incorrect entry before it contacts the
-   * issuer of an earlier entry for discovery.
-   *
-   * <p>The redirection endpoint of the scoped webapp chain listens at a path with a prefix, for
-   * example {@code /physical-tenants/{id}/sso-callback}. The registrations must carry a {@code
-   * redirect_uri} that agrees with that path. Without the replacement, the IdP calls back to the
-   * cluster path that has no prefix, and the scoped chain does not intercept that path.
+   * As {@link #createFromProviderMap(Map)}, but replaces each registration's {@code redirect_uri}
+   * with {@code scopedRedirectUriPath} when given. A scoped webapp chain listens at a prefixed path
+   * (for example {@code /physical-tenants/{id}/sso-callback}), and the registration's redirect-uri
+   * has to agree with it or the IdP calls back to a path the scoped chain never intercepts.
    *
    * @param providers map of registrationId to {@link OidcConfiguration}; must not be {@code null}
    * @param scopedRedirectUriPath the path to use as the redirect-uri, for example {@code
-   *     /physical-tenants/t1/sso-callback}. If it is {@code null} or blank, the method keeps the
-   *     redirect-uri from the {@link OidcConfiguration}.
+   *     /physical-tenants/t1/sso-callback}. If {@code null} or blank, keeps the configured
+   *     redirect-uri.
    * @return an ordered list of {@link ClientRegistration} instances, one per map entry
-   * @throws IllegalArgumentException if scopedRedirectUriPath is non-blank but is not a path the
-   *     default firewall lets through, or a configured redirect-uri does not expand to a usable
-   *     callback URL
-   * @throws IllegalStateException if any provider block fails one of the checks {@link
-   *     #validateWithoutNetwork} describes
    */
   public List<ClientRegistration> createFromProviderMap(
       final Map<String, OidcConfiguration> providers, final String scopedRedirectUriPath) {
@@ -213,22 +206,12 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Creates one {@link ClientRegistration} for each entry, for a caller that derives no browser
-   * login route from the configuration. Two callers do this: the token validation of an API chain,
-   * and UserInfo augmentation. Both read the issuer, the keys and the endpoints of a registration,
-   * and neither redirects a browser.
-   *
-   * <p>The method makes each check on a value that such a caller uses. It does not make the {@link
-   * LoginRouteChecks login chain checks}. If no login chain exists, a redirect-uri the application
-   * cannot serve, a registration id the login route cannot address, and a malformed end-session
-   * endpoint are no reason to stop the application. The login paths are the webapp client beans and
-   * the webapp chains. They continue to reject each of these values, because they are the paths
-   * where such a value breaks the flow.
+   * As {@link #createFromProviderMap(Map)}, for a caller that derives no browser login route from
+   * the configuration — token validation on an API chain, or UserInfo augmentation. Neither reads a
+   * registration id, a redirect-uri or an end-session endpoint, so those checks are skipped.
    *
    * @param providers map of registrationId to {@link OidcConfiguration}; must not be {@code null}
    * @return an ordered list of {@link ClientRegistration} instances, one per map entry
-   * @throws IllegalStateException if any provider block fails one of the checks {@link
-   *     #validateWithoutNetwork} describes, other than the login route checks
    */
   public List<ClientRegistration> createWithoutLoginRoutes(
       final Map<String, OidcConfiguration> providers) {
@@ -236,13 +219,11 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * The same as {@link #createWithoutLoginRoutes(Map)}, but the method flattens the {@link
-   * AuthenticationConfiguration} first.
+   * As {@link #createWithoutLoginRoutes(Map)}, flattening the {@link AuthenticationConfiguration}
+   * first.
    *
    * @param authentication the authentication configuration; must not be {@code null}
    * @return an ordered list of {@link ClientRegistration} instances
-   * @throws IllegalStateException if any provider block fails one of the checks {@link
-   *     #validateWithoutNetwork} describes, other than the login route checks
    */
   public List<ClientRegistration> createWithoutLoginRoutes(
       final AuthenticationConfiguration authentication) {
@@ -290,8 +271,6 @@ public final class ScopedClientRegistrationFactory {
    *
    * @param authentication the authentication configuration; must not be {@code null}
    * @return an ordered list of {@link ClientRegistration} instances
-   * @throws IllegalStateException if any provider block fails one of the checks {@link
-   *     #validateWithoutNetwork} describes
    */
   public List<ClientRegistration> create(final AuthenticationConfiguration authentication) {
     return createFromProviderMap(flatten(authentication));
@@ -300,20 +279,9 @@ public final class ScopedClientRegistrationFactory {
   /**
    * Makes each check that {@link #createFromProviderMap(Map, String)} makes without network access,
    * and builds no registration. A caller that resolves registrations only when it needs them can
-   * therefore reject an incorrect provider block at startup. The failure then occurs where the
-   * configuration is, and not on the first request that needs the block.
-   *
-   * @throws IllegalStateException if Spring cannot make a {@link ClientRegistration} from a
-   *     provider block. The causes are a blank registrationId, client-id or
-   *     client-authentication-method, a registrationId that the login route cannot address as one
-   *     path segment, a scope that contains a character a scope token does not permit, a configured
-   *     endpoint URL that is not an absolute http(s) URL with a host and a port in the TCP range,
-   *     and a block that sets neither issuer-uri nor all of authorization-uri, token-uri and
-   *     jwk-set-uri. The method reports an incorrect URL before the completeness error that the URL
-   *     causes.
-   * @throws IllegalArgumentException if {@code scopedRedirectUriPath} is not absolute, or is a path
-   *     the default firewall does not permit, or if a configured redirect-uri does not expand to a
-   *     usable callback URL
+   * run this at startup, so a problem is logged where the configuration is, rather than only
+   * surfacing on the first request that needs it. A provider block that fails a check is logged,
+   * not rejected — see the class Javadoc.
    */
   public void validateWithoutNetwork(
       final Map<String, OidcConfiguration> providers, final String scopedRedirectUriPath) {
@@ -323,9 +291,6 @@ public final class ScopedClientRegistrationFactory {
   /**
    * As {@link #validateWithoutNetwork}, for a caller that derives no browser login route from the
    * configuration. See {@link #createWithoutLoginRoutes(Map)}.
-   *
-   * @throws IllegalStateException if a provider block does not pass one of the checks that {@link
-   *     #validateWithoutNetwork} describes, other than the login-route checks
    */
   public void validateWithoutLoginRoutes(final Map<String, OidcConfiguration> providers) {
     validateWithoutNetwork(providers, null, LoginRouteChecks.SKIPPED);
@@ -382,7 +347,6 @@ public final class ScopedClientRegistrationFactory {
    *     placeholder expands to. If it is blank, the method uses {@link
    *     OidcConfiguration#DEFAULT_REGISTRATION_ID}, because a flat block that adds no registration
    *     has no id of its own, and the chain mounts the placeholder as a wildcard.
-   * @throws IllegalArgumentException if the value does not expand to a usable callback URL
    */
   public void validateRedirectionEndpointSource(
       final String configured, final String registrationId) {
@@ -393,20 +357,16 @@ public final class ScopedClientRegistrationFactory {
     if (!StringUtils.hasText(configured) || isUsableRedirectUri(configured, id)) {
       return;
     }
-    throw new IllegalArgumentException(
-        "camunda.security.authentication.oidc.redirect-uri must expand to an absolute http(s) URL"
-            + " with a host and a callback path, and without a fragment, because the webapp chain"
-            + " mounts its redirection endpoint at that path, but was: "
-            + UrlRedaction.redact(configured)
-            + ". Spring expands {baseUrl}, {baseScheme}, {baseHost}, {basePort}, {basePath},"
-            + " {registrationId} and {action} per request — {basePort} and {basePath} include"
-            + " their own ':' and '/' — and expands nothing else.");
+    LOG.warn(
+        "camunda.security.authentication.oidc.redirect-uri may not expand to a usable callback URL"
+            + " for the webapp chain's redirection endpoint (was: {}).",
+        UrlRedaction.redact(configured));
   }
 
   private static void requireRegistrationId(final String registrationId) {
     if (!StringUtils.hasText(registrationId)) {
-      throw new IllegalStateException(
-          "OIDC registrationId must be non-blank: set"
+      LOG.warn(
+          "OIDC registrationId should be non-blank: set"
               + " camunda.security.authentication.oidc.registration-id (flat block)"
               + " or use a non-blank key under"
               + " camunda.security.authentication.providers.oidc.<id>.*");
@@ -421,17 +381,14 @@ public final class ScopedClientRegistrationFactory {
    */
   private static void requireRegistrationIdAddressableByTheLoginRoute(final String registrationId) {
     if (!isAddressableAsASinglePathSegment(registrationId)) {
-      throw new IllegalStateException(
-          "OIDC registrationId '"
-              + registrationId
-              + "' is not addressable as a single path segment. The login route is"
-              + " <basePath>/oauth2/authorization/<id>, so an id carrying a URI delimiter or a"
-              + " character that has to be escaped resolves to a path that no longer names the"
-              + " provider, and a form the default firewall blocks is rejected before the"
-              + " authorization filter sees it — and where redirect-uri templates"
-              + " {registrationId}, the callback the IdP receives resolves elsewhere too. Set"
+      LOG.warn(
+          "OIDC registrationId '{}' is not addressable as a single path segment, so its login"
+              + " route ({}/oauth2/authorization/{}) may not resolve to this provider. Set"
               + " camunda.security.authentication.oidc.registration-id (flat block) or rename the"
-              + " key under camunda.security.authentication.providers.oidc.<id>.");
+              + " key under camunda.security.authentication.providers.oidc.<id>.",
+          registrationId,
+          "<basePath>",
+          registrationId);
     }
   }
 
@@ -457,50 +414,40 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * {@link ClientRegistration.Builder#build()} rejects a blank client-id. This check only moves
-   * that failure to startup, away from the first request that resolves the registration.
+   * A blank client-id makes {@link ClientRegistration.Builder#build()} fail later, when this
+   * provider is actually resolved. Warning here surfaces the problem early without stopping the
+   * application for it.
    */
   private static void requireClientId(final String registrationId, final OidcConfiguration oidc) {
     if (!StringUtils.hasText(oidc.getClientId())) {
-      throw new IllegalStateException(
-          "Cannot build ClientRegistration '"
-              + registrationId
-              + "': client-id must be non-blank. Set it under"
+      LOG.warn(
+          "OIDC provider '{}' has no client-id set. Set"
               + " camunda.security.authentication.oidc.client-id (flat) or"
-              + " camunda.security.authentication.providers.oidc."
-              + registrationId
-              + ".client-id.");
+              + " camunda.security.authentication.providers.oidc.{}.client-id.",
+          registrationId,
+          registrationId);
     }
   }
 
-  /**
-   * The check makes the {@link ClientAuthenticationMethod} that the build path makes. Spring
-   * therefore keeps the rule, and the failure occurs at startup and not on the first request that
-   * needs the registration.
-   */
+  /** Warns early about a {@link ClientAuthenticationMethod} the build path would also reject. */
   private static void requireClientAuthenticationMethod(
       final String registrationId, final OidcConfiguration oidc) {
     try {
       new ClientAuthenticationMethod(oidc.getClientAuthenticationMethod());
     } catch (final IllegalArgumentException rejected) {
-      throw new IllegalStateException(
-          "Cannot build ClientRegistration '"
-              + registrationId
-              + "': client-authentication-method must be non-blank. Set it under"
+      LOG.warn(
+          "OIDC provider '{}' has no usable client-authentication-method. Set"
               + " camunda.security.authentication.oidc.client-authentication-method (flat) or"
-              + " camunda.security.authentication.providers.oidc."
-              + registrationId
-              + ".client-authentication-method.",
+              + " camunda.security.authentication.providers.oidc.{}.client-authentication-method.",
+          registrationId,
+          registrationId,
           rejected);
     }
   }
 
   /**
-   * {@link ClientRegistration.Builder#build()} rejects a scope that contains a character that RFC
-   * 6749 does not permit in a scope token. The most frequent such character is a space. A space
-   * occurs if one {@code scope} entry holds a list that spaces separate. The check makes that
-   * validation on a probe registration. Spring therefore keeps the rule, and the check needs no
-   * network.
+   * Warns early about a scope RFC 6749 does not permit in a scope token — most often a space,
+   * meaning one {@code scope} entry holds a space-separated list instead of one value per entry.
    */
   private static void requireUsableScopes(
       final String registrationId, final OidcConfiguration oidc) {
@@ -517,17 +464,13 @@ public final class ScopedClientRegistrationFactory {
           .scope(oidc.getScope())
           .build();
     } catch (final IllegalArgumentException rejected) {
-      throw new IllegalStateException(
-          "Cannot build ClientRegistration '"
-              + registrationId
-              + "': "
-              + rejected.getMessage()
-              + ". A scope is one entry per value, not a space-separated list. Set them under"
-              + " camunda.security.authentication.oidc.scope (flat) or"
-              + " camunda.security.authentication.providers.oidc."
-              + registrationId
-              + ".scope.",
-          rejected);
+      LOG.warn(
+          "OIDC provider '{}' has an unusable scope ({}). A scope is one entry per value, not a"
+              + " space-separated list. Set them under camunda.security.authentication.oidc.scope"
+              + " (flat) or camunda.security.authentication.providers.oidc.{}.scope.",
+          registrationId,
+          rejected.getMessage(),
+          registrationId);
     }
   }
 
@@ -564,36 +507,15 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Rejects a {@code post-logout-redirect-uri} that cannot work, before a logout ever runs.
+   * Warns about a {@code post-logout-redirect-uri} that cannot work, instead of letting logout fail
+   * on it later. Three accepted shapes: a path starting with {@code /}, an absolute URL, or a URI
+   * template that still resolves to an absolute URL once Spring expands it. See ADR-0026.
    *
-   * <p>Three accepted shapes: a path starting with {@code /}, which the logout chain resolves
-   * against its own base path; an absolute URL; or a URI template that still resolves to an
-   * absolute URL once Spring expands it. The template form is what lets a deployment served under a
-   * per-cluster prefix name a URL its IdP can actually have registered, so it cannot simply be
-   * disallowed.
-   *
-   * <p>Everything here fails at startup rather than at logout, which is the point: Spring expands
-   * the template on the logout request itself, so an unexpandable value throws from inside {@code
-   * buildAndExpand} on the one request a user cannot usefully retry — long after the typo shipped.
-   *
-   * <p>See ADR-0026.
-   */
-  /**
-   * Validates only the {@code post-logout-redirect-uri} of each provider.
-   *
-   * <p>{@link #validateWithoutNetwork} already runs this as part of a full provider-block check,
-   * and that is the path a normal deployment takes. This narrower entry point exists for the
-   * consumer that can reach a provider map the factory never built: the primary chain's {@code
-   * ClientRegistrationRepository} bean is {@code @ConditionalOnMissingBean}, so a host can replace
-   * it and bypass {@code createFromProviderMap} entirely, while the logout handler is still
-   * configured from the provider-configuration port. Without this the values it composes would
-   * never have been checked.
-   *
-   * <p>Running twice is harmless — the checks are pure — and the alternative, a second copy of the
-   * rules at the consumer, is what keeping one implementation is meant to avoid.
+   * <p>This narrower entry point exists for a consumer that can reach a provider map the factory
+   * never built: a host that replaces the {@code ClientRegistrationRepository} bean bypasses {@link
+   * #createFromProviderMap}, but the logout handler still reads its configuration from here.
    *
    * @param providers the provider configurations keyed by registration id; must not be {@code null}
-   * @throws IllegalStateException if any configured value cannot work
    */
   public void validatePostLogoutRedirectUris(final Map<String, OidcConfiguration> providers) {
     Objects.requireNonNull(providers, "providers must not be null");
@@ -610,20 +532,23 @@ public final class ScopedClientRegistrationFactory {
     // Covers CR and LF, which would otherwise forge a line in the log this error is written to,
     // and the rest of the control characters, which no component can serve.
     if (value.chars().anyMatch(Character::isISOControl)) {
-      throw postLogoutRedirectUriError(
-          registrationId, value, "must not contain control characters");
+      warnPostLogoutRedirectUri(registrationId, value, "must not contain control characters");
+      return;
     }
     // OpenID Connect RP-Initiated Logout 1.0 §2 gives post_logout_redirect_uri no fragment, so an
     // OP has no reason to accept one.
     if (value.indexOf('#') >= 0) {
-      throw postLogoutRedirectUriError(registrationId, value, "must not contain a fragment ('#')");
+      warnPostLogoutRedirectUri(registrationId, value, "must not contain a fragment ('#')");
+      return;
     }
-    requireExpandableTemplate(registrationId, value);
-    if (!value.startsWith("/")) {
-      requireUsableAbsoluteForm(registrationId, value);
+    if (!requireExpandableTemplate(registrationId, value)) {
+      return;
+    }
+    if (!value.startsWith("/") && !requireUsableAbsoluteForm(registrationId, value)) {
+      return;
     }
     if (!isUsablePostLogoutRedirectUri(value, registrationId)) {
-      throw postLogoutRedirectUriError(
+      warnPostLogoutRedirectUri(
           registrationId,
           value,
           "must expand to an absolute http(s) URL with a host, a port in 1-65535 if it names one,"
@@ -631,24 +556,27 @@ public final class ScopedClientRegistrationFactory {
     }
   }
 
-  /** The checks that only a non-path value can fail. */
-  private static void requireUsableAbsoluteForm(final String registrationId, final String value) {
+  /** The checks that only a non-path value can fail. Returns false once one of them has warned. */
+  private static boolean requireUsableAbsoluteForm(
+      final String registrationId, final String value) {
     if (!continuesWithAPath(value)) {
-      throw postLogoutRedirectUriError(
+      warnPostLogoutRedirectUri(
           registrationId,
           value,
           "must continue with a path after {baseUrl}, which already carries the scheme, host and"
               + " port");
+      return false;
     }
     if (!resolvesToAnAbsoluteUrl(value)) {
-      throw postLogoutRedirectUriError(
+      warnPostLogoutRedirectUri(
           registrationId,
           value,
           "must be an absolute URL, a path starting with '/', or a template that still resolves to"
               + " an absolute URL (starting with {baseUrl}, or carrying an explicit scheme and a"
               + " host, such as {baseScheme}://{baseHost})");
+      return false;
     }
-    requireParseableAbsoluteUrl(registrationId, value);
+    return requireParseableAbsoluteUrl(registrationId, value);
   }
 
   /**
@@ -795,35 +723,41 @@ public final class ScopedClientRegistrationFactory {
    * the literal <code>https://host&#123;tenantId</code> and is sent to the IdP exactly like that. A
    * closed-pair check would find only {@code baseUrl}, pass it, and ship the malformed URL.
    */
-  private static void requireExpandableTemplate(final String registrationId, final String value) {
+  private static boolean requireExpandableTemplate(
+      final String registrationId, final String value) {
     int openAt = -1;
     for (int i = 0; i < value.length(); i++) {
       final char c = value.charAt(i);
       if (c == '{') {
         if (openAt >= 0) {
-          throw postLogoutRedirectUriError(registrationId, value, "contains a nested '{'");
+          warnPostLogoutRedirectUri(registrationId, value, "contains a nested '{'");
+          return false;
         }
         openAt = i;
       } else if (c == '}') {
         if (openAt < 0) {
-          throw postLogoutRedirectUriError(registrationId, value, "contains an unmatched '}'");
+          warnPostLogoutRedirectUri(registrationId, value, "contains an unmatched '}'");
+          return false;
         }
         final var name = value.substring(openAt + 1, i);
         if (!POST_LOGOUT_TEMPLATE_VARIABLES.contains(name)) {
-          throw postLogoutRedirectUriError(
+          warnPostLogoutRedirectUri(
               registrationId,
               value,
               "uses "
                   + unsupportedVariable(name)
                   + "; supported variables are "
                   + POST_LOGOUT_TEMPLATE_VARIABLES);
+          return false;
         }
         openAt = -1;
       }
     }
     if (openAt >= 0) {
-      throw postLogoutRedirectUriError(registrationId, value, "contains an unclosed '{'");
+      warnPostLogoutRedirectUri(registrationId, value, "contains an unclosed '{'");
+      return false;
     }
+    return true;
   }
 
   /**
@@ -837,15 +771,16 @@ public final class ScopedClientRegistrationFactory {
    * <p>A {@code {baseScheme}} is parsed as {@code https}: the scheme is unknown until the request,
    * but standing one in is what lets the authority after it be checked at all.
    */
-  private static void requireParseableAbsoluteUrl(final String registrationId, final String value) {
+  private static boolean requireParseableAbsoluteUrl(
+      final String registrationId, final String value) {
     if (value.startsWith(BASE_URL_PLACEHOLDER)) {
-      return;
+      return true;
     }
     final var schemeEnd = value.indexOf("://");
     final var scheme = value.substring(0, schemeEnd);
     final var authority = authorityOf(value, schemeEnd + 3);
     if (authority.indexOf('{') >= 0) {
-      return;
+      return true;
     }
     final var probeScheme = BASE_SCHEME_PLACEHOLDER.equals(scheme) ? "https" : scheme;
     final var probe =
@@ -856,16 +791,20 @@ public final class ScopedClientRegistrationFactory {
     try {
       parsed = new URI(probe);
     } catch (final URISyntaxException malformed) {
-      throw postLogoutRedirectUriError(
+      warnPostLogoutRedirectUri(
           registrationId, value, "is not a valid URI: " + malformed.getReason());
+      return false;
     }
     if (!parsed.isAbsolute() || !StringUtils.hasText(parsed.getHost())) {
-      throw postLogoutRedirectUriError(registrationId, value, "is missing a scheme or a host");
+      warnPostLogoutRedirectUri(registrationId, value, "is missing a scheme or a host");
+      return false;
     }
     if (!namesAPortInTcpRange(parsed)) {
-      throw postLogoutRedirectUriError(
+      warnPostLogoutRedirectUri(
           registrationId, value, "must name a port in 1-65535 if it names one");
+      return false;
     }
+    return true;
   }
 
   /**
@@ -888,19 +827,16 @@ public final class ScopedClientRegistrationFactory {
         : "an unsupported template variable";
   }
 
-  private static IllegalStateException postLogoutRedirectUriError(
+  private static void warnPostLogoutRedirectUri(
       final String registrationId, final String value, final String problem) {
-    return new IllegalStateException(
-        "Cannot build ClientRegistration '"
-            + registrationId
-            + "': post-logout-redirect-uri "
-            + problem
-            + ", but was: "
-            + UrlRedaction.redact(value)
-            + ". Set camunda.security.authentication.oidc.post-logout-redirect-uri (flat) or"
-            + " camunda.security.authentication.providers.oidc."
-            + registrationId
-            + ".post-logout-redirect-uri.");
+    LOG.warn(
+        "OIDC provider '{}' has an unusable post-logout-redirect-uri ({}, but was: {}). Set"
+            + " camunda.security.authentication.oidc.post-logout-redirect-uri (flat) or"
+            + " camunda.security.authentication.providers.oidc.{}.post-logout-redirect-uri.",
+        registrationId,
+        problem,
+        UrlRedaction.redact(value),
+        registrationId);
   }
 
   private static void requireAbsoluteHttpUrl(
@@ -912,14 +848,15 @@ public final class ScopedClientRegistrationFactory {
     try {
       parsed = new URI(value);
     } catch (final URISyntaxException malformed) {
-      throw new IllegalStateException(endpointUrlError(registrationId, property, value), malformed);
+      LOG.warn(endpointUrlError(registrationId, property, value), malformed);
+      return;
     }
     final var scheme = parsed.getScheme();
     if (!parsed.isAbsolute()
         || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
         || !StringUtils.hasText(parsed.getHost())
         || !namesAPortInTcpRange(parsed)) {
-      throw new IllegalStateException(endpointUrlError(registrationId, property, value));
+      LOG.warn(endpointUrlError(registrationId, property, value));
     }
   }
 
@@ -960,14 +897,12 @@ public final class ScopedClientRegistrationFactory {
             && StringUtils.hasText(oidc.getJwkSetUri()))) {
       return;
     }
-    throw new IllegalStateException(
-        "Cannot build ClientRegistration '"
-            + registrationId
-            + "': set issuer-uri, or all of authorization-uri, token-uri, and jwk-set-uri,"
-            + " under camunda.security.authentication.oidc.* (flat) or"
-            + " camunda.security.authentication.providers.oidc."
-            + registrationId
-            + ".*");
+    LOG.warn(
+        "OIDC provider '{}' is incomplete: set issuer-uri, or all of authorization-uri, token-uri"
+            + " and jwk-set-uri, under camunda.security.authentication.oidc.* (flat) or"
+            + " camunda.security.authentication.providers.oidc.{}.*.",
+        registrationId,
+        registrationId);
   }
 
   /**
@@ -1113,35 +1048,27 @@ public final class ScopedClientRegistrationFactory {
     if (StringUtils.hasText(scopedRedirectUriPath)) {
       final var scoped = BASE_URL_PLACEHOLDER + scopedRedirectUriPath;
       if (checkCallback && !isUsableRedirectUri(scoped, registrationId)) {
-        throw new IllegalArgumentException(
-            "scopedRedirectUriPath must yield a callback this application can serve: a path the"
-                + " default firewall lets through, and one the scoped chain's redirection endpoint"
-                + " matches once expanded — no empty or dot segment, semicolon, backslash,"
-                + " percent escape or control character, but was: "
-                + UrlRedaction.redact(scopedRedirectUriPath));
+        LOG.warn(
+            "The scoped redirect-uri path '{}' for OIDC provider '{}' may not yield a callback"
+                + " this application can serve — the scoped chain's redirection endpoint may not"
+                + " match it once expanded.",
+            UrlRedaction.redact(scopedRedirectUriPath),
+            registrationId);
       }
       return scoped;
     }
     if (StringUtils.hasText(oidc.getRedirectUri())) {
       final String configured = oidc.getRedirectUri();
       if (checkCallback && !isUsableRedirectUri(configured, registrationId)) {
-        throw new IllegalArgumentException(
-            "Cannot build ClientRegistration '"
-                + registrationId
-                + "': redirect-uri must expand to an absolute http(s) URL with a host, a port in"
-                + " 1-65535 if it names one, and a callback path, and without a fragment, because"
-                + " that is where the IdP redirects"
-                + " the browser, and the redirection endpoint derived from this value has to match"
-                + " that same expanded path,"
-                + " but was: "
-                + UrlRedaction.redact(configured)
-                + ". Spring expands {baseUrl}, {baseScheme}, {baseHost}, {basePort}, {basePath},"
-                + " {registrationId} and {action} per request — {basePort} and {basePath} include"
-                + " their own ':' and '/' — and expands nothing else."
-                + " Set camunda.security.authentication.oidc.redirect-uri (flat) or"
-                + " camunda.security.authentication.providers.oidc."
-                + registrationId
-                + ".redirect-uri.");
+        LOG.warn(
+            "OIDC provider '{}' has a redirect-uri that may not expand to a usable callback URL"
+                + " (was: {}). Spring expands {{baseUrl}}, {{baseScheme}}, {{baseHost}},"
+                + " {{basePort}}, {{basePath}}, {{registrationId}} and {{action}} per request. Set"
+                + " camunda.security.authentication.oidc.redirect-uri (flat) or"
+                + " camunda.security.authentication.providers.oidc.{}.redirect-uri.",
+            registrationId,
+            UrlRedaction.redact(configured),
+            registrationId);
       }
       return configured;
     }

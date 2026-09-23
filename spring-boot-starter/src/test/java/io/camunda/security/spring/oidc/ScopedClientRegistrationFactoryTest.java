@@ -13,6 +13,10 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import jakarta.servlet.http.HttpServletRequest;
@@ -29,6 +33,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
@@ -88,21 +93,20 @@ class ScopedClientRegistrationFactoryTest {
 
   @Test
   void shouldFailWithActionableErrorWhenProviderMapKeyIsBlank() {
+    // Spring's own build() still rejects a blank registrationId when a registration is actually
+    // built; only the eager, no-network validation of validateWithoutNetwork stops throwing.
     final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
     assertThatThrownBy(() -> factory.createFromProviderMap(Map.of("", oidc)))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("registrationId")
-        .hasMessageContaining("registration-id");
+        .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   void shouldFailWithActionableErrorWhenNoIssuerAndMissingExplicitEndpoints() {
+    // Spring's own build() still rejects a missing authorization-uri/token-uri under the
+    // authorization_code grant type when a registration is actually built.
     final var oidc = OidcConfiguration.builder().clientId("my-client").build();
     assertThatThrownBy(() -> factory.createFromProviderMap(Map.of("myid", oidc)))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("'myid'")
-        .hasMessageContaining("issuer-uri")
-        .hasMessageContaining("jwk-set-uri");
+        .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
@@ -155,8 +159,9 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
-  void shouldRejectConfiguredRedirectUriWithoutBaseUrlOrSchemePrefix() {
-    // given a bare-path redirect-uri (no {baseUrl} template, no scheme://host)
+  void shouldWarnRatherThanFailOnAConfiguredRedirectUriWithoutBaseUrlOrSchemePrefix() {
+    // given a bare-path redirect-uri (no {baseUrl} template, no scheme://host), which would send
+    // the IdP a non-absolute redirect_uri and break login — but should log, not stop the app
     final var oidc =
         OidcConfiguration.builder()
             .clientId("my-client")
@@ -166,13 +171,10 @@ class ScopedClientRegistrationFactoryTest {
             .redirectUri("/api/authentication/callback")
             .build();
 
-    // when / then: the redirect_uri sent to the IdP would be non-absolute and break login
-    assertThatThrownBy(() -> factory.createFromProviderMap(Map.of("myid", oidc)))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("myid")
-        .hasMessageContaining("providers.oidc.myid.redirect-uri")
-        .hasMessageContaining("{baseUrl}")
-        .hasMessageContaining("/api/authentication/callback");
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    assertThat(registrations).hasSize(1);
+    assertThat(registrations.get(0).getRedirectUri()).isEqualTo("/api/authentication/callback");
   }
 
   @Test
@@ -444,51 +446,43 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
-  void shouldRejectABlankRegistrationIdWithoutNetwork() {
+  void shouldWarnRatherThanFailOnABlankRegistrationIdWithoutNetwork() {
     final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
 
-    assertThatThrownBy(() -> factory.validateWithoutNetwork(Map.of(" ", oidc), null))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("registrationId");
+    assertThatNoException()
+        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of(" ", oidc), null));
   }
 
   @Test
-  void shouldRejectABlankClientIdWithoutNetwork() {
-    // given a provider whose client-id is missing — ClientRegistration.Builder#build rejects it
+  void shouldWarnRatherThanFailOnABlankClientIdWithoutNetwork() {
+    // given a provider whose client-id is missing — Spring's build() rejects it only once the
+    // registration is actually built, which validateWithoutNetwork never does
     final var oidc =
         OidcConfiguration.builder()
             .redirectUri("{baseUrl}/sso-callback")
             .issuerUri("https://idp.example.com/realms/camunda")
             .build();
 
-    // when / then the message names the properties to set, which the builder's own error does not
-    assertThatThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("client-id")
-        .hasMessageContaining("providers.oidc.oidc.client-id");
+    assertThatNoException()
+        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null));
   }
 
   @Test
-  void shouldRejectMissingExplicitEndpointsWithoutNetwork() {
+  void shouldWarnRatherThanFailOnMissingExplicitEndpointsWithoutNetwork() {
     final var oidc = OidcConfiguration.builder().clientId("my-client").build();
 
-    assertThatThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("issuer-uri");
+    assertThatNoException()
+        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null));
   }
 
   @Test
-  void shouldNameTheMalformedEndpointUrlOfAnIncompleteBlockWithoutNetwork() {
+  void shouldWarnRatherThanFailOnAMalformedEndpointUrlWithoutNetwork() {
     // given a block whose one configured endpoint is malformed, leaving it incomplete as well
     final var oidc =
         OidcConfiguration.builder().clientId("my-client").authorizationUri("not a URL").build();
 
-    // when / then the typo is named rather than hidden behind the completeness error, as on the
-    // build path
-    assertThatThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("authorization-uri")
-        .hasMessageContaining("not a URL");
+    assertThatNoException()
+        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null));
   }
 
   @Test
@@ -501,21 +495,21 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
-  void shouldRejectAConfiguredRedirectUriWithoutBaseUrlOrSchemeWithoutNetwork() {
+  void shouldWarnRatherThanFailOnAConfiguredRedirectUriWithoutBaseUrlOrSchemeWithoutNetwork() {
     final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
     oidc.setRedirectUri("sso-callback");
 
-    assertThatThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null))
-        .isInstanceOf(IllegalArgumentException.class);
+    assertThatNoException()
+        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null));
   }
 
   @Test
-  void shouldRejectAMalformedProviderBeforeContactingAnEarlierProvidersIssuer() {
-    // given a first provider whose issuer is not listening at all, and a second one whose
-    // redirect-uri could never be served
+  void shouldMakeNoNetworkCallWhileValidatingAMultiProviderMap() {
+    // given a first provider whose issuer is not listening at all, and a second one with a
+    // redirect-uri that would break login
     final var providers = new LinkedHashMap<String, OidcConfiguration>();
     providers.put(
-        "reachable-last",
+        "unreachable",
         OidcConfiguration.builder()
             .clientId("my-client")
             .redirectUri("{baseUrl}/sso-callback")
@@ -523,17 +517,14 @@ class ScopedClientRegistrationFactoryTest {
             .build());
     providers.put("broken", explicitEndpointsWith(b -> b.redirectUri("{baseUrl}api/callback")));
 
-    // when / then the deterministic error is reported rather than the discovery attempt the first
-    // provider would make on the way to it
-    assertThatThrownBy(() -> factory.createFromProviderMap(providers))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("broken")
-        .hasMessageContaining("{baseUrl}api/callback");
+    // when / then validation completes (and warns) without ever contacting the unreachable issuer
+    assertThatNoException().isThrownBy(() -> factory.validateWithoutNetwork(providers, null));
   }
 
   @Test
   void shouldRejectABlankClientIdWhenBuildingARegistration() {
-    // given the same missing client-id, now on the building path
+    // given the same missing client-id, now on the building path — Spring's own build() still
+    // rejects it, since our own pre-check no longer does
     final var oidc =
         OidcConfiguration.builder()
             .redirectUri("{baseUrl}/sso-callback")
@@ -542,14 +533,13 @@ class ScopedClientRegistrationFactoryTest {
             .jwkSetUri("https://idp.example.com/jwks")
             .build();
 
-    // when / then it fails with the actionable message rather than the builder's assertion
     assertThatThrownBy(() -> factory.createFromProviderMap(Map.of("oidc", oidc)))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("client-id");
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("clientId");
   }
 
   @Test
-  void shouldRejectAMalformedIssuerUriWithoutNetwork() {
+  void shouldWarnRatherThanFailOnAMalformedIssuerUriWithoutNetwork() {
     // given an issuer-uri that cannot be parsed as a URI at all
     final var oidc =
         OidcConfiguration.builder()
@@ -558,15 +548,12 @@ class ScopedClientRegistrationFactoryTest {
             .issuerUri("not a URI")
             .build();
 
-    // when / then discovery could never be performed against it, and seeing that needs no network
-    assertThatThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("issuer-uri must be an absolute http(s) URL")
-        .hasMessageContaining("not a URI");
+    assertThatNoException()
+        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null));
   }
 
   @Test
-  void shouldRejectAnIssuerUriWithoutASchemeWithoutNetwork() {
+  void shouldWarnRatherThanFailOnAnIssuerUriWithoutASchemeWithoutNetwork() {
     final var oidc =
         OidcConfiguration.builder()
             .clientId("my-client")
@@ -574,13 +561,12 @@ class ScopedClientRegistrationFactoryTest {
             .issuerUri("idp.example.com/realms/camunda")
             .build();
 
-    assertThatThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("issuer-uri must be an absolute http(s) URL");
+    assertThatNoException()
+        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null));
   }
 
   @Test
-  void shouldRejectANonHttpIssuerUriWithoutNetwork() {
+  void shouldWarnRatherThanFailOnANonHttpIssuerUriWithoutNetwork() {
     final var oidc =
         OidcConfiguration.builder()
             .clientId("my-client")
@@ -588,9 +574,8 @@ class ScopedClientRegistrationFactoryTest {
             .issuerUri("ftp://idp.example.com/realms/camunda")
             .build();
 
-    assertThatThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("issuer-uri must be an absolute http(s) URL");
+    assertThatNoException()
+        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null));
   }
 
   @Test
@@ -603,10 +588,9 @@ class ScopedClientRegistrationFactoryTest {
             .issuerUri("not a URI")
             .build();
 
-    // when / then it fails before any discovery attempt
+    // when / then Spring's own discovery attempt fails on the malformed URI
     assertThatThrownBy(() -> factory.createFromProviderMap(Map.of("oidc", oidc)))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("issuer-uri must be an absolute http(s) URL");
+        .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
@@ -626,16 +610,14 @@ class ScopedClientRegistrationFactoryTest {
 
   @ParameterizedTest(name = "{0}")
   @ValueSource(strings = {"0", "65536", "99999"})
-  void shouldRejectAnEndpointUrlNamingAPortOutsideTheTcpRangeWithoutNetwork(final String port) {
+  void shouldWarnRatherThanFailOnAnEndpointUrlNamingAPortOutsideTheTcpRangeWithoutNetwork(
+      final String port) {
     // given a port no TCP connection can be opened to, which URI syntax still accepts
     final var oidc =
         explicitEndpointsWith(b -> b.jwkSetUri("https://idp.example.com:" + port + "/keys"));
 
-    // when / then the typo fails at startup rather than on the first token validation
-    assertThatThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("jwk-set-uri must be an absolute http(s) URL")
-        .hasMessageContaining("1-65535");
+    assertThatNoException()
+        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null));
   }
 
   @Test
@@ -650,13 +632,10 @@ class ScopedClientRegistrationFactoryTest {
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("providersWithOneMalformedEndpointUrl")
-  void shouldRejectAMalformedEndpointUrlWithoutNetwork(
+  void shouldWarnRatherThanFailOnAMalformedEndpointUrlWithoutNetwork(
       final String property, final OidcConfiguration oidc) {
-    // when / then every endpoint the application sends requests to is named in its own error
-    assertThatThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining(property + " must be an absolute http(s) URL")
-        .hasMessageContaining("not a URL");
+    assertThatNoException()
+        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null));
   }
 
   @Test
@@ -666,64 +645,50 @@ class ScopedClientRegistrationFactoryTest {
         Map.of("oidc", explicitEndpointsWith(b -> b.redirectUri("https://example.com")));
 
     // when a caller derives no redirection endpoint from it
-    // then it is no reason to refuse to start, while a login path still rejects it
+    // then it is no reason to refuse to start — a login path warns about it too, rather than
+    // refusing to start
     assertThatNoException().isThrownBy(() -> factory.createWithoutLoginRoutes(providers));
-    assertThatThrownBy(() -> factory.createFromProviderMap(providers))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("redirect-uri");
+    assertThatNoException().isThrownBy(() -> factory.createFromProviderMap(providers));
   }
 
   @Test
-  void shouldBuildWithoutLoginRoutesGivenAnIdOnlyTheLoginRouteCouldNotAddress() {
+  void shouldBuildGivenAnIdTheLoginRouteCouldNotAddress() {
     // given an id usable as a registration key but not as a path segment
     final var providers = Map.of("foo/bar", explicitEndpointsWith(b -> b));
 
-    // when a caller never resolves /oauth2/authorization/<id>
-    // then the id it can use is no reason to refuse to start, while a login path still rejects it
+    // when / then it warns, but is no reason to refuse to start, in either mode
     assertThatNoException().isThrownBy(() -> factory.createWithoutLoginRoutes(providers));
-    assertThatThrownBy(() -> factory.createFromProviderMap(providers))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("single path segment")
-        // the id can come from either shape, so the message names both properties that set it
-        .hasMessageContaining("camunda.security.authentication.oidc.registration-id")
-        .hasMessageContaining("camunda.security.authentication.providers.oidc.<id>");
+    assertThatNoException().isThrownBy(() -> factory.createFromProviderMap(providers));
   }
 
   @Test
   void shouldRejectABlankIdEvenWithoutLoginRoutes() {
-    // given no registration key at all, which every caller needs
+    // given no registration key at all — Spring's own build() still rejects it once the
+    // registration is actually built
     final var providers = Map.of(" ", explicitEndpointsWith(b -> b));
 
-    // when / then
     assertThatThrownBy(() -> factory.createWithoutLoginRoutes(providers))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("registrationId must be non-blank");
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("registrationId");
   }
 
   @Test
-  void shouldRejectAMalformedEndpointUrlWhenBuildingWithoutLoginRoutes() {
-    // given a value token validation itself uses
+  void shouldBuildWithoutLoginRoutesGivenAMalformedEndpointUrl() {
+    // given a value that only warns now — Spring itself never validates a jwk-set-uri's shape
     final var providers = Map.of("oidc", explicitEndpointsWith(b -> b.jwkSetUri("not a URL")));
 
-    // when / then
-    assertThatThrownBy(() -> factory.createWithoutLoginRoutes(providers))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("jwk-set-uri");
+    assertThatNoException().isThrownBy(() -> factory.createWithoutLoginRoutes(providers));
   }
 
   @Test
-  void shouldBuildWithoutLoginRoutesGivenAnEndSessionEndpointOnlyLogoutWouldDereference() {
+  void shouldBuildGivenAnEndSessionEndpointOnlyLogoutWouldDereference() {
     // given a malformed end-session endpoint, whose only consumer is the webapp logout handler
     final var providers =
         Map.of("oidc", explicitEndpointsWith(b -> b.endSessionEndpointUri("not a URL")));
 
-    // when a caller mounts no login chain, and therefore no logout handler
-    // then the value it never dereferences is no reason to refuse to start, while a login path
-    // still rejects it
+    // when / then it warns, but is no reason to refuse to start, in either mode
     assertThatNoException().isThrownBy(() -> factory.createWithoutLoginRoutes(providers));
-    assertThatThrownBy(() -> factory.createFromProviderMap(providers))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("end-session-endpoint-uri");
+    assertThatNoException().isThrownBy(() -> factory.createFromProviderMap(providers));
   }
 
   @Test
@@ -760,19 +725,18 @@ class ScopedClientRegistrationFactoryTest {
         "/physical-tenants/../sso-callback",
         "/physical-tenants/t%zz/sso-callback"
       })
-  void shouldRejectAScopedRedirectPathTheDeploymentCannotServe(final String scopedPath) {
+  void shouldWarnRatherThanFailOnAScopedRedirectPathTheDeploymentCannotServe(
+      final String scopedPath) {
     // given a scope whose base path is valid per BasePathSyntax but yields a callback no chain is
     // asked about: a form the default firewall blocks, a non-normalized segment, or no URL at all
     final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
 
-    // when / then the scoped chain would send the IdP a callback no chain is ever asked about
-    assertThatThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), scopedPath))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining(scopedPath);
+    assertThatNoException()
+        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), scopedPath));
   }
 
   @Test
-  void shouldRejectAScopedRedirectPathWhoseEncodingTheEndpointAndTheCallbackDisagreeOn() {
+  void shouldWarnRatherThanFailWhenEncodingTheEndpointAndTheCallbackDisagree() {
     // given a scope whose base path carries an encoded space — one the default firewall allows
     final var scopedPath = "/physical-tenants/t%20a/sso-callback";
     final var firewall = new StrictHttpFirewall();
@@ -781,24 +745,23 @@ class ScopedClientRegistrationFactoryTest {
 
     // when / then it is still unusable, for the other reason: the endpoint pattern keeps the escape
     // while the expanded callback path decodes it, so the two never match and the IdP would send
-    // the browser to a callback the scoped chain's redirection endpoint does not serve
+    // the browser to a callback the scoped chain's redirection endpoint does not serve — but that
+    // only warns now
     final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
-    assertThatThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), scopedPath))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining(scopedPath);
+    assertThatNoException()
+        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), scopedPath));
   }
 
   @ParameterizedTest
   @ValueSource(
       strings = {"foo?bar", "foo#bar", "foo/bar", "foo bar", "foo%2fbar", "foo;bar", ".", ".."})
-  void shouldRejectARegistrationIdThatDoesNotAddressItsOwnLoginRoute(final String registrationId) {
+  void shouldWarnRatherThanFailOnARegistrationIdThatDoesNotAddressItsOwnLoginRoute(
+      final String registrationId) {
     // given a provider under an id that does not survive /oauth2/authorization/<id> as one segment
     final var oidc = explicitEndpointsWith(b -> b);
 
-    // when / then it is rejected rather than naming a provider no browser can reach
-    assertThatThrownBy(() -> factory.validateWithoutNetwork(Map.of(registrationId, oidc), null))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining(registrationId);
+    assertThatNoException()
+        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of(registrationId, oidc), null));
   }
 
   @ParameterizedTest
@@ -824,16 +787,12 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
-  void shouldRejectAScopeThatIsASpaceSeparatedListWithoutNetwork() {
+  void shouldWarnRatherThanFailOnAScopeThatIsASpaceSeparatedListWithoutNetwork() {
     // given the scopes written as one space-separated entry instead of one entry each
     final var oidc = explicitEndpointsWith(b -> b.scope(List.of("openid profile email")));
 
-    // when / then the authorization request Spring would refuse to build fails at startup
-    assertThatThrownBy(() -> factory.validateWithoutNetwork(Map.of("provider-b", oidc), null))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("provider-b")
-        .hasMessageContaining("openid profile email")
-        .hasMessageContaining("providers.oidc.provider-b.scope");
+    assertThatNoException()
+        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("provider-b", oidc), null));
   }
 
   @Test
@@ -848,43 +807,32 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
-  void shouldRejectABlankClientAuthenticationMethodWithoutNetwork() {
+  void shouldWarnRatherThanFailOnABlankClientAuthenticationMethodWithoutNetwork() {
     // given a provider whose client-authentication-method was blanked out
     final var oidc = explicitEndpointsWith(b -> b.clientAuthenticationMethod(""));
 
-    // when / then the value the registration builder would reject is named at startup instead
-    assertThatThrownBy(() -> factory.validateWithoutNetwork(Map.of("provider-b", oidc), null))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("provider-b")
-        .hasMessageContaining("client-authentication-method");
+    assertThatNoException()
+        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("provider-b", oidc), null));
   }
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("io.camunda.security.spring.oidc.RedirectUriSamples#unusable")
-  void shouldRejectARedirectUriThatIsNotAUsableCallbackUrlWithoutNetwork(final String redirectUri) {
+  void shouldWarnRatherThanFailOnARedirectUriThatIsNotAUsableCallbackUrlWithoutNetwork(
+      final String redirectUri) {
     final var oidc = explicitEndpointsWith(b -> b.redirectUri(redirectUri));
 
-    // when / then the IdP would receive a redirect_uri it cannot redirect to, and the provider
-    // whose value that is has to be named where several are configured
-    assertThatThrownBy(() -> factory.validateWithoutNetwork(Map.of("provider-b", oidc), null))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("provider-b")
-        .hasMessageContaining("providers.oidc.provider-b.redirect-uri")
-        .hasMessageContaining(UrlRedaction.redact(redirectUri));
+    assertThatNoException()
+        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("provider-b", oidc), null));
   }
 
   @ParameterizedTest(name = "{0}")
   @MethodSource("io.camunda.security.spring.oidc.RedirectUriSamples#unusable")
-  void shouldRejectAFlatRedirectUriTheWebappChainCannotMount(final String redirectUri) {
+  void shouldWarnRatherThanFailOnAFlatRedirectUriTheWebappChainCannotMount(
+      final String redirectUri) {
     // given a flat redirect-uri that contributes no registration of its own — no client-id beside
     // it — but still decides where the unscoped chain mounts its redirection endpoint
-
-    // when / then it is held to the same contract, instead of the chain quietly mounting the
-    // default callback while the IdP redirects elsewhere
-    assertThatThrownBy(() -> factory.validateRedirectionEndpointSource(redirectUri, "oidc"))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("camunda.security.authentication.oidc.redirect-uri")
-        .hasMessageContaining(UrlRedaction.redact(redirectUri));
+    assertThatNoException()
+        .isThrownBy(() -> factory.validateRedirectionEndpointSource(redirectUri, "oidc"));
   }
 
   @ParameterizedTest(name = "{0}")
@@ -907,8 +855,8 @@ class ScopedClientRegistrationFactoryTest {
             () ->
                 factory.validateRedirectionEndpointSource(
                     "{baseUrl}/login/oauth2/code/{registrationId}", null));
-    assertThatThrownBy(() -> factory.validateRedirectionEndpointSource("https://example.com", null))
-        .isInstanceOf(IllegalArgumentException.class);
+    assertThatNoException()
+        .isThrownBy(() -> factory.validateRedirectionEndpointSource("https://example.com", null));
   }
 
   @Test
@@ -975,16 +923,16 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
-  void shouldRejectARedirectUriThatIsTheDeploymentContextPathWithoutNetwork() {
+  void shouldWarnRatherThanFailOnARedirectUriThatIsTheDeploymentContextPathWithoutNetwork() {
     // given a deployment under a context path, and a redirect-uri pointing at its root
     final var contextPathFactory = new ScopedClientRegistrationFactory("/orchestration");
     final var oidc = explicitEndpointsWith(b -> b.redirectUri("https://example.com/orchestration"));
 
     // when / then the redirection endpoint would strip the whole path away and listen at the
-    // default callback instead, while the IdP redirects the browser to the context root
-    assertThatThrownBy(() -> contextPathFactory.validateWithoutNetwork(Map.of("oidc", oidc), null))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("https://example.com/orchestration");
+    // default callback instead, while the IdP redirects the browser to the context root — but that
+    // only warns now
+    assertThatNoException()
+        .isThrownBy(() -> contextPathFactory.validateWithoutNetwork(Map.of("oidc", oidc), null));
   }
 
   @Test
@@ -999,9 +947,9 @@ class ScopedClientRegistrationFactoryTest {
     // the context root is still rejected
     assertThatNoException()
         .isThrownBy(() -> contextPathFactory.validateWithoutNetwork(Map.of("oidc", usable), null));
-    assertThatThrownBy(
-            () -> contextPathFactory.validateWithoutNetwork(Map.of("oidc", contextRoot), null))
-        .isInstanceOf(IllegalArgumentException.class);
+    assertThatNoException()
+        .isThrownBy(
+            () -> contextPathFactory.validateWithoutNetwork(Map.of("oidc", contextRoot), null));
   }
 
   @Test
@@ -1116,11 +1064,38 @@ class ScopedClientRegistrationFactoryTest {
         Map.of("oidc", explicitEndpointsWith(b -> b.postLogoutRedirectUri(configured))), null);
   }
 
-  private org.assertj.core.api.AbstractThrowableAssert<?, ? extends Throwable>
-      assertPostLogoutRedirectUriRejected(final String configured) {
-    return assertThatThrownBy(() -> validatePostLogoutRedirectUri(configured))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("post-logout-redirect-uri");
+  /**
+   * Runs the same validation as before, but the value is no longer rejected by an exception — it is
+   * logged. Captures the warning and returns an assertion on its message, so every existing
+   * caller's {@code .hasMessageContaining(...)} chain still reads the same way.
+   */
+  private org.assertj.core.api.AbstractStringAssert<?> assertPostLogoutRedirectUriRejected(
+      final String configured) {
+    final var appender = captureFactoryLogs();
+    try {
+      validatePostLogoutRedirectUri(configured);
+    } finally {
+      releaseFactoryLogs(appender);
+    }
+    return assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .singleElement()
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.STRING)
+        .contains("post-logout-redirect-uri");
+  }
+
+  private static ListAppender<ILoggingEvent> captureFactoryLogs() {
+    final var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    ((Logger) LoggerFactory.getLogger(ScopedClientRegistrationFactory.class)).addAppender(appender);
+    return appender;
+  }
+
+  private static void releaseFactoryLogs(final ListAppender<ILoggingEvent> appender) {
+    ((Logger) LoggerFactory.getLogger(ScopedClientRegistrationFactory.class))
+        .detachAppender(appender);
+    appender.stop();
   }
 
   @Test
@@ -1163,21 +1138,21 @@ class ScopedClientRegistrationFactoryTest {
   @Test
   void shouldRejectAPostLogoutRedirectUriWhoseSchemeIsNotAtTheStart() {
     assertPostLogoutRedirectUriRejected("{basePath}https://accounts.example.com/logout")
-        .hasMessageContaining("must be an absolute URL");
+        .contains("must be an absolute URL");
   }
 
   /** A placeholder in the port position expands to something no socket can use. */
   @Test
   void shouldRejectAPostLogoutRedirectUriWithAPlaceholderInThePortPosition() {
     assertPostLogoutRedirectUriRejected("https://accounts.example.com:{registrationId}/logout")
-        .hasMessageContaining("must be an absolute URL");
+        .contains("must be an absolute URL");
   }
 
   /** A literal port still has to be a port, matching what the other endpoint URLs enforce. */
   @Test
   void shouldRejectAPostLogoutRedirectUriWithAPortOutsideTheTcpRange() {
     assertPostLogoutRedirectUriRejected("https://accounts.example.com:99999/logout")
-        .hasMessageContaining("port");
+        .contains("port");
   }
 
   /**
@@ -1187,7 +1162,7 @@ class ScopedClientRegistrationFactoryTest {
   @Test
   void shouldRejectAPostLogoutRedirectUriWithATemplatedHostAndAnOutOfRangePort() {
     assertPostLogoutRedirectUriRejected("https://{baseHost}:99999/logout")
-        .hasMessageContaining("must expand to an absolute http(s) URL");
+        .contains("must expand to an absolute http(s) URL");
   }
 
   /**
@@ -1201,7 +1176,7 @@ class ScopedClientRegistrationFactoryTest {
   @Test
   void shouldRejectAPostLogoutRedirectUriWithALiteralColonBeforeBasePort() {
     assertPostLogoutRedirectUriRejected("https://accounts.example.com:{basePort}/logged-out")
-        .hasMessageContaining("must be an absolute URL");
+        .contains("must be an absolute URL");
   }
 
   /**
@@ -1212,7 +1187,7 @@ class ScopedClientRegistrationFactoryTest {
   @Test
   void shouldRejectAPostLogoutRedirectUriThatAddsAPortAfterBaseUrl() {
     assertPostLogoutRedirectUriRejected("{baseUrl}:8080/logout")
-        .hasMessageContaining("must continue with a path after {baseUrl}");
+        .contains("must continue with a path after {baseUrl}");
   }
 
   /**
@@ -1224,7 +1199,7 @@ class ScopedClientRegistrationFactoryTest {
   @ParameterizedTest
   void shouldRejectAPostLogoutRedirectPathThatCannotExpand(final String configured) {
     assertPostLogoutRedirectUriRejected(configured)
-        .hasMessageContaining("must expand to an absolute http(s) URL");
+        .contains("must expand to an absolute http(s) URL");
   }
 
   /**
@@ -1246,7 +1221,7 @@ class ScopedClientRegistrationFactoryTest {
   @Test
   void shouldRejectAPostLogoutRedirectUriWithAMalformedEscapeInALiteralPath() {
     assertPostLogoutRedirectUriRejected("https://accounts.example.com/%zz/{basePath}")
-        .hasMessageContaining("must expand to an absolute http(s) URL");
+        .contains("must expand to an absolute http(s) URL");
   }
 
   /**
@@ -1257,7 +1232,7 @@ class ScopedClientRegistrationFactoryTest {
       strings = {"https://ex ample.com/{basePath}", "{baseScheme}://ex ample.com/logged-out"})
   @ParameterizedTest
   void shouldRejectAPostLogoutRedirectUriWithALiteralHostThatCannotParse(final String configured) {
-    assertPostLogoutRedirectUriRejected(configured).hasMessageContaining("is not a valid URI");
+    assertPostLogoutRedirectUriRejected(configured).contains("is not a valid URI");
   }
 
   /**
@@ -1282,7 +1257,7 @@ class ScopedClientRegistrationFactoryTest {
       })
   @ParameterizedTest
   void shouldRejectAPostLogoutRedirectUriThatIsNotAbsolute(final String configured) {
-    assertPostLogoutRedirectUriRejected(configured).hasMessageContaining("must be an absolute URL");
+    assertPostLogoutRedirectUriRejected(configured).contains("must be an absolute URL");
   }
 
   /**
@@ -1295,27 +1270,34 @@ class ScopedClientRegistrationFactoryTest {
    * scheme-less one must be redacted there too — not only for post-logout.
    */
   @Test
-  void shouldRedactCredentialsFromASchemelessEndpointUrl() {
-    assertThatThrownBy(
-            () ->
-                factory.validateWithoutNetwork(
-                    Map.of(
-                        "oidc",
-                        OidcConfiguration.builder()
-                            .clientId("my-client")
-                            .redirectUri("{baseUrl}/sso-callback")
-                            .issuerUri("user:secret@idp.example.com/realm")
-                            .build()),
-                    null))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageNotContaining("secret")
-        .hasMessageContaining("idp.example.com");
+  void shouldRedactCredentialsFromASchemelessEndpointUrlWarning() {
+    final var appender = captureFactoryLogs();
+    try {
+      factory.validateWithoutNetwork(
+          Map.of(
+              "oidc",
+              OidcConfiguration.builder()
+                  .clientId("my-client")
+                  .redirectUri("{baseUrl}/sso-callback")
+                  .issuerUri("user:secret@idp.example.com/realm")
+                  .build()),
+          null);
+    } finally {
+      releaseFactoryLogs(appender);
+    }
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .anySatisfy(
+            event -> {
+              final var message = event.getFormattedMessage();
+              assertThat(message).doesNotContain("secret").contains("idp.example.com");
+            });
   }
 
   @Test
   void shouldRejectAPostLogoutRedirectUriWithAnUnsupportedTemplateVariable() {
     assertPostLogoutRedirectUriRejected("{baseUrl}/{tenantId}")
-        .hasMessageContaining("unsupported template variable {tenantId}");
+        .contains("unsupported template variable {tenantId}");
   }
 
   /**
@@ -1326,9 +1308,9 @@ class ScopedClientRegistrationFactoryTest {
   @Test
   void shouldNotEchoAnUnsupportedTemplateVariableThatCarriesCredentials() {
     assertPostLogoutRedirectUriRejected("{baseUrl}/{https://user:secret@host}")
-        .hasMessageNotContaining("secret")
-        .hasMessageContaining("an unsupported template variable")
-        .hasMessageContaining("supported variables are");
+        .doesNotContain("secret")
+        .contains("an unsupported template variable")
+        .contains("supported variables are");
   }
 
   /**
@@ -1338,27 +1320,27 @@ class ScopedClientRegistrationFactoryTest {
   @ValueSource(strings = {"{baseUrl}{tenantId", "{baseUrl"})
   @ParameterizedTest
   void shouldRejectAPostLogoutRedirectUriWithAnUnclosedBrace(final String configured) {
-    assertPostLogoutRedirectUriRejected(configured).hasMessageContaining("unclosed '{'");
+    assertPostLogoutRedirectUriRejected(configured).contains("unclosed '{'");
   }
 
   @Test
   void shouldRejectAPostLogoutRedirectUriWithAnUnmatchedClosingBrace() {
     assertPostLogoutRedirectUriRejected("https://accounts.example.com/a}")
-        .hasMessageContaining("unmatched '}'");
+        .contains("unmatched '}'");
   }
 
   /** A literal host reaches the URI parse, which is what catches a host that cannot be parsed. */
   @Test
   void shouldRejectAPostLogoutRedirectUriWithAnUnparseableHost() {
     assertPostLogoutRedirectUriRejected("https://ex ample.com/logout")
-        .hasMessageContaining("is not a valid URI");
+        .contains("is not a valid URI");
   }
 
   /** RP-Initiated Logout 1.0 §2 gives the parameter no fragment, for any of the accepted forms. */
   @ValueSource(strings = {"https://accounts.example.com/logged-out#section", "/goodbye#section"})
   @ParameterizedTest
   void shouldRejectAPostLogoutRedirectUriWithAFragment(final String configured) {
-    assertPostLogoutRedirectUriRejected(configured).hasMessageContaining("must not contain");
+    assertPostLogoutRedirectUriRejected(configured).contains("must not contain");
   }
 
   /**
@@ -1368,16 +1350,15 @@ class ScopedClientRegistrationFactoryTest {
   @ValueSource(strings = {"https://accounts.example.com/x\r\nSet-Cookie: a=b", "/good\tbye"})
   @ParameterizedTest
   void shouldRejectAPostLogoutRedirectUriWithControlCharacters(final String configured) {
-    assertPostLogoutRedirectUriRejected(configured)
-        .hasMessageContaining("must not contain control characters");
+    assertPostLogoutRedirectUriRejected(configured).contains("must not contain control characters");
   }
 
   /** And the message that reports one must not carry the control characters either. */
   @Test
   void shouldEscapeControlCharactersInTheRejectionMessage() {
     assertPostLogoutRedirectUriRejected("https://accounts.example.com/x\r\nINFO forged")
-        .hasMessageNotContaining("\r")
-        .hasMessageNotContaining("\n");
+        .doesNotContain("\r")
+        .doesNotContain("\n");
   }
 
   /**
@@ -1385,19 +1366,26 @@ class ScopedClientRegistrationFactoryTest {
    * rather than lying dormant until someone flips the flag back on.
    */
   @Test
-  void shouldRejectAnUnusablePostLogoutRedirectUriEvenWhenTheRedirectIsDisabled() {
-    assertThatThrownBy(
-            () ->
-                factory.validateWithoutNetwork(
-                    Map.of(
-                        "oidc",
-                        explicitEndpointsWith(
-                            b ->
-                                b.postLogoutRedirectUri("{tenantId}/goodbye")
-                                    .postLogoutRedirectEnabled(false))),
-                    null))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("unsupported template variable {tenantId}");
+  void shouldWarnOnAnUnusablePostLogoutRedirectUriEvenWhenTheRedirectIsDisabled() {
+    final var appender = captureFactoryLogs();
+    try {
+      factory.validateWithoutNetwork(
+          Map.of(
+              "oidc",
+              explicitEndpointsWith(
+                  b ->
+                      b.postLogoutRedirectUri("{tenantId}/goodbye")
+                          .postLogoutRedirectEnabled(false))),
+          null);
+    } finally {
+      releaseFactoryLogs(appender);
+    }
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .anySatisfy(
+            event ->
+                assertThat(event.getFormattedMessage())
+                    .contains("unsupported template variable {tenantId}"));
   }
 
   /**
@@ -1407,9 +1395,9 @@ class ScopedClientRegistrationFactoryTest {
   @Test
   void shouldRedactCredentialsAndQueryFromARejectedPostLogoutRedirectUri() {
     assertPostLogoutRedirectUriRejected("https://user:secret@accounts.example.com/{tenantId}?t=abc")
-        .hasMessageNotContaining("secret")
-        .hasMessageNotContaining("t=abc")
-        .hasMessageContaining("accounts.example.com");
+        .doesNotContain("secret")
+        .doesNotContain("t=abc")
+        .contains("accounts.example.com");
   }
 
   private static OidcConfiguration explicitEndpointsWith(

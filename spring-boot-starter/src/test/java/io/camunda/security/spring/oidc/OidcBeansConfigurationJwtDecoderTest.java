@@ -215,7 +215,7 @@ class OidcBeansConfigurationJwtDecoderTest {
   }
 
   @Test
-  void shouldFailWithInformativeErrorWhenOnlyAdditionalJwkSetUrisConfigured() {
+  void shouldWarnRatherThanFailWhenOnlyAdditionalJwkSetUrisConfigured() {
     runner
         .withPropertyValues(
             "camunda.security.authentication.oidc.client-id=flat-client",
@@ -223,39 +223,22 @@ class OidcBeansConfigurationJwtDecoderTest {
             "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
             "camunda.security.authentication.oidc.token-uri=https://flat.example.com/token",
             "camunda.security.authentication.oidc.additional-jwk-set-uris[0]=https://secondary.example.com/jwks")
-        // additional-jwk-set-uris without a primary jwk-set-uri or issuer-uri:
-        // clientRegistrationRepository fails with an actionable error
-        .run(
-            ctx -> {
-              assertThat(ctx).hasFailed();
-              assertThat(ctx.getStartupFailure())
-                  .rootCause()
-                  .isInstanceOf(IllegalStateException.class)
-                  .hasMessageContaining("issuer-uri")
-                  .hasMessageContaining("jwk-set-uri");
-            });
+        // additional-jwk-set-uris without a primary jwk-set-uri or issuer-uri: incomplete, but
+        // only logged now — building the registration is deferred, so this does not stop the
+        // context from starting
+        .run(ctx -> assertThat(ctx).hasNotFailed());
   }
 
   @Test
-  void shouldFailWithInformativeErrorWhenNoSourceAvailable() {
+  void shouldWarnRatherThanFailWhenNoSourceAvailable() {
     runner
         .withPropertyValues(
             "camunda.security.authentication.oidc.client-id=flat-client",
             "camunda.security.authentication.oidc.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
             "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
             "camunda.security.authentication.oidc.token-uri=https://flat.example.com/token")
-        // no issuer-uri, no jwk-set-uri: clientRegistrationRepository fails with an
-        // actionable error before jwtDecoder is even attempted
-        .run(
-            ctx -> {
-              assertThat(ctx).hasFailed();
-              assertThat(ctx.getStartupFailure())
-                  .rootCause()
-                  .isInstanceOf(IllegalStateException.class)
-                  .hasMessageContaining("issuer-uri")
-                  .hasMessageContaining("jwk-set-uri")
-                  .hasMessageContaining("providers.oidc");
-            });
+        // no issuer-uri, no jwk-set-uri: incomplete, but only logged now
+        .run(ctx -> assertThat(ctx).hasNotFailed());
   }
 
   @Test
