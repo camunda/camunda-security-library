@@ -205,6 +205,14 @@ mandatory, so the combination can only mean a configuration mistake. This mirror
   the safer default is "don't fail login hard," and a host wanting the old behavior sets
   `user-info-required=true` on its own registrations' metadata, or supplies its own
   `OidcUserService` bean.
+- Because Spring Security's `OAuth2LoginConfigurer` wires this same bean into
+  `OidcAuthorizedClientRefreshedEventListener` (see Decision above), a *transient* `/userinfo`
+  failure during an access-token refresh — not just at initial login — degrades that refresh the
+  same way: the live session's claims narrow to ID-token-only (fewer authorities) instead of the
+  refresh failing outright, the way it would have before this change. This is fail-closed, never an
+  escalation of privilege — CSL's authorization mapping never grants more from an absent claim than
+  from a present one — and the same `user-info-required=true` escape hatch applies: a provider whose
+  refreshed sessions cannot tolerate a narrowed claim set opts back into failing the refresh instead.
 
 ## Alternatives Considered
 

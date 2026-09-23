@@ -50,7 +50,11 @@ import org.springframework.security.oauth2.core.user.OAuth2User;
  * <p>Logged at WARN without the original throwable: Spring Security's {@code OAuth2LoginConfigurer}
  * wires this same bean into {@code OidcAuthorizedClientRefreshedEventListener}, so for a
  * structurally-mismatched IdP this fires not just at login but on every access-token refresh — a
- * full stack trace there is log noise. The cause is still available at DEBUG.
+ * full stack trace there is log noise. The cause is still available at DEBUG. The same refresh-path
+ * invocation is also why a provider whose authorization-relevant claims are available only via
+ * UserInfo should set {@code user-info-required=true}: otherwise a transient fetch failure during a
+ * live session's token refresh, not just at login, silently narrows that session to ID-token-only
+ * claims instead of failing the refresh.
  */
 public final class FailSoftOidcUserService extends OidcUserService {
 

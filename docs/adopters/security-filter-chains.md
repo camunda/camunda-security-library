@@ -141,6 +141,7 @@ For most conditional use cases the CSL ships purpose-built meta-annotations (see
 | `additional-jwk-set-uris` | list&lt;string&gt; | empty | Secondary JWK Set URIs consulted when the primary `jwk-set-uri` does not resolve a token's signing key. See [Multiple JWK Set URIs](#multiple-jwk-set-uris) below and [ADR-0006](../adr/0006-multi-idp-oidc-configuration.md). |
 | `authorization-uri`, `token-uri`, `user-info-uri` | string | unset | Endpoint overrides for non-discovery flows. |
 | `user-info-enabled` | boolean | `true` | When `false`, the built `ClientRegistration` has its `userInfoUri` nulled so Spring Security does not call the IdP's UserInfo endpoint after token exchange. See [Disabling the UserInfo fetch](#disabling-the-userinfo-fetch) below and [ADR-0007](../adr/0007-oidc-user-info-enabled-toggle.md). |
+| `user-info-required` | boolean | `false` | When `true`, a UserInfo fetch the IdP rejects fails login instead of degrading to ID-token-only claims. See [Disabling the UserInfo fetch](#disabling-the-userinfo-fetch) below and [ADR-0028](../adr/0028-oidc-userinfo-fail-soft-login.md). |
 | `user-info-augmentation.enabled` | boolean | `false` | When `true`, enables request-time claim augmentation from the UserInfo endpoint. See [UserInfo claim augmentation](#userinfo-claim-augmentation) below. |
 | `user-info-augmentation.cache-ttl` | duration | `5m` | How long a successful UserInfo response is cached per token identity (`iss+jti`, or `iss+sub+iat+exp` when `jti` is absent). |
 | `user-info-augmentation.cache-max-size` | int | `10000` | Maximum number of entries in the UserInfo claims cache. |
@@ -356,6 +357,8 @@ camunda:
 ```
 
 A host-supplied `OidcUserService` bean still takes precedence in both modes (see [ADR-0007](../adr/0007-oidc-user-info-enabled-toggle.md)) — `user-info-enabled` only governs the library's default wiring.
+
+A sibling property, `user-info-required` (default `false`), controls what happens when the fetch is attempted but the IdP rejects it: by default the fetch failure degrades login to ID-token-only claims (the same claim set `user-info-enabled: false` produces) with a WARN logged, instead of failing login outright. Set `user-info-required: true` on a provider that cannot tolerate missing UserInfo claims (e.g. groups available only via UserInfo) to keep the previous hard-failure behavior for that provider. See [ADR-0028](../adr/0028-oidc-userinfo-fail-soft-login.md).
 
 ### Customizing the authorization request (`resource`, `additional-parameters`)
 
@@ -690,9 +693,9 @@ CSL applies every registered customizer, in `@Order` order, to every content-ser
 ### Other host beans the chains pick up automatically
 
 - `LogoutSuccessHandler` — wired into the OIDC webapp chain for IdP-coordinated logout. The CSL ships a default (`CamundaOidcLogoutSuccessHandler`) via `OidcBeansConfiguration` when `authentication.method=oidc` and the host activates CSL through the `CamundaSecurityAutoConfiguration` umbrella; a host-registered bean replaces it. See [OIDC logout](#oidc-logout).
-- `OidcUserService` — wired into the OIDC user-info endpoint.
+- `OidcUserService` — wired into the OIDC login flow to fetch UserInfo after token exchange. The CSL ships a default (`FailSoftOidcUserService`) via `ScopedWebappSecurityChainBuilderConfiguration` as a `@ConditionalOnMissingBean OidcUserService` when the host imports that configuration class directly, or via the `CamundaSecurityAutoConfiguration` umbrella (this bean is not gated on `authentication.method=oidc`); a host-registered bean takes precedence regardless of `user-info-required`. See [ADR-0028](../adr/0028-oidc-userinfo-fail-soft-login.md).
 
-These are looked up via `ObjectProvider#ifAvailable`; absence is fine, the chain falls back to Spring Security defaults.
+These are looked up via `ObjectProvider#ifAvailable`; a host bean of the matching type takes precedence, and CSL's own default applies otherwise.
 
 ## Web app authorization
 
