@@ -480,6 +480,18 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
+  void shouldEscapeControlCharactersSanitizeForLogDoesNotCatchViaAsciiOnlyRegex() {
+    // given a value carrying a non-ASCII line separator (U+2028), which java's \p{Cntrl} regex
+    // class does not match, unlike Character#isISOControl
+    assertThat(ScopedClientRegistrationFactory.sanitizeForLog("foo" + (char) 0x2028 + "bar"))
+        .isEqualTo("foo\\u2028bar");
+    assertThat(ScopedClientRegistrationFactory.sanitizeForLog("foo\r\nbar"))
+        .isEqualTo("foo\\u000d\\u000abar");
+    assertThat(ScopedClientRegistrationFactory.sanitizeForLog("plain-id")).isEqualTo("plain-id");
+    assertThat(ScopedClientRegistrationFactory.sanitizeForLog(null)).isNull();
+  }
+
+  @Test
   void shouldWarnRatherThanFailOnABlankClientIdWithoutNetwork() {
     // given a provider whose client-id is missing — Spring's build() rejects it only once the
     // registration is actually built, which validateWithoutNetwork never does

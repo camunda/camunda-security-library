@@ -70,8 +70,9 @@ public final class ScopedOidcClaimsProviderFactory {
    * See {@link IssuerRegistrations}.
    *
    * @throws IllegalStateException if augmentation is enabled and the configuration declares no OIDC
-   *     provider, a provider block is incomplete, or no provider enables UserInfo for the issuer it
-   *     owns. Such a configuration would leave the scope without augmentation and report nothing.
+   *     provider, or no provider enables UserInfo for the issuer it owns. Such a configuration
+   *     would leave the scope without augmentation and report nothing. A provider block the factory
+   *     considers incomplete only warns; it does not throw here either.
    */
   public OidcClaimsProvider buildClaimsProvider(final AuthenticationConfiguration authentication) {
     return buildClaimsProvider(authentication, null);

@@ -16,7 +16,7 @@ import org.slf4j.LoggerFactory;
  * <p>One value decides two things. It is the {@code redirect_uri} that the application sends to the
  * IdP, and it gives the callback path where the webapp chain listens. This class holds the rule
  * that derives the second value from the first value. Two components need that rule: the chain that
- * mounts the endpoint, and the validation that rejects a value the chain cannot mount. Neither
+ * mounts the endpoint, and the validation that warns about a value the chain cannot mount. Neither
  * component owns the rule, and both must apply it in the same way.
  */
 public final class OidcRedirectionEndpoint {

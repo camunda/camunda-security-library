@@ -251,7 +251,7 @@ final class DeferredOidcResolutionTest {
 
     // when / then the subject a failed resolution logs cannot forge a line with it
     assertThat(DeferredOidcResolution.describeProvider("foo\r\nbar", config))
-        .isEqualTo("'foo??bar'");
+        .isEqualTo("'foo\\u000d\\u000abar'");
   }
 
   @Test

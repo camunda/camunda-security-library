@@ -48,12 +48,19 @@ import org.springframework.web.util.pattern.PatternParseException;
  *
  * <p><b>Provider-block validation never blocks startup.</b> A provider block that looks wrong — a
  * bad URL, a missing field, an unusable redirect-uri — logs a {@code WARN} naming the provider and
- * the problem, and the application starts regardless. Only Spring's own {@link
- * ClientRegistration.Builder#build()} can still exclude a provider, by throwing when it is
- * resolved. That failure is per-registration and already deferred to first use (see {@link
- * DeferredOidcResolution}), so one bad provider never takes down another. This does not extend to a
- * caller's own arguments, such as {@code scopedRedirectUriPath}: a malformed one is still a
- * programmer error and still throws.
+ * the problem, and the application starts regardless. A provider can still fail to build: Spring's
+ * own {@link ClientRegistration.Builder#build()} throws for some of the same problems (a blank
+ * client-id, for one), and so do {@link
+ * org.springframework.security.oauth2.core.ClientAuthenticationMethod}'s constructor and {@link
+ * ClientRegistrations#fromIssuerLocation} for a malformed {@code issuer-uri}. Whether that failure
+ * is deferred to first use, rather than blocking startup, depends on the caller: {@link
+ * LazyClientRegistrationRepository}, {@link ScopedJwtDecoderFactory} and {@link
+ * ScopedOidcClaimsProviderFactory} resolve lazily through {@link DeferredOidcResolution}, so one
+ * bad provider never takes down another there — but a host calling {@link
+ * #createFromProviderMap(Map)}, {@link #createWithoutLoginRoutes(Map)} or {@link
+ * #create(AuthenticationConfiguration)} directly, eagerly, from its own {@code @Bean} method still
+ * gets that failure at startup. This does not extend to a caller's own arguments, such as {@code
+ * scopedRedirectUriPath}: a malformed one is still a programmer error and still throws.
  */
 public final class ScopedClientRegistrationFactory {
 
@@ -84,6 +91,11 @@ public final class ScopedClientRegistrationFactory {
 
   private static final Set<String> POST_LOGOUT_TEMPLATE_VARIABLES =
       Set.of("baseUrl", "baseScheme", "baseHost", "basePort", "basePath", "registrationId");
+
+  /** {@code LINE SEPARATOR} (U+2028) and {@code PARAGRAPH SEPARATOR} (U+2029). */
+  private static final int LINE_SEPARATOR = 0x2028;
+
+  private static final int PARAGRAPH_SEPARATOR = 0x2029;
 
   /** The login route that {@code LoginLinksBuilder} makes. The id checks use the same route. */
   private static final String LOGIN_ROUTE_PROBE = "https://probe.invalid/oauth2/authorization/";
@@ -391,15 +403,31 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
-   * Replaces a control character (for example CR or LF) in operator-supplied text with {@code '?'}
-   * before it reaches a log message, so a registrationId carrying one cannot forge a line in the
-   * log it is quoted in. {@code registrationId} is never validated by this class the way a URL
-   * value is — a caller can set it to anything — so every place that logs it needs this, not just
-   * the checks that reject an unsafe form. Public because callers outside this package (for example
-   * {@code ScopedWebappSecurityChainBuilder}) log a raw registrationId of their own too.
+   * Escapes a control character (for example CR or LF) in operator-supplied text to its 4-digit
+   * unicode escape form before it reaches a log message, so a registrationId carrying one cannot
+   * forge a line in the log it is quoted in — the same treatment {@link UrlRedaction} gives a
+   * control character in a URL value, and for the same reason: escaping, not dropping, keeps the
+   * value diagnosable. Also escapes the line and paragraph separators {@code
+   * isServableByTheDefaultFirewall} already checks for beside {@link Character#isISOControl}, which
+   * does not cover them, unlike a regex {@code Cntrl} class, which is ASCII-only and would miss all
+   * three. {@code registrationId} is never validated by this class the way a URL value is — a
+   * caller can set it to anything — so every place that logs it needs this, not just the checks
+   * that reject an unsafe form. Public because callers outside this package (for example {@code
+   * ScopedWebappSecurityChainBuilder}) log a raw registrationId of their own too.
    */
   public static String sanitizeForLog(final String value) {
-    return value == null ? null : value.replaceAll("\\p{Cntrl}", "?");
+    if (value == null || value.chars().noneMatch(ScopedClientRegistrationFactory::mustBeEscaped)) {
+      return value;
+    }
+    final var escaped = new StringBuilder(value.length());
+    value
+        .chars()
+        .forEach(c -> escaped.append(mustBeEscaped(c) ? String.format("\\u%04x", c) : (char) c));
+    return escaped.toString();
+  }
+
+  private static boolean mustBeEscaped(final int c) {
+    return Character.isISOControl(c) || c == LINE_SEPARATOR || c == PARAGRAPH_SEPARATOR;
   }
 
   private static void warnIfBlankRegistrationId(final String registrationId) {

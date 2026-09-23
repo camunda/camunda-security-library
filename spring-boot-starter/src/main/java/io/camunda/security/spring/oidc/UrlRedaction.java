@@ -10,15 +10,17 @@ package io.camunda.security.spring.oidc;
 /**
  * Strips the parts of a configured URL that can carry a secret, for messages that report one.
  *
- * <p>Every OIDC URL property is operator-supplied, and a startup failure naming one lands in
- * application logs like anything else. {@code https://user:password@idp.example.com/token} puts
- * credentials there, and a query string can carry a token or a tracking value; the library's
- * logging rules forbid either at any level. Scheme, host and path survive, which is what identifies
- * the endpoint and locates a typo — the reason for naming the value at all.
+ * <p>Every OIDC URL property is operator-supplied, and a value the library warns about lands in
+ * application logs like anything else — and, unlike a one-off startup failure, keeps landing there
+ * on every later attempt, since the application starts and keeps running with it. {@code
+ * https://user:password@idp.example.com/token} puts credentials there, and a query string can carry
+ * a token or a tracking value; the library's logging rules forbid either at any level. Scheme, host
+ * and path survive, which is what identifies the endpoint and locates a typo — the reason for
+ * naming the value at all.
  *
  * <p>A value does not have to be well-formed to carry a credential, and the messages that quote one
- * are mostly quoting something that was <em>rejected</em>. User-info is therefore found by shape
- * rather than by parsing: see {@link #authorityStart}.
+ * are mostly quoting something the library considers unusable, but keeps and uses regardless.
+ * User-info is therefore found by shape rather than by parsing: see {@link #authorityStart}.
  *
  * <p>A fragment keeps its {@code '#'} and loses its contents. Several of these messages exist
  * <em>because</em> a value carries a fragment — a redirect URI and a post-logout redirect URI may
@@ -27,13 +29,12 @@ package io.camunda.security.spring.oidc;
  * stops one being pasted into configuration. The marker says where the problem is without repeating
  * what it holds.
  *
- * <p>Control characters are replaced rather than passed through. CR and LF are rejected values, and
- * a rejected value is exactly what these messages quote — unescaped, it would forge a second line
- * in the log the message lands in.
+ * <p>Control characters are replaced rather than passed through. CR and LF let an otherwise
+ * unremarkable-looking value forge a second line in the log the message lands in, unescaped.
  *
  * <p>Trimmed as a string rather than parsed as a {@link java.net.URI}: these values may hold
  * unexpanded {@code {placeholder}} templates, whose braces are not legal URI characters, and this
- * runs on values that were rejected precisely for being unparseable.
+ * runs on values the library considers unparseable precisely for that reason.
  */
 public final class UrlRedaction {
 
