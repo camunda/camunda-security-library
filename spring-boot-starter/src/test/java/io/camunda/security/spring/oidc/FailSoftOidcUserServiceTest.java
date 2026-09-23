@@ -131,6 +131,48 @@ class FailSoftOidcUserServiceTest {
   }
 
   @Test
+  void fallsBackToIdTokenOnlyClaimsWhenFetchThrowsMalformedResponse() {
+    // DefaultOAuth2UserService throws a plain IllegalArgumentException (not an
+    // OAuth2AuthenticationException) for an empty body, an empty-JSON body, or a body missing the
+    // name attribute — this must fail soft exactly like a transport failure does.
+    final OAuth2UserService<OAuth2UserRequest, OAuth2User> fetcher =
+        request -> {
+          throw new IllegalArgumentException("attributes cannot be empty");
+        };
+    final var service = new FailSoftOidcUserService(fetcher);
+    final var request = requestFor(registrationBuilder().build());
+
+    final var result = service.loadUser(request);
+
+    assertThat(result.getUserInfo()).isNull();
+    assertThat(result.getName()).isEqualTo("alice");
+  }
+
+  @Test
+  void rethrowsNormalizedFailureWhenUserInfoRequiredAndFetchThrowsMalformedResponse() {
+    final OAuth2UserService<OAuth2UserRequest, OAuth2User> fetcher =
+        request -> {
+          throw new IllegalArgumentException("attributes cannot be empty");
+        };
+    final var service = new FailSoftOidcUserService(fetcher);
+    final var registration =
+        ClientRegistration.withClientRegistration(registrationBuilder().build())
+            .providerConfigurationMetadata(
+                Map.of(FailSoftOidcUserService.USER_INFO_REQUIRED_METADATA_KEY, true))
+            .build();
+
+    // A plain IllegalArgumentException isn't an AuthenticationException, so Spring's login-failure
+    // handling would never see it; normalizing to invalid_user_info_response keeps this rethrow on
+    // the same failure path as every other fetch failure.
+    assertThatThrownBy(() -> service.loadUser(requestFor(registration)))
+        .isInstanceOf(OAuth2AuthenticationException.class)
+        .satisfies(
+            ex ->
+                assertThat(((OAuth2AuthenticationException) ex).getError().getErrorCode())
+                    .isEqualTo("invalid_user_info_response"));
+  }
+
+  @Test
   void stillThrowsOnSubMismatchRegardlessOfUserInfoRequired() {
     // The fetch itself succeeds; OidcUserService's own OIDC S:5.3.2 sub-check then fails. This
     // must propagate even though user-info-required is false (the default) — the acceptance

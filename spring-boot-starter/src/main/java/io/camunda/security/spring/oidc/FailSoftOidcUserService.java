@@ -16,6 +16,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 
@@ -25,11 +26,13 @@ import org.springframework.security.oauth2.core.user.OAuth2User;
  *
  * <p>Several IdPs reject the access token at {@code /userinfo} even though it's valid for local JWT
  * validation — Microsoft Entra with the documented {@code <client-id>/.default} scope always,
- * Auth0/Okta/PingFederate in common audience-bound setups. A transport error or malformed response
- * fails the same way. {@code DefaultOAuth2UserService} maps all of these to the same {@code
+ * Auth0/Okta/PingFederate in common audience-bound setups. A transport error fails this way, and so
+ * does a malformed response ({@code DefaultOAuth2UserService} throws a plain {@code
+ * IllegalArgumentException} for an empty body, a body with no claims, or a body missing the name
+ * attribute); {@link #asUserInfoResponseFailure} normalizes every one of these to the same {@code
  * invalid_user_info_response} error code that {@link OidcUserService#loadUser} also uses for its
- * OIDC S:5.3.2 sub-mismatch check, so the two cases can't be told apart by error code. Only the
- * delegate fetch call is wrapped, in a private marker exception, making them structurally
+ * OIDC S:5.3.2 sub-mismatch check, so the two cases can't be told apart by error code alone. Only
+ * the delegate fetch call is wrapped, in a private marker exception, making them structurally
  * distinguishable instead: the sub-mismatch check runs after the delegate returns, so it can never
  * be caught here.
  *
@@ -50,7 +53,7 @@ public final class FailSoftOidcUserService extends OidcUserService {
    * Absent (e.g. a registration built outside CSL) is treated as {@code false}.
    */
   public static final String USER_INFO_REQUIRED_METADATA_KEY =
-      "camunda.security.oidc.userInfoRequired";
+      "camunda.security.oidc.user-info-required";
 
   private static final Logger LOG = LoggerFactory.getLogger(FailSoftOidcUserService.class);
 
@@ -66,10 +69,26 @@ public final class FailSoftOidcUserService extends OidcUserService {
         request -> {
           try {
             return delegate.loadUser(request);
-          } catch (final OAuth2AuthenticationException fetchFailure) {
-            throw new UserInfoFetchFailedException(fetchFailure);
+          } catch (final RuntimeException fetchFailure) {
+            throw new UserInfoFetchFailedException(asUserInfoResponseFailure(fetchFailure));
           }
         });
+  }
+
+  /**
+   * {@code DefaultOAuth2UserService} throws a plain {@code IllegalArgumentException}, not an {@link
+   * OAuth2AuthenticationException}, for an empty body, a body with no claims, or a body missing the
+   * name attribute. Normalizing those to the same {@code invalid_user_info_response} error code the
+   * transport-failure path already uses keeps this class's fail-soft/required behavior, and its log
+   * output, uniform across every way {@code /userinfo} can misbehave.
+   */
+  private static OAuth2AuthenticationException asUserInfoResponseFailure(
+      final RuntimeException cause) {
+    if (cause instanceof final OAuth2AuthenticationException oauth2Failure) {
+      return oauth2Failure;
+    }
+    return new OAuth2AuthenticationException(
+        new OAuth2Error("invalid_user_info_response", cause.getMessage(), null), cause);
   }
 
   @Override
