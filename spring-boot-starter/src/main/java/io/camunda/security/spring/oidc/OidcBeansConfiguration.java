@@ -113,9 +113,14 @@ public class OidcBeansConfiguration {
     final var configurations = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
     // IssuerOwnership decides the winner per issuer and logs the duplicate-issuer warning — the
     // one place that warning is built, redacted and sanitized, rather than a second copy of it
-    // here.
+    // here. Filtered first: a blank/null registrationId must not win ownership over a valid
+    // provider sharing its issuer, or the claims converter is built from the wrong configuration
+    // while the decoder verifies the token with the valid one.
     final var winningRegistrationIdByIssuer =
-        IssuerOwnership.registrationIdByIssuer(configurations, LOG, "the claim configuration");
+        IssuerOwnership.registrationIdByIssuer(
+            ScopedClientRegistrationFactory.withoutBlankRegistrationIds(configurations),
+            LOG,
+            "the claim configuration");
     final Map<String, LazyTokenClaimsConverter> byIssuer = new LinkedHashMap<>();
     winningRegistrationIdByIssuer.forEach(
         (issuerUri, registrationId) -> {

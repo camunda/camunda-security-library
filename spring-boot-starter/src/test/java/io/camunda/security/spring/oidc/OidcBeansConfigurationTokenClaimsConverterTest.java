@@ -279,6 +279,30 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
   }
 
   @Test
+  void shouldNotLetABlankRegistrationIdWinIssuerOwnershipOverAValidProvider() {
+    // given a flat block with a blank registration-id sharing an issuer with a real provider —
+    // the flat entry is inserted first by flatten(), so without filtering it would win ownership
+    // and the claims converter would be built from the wrong (blank-id) configuration while the
+    // decoder verifies the token with the valid "entra" provider
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.registration-id=",
+            "camunda.security.authentication.oidc.client-id=default-client",
+            "camunda.security.authentication.oidc.issuer-uri=" + ENTRA_ISSUER,
+            "camunda.security.authentication.providers.oidc.entra.client-id=entra-client",
+            "camunda.security.authentication.providers.oidc.entra.issuer-uri=" + ENTRA_ISSUER,
+            "camunda.security.authentication.providers.oidc.entra.username-claim=entra_user")
+        .run(
+            ctx -> {
+              final var converter = byIssuer(ctx).get(ENTRA_ISSUER);
+              assertThat(converter).isNotNull().isNotSameAs(mockDefaultConverter);
+              final var authentication =
+                  converter.convert(Map.of("iss", ENTRA_ISSUER, "entra_user", "alice"));
+              assertThat(authentication.authenticatedUsername()).isEqualTo("alice");
+            });
+  }
+
+  @Test
   void backsOffCleanlyWhenLazyTokenClaimsConverterBeanIsAbsent() {
     // Mirrors the documented @Import(OidcBeansConfiguration.class) quickstart via a REAL host
     // @Configuration + @Import, not AutoConfigurations.of(...): auto-configuration processing
