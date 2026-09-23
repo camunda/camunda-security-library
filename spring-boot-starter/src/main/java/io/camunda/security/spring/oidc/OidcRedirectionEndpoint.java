@@ -45,8 +45,9 @@ public final class OidcRedirectionEndpoint {
    * wildcard, the result depends on {@code PathPatternRequestMatcher}, which reads the remaining
    * placeholder as a path variable for one segment.
    *
-   * @throws IllegalArgumentException if the value gives a path that is not blank and does not start
-   *     with {@code "/"}, because {@code redirectionEndpoint().baseUri(...)} needs a leading slash
+   * <p>A value that resolves to a path without a leading slash — {@code
+   * redirectionEndpoint().baseUri(...)} needs one — falls back to {@code defaultPath} with a {@code
+   * WARN}, the same as a value with no callback path at all.
    */
   public static String resolve(
       final String configuredRedirectUri, final String contextPath, final String defaultPath) {
@@ -72,7 +73,16 @@ public final class OidcRedirectionEndpoint {
           defaultPath);
       return defaultPath;
     }
-    requireLeadingSlash(path, configuredRedirectUri);
+    if (!path.startsWith("/")) {
+      LOG.warn(
+          "OIDC redirect-uri '{}' resolves to a path that does not start with '/' (was: '{}');"
+              + " falling back to the default redirection-endpoint path '{}'. The OIDC login"
+              + " callback will be served at that default instead.",
+          configuredRedirectUri,
+          path,
+          defaultPath);
+      return defaultPath;
+    }
     // Log the resolved matcher path so the callback the chain listens on is reconstructable from
     // logs alone (this resolution silently broke logins for a full alpha cycle — see GH-569).
     LOG.debug(
@@ -114,17 +124,6 @@ public final class OidcRedirectionEndpoint {
   private static int indexOrEnd(final String path, final char delimiter) {
     final int index = path.indexOf(delimiter);
     return index >= 0 ? index : path.length();
-  }
-
-  /** {@code redirectionEndpoint().baseUri(...)} needs a leading slash. */
-  private static void requireLeadingSlash(final String path, final String configuredRedirectUri) {
-    if (!path.startsWith("/")) {
-      throw new IllegalArgumentException(
-          "OIDC redirect-uri must resolve to a path starting with '/', but '"
-              + configuredRedirectUri
-              + "' resolved to: "
-              + path);
-    }
   }
 
   /**

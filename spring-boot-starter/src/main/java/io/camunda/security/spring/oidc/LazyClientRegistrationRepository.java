@@ -25,8 +25,9 @@ import org.springframework.util.StringUtils;
  * registration, and not while the application builds the repository. An unreachable identity
  * provider therefore fails the requests that need it, and not the start. The repository keeps a
  * resolved registration after a successful lookup only, so the next lookup makes a new attempt
- * after a failed one. The constructor validates the configuration without network access, so an
- * incorrect provider block still stops the start.
+ * after a failed one. The constructor validates the configuration without network access; a
+ * provider block that fails such a check logs a {@code WARN} naming the provider and the problem,
+ * rather than stopping the start (see {@link ScopedClientRegistrationFactory}'s class Javadoc).
  *
  * <p>Iteration resolves each registration, and therefore makes discovery. A caller that runs while
  * the application starts must use {@link #registrationIds()} or {@link
@@ -52,10 +53,8 @@ public final class LazyClientRegistrationRepository
    *     ScopedClientRegistrationFactory#createFromProviderMap(Map, String)}
    * @param scopeDescription the name a failure log gives to the scope this repository serves (for
    *     example {@code basePath=/physical-tenants/t1}), or {@code null} for the unscoped text
-   * @throws IllegalStateException if a provider block gives no registration for a reason that needs
-   *     no network access, such as a blank registrationId, or no issuer-uri together with
-   *     incomplete endpoints
-   * @throws IllegalArgumentException if a configured redirect-uri is not absolute
+   * @throws IllegalArgumentException if scopedRedirectUriPath is non-blank and does not start with
+   *     '/'
    */
   public LazyClientRegistrationRepository(
       final ScopedClientRegistrationFactory factory,
@@ -124,12 +123,15 @@ public final class LazyClientRegistrationRepository
     if (cached != null) {
       return cached;
     }
+    // createAlreadyValidated, not createFromProviderMap: the constructor already ran the
+    // no-network validation once, over the whole map. Re-running it here on every retry of a
+    // registration that keeps failing to build would re-log the same WARN on every request.
     final var registration =
         DeferredOidcResolution.resolve(
             describe(registrationId, config),
             () ->
                 factory
-                    .createFromProviderMap(Map.of(registrationId, config), scopedRedirectUriPath)
+                    .createAlreadyValidated(Map.of(registrationId, config), scopedRedirectUriPath)
                     .getFirst());
     final var winner = resolved.putIfAbsent(registrationId, registration);
     return winner != null ? winner : registration;

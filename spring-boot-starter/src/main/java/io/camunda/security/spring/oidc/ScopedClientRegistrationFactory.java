@@ -234,6 +234,24 @@ public final class ScopedClientRegistrationFactory {
     return createWithoutLoginRoutes(flatten(authentication));
   }
 
+  /**
+   * As {@link #createFromProviderMap(Map, String)}, but skips the no-network validation. For a
+   * caller such as {@link LazyClientRegistrationRepository#findByRegistrationId} that already ran
+   * {@link #validateWithoutNetwork} once, over the whole provider map, at construction: repeating
+   * it on every retry of a registration that keeps failing to build would re-log the same WARN on
+   * every request, unlike a genuine build failure, which {@link DeferredOidcResolution} already
+   * rate-limits.
+   */
+  List<ClientRegistration> createAlreadyValidated(
+      final Map<String, OidcConfiguration> providers, final String scopedRedirectUriPath) {
+    return providers.entrySet().stream()
+        .map(
+            e ->
+                buildClientRegistration(
+                    e.getKey(), e.getValue(), scopedRedirectUriPath, LoginRouteChecks.ENFORCED))
+        .toList();
+  }
+
   private List<ClientRegistration> createFromProviderMap(
       final Map<String, OidcConfiguration> providers,
       final String scopedRedirectUriPath,
@@ -488,8 +506,8 @@ public final class ScopedClientRegistrationFactory {
 
   /**
    * Each endpoint in a provider block is an address to which the application sends requests. A
-   * check of these addresses needs no network. A typo therefore causes a failure at startup, also
-   * if the related request occurs much later. Two endpoints are exempt where nothing dereferences
+   * check of these addresses needs no network, so a typo is logged here rather than only surfacing
+   * on the first related request, much later. Two endpoints are exempt where nothing dereferences
    * them: a {@code user-info-uri} that the build path discards, and the end-session endpoint of a
    * caller that mounts no login chain.
    */
@@ -1185,13 +1203,13 @@ public final class ScopedClientRegistrationFactory {
    */
   private ClientRegistration.Builder clientRegistrationBuilder(
       final String registrationId, final OidcConfiguration oidc) {
+    // warnIfEndpointConfigurationIncomplete already ran in validateWithoutNetwork, over the whole
+    // map, before createFromProviderMap called this method — see buildClientRegistration.
     final boolean hasIssuer = StringUtils.hasText(oidc.getIssuerUri());
     final ClientRegistration.Builder builder =
         hasIssuer
             ? discoveredBuilder(oidc.getIssuerUri()).registrationId(registrationId)
             : ClientRegistration.withRegistrationId(registrationId);
-
-    warnIfEndpointConfigurationIncomplete(registrationId, oidc);
 
     return applyExplicitEndpointOverrides(builder, oidc);
   }
