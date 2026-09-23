@@ -73,6 +73,12 @@ gap that was previously empty. `ScopedWebappSecurityChainBuilder` already resolv
 `ObjectProvider#ifAvailable(...)` for both the primary chain and every per-scope chain, so the new
 default reaches both with no further changes.
 
+This updates one fact in ADR-0007's own "Default implementations and override boundaries" table,
+without reopening that ADR: the row there still describes Spring's raw default as what runs absent
+a host bean, because CSL supplied none at the time. That default is now `FailSoftOidcUserService`.
+The rest of ADR-0007 — the `userInfoEnabled` toggle, the host-override precedence rule, the
+request-time augmentation design — is unaffected and stays the current decision on all of it.
+
 **The discriminator.** A transport failure, an audience failure, and an OIDC S:5.3.2
 subject-mismatch failure all surface from Spring Security as the same thing: an
 `OAuth2AuthenticationException` with the error code `invalid_user_info_response`. This was
@@ -94,10 +100,19 @@ exception, `UserInfoFetchFailedException`. This marker is a plain `RuntimeExcept
 normalized failure as a field. It is deliberately not a subclass of `OAuth2AuthenticationException`,
 so it can never be mistaken for the exception type whose ambiguity motivated this design.
 
-The `sub`-validation code runs strictly after the delegate returns successfully. It is never inside
+The sub-*mismatch* check runs strictly after the delegate returns successfully. It is never inside
 the wrapped call, so it is excluded from fail-soft handling by construction, not by a runtime
 check. The marker itself never escapes `loadUser()`: the `user-info-required=true` branch rethrows
 the normalized failure, never the marker.
+
+A response missing `sub` entirely is a separate OIDC requirement from the mismatch check: OIDC
+S:5.3.2 requires `sub` to be present, then to match the ID token's. `DefaultOAuth2UserService`
+enforces the presence requirement earlier than `OidcUserService#loadUser` does, inside the wrapped
+call (its own `DefaultOAuth2User` constructor throws when the name attribute, `sub` in CSL, is
+absent), so this one specific check does get caught by the wrapper. Folding it into fail-soft is
+still safe: the fallback below never reads any claim from the delegate's response, malformed or
+not. There is no unvalidated payload for this class to trust in any of the three malformed-response
+cases, so nothing forged or misdirected can reach an authenticated session through them.
 
 The WARN log omits the throwable: it carries only the registration id and the error code. The full
 cause goes to DEBUG instead. Spring wires this same bean into

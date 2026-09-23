@@ -29,12 +29,19 @@ import org.springframework.security.oauth2.core.user.OAuth2User;
  * Auth0/Okta/PingFederate in common audience-bound setups. A transport error fails this way, and so
  * does a malformed response ({@code DefaultOAuth2UserService} throws a plain {@code
  * IllegalArgumentException} for an empty body, a body with no claims, or a body missing the name
- * attribute); {@link #asUserInfoResponseFailure} normalizes every one of these to the same {@code
- * invalid_user_info_response} error code that {@link OidcUserService#loadUser} also uses for its
- * OIDC S:5.3.2 sub-mismatch check, so the two cases can't be told apart by error code alone. Only
- * the delegate fetch call is wrapped, in a private marker exception, making them structurally
- * distinguishable instead: the sub-mismatch check runs after the delegate returns, so it can never
- * be caught here.
+ * attribute — always {@code sub} in CSL); {@link #asUserInfoResponseFailure} normalizes every one
+ * of these to the same {@code invalid_user_info_response} error code that {@link
+ * OidcUserService#loadUser} also uses for its OIDC S:5.3.2 sub-mismatch check, so error code alone
+ * can't tell any of them apart. Only the delegate fetch call is wrapped, in a private marker
+ * exception, making them structurally distinguishable instead: the sub-<em>mismatch</em> check
+ * itself always runs after the delegate returns, so it is never caught here.
+ *
+ * <p>A response missing {@code sub} entirely is a different OIDC requirement than a mismatch — OIDC
+ * S:5.3.2 requires {@code sub} to be present, then to match the ID token's — and {@code
+ * DefaultOAuth2UserService} enforces the presence requirement earlier than {@link
+ * OidcUserService#loadUser} does, inside the wrapped call. Folding it into fail-soft here is still
+ * safe: {@link #idTokenOnlyFallback} never reads any claim from the delegate's response, malformed
+ * or not, so there is no unvalidated payload for this class to trust either way.
  *
  * <p>A provider that cannot tolerate missing UserInfo claims (e.g. groups sourced only from
  * UserInfo) sets {@code user-info-required=true}; this class then re-throws instead of degrading.
