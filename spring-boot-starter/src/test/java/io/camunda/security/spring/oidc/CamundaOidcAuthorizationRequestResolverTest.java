@@ -8,11 +8,13 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.model.config.oidc.AuthorizeRequestConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -57,6 +59,20 @@ class CamundaOidcAuthorizationRequestResolverTest {
             .authorizationUri("http://idp.example.com/auth")
             .tokenUri("http://idp.example.com/token")
             .build();
+  }
+
+  @Test
+  void shouldNotThrowOnANullRegistrationIdInTheSourcesMap() {
+    // given a sources map holding a blank/null registrationId key, as a flat oidc.* block with no
+    // registration-id set can produce — the resolver's constructor must not let Map.copyOf reject
+    // it and abort startup, since that registrationId is only ever warn-only elsewhere
+    final var sources =
+        Collections.<String, OidcConfiguration>singletonMap(null, new OidcConfiguration());
+
+    assertThatCode(
+            () ->
+                new CamundaOidcAuthorizationRequestResolver(clientRegistrationRepository, sources))
+        .doesNotThrowAnyException();
   }
 
   @Test

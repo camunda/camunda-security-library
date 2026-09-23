@@ -11,6 +11,7 @@ import io.camunda.security.api.model.config.oidc.AuthorizeRequestConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.spring.scope.BasePaths;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -25,6 +26,7 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequ
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
+import org.springframework.util.StringUtils;
 
 /**
  * CSL default {@link OAuth2AuthorizationRequestResolver} for the OIDC webapp chain. Lifts OC's
@@ -85,7 +87,17 @@ public final class CamundaOidcAuthorizationRequestResolver
               + authorizationRequestBaseUri);
     }
     this.clientRegistrationRepository = clientRegistrationRepository;
-    this.sourcesByRegistrationId = Map.copyOf(sourcesByRegistrationId);
+    // A blank/null registrationId is warn-only elsewhere (ScopedClientRegistrationFactory), not
+    // rejected — keeping it here would fail Map.copyOf on the null key and block startup, defeating
+    // that contract.
+    final var withoutBlankRegistrationIds = new LinkedHashMap<String, OidcConfiguration>();
+    sourcesByRegistrationId.forEach(
+        (registrationId, config) -> {
+          if (StringUtils.hasText(registrationId)) {
+            withoutBlankRegistrationIds.put(registrationId, config);
+          }
+        });
+    this.sourcesByRegistrationId = Map.copyOf(withoutBlankRegistrationIds);
     this.authorizationRequestBaseUri = normalizedBaseUri;
     resolvers = new ConcurrentHashMap<>();
     authorizationRequestMatcher =

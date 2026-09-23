@@ -114,6 +114,23 @@ final class ScopedOidcClaimsProviderFactoryTest {
   }
 
   @Test
+  void shouldNotThrowOnANullRegistrationIdAmongTheFlattenedProviders() {
+    // given a flat oidc.* block with no registration-id set alongside a valid provider —
+    // registrationId is warn-only, not rejected, so the null key must not reach
+    // IssuerRegistrations.ofConfiguration's Map.copyOf and abort startup
+    final var authentication =
+        authEnabled("https://idp.example.com", "https://idp.example.com/userinfo");
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put(null, authentication.getOidc());
+    providers.put(
+        "b", authEnabled("https://idp-b.example", "https://idp-b.example/userinfo").getOidc());
+    when(clientRegistrationFactory.flatten(authentication)).thenReturn(providers);
+
+    assertThat(factory.buildClaimsProvider(authentication))
+        .isInstanceOf(CachingOidcClaimsProvider.class);
+  }
+
+  @Test
   void shouldFailTheTokenOfAProviderThatDoesNotAnswerAsAServerError() {
     final var authentication =
         authEnabled("https://idp.example.com", "https://idp.example.com/userinfo");
