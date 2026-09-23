@@ -192,6 +192,78 @@ class DefaultAndScopedSessionRegressionTest {
   }
 
   /**
+   * Regression guard for the CSRF response-header filter's login detection: with the default and a
+   * physical-tenant scope's chains registered together, an unauthenticated GET to the scope's own
+   * login path must get a token from the scope's chain, while a sibling unscoped path that merely
+   * *contains* {@code /login} as a substring must not be mistaken for the login endpoint on the
+   * default chain. Exercises the actual chain-routing guarantee that {@code
+   * csrfTokenResponseHeaderFilter}'s per-scope matcher relies on — something the
+   * direct-construction unit tests in {@code CsrfTokenResponseHeaderFilterTest} cannot cover.
+   */
+  @Test
+  void scopedLoginGetIssuesTokenWhileUnscopedPathMerelyContainingLoginDoesNot() throws Exception {
+    new WebApplicationContextRunner()
+        .withUserConfiguration(
+            ObjectMapperConfig.class, StubUserDetailsPort.class, SingleBasicScopeProvider.class)
+        .withBean(
+            "securityPathPort",
+            SecurityPathPort.class,
+            () -> StubSecurityPaths.builder().unprotectedApiPaths("/api/public/login-info").build())
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                BaseSecurityConfiguration.class,
+                BasicAuthWebappSecurityConfiguration.class,
+                BasicAuthApiSecurityConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                UserConfiguration.class,
+                ScopedSecurityChainConfiguration.class))
+        .withPropertyValues("camunda.security.authentication.method=basic")
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+
+              final var defaultWebappChain =
+                  ctx.getBean("basicAuthWebappSecurityFilterChain", SecurityFilterChain.class);
+              final var defaultApiChain =
+                  ctx.getBean("basicAuthApiSecurityFilterChain", SecurityFilterChain.class);
+              final var scopedWebappChain = scopedChain(ctx, "scopedWebappSecurityFilterChain-");
+              final var scopedApiChain = scopedChain(ctx, "scopedApiSecurityFilterChain-");
+
+              final var proxy =
+                  new FilterChainProxy(
+                      List.of(
+                          defaultWebappChain, defaultApiChain, scopedWebappChain, scopedApiChain));
+
+              final var scopedLoginRequest = new MockHttpServletRequest("GET", BASE_PT + "/login");
+              final var scopedLoginResponse = new MockHttpServletResponse();
+              proxy.doFilter(scopedLoginRequest, scopedLoginResponse, new MockFilterChain());
+              assertThat(
+                      scopedLoginResponse.getHeader(
+                          CamundaSecurityFilterChainConstants.X_CSRF_TOKEN))
+                  .as(
+                      "an unauthenticated GET to the scoped login path must receive a CSRF token"
+                          + " from the scope's own chain")
+                  .isNotNull();
+
+              // Permit-all so the request completes with 200 rather than 401 — an unauthenticated
+              // GET to an auth-required path would have its response (and any header set on it)
+              // reset by JsonProblemDetailAuthFailureHandler regardless of the CSRF header logic,
+              // masking the very bug this test guards against.
+              final var unrelatedRequest =
+                  new MockHttpServletRequest("GET", "/api/public/login-info");
+              final var unrelatedResponse = new MockHttpServletResponse();
+              proxy.doFilter(unrelatedRequest, unrelatedResponse, new MockFilterChain());
+              assertThat(
+                      unrelatedResponse.getHeader(CamundaSecurityFilterChainConstants.X_CSRF_TOKEN))
+                  .as(
+                      "a path merely containing \"/login\" must not be mistaken for the login"
+                          + " endpoint on the default chain")
+                  .isNull();
+            });
+  }
+
+  /**
    * Durable-storage variant of the regression above: #55852 was specifically about persistent web
    * sessions, so this repeats the same mixed default+scoped, two-round-trip sequence with real
    * {@link SessionStorePort}-backed durable repositories — a distinct store for the default surface

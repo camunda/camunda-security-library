@@ -178,6 +178,37 @@ final class SecurityFilterChainSupportTest {
   }
 
   @Test
+  void shouldIncludePrefixedLogoutPathInLogoutPathsWhenCookiePathProvided() {
+    // given
+    final var cookiePath = "/physical-tenants/t1";
+
+    // when
+    final var logoutPaths = SecurityFilterChainSupport.csrfLogoutPaths(cookiePath);
+
+    // then
+    assertThat(logoutPaths)
+        .as("must contain unprefixed /logout (primary chain compatibility)")
+        .contains("/logout")
+        .as("must contain scoped /physical-tenants/t1/logout")
+        .contains("/physical-tenants/t1/logout")
+        .as("must not enforce /login")
+        .noneMatch(p -> p.endsWith("/login"));
+  }
+
+  @Test
+  void shouldNotIncludePrefixedLogoutPathInLogoutPathsWhenCookiePathIsNull() {
+    // when
+    final var logoutPaths = SecurityFilterChainSupport.csrfLogoutPaths(null);
+
+    // then
+    assertThat(logoutPaths)
+        .as("must contain /logout")
+        .contains("/logout")
+        .as("must not contain any scoped logout path")
+        .noneMatch(p -> p.contains("/physical-tenants"));
+  }
+
+  @Test
   void shouldStripTrailingSlashFromCookiePathOnCsrfCookie() {
     // given
     final var properties = csrfEnabledProperties();

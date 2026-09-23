@@ -40,6 +40,7 @@ import org.springframework.security.web.header.writers.CrossOriginEmbedderPolicy
 import org.springframework.security.web.header.writers.CrossOriginOpenerPolicyHeaderWriter;
 import org.springframework.security.web.header.writers.CrossOriginResourcePolicyHeaderWriter;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.util.pattern.PathPatternParser;
@@ -69,15 +70,37 @@ public final class SecurityFilterChainSupport {
     final var allowedPaths = new HashSet<String>();
     allowedPaths.addAll(pathPort.unprotectedPaths());
     allowedPaths.addAll(pathPort.unprotectedApiPaths());
-    allowedPaths.add(LOGOUT_URL);
+    allowedPaths.addAll(csrfLogoutPaths(cookiePath));
     allowedPaths.addAll(properties.getCsrf().getIgnoredPathPatterns());
+    return allowedPaths;
+  }
 
+  /**
+   * Computes the logout endpoint(s) exempt from CSRF protection for the given scope: the unprefixed
+   * {@code /logout} constant, plus the {@code cookiePath}-prefixed variant when {@code cookiePath}
+   * identifies a per-scope basePath (e.g. {@code /physical-tenants/t1}).
+   *
+   * <p>Package-private for unit testing.
+   */
+  static Set<String> csrfLogoutPaths(final String cookiePath) {
+    final var logoutPaths = new HashSet<String>();
+    addScopedPath(logoutPaths, LOGOUT_URL, cookiePath);
+    return logoutPaths;
+  }
+
+  /**
+   * Adds {@code suffix} (e.g. {@code /login}/{@code /logout}) to {@code target}, and, when {@code
+   * cookiePath} identifies a per-scope basePath, also adds the {@code cookiePath}-prefixed variant.
+   * Trailing slashes on {@code cookiePath} are stripped before concatenation to avoid double-slash
+   * paths.
+   */
+  private static void addScopedPath(
+      final Set<String> target, final String suffix, final String cookiePath) {
+    target.add(suffix);
     if (cookiePath != null && !cookiePath.isBlank()) {
       final var base = BasePaths.normalize(cookiePath, "cookiePath");
-      allowedPaths.add(base + LOGOUT_URL);
+      target.add(base + suffix);
     }
-
-    return allowedPaths;
   }
 
   /**
@@ -100,13 +123,7 @@ public final class SecurityFilterChainSupport {
    */
   static Set<String> csrfEnforcedPaths(final String cookiePath) {
     final var enforcedPaths = new HashSet<String>();
-    enforcedPaths.add(LOGIN_URL);
-
-    if (cookiePath != null && !cookiePath.isBlank()) {
-      final var base = BasePaths.normalize(cookiePath, "cookiePath");
-      enforcedPaths.add(base + LOGIN_URL);
-    }
-
+    addScopedPath(enforcedPaths, LOGIN_URL, cookiePath);
     return enforcedPaths;
   }
 
@@ -248,7 +265,7 @@ public final class SecurityFilterChainSupport {
             csrf.csrfTokenRepository(csrfTokenRepository)
                 .requireCsrfProtectionMatcher(
                     new CsrfProtectionRequestMatcher(allowedPaths, enforcedPaths)));
-    http.addFilterAfter(csrfTokenResponseHeaderFilter(), CsrfFilter.class);
+    http.addFilterAfter(csrfTokenResponseHeaderFilter(cookiePath), CsrfFilter.class);
   }
 
   /**
@@ -331,8 +348,22 @@ public final class SecurityFilterChainSupport {
    * bodies — silently strips a post-chain write. The {@link CsrfToken} request attribute is
    * populated by the upstream {@code CsrfFilter} (we are registered via {@code addFilterAfter(_,
    * CsrfFilter.class)}), so it is available at filter entry.
+   *
+   * <p>Login/logout detection is scoped to this chain's {@code cookiePath} (unprefixed for the
+   * primary chain), matched via {@link
+   * io.camunda.security.spring.csrf.CsrfProtectionRequestMatcher#buildPathsMatcher} against the
+   * same path sets {@link #csrfEnforcedPaths} and {@link #csrfLogoutPaths} compute for CSRF
+   * enforcement/exemption on this scope, rather than by an unscoped substring check.
    */
   public static OncePerRequestFilter csrfTokenResponseHeaderFilter() {
+    return csrfTokenResponseHeaderFilter(null);
+  }
+
+  public static OncePerRequestFilter csrfTokenResponseHeaderFilter(final String cookiePath) {
+    final RequestMatcher loginMatcher =
+        CsrfProtectionRequestMatcher.buildPathsMatcher(csrfEnforcedPaths(cookiePath));
+    final RequestMatcher logoutMatcher =
+        CsrfProtectionRequestMatcher.buildPathsMatcher(csrfLogoutPaths(cookiePath));
     return new OncePerRequestFilter() {
       @Override
       protected void doFilterInternal(
@@ -340,22 +371,22 @@ public final class SecurityFilterChainSupport {
           final HttpServletResponse response,
           final FilterChain filterChain)
           throws ServletException, IOException {
-        writeCsrfTokenHeaderIfApplicable(request, response);
+        writeCsrfTokenHeaderIfApplicable(request, response, loginMatcher, logoutMatcher);
         filterChain.doFilter(request, response);
       }
     };
   }
 
   private static void writeCsrfTokenHeaderIfApplicable(
-      final HttpServletRequest request, final HttpServletResponse response) {
-    final String path = request.getRequestURI();
-    final String method = request.getMethod();
-    final boolean isLogout = path != null && path.contains(LOGOUT_URL);
-    if (isLogout) {
+      final HttpServletRequest request,
+      final HttpServletResponse response,
+      final RequestMatcher loginMatcher,
+      final RequestMatcher logoutMatcher) {
+    if (logoutMatcher.matches(request)) {
       return;
     }
-    final boolean isLogin = path != null && path.contains(LOGIN_URL);
-    final boolean isGetOrLogin = "GET".equalsIgnoreCase(method) || isLogin;
+    final boolean isLogin = loginMatcher.matches(request);
+    final boolean isGetOrLogin = "GET".equalsIgnoreCase(request.getMethod()) || isLogin;
     if (!isGetOrLogin) {
       return;
     }

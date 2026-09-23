@@ -89,7 +89,7 @@ public final class CsrfProtectionRequestMatcher implements RequestMatcher {
     return request.getSession(false) != null;
   }
 
-  private static RequestMatcher buildPathsMatcher(final Set<String> paths) {
+  public static RequestMatcher buildPathsMatcher(final Set<String> paths) {
     if (paths == null || paths.isEmpty()) {
       return NEVER_MATCHES;
     }

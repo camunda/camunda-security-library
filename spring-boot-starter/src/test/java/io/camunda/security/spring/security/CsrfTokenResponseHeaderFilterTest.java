@@ -126,6 +126,42 @@ class CsrfTokenResponseHeaderFilterTest {
     request.setAttribute(CsrfToken.class.getName(), TOKEN);
     final var response = new MockHttpServletResponse();
 
+    SecurityFilterChainSupport.csrfTokenResponseHeaderFilter("/physical-tenants/t1")
+        .doFilter(request, response, (req, res) -> {});
+
+    assertThat(response.getHeader(X_CSRF_TOKEN)).isEqualTo(TOKEN.getToken());
+  }
+
+  @Test
+  void doesNotWriteHeaderForUnauthenticatedGetToPathMerelyContainingLogin() throws Exception {
+    // /api/users/login-history merely *contains* "/login" as a substring; it must not be
+    // mistaken for the login endpoint and handed a token while unauthenticated.
+    SecurityContextHolder.clearContext();
+
+    final var request = new MockHttpServletRequest("GET", "/api/users/login-history");
+    request.setAttribute(CsrfToken.class.getName(), TOKEN);
+    final var response = new MockHttpServletResponse();
+
+    SecurityFilterChainSupport.csrfTokenResponseHeaderFilter()
+        .doFilter(request, response, (req, res) -> {});
+
+    assertThat(response.getHeader(X_CSRF_TOKEN)).isNull();
+  }
+
+  @Test
+  void writesHeaderForAuthenticatedGetToPathMerelyContainingLogout() throws Exception {
+    // /api/audit/logout-events merely *contains* "/logout" as a substring; it must still get its
+    // token refreshed like any other authenticated GET, rather than being mistaken for the logout
+    // endpoint.
+    SecurityContextHolder.getContext()
+        .setAuthentication(
+            new UsernamePasswordAuthenticationToken(
+                "user", null, List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+
+    final var request = new MockHttpServletRequest("GET", "/api/audit/logout-events");
+    request.setAttribute(CsrfToken.class.getName(), TOKEN);
+    final var response = new MockHttpServletResponse();
+
     SecurityFilterChainSupport.csrfTokenResponseHeaderFilter()
         .doFilter(request, response, (req, res) -> {});
 
