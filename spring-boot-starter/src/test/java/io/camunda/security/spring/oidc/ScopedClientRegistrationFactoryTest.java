@@ -833,6 +833,26 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
+  void shouldNotLogTheRejectionExceptionForAnUnusableScope() {
+    // given a scope Spring's own builder would reject with a message that quotes it verbatim —
+    // SLF4J prints a trailing Throwable argument via the appender's own stack-trace handling, not
+    // through the formatted message text, so a plain content assertion would miss this
+    final var oidc = explicitEndpointsWith(b -> b.scope(List.of("open\r\nid")));
+
+    final var appender = captureFactoryLogs();
+    try {
+      factory.validateWithoutNetwork(Map.of("provider-b", oidc), null);
+    } finally {
+      releaseFactoryLogs(appender);
+    }
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .filteredOn(event -> event.getFormattedMessage().contains("unusable scope"))
+        .singleElement()
+        .satisfies(event -> assertThat(event.getThrowableProxy()).isNull());
+  }
+
+  @Test
   void shouldStartAndBuildAProviderThatConfiguresNoScope() {
     // given a provider whose scope list was unset rather than filled
     final var providers = Map.of("oidc", explicitEndpointsWith(b -> b.scope(null)));

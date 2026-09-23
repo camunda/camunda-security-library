@@ -406,9 +406,10 @@ public final class ScopedClientRegistrationFactory {
    * before it reaches a log message, so a registrationId carrying one cannot forge a line in the
    * log it is quoted in. {@code registrationId} is never validated by this class the way a URL
    * value is — a caller can set it to anything — so every place that logs it needs this, not just
-   * the checks that reject an unsafe form.
+   * the checks that reject an unsafe form. Public because callers outside this package (for example
+   * {@code ScopedWebappSecurityChainBuilder}) log a raw registrationId of their own too.
    */
-  private static String sanitizeForLog(final String value) {
+  public static String sanitizeForLog(final String value) {
     return value == null ? null : value.replaceAll("\\p{Cntrl}", "?");
   }
 
@@ -521,14 +522,16 @@ public final class ScopedClientRegistrationFactory {
           .scope(oidc.getScope())
           .build();
     } catch (final IllegalArgumentException rejected) {
+      // Not rejected itself: Spring's own message quotes the configured scope verbatim, and a
+      // scope containing CR/LF could then forge a line in this log despite registrationId being
+      // sanitized. The warning below already says everything actionable without it.
       final var safeId = sanitizeForLog(registrationId);
       LOG.warn(
           "OIDC provider '{}' has an unusable scope. A scope is one entry per value, not a"
               + " space-separated list. Set them under camunda.security.authentication.oidc.scope"
               + " (flat) or camunda.security.authentication.providers.oidc.{}.scope.",
           safeId,
-          safeId,
-          rejected);
+          safeId);
     }
   }
 

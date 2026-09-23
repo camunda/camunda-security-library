@@ -126,22 +126,11 @@ public final class DeferredOidcResolution {
       final String registrationId, final OidcConfiguration config) {
     final var issuerUri = config.getIssuerUri();
     return "'"
-        + sanitizeForLog(registrationId)
+        + ScopedClientRegistrationFactory.sanitizeForLog(registrationId)
         + "'"
         + (StringUtils.hasText(issuerUri)
             ? " (issuer " + UrlRedaction.redact(issuerUri) + ")"
             : "");
-  }
-
-  /**
-   * Replaces a control character (for example CR or LF) in a registrationId with {@code '?'} before
-   * it reaches a log message, so a value carrying one cannot forge a line in the log it is quoted
-   * in. Warn-only validation lets such a value reach this class, resolved on every retry, so the
-   * same treatment {@code ScopedClientRegistrationFactory} applies to its own warnings applies here
-   * too.
-   */
-  private static String sanitizeForLog(final String value) {
-    return value == null ? null : value.replaceAll("\\p{Cntrl}", "?");
   }
 
   /**

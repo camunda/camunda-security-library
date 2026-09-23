@@ -625,7 +625,7 @@ public final class ScopedWebappSecurityChainBuilder {
                 + "post-logout-redirect-enabled=false; the configured URI is ignored and no "
                 + "post_logout_redirect_uri will be sent. Remove one of the two to make the intent "
                 + "unambiguous.",
-            registrationId);
+            ScopedClientRegistrationFactory.sanitizeForLog(registrationId));
       }
       return "";
     }
@@ -673,15 +673,16 @@ public final class ScopedWebappSecurityChainBuilder {
     if (LOG.isDebugEnabled()) {
       redirectUris.forEach(
           (registrationId, uri) -> {
+            final var safeId = ScopedClientRegistrationFactory.sanitizeForLog(registrationId);
             if (uri.isEmpty()) {
               LOG.debug(
                   "post_logout_redirect_uri is disabled for OIDC registration '{}'; "
                       + "the IdP will apply its own post-logout default.",
-                  registrationId);
+                  safeId);
             } else {
               LOG.debug(
                   "OIDC registration '{}' will send post_logout_redirect_uri '{}'.",
-                  registrationId,
+                  safeId,
                   UrlRedaction.redact(uri));
             }
           });
