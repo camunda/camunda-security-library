@@ -38,6 +38,7 @@ public class OidcConfiguration {
   public static final boolean DEFAULT_IDP_LOGOUT_ENABLED = true;
   public static final boolean DEFAULT_POST_LOGOUT_REDIRECT_ENABLED = true;
   public static final boolean DEFAULT_USER_INFO_ENABLED = true;
+  public static final boolean DEFAULT_USER_INFO_REQUIRED = false;
 
   private String issuerUri;
   private String clientName;
@@ -71,6 +72,7 @@ public class OidcConfiguration {
   private boolean postLogoutRedirectEnabled = DEFAULT_POST_LOGOUT_REDIRECT_ENABLED;
   private String postLogoutRedirectUri;
   private boolean userInfoEnabled = DEFAULT_USER_INFO_ENABLED;
+  private boolean userInfoRequired = DEFAULT_USER_INFO_REQUIRED;
   private OidcUserInfoAugmentationConfiguration userInfoAugmentation =
       new OidcUserInfoAugmentationConfiguration();
   private OidcDiagnosticsConfiguration diagnostics = new OidcDiagnosticsConfiguration();
@@ -403,6 +405,24 @@ public class OidcConfiguration {
     this.userInfoEnabled = userInfoEnabled;
   }
 
+  /**
+   * Whether a failed UserInfo fetch must fail login instead of degrading to ID-token-only claims.
+   * Defaults to {@code false}: the starter's default {@code OidcUserService} degrades on a
+   * transport or audience failure and logs a WARN. Set {@code true} for a provider whose
+   * authorization-relevant claims (e.g. groups) are only available via UserInfo.
+   *
+   * <p>Has no effect when {@link #isUserInfoEnabled()} is {@code false} — login then never attempts
+   * the call this flag would make mandatory. {@code ScopedClientRegistrationFactory} rejects that
+   * combination at startup.
+   */
+  public boolean isUserInfoRequired() {
+    return userInfoRequired;
+  }
+
+  public void setUserInfoRequired(final boolean userInfoRequired) {
+    this.userInfoRequired = userInfoRequired;
+  }
+
   public OidcUserInfoAugmentationConfiguration getUserInfoAugmentation() {
     return userInfoAugmentation;
   }
@@ -470,6 +490,8 @@ public class OidcConfiguration {
         || !DEFAULT_CLOCK_SKEW.equals(clockSkew)
         || postLogoutRedirectEnabled != DEFAULT_POST_LOGOUT_REDIRECT_ENABLED
         || postLogoutRedirectUri != null
+        || userInfoEnabled != DEFAULT_USER_INFO_ENABLED
+        || userInfoRequired != DEFAULT_USER_INFO_REQUIRED
         || diagnostics.isEnabled();
   }
 
@@ -509,6 +531,7 @@ public class OidcConfiguration {
     private boolean postLogoutRedirectEnabled = DEFAULT_POST_LOGOUT_REDIRECT_ENABLED;
     private String postLogoutRedirectUri;
     private boolean userInfoEnabled = DEFAULT_USER_INFO_ENABLED;
+    private boolean userInfoRequired = DEFAULT_USER_INFO_REQUIRED;
     private OidcUserInfoAugmentationConfiguration userInfoAugmentation =
         new OidcUserInfoAugmentationConfiguration();
     private OidcDiagnosticsConfiguration diagnostics = new OidcDiagnosticsConfiguration();
@@ -665,6 +688,11 @@ public class OidcConfiguration {
       return this;
     }
 
+    public Builder userInfoRequired(final boolean userInfoRequired) {
+      this.userInfoRequired = userInfoRequired;
+      return this;
+    }
+
     public Builder userInfoAugmentation(
         final OidcUserInfoAugmentationConfiguration userInfoAugmentation) {
       this.userInfoAugmentation = userInfoAugmentation;
@@ -703,6 +731,7 @@ public class OidcConfiguration {
       config.setPostLogoutRedirectEnabled(postLogoutRedirectEnabled);
       config.setPostLogoutRedirectUri(postLogoutRedirectUri);
       config.setUserInfoEnabled(userInfoEnabled);
+      config.setUserInfoRequired(userInfoRequired);
       config.setUserInfoAugmentation(userInfoAugmentation);
       config.setDiagnostics(diagnostics);
       return config;

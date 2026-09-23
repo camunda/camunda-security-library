@@ -14,6 +14,7 @@ import io.camunda.security.spring.cors.NoOpCorsConfigurationSource;
 import io.camunda.security.spring.filter.AdminUserCheckFilter;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
+import io.camunda.security.spring.oidc.FailSoftOidcUserService;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
@@ -24,9 +25,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProviderBuilder;
-import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
+import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserRequest;
+import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserService;
+import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 /**
@@ -50,7 +54,7 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort,
       final ObjectProvider<OidcTokenEndpointCustomizer> tokenEndpointCustomizerProvider,
-      final ObjectProvider<OidcUserService> oidcUserServiceProvider,
+      final ObjectProvider<OAuth2UserService<OidcUserRequest, OidcUser>> oidcUserServiceProvider,
       final ObjectProvider<OAuth2AuthorizationRequestResolver> authorizationRequestResolverProvider,
       final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
       final ObjectProvider<CamundaLoginPickerFilter> oidcLoginPickerProvider,
@@ -106,5 +110,20 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
               .build());
       return manager;
     };
+  }
+
+  /**
+   * Declared as the generic {@code OAuth2UserService<OidcUserRequest, OidcUser>} rather than the
+   * narrower {@code OidcUserService}, so {@code @ConditionalOnMissingBean} matches the same shape
+   * {@code OAuth2LoginConfigurer.getOidcUserService()} looks up by. A host bean of that generic
+   * shape which doesn't extend {@code OidcUserService} would otherwise go undetected here, and this
+   * default would shadow it once {@link ScopedWebappSecurityChainBuilder} passes it explicitly to
+   * {@code userInfoEndpoint(c -> c.oidcUserService(service))} — bypassing Spring's own generic-type
+   * fallback lookup entirely.
+   */
+  @Bean
+  @ConditionalOnMissingBean
+  public OAuth2UserService<OidcUserRequest, OidcUser> oidcUserService() {
+    return new FailSoftOidcUserService(new DefaultOAuth2UserService());
   }
 }

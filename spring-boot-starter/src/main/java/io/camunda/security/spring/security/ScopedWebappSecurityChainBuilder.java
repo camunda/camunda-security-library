@@ -50,13 +50,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
-import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
+import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserRequest;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
@@ -103,7 +105,17 @@ public final class ScopedWebappSecurityChainBuilder {
   private final CamundaSecurityLibraryProperties properties;
   private final SecurityPathPort pathPort;
   private final ObjectProvider<OidcTokenEndpointCustomizer> tokenEndpointCustomizerProvider;
-  private final ObjectProvider<OidcUserService> oidcUserServiceProvider;
+
+  /**
+   * Generic {@code OAuth2UserService<OidcUserRequest, OidcUser>} rather than the narrower {@code
+   * OidcUserService}, matching {@link ScopedWebappSecurityChainBuilderConfiguration}'s {@code
+   * oidcUserService()} default bean shape. The narrower type can miss that bean under Spring's
+   * early bean-type prediction, since a declared factory return type of the wider generic isn't
+   * assignable to it.
+   */
+  private final ObjectProvider<OAuth2UserService<OidcUserRequest, OidcUser>>
+      oidcUserServiceProvider;
+
   private final ObjectProvider<OAuth2AuthorizationRequestResolver>
       authorizationRequestResolverProvider;
   private final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider;
@@ -122,7 +134,7 @@ public final class ScopedWebappSecurityChainBuilder {
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort,
       final ObjectProvider<OidcTokenEndpointCustomizer> tokenEndpointCustomizerProvider,
-      final ObjectProvider<OidcUserService> oidcUserServiceProvider,
+      final ObjectProvider<OAuth2UserService<OidcUserRequest, OidcUser>> oidcUserServiceProvider,
       final ObjectProvider<OAuth2AuthorizationRequestResolver> authorizationRequestResolverProvider,
       final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
       final ObjectProvider<CamundaLoginPickerFilter> oidcLoginPickerProvider,

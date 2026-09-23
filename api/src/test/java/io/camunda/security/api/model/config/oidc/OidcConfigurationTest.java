@@ -24,6 +24,7 @@ import java.util.Set;
 import java.util.stream.Stream;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -40,6 +41,19 @@ public class OidcConfigurationTest {
     Assertions.assertThat(oidcAuthenticationConfiguration.isAnyPropertySet())
         .withFailMessage(description)
         .isEqualTo(expected);
+  }
+
+  @Test
+  void userInfoRequiredDefaultsToFalseAndIsSettable() {
+    final var defaultConfig = new OidcConfiguration();
+    Assertions.assertThat(defaultConfig.isUserInfoRequired()).isFalse();
+
+    final var required = OidcConfiguration.builder().userInfoRequired(true).build();
+    Assertions.assertThat(required.isUserInfoRequired()).isTrue();
+
+    final var viaSetter = new OidcConfiguration();
+    viaSetter.setUserInfoRequired(true);
+    Assertions.assertThat(viaSetter.isUserInfoRequired()).isTrue();
   }
 
   static Stream<Arguments> oidcAuthentications() {
@@ -239,6 +253,26 @@ public class OidcConfigurationTest {
         Arguments.of(
             "default postLogoutRedirectUri is unset",
             OidcConfiguration.builder().postLogoutRedirectUri(null).build(),
+            false),
+        Arguments.of(
+            "userInfoEnabled is set to false",
+            OidcConfiguration.builder().userInfoEnabled(false).build(),
+            true),
+        Arguments.of(
+            "default userInfoEnabled is set",
+            OidcConfiguration.builder()
+                .userInfoEnabled(OidcConfiguration.DEFAULT_USER_INFO_ENABLED)
+                .build(),
+            false),
+        Arguments.of(
+            "userInfoRequired is set to true",
+            OidcConfiguration.builder().userInfoRequired(true).build(),
+            true),
+        Arguments.of(
+            "default userInfoRequired is set",
+            OidcConfiguration.builder()
+                .userInfoRequired(OidcConfiguration.DEFAULT_USER_INFO_REQUIRED)
+                .build(),
             false),
         Arguments.of("default", new OidcConfiguration(), false),
         Arguments.of(
