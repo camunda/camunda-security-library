@@ -99,4 +99,72 @@ class CsrfTokenResponseHeaderFilterTest {
 
     assertThat(response.getHeader(X_CSRF_TOKEN)).isNull();
   }
+
+  @Test
+  void writesHeaderForUnauthenticatedLoginGet() throws Exception {
+    // Login CSRF protection (camunda/security-testing-findings#281) makes /login require a valid
+    // CSRF token unconditionally. Since .anonymous(disable) means an unauthenticated visitor has no
+    // Authentication at all, the login endpoint must still hand out a token so a legitimate login
+    // attempt can submit it back.
+    SecurityContextHolder.clearContext();
+
+    final var request = new MockHttpServletRequest("GET", "/login");
+    request.setAttribute(CsrfToken.class.getName(), TOKEN);
+    final var response = new MockHttpServletResponse();
+
+    SecurityFilterChainSupport.csrfTokenResponseHeaderFilter()
+        .doFilter(request, response, (req, res) -> {});
+
+    assertThat(response.getHeader(X_CSRF_TOKEN)).isEqualTo(TOKEN.getToken());
+  }
+
+  @Test
+  void writesHeaderForUnauthenticatedScopedLoginGet() throws Exception {
+    SecurityContextHolder.clearContext();
+
+    final var request = new MockHttpServletRequest("GET", "/physical-tenants/t1/login");
+    request.setAttribute(CsrfToken.class.getName(), TOKEN);
+    final var response = new MockHttpServletResponse();
+
+    SecurityFilterChainSupport.csrfTokenResponseHeaderFilter("/physical-tenants/t1")
+        .doFilter(request, response, (req, res) -> {});
+
+    assertThat(response.getHeader(X_CSRF_TOKEN)).isEqualTo(TOKEN.getToken());
+  }
+
+  @Test
+  void doesNotWriteHeaderForUnauthenticatedGetToPathMerelyContainingLogin() throws Exception {
+    // /api/users/login-history merely *contains* "/login" as a substring; it must not be
+    // mistaken for the login endpoint and handed a token while unauthenticated.
+    SecurityContextHolder.clearContext();
+
+    final var request = new MockHttpServletRequest("GET", "/api/users/login-history");
+    request.setAttribute(CsrfToken.class.getName(), TOKEN);
+    final var response = new MockHttpServletResponse();
+
+    SecurityFilterChainSupport.csrfTokenResponseHeaderFilter()
+        .doFilter(request, response, (req, res) -> {});
+
+    assertThat(response.getHeader(X_CSRF_TOKEN)).isNull();
+  }
+
+  @Test
+  void writesHeaderForAuthenticatedGetToPathMerelyContainingLogout() throws Exception {
+    // /api/audit/logout-events merely *contains* "/logout" as a substring; it must still get its
+    // token refreshed like any other authenticated GET, rather than being mistaken for the logout
+    // endpoint.
+    SecurityContextHolder.getContext()
+        .setAuthentication(
+            new UsernamePasswordAuthenticationToken(
+                "user", null, List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+
+    final var request = new MockHttpServletRequest("GET", "/api/audit/logout-events");
+    request.setAttribute(CsrfToken.class.getName(), TOKEN);
+    final var response = new MockHttpServletResponse();
+
+    SecurityFilterChainSupport.csrfTokenResponseHeaderFilter()
+        .doFilter(request, response, (req, res) -> {});
+
+    assertThat(response.getHeader(X_CSRF_TOKEN)).isEqualTo(TOKEN.getToken());
+  }
 }

@@ -26,8 +26,13 @@ public class CsrfConfiguration {
 
   /**
    * Path patterns CSRF protection ignores in addition to the always-ignored unprotected paths and
-   * login/logout endpoints. Use ant-style patterns. Hosts that need to exempt actuator endpoints
-   * (e.g. {@code /actuator/loggers}) populate this set.
+   * the logout endpoint. Use ant-style patterns. Hosts that need to exempt actuator endpoints (e.g.
+   * {@code /actuator/loggers}) populate this set.
+   *
+   * <p>The login endpoint is deliberately not exemptable this way: it always requires a valid CSRF
+   * token, even on a browser with no session yet, so that a cross-site {@code POST} cannot silently
+   * replace an already-authenticated victim's session with an attacker-controlled one (see {@code
+   * CsrfProtectionRequestMatcher} and camunda/security-testing-findings#281).
    */
   private Set<String> ignoredPathPatterns = new HashSet<>();
 
