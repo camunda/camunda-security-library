@@ -24,6 +24,7 @@ import java.util.Set;
 import java.util.stream.Stream;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -40,6 +41,19 @@ public class OidcConfigurationTest {
     Assertions.assertThat(oidcAuthenticationConfiguration.isAnyPropertySet())
         .withFailMessage(description)
         .isEqualTo(expected);
+  }
+
+  @Test
+  void userInfoRequiredDefaultsToFalseAndIsSettable() {
+    final var defaultConfig = new OidcConfiguration();
+    Assertions.assertThat(defaultConfig.isUserInfoRequired()).isFalse();
+
+    final var required = OidcConfiguration.builder().userInfoRequired(true).build();
+    Assertions.assertThat(required.isUserInfoRequired()).isTrue();
+
+    final var viaSetter = new OidcConfiguration();
+    viaSetter.setUserInfoRequired(true);
+    Assertions.assertThat(viaSetter.isUserInfoRequired()).isTrue();
   }
 
   static Stream<Arguments> oidcAuthentications() {
