@@ -39,6 +39,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0024: Per-issuer claim-converter map for multi-provider bearer-token principal resolution](../adr/0024-per-issuer-token-claims-converter-map.md)
 - [ADR-0025: Deferred OIDC resolution at first use](../adr/0025-deferred-oidc-resolution.md)
 - [ADR-0026: Make `post_logout_redirect_uri` configurable and resolve it per client registration](../adr/0026-per-registration-post-logout-redirect-uri.md)
+- [ADR-0027: Warn instead of block on provider-block validation](../adr/0027-warn-instead-of-block-on-provider-block-validation.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 
