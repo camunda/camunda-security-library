@@ -148,9 +148,11 @@ public class OidcConfiguration {
   /**
    * The OAuth2 client {@code redirect_uri} that the application sends to the IdP. The application
    * also derives the redirection endpoint that serves the callback from this value. The two uses
-   * must agree. A caller that derives an endpoint from this value warns about it, and falls back to
-   * the default callback, if the IdP would send the browser to a path where no redirection-endpoint
-   * filter listens — it does not stop the application from starting.
+   * must agree, and a caller that derives an endpoint from this value never stops the application
+   * from starting over it: a value that resolves to no callback path, or one without a leading
+   * slash, warns and falls back to the default callback instead; any other way a value can be
+   * unusable (an unreachable port, a fragment, a path the default firewall blocks) only warns — the
+   * value is still used as configured, on both sides, so the two stay in agreement either way.
    *
    * <p>If you set this property, it must expand to an absolute http(s) URL with a host, a callback
    * path and no fragment. If the URL has a port, the port must be in the range 1 to 65535. A query
