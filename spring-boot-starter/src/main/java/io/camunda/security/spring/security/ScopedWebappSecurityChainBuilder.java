@@ -551,7 +551,7 @@ public final class ScopedWebappSecurityChainBuilder {
   // the factory and the composed default explicitly so a test can exercise the wiring between
   // isPostLogoutRedirectUriUsable and postLogoutRedirectUri without constructing a full builder.
   static Map<String, String> postLogoutRedirectUris(
-      final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
+      final ScopedClientRegistrationFactory clientRegistrationFactory,
       final Map<String, OidcConfiguration> sources,
       final String prefix,
       final String composedDefault) {
@@ -559,7 +559,7 @@ public final class ScopedWebappSecurityChainBuilder {
     // that replaces the ClientRegistrationRepository bean bypasses that, and this handler is still
     // configured from the provider map — so the map actually consumed is validated here too. The
     // rules live in one place; this only calls them.
-    scopedClientRegistrationFactory.validatePostLogoutRedirectUris(sources);
+    clientRegistrationFactory.validatePostLogoutRedirectUris(sources);
     final Map<String, String> redirectUris = new LinkedHashMap<>();
     sources.forEach(
         (registrationId, oidc) -> {
@@ -576,8 +576,7 @@ public final class ScopedWebappSecurityChainBuilder {
                   oidc,
                   prefix,
                   composedDefault,
-                  scopedClientRegistrationFactory.isPostLogoutRedirectUriUsable(
-                      registrationId, oidc)));
+                  clientRegistrationFactory.isPostLogoutRedirectUriUsable(registrationId, oidc)));
         });
     return redirectUris;
   }

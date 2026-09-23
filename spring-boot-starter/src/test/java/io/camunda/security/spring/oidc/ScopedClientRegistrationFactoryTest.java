@@ -915,10 +915,15 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @ParameterizedTest(name = "{0}")
-  @MethodSource("io.camunda.security.spring.oidc.RedirectUriSamples#unusable")
+  @MethodSource({
+    "io.camunda.security.spring.oidc.RedirectUriSamples#unusable",
+    "io.camunda.security.spring.oidc.RedirectUriSamples#usable"
+  })
   void shouldAgreeWithOidcRedirectionEndpointOnWhenToFallBack(final String redirectUri) {
-    // given an unusable redirect-uri, built into a registration with the empty context path
-    // OidcRedirectionEndpoint#resolve is also given below
+    // given a redirect-uri, usable or not, built into a registration with the empty context path
+    // OidcRedirectionEndpoint#resolve is also given below — a usable sample must never trigger a
+    // fallback either, or the registration would silently start using the default in its place
+    // with no WARN to explain why
     final var oidc = explicitEndpointsWith(b -> b.redirectUri(redirectUri));
 
     final var registrationRedirectUri =
@@ -926,12 +931,17 @@ class ScopedClientRegistrationFactoryTest {
     final var chainMountsAtDefault = OidcRedirectionEndpoint.fallsBackToDefault(redirectUri, "");
 
     // then the registration's redirect_uri falls back exactly when the chain's redirection
-    // endpoint does too — never one without the other, or a login loop follows
-    assertThat(registrationRedirectUri.equals("{baseUrl}" + OidcRedirectionEndpoint.DEFAULT_PATH))
+    // endpoint does too — never one without the other, or a login loop follows. Compared against
+    // the value each side is expected to produce, not a literal-equals check against the default
+    // string: a usable sample can happen to already read as "{baseUrl}" + DEFAULT_PATH without
+    // ever having fallen back to it, which a literal-equals check alone cannot tell apart.
+    final var expectedRedirectUri =
+        chainMountsAtDefault ? "{baseUrl}" + OidcRedirectionEndpoint.DEFAULT_PATH : redirectUri;
+    assertThat(registrationRedirectUri)
         .as(
             "registration redirect_uri '%s' and chain mount fallback (%s) must agree for '%s'",
             registrationRedirectUri, chainMountsAtDefault, redirectUri)
-        .isEqualTo(chainMountsAtDefault);
+        .isEqualTo(expectedRedirectUri);
   }
 
   @Test

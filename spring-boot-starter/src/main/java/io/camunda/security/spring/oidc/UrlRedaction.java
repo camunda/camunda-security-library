@@ -58,7 +58,7 @@ public final class UrlRedaction {
     if (url == null || url.isEmpty()) {
       return url;
     }
-    return withoutControlCharacters(withoutFragment(withoutQuery(withoutUserInfo(url))));
+    return escapeControlCharacters(withoutFragment(withoutQuery(withoutUserInfo(url))));
   }
 
   private static String withoutUserInfo(final String url) {
@@ -115,18 +115,27 @@ public final class UrlRedaction {
     return url.substring(0, fragmentStart + 1) + ELLIPSIS;
   }
 
-  private static boolean mustBeEscaped(final int c) {
-    return Character.isISOControl(c) || c == LINE_SEPARATOR || c == PARAGRAPH_SEPARATOR;
-  }
-
-  private static String withoutControlCharacters(final String url) {
-    if (url.chars().noneMatch(UrlRedaction::mustBeEscaped)) {
-      return url;
+  /**
+   * Escapes a control character (for example CR or LF), or the line/paragraph separators {@code
+   * Character#isISOControl} does not cover (U+2028, U+2029), to its 4-digit unicode escape form —
+   * the one place this logic lives, so a value forging a log line this way cannot be fixed in one
+   * caller and missed in another, the way U+2028 was across two review rounds. Used both for a URL
+   * value here and for {@code ScopedClientRegistrationFactory#sanitizeForLog}'s registrationId,
+   * which is never a URL and so does not otherwise go through this class.
+   */
+  static String escapeControlCharacters(final String value) {
+    if (value == null || value.chars().noneMatch(UrlRedaction::mustBeEscaped)) {
+      return value;
     }
-    final var escaped = new StringBuilder(url.length());
-    url.chars()
+    final var escaped = new StringBuilder(value.length());
+    value
+        .chars()
         .forEach(c -> escaped.append(mustBeEscaped(c) ? String.format("\\u%04x", c) : (char) c));
     return escaped.toString();
+  }
+
+  private static boolean mustBeEscaped(final int c) {
+    return Character.isISOControl(c) || c == LINE_SEPARATOR || c == PARAGRAPH_SEPARATOR;
   }
 
   private static int endOfAuthority(final String url, final int from) {
