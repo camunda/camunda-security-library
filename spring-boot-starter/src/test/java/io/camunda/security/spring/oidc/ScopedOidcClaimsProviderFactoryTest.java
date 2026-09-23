@@ -115,9 +115,10 @@ final class ScopedOidcClaimsProviderFactoryTest {
 
   @Test
   void shouldNotThrowOnANullRegistrationIdAmongTheFlattenedProviders() {
-    // given a flat oidc.* block with no registration-id set alongside a valid provider —
-    // registrationId is warn-only, not rejected, so the null key must not reach
-    // IssuerRegistrations.ofConfiguration's Map.copyOf and abort startup
+    // given a null registrationId key among the flattened providers — not reachable from
+    // configuration (Spring binds an unset/empty registration-id to "", never null), but a host
+    // handing CSL a hand-built map (as this mocked flatten() stands in for) can still produce
+    // one, and it must not reach IssuerRegistrations.ofConfiguration's Map.copyOf and abort
     final var authentication =
         authEnabled("https://idp.example.com", "https://idp.example.com/userinfo");
     final var providers = new LinkedHashMap<String, OidcConfiguration>();

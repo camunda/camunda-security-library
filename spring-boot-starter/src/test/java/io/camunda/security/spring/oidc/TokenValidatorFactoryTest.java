@@ -61,9 +61,9 @@ class TokenValidatorFactoryTest {
 
   @Test
   void shouldNotThrowOnANullRegistrationIdInTheProvidersMap() {
-    // given a providers map holding a blank/null registrationId key, as a flat oidc.* block with
-    // no registration-id set can produce — registrationId is warn-only, not rejected, so the
-    // constructor must not let Map.copyOf reject it and abort startup
+    // given a providers map holding a null registrationId key — not reachable from configuration
+    // (Spring binds an unset/empty registration-id to "", never null), but a host handing CSL a
+    // hand-built map can still produce one; the constructor must not let Map.copyOf reject it
     final var providers =
         Collections.<String, OidcConfiguration>singletonMap(null, new OidcConfiguration());
 

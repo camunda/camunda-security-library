@@ -10,7 +10,6 @@ package io.camunda.security.spring.oidc;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.time.Duration;
 import java.util.Collection;
-import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -65,16 +64,10 @@ public class TokenValidatorFactory {
       final Map<String, OidcConfiguration> providers,
       final Duration clockSkew,
       final List<OAuth2TokenValidator<Jwt>> extraValidators) {
-    // A blank/null registrationId is warn-only elsewhere in the OIDC wiring, not rejected; copying
-    // it below would still fail on the null key and abort startup.
-    final var withoutBlankIds = new LinkedHashMap<String, OidcConfiguration>();
-    providers.forEach(
-        (registrationId, config) -> {
-          if (StringUtils.hasText(registrationId)) {
-            withoutBlankIds.put(registrationId, config);
-          }
-        });
-    this.providers = Map.copyOf(withoutBlankIds);
+    // ScopedClientRegistrationFactory#withoutBlankRegistrationIds: Map.copyOf below rejects a
+    // null key outright, and a blank registrationId is warn-only, not rejected, elsewhere.
+    this.providers =
+        Map.copyOf(ScopedClientRegistrationFactory.withoutBlankRegistrationIds(providers));
     this.clockSkew = Objects.requireNonNull(clockSkew, "clockSkew");
     this.extraValidators = extraValidators == null ? List.of() : List.copyOf(extraValidators);
   }

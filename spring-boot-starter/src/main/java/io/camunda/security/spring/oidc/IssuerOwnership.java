@@ -91,6 +91,11 @@ final class IssuerOwnership {
    * An {@code issuer-uri} check elsewhere in this package is warn-only, not rejected, so a
    * malformed, credential-bearing value (for example {@code https://user:pw@idp.example.com})
    * reaches this warning too — redact it the same way a check that rejects such a value would.
+   *
+   * <p>{@code owner} and {@code ignored} are escaped too, for line-forging safety consistent with
+   * every other place a registrationId reaches a log in this package — not because either can carry
+   * a credential: a registrationId only ever comes from the operator's own configuration, never
+   * from anything an external caller controls.
    */
   private static void warn(
       final Logger log,
@@ -102,8 +107,8 @@ final class IssuerOwnership {
         "Issuer '{}' is claimed by multiple OIDC registrations: '{}' wins, and the tokens of that"
             + " issuer ignore {} of '{}'.",
         UrlRedaction.redact(issuerUri),
-        owner,
+        UrlRedaction.escapeControlCharacters(owner),
         ignoredConfiguration,
-        ignored);
+        UrlRedaction.escapeControlCharacters(ignored));
   }
 }

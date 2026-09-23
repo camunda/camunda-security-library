@@ -63,9 +63,10 @@ class CamundaOidcAuthorizationRequestResolverTest {
 
   @Test
   void shouldNotThrowOnANullRegistrationIdInTheSourcesMap() {
-    // given a sources map holding a blank/null registrationId key, as a flat oidc.* block with no
-    // registration-id set can produce — the resolver's constructor must not let Map.copyOf reject
-    // it and abort startup, since that registrationId is only ever warn-only elsewhere
+    // given a sources map holding a null registrationId key — not reachable from configuration
+    // (Spring binds an unset/empty registration-id to "", never null), but a host handing CSL a
+    // hand-built map can still produce one; the resolver's constructor must not let Map.copyOf
+    // reject it and abort startup
     final var sources =
         Collections.<String, OidcConfiguration>singletonMap(null, new OidcConfiguration());
 

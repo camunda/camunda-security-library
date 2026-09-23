@@ -62,12 +62,19 @@ public final class LazyClientRegistrationRepository
       final String scopedRedirectUriPath,
       final String scopeDescription) {
     this.factory = Objects.requireNonNull(factory, "factory must not be null");
-    this.providers =
+    final var normalized =
         Collections.unmodifiableMap(
             new LinkedHashMap<>(Objects.requireNonNull(providers, "providers must not be null")));
     this.scopedRedirectUriPath = scopedRedirectUriPath;
     this.scopeDescription = scopeDescription;
-    factory.validateWithoutNetwork(this.providers, scopedRedirectUriPath);
+    // Validated before filtering: a blank registrationId is warn-only, not rejected, and that
+    // warning must still fire for it. ScopedClientRegistrationFactory#withoutBlankRegistrationIds
+    // then keeps the entry out of every reader below (iterator(), findByRegistrationId(),
+    // registrationIds(), providers()) in this one place, rather than each one filtering it again.
+    factory.validateWithoutNetwork(normalized, scopedRedirectUriPath);
+    this.providers =
+        Collections.unmodifiableMap(
+            ScopedClientRegistrationFactory.withoutBlankRegistrationIds(normalized));
   }
 
   /** The configured registrationIds, in the order of the configuration. Resolves nothing. */
@@ -142,13 +149,10 @@ public final class LazyClientRegistrationRepository
 
   @Override
   public Iterator<ClientRegistration> iterator() {
-    // A blank/null registrationId is warn-only, not rejected — findByRegistrationId's resolved
-    // cache is a ConcurrentHashMap, which throws NullPointerException on get(null), so that entry
-    // must not reach it here either.
-    return providers.keySet().stream()
-        .filter(StringUtils::hasText)
-        .map(this::findByRegistrationId)
-        .iterator();
+    // providers is already filtered by the constructor, so no key here can reach
+    // findByRegistrationId's resolved cache (a ConcurrentHashMap, which throws
+    // NullPointerException on get(null)).
+    return providers.keySet().stream().map(this::findByRegistrationId).iterator();
   }
 
   private String describe(final String registrationId, final OidcConfiguration config) {

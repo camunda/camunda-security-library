@@ -185,9 +185,11 @@ class OidcClaimsProviderConfigurationTest {
 
   @Test
   void shouldNotThrowOnANullRegistrationIdAmongTheLazyRepositoryProviders() {
-    // given a flat oidc.* block with no registration-id set (a null key) alongside a valid
-    // provider in the lazy repository's provider map — registrationId is warn-only, not rejected,
-    // so it must not reach IssuerRegistrations.ofConfiguration's Map.copyOf and abort startup
+    // given a null registrationId key alongside a valid provider in the lazy repository's
+    // provider map — not reachable from configuration (Spring binds an unset/empty
+    // registration-id to "", never null), but a host handing CSL a hand-built map can still
+    // produce one, and LazyClientRegistrationRepository's constructor must filter it before it
+    // reaches IssuerRegistrations.ofConfiguration's Map.copyOf and aborts startup
     final var providers = new LinkedHashMap<String, OidcConfiguration>();
     providers.put(
         null,

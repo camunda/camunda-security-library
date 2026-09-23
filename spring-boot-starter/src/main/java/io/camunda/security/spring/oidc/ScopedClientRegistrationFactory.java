@@ -296,6 +296,37 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
+   * The provider view every consumer of a registrationId-keyed provider map should build from: a
+   * blank registrationId is warn-only elsewhere ({@link #warnIfBlankRegistrationId}), not rejected,
+   * but several downstream consumers copy the map with {@code Map.copyOf} or a {@code
+   * ConcurrentHashMap} lookup, either of which rejects a {@code null} key outright.
+   *
+   * <p>A {@code null} key is not reachable from configuration: Spring binds an unset or empty
+   * {@code registration-id} to {@code ""}, never to {@code null}, and {@link #flatten} always keys
+   * the flat block by {@link OidcConfiguration#getRegistrationId()}, whose default is {@link
+   * OidcConfiguration#DEFAULT_REGISTRATION_ID}. Only a host that hands CSL a hand-built map — for
+   * example a custom {@code OidcProviderConfigurationPort} — can produce one; this filter is
+   * defensive hardening against that case, not a documented configuration path. The empty-string
+   * case, by contrast, is genuinely reachable (an explicit {@code registration-id: ""}) and is
+   * exactly what {@link StringUtils#hasText} also excludes here.
+   *
+   * <p>Every consumer that builds a routing or ownership map from a provider view should call this
+   * once, so the invariant "no blank key" holds by construction rather than by each consumer
+   * remembering to filter its own copy.
+   */
+  static Map<String, OidcConfiguration> withoutBlankRegistrationIds(
+      final Map<String, OidcConfiguration> providers) {
+    final var withoutBlankIds = new LinkedHashMap<String, OidcConfiguration>();
+    providers.forEach(
+        (registrationId, config) -> {
+          if (StringUtils.hasText(registrationId)) {
+            withoutBlankIds.put(registrationId, config);
+          }
+        });
+    return withoutBlankIds;
+  }
+
+  /**
    * Flattens the {@link AuthenticationConfiguration} and then builds all {@link ClientRegistration}
    * instances from the result.
    *

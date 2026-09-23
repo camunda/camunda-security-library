@@ -200,28 +200,12 @@ public class OidcAccessTokenDecoderFactory {
     // Both maps below must see the same, filtered provider view: a blank/null-registrationId
     // provider sharing an issuer with a valid one must not win issuer ownership in one pass and
     // lose it in the other, or a token would be checked against the wrong provider's JWK Set URIs.
-    final var withoutBlankIds = withoutBlankRegistrationIds(providersById);
+    final var withoutBlankIds =
+        ScopedClientRegistrationFactory.withoutBlankRegistrationIds(providersById);
     return createIssuerAwareAccessTokenDecoder(
         IssuerRegistrations.ofConfiguration(withoutBlankIds, resolveByRegistrationId),
         buildAdditionalJwkSetUrisByIssuer(withoutBlankIds),
         validatorFactory);
-  }
-
-  /**
-   * A blank/null registrationId is warn-only, not rejected — {@link
-   * IssuerRegistrations#ofConfiguration} copies its issuer map and would fail on the null value,
-   * blocking startup or the first token decode, so it must not see that entry.
-   */
-  private static Map<String, OidcConfiguration> withoutBlankRegistrationIds(
-      final Map<String, OidcConfiguration> providers) {
-    final var withoutBlankIds = new LinkedHashMap<String, OidcConfiguration>();
-    providers.forEach(
-        (registrationId, config) -> {
-          if (StringUtils.hasText(registrationId)) {
-            withoutBlankIds.put(registrationId, config);
-          }
-        });
-    return withoutBlankIds;
   }
 
   /**
@@ -238,7 +222,8 @@ public class OidcAccessTokenDecoderFactory {
     // A blank/null registrationId is warn-only elsewhere, not rejected — such an entry must not
     // count towards the multi-provider check below, or it can trip a hard failure that names no
     // provider at all for an entry the decoder has already decided to ignore.
-    final var withoutBlankIds = withoutBlankRegistrationIds(providersById);
+    final var withoutBlankIds =
+        ScopedClientRegistrationFactory.withoutBlankRegistrationIds(providersById);
     if (withoutBlankIds.size() < 2) {
       return;
     }

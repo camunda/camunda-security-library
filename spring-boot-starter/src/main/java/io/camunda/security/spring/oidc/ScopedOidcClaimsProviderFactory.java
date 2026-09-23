@@ -13,7 +13,6 @@ import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpClient;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -103,17 +102,11 @@ public final class ScopedOidcClaimsProviderFactory {
               + " providers.oidc.<id> entries) or disable userinfo augmentation for this scope.");
     }
     clientRegistrationFactory.validateWithoutLoginRoutes(providers);
-    // A blank/null registrationId is warn-only, not rejected — IssuerRegistrations.ofConfiguration
-    // copies its issuer map and would fail on the null value, blocking startup, so it must not see
-    // that entry. providers itself stays as-is for the checks above and the resolve() closure
-    // below.
-    final var issuerProviders = new LinkedHashMap<String, OidcConfiguration>();
-    providers.forEach(
-        (registrationId, config) -> {
-          if (StringUtils.hasText(registrationId)) {
-            issuerProviders.put(registrationId, config);
-          }
-        });
+    // IssuerRegistrations.ofConfiguration copies its issuer map and would fail on a blank/null
+    // registrationId (see ScopedClientRegistrationFactory#withoutBlankRegistrationIds); providers
+    // itself stays as-is for the checks above and the resolve() closure below.
+    final var issuerProviders =
+        ScopedClientRegistrationFactory.withoutBlankRegistrationIds(providers);
     return new CachingOidcClaimsProvider(
         userInfoHttpClient,
         CachingOidcClaimsProvider.userInfoUriByIssuer(

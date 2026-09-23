@@ -212,10 +212,12 @@ final class LazyClientRegistrationRepositoryTest {
   }
 
   @Test
-  void shouldSkipANullRegistrationIdWhenIterated() throws Exception {
-    // given a flat oidc.* block with no registration-id set (a null key) alongside a valid
-    // provider — registrationId is warn-only, not rejected, so iterating must not let the null key
-    // reach the resolved cache's ConcurrentHashMap#get(null), which throws NullPointerException
+  void shouldFilterANullRegistrationIdAtConstructionAndSkipItWhenIterated() throws Exception {
+    // given a null registrationId key alongside a valid provider — not reachable from
+    // configuration (Spring binds an unset/empty registration-id to "", never null), but a host
+    // handing CSL a hand-built map can still produce one. The constructor filters it out, so
+    // iterating must not let it reach the resolved cache's ConcurrentHashMap#get(null), which
+    // throws NullPointerException
     server = OidcTestServer.startRsa("key");
     final var providers = new LinkedHashMap<String, OidcConfiguration>();
     providers.put(null, server.oidcConfiguration("blank-client"));
@@ -232,6 +234,7 @@ final class LazyClientRegistrationRepositoryTest {
                             registration.getRegistrationId(), registration.getClientId())));
 
     assertThat(registrationIds).containsExactly(entry("second", "second-client"));
+    assertThat(repository.providers()).containsOnlyKeys("second");
   }
 
   @Test
