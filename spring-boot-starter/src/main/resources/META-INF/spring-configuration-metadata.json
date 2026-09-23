@@ -407,6 +407,12 @@
       "defaultValue": true
     },
     {
+      "name": "camunda.security.authentication.oidc.user-info-required",
+      "type": "java.lang.Boolean",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "defaultValue": false
+    },
+    {
       "name": "camunda.security.authentication.oidc.user-info-uri",
       "type": "java.lang.String",
       "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"

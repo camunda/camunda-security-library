@@ -40,6 +40,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0025: Deferred OIDC resolution at first use](../adr/0025-deferred-oidc-resolution.md)
 - [ADR-0026: Make `post_logout_redirect_uri` configurable and resolve it per client registration](../adr/0026-per-registration-post-logout-redirect-uri.md)
 - [ADR-0027: Enforce CSRF unconditionally on the login endpoint](../adr/0027-enforce-csrf-on-login-unconditionally.md)
+- [ADR-0028: OIDC login fails soft when the IdP rejects UserInfo, unless required](../adr/0028-oidc-userinfo-fail-soft-login.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 

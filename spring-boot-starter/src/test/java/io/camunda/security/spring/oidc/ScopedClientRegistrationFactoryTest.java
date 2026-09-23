@@ -279,6 +279,57 @@ class ScopedClientRegistrationFactoryTest {
         .isEmpty();
   }
 
+  @Test
+  void metadataCarriesUserInfoRequiredFlagWhenSet() {
+    // userInfoUri is required alongside userInfoRequired here: the manual-endpoints path (no
+    // issuer-uri) has no other way to resolve a UserInfo endpoint, and
+    // requireUserInfoRequiredConsistency
+    // rejects userInfoRequired=true when neither is set.
+    final var oidc =
+        explicitEndpointsWith(
+            b -> b.userInfoRequired(true).userInfoUri("https://idp.example.com/userinfo"));
+
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    final var metadata = registrations.get(0).getProviderDetails().getConfigurationMetadata();
+    assertThat(metadata)
+        .containsEntry(FailSoftOidcUserService.USER_INFO_REQUIRED_METADATA_KEY, true);
+  }
+
+  @Test
+  void metadataCarriesUserInfoRequiredFlagFalseByDefault() {
+    final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
+
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    final var metadata = registrations.get(0).getProviderDetails().getConfigurationMetadata();
+    assertThat(metadata)
+        .containsEntry(FailSoftOidcUserService.USER_INFO_REQUIRED_METADATA_KEY, false);
+  }
+
+  @Test
+  void rejectsUserInfoRequiredWithoutUserInfoEnabled() {
+    final var oidc = explicitEndpointsWith(b -> b.userInfoRequired(true).userInfoEnabled(false));
+
+    assertThatThrownBy(() -> factory.createFromProviderMap(Map.of("myid", oidc)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("user-info-required")
+        .hasMessageContaining("user-info-enabled");
+  }
+
+  @Test
+  void rejectsUserInfoRequiredWithoutIssuerOrUserInfoUri() {
+    // Manual-endpoints provider (no issuer-uri) with no user-info-uri either: userInfoEnabled
+    // stays true, so the check above doesn't fire, but shouldRetrieveUserInfo will still never
+    // call UserInfo — the same silent no-op, reached a different way.
+    final var oidc = explicitEndpointsWith(b -> b.userInfoRequired(true));
+
+    assertThatThrownBy(() -> factory.createFromProviderMap(Map.of("myid", oidc)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("user-info-required")
+        .hasMessageContaining("user-info-uri");
+  }
+
   // ---------------------------------------------------------------------------
   // userInfoUri / userNameAttributeName
   // ---------------------------------------------------------------------------
@@ -734,6 +785,23 @@ class ScopedClientRegistrationFactoryTest {
     // when / then the value the build path discards does not fail a deployment that works today
     assertThatNoException()
         .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null));
+  }
+
+  @Test
+  void shouldBuildWithoutLoginRoutesGivenUserInfoRequiredWithNoEffect() {
+    // given user-info-required=true combined with user-info-enabled=false — inert either way,
+    // since FailSoftOidcUserService only ever runs on the browser login chain
+    final var providers =
+        Map.of("oidc", explicitEndpointsWith(b -> b.userInfoRequired(true).userInfoEnabled(false)));
+
+    // when a caller mounts no login chain, and therefore never constructs a FailSoftOidcUserService
+    // then the flag having no effect is no reason to refuse to start, while a login path still
+    // rejects it
+    assertThatNoException().isThrownBy(() -> factory.createWithoutLoginRoutes(providers));
+    assertThatThrownBy(() -> factory.createFromProviderMap(providers))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("user-info-required")
+        .hasMessageContaining("user-info-enabled");
   }
 
   private static Stream<Arguments> providersWithOneMalformedEndpointUrl() {
