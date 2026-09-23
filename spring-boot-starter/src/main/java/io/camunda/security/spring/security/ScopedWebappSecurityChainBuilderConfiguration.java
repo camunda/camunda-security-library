@@ -25,10 +25,13 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProviderBuilder;
+import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserRequest;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
 import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserService;
+import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 /**
@@ -110,9 +113,18 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
     };
   }
 
+  /**
+   * Declared as the generic {@code OAuth2UserService<OidcUserRequest, OidcUser>} rather than the
+   * narrower {@code OidcUserService}, so {@code @ConditionalOnMissingBean} matches the same shape
+   * {@code OAuth2LoginConfigurer.getOidcUserService()} looks up by. A host bean of that generic
+   * shape which doesn't extend {@code OidcUserService} would otherwise go undetected here, and this
+   * default would shadow it once {@link ScopedWebappSecurityChainBuilder} passes it explicitly to
+   * {@code userInfoEndpoint(c -> c.oidcUserService(service))} — bypassing Spring's own generic-type
+   * fallback lookup entirely.
+   */
   @Bean
   @ConditionalOnMissingBean
-  public OidcUserService oidcUserService() {
+  public OAuth2UserService<OidcUserRequest, OidcUser> oidcUserService() {
     return new FailSoftOidcUserService(new DefaultOAuth2UserService());
   }
 }

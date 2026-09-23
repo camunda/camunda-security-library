@@ -24,7 +24,11 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.ResolvableType;
+import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserRequest;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
+import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 
 @ExtendWith(MockitoExtension.class)
 class ScopedWebappSecurityChainBuilderConfigurationTest {
@@ -98,6 +102,44 @@ class ScopedWebappSecurityChainBuilderConfigurationTest {
               assertThat(ctx).hasNotFailed();
               assertThat(ctx.getBean(OidcUserService.class)).isSameAs(hostOidcUserService);
             });
+  }
+
+  @Test
+  void backsOffWhenHostProvidesGenericOidcUserServiceNotExtendingOidcUserService() {
+    new WebApplicationContextRunner()
+        .withUserConfiguration(
+            ObjectMapperConfig.class, StubPaths.class, GenericHostOidcUserServiceConfig.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                ScopedWebappSecurityChainBuilderConfiguration.class))
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              // Not an OidcUserService, so ctx.getBean(OidcUserService.class) can't see it. This
+              // test's point is that CSL's default still backs off, leaving the host bean as the
+              // sole match at the generic shape OAuth2LoginConfigurer.getOidcUserService() itself
+              // looks up by.
+              assertThat(ctx.containsBean("oidcUserService")).isFalse();
+              final var byGenericType =
+                  ctx.getBeanProvider(
+                          ResolvableType.forClassWithGenerics(
+                              OAuth2UserService.class, OidcUserRequest.class, OidcUser.class))
+                      .getIfUnique();
+              assertThat(byGenericType).isNotNull();
+            });
+  }
+
+  @Configuration
+  static class GenericHostOidcUserServiceConfig {
+
+    @Bean
+    OAuth2UserService<OidcUserRequest, OidcUser> hostOidcUserService() {
+      return request -> {
+        throw new UnsupportedOperationException("not invoked by this test");
+      };
+    }
   }
 
   @Configuration
