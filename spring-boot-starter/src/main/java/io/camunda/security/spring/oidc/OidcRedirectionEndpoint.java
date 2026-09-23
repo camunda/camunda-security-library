@@ -68,7 +68,7 @@ public final class OidcRedirectionEndpoint {
               + "falling back to the default redirection-endpoint path '{}'. The OIDC login "
               + "callback will be served at that default — set a redirect-uri with an explicit "
               + "callback segment to override it.",
-          configuredRedirectUri,
+          UrlRedaction.redact(configuredRedirectUri),
           contextPath,
           defaultPath);
       return defaultPath;
@@ -78,8 +78,8 @@ public final class OidcRedirectionEndpoint {
           "OIDC redirect-uri '{}' resolves to a path that does not start with '/' (was: '{}');"
               + " falling back to the default redirection-endpoint path '{}'. The OIDC login"
               + " callback will be served at that default instead.",
-          configuredRedirectUri,
-          path,
+          UrlRedaction.redact(configuredRedirectUri),
+          UrlRedaction.redact(path),
           defaultPath);
       return defaultPath;
     }
@@ -88,8 +88,8 @@ public final class OidcRedirectionEndpoint {
     LOG.debug(
         "Resolved OIDC redirection-endpoint path '{}' from redirect-uri '{}' (servlet context-path"
             + " '{}')",
-        path,
-        configuredRedirectUri,
+        UrlRedaction.redact(path),
+        UrlRedaction.redact(configuredRedirectUri),
         contextPath);
     return path;
   }

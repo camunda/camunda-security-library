@@ -128,7 +128,9 @@ public final class DeferredOidcResolution {
     return "'"
         + registrationId
         + "'"
-        + (StringUtils.hasText(issuerUri) ? " (issuer " + issuerUri + ")" : "");
+        + (StringUtils.hasText(issuerUri)
+            ? " (issuer " + UrlRedaction.redact(issuerUri) + ")"
+            : "");
   }
 
   /**

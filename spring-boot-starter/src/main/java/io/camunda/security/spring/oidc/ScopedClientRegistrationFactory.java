@@ -244,12 +244,18 @@ public final class ScopedClientRegistrationFactory {
    */
   List<ClientRegistration> createAlreadyValidated(
       final Map<String, OidcConfiguration> providers, final String scopedRedirectUriPath) {
-    return providers.entrySet().stream()
-        .map(
-            e ->
-                buildClientRegistration(
-                    e.getKey(), e.getValue(), scopedRedirectUriPath, LoginRouteChecks.ENFORCED))
-        .toList();
+    return buildAll(providers, scopedRedirectUriPath, LoginRouteChecks.ENFORCED);
+  }
+
+  /**
+   * As {@link #createAlreadyValidated(Map, String)}, for a caller such as {@link
+   * ScopedJwtDecoderFactory} or {@link ScopedOidcClaimsProviderFactory} that already ran {@link
+   * #validateWithoutLoginRoutes} once, over the whole provider map, before resolving any
+   * registration.
+   */
+  List<ClientRegistration> createWithoutLoginRoutesAlreadyValidated(
+      final Map<String, OidcConfiguration> providers) {
+    return buildAll(providers, null, LoginRouteChecks.SKIPPED);
   }
 
   private List<ClientRegistration> createFromProviderMap(
@@ -257,6 +263,13 @@ public final class ScopedClientRegistrationFactory {
       final String scopedRedirectUriPath,
       final LoginRouteChecks loginRouteChecks) {
     validateWithoutNetwork(providers, scopedRedirectUriPath, loginRouteChecks);
+    return buildAll(providers, scopedRedirectUriPath, loginRouteChecks);
+  }
+
+  private List<ClientRegistration> buildAll(
+      final Map<String, OidcConfiguration> providers,
+      final String scopedRedirectUriPath,
+      final LoginRouteChecks loginRouteChecks) {
     return providers.entrySet().stream()
         .map(
             e ->
@@ -1022,7 +1035,7 @@ public final class ScopedClientRegistrationFactory {
       LOG.debug(
           "Not caching the discovery document for issuer {}: it cannot be read back into a builder"
               + " ({}). This issuer keeps resolving once per client registration.",
-          issuerUri,
+          UrlRedaction.redact(issuerUri),
           notReConsumable.getMessage());
       return;
     }
@@ -1093,9 +1106,16 @@ public final class ScopedClientRegistrationFactory {
       final LoginRouteChecks loginRouteChecks,
       final boolean warnIfUnusable) {
     final var checkCallback = loginRouteChecks == LoginRouteChecks.ENFORCED && warnIfUnusable;
+    // sampleRequestShape expands {registrationId} through Map.of, which rejects a null value; a
+    // blank/null registrationId already gets its own warning from warnIfBlankRegistrationId, so
+    // template expansion here only needs a stand-in id, not the diagnostic name.
+    final var probeId =
+        StringUtils.hasText(registrationId)
+            ? registrationId
+            : OidcConfiguration.DEFAULT_REGISTRATION_ID;
     if (StringUtils.hasText(scopedRedirectUriPath)) {
       final var scoped = BASE_URL_PLACEHOLDER + scopedRedirectUriPath;
-      if (checkCallback && !isUsableRedirectUri(scoped, registrationId)) {
+      if (checkCallback && !isUsableRedirectUri(scoped, probeId)) {
         LOG.warn(
             "The scoped redirect-uri path '{}' for OIDC provider '{}' may not yield a callback"
                 + " this application can serve — the scoped chain's redirection endpoint may not"
@@ -1107,7 +1127,7 @@ public final class ScopedClientRegistrationFactory {
     }
     if (StringUtils.hasText(oidc.getRedirectUri())) {
       final String configured = oidc.getRedirectUri();
-      if (checkCallback && !isUsableRedirectUri(configured, registrationId)) {
+      if (checkCallback && !isUsableRedirectUri(configured, probeId)) {
         LOG.warn(
             "OIDC provider '{}' has a redirect-uri that may not expand to a usable callback URL"
                 + " (was: {}). Spring expands {{baseUrl}}, {{baseScheme}}, {{baseHost}},"

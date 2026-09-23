@@ -27,9 +27,10 @@ import org.springframework.util.StringUtils;
  * io.camunda.security.spring.CamundaSecurityLibraryProperties}. Each scope therefore controls its
  * own augmentation, which a physical tenant needs.
  *
- * <p>Augmentation redirects no browser, so this factory builds its registrations with {@link
- * ScopedClientRegistrationFactory#createWithoutLoginRoutes}. Augmentation then also runs on a scope
- * that serves no login route.
+ * <p>Augmentation redirects no browser, so this factory validates and builds its registrations with
+ * {@link ScopedClientRegistrationFactory#validateWithoutLoginRoutes} and {@link
+ * ScopedClientRegistrationFactory#createWithoutLoginRoutesAlreadyValidated}. Augmentation then also
+ * runs on a scope that serves no login route.
  */
 public final class ScopedOidcClaimsProviderFactory {
 
@@ -121,11 +122,15 @@ public final class ScopedOidcClaimsProviderFactory {
       final String registrationId,
       final String scopeDescription) {
     final var config = providers.get(registrationId);
+    // createWithoutLoginRoutesAlreadyValidated, not createWithoutLoginRoutes: the whole map was
+    // already validated once above, before this claims provider started resolving registrations.
+    // Repeating that validation on every retry of a registration that keeps failing to build would
+    // re-log the same WARN on every request.
     return DeferredOidcResolution.resolve(
         claimsSubject(registrationId, config, scopeDescription),
         () ->
             clientRegistrationFactory
-                .createWithoutLoginRoutes(Map.of(registrationId, config))
+                .createWithoutLoginRoutesAlreadyValidated(Map.of(registrationId, config))
                 .getFirst());
   }
 

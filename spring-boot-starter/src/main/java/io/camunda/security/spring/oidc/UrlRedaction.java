@@ -83,8 +83,8 @@ public final class UrlRedaction {
    * scheme://user:pw@host} is the obvious one. A scheme-relative {@code //user:pw@host/path} is an
    * authority too. So is a value that has lost its scheme altogether — {@code
    * user:pw@idp.example.com/token}, an {@code issuer-uri} typed without its {@code https://}, which
-   * {@code URI} happily parses as scheme {@code user}, which {@code requireAbsoluteHttpUrl} then
-   * rejects, and which the rejection quotes.
+   * {@code URI} happily parses as scheme {@code user}, which {@code warnIfNotAbsoluteHttpUrl} then
+   * flags, and which the warning quotes.
    *
    * <p>The last form has no delimiter to find, so the value is treated as beginning with its
    * authority. That costs nothing when there is none: {@link #withoutUserInfo} looks for an {@code

@@ -230,6 +230,20 @@ final class DeferredOidcResolutionTest {
   }
 
   @Test
+  void shouldRedactCredentialsFromTheIssuerInTheSubject() {
+    // given an issuer-uri carrying a credential, as a misconfigured value can
+    final var config =
+        OidcConfiguration.builder()
+            .clientId("client")
+            .issuerUri("https://user:secret@idp.example.com/realms/camunda")
+            .build();
+
+    // when / then the subject a failed resolution logs never carries the credential
+    assertThat(DeferredOidcResolution.describeProvider("discovered", config))
+        .isEqualTo("'discovered' (issuer https://…@idp.example.com/realms/camunda)");
+  }
+
+  @Test
   void shouldReportANestedFailureOnceAtTheStepThatNamesTheProvider() {
     // given an outer resolution, as a decoder makes over the registrations of a repository
     final var inner = "inner-" + UUID.randomUUID();

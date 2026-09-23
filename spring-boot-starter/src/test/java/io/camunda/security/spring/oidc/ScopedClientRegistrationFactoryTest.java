@@ -20,6 +20,7 @@ import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -454,6 +455,18 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
+  void shouldNotThrowOnANullRegistrationIdWithARedirectUriToCheck() {
+    // given a null registrationId (OidcConfiguration#setRegistrationId accepts null) alongside a
+    // configured redirect-uri, so resolveRedirectUri's callback-usability check runs with it —
+    // sampleRequestShape expands {registrationId} through Map.of, which rejects a null value
+    final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
+    oidc.setRedirectUri("{baseUrl}/sso-callback/{registrationId}");
+    final var providers = Collections.<String, OidcConfiguration>singletonMap(null, oidc);
+
+    assertThatNoException().isThrownBy(() -> factory.validateWithoutNetwork(providers, null));
+  }
+
+  @Test
   void shouldWarnRatherThanFailOnABlankClientIdWithoutNetwork() {
     // given a provider whose client-id is missing — Spring's build() rejects it only once the
     // registration is actually built, which validateWithoutNetwork never does
@@ -842,6 +855,33 @@ class ScopedClientRegistrationFactoryTest {
         .filteredOn(event -> event.getLevel() == Level.WARN)
         .filteredOn(event -> event.getFormattedMessage().contains("redirect-uri that may not"))
         .hasSize(1);
+  }
+
+  @Test
+  void shouldNotReWarnOnEachRetryOfAnAlreadyValidatedRegistration() {
+    // given a provider block that validateWithoutNetwork would warn about (no client-id)
+    final var oidc =
+        OidcConfiguration.builder()
+            .issuerUri("http://127.0.0.1:1/realms/camunda")
+            .redirectUri("{baseUrl}/sso-callback")
+            .build();
+    final var providers = Map.of("oidc", oidc);
+    // when the whole map is validated once, as a caller resolving lazily does at construction
+    factory.validateWithoutNetwork(providers, null);
+
+    // then a caller retrying resolution of one already-validated registration (as
+    // LazyClientRegistrationRepository, ScopedJwtDecoderFactory and
+    // ScopedOidcClaimsProviderFactory do on every attempt) does not warn again
+    final var appender = captureFactoryLogs();
+    try {
+      assertThatThrownBy(() -> factory.createAlreadyValidated(providers, null))
+          .isInstanceOf(IllegalArgumentException.class);
+      assertThatThrownBy(() -> factory.createWithoutLoginRoutesAlreadyValidated(providers))
+          .isInstanceOf(IllegalArgumentException.class);
+    } finally {
+      releaseFactoryLogs(appender);
+    }
+    assertThat(appender.list).filteredOn(event -> event.getLevel() == Level.WARN).isEmpty();
   }
 
   @ParameterizedTest(name = "{0}")
