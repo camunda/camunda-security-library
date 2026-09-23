@@ -551,16 +551,23 @@ public final class ScopedWebappSecurityChainBuilder {
     final var composedDefault = composedPostLogoutRedirectUri(prefix);
     final Map<String, String> redirectUris = new LinkedHashMap<>();
     sources.forEach(
-        (registrationId, oidc) ->
-            redirectUris.put(
-                registrationId,
-                postLogoutRedirectUri(
-                    registrationId,
-                    oidc,
-                    prefix,
-                    composedDefault,
-                    scopedClientRegistrationFactory.isPostLogoutRedirectUriUsable(
-                        registrationId, oidc))));
+        (registrationId, oidc) -> {
+          // A blank/null registrationId already gets its own warning above, and can never be the
+          // authenticated registration id a real logout looks this map up by — Map.copyOf below
+          // rejects a null key, so keeping such an entry would still crash chain construction.
+          if (!StringUtils.hasText(registrationId)) {
+            return;
+          }
+          redirectUris.put(
+              registrationId,
+              postLogoutRedirectUri(
+                  registrationId,
+                  oidc,
+                  prefix,
+                  composedDefault,
+                  scopedClientRegistrationFactory.isPostLogoutRedirectUriUsable(
+                      registrationId, oidc)));
+        });
     return redirectUris;
   }
 

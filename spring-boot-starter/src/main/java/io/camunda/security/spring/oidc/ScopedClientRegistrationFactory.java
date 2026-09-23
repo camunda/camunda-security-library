@@ -46,7 +46,7 @@ import org.springframework.web.util.pattern.PatternParseException;
  * read it back (see {@link #cacheDiscoveryDocument}); if it cannot, that issuer goes on fetching
  * once per registration.
  *
- * <p><b>Provider-block validation never blocks startup</b> (see ADR-0027). A provider block that
+ * <p><b>Provider-block validation never blocks startup</b> (see ADR-0028). A provider block that
  * looks wrong — a bad URL, a missing field, an unusable redirect-uri — logs a {@code WARN} naming
  * the provider and the problem, and the application starts regardless. A provider can still fail to
  * build: Spring's own {@link ClientRegistration.Builder#build()} throws for some of the same

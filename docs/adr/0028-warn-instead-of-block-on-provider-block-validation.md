@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0027: Warn instead of block on provider-block validation
+# ADR-0028: Warn instead of block on provider-block validation
 
 **Deciders**: Ben Sheppard, Sebastian Bathke
 
