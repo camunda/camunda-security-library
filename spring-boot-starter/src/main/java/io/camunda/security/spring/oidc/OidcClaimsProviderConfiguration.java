@@ -9,6 +9,7 @@ package io.camunda.security.spring.oidc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.api.context.OidcClaimsProvider;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpClient;
@@ -27,6 +28,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.util.StringUtils;
 
 /**
  * Registers the {@link OidcClaimsProvider} bean: an augmenting provider when {@code
@@ -103,12 +105,23 @@ public class OidcClaimsProviderConfiguration {
     final var fetcher = new OidcUserInfoHttpClient(httpClient, objectMapper);
     if (clientRegistrationRepository instanceof final LazyClientRegistrationRepository lazy) {
       final var providers = lazy.providers();
+      // A blank/null registrationId is warn-only, not rejected —
+      // IssuerRegistrations#ofConfiguration
+      // copies its issuer map and would fail on the null value, blocking startup, so it must not
+      // see that entry.
+      final var issuerProviders = new LinkedHashMap<String, OidcConfiguration>();
+      providers.forEach(
+          (registrationId, config) -> {
+            if (StringUtils.hasText(registrationId)) {
+              issuerProviders.put(registrationId, config);
+            }
+          });
       return new CachingOidcClaimsProvider(
           fetcher,
           CachingOidcClaimsProvider.userInfoUriByIssuer(
               IssuerRegistrations.ofConfiguration(
-                  providers, lazy::findByRegistrationId, "the UserInfo endpoint"),
-              providers),
+                  issuerProviders, lazy::findByRegistrationId, "the UserInfo endpoint"),
+              issuerProviders),
           augmentation,
           meterRegistry);
     }

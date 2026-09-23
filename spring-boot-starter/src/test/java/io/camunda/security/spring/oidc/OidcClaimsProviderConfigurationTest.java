@@ -23,6 +23,7 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -180,6 +181,46 @@ class OidcClaimsProviderConfigurationTest {
                     .isInstanceOf(AuthenticationServiceException.class);
               });
     }
+  }
+
+  @Test
+  void shouldNotThrowOnANullRegistrationIdAmongTheLazyRepositoryProviders() {
+    // given a flat oidc.* block with no registration-id set (a null key) alongside a valid
+    // provider in the lazy repository's provider map — registrationId is warn-only, not rejected,
+    // so it must not reach IssuerRegistrations.ofConfiguration's Map.copyOf and abort startup
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put(
+        null,
+        OidcConfiguration.builder()
+            .clientId("client-id")
+            .redirectUri("{baseUrl}/sso-callback")
+            .issuerUri("https://idp-a.example")
+            .userInfoUri("https://idp-a.example/userinfo")
+            .build());
+    providers.put(
+        "b",
+        OidcConfiguration.builder()
+            .clientId("client-id")
+            .redirectUri("{baseUrl}/sso-callback")
+            .issuerUri("https://idp-b.example")
+            .userInfoUri("https://idp-b.example/userinfo")
+            .build());
+
+    new ApplicationContextRunner()
+        .withBean(ScopedClientRegistrationFactory.class, ScopedClientRegistrationFactory::new)
+        .withPropertyValues(
+            "camunda.security.authentication.method=oidc",
+            "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
+        .withBean(
+            ClientRegistrationRepository.class,
+            () ->
+                new LazyClientRegistrationRepository(
+                    new ScopedClientRegistrationFactory(), providers))
+        .withUserConfiguration(StubObjectMapper.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class))
+        .run(ctx -> assertThat(ctx).hasNotFailed());
   }
 
   @Test

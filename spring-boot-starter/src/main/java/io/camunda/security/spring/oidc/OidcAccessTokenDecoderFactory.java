@@ -198,9 +198,27 @@ public class OidcAccessTokenDecoderFactory {
           registration, config.getAdditionalJwkSetUris(), validatorFactory);
     }
     return createIssuerAwareAccessTokenDecoder(
-        IssuerRegistrations.ofConfiguration(providersById, resolveByRegistrationId),
+        IssuerRegistrations.ofConfiguration(
+            withoutBlankRegistrationIds(providersById), resolveByRegistrationId),
         buildAdditionalJwkSetUrisByIssuer(providersById),
         validatorFactory);
+  }
+
+  /**
+   * A blank/null registrationId is warn-only, not rejected — {@link
+   * IssuerRegistrations#ofConfiguration} copies its issuer map and would fail on the null value,
+   * blocking startup or the first token decode, so it must not see that entry.
+   */
+  private static Map<String, OidcConfiguration> withoutBlankRegistrationIds(
+      final Map<String, OidcConfiguration> providers) {
+    final var withoutBlankIds = new LinkedHashMap<String, OidcConfiguration>();
+    providers.forEach(
+        (registrationId, config) -> {
+          if (StringUtils.hasText(registrationId)) {
+            withoutBlankIds.put(registrationId, config);
+          }
+        });
+    return withoutBlankIds;
   }
 
   /**

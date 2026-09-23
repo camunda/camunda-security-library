@@ -8,6 +8,7 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import ch.qos.logback.classic.Level;
@@ -18,6 +19,7 @@ import com.nimbusds.jose.KeySourceException;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.io.IOException;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -183,6 +185,25 @@ class OidcAccessTokenDecoderFactoryTest {
     } finally {
       detachAppender(appender);
     }
+  }
+
+  @Test
+  void shouldNotThrowOnANullRegistrationIdAmongMultipleProviders() {
+    // given a provider map with a blank/null registrationId — warn-only, not rejected — alongside
+    // a valid one, selecting the issuer-aware decoder must not let the null key reach
+    // IssuerRegistrations.ofConfiguration's Map.copyOf and abort
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    final var providerA = new OidcConfiguration();
+    providerA.setIssuerUri("https://idp-a.example");
+    final var providerB = new OidcConfiguration();
+    providerB.setIssuerUri("https://idp-b.example");
+    providers.put(null, providerA);
+    providers.put("b", providerB);
+    final var factory =
+        new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
+
+    assertThatCode(() -> factory.selectAccessTokenDecoder(providers, registrationId -> null))
+        .doesNotThrowAnyException();
   }
 
   private static ClientRegistration registration(
