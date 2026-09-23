@@ -111,36 +111,26 @@ public class OidcBeansConfiguration {
         contextPropagatorProvider.getIfAvailable(MembershipResolutionContextPropagator::identity);
     final var flatOidcConfiguration = properties.getAuthentication().getOidc();
     final var configurations = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
+    // IssuerOwnership decides the winner per issuer and logs the duplicate-issuer warning — the
+    // one place that warning is built, redacted and sanitized, rather than a second copy of it
+    // here.
+    final var winningRegistrationIdByIssuer =
+        IssuerOwnership.registrationIdByIssuer(configurations, LOG, "the claim configuration");
     final Map<String, LazyTokenClaimsConverter> byIssuer = new LinkedHashMap<>();
-    final Map<String, String> winningRegistrationIdByIssuer = new LinkedHashMap<>();
-    for (final var registrationId : configurations.keySet()) {
-      final var config = configurations.get(registrationId);
-      final var issuerUri = config.getIssuerUri();
-      if (issuerUri == null || issuerUri.isBlank()) {
-        continue;
-      }
-      final var converter =
-          config == flatOidcConfiguration
-              ? lazyTokenClaimsConverter
-              : new LazyTokenClaimsConverter(
-                  config.getUsernameClaim(),
-                  config.getClientIdClaim(),
-                  config.isPreferUsernameClaim(),
-                  membershipPort,
-                  contextPropagator);
-      if (byIssuer.putIfAbsent(issuerUri, converter) != null) {
-        // Redacted: an issuer-uri check elsewhere is warn-only, not rejected, so a malformed,
-        // credential-bearing value can reach this diagnostic too.
-        LOG.warn(
-            "Issuer '{}' is claimed by multiple OIDC registrations: '{}' wins, and the tokens of"
-                + " that issuer ignore the claim configuration of '{}'.",
-            UrlRedaction.redact(issuerUri),
-            winningRegistrationIdByIssuer.get(issuerUri),
-            registrationId);
-      } else {
-        winningRegistrationIdByIssuer.put(issuerUri, registrationId);
-      }
-    }
+    winningRegistrationIdByIssuer.forEach(
+        (issuerUri, registrationId) -> {
+          final var config = configurations.get(registrationId);
+          final var converter =
+              config == flatOidcConfiguration
+                  ? lazyTokenClaimsConverter
+                  : new LazyTokenClaimsConverter(
+                      config.getUsernameClaim(),
+                      config.getClientIdClaim(),
+                      config.isPreferUsernameClaim(),
+                      membershipPort,
+                      contextPropagator);
+          byIssuer.put(issuerUri, converter);
+        });
     return new TokenClaimsConvertersByIssuer(byIssuer);
   }
 }

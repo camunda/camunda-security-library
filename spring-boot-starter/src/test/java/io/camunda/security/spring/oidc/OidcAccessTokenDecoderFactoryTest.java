@@ -190,14 +190,16 @@ class OidcAccessTokenDecoderFactoryTest {
   @Test
   void shouldNotThrowOnANullRegistrationIdAmongMultipleProviders() {
     // given a provider map with a blank/null registrationId — warn-only, not rejected — alongside
-    // a valid one, selecting the issuer-aware decoder must not let the null key reach
+    // two valid ones (so the filtered view still has more than one provider and takes the
+    // issuer-aware path), selecting the decoder must not let the null key reach
     // IssuerRegistrations.ofConfiguration's Map.copyOf and abort
     final var providers = new LinkedHashMap<String, OidcConfiguration>();
     final var providerA = new OidcConfiguration();
     providerA.setIssuerUri("https://idp-a.example");
     final var providerB = new OidcConfiguration();
     providerB.setIssuerUri("https://idp-b.example");
-    providers.put(null, providerA);
+    providers.put(null, new OidcConfiguration());
+    providers.put("a", providerA);
     providers.put("b", providerB);
     final var factory =
         new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
@@ -223,8 +225,24 @@ class OidcAccessTokenDecoderFactoryTest {
   }
 
   @Test
+  void shouldTakeTheSingleProviderPathWhenOnlyOneRealProviderRemainsAfterFiltering() {
+    // given one real provider with no issuer-uri (valid for a single-provider deployment) plus a
+    // blank-registrationId leftover — the leftover must not flip provider "a" from the single- to
+    // the issuer-aware path, where it has no issuer to route by and every one of its tokens would
+    // be refused at runtime (see PR #682 review)
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put("a", new OidcConfiguration());
+    providers.put(null, new OidcConfiguration());
+    final var factory =
+        new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
+    final var resolved = registration("a", "https://idp-a.example", "https://idp-a.example/jwks");
+
+    assertThat(factory.selectAccessTokenDecoder(providers, registrationId -> resolved)).isNotNull();
+  }
+
+  @Test
   void shouldUseTheSameFilteredProviderViewForJwkSetUrisAsForIssuerRegistrations() {
-    // given a blank-registrationId provider and a valid one sharing an issuer, the blank one
+    // given a blank-registrationId provider and two valid ones sharing an issuer, the blank one
     // first — before this fix, buildAdditionalJwkSetUrisByIssuer read the unfiltered map and could
     // pick the blank provider as issuer owner while IssuerRegistrations picked "b", letting "b"'s
     // tokens be checked against the blank provider's additional JWK Set URIs
@@ -232,6 +250,7 @@ class OidcAccessTokenDecoderFactoryTest {
     final var providers = new LinkedHashMap<String, OidcConfiguration>();
     providers.put(null, providerConfiguration(issuer, "https://blank/extra-jwks"));
     providers.put("b", providerConfiguration(issuer, "https://b/extra-jwks"));
+    providers.put("c", providerConfiguration(issuer, "https://c/extra-jwks"));
     final var factory =
         new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
     final var appender = attachAppender();
@@ -239,14 +258,17 @@ class OidcAccessTokenDecoderFactoryTest {
     try {
       factory.selectAccessTokenDecoder(providers, registrationId -> null);
 
-      // then no duplicate-issuer warning fires for the additional-JWK-set pass — the blank
+      // then the duplicate-issuer warning names "b" as the owner and "c" as the loser — the blank
       // provider never entered ownership resolution to begin with, agreeing with the filtered view
       // IssuerRegistrations uses
       assertThat(appender.list)
-          .noneSatisfy(
+          .anySatisfy(
               event ->
                   assertThat(event.getFormattedMessage())
-                      .contains("ignore the additional JWK Set URIs"));
+                      .contains("ignore the additional JWK Set URIs")
+                      .contains("'b' wins")
+                      .contains("'c'"))
+          .noneSatisfy(event -> assertThat(event.getFormattedMessage()).contains("null"));
     } finally {
       detachAppender(appender);
     }

@@ -185,26 +185,28 @@ public class OidcAccessTokenDecoderFactory {
       final Map<String, OidcConfiguration> providersById,
       final Function<String, ClientRegistration> resolveByRegistrationId,
       final TokenValidatorFactory validatorFactory) {
-    if (providersById.isEmpty()) {
+    // Filtered once, at the top: every decision below — whether any provider remains, whether to
+    // take the single- or multi-provider path, the issuer requirement, and the decoder itself —
+    // must agree on the same view. Deciding size()/isEmpty() on the raw map let an entry already
+    // ignored elsewhere still flip a real provider from the single- to the issuer-aware path,
+    // where it has no issuer to route by and every one of its tokens is refused.
+    final var providers =
+        ScopedClientRegistrationFactory.withoutBlankRegistrationIds(providersById);
+    if (providers.isEmpty()) {
       throw new IllegalStateException(ERROR_NO_PROVIDER);
     }
-    validateProvidersHaveIssuer(providersById);
-    if (providersById.size() == 1) {
-      final var registrationId = providersById.keySet().iterator().next();
-      final var config = providersById.get(registrationId);
+    validateProvidersHaveIssuer(providers);
+    if (providers.size() == 1) {
+      final var registrationId = providers.keySet().iterator().next();
+      final var config = providers.get(registrationId);
       final var registration =
           requireRegistration(registrationId, resolveByRegistrationId.apply(registrationId));
       return createAccessTokenDecoder(
           registration, config.getAdditionalJwkSetUris(), validatorFactory);
     }
-    // Both maps below must see the same, filtered provider view: a blank/null-registrationId
-    // provider sharing an issuer with a valid one must not win issuer ownership in one pass and
-    // lose it in the other, or a token would be checked against the wrong provider's JWK Set URIs.
-    final var withoutBlankIds =
-        ScopedClientRegistrationFactory.withoutBlankRegistrationIds(providersById);
     return createIssuerAwareAccessTokenDecoder(
-        IssuerRegistrations.ofConfiguration(withoutBlankIds, resolveByRegistrationId),
-        buildAdditionalJwkSetUrisByIssuer(withoutBlankIds),
+        IssuerRegistrations.ofConfiguration(providers, resolveByRegistrationId),
+        buildAdditionalJwkSetUrisByIssuer(providers),
         validatorFactory);
   }
 
