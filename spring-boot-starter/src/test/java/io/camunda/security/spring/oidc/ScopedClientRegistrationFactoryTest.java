@@ -279,6 +279,38 @@ class ScopedClientRegistrationFactoryTest {
         .isEmpty();
   }
 
+  @Test
+  void metadataCarriesUserInfoRequiredFlagWhenSet() {
+    final var oidc = explicitEndpointsWith(b -> b.userInfoRequired(true));
+
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    final var metadata = registrations.get(0).getProviderDetails().getConfigurationMetadata();
+    assertThat(metadata)
+        .containsEntry(FailSoftOidcUserService.USER_INFO_REQUIRED_METADATA_KEY, true);
+  }
+
+  @Test
+  void metadataCarriesUserInfoRequiredFlagFalseByDefault() {
+    final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
+
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    final var metadata = registrations.get(0).getProviderDetails().getConfigurationMetadata();
+    assertThat(metadata)
+        .containsEntry(FailSoftOidcUserService.USER_INFO_REQUIRED_METADATA_KEY, false);
+  }
+
+  @Test
+  void rejectsUserInfoRequiredWithoutUserInfoEnabled() {
+    final var oidc = explicitEndpointsWith(b -> b.userInfoRequired(true).userInfoEnabled(false));
+
+    assertThatThrownBy(() -> factory.createFromProviderMap(Map.of("myid", oidc)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("user-info-required")
+        .hasMessageContaining("user-info-enabled");
+  }
+
   // ---------------------------------------------------------------------------
   // userInfoUri / userNameAttributeName
   // ---------------------------------------------------------------------------

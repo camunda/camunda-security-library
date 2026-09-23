@@ -354,6 +354,7 @@ public final class ScopedClientRegistrationFactory {
             requirePostLogoutRedirectUri(registrationId, oidc);
           }
           requireEndpointConfiguration(registrationId, oidc);
+          requireUserInfoRequiredConsistency(registrationId, oidc);
           resolveRedirectUri(registrationId, oidc, scopedRedirectUriPath, loginRouteChecks);
         });
   }
@@ -971,6 +972,30 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
+   * A provider cannot both disable the UserInfo fetch and require it to succeed: with {@code
+   * user-info-enabled=false}, {@code userInfoUri} is nulled on the built registration and login
+   * never attempts the call {@code user-info-required} is meant to make mandatory. Rejecting this
+   * combination at startup mirrors {@link CachingOidcClaimsProvider#forConfiguredMappings} failing
+   * fast on an analogous config-mismatch (ADR-0007) rather than letting the flag silently do
+   * nothing.
+   */
+  private static void requireUserInfoRequiredConsistency(
+      final String registrationId, final OidcConfiguration oidc) {
+    if (oidc.isUserInfoRequired() && !oidc.isUserInfoEnabled()) {
+      throw new IllegalStateException(
+          "Cannot build ClientRegistration '"
+              + registrationId
+              + "': user-info-required=true has no effect when user-info-enabled=false, because"
+              + " login then never attempts the UserInfo call this flag is meant to make"
+              + " mandatory. Set user-info-enabled=true (the default) under"
+              + " camunda.security.authentication.oidc.* (flat) or"
+              + " camunda.security.authentication.providers.oidc."
+              + registrationId
+              + ".*, or remove user-info-required.");
+    }
+  }
+
+  /**
    * A path that is not blank and has no leading '/' gives "{baseUrl}physical-tenants/...", which is
    * not a valid URI. The method rejects such a path immediately, so that the caller gets a clear
    * error. {@link #resolveRedirectUri} examines the expansion of the path for each registration.
@@ -1076,6 +1101,7 @@ public final class ScopedClientRegistrationFactory {
     merged.put(
         TokenValidatorFactory.AUDIENCES_METADATA_KEY,
         oidc.getAudiences() != null ? List.copyOf(oidc.getAudiences()) : List.of());
+    merged.put(FailSoftOidcUserService.USER_INFO_REQUIRED_METADATA_KEY, oidc.isUserInfoRequired());
     if (StringUtils.hasText(oidc.getEndSessionEndpointUri())) {
       merged.put("end_session_endpoint", oidc.getEndSessionEndpointUri());
     }
