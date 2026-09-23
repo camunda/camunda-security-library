@@ -401,6 +401,17 @@ public final class ScopedClientRegistrationFactory {
         UrlRedaction.redact(configured));
   }
 
+  /**
+   * Replaces a control character (for example CR or LF) in operator-supplied text with {@code '?'}
+   * before it reaches a log message, so a registrationId carrying one cannot forge a line in the
+   * log it is quoted in. {@code registrationId} is never validated by this class the way a URL
+   * value is — a caller can set it to anything — so every place that logs it needs this, not just
+   * the checks that reject an unsafe form.
+   */
+  private static String sanitizeForLog(final String value) {
+    return value == null ? null : value.replaceAll("\\p{Cntrl}", "?");
+  }
+
   private static void warnIfBlankRegistrationId(final String registrationId) {
     if (!StringUtils.hasText(registrationId)) {
       LOG.warn(
@@ -420,13 +431,14 @@ public final class ScopedClientRegistrationFactory {
   private static void warnIfRegistrationIdNotAddressableByTheLoginRoute(
       final String registrationId) {
     if (!isAddressableAsASinglePathSegment(registrationId)) {
+      final var safeId = sanitizeForLog(registrationId);
       LOG.warn(
           "OIDC registrationId '{}' is not addressable as a single path segment, so its login"
               + " route (<basePath>/oauth2/authorization/{}) may not resolve to this provider. Set"
               + " camunda.security.authentication.oidc.registration-id (flat block) or rename the"
               + " key under camunda.security.authentication.providers.oidc.<id>.",
-          registrationId,
-          registrationId);
+          safeId,
+          safeId);
     }
   }
 
@@ -463,12 +475,13 @@ public final class ScopedClientRegistrationFactory {
    */
   private static void warnIfNoClientId(final String registrationId, final OidcConfiguration oidc) {
     if (!StringUtils.hasText(oidc.getClientId())) {
+      final var safeId = sanitizeForLog(registrationId);
       LOG.warn(
           "OIDC provider '{}' has no client-id set. Set"
               + " camunda.security.authentication.oidc.client-id (flat) or"
               + " camunda.security.authentication.providers.oidc.{}.client-id.",
-          registrationId,
-          registrationId);
+          safeId,
+          safeId);
     }
   }
 
@@ -478,12 +491,13 @@ public final class ScopedClientRegistrationFactory {
     try {
       new ClientAuthenticationMethod(oidc.getClientAuthenticationMethod());
     } catch (final IllegalArgumentException rejected) {
+      final var safeId = sanitizeForLog(registrationId);
       LOG.warn(
           "OIDC provider '{}' has no usable client-authentication-method. Set"
               + " camunda.security.authentication.oidc.client-authentication-method (flat) or"
               + " camunda.security.authentication.providers.oidc.{}.client-authentication-method.",
-          registrationId,
-          registrationId,
+          safeId,
+          safeId,
           rejected);
     }
   }
@@ -507,12 +521,13 @@ public final class ScopedClientRegistrationFactory {
           .scope(oidc.getScope())
           .build();
     } catch (final IllegalArgumentException rejected) {
+      final var safeId = sanitizeForLog(registrationId);
       LOG.warn(
           "OIDC provider '{}' has an unusable scope. A scope is one entry per value, not a"
               + " space-separated list. Set them under camunda.security.authentication.oidc.scope"
               + " (flat) or camunda.security.authentication.providers.oidc.{}.scope.",
-          registrationId,
-          registrationId,
+          safeId,
+          safeId,
           rejected);
     }
   }
@@ -590,7 +605,14 @@ public final class ScopedClientRegistrationFactory {
     if (!value.startsWith("/") && !requireUsableAbsoluteForm(registrationId, value)) {
       return;
     }
-    if (!isUsablePostLogoutRedirectUri(value, registrationId)) {
+    // sampleRequestShape expands {registrationId} through Map.of, which rejects a null value; a
+    // blank/null registrationId already gets its own warning from warnIfBlankRegistrationId, so
+    // template expansion here only needs a stand-in id, not the diagnostic name.
+    final var probeId =
+        StringUtils.hasText(registrationId)
+            ? registrationId
+            : OidcConfiguration.DEFAULT_REGISTRATION_ID;
+    if (!isUsablePostLogoutRedirectUri(value, probeId)) {
       warnPostLogoutRedirectUri(
           registrationId,
           value,
@@ -872,14 +894,15 @@ public final class ScopedClientRegistrationFactory {
 
   private static void warnPostLogoutRedirectUri(
       final String registrationId, final String value, final String problem) {
+    final var safeId = sanitizeForLog(registrationId);
     LOG.warn(
         "OIDC provider '{}' has an unusable post-logout-redirect-uri ({}, but was: {}). Set"
             + " camunda.security.authentication.oidc.post-logout-redirect-uri (flat) or"
             + " camunda.security.authentication.providers.oidc.{}.post-logout-redirect-uri.",
-        registrationId,
+        safeId,
         problem,
         UrlRedaction.redact(value),
-        registrationId);
+        safeId);
   }
 
   private static void warnIfNotAbsoluteHttpUrl(
@@ -919,8 +942,9 @@ public final class ScopedClientRegistrationFactory {
 
   private static String endpointUrlError(
       final String registrationId, final String property, final String value) {
+    final var safeId = sanitizeForLog(registrationId);
     return "OIDC provider '"
-        + registrationId
+        + safeId
         + "' has an unusable "
         + property
         + ": it must be an absolute http(s) URL with a host and, if it names a port, one in"
@@ -929,7 +953,7 @@ public final class ScopedClientRegistrationFactory {
         + ". Set camunda.security.authentication.oidc."
         + property
         + " (flat) or camunda.security.authentication.providers.oidc."
-        + registrationId
+        + safeId
         + "."
         + property
         + ".";
@@ -943,12 +967,13 @@ public final class ScopedClientRegistrationFactory {
             && StringUtils.hasText(oidc.getJwkSetUri()))) {
       return;
     }
+    final var safeId = sanitizeForLog(registrationId);
     LOG.warn(
         "OIDC provider '{}' is incomplete: set issuer-uri, or all of authorization-uri, token-uri"
             + " and jwk-set-uri, under camunda.security.authentication.oidc.* (flat) or"
             + " camunda.security.authentication.providers.oidc.{}.*.",
-        registrationId,
-        registrationId);
+        safeId,
+        safeId);
   }
 
   /**
@@ -1121,22 +1146,23 @@ public final class ScopedClientRegistrationFactory {
                 + " this application can serve — the scoped chain's redirection endpoint may not"
                 + " match it once expanded.",
             UrlRedaction.redact(scopedRedirectUriPath),
-            registrationId);
+            sanitizeForLog(registrationId));
       }
       return scoped;
     }
     if (StringUtils.hasText(oidc.getRedirectUri())) {
       final String configured = oidc.getRedirectUri();
       if (checkCallback && !isUsableRedirectUri(configured, probeId)) {
+        final var safeId = sanitizeForLog(registrationId);
         LOG.warn(
             "OIDC provider '{}' has a redirect-uri that may not expand to a usable callback URL"
                 + " (was: {}). Spring expands {{baseUrl}}, {{baseScheme}}, {{baseHost}},"
                 + " {{basePort}}, {{basePath}}, {{registrationId}} and {{action}} per request. Set"
                 + " camunda.security.authentication.oidc.redirect-uri (flat) or"
                 + " camunda.security.authentication.providers.oidc.{}.redirect-uri.",
-            registrationId,
+            safeId,
             UrlRedaction.redact(configured),
-            registrationId);
+            safeId);
       }
       return configured;
     }

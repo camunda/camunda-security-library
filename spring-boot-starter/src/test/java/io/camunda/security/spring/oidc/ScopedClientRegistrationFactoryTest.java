@@ -467,6 +467,17 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
+  void shouldNotThrowOnANullRegistrationIdWithAPostLogoutRedirectUriToCheck() {
+    // given a null registrationId alongside a post-logout-redirect-uri usable enough to reach
+    // isUsablePostLogoutRedirectUri, which also expands {registrationId} through sampleRequestShape
+    final var oidc =
+        explicitEndpointsWith(b -> b.postLogoutRedirectUri("{baseUrl}/logout/{registrationId}"));
+    final var providers = Collections.<String, OidcConfiguration>singletonMap(null, oidc);
+
+    assertThatNoException().isThrownBy(() -> factory.validateWithoutNetwork(providers, null));
+  }
+
+  @Test
   void shouldWarnRatherThanFailOnABlankClientIdWithoutNetwork() {
     // given a provider whose client-id is missing — Spring's build() rejects it only once the
     // registration is actually built, which validateWithoutNetwork never does
@@ -775,6 +786,19 @@ class ScopedClientRegistrationFactoryTest {
 
     assertFactoryWarns(() -> factory.validateWithoutNetwork(Map.of(registrationId, oidc), null))
         .contains("not addressable");
+  }
+
+  @Test
+  void shouldNotForgeALogLineFromARegistrationIdCarryingControlCharacters() {
+    // given a registrationId that fails the addressability check specifically because it carries a
+    // CR/LF — the same value that would otherwise let it forge a line in the log this warns to
+    final var registrationId = "foo\r\nbar";
+    final var oidc = explicitEndpointsWith(b -> b);
+
+    assertFactoryWarns(() -> factory.validateWithoutNetwork(Map.of(registrationId, oidc), null))
+        .contains("not addressable")
+        .doesNotContain("\r")
+        .doesNotContain("\n");
   }
 
   @ParameterizedTest
