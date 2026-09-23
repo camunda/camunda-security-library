@@ -41,7 +41,7 @@ class UrlRedactionTest {
 
   /**
    * A value that lost its scheme still has user-info. {@code URI} parses this as scheme {@code
-   * user}, so {@code requireAbsoluteHttpUrl} rejects it for the wrong scheme and the rejection
+   * user}, so {@code warnIfNotAbsoluteHttpUrl} rejects it for the wrong scheme and the rejection
    * quotes it — with no {@code "://"} or leading {@code "//"} to find, the credential used to ride
    * along verbatim. This is the shape an {@code issuer-uri} takes when its {@code https://} is
    * missing.

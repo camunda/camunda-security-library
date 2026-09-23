@@ -449,8 +449,8 @@ class ScopedClientRegistrationFactoryTest {
   void shouldWarnRatherThanFailOnABlankRegistrationIdWithoutNetwork() {
     final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
 
-    assertThatNoException()
-        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of(" ", oidc), null));
+    assertFactoryWarns(() -> factory.validateWithoutNetwork(Map.of(" ", oidc), null))
+        .contains("registrationId");
   }
 
   @Test
@@ -463,16 +463,16 @@ class ScopedClientRegistrationFactoryTest {
             .issuerUri("https://idp.example.com/realms/camunda")
             .build();
 
-    assertThatNoException()
-        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null));
+    assertFactoryWarns(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null))
+        .contains("client-id");
   }
 
   @Test
   void shouldWarnRatherThanFailOnMissingExplicitEndpointsWithoutNetwork() {
     final var oidc = OidcConfiguration.builder().clientId("my-client").build();
 
-    assertThatNoException()
-        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null));
+    assertFactoryWarns(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null))
+        .contains("is incomplete");
   }
 
   @Test
@@ -481,8 +481,8 @@ class ScopedClientRegistrationFactoryTest {
     final var oidc =
         OidcConfiguration.builder().clientId("my-client").authorizationUri("not a URL").build();
 
-    assertThatNoException()
-        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null));
+    assertFactoryWarns(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null))
+        .contains("authorization-uri");
   }
 
   @Test
@@ -499,8 +499,8 @@ class ScopedClientRegistrationFactoryTest {
     final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
     oidc.setRedirectUri("sso-callback");
 
-    assertThatNoException()
-        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null));
+    assertFactoryWarns(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null))
+        .contains("redirect-uri");
   }
 
   @Test
@@ -760,8 +760,8 @@ class ScopedClientRegistrationFactoryTest {
     // given a provider under an id that does not survive /oauth2/authorization/<id> as one segment
     final var oidc = explicitEndpointsWith(b -> b);
 
-    assertThatNoException()
-        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of(registrationId, oidc), null));
+    assertFactoryWarns(() -> factory.validateWithoutNetwork(Map.of(registrationId, oidc), null))
+        .contains("not addressable");
   }
 
   @ParameterizedTest
@@ -791,8 +791,8 @@ class ScopedClientRegistrationFactoryTest {
     // given the scopes written as one space-separated entry instead of one entry each
     final var oidc = explicitEndpointsWith(b -> b.scope(List.of("openid profile email")));
 
-    assertThatNoException()
-        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("provider-b", oidc), null));
+    assertFactoryWarns(() -> factory.validateWithoutNetwork(Map.of("provider-b", oidc), null))
+        .contains("unusable scope");
   }
 
   @Test
@@ -811,8 +811,8 @@ class ScopedClientRegistrationFactoryTest {
     // given a provider whose client-authentication-method was blanked out
     final var oidc = explicitEndpointsWith(b -> b.clientAuthenticationMethod(""));
 
-    assertThatNoException()
-        .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("provider-b", oidc), null));
+    assertFactoryWarns(() -> factory.validateWithoutNetwork(Map.of("provider-b", oidc), null))
+        .contains("client-authentication-method");
   }
 
   @ParameterizedTest(name = "{0}")
@@ -831,8 +831,8 @@ class ScopedClientRegistrationFactoryTest {
       final String redirectUri) {
     // given a flat redirect-uri that contributes no registration of its own — no client-id beside
     // it — but still decides where the unscoped chain mounts its redirection endpoint
-    assertThatNoException()
-        .isThrownBy(() -> factory.validateRedirectionEndpointSource(redirectUri, "oidc"));
+    assertFactoryWarns(() -> factory.validateRedirectionEndpointSource(redirectUri, "oidc"))
+        .contains("redirect-uri");
   }
 
   @ParameterizedTest(name = "{0}")
@@ -1085,6 +1085,26 @@ class ScopedClientRegistrationFactoryTest {
         .contains("post-logout-redirect-uri");
   }
 
+  /**
+   * Runs {@code action}, captures every {@code WARN} the factory's logger emits meanwhile, and
+   * returns an assertion on their combined formatted messages. Lets a test prove the diagnostic
+   * itself fires, not just that no exception is thrown.
+   */
+  private org.assertj.core.api.AbstractStringAssert<?> assertFactoryWarns(final Runnable action) {
+    final var appender = captureFactoryLogs();
+    try {
+      action.run();
+    } finally {
+      releaseFactoryLogs(appender);
+    }
+    return assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .isNotEmpty()
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .asInstanceOf(InstanceOfAssertFactories.LIST)
+        .asString();
+  }
+
   private static ListAppender<ILoggingEvent> captureFactoryLogs() {
     final var appender = new ListAppender<ILoggingEvent>();
     appender.start();
@@ -1266,8 +1286,8 @@ class ScopedClientRegistrationFactoryTest {
    * cannot usefully retry.
    */
   /**
-   * Every property routed through {@code requireAbsoluteHttpUrl} quotes the value it rejects, so a
-   * scheme-less one must be redacted there too — not only for post-logout.
+   * Every property routed through {@code warnIfNotAbsoluteHttpUrl} quotes the value it rejects, so
+   * a scheme-less one must be redacted there too — not only for post-logout.
    */
   @Test
   void shouldRedactCredentialsFromASchemelessEndpointUrlWarning() {
