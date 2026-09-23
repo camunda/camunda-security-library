@@ -14,6 +14,7 @@ import io.camunda.security.spring.cors.NoOpCorsConfigurationSource;
 import io.camunda.security.spring.filter.AdminUserCheckFilter;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
+import io.camunda.security.spring.oidc.FailSoftOidcUserService;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
@@ -25,6 +26,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProviderBuilder;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
+import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserService;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -106,5 +108,11 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
               .build());
       return manager;
     };
+  }
+
+  @Bean
+  @ConditionalOnMissingBean
+  public OidcUserService oidcUserService() {
+    return new FailSoftOidcUserService(new DefaultOAuth2UserService());
   }
 }

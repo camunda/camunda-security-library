@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
+import io.camunda.security.spring.oidc.FailSoftOidcUserService;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -23,11 +24,13 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
 
 @ExtendWith(MockitoExtension.class)
 class ScopedWebappSecurityChainBuilderConfigurationTest {
 
   @Mock private ScopedWebappSecurityChainBuilder hostBean;
+  @Mock private OidcUserService hostOidcUserService;
 
   @Test
   void shouldCreateBeanWhenCollaboratorsArePresent() {
@@ -60,6 +63,40 @@ class ScopedWebappSecurityChainBuilderConfigurationTest {
             ctx -> {
               assertThat(ctx).hasNotFailed();
               assertThat(ctx.getBean(ScopedWebappSecurityChainBuilder.class)).isSameAs(hostBean);
+            });
+  }
+
+  @Test
+  void registersFailSoftOidcUserServiceByDefault() {
+    new WebApplicationContextRunner()
+        .withUserConfiguration(ObjectMapperConfig.class, StubPaths.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                ScopedWebappSecurityChainBuilderConfiguration.class))
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              assertThat(ctx.getBean(OidcUserService.class))
+                  .isInstanceOf(FailSoftOidcUserService.class);
+            });
+  }
+
+  @Test
+  void backsOffWhenHostProvidesOwnOidcUserService() {
+    new WebApplicationContextRunner()
+        .withUserConfiguration(ObjectMapperConfig.class, StubPaths.class)
+        .withBean(OidcUserService.class, () -> hostOidcUserService)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                ScopedWebappSecurityChainBuilderConfiguration.class))
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              assertThat(ctx.getBean(OidcUserService.class)).isSameAs(hostOidcUserService);
             });
   }
 
