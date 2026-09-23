@@ -54,14 +54,7 @@ public final class OidcRedirectionEndpoint {
     if (configuredRedirectUri == null || configuredRedirectUri.isBlank()) {
       return defaultPath;
     }
-    final var template = pathOfTheTemplate(configuredRedirectUri.trim());
-    var path = withoutQueryAndFragment(template.path());
-    if (!template.contextPathCarriedByAPlaceholder()) {
-      path = stripContextPath(path, contextPath);
-    }
-    // Spring's default template ends in "{registrationId}"; the redirection-endpoint matcher must
-    // use an Ant wildcard for that segment so it matches the resolved id (e.g. ".../code/oidc").
-    path = path.replace("{registrationId}", "*");
+    final var path = derivePath(configuredRedirectUri, contextPath);
     if (path.isBlank()) {
       LOG.warn(
           "OIDC redirect-uri '{}' carries no callback path beyond the servlet context-path '{}'; "
@@ -92,6 +85,38 @@ public final class OidcRedirectionEndpoint {
         UrlRedaction.redact(configuredRedirectUri),
         contextPath);
     return path;
+  }
+
+  /**
+   * Whether {@link #resolve} would fall back to its own {@code defaultPath} for this value: the
+   * derived path is blank, or does not start with {@code '/'}. A caller that builds the {@link
+   * org.springframework.security.oauth2.client.registration.ClientRegistration}'s own {@code
+   * redirect_uri} from the same configured value needs this, not {@link #resolve} itself, to agree
+   * with the endpoint this method mounts — reusing {@link #derivePath} rather than re-deriving the
+   * path independently, so the two never drift apart on what "the same value" means.
+   */
+  static boolean fallsBackToDefault(final String configuredRedirectUri, final String contextPath) {
+    if (configuredRedirectUri == null || configuredRedirectUri.isBlank()) {
+      return true;
+    }
+    final var path = derivePath(configuredRedirectUri, contextPath);
+    return path.isBlank() || !path.startsWith("/");
+  }
+
+  /**
+   * The redirection-endpoint path derived from a configured {@code redirect-uri}, before the
+   * blank/leading-slash check that decides whether it is usable. Shared by {@link #resolve} and
+   * {@link #fallsBackToDefault} so both apply the exact same derivation.
+   */
+  private static String derivePath(final String configuredRedirectUri, final String contextPath) {
+    final var template = pathOfTheTemplate(configuredRedirectUri.trim());
+    var path = withoutQueryAndFragment(template.path());
+    if (!template.contextPathCarriedByAPlaceholder()) {
+      path = stripContextPath(path, contextPath);
+    }
+    // Spring's default template ends in "{registrationId}"; the redirection-endpoint matcher must
+    // use an Ant wildcard for that segment so it matches the resolved id (e.g. ".../code/oidc").
+    return path.replace("{registrationId}", "*");
   }
 
   /**

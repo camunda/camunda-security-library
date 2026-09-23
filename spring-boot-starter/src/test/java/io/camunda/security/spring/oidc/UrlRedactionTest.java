@@ -104,6 +104,19 @@ class UrlRedactionTest {
         .isEqualTo("https://idp.example.com/cb\\u000d\\u000aINFO forged");
   }
 
+  /**
+   * U+2028 (LINE SEPARATOR) and U+2029 (PARAGRAPH SEPARATOR) are not ISO control characters, so
+   * {@link Character#isISOControl} alone misses them — the same gap already closed for {@code
+   * ScopedClientRegistrationFactory#sanitizeForLog}.
+   */
+  @Test
+  void shouldEscapeLineAndParagraphSeparators() {
+    assertThat(UrlRedaction.redact("https://idp.example.com/cb" + (char) 0x2028 + "forged"))
+        .isEqualTo("https://idp.example.com/cb\\u2028forged");
+    assertThat(UrlRedaction.redact("https://idp.example.com/cb" + (char) 0x2029 + "forged"))
+        .isEqualTo("https://idp.example.com/cb\\u2029forged");
+  }
+
   /** Values reach this helper unexpanded and sometimes unparseable; none of that may throw. */
   @ValueSource(
       strings = {

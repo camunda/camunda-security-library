@@ -543,12 +543,23 @@ public final class ScopedWebappSecurityChainBuilder {
    */
   private Map<String, String> postLogoutRedirectUris(
       final Map<String, OidcConfiguration> sources, final String prefix) {
+    return postLogoutRedirectUris(
+        scopedClientRegistrationFactory, sources, prefix, composedPostLogoutRedirectUri(prefix));
+  }
+
+  // Package-private for unit testing, like postLogoutRedirectUri(String, Optional) above: takes
+  // the factory and the composed default explicitly so a test can exercise the wiring between
+  // isPostLogoutRedirectUriUsable and postLogoutRedirectUri without constructing a full builder.
+  static Map<String, String> postLogoutRedirectUris(
+      final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
+      final Map<String, OidcConfiguration> sources,
+      final String prefix,
+      final String composedDefault) {
     // The factory validates these when it builds the registrations, which is the usual path. A host
     // that replaces the ClientRegistrationRepository bean bypasses that, and this handler is still
     // configured from the provider map — so the map actually consumed is validated here too. The
     // rules live in one place; this only calls them.
     scopedClientRegistrationFactory.validatePostLogoutRedirectUris(sources);
-    final var composedDefault = composedPostLogoutRedirectUri(prefix);
     final Map<String, String> redirectUris = new LinkedHashMap<>();
     sources.forEach(
         (registrationId, oidc) -> {

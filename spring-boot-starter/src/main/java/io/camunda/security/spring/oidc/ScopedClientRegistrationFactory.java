@@ -1162,9 +1162,12 @@ public final class ScopedClientRegistrationFactory {
    * </ol>
    *
    * <p>With the default, a provider that sets no {@code redirect-uri} can complete the login flow.
-   * The former {@code ClientRegistrationFactory} in OC did the same. A configured value that does
-   * not expand to a usable callback URL is used as-is, with a WARN naming the provider and the
-   * problem, rather than rejected.
+   * The former {@code ClientRegistrationFactory} in OC did the same. A configured value logs a WARN
+   * naming the provider and the problem whenever {@link #isUsableRedirectUri} rejects it, rather
+   * than being rejected itself — but it is still <em>used</em> as configured unless {@link
+   * OidcRedirectionEndpoint#fallsBackToDefault} also says so, in which case the default is used
+   * instead. The two checks differ, and only the narrower one governs the returned value: see the
+   * private overload below for why.
    */
   private String resolveRedirectUri(
       final String registrationId,
@@ -1178,11 +1181,14 @@ public final class ScopedClientRegistrationFactory {
    * As {@link #resolveRedirectUri(String, OidcConfiguration, String, LoginRouteChecks)}, but warns
    * only when {@code warnIfUnusable} is set. {@link #buildClientRegistration} needs the resolved
    * value itself, not a second diagnostic: {@link #validateWithoutNetwork} already warned about
-   * this same provider, over the whole map, before any registration was built. The usability check
-   * itself, and its fallback to the default, still apply either way: {@link
-   * OidcRedirectionEndpoint#resolve} makes the same fallback for the unscoped chain's redirection
-   * endpoint, over the same flat {@code redirect-uri}, so the two consumers of the value must agree
-   * on it, or the chain listens at the default path while the IdP is told to call back elsewhere.
+   * this same provider, over the whole map, before any registration was built.
+   *
+   * <p>The returned value falls back to the default exactly when {@link
+   * OidcRedirectionEndpoint#fallsBackToDefault} says the unscoped chain's redirection endpoint
+   * would too, for this same flat {@code redirect-uri} — not on {@link #isUsableRedirectUri}, which
+   * is a broader, only-a-WARN check. The two consumers of the value must agree on when to fall
+   * back, or the chain listens at the default path while the IdP still sends the browser to the
+   * configured one.
    */
   private String resolveRedirectUri(
       final String registrationId,
@@ -1212,20 +1218,24 @@ public final class ScopedClientRegistrationFactory {
     }
     if (StringUtils.hasText(oidc.getRedirectUri())) {
       final String configured = oidc.getRedirectUri();
-      if (checkCallback && !isUsableRedirectUri(configured, probeId)) {
-        if (warnIfUnusable) {
-          final var safeId = sanitizeForLog(registrationId);
-          LOG.warn(
-              "OIDC provider '{}' has a redirect-uri that may not expand to a usable callback URL"
-                  + " (was: {}); the {baseUrl}/sso-callback default is used instead. Spring expands"
-                  + " {baseUrl}, {baseScheme}, {baseHost}, {basePort}, {basePath},"
-                  + " {registrationId} and {action} per request. Set"
-                  + " camunda.security.authentication.oidc.redirect-uri (flat) or"
-                  + " camunda.security.authentication.providers.oidc.{}.redirect-uri.",
-              safeId,
-              UrlRedaction.redact(configured),
-              safeId);
-        }
+      if (checkCallback && warnIfUnusable && !isUsableRedirectUri(configured, probeId)) {
+        final var safeId = sanitizeForLog(registrationId);
+        LOG.warn(
+            "OIDC provider '{}' has a redirect-uri that may not expand to a usable callback URL"
+                + " (was: {}). Spring expands {baseUrl}, {baseScheme}, {baseHost}, {basePort},"
+                + " {basePath}, {registrationId} and {action} per request. Set"
+                + " camunda.security.authentication.oidc.redirect-uri (flat) or"
+                + " camunda.security.authentication.providers.oidc.{}.redirect-uri.",
+            safeId,
+            UrlRedaction.redact(configured),
+            safeId);
+      }
+      // Falls back on the exact same verdict OidcRedirectionEndpoint#resolve uses for the
+      // unscoped chain's redirection endpoint, over this same value — not on isUsableRedirectUri
+      // above, which is broader and only drives the diagnostic. The registration's redirect_uri
+      // and the endpoint the chain mounts must agree on when to fall back, or the IdP is told to
+      // call back at a path no filter serves.
+      if (checkCallback && OidcRedirectionEndpoint.fallsBackToDefault(configured, basePath)) {
         return BASE_URL_PLACEHOLDER + OidcRedirectionEndpoint.DEFAULT_PATH;
       }
       return configured;

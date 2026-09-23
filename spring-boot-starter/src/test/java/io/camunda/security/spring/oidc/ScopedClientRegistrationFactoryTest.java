@@ -162,9 +162,10 @@ class ScopedClientRegistrationFactoryTest {
   @Test
   void shouldWarnRatherThanFailOnAConfiguredRedirectUriWithoutBaseUrlOrSchemePrefix() {
     // given a bare-path redirect-uri (no {baseUrl} template, no scheme://host), which would send
-    // the IdP a non-absolute redirect_uri and break login — but should log, not stop the app, and
-    // fall back to the default so the registration agrees with OidcRedirectionEndpoint#resolve's
-    // own fallback for the same value
+    // the IdP a non-absolute redirect_uri and break login — but should log, not stop the app. It
+    // is kept verbatim, not defaulted: OidcRedirectionEndpoint#fallsBackToDefault does not trigger
+    // for a value that is already a non-blank path starting with '/', so the mounted endpoint and
+    // the registration's redirect_uri still agree — both use this same value as-is.
     final var oidc =
         OidcConfiguration.builder()
             .clientId("my-client")
@@ -177,7 +178,7 @@ class ScopedClientRegistrationFactoryTest {
     final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
 
     assertThat(registrations).hasSize(1);
-    assertThat(registrations.get(0).getRedirectUri()).isEqualTo("{baseUrl}/sso-callback");
+    assertThat(registrations.get(0).getRedirectUri()).isEqualTo("/api/authentication/callback");
   }
 
   @Test
@@ -911,6 +912,26 @@ class ScopedClientRegistrationFactoryTest {
 
     assertThatNoException()
         .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("provider-b", oidc), null));
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("io.camunda.security.spring.oidc.RedirectUriSamples#unusable")
+  void shouldAgreeWithOidcRedirectionEndpointOnWhenToFallBack(final String redirectUri) {
+    // given an unusable redirect-uri, built into a registration with the empty context path
+    // OidcRedirectionEndpoint#resolve is also given below
+    final var oidc = explicitEndpointsWith(b -> b.redirectUri(redirectUri));
+
+    final var registrationRedirectUri =
+        factory.createFromProviderMap(Map.of("provider-b", oidc)).getFirst().getRedirectUri();
+    final var chainMountsAtDefault = OidcRedirectionEndpoint.fallsBackToDefault(redirectUri, "");
+
+    // then the registration's redirect_uri falls back exactly when the chain's redirection
+    // endpoint does too — never one without the other, or a login loop follows
+    assertThat(registrationRedirectUri.equals("{baseUrl}" + OidcRedirectionEndpoint.DEFAULT_PATH))
+        .as(
+            "registration redirect_uri '%s' and chain mount fallback (%s) must agree for '%s'",
+            registrationRedirectUri, chainMountsAtDefault, redirectUri)
+        .isEqualTo(chainMountsAtDefault);
   }
 
   @Test

@@ -40,6 +40,11 @@ public final class UrlRedaction {
 
   private static final String ELLIPSIS = "…";
 
+  /** {@code LINE SEPARATOR} (U+2028) and {@code PARAGRAPH SEPARATOR} (U+2029). */
+  private static final int LINE_SEPARATOR = 0x2028;
+
+  private static final int PARAGRAPH_SEPARATOR = 0x2029;
+
   private UrlRedaction() {}
 
   /**
@@ -110,15 +115,17 @@ public final class UrlRedaction {
     return url.substring(0, fragmentStart + 1) + ELLIPSIS;
   }
 
+  private static boolean mustBeEscaped(final int c) {
+    return Character.isISOControl(c) || c == LINE_SEPARATOR || c == PARAGRAPH_SEPARATOR;
+  }
+
   private static String withoutControlCharacters(final String url) {
-    if (url.chars().noneMatch(Character::isISOControl)) {
+    if (url.chars().noneMatch(UrlRedaction::mustBeEscaped)) {
       return url;
     }
     final var escaped = new StringBuilder(url.length());
     url.chars()
-        .forEach(
-            c ->
-                escaped.append(Character.isISOControl(c) ? String.format("\\u%04x", c) : (char) c));
+        .forEach(c -> escaped.append(mustBeEscaped(c) ? String.format("\\u%04x", c) : (char) c));
     return escaped.toString();
   }
 
