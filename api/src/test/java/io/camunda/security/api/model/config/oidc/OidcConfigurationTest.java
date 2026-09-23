@@ -254,6 +254,26 @@ public class OidcConfigurationTest {
             "default postLogoutRedirectUri is unset",
             OidcConfiguration.builder().postLogoutRedirectUri(null).build(),
             false),
+        Arguments.of(
+            "userInfoEnabled is set to false",
+            OidcConfiguration.builder().userInfoEnabled(false).build(),
+            true),
+        Arguments.of(
+            "default userInfoEnabled is set",
+            OidcConfiguration.builder()
+                .userInfoEnabled(OidcConfiguration.DEFAULT_USER_INFO_ENABLED)
+                .build(),
+            false),
+        Arguments.of(
+            "userInfoRequired is set to true",
+            OidcConfiguration.builder().userInfoRequired(true).build(),
+            true),
+        Arguments.of(
+            "default userInfoRequired is set",
+            OidcConfiguration.builder()
+                .userInfoRequired(OidcConfiguration.DEFAULT_USER_INFO_REQUIRED)
+                .build(),
+            false),
         Arguments.of("default", new OidcConfiguration(), false),
         Arguments.of(
             "default authorizeRequestConfiguration is set",

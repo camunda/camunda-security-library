@@ -487,6 +487,8 @@ public class OidcConfiguration {
         || !DEFAULT_CLOCK_SKEW.equals(clockSkew)
         || postLogoutRedirectEnabled != DEFAULT_POST_LOGOUT_REDIRECT_ENABLED
         || postLogoutRedirectUri != null
+        || userInfoEnabled != DEFAULT_USER_INFO_ENABLED
+        || userInfoRequired != DEFAULT_USER_INFO_REQUIRED
         || diagnostics.isEnabled();
   }
 
