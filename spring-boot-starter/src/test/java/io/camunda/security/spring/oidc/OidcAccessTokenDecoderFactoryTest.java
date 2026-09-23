@@ -206,6 +206,36 @@ class OidcAccessTokenDecoderFactoryTest {
         .doesNotThrowAnyException();
   }
 
+  @Test
+  void shouldUseTheSameFilteredProviderViewForJwkSetUrisAsForIssuerRegistrations() {
+    // given a blank-registrationId provider and a valid one sharing an issuer, the blank one
+    // first — before this fix, buildAdditionalJwkSetUrisByIssuer read the unfiltered map and could
+    // pick the blank provider as issuer owner while IssuerRegistrations picked "b", letting "b"'s
+    // tokens be checked against the blank provider's additional JWK Set URIs
+    final var issuer = "https://shared.example";
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put(null, providerConfiguration(issuer, "https://blank/extra-jwks"));
+    providers.put("b", providerConfiguration(issuer, "https://b/extra-jwks"));
+    final var factory =
+        new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
+    final var appender = attachAppender();
+
+    try {
+      factory.selectAccessTokenDecoder(providers, registrationId -> null);
+
+      // then no duplicate-issuer warning fires for the additional-JWK-set pass — the blank
+      // provider never entered ownership resolution to begin with, agreeing with the filtered view
+      // IssuerRegistrations uses
+      assertThat(appender.list)
+          .noneSatisfy(
+              event ->
+                  assertThat(event.getFormattedMessage())
+                      .contains("ignore the additional JWK Set URIs"));
+    } finally {
+      detachAppender(appender);
+    }
+  }
+
   private static ClientRegistration registration(
       final String registrationId, final String issuerUri, final String jwkSetUri) {
     return ClientRegistration.withRegistrationId(registrationId)

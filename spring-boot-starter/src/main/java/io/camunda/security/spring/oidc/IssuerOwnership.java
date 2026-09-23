@@ -87,6 +87,11 @@ final class IssuerOwnership {
     return owners;
   }
 
+  /**
+   * An {@code issuer-uri} check elsewhere in this package is warn-only, not rejected, so a
+   * malformed, credential-bearing value (for example {@code https://user:pw@idp.example.com})
+   * reaches this warning too — redact it the same way a check that rejects such a value would.
+   */
   private static void warn(
       final Logger log,
       final String issuerUri,
@@ -96,7 +101,7 @@ final class IssuerOwnership {
     log.warn(
         "Issuer '{}' is claimed by multiple OIDC registrations: '{}' wins, and the tokens of that"
             + " issuer ignore {} of '{}'.",
-        issuerUri,
+        UrlRedaction.redact(issuerUri),
         owner,
         ignoredConfiguration,
         ignored);

@@ -197,10 +197,13 @@ public class OidcAccessTokenDecoderFactory {
       return createAccessTokenDecoder(
           registration, config.getAdditionalJwkSetUris(), validatorFactory);
     }
+    // Both maps below must see the same, filtered provider view: a blank/null-registrationId
+    // provider sharing an issuer with a valid one must not win issuer ownership in one pass and
+    // lose it in the other, or a token would be checked against the wrong provider's JWK Set URIs.
+    final var withoutBlankIds = withoutBlankRegistrationIds(providersById);
     return createIssuerAwareAccessTokenDecoder(
-        IssuerRegistrations.ofConfiguration(
-            withoutBlankRegistrationIds(providersById), resolveByRegistrationId),
-        buildAdditionalJwkSetUrisByIssuer(providersById),
+        IssuerRegistrations.ofConfiguration(withoutBlankIds, resolveByRegistrationId),
+        buildAdditionalJwkSetUrisByIssuer(withoutBlankIds),
         validatorFactory);
   }
 
