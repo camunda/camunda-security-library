@@ -29,8 +29,8 @@ import org.springframework.util.StringUtils;
  *
  * <p>Augmentation redirects no browser, so this factory validates and builds its registrations with
  * {@link ScopedClientRegistrationFactory#validateWithoutLoginRoutes} and {@link
- * ScopedClientRegistrationFactory#createWithoutLoginRoutesAlreadyValidated}. Augmentation then also
- * runs on a scope that serves no login route.
+ * ScopedClientRegistrationFactory#buildAll}. Augmentation then also runs on a scope that serves no
+ * login route.
  */
 public final class ScopedOidcClaimsProviderFactory {
 
@@ -122,15 +122,18 @@ public final class ScopedOidcClaimsProviderFactory {
       final String registrationId,
       final String scopeDescription) {
     final var config = providers.get(registrationId);
-    // createWithoutLoginRoutesAlreadyValidated, not createWithoutLoginRoutes: the whole map was
-    // already validated once above, before this claims provider started resolving registrations.
-    // Repeating that validation on every retry of a registration that keeps failing to build would
-    // re-log the same WARN on every request.
+    // buildAll, not createWithoutLoginRoutes: the whole map was already validated once above,
+    // before this claims provider started resolving registrations. Repeating that validation on
+    // every retry of a registration that keeps failing to build would re-log the same WARN on
+    // every request.
     return DeferredOidcResolution.resolve(
         claimsSubject(registrationId, config, scopeDescription),
         () ->
             clientRegistrationFactory
-                .createWithoutLoginRoutesAlreadyValidated(Map.of(registrationId, config))
+                .buildAll(
+                    Map.of(registrationId, config),
+                    null,
+                    ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED)
                 .getFirst());
   }
 

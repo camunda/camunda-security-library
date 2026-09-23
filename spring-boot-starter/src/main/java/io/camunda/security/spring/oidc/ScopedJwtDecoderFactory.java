@@ -113,15 +113,18 @@ public final class ScopedJwtDecoderFactory {
       final String registrationId,
       final String scopeDescription) {
     final var config = providers.get(registrationId);
-    // createWithoutLoginRoutesAlreadyValidated, not createWithoutLoginRoutes: the whole map was
-    // already validated once above, before this decoder started resolving registrations. Repeating
-    // that validation on every retry of a registration that keeps failing to build would re-log
-    // the same WARN on every request.
+    // buildAll, not createWithoutLoginRoutes: the whole map was already validated once above,
+    // before this decoder started resolving registrations. Repeating that validation on every
+    // retry of a registration that keeps failing to build would re-log the same WARN on every
+    // request.
     return DeferredOidcResolution.resolve(
         registrationSubject(registrationId, config, scopeDescription),
         () ->
             clientRegistrationFactory
-                .createWithoutLoginRoutesAlreadyValidated(Map.of(registrationId, config))
+                .buildAll(
+                    Map.of(registrationId, config),
+                    null,
+                    ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED)
                 .getFirst());
   }
 

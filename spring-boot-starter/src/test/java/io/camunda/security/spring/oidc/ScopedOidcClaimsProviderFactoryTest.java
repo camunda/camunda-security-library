@@ -10,6 +10,8 @@ package io.camunda.security.spring.oidc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -69,10 +71,12 @@ final class ScopedOidcClaimsProviderFactoryTest {
 
     assertThat(provider).isInstanceOf(CachingOidcClaimsProvider.class);
     verifyNoInteractions(httpClient);
-    verify(clientRegistrationFactory, never()).createWithoutLoginRoutesAlreadyValidated(anyMap());
+    verify(clientRegistrationFactory, never())
+        .buildAll(anyMap(), isNull(), eq(ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED));
     // A token that needs no augmented claims resolves no provider either.
     assertThat(claimsForUnaugmentedToken(provider)).containsEntry("iss", "https://idp.example.com");
-    verify(clientRegistrationFactory, never()).createWithoutLoginRoutesAlreadyValidated(anyMap());
+    verify(clientRegistrationFactory, never())
+        .buildAll(anyMap(), isNull(), eq(ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED));
   }
 
   @Test
@@ -84,8 +88,10 @@ final class ScopedOidcClaimsProviderFactoryTest {
         authEnabled("https://idp-b.example", "https://idp-b.example/userinfo").getOidc();
     final var providers = Map.of("a", authentication.getOidc(), "b", second);
     when(clientRegistrationFactory.flatten(authentication)).thenReturn(providers);
-    when(clientRegistrationFactory.createWithoutLoginRoutesAlreadyValidated(
-            Map.of("a", authentication.getOidc())))
+    when(clientRegistrationFactory.buildAll(
+            Map.of("a", authentication.getOidc()),
+            null,
+            ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED))
         .thenReturn(
             List.of(
                 registrationWithUserInfo(
@@ -98,9 +104,13 @@ final class ScopedOidcClaimsProviderFactoryTest {
     // then the provider that issued no token keeps its registration unresolved, so a provider that
     // does not answer costs the tokens of its own issuer only
     verify(clientRegistrationFactory)
-        .createWithoutLoginRoutesAlreadyValidated(Map.of("a", authentication.getOidc()));
+        .buildAll(
+            Map.of("a", authentication.getOidc()),
+            null,
+            ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED);
     verify(clientRegistrationFactory, never())
-        .createWithoutLoginRoutesAlreadyValidated(Map.of("b", second));
+        .buildAll(
+            Map.of("b", second), null, ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED);
   }
 
   @Test
@@ -109,7 +119,8 @@ final class ScopedOidcClaimsProviderFactoryTest {
         authEnabled("https://idp.example.com", "https://idp.example.com/userinfo");
     final var providers = Map.of("oidc", authentication.getOidc());
     when(clientRegistrationFactory.flatten(authentication)).thenReturn(providers);
-    when(clientRegistrationFactory.createWithoutLoginRoutesAlreadyValidated(providers))
+    when(clientRegistrationFactory.buildAll(
+            providers, null, ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED))
         .thenThrow(new IllegalArgumentException("Unable to resolve the Configuration"));
     final var provider = factory.buildClaimsProvider(authentication);
 
@@ -131,7 +142,8 @@ final class ScopedOidcClaimsProviderFactoryTest {
     // here, and it is no reason to resolve a provider either.
     assertThat(claimsForAugmentedToken(provider, "https://other.example"))
         .containsEntry("iss", "https://other.example");
-    verify(clientRegistrationFactory, never()).createWithoutLoginRoutesAlreadyValidated(anyMap());
+    verify(clientRegistrationFactory, never())
+        .buildAll(anyMap(), isNull(), eq(ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED));
   }
 
   @Test
@@ -196,7 +208,8 @@ final class ScopedOidcClaimsProviderFactoryTest {
     // The provider resolves, but its discovery document names no UserInfo endpoint, so the claims
     // of its tokens would silently lose the attributes the authorization needs.
     when(clientRegistrationFactory.flatten(authentication)).thenReturn(providers);
-    when(clientRegistrationFactory.createWithoutLoginRoutesAlreadyValidated(providers))
+    when(clientRegistrationFactory.buildAll(
+            providers, null, ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED))
         .thenReturn(List.of(registrationWithoutUserInfo("oidc", "https://idp.example.com")));
 
     final OidcClaimsProvider provider = factory.buildClaimsProvider(authentication);
@@ -215,7 +228,8 @@ final class ScopedOidcClaimsProviderFactoryTest {
         authEnabled("https://idp.example.com", "https://idp.example.com/userinfo");
     final var providers = Map.of("oidc", authentication.getOidc());
     when(clientRegistrationFactory.flatten(authentication)).thenReturn(providers);
-    when(clientRegistrationFactory.createWithoutLoginRoutesAlreadyValidated(providers))
+    when(clientRegistrationFactory.buildAll(
+            providers, null, ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED))
         .thenThrow(new IllegalArgumentException("Unable to resolve the Configuration"));
     final var provider = factory.buildClaimsProvider(authentication, "basePath=" + basePath);
     final var appender = captureResolutionLogs();
@@ -333,7 +347,8 @@ final class ScopedOidcClaimsProviderFactoryTest {
     providers.put("owner", owner);
     providers.put("loser", loser);
     when(clientRegistrationFactory.flatten(authentication)).thenReturn(providers);
-    when(clientRegistrationFactory.createWithoutLoginRoutesAlreadyValidated(Map.of("owner", owner)))
+    when(clientRegistrationFactory.buildAll(
+            Map.of("owner", owner), null, ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED))
         .thenReturn(List.of(registrationWithUserInfo("owner", issuer, issuer + "/owner/userinfo")));
     final var appender = attachAppender();
 
@@ -344,9 +359,15 @@ final class ScopedOidcClaimsProviderFactoryTest {
       // then the first provider of the configuration answers for the issuer, and the operator reads
       // whose endpoint the augmentation therefore never calls
       verify(clientRegistrationFactory)
-          .createWithoutLoginRoutesAlreadyValidated(Map.of("owner", owner));
+          .buildAll(
+              Map.of("owner", owner),
+              null,
+              ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED);
       verify(clientRegistrationFactory, never())
-          .createWithoutLoginRoutesAlreadyValidated(Map.of("loser", loser));
+          .buildAll(
+              Map.of("loser", loser),
+              null,
+              ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED);
       assertThat(appender.list)
           .anySatisfy(
               event -> {
@@ -384,7 +405,8 @@ final class ScopedOidcClaimsProviderFactoryTest {
     // instead of failing over an endpoint the augmentation never asked for
     assertThat(claimsForAugmentedToken(provider, shared)).containsEntry("iss", shared);
     // and the configuration answers alone, so such a token also survives an outage of that provider
-    verify(clientRegistrationFactory, never()).createWithoutLoginRoutesAlreadyValidated(anyMap());
+    verify(clientRegistrationFactory, never())
+        .buildAll(anyMap(), isNull(), eq(ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED));
   }
 
   @Test

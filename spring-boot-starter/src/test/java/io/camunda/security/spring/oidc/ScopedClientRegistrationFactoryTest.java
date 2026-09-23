@@ -162,7 +162,9 @@ class ScopedClientRegistrationFactoryTest {
   @Test
   void shouldWarnRatherThanFailOnAConfiguredRedirectUriWithoutBaseUrlOrSchemePrefix() {
     // given a bare-path redirect-uri (no {baseUrl} template, no scheme://host), which would send
-    // the IdP a non-absolute redirect_uri and break login — but should log, not stop the app
+    // the IdP a non-absolute redirect_uri and break login — but should log, not stop the app, and
+    // fall back to the default so the registration agrees with OidcRedirectionEndpoint#resolve's
+    // own fallback for the same value
     final var oidc =
         OidcConfiguration.builder()
             .clientId("my-client")
@@ -175,7 +177,7 @@ class ScopedClientRegistrationFactoryTest {
     final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
 
     assertThat(registrations).hasSize(1);
-    assertThat(registrations.get(0).getRedirectUri()).isEqualTo("/api/authentication/callback");
+    assertThat(registrations.get(0).getRedirectUri()).isEqualTo("{baseUrl}/sso-callback");
   }
 
   @Test
@@ -853,6 +855,23 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
+  void shouldWarnOnceAboutABlankClientIdAndNotMisreportItAsAnUnusableScope() {
+    // given a provider with a usable, single-value scope but no client-id — build() validates
+    // registrationId and clientId before scopes, so the scope probe must not use the real
+    // (blank) clientId, or it would catch that failure and misreport it as a scope problem
+    final var oidc =
+        OidcConfiguration.builder()
+            .issuerUri("https://idp.example.com/realms/camunda")
+            .redirectUri("{baseUrl}/sso-callback")
+            .scope(List.of("openid"))
+            .build();
+
+    assertFactoryWarns(() -> factory.validateWithoutNetwork(Map.of("oidc", oidc), null))
+        .contains("client-id")
+        .doesNotContain("scope");
+  }
+
+  @Test
   void shouldStartAndBuildAProviderThatConfiguresNoScope() {
     // given a provider whose scope list was unset rather than filled
     final var providers = Map.of("oidc", explicitEndpointsWith(b -> b.scope(null)));
@@ -918,9 +937,15 @@ class ScopedClientRegistrationFactoryTest {
     // ScopedOidcClaimsProviderFactory do on every attempt) does not warn again
     final var appender = captureFactoryLogs();
     try {
-      assertThatThrownBy(() -> factory.createAlreadyValidated(providers, null))
+      assertThatThrownBy(
+              () ->
+                  factory.buildAll(
+                      providers, null, ScopedClientRegistrationFactory.LoginRouteChecks.ENFORCED))
           .isInstanceOf(IllegalArgumentException.class);
-      assertThatThrownBy(() -> factory.createWithoutLoginRoutesAlreadyValidated(providers))
+      assertThatThrownBy(
+              () ->
+                  factory.buildAll(
+                      providers, null, ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED))
           .isInstanceOf(IllegalArgumentException.class);
     } finally {
       releaseFactoryLogs(appender);

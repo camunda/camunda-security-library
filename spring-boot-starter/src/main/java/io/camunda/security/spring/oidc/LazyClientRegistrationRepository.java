@@ -123,15 +123,18 @@ public final class LazyClientRegistrationRepository
     if (cached != null) {
       return cached;
     }
-    // createAlreadyValidated, not createFromProviderMap: the constructor already ran the
-    // no-network validation once, over the whole map. Re-running it here on every retry of a
-    // registration that keeps failing to build would re-log the same WARN on every request.
+    // buildAll, not createFromProviderMap: the constructor already ran the no-network validation
+    // once, over the whole map. Re-running it here on every retry of a registration that keeps
+    // failing to build would re-log the same WARN on every request.
     final var registration =
         DeferredOidcResolution.resolve(
             describe(registrationId, config),
             () ->
                 factory
-                    .createAlreadyValidated(Map.of(registrationId, config), scopedRedirectUriPath)
+                    .buildAll(
+                        Map.of(registrationId, config),
+                        scopedRedirectUriPath,
+                        ScopedClientRegistrationFactory.LoginRouteChecks.ENFORCED)
                     .getFirst());
     final var winner = resolved.putIfAbsent(registrationId, registration);
     return winner != null ? winner : registration;

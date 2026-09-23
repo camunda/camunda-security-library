@@ -554,7 +554,13 @@ public final class ScopedWebappSecurityChainBuilder {
         (registrationId, oidc) ->
             redirectUris.put(
                 registrationId,
-                postLogoutRedirectUri(registrationId, oidc, prefix, composedDefault)));
+                postLogoutRedirectUri(
+                    registrationId,
+                    oidc,
+                    prefix,
+                    composedDefault,
+                    scopedClientRegistrationFactory.isPostLogoutRedirectUriUsable(
+                        registrationId, oidc))));
     return redirectUris;
   }
 
@@ -593,9 +599,12 @@ public final class ScopedWebappSecurityChainBuilder {
   /**
    * One provider's {@code post_logout_redirect_uri} template, or {@code ""} to send none.
    *
-   * <p>Composition only. The value's shape was already vetted at startup by {@link
+   * <p>Composition only. The value's shape is checked separately, by {@link
    * ScopedClientRegistrationFactory}, which validates every OIDC provider block in one place
-   * (ADR-0026), so this decides where an already-legal value resolves, not whether it is legal.
+   * (ADR-0026) — but only warns about one it considers unusable, rather than stopping the
+   * application (see that class's own Javadoc). {@code usable} carries that verdict here, so a
+   * value the factory warned about falls back to {@code composedDefault} instead of reaching {@code
+   * buildAndExpand} at logout, where it would only fail then.
    *
    * <p>A value starting with {@code /} is a path and resolves against this chain just as the host's
    * own route does, keeping per-scope resolution. Anything else is a URI template handed to Spring
@@ -613,7 +622,8 @@ public final class ScopedWebappSecurityChainBuilder {
       final String registrationId,
       final OidcConfiguration oidc,
       final String prefix,
-      final String composedDefault) {
+      final String composedDefault,
+      final boolean usable) {
     final var configured = oidc.getPostLogoutRedirectUri();
     final var value = StringUtils.hasText(configured) ? configured.trim() : null;
     if (!oidc.isPostLogoutRedirectEnabled()) {
@@ -629,7 +639,7 @@ public final class ScopedWebappSecurityChainBuilder {
       }
       return "";
     }
-    if (value == null) {
+    if (value == null || !usable) {
       return composedDefault;
     }
     return value.startsWith("/") ? "{baseUrl}" + prefix + value : value;
