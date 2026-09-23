@@ -356,9 +356,11 @@ camunda:
             user-info-enabled: false   # skip the /userinfo call for Azure
 ```
 
-A host-supplied `OidcUserService` bean still takes precedence in both modes (see [ADR-0007](../adr/0007-oidc-user-info-enabled-toggle.md)) — `user-info-enabled` only governs the library's default wiring.
+A host-supplied `OidcUserService` bean, or a bean of the broader type `OAuth2UserService<OidcUserRequest, OidcUser>`, still takes precedence in both modes (see [ADR-0007](../adr/0007-oidc-user-info-enabled-toggle.md)). `user-info-enabled` only governs the library's default wiring.
 
-A sibling property, `user-info-required` (default `false`), controls what happens when the fetch is attempted but the IdP rejects it: by default the fetch failure degrades login to ID-token-only claims (the same claim set `user-info-enabled: false` produces) with a WARN logged, instead of failing login outright. Set `user-info-required: true` on a provider that cannot tolerate missing UserInfo claims (e.g. groups available only via UserInfo) to keep the previous hard-failure behavior for that provider. See [ADR-0028](../adr/0028-oidc-userinfo-fail-soft-login.md).
+A sibling property, `user-info-required`, defaults to `false`. It controls what happens when the fetch is attempted but the IdP rejects it. By default, a rejected fetch degrades login to ID-token-only claims (the same claim set `user-info-enabled: false` produces) and logs a WARN, instead of failing login outright. Set `user-info-required: true` on a provider that cannot tolerate missing UserInfo claims, for example one whose groups are only available via UserInfo, to keep the previous hard-failure behavior for that provider.
+
+This property only affects the login-time and token-refresh UserInfo fetch performed by `FailSoftOidcUserService`. It has no effect on the request-time claims augmentation that `CachingOidcClaimsProvider` performs when validating bearer tokens on API requests: that path stays fail-open regardless of this flag, logging the failure and proceeding on the JWT's own claims. See [ADR-0028](../adr/0028-oidc-userinfo-fail-soft-login.md).
 
 ### Customizing the authorization request (`resource`, `additional-parameters`)
 
