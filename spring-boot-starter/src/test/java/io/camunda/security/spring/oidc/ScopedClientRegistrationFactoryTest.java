@@ -825,6 +825,25 @@ class ScopedClientRegistrationFactoryTest {
         .isThrownBy(() -> factory.validateWithoutNetwork(Map.of("provider-b", oidc), null));
   }
 
+  @Test
+  void shouldWarnOnlyOnceAboutAnUnusableRedirectUriWhenBuildingARegistration() {
+    // given a redirect-uri that is unusable, on a call that both validates and builds
+    final var oidc = explicitEndpointsWith(b -> b.redirectUri("https://example.com"));
+
+    // when the diagnostic fires once, not once from validateWithoutNetwork and again from
+    // resolving the value while building
+    final var appender = captureFactoryLogs();
+    try {
+      factory.createFromProviderMap(Map.of("provider-b", oidc));
+    } finally {
+      releaseFactoryLogs(appender);
+    }
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .filteredOn(event -> event.getFormattedMessage().contains("redirect-uri that may not"))
+        .hasSize(1);
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("io.camunda.security.spring.oidc.RedirectUriSamples#unusable")
   void shouldWarnRatherThanFailOnAFlatRedirectUriTheWebappChainCannotMount(

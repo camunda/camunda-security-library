@@ -970,9 +970,10 @@ public final class ScopedClientRegistrationFactory {
       final String scopedRedirectUriPath,
       final LoginRouteChecks loginRouteChecks) {
     // Every no-network check ran in validateWithoutNetwork, over the whole map, before the first
-    // registration was built. Repeating the list here let the two copies drift.
+    // registration was built. Repeating the list here let the two copies drift; warnIfUnusable is
+    // false below for the same reason — that pass already warned about this same provider.
     final var redirectUri =
-        resolveRedirectUri(registrationId, oidc, scopedRedirectUriPath, loginRouteChecks);
+        resolveRedirectUri(registrationId, oidc, scopedRedirectUriPath, loginRouteChecks, false);
     final ClientRegistration.Builder builder =
         clientRegistrationBuilder(registrationId, oidc)
             .registrationId(registrationId)
@@ -1076,7 +1077,22 @@ public final class ScopedClientRegistrationFactory {
       final OidcConfiguration oidc,
       final String scopedRedirectUriPath,
       final LoginRouteChecks loginRouteChecks) {
-    final var checkCallback = loginRouteChecks == LoginRouteChecks.ENFORCED;
+    return resolveRedirectUri(registrationId, oidc, scopedRedirectUriPath, loginRouteChecks, true);
+  }
+
+  /**
+   * As {@link #resolveRedirectUri(String, OidcConfiguration, String, LoginRouteChecks)}, but warns
+   * only when {@code warnIfUnusable} is set. {@link #buildClientRegistration} needs the resolved
+   * value itself, not a second diagnostic: {@link #validateWithoutNetwork} already warned about
+   * this same provider, over the whole map, before any registration was built.
+   */
+  private String resolveRedirectUri(
+      final String registrationId,
+      final OidcConfiguration oidc,
+      final String scopedRedirectUriPath,
+      final LoginRouteChecks loginRouteChecks,
+      final boolean warnIfUnusable) {
+    final var checkCallback = loginRouteChecks == LoginRouteChecks.ENFORCED && warnIfUnusable;
     if (StringUtils.hasText(scopedRedirectUriPath)) {
       final var scoped = BASE_URL_PLACEHOLDER + scopedRedirectUriPath;
       if (checkCallback && !isUsableRedirectUri(scoped, registrationId)) {
