@@ -126,9 +126,11 @@ public final class DeferredOidcResolution {
       final String registrationId, final OidcConfiguration config) {
     final var issuerUri = config.getIssuerUri();
     return "'"
-        + registrationId
+        + ScopedClientRegistrationFactory.sanitizeForLog(registrationId)
         + "'"
-        + (StringUtils.hasText(issuerUri) ? " (issuer " + issuerUri + ")" : "");
+        + (StringUtils.hasText(issuerUri)
+            ? " (issuer " + UrlRedaction.redact(issuerUri) + ")"
+            : "");
   }
 
   /**

@@ -16,7 +16,7 @@ import org.slf4j.LoggerFactory;
  * <p>One value decides two things. It is the {@code redirect_uri} that the application sends to the
  * IdP, and it gives the callback path where the webapp chain listens. This class holds the rule
  * that derives the second value from the first value. Two components need that rule: the chain that
- * mounts the endpoint, and the validation that rejects a value the chain cannot mount. Neither
+ * mounts the endpoint, and the validation that warns about a value the chain cannot mount. Neither
  * component owns the rule, and both must apply it in the same way.
  */
 public final class OidcRedirectionEndpoint {
@@ -45,14 +45,70 @@ public final class OidcRedirectionEndpoint {
    * wildcard, the result depends on {@code PathPatternRequestMatcher}, which reads the remaining
    * placeholder as a path variable for one segment.
    *
-   * @throws IllegalArgumentException if the value gives a path that is not blank and does not start
-   *     with {@code "/"}, because {@code redirectionEndpoint().baseUri(...)} needs a leading slash
+   * <p>A value that resolves to a path without a leading slash — {@code
+   * redirectionEndpoint().baseUri(...)} needs one — falls back to {@code defaultPath} with a {@code
+   * WARN}, the same as a value with no callback path at all.
    */
   public static String resolve(
       final String configuredRedirectUri, final String contextPath, final String defaultPath) {
     if (configuredRedirectUri == null || configuredRedirectUri.isBlank()) {
       return defaultPath;
     }
+    final var path = derivePath(configuredRedirectUri, contextPath);
+    if (path.isBlank()) {
+      LOG.warn(
+          "OIDC redirect-uri '{}' carries no callback path beyond the servlet context-path '{}'; "
+              + "falling back to the default redirection-endpoint path '{}'. The OIDC login "
+              + "callback will be served at that default — set a redirect-uri with an explicit "
+              + "callback segment to override it.",
+          UrlRedaction.redact(configuredRedirectUri),
+          contextPath,
+          defaultPath);
+      return defaultPath;
+    }
+    if (!path.startsWith("/")) {
+      LOG.warn(
+          "OIDC redirect-uri '{}' resolves to a path that does not start with '/' (was: '{}');"
+              + " falling back to the default redirection-endpoint path '{}'. The OIDC login"
+              + " callback will be served at that default instead.",
+          UrlRedaction.redact(configuredRedirectUri),
+          UrlRedaction.redact(path),
+          defaultPath);
+      return defaultPath;
+    }
+    // Log the resolved matcher path so the callback the chain listens on is reconstructable from
+    // logs alone (this resolution silently broke logins for a full alpha cycle — see GH-569).
+    LOG.debug(
+        "Resolved OIDC redirection-endpoint path '{}' from redirect-uri '{}' (servlet context-path"
+            + " '{}')",
+        UrlRedaction.redact(path),
+        UrlRedaction.redact(configuredRedirectUri),
+        contextPath);
+    return path;
+  }
+
+  /**
+   * Whether {@link #resolve} would fall back to its own {@code defaultPath} for this value: the
+   * derived path is blank, or does not start with {@code '/'}. A caller that builds the {@link
+   * org.springframework.security.oauth2.client.registration.ClientRegistration}'s own {@code
+   * redirect_uri} from the same configured value needs this, not {@link #resolve} itself, to agree
+   * with the endpoint this method mounts — reusing {@link #derivePath} rather than re-deriving the
+   * path independently, so the two never drift apart on what "the same value" means.
+   */
+  static boolean fallsBackToDefault(final String configuredRedirectUri, final String contextPath) {
+    if (configuredRedirectUri == null || configuredRedirectUri.isBlank()) {
+      return true;
+    }
+    final var path = derivePath(configuredRedirectUri, contextPath);
+    return path.isBlank() || !path.startsWith("/");
+  }
+
+  /**
+   * The redirection-endpoint path derived from a configured {@code redirect-uri}, before the
+   * blank/leading-slash check that decides whether it is usable. Shared by {@link #resolve} and
+   * {@link #fallsBackToDefault} so both apply the exact same derivation.
+   */
+  private static String derivePath(final String configuredRedirectUri, final String contextPath) {
     final var template = pathOfTheTemplate(configuredRedirectUri.trim());
     var path = withoutQueryAndFragment(template.path());
     if (!template.contextPathCarriedByAPlaceholder()) {
@@ -60,28 +116,7 @@ public final class OidcRedirectionEndpoint {
     }
     // Spring's default template ends in "{registrationId}"; the redirection-endpoint matcher must
     // use an Ant wildcard for that segment so it matches the resolved id (e.g. ".../code/oidc").
-    path = path.replace("{registrationId}", "*");
-    if (path.isBlank()) {
-      LOG.warn(
-          "OIDC redirect-uri '{}' carries no callback path beyond the servlet context-path '{}'; "
-              + "falling back to the default redirection-endpoint path '{}'. The OIDC login "
-              + "callback will be served at that default — set a redirect-uri with an explicit "
-              + "callback segment to override it.",
-          configuredRedirectUri,
-          contextPath,
-          defaultPath);
-      return defaultPath;
-    }
-    requireLeadingSlash(path, configuredRedirectUri);
-    // Log the resolved matcher path so the callback the chain listens on is reconstructable from
-    // logs alone (this resolution silently broke logins for a full alpha cycle — see GH-569).
-    LOG.debug(
-        "Resolved OIDC redirection-endpoint path '{}' from redirect-uri '{}' (servlet context-path"
-            + " '{}')",
-        path,
-        configuredRedirectUri,
-        contextPath);
-    return path;
+    return path.replace("{registrationId}", "*");
   }
 
   /**
@@ -114,17 +149,6 @@ public final class OidcRedirectionEndpoint {
   private static int indexOrEnd(final String path, final char delimiter) {
     final int index = path.indexOf(delimiter);
     return index >= 0 ? index : path.length();
-  }
-
-  /** {@code redirectionEndpoint().baseUri(...)} needs a leading slash. */
-  private static void requireLeadingSlash(final String path, final String configuredRedirectUri) {
-    if (!path.startsWith("/")) {
-      throw new IllegalArgumentException(
-          "OIDC redirect-uri must resolve to a path starting with '/', but '"
-              + configuredRedirectUri
-              + "' resolved to: "
-              + path);
-    }
   }
 
   /**

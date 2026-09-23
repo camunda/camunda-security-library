@@ -54,13 +54,14 @@ public final class ScopedJwtDecoderFactory {
    * the first token of the issuer of that provider, and not here. This method runs while the
    * application builds the security chain, and an identity provider it cannot reach must not stop
    * the application context. A provider that does not answer later fails the tokens of its own
-   * issuer, and leaves the other providers of the scope untouched. A configuration error that needs
-   * no network access still fails here, at the configuration it is in.
+   * issuer, and leaves the other providers of the scope untouched. A provider block that looks
+   * wrong is logged rather than stopping the application, except where Spring's own client
+   * registration model, or the issuer-aware decoder's routing requirement, cannot be satisfied at
+   * all.
    *
    * @param authentication the authentication configuration describing the OIDC provider(s)
    * @return a {@link JwtDecoder} ready to verify tokens from the configured providers
-   * @throws IllegalStateException if the configuration contains no providers, or a provider block
-   *     is incomplete
+   * @throws IllegalStateException if the configuration contains no providers at all
    * @throws IllegalArgumentException if the scope configures several providers and any of them sets
    *     no issuer-uri, which the issuer-aware decoder requires
    */
@@ -112,11 +113,18 @@ public final class ScopedJwtDecoderFactory {
       final String registrationId,
       final String scopeDescription) {
     final var config = providers.get(registrationId);
+    // buildAll, not createWithoutLoginRoutes: the whole map was already validated once above,
+    // before this decoder started resolving registrations. Repeating that validation on every
+    // retry of a registration that keeps failing to build would re-log the same WARN on every
+    // request.
     return DeferredOidcResolution.resolve(
         registrationSubject(registrationId, config, scopeDescription),
         () ->
             clientRegistrationFactory
-                .createWithoutLoginRoutes(Map.of(registrationId, config))
+                .buildAll(
+                    Map.of(registrationId, config),
+                    null,
+                    ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED)
                 .getFirst());
   }
 

@@ -8,12 +8,14 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.lenient;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -55,6 +57,18 @@ class TokenValidatorFactoryTest {
 
     assertThat(validator).isInstanceOf(DelegatingOAuth2TokenValidator.class);
     assertThat(validator.validate(validJwt()).hasErrors()).isFalse();
+  }
+
+  @Test
+  void shouldNotThrowOnANullRegistrationIdInTheProvidersMap() {
+    // given a providers map holding a null registrationId key — not reachable from configuration
+    // (Spring binds an unset/empty registration-id to "", never null), but a host handing CSL a
+    // hand-built map can still produce one; the constructor must not let Map.copyOf reject it
+    final var providers =
+        Collections.<String, OidcConfiguration>singletonMap(null, new OidcConfiguration());
+
+    assertThatCode(() -> new TokenValidatorFactory(providers, Duration.ofSeconds(60), List.of()))
+        .doesNotThrowAnyException();
   }
 
   @Test

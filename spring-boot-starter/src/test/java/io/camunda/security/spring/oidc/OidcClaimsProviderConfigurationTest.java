@@ -23,6 +23,7 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -180,6 +181,48 @@ class OidcClaimsProviderConfigurationTest {
                     .isInstanceOf(AuthenticationServiceException.class);
               });
     }
+  }
+
+  @Test
+  void shouldNotThrowOnANullRegistrationIdAmongTheLazyRepositoryProviders() {
+    // given a null registrationId key alongside a valid provider in the lazy repository's
+    // provider map — not reachable from configuration (Spring binds an unset/empty
+    // registration-id to "", never null), but a host handing CSL a hand-built map can still
+    // produce one, and LazyClientRegistrationRepository's constructor must filter it before it
+    // reaches IssuerRegistrations.ofConfiguration's Map.copyOf and aborts startup
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put(
+        null,
+        OidcConfiguration.builder()
+            .clientId("client-id")
+            .redirectUri("{baseUrl}/sso-callback")
+            .issuerUri("https://idp-a.example")
+            .userInfoUri("https://idp-a.example/userinfo")
+            .build());
+    providers.put(
+        "b",
+        OidcConfiguration.builder()
+            .clientId("client-id")
+            .redirectUri("{baseUrl}/sso-callback")
+            .issuerUri("https://idp-b.example")
+            .userInfoUri("https://idp-b.example/userinfo")
+            .build());
+
+    new ApplicationContextRunner()
+        .withBean(ScopedClientRegistrationFactory.class, ScopedClientRegistrationFactory::new)
+        .withPropertyValues(
+            "camunda.security.authentication.method=oidc",
+            "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
+        .withBean(
+            ClientRegistrationRepository.class,
+            () ->
+                new LazyClientRegistrationRepository(
+                    new ScopedClientRegistrationFactory(), providers))
+        .withUserConfiguration(StubObjectMapper.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class, OidcClaimsProviderConfiguration.class))
+        .run(ctx -> assertThat(ctx).hasNotFailed());
   }
 
   @Test

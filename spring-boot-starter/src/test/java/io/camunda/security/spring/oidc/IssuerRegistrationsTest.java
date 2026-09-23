@@ -10,6 +10,10 @@ package io.camunda.security.spring.oidc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -17,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 
@@ -126,6 +131,45 @@ final class IssuerRegistrationsTest {
     // token reaches are the keys of the provider that every other stage of the request reads
     assertThat(registration.getRegistrationId()).isEqualTo("provider-a");
     assertThat(resolutions).containsExactly("provider-a");
+  }
+
+  @Test
+  void shouldRedactCredentialsFromADuplicatedIssuerWarning() {
+    // given two providers sharing a credential-bearing issuer — an issuer-uri check elsewhere is
+    // warn-only, not rejected, so such a value can survive to this pre-existing duplicate-issuer
+    // diagnostic, and it must be redacted here too, or the credential leaks into the log
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put("provider-a", provider("https://user:s3cret@shared.example"));
+    providers.put("provider-b", provider("https://user:s3cret@shared.example"));
+    final var appender = attachAppender();
+
+    try {
+      IssuerRegistrations.ofConfiguration(providers, recording(new ArrayList<>()));
+
+      assertThat(appender.list)
+          .anySatisfy(
+              event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                assertThat(event.getFormattedMessage())
+                    .doesNotContain("s3cret")
+                    .contains("provider-a")
+                    .contains("provider-b");
+              });
+    } finally {
+      detachAppender(appender);
+    }
+  }
+
+  private static ListAppender<ILoggingEvent> attachAppender() {
+    final var logger = (Logger) LoggerFactory.getLogger(IssuerRegistrations.class);
+    final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    appender.start();
+    logger.addAppender(appender);
+    return appender;
+  }
+
+  private static void detachAppender(final ListAppender<ILoggingEvent> appender) {
+    ((Logger) LoggerFactory.getLogger(IssuerRegistrations.class)).detachAppender(appender);
   }
 
   @Test

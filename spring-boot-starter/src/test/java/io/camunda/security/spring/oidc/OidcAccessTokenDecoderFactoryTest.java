@@ -8,6 +8,7 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import ch.qos.logback.classic.Level;
@@ -18,6 +19,7 @@ import com.nimbusds.jose.KeySourceException;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.io.IOException;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -180,6 +182,93 @@ class OidcAccessTokenDecoderFactoryTest {
                     .contains("'owner' wins")
                     .contains("ignore the additional JWK Set URIs of 'loser'");
               });
+    } finally {
+      detachAppender(appender);
+    }
+  }
+
+  @Test
+  void shouldNotThrowOnANullRegistrationIdAmongMultipleProviders() {
+    // given a provider map with a blank/null registrationId — warn-only, not rejected — alongside
+    // two valid ones (so the filtered view still has more than one provider and takes the
+    // issuer-aware path), selecting the decoder must not let the null key reach
+    // IssuerRegistrations.ofConfiguration's Map.copyOf and abort
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    final var providerA = new OidcConfiguration();
+    providerA.setIssuerUri("https://idp-a.example");
+    final var providerB = new OidcConfiguration();
+    providerB.setIssuerUri("https://idp-b.example");
+    providers.put(null, new OidcConfiguration());
+    providers.put("a", providerA);
+    providers.put("b", providerB);
+    final var factory =
+        new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
+
+    assertThatCode(() -> factory.selectAccessTokenDecoder(providers, registrationId -> null))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  void shouldNotCountABlankRegistrationIdTowardsTheIssuerRequirement() {
+    // given one real provider with an issuer-uri and a blank-registrationId leftover with none —
+    // the blank entry must not count towards the multi-provider issuer requirement, or a
+    // single-provider deployment aborts startup naming no provider at all
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    final var real = new OidcConfiguration();
+    real.setIssuerUri("https://idp-a.example");
+    providers.put("a", real);
+    providers.put(null, new OidcConfiguration());
+    final var factory =
+        new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
+
+    assertThatCode(() -> factory.validateProvidersHaveIssuer(providers)).doesNotThrowAnyException();
+  }
+
+  @Test
+  void shouldTakeTheSingleProviderPathWhenOnlyOneRealProviderRemainsAfterFiltering() {
+    // given one real provider with no issuer-uri (valid for a single-provider deployment) plus a
+    // blank-registrationId leftover — the leftover must not flip provider "a" from the single- to
+    // the issuer-aware path, where it has no issuer to route by and every one of its tokens would
+    // be refused at runtime (see PR #682 review)
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put("a", new OidcConfiguration());
+    providers.put(null, new OidcConfiguration());
+    final var factory =
+        new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
+    final var resolved = registration("a", "https://idp-a.example", "https://idp-a.example/jwks");
+
+    assertThat(factory.selectAccessTokenDecoder(providers, registrationId -> resolved)).isNotNull();
+  }
+
+  @Test
+  void shouldUseTheSameFilteredProviderViewForJwkSetUrisAsForIssuerRegistrations() {
+    // given a blank-registrationId provider and two valid ones sharing an issuer, the blank one
+    // first — before this fix, buildAdditionalJwkSetUrisByIssuer read the unfiltered map and could
+    // pick the blank provider as issuer owner while IssuerRegistrations picked "b", letting "b"'s
+    // tokens be checked against the blank provider's additional JWK Set URIs
+    final var issuer = "https://shared.example";
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put(null, providerConfiguration(issuer, "https://blank/extra-jwks"));
+    providers.put("b", providerConfiguration(issuer, "https://b/extra-jwks"));
+    providers.put("c", providerConfiguration(issuer, "https://c/extra-jwks"));
+    final var factory =
+        new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
+    final var appender = attachAppender();
+
+    try {
+      factory.selectAccessTokenDecoder(providers, registrationId -> null);
+
+      // then the duplicate-issuer warning names "b" as the owner and "c" as the loser — the blank
+      // provider never entered ownership resolution to begin with, agreeing with the filtered view
+      // IssuerRegistrations uses
+      assertThat(appender.list)
+          .anySatisfy(
+              event ->
+                  assertThat(event.getFormattedMessage())
+                      .contains("ignore the additional JWK Set URIs")
+                      .contains("'b' wins")
+                      .contains("'c'"))
+          .noneSatisfy(event -> assertThat(event.getFormattedMessage()).contains("null"));
     } finally {
       detachAppender(appender);
     }

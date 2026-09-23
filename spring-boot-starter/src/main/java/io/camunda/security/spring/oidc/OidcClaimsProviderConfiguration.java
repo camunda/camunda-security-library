@@ -102,6 +102,8 @@ public class OidcClaimsProviderConfiguration {
     final var augmentation = properties.getAuthentication().getOidc().getUserInfoAugmentation();
     final var fetcher = new OidcUserInfoHttpClient(httpClient, objectMapper);
     if (clientRegistrationRepository instanceof final LazyClientRegistrationRepository lazy) {
+      // lazy.providers() is already free of a blank/null registrationId — its constructor filters
+      // it after warning about it, so no filtering is needed here.
       final var providers = lazy.providers();
       return new CachingOidcClaimsProvider(
           fetcher,

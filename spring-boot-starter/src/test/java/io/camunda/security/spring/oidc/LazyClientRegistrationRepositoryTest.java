@@ -8,6 +8,7 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.entry;
 
@@ -160,7 +161,7 @@ final class LazyClientRegistrationRepositoryTest {
   }
 
   @Test
-  void shouldRejectAnIncompleteProviderWhenConstructed() {
+  void shouldWarnRatherThanFailOnAnIncompleteProviderWhenConstructed() {
     // given a provider with neither an issuer-uri nor a complete set of explicit endpoints
     final var incomplete =
         Map.of(
@@ -171,15 +172,13 @@ final class LazyClientRegistrationRepositoryTest {
                 .authorizationUri("https://idp.example.com/auth")
                 .build());
 
-    // when / then a configuration error needs no network access, so it still fails here
-    assertThatThrownBy(() -> newRepository(incomplete))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("issuer-uri");
+    // when / then the problem is logged, but does not stop the repository from being built
+    assertThatNoException().isThrownBy(() -> newRepository(incomplete));
   }
 
   @Test
-  void shouldRejectAProviderWithoutAClientIdWhenConstructed() {
-    // given a provider whose client-id is missing — ClientRegistration.Builder#build rejects it
+  void shouldWarnRatherThanFailOnAProviderWithoutAClientIdWhenConstructed() {
+    // given a provider whose client-id is missing
     final var withoutClientId =
         Map.of(
             "oidc",
@@ -188,10 +187,8 @@ final class LazyClientRegistrationRepositoryTest {
                 .issuerUri("https://idp.example.com/realms/camunda")
                 .build());
 
-    // when / then no network access is needed to see it, so it still fails here
-    assertThatThrownBy(() -> newRepository(withoutClientId))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("client-id");
+    // when / then the problem is logged, but does not stop the repository from being built
+    assertThatNoException().isThrownBy(() -> newRepository(withoutClientId));
   }
 
   @Test
@@ -212,6 +209,32 @@ final class LazyClientRegistrationRepositoryTest {
     // then
     assertThat(registrationIds)
         .containsExactly(entry("first", "first-client"), entry("second", "second-client"));
+  }
+
+  @Test
+  void shouldFilterANullRegistrationIdAtConstructionAndSkipItWhenIterated() throws Exception {
+    // given a null registrationId key alongside a valid provider — not reachable from
+    // configuration (Spring binds an unset/empty registration-id to "", never null), but a host
+    // handing CSL a hand-built map can still produce one. The constructor filters it out, so
+    // iterating must not let it reach the resolved cache's ConcurrentHashMap#get(null), which
+    // throws NullPointerException
+    server = OidcTestServer.startRsa("key");
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put(null, server.oidcConfiguration("blank-client"));
+    providers.put("second", server.oidcConfiguration("second-client"));
+    final var repository = newRepository(providers);
+
+    final var registrationIds = new LinkedHashMap<String, String>();
+    assertThatNoException()
+        .isThrownBy(
+            () ->
+                repository.forEach(
+                    registration ->
+                        registrationIds.put(
+                            registration.getRegistrationId(), registration.getClientId())));
+
+    assertThat(registrationIds).containsExactly(entry("second", "second-client"));
+    assertThat(repository.providers()).containsOnlyKeys("second");
   }
 
   @Test

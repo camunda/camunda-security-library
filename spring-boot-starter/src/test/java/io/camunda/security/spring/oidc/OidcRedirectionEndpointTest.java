@@ -8,15 +8,20 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.List;
 import java.util.Map;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -60,12 +65,20 @@ class OidcRedirectionEndpointTest {
   }
 
   @Test
-  void redirectionEndpointPathRejectsResolvedPathWithoutLeadingSlash() {
-    assertThatIllegalArgumentException()
-        .isThrownBy(
-            () -> OidcRedirectionEndpoint.resolve("{baseUrl}api/callback", "", "/sso-callback"))
-        .withMessageContaining("must resolve to a path starting with '/'")
-        .withMessageContaining("api/callback");
+  void redirectionEndpointPathFallsBackToDefaultWhenResolvedPathHasNoLeadingSlash() {
+    final var appender = captureLogs();
+    try {
+      assertThat(OidcRedirectionEndpoint.resolve("{baseUrl}api/callback", "", "/sso-callback"))
+          .isEqualTo("/sso-callback");
+    } finally {
+      releaseLogs(appender);
+    }
+    assertThat(appender.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .singleElement()
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .asInstanceOf(InstanceOfAssertFactories.STRING)
+        .contains("api/callback");
   }
 
   // GH-569 regression: a redirect-uri that embeds the servlet context-path must yield a
@@ -208,5 +221,17 @@ class OidcRedirectionEndpointTest {
                         "action", "login"))
                 .toUriString());
     return OidcRedirectionEndpoint.stripContextPath(expanded.getPath(), contextPath);
+  }
+
+  private static ListAppender<ILoggingEvent> captureLogs() {
+    final var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    ((Logger) LoggerFactory.getLogger(OidcRedirectionEndpoint.class)).addAppender(appender);
+    return appender;
+  }
+
+  private static void releaseLogs(final ListAppender<ILoggingEvent> appender) {
+    ((Logger) LoggerFactory.getLogger(OidcRedirectionEndpoint.class)).detachAppender(appender);
+    appender.stop();
   }
 }

@@ -27,9 +27,10 @@ import org.springframework.util.StringUtils;
  * io.camunda.security.spring.CamundaSecurityLibraryProperties}. Each scope therefore controls its
  * own augmentation, which a physical tenant needs.
  *
- * <p>Augmentation redirects no browser, so this factory builds its registrations with {@link
- * ScopedClientRegistrationFactory#createWithoutLoginRoutes}. Augmentation then also runs on a scope
- * that serves no login route.
+ * <p>Augmentation redirects no browser, so this factory validates and builds its registrations with
+ * {@link ScopedClientRegistrationFactory#validateWithoutLoginRoutes} and {@link
+ * ScopedClientRegistrationFactory#buildAll}. Augmentation then also runs on a scope that serves no
+ * login route.
  */
 public final class ScopedOidcClaimsProviderFactory {
 
@@ -69,8 +70,9 @@ public final class ScopedOidcClaimsProviderFactory {
    * See {@link IssuerRegistrations}.
    *
    * @throws IllegalStateException if augmentation is enabled and the configuration declares no OIDC
-   *     provider, a provider block is incomplete, or no provider enables UserInfo for the issuer it
-   *     owns. Such a configuration would leave the scope without augmentation and report nothing.
+   *     provider, or no provider enables UserInfo for the issuer it owns. Such a configuration
+   *     would leave the scope without augmentation and report nothing. A provider block the factory
+   *     considers incomplete only warns; it does not throw here either.
    */
   public OidcClaimsProvider buildClaimsProvider(final AuthenticationConfiguration authentication) {
     return buildClaimsProvider(authentication, null);
@@ -100,14 +102,19 @@ public final class ScopedOidcClaimsProviderFactory {
               + " providers.oidc.<id> entries) or disable userinfo augmentation for this scope.");
     }
     clientRegistrationFactory.validateWithoutLoginRoutes(providers);
+    // IssuerRegistrations.ofConfiguration copies its issuer map and would fail on a blank/null
+    // registrationId (see ScopedClientRegistrationFactory#withoutBlankRegistrationIds); providers
+    // itself stays as-is for the checks above and the resolve() closure below.
+    final var issuerProviders =
+        ScopedClientRegistrationFactory.withoutBlankRegistrationIds(providers);
     return new CachingOidcClaimsProvider(
         userInfoHttpClient,
         CachingOidcClaimsProvider.userInfoUriByIssuer(
             IssuerRegistrations.ofConfiguration(
-                providers,
+                issuerProviders,
                 registrationId -> resolve(providers, registrationId, scopeDescription),
                 "the UserInfo endpoint"),
-            providers),
+            issuerProviders),
         augmentation,
         meterRegistry);
   }
@@ -121,11 +128,18 @@ public final class ScopedOidcClaimsProviderFactory {
       final String registrationId,
       final String scopeDescription) {
     final var config = providers.get(registrationId);
+    // buildAll, not createWithoutLoginRoutes: the whole map was already validated once above,
+    // before this claims provider started resolving registrations. Repeating that validation on
+    // every retry of a registration that keeps failing to build would re-log the same WARN on
+    // every request.
     return DeferredOidcResolution.resolve(
         claimsSubject(registrationId, config, scopeDescription),
         () ->
             clientRegistrationFactory
-                .createWithoutLoginRoutes(Map.of(registrationId, config))
+                .buildAll(
+                    Map.of(registrationId, config),
+                    null,
+                    ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED)
                 .getFirst());
   }
 

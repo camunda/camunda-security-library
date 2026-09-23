@@ -64,7 +64,10 @@ public class TokenValidatorFactory {
       final Map<String, OidcConfiguration> providers,
       final Duration clockSkew,
       final List<OAuth2TokenValidator<Jwt>> extraValidators) {
-    this.providers = Map.copyOf(providers);
+    // ScopedClientRegistrationFactory#withoutBlankRegistrationIds: Map.copyOf below rejects a
+    // null key outright, and a blank registrationId is warn-only, not rejected, elsewhere.
+    this.providers =
+        Map.copyOf(ScopedClientRegistrationFactory.withoutBlankRegistrationIds(providers));
     this.clockSkew = Objects.requireNonNull(clockSkew, "clockSkew");
     this.extraValidators = extraValidators == null ? List.of() : List.copyOf(extraValidators);
   }

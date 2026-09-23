@@ -172,7 +172,7 @@ class OidcBeansConfigurationClientRegistrationTest {
   }
 
   @Test
-  void shouldTreatBlankEndpointUrisAsMissing() {
+  void shouldWarnRatherThanFailWhenAnEndpointUriIsBlank() {
     runner
         .withPropertyValues(
             "camunda.security.authentication.providers.oidc.foo.client-id=foo-client",
@@ -180,18 +180,11 @@ class OidcBeansConfigurationClientRegistrationTest {
             "camunda.security.authentication.providers.oidc.foo.authorization-uri=",
             "camunda.security.authentication.providers.oidc.foo.token-uri=https://foo.example.com/token",
             "camunda.security.authentication.providers.oidc.foo.jwk-set-uri=https://foo.example.com/jwks")
-        .run(
-            ctx -> {
-              assertThat(ctx).hasFailed();
-              assertThat(ctx.getStartupFailure())
-                  .rootCause()
-                  .isInstanceOf(IllegalStateException.class)
-                  .hasMessageContaining("'foo'");
-            });
+        .run(ctx -> assertThat(ctx).hasNotFailed());
   }
 
   @Test
-  void shouldFailWithActionableErrorWhenFlatRegistrationIdIsBlank() {
+  void shouldWarnRatherThanFailWhenFlatRegistrationIdIsBlank() {
     runner
         .withPropertyValues(
             "camunda.security.authentication.oidc.client-id=flat-client",
@@ -200,15 +193,7 @@ class OidcBeansConfigurationClientRegistrationTest {
             "camunda.security.authentication.oidc.authorization-uri=https://flat.example.com/auth",
             "camunda.security.authentication.oidc.token-uri=https://flat.example.com/token",
             "camunda.security.authentication.oidc.jwk-set-uri=https://flat.example.com/jwks")
-        .run(
-            ctx -> {
-              assertThat(ctx).hasFailed();
-              assertThat(ctx.getStartupFailure())
-                  .rootCause()
-                  .isInstanceOf(IllegalStateException.class)
-                  .hasMessageContaining("registrationId")
-                  .hasMessageContaining("registration-id");
-            });
+        .run(ctx -> assertThat(ctx).hasNotFailed());
   }
 
   @Test
@@ -291,20 +276,12 @@ class OidcBeansConfigurationClientRegistrationTest {
   }
 
   @Test
-  void shouldReportRegistrationIdAndBothShapesWhenBuilderFailsForProvider() {
+  void shouldWarnRatherThanFailWhenAProviderHasNoEndpoints() {
     runner
         .withPropertyValues(
             "camunda.security.authentication.providers.oidc.foo.client-id=foo-client",
             "camunda.security.authentication.providers.oidc.foo.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}")
-        .run(
-            ctx -> {
-              assertThat(ctx).hasFailed();
-              assertThat(ctx.getStartupFailure())
-                  .rootCause()
-                  .isInstanceOf(IllegalStateException.class)
-                  .hasMessageContaining("'foo'")
-                  .hasMessageContaining("providers.oidc.foo");
-            });
+        .run(ctx -> assertThat(ctx).hasNotFailed());
   }
 
   /**

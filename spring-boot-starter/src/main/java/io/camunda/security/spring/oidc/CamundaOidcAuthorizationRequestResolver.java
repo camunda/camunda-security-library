@@ -85,7 +85,11 @@ public final class CamundaOidcAuthorizationRequestResolver
               + authorizationRequestBaseUri);
     }
     this.clientRegistrationRepository = clientRegistrationRepository;
-    this.sourcesByRegistrationId = Map.copyOf(sourcesByRegistrationId);
+    // ScopedClientRegistrationFactory#withoutBlankRegistrationIds: Map.copyOf below rejects a
+    // null key outright, and a blank registrationId is warn-only, not rejected, elsewhere.
+    this.sourcesByRegistrationId =
+        Map.copyOf(
+            ScopedClientRegistrationFactory.withoutBlankRegistrationIds(sourcesByRegistrationId));
     this.authorizationRequestBaseUri = normalizedBaseUri;
     resolvers = new ConcurrentHashMap<>();
     authorizationRequestMatcher =

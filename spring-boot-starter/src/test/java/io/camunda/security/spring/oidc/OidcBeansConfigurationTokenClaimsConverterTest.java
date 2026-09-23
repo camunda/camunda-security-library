@@ -230,6 +230,37 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
   }
 
   @Test
+  void redactsCredentialsFromTheSharedIssuerWarning() {
+    // given two providers sharing a credential-bearing issuer — an issuer-uri check elsewhere is
+    // warn-only, not rejected, so such a value can survive to this pre-existing duplicate-issuer
+    // diagnostic, and it must be redacted here too, or the credential leaks into the log
+    final ListAppender<ILoggingEvent> appender = attachAppender();
+    try {
+      runner
+          .withPropertyValues(
+              "camunda.security.authentication.oidc.client-id=default-client",
+              "camunda.security.authentication.oidc.issuer-uri=" + DEFAULT_ISSUER,
+              "camunda.security.authentication.providers.oidc.web.client-id=web-client",
+              "camunda.security.authentication.providers.oidc.web.issuer-uri=https://user:s3cret@shared.example.com",
+              "camunda.security.authentication.providers.oidc.backend.client-id=backend-client",
+              "camunda.security.authentication.providers.oidc.backend.issuer-uri=https://user:s3cret@shared.example.com")
+          .run(ctx -> {});
+
+      assertThat(appender.list)
+          .anySatisfy(
+              event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                assertThat(event.getFormattedMessage())
+                    .doesNotContain("s3cret")
+                    .contains("'web' wins")
+                    .contains("ignore the claim configuration of 'backend'");
+              });
+    } finally {
+      detachAppender(appender);
+    }
+  }
+
+  @Test
   void keepsFlatEntryConverterWhenAProviderSharesItsIssuer() {
     // The merge places the flat block before the provider blocks, so the flat entry owns the
     // issuer it shares with a provider.
@@ -244,6 +275,30 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
             ctx -> {
               final var defaultConverter = ctx.getBean(LazyTokenClaimsConverter.class);
               assertThat(byIssuer(ctx)).containsEntry(DEFAULT_ISSUER, defaultConverter);
+            });
+  }
+
+  @Test
+  void shouldNotLetABlankRegistrationIdWinIssuerOwnershipOverAValidProvider() {
+    // given a flat block with a blank registration-id sharing an issuer with a real provider —
+    // the flat entry is inserted first by flatten(), so without filtering it would win ownership
+    // and the claims converter would be built from the wrong (blank-id) configuration while the
+    // decoder verifies the token with the valid "entra" provider
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.registration-id=",
+            "camunda.security.authentication.oidc.client-id=default-client",
+            "camunda.security.authentication.oidc.issuer-uri=" + ENTRA_ISSUER,
+            "camunda.security.authentication.providers.oidc.entra.client-id=entra-client",
+            "camunda.security.authentication.providers.oidc.entra.issuer-uri=" + ENTRA_ISSUER,
+            "camunda.security.authentication.providers.oidc.entra.username-claim=entra_user")
+        .run(
+            ctx -> {
+              final var converter = byIssuer(ctx).get(ENTRA_ISSUER);
+              assertThat(converter).isNotNull().isNotSameAs(mockDefaultConverter);
+              final var authentication =
+                  converter.convert(Map.of("iss", ENTRA_ISSUER, "entra_user", "alice"));
+              assertThat(authentication.authenticatedUsername()).isEqualTo("alice");
             });
   }
 

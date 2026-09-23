@@ -555,18 +555,41 @@ public final class ScopedWebappSecurityChainBuilder {
    */
   private Map<String, String> postLogoutRedirectUris(
       final Map<String, OidcConfiguration> sources, final String prefix) {
+    return postLogoutRedirectUris(
+        scopedClientRegistrationFactory, sources, prefix, composedPostLogoutRedirectUri(prefix));
+  }
+
+  // Package-private for unit testing, like postLogoutRedirectUri(String, Optional) above: takes
+  // the factory and the composed default explicitly so a test can exercise the wiring between
+  // isPostLogoutRedirectUriUsable and postLogoutRedirectUri without constructing a full builder.
+  static Map<String, String> postLogoutRedirectUris(
+      final ScopedClientRegistrationFactory clientRegistrationFactory,
+      final Map<String, OidcConfiguration> sources,
+      final String prefix,
+      final String composedDefault) {
     // The factory validates these when it builds the registrations, which is the usual path. A host
     // that replaces the ClientRegistrationRepository bean bypasses that, and this handler is still
     // configured from the provider map — so the map actually consumed is validated here too. The
     // rules live in one place; this only calls them.
-    scopedClientRegistrationFactory.validatePostLogoutRedirectUris(sources);
-    final var composedDefault = composedPostLogoutRedirectUri(prefix);
+    clientRegistrationFactory.validatePostLogoutRedirectUris(sources);
     final Map<String, String> redirectUris = new LinkedHashMap<>();
     sources.forEach(
-        (registrationId, oidc) ->
-            redirectUris.put(
-                registrationId,
-                postLogoutRedirectUri(registrationId, oidc, prefix, composedDefault)));
+        (registrationId, oidc) -> {
+          // A blank/null registrationId already gets its own warning above, and can never be the
+          // authenticated registration id a real logout looks this map up by — Map.copyOf below
+          // rejects a null key, so keeping such an entry would still crash chain construction.
+          if (!StringUtils.hasText(registrationId)) {
+            return;
+          }
+          redirectUris.put(
+              registrationId,
+              postLogoutRedirectUri(
+                  registrationId,
+                  oidc,
+                  prefix,
+                  composedDefault,
+                  clientRegistrationFactory.isPostLogoutRedirectUriUsable(registrationId, oidc)));
+        });
     return redirectUris;
   }
 
@@ -605,9 +628,12 @@ public final class ScopedWebappSecurityChainBuilder {
   /**
    * One provider's {@code post_logout_redirect_uri} template, or {@code ""} to send none.
    *
-   * <p>Composition only. The value's shape was already vetted at startup by {@link
+   * <p>Composition only. The value's shape is checked separately, by {@link
    * ScopedClientRegistrationFactory}, which validates every OIDC provider block in one place
-   * (ADR-0026), so this decides where an already-legal value resolves, not whether it is legal.
+   * (ADR-0026) — but only warns about one it considers unusable, rather than stopping the
+   * application (see that class's own Javadoc). {@code usable} carries that verdict here, so a
+   * value the factory warned about falls back to {@code composedDefault} instead of reaching {@code
+   * buildAndExpand} at logout, where it would only fail then.
    *
    * <p>A value starting with {@code /} is a path and resolves against this chain just as the host's
    * own route does, keeping per-scope resolution. Anything else is a URI template handed to Spring
@@ -625,7 +651,8 @@ public final class ScopedWebappSecurityChainBuilder {
       final String registrationId,
       final OidcConfiguration oidc,
       final String prefix,
-      final String composedDefault) {
+      final String composedDefault,
+      final boolean usable) {
     final var configured = oidc.getPostLogoutRedirectUri();
     final var value = StringUtils.hasText(configured) ? configured.trim() : null;
     if (!oidc.isPostLogoutRedirectEnabled()) {
@@ -637,11 +664,11 @@ public final class ScopedWebappSecurityChainBuilder {
                 + "post-logout-redirect-enabled=false; the configured URI is ignored and no "
                 + "post_logout_redirect_uri will be sent. Remove one of the two to make the intent "
                 + "unambiguous.",
-            registrationId);
+            ScopedClientRegistrationFactory.sanitizeForLog(registrationId));
       }
       return "";
     }
-    if (value == null) {
+    if (value == null || !usable) {
       return composedDefault;
     }
     return value.startsWith("/") ? "{baseUrl}" + prefix + value : value;
@@ -685,15 +712,16 @@ public final class ScopedWebappSecurityChainBuilder {
     if (LOG.isDebugEnabled()) {
       redirectUris.forEach(
           (registrationId, uri) -> {
+            final var safeId = ScopedClientRegistrationFactory.sanitizeForLog(registrationId);
             if (uri.isEmpty()) {
               LOG.debug(
                   "post_logout_redirect_uri is disabled for OIDC registration '{}'; "
                       + "the IdP will apply its own post-logout default.",
-                  registrationId);
+                  safeId);
             } else {
               LOG.debug(
                   "OIDC registration '{}' will send post_logout_redirect_uri '{}'.",
-                  registrationId,
+                  safeId,
                   UrlRedaction.redact(uri));
             }
           });

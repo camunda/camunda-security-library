@@ -13,7 +13,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -167,7 +169,7 @@ class ScopedWebappSecurityChainBuilderTest {
   private static String resolvedPostLogoutRedirectUri(
       final String prefix, final OidcConfiguration.Builder oidc) {
     return ScopedWebappSecurityChainBuilder.postLogoutRedirectUri(
-        "oidc", oidc.build(), prefix, COMPOSED_DEFAULT);
+        "oidc", oidc.build(), prefix, COMPOSED_DEFAULT, true);
   }
 
   private static OidcConfiguration.Builder configuredUri(final String uri) {
@@ -185,6 +187,47 @@ class ScopedWebappSecurityChainBuilderTest {
   @Test
   void blankConfiguredUriFallsBackToTheHostRoute() {
     assertThat(resolvedPostLogoutRedirectUri("", configuredUri("  "))).isEqualTo(COMPOSED_DEFAULT);
+  }
+
+  /**
+   * A value {@link ScopedClientRegistrationFactory} warned about (unusable, not merely unset) falls
+   * back the same way, instead of reaching {@code buildAndExpand} at logout — where an unclosed
+   * brace or a CR/LF would throw and fail the request, rather than just warn.
+   */
+  @Test
+  void unusableConfiguredUriFallsBackToTheHostRoute() {
+    assertThat(
+            ScopedWebappSecurityChainBuilder.postLogoutRedirectUri(
+                "oidc",
+                configuredUri("{baseUrl}/post-logout{tenantId").build(),
+                "",
+                COMPOSED_DEFAULT,
+                false))
+        .isEqualTo(COMPOSED_DEFAULT);
+  }
+
+  /**
+   * Covers the seam {@code unusableConfiguredUriFallsBackToTheHostRoute} above does not: that one
+   * passes {@code usable=false} in by hand, so it proves only that {@code postLogoutRedirectUri}
+   * honours the flag. This exercises the real wiring — {@code isPostLogoutRedirectUriUsable}
+   * actually returning false for an unusable value, and {@code postLogoutRedirectUris} passing that
+   * verdict through — using a real {@link ScopedClientRegistrationFactory}, not a mock.
+   */
+  @Test
+  void postLogoutRedirectUrisFallsBackForARegistrationWithAnUnusableConfiguredUri() {
+    final var factory = new ScopedClientRegistrationFactory();
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("client")
+            .issuerUri("https://idp.example.com/realms/camunda")
+            .postLogoutRedirectUri("{baseUrl}/post-logout{tenantId")
+            .build();
+
+    final var redirectUris =
+        ScopedWebappSecurityChainBuilder.postLogoutRedirectUris(
+            factory, Map.of("oidc", oidc), "", COMPOSED_DEFAULT);
+
+    assertThat(redirectUris).containsEntry("oidc", COMPOSED_DEFAULT);
   }
 
   /** A configured path overrides the host route but still resolves under the scope. */
