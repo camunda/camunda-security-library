@@ -8,12 +8,15 @@
 package io.camunda.security.spring.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -103,7 +106,7 @@ final class SecurityFilterChainSupportTest {
   }
 
   @Test
-  void shouldIncludePrefixedLoginAndLogoutPathsWhenCookiePathProvided() {
+  void shouldIncludePrefixedLogoutPathWhenCookiePathProvided() {
     // given
     final var properties = csrfEnabledProperties();
     final var pathPort = emptyPathPort();
@@ -115,14 +118,12 @@ final class SecurityFilterChainSupportTest {
 
     // then
     assertThat(allowedPaths)
-        .as("must contain unprefixed /login (primary chain compatibility)")
-        .contains("/login")
         .as("must contain unprefixed /logout (primary chain compatibility)")
         .contains("/logout")
-        .as("must contain scoped /physical-tenants/t1/login")
-        .contains("/physical-tenants/t1/login")
         .as("must contain scoped /physical-tenants/t1/logout")
-        .contains("/physical-tenants/t1/logout");
+        .contains("/physical-tenants/t1/logout")
+        .as("must NOT contain /login — login always requires CSRF, see csrfEnforcedPaths")
+        .noneMatch(p -> p.endsWith("/login"));
   }
 
   @Test
@@ -137,11 +138,73 @@ final class SecurityFilterChainSupportTest {
 
     // then
     assertThat(allowedPaths)
-        .as("must contain /login")
-        .contains("/login")
         .as("must contain /logout")
         .contains("/logout")
+        .as("must NOT contain /login — login always requires CSRF, see csrfEnforcedPaths")
+        .noneMatch(p -> p.endsWith("/login"))
         .as("must not contain any scoped login path")
+        .noneMatch(p -> p.contains("/physical-tenants"));
+  }
+
+  @Test
+  void shouldIncludePrefixedLoginPathInEnforcedPathsWhenCookiePathProvided() {
+    // given
+    final var cookiePath = "/physical-tenants/t1";
+
+    // when
+    final var enforcedPaths = SecurityFilterChainSupport.csrfEnforcedPaths(cookiePath);
+
+    // then
+    assertThat(enforcedPaths)
+        .as("must contain unprefixed /login (primary chain compatibility)")
+        .contains("/login")
+        .as("must contain scoped /physical-tenants/t1/login")
+        .contains("/physical-tenants/t1/login")
+        .as("must not enforce /logout")
+        .noneMatch(p -> p.endsWith("/logout"));
+  }
+
+  @Test
+  void shouldNotIncludePrefixedLoginPathInEnforcedPathsWhenCookiePathIsNull() {
+    // when
+    final var enforcedPaths = SecurityFilterChainSupport.csrfEnforcedPaths(null);
+
+    // then
+    assertThat(enforcedPaths)
+        .as("must contain /login")
+        .contains("/login")
+        .as("must not contain any scoped login path")
+        .noneMatch(p -> p.contains("/physical-tenants"));
+  }
+
+  @Test
+  void shouldIncludePrefixedLogoutPathInLogoutPathsWhenCookiePathProvided() {
+    // given
+    final var cookiePath = "/physical-tenants/t1";
+
+    // when
+    final var logoutPaths = SecurityFilterChainSupport.csrfLogoutPaths(cookiePath);
+
+    // then
+    assertThat(logoutPaths)
+        .as("must contain unprefixed /logout (primary chain compatibility)")
+        .contains("/logout")
+        .as("must contain scoped /physical-tenants/t1/logout")
+        .contains("/physical-tenants/t1/logout")
+        .as("must not enforce /login")
+        .noneMatch(p -> p.endsWith("/login"));
+  }
+
+  @Test
+  void shouldNotIncludePrefixedLogoutPathInLogoutPathsWhenCookiePathIsNull() {
+    // when
+    final var logoutPaths = SecurityFilterChainSupport.csrfLogoutPaths(null);
+
+    // then
+    assertThat(logoutPaths)
+        .as("must contain /logout")
+        .contains("/logout")
+        .as("must not contain any scoped logout path")
         .noneMatch(p -> p.contains("/physical-tenants"));
   }
 
@@ -187,20 +250,33 @@ final class SecurityFilterChainSupportTest {
   }
 
   @Test
-  void shouldIncludeUnprefixedLoginLogoutWhenRootBasePathProvided() {
-    // given — root "/" normalizes to "" so prefixed paths collapse to /login and /logout
+  void shouldIncludeUnprefixedLogoutWhenRootBasePathProvided() {
+    // given — root "/" normalizes to "" so the prefixed path collapses to /logout
     final var properties = csrfEnabledProperties();
     final var pathPort = emptyPathPort();
 
     // when
     final var allowedPaths = SecurityFilterChainSupport.csrfAllowedPaths(properties, pathPort, "/");
 
-    // then — base="" so "" + "/login" = "/login"; deduped by Set, still present
+    // then — base="" so "" + "/logout" = "/logout"; deduped by Set, still present
     assertThat(allowedPaths)
-        .as("must contain /login")
-        .contains("/login")
         .as("must contain /logout")
         .contains("/logout")
+        .as("must NOT contain /login")
+        .noneMatch(p -> p.endsWith("/login"))
+        .as("must not produce double-slash paths")
+        .noneMatch(p -> p.contains("//"));
+  }
+
+  @Test
+  void shouldIncludeUnprefixedLoginInEnforcedPathsWhenRootBasePathProvided() {
+    // when — base="" so "" + "/login" = "/login"; deduped by Set, still present
+    final var enforcedPaths = SecurityFilterChainSupport.csrfEnforcedPaths("/");
+
+    // then
+    assertThat(enforcedPaths)
+        .as("must contain /login")
+        .contains("/login")
         .as("must not produce double-slash paths")
         .noneMatch(p -> p.contains("//"));
   }
@@ -301,14 +377,52 @@ final class SecurityFilterChainSupportTest {
     // when
     final var allowedPaths =
         SecurityFilterChainSupport.csrfAllowedPaths(properties, pathPort, cookiePath);
+    final var enforcedPaths = SecurityFilterChainSupport.csrfEnforcedPaths(cookiePath);
 
     // then
     assertThat(allowedPaths)
-        .as("must contain /physical-tenants/t1/login without double slash")
-        .contains("/physical-tenants/t1/login")
         .as("must contain /physical-tenants/t1/logout without double slash")
         .contains("/physical-tenants/t1/logout")
         .as("must not contain a double-slash path")
         .noneMatch(p -> p.contains("//"));
+    assertThat(enforcedPaths)
+        .as("must contain /physical-tenants/t1/login without double slash")
+        .contains("/physical-tenants/t1/login")
+        .as("must not contain a double-slash path")
+        .noneMatch(p -> p.contains("//"));
+  }
+
+  @Test
+  void rejectUnprotectedPathOverlapDoesNothingWhenNoOverlap() {
+    assertThatCode(
+            () ->
+                SecurityFilterChainSupport.rejectUnprotectedPathOverlap(
+                    Set.of("/error", "/actuator/**"), Set.of("/login")))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  void rejectUnprotectedPathOverlapRejectsExactLoginMatch() {
+    assertThatIllegalStateException()
+        .isThrownBy(
+            () ->
+                SecurityFilterChainSupport.rejectUnprotectedPathOverlap(
+                    Set.of("/login"), Set.of("/login")))
+        .withMessageContaining("/login");
+  }
+
+  @Test
+  void rejectUnprotectedPathOverlapRejectsScopedLoginPathReachableThroughABroaderPattern() {
+    // Regression for the exact bypass a reviewer flagged on PR #680 (camunda-security-library):
+    // "/physical-tenants/**" does not match the literal "/login", but it does match the scoped
+    // login path "/physical-tenants/t1/login" that a scoped chain actually enforces CSRF on.
+    final var enforcedPaths = SecurityFilterChainSupport.csrfEnforcedPaths("/physical-tenants/t1");
+
+    assertThatIllegalStateException()
+        .isThrownBy(
+            () ->
+                SecurityFilterChainSupport.rejectUnprotectedPathOverlap(
+                    Set.of("/physical-tenants/**"), enforcedPaths))
+        .withMessageContaining("/physical-tenants/t1/login");
   }
 }

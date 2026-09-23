@@ -429,7 +429,9 @@ In this example, the library treats `groups` as the claim source for group mappi
 |---|---|---|---|
 | `enabled` | boolean | `true` | Toggles CSRF protection on the webapp chains. |
 | `cookie-http-only` | boolean | `false` | When `false`, the CSRF cookie is readable by browser-side JavaScript so it can echo the token. Flip to `true` only for API-only hosts. |
-| `ignored-path-patterns` | set&lt;string&gt; | empty | Ant-style patterns CSRF protection skips, in addition to the always-ignored unprotected paths and login/logout endpoints. |
+| `ignored-path-patterns` | set&lt;string&gt; | empty | Ant-style patterns CSRF protection skips, in addition to the always-ignored unprotected paths and the logout endpoint. |
+
+The login endpoint (`/login`, and its scoped `<basePath>/login` variants) always requires a valid CSRF token, even for a browser that holds no session yet — it cannot be exempted via `ignored-path-patterns`. Without this, a cross-site `POST /login` is otherwise indistinguishable from a legitimate one on a browser that already has an authenticated session, and silently replaces the victim's session with an attacker-controlled one (camunda/security-testing-findings#281). An anonymous `GET /login` still receives a CSRF token (via the same cookie/response-header mechanism used for authenticated requests) so a legitimate login can obtain one to submit back.
 
 ### `camunda.security.http-headers.*`
 
@@ -1056,7 +1058,7 @@ To return a different problem-detail schema, register your own `AuthFailureHandl
 
 ## CSRF, headers, sessions
 
-When `camunda.security.csrf.enabled=true` (the default), every API and webapp chain applies cookie-backed CSRF protection through `CsrfProtectionRequestMatcher`. Allowed methods (GET/HEAD/TRACE/OPTIONS), unprotected paths, the login endpoint, the logout endpoint, and any host-supplied `csrf.ignored-path-patterns` are exempt. Browser clients receive the token on authenticated GETs and the login response — the cookie name and header are both `X-CSRF-TOKEN`. Set `cookie-http-only=true` for API-only hosts that read the token from the response header instead of the cookie.
+When `camunda.security.csrf.enabled=true` (the default), every API and webapp chain applies cookie-backed CSRF protection through `CsrfProtectionRequestMatcher`. Allowed methods (GET/HEAD/TRACE/OPTIONS), unprotected paths, the logout endpoint, and any host-supplied `csrf.ignored-path-patterns` are exempt — but the login endpoint (`/login`, and its scoped `<basePath>/login` variants) is not: it requires a valid CSRF token unconditionally, even on a browser with no session yet, and this cannot be overridden by `ignored-path-patterns` or an overlapping unprotected path (camunda/security-testing-findings#281; see [CSRF protection: `camunda.security.csrf.*`](#camundasecuritycsrf) above for the full rationale). Browser clients receive the token on authenticated GETs, on any request to the login endpoint (including an anonymous `GET /login`, so a first-time login can obtain one to submit back), and on the login response — the cookie name and header are both `X-CSRF-TOKEN`. Set `cookie-http-only=true` for API-only hosts that read the token from the response header instead of the cookie.
 
 HTTP response headers are configured by `HeaderConfiguration`. Defaults are the hardened production set: nosniff, cache-control, HSTS (1 year, no preload), X-Frame-Options `SAMEORIGIN`, the bundled CSP and permissions policy, `Referrer-Policy: STRICT_ORIGIN_WHEN_CROSS_ORIGIN`, COOP `SAME_ORIGIN_ALLOW_POPUPS`, COEP `UNSAFE_NONE`, CORP `SAME_SITE`. Override individual values under `camunda.security.http-headers.*`.
 
