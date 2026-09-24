@@ -387,7 +387,7 @@ public final class ScopedClientRegistrationFactory {
             // user-info-required only ever affects FailSoftOidcUserService on the browser login
             // chain — a bearer-only scope never constructs one, so the flag is harmless there
             // regardless of user-info-enabled or the resolved UserInfo endpoint.
-            requireUserInfoRequiredConsistency(registrationId, oidc);
+            warnIfUserInfoRequiredInconsistent(registrationId, oidc);
           }
           resolveRedirectUri(registrationId, oidc, scopedRedirectUriPath, loginRouteChecks);
         });
@@ -1052,24 +1052,23 @@ public final class ScopedClientRegistrationFactory {
 
   /**
    * A provider cannot both disable the UserInfo fetch ({@code user-info-enabled=false}, which nulls
-   * {@code userInfoUri}) and require it to succeed. Rejecting this combination at startup, rather
-   * than letting the flag silently do nothing, mirrors {@link
-   * CachingOidcClaimsProvider#forConfiguredMappings}'s fail-fast policy for the analogous
-   * config-mismatch.
+   * {@code userInfoUri}) and require it to succeed. Surfaces the mismatch as a WARN so the
+   * application still starts, matching the rest of {@link #validateWithoutNetwork} (ADR-0029).
    */
-  private static void requireUserInfoRequiredConsistency(
+  private static void warnIfUserInfoRequiredInconsistent(
       final String registrationId, final OidcConfiguration oidc) {
     if (oidc.isUserInfoRequired() && !oidc.isUserInfoEnabled()) {
-      throw new IllegalStateException(
-          "Cannot build ClientRegistration '"
-              + registrationId
-              + "': user-info-required=true has no effect when user-info-enabled=false, because"
-              + " login then never attempts the UserInfo call this flag is meant to make"
+      final var safeId = sanitizeForLog(registrationId);
+      LOG.warn(
+          "OIDC provider '{}': user-info-required=true has no effect when user-info-enabled=false,"
+              + " because login then never attempts the UserInfo call this flag is meant to make"
               + " mandatory. Set user-info-enabled=true (the default) under"
               + " camunda.security.authentication.oidc.* (flat) or"
-              + " camunda.security.authentication.providers.oidc."
-              + registrationId
-              + ".*, or remove user-info-required.");
+              + " camunda.security.authentication.providers.oidc.{}.*, or remove"
+              + " user-info-required.",
+          safeId,
+          safeId);
+      return;
     }
     // The manual-endpoints path (authorization-uri + token-uri + jwk-set-uri, no issuer-uri) can
     // leave user-info-enabled=true with no user-info-uri configured either. shouldRetrieveUserInfo
@@ -1080,15 +1079,16 @@ public final class ScopedClientRegistrationFactory {
     if (oidc.isUserInfoRequired()
         && !StringUtils.hasText(oidc.getIssuerUri())
         && !StringUtils.hasText(oidc.getUserInfoUri())) {
-      throw new IllegalStateException(
-          "Cannot build ClientRegistration '"
-              + registrationId
-              + "': user-info-required=true has no effect because no issuer-uri or user-info-uri"
-              + " is configured, so this provider never resolves a UserInfo endpoint to call. Set"
-              + " user-info-uri (or issuer-uri) under camunda.security.authentication.oidc.* (flat)"
-              + " or camunda.security.authentication.providers.oidc."
-              + registrationId
-              + ".*, or remove user-info-required.");
+      final var safeId = sanitizeForLog(registrationId);
+      LOG.warn(
+          "OIDC provider '{}': user-info-required=true has no effect because no issuer-uri or"
+              + " user-info-uri is configured, so this provider never resolves a UserInfo endpoint"
+              + " to call. Set user-info-uri (or issuer-uri) under"
+              + " camunda.security.authentication.oidc.* (flat) or"
+              + " camunda.security.authentication.providers.oidc.{}.*, or remove"
+              + " user-info-required.",
+          safeId,
+          safeId);
     }
   }
 
@@ -1157,22 +1157,33 @@ public final class ScopedClientRegistrationFactory {
   /**
    * {@code userinfo_endpoint} is optional in an OIDC discovery document, so an issuer-uri provider
    * can finish discovery with no UserInfo endpoint at all — the static check in {@link
-   * #requireUserInfoRequiredConsistency} only ever sees the manual-endpoints case, since resolving
-   * this one needs the network. Checked here, once the registration is built, so every route to an
-   * unreachable UserInfo endpoint is covered, not only the ones detectable without it.
+   * #warnIfUserInfoRequiredInconsistent} only ever sees the manual-endpoints case, since resolving
+   * this one needs the network. Checked here, once the registration is built, so the discovery
+   * residual is still refused on a login-path build. Cases {@link
+   * #warnIfUserInfoRequiredInconsistent} already warned about (user-info disabled, or no issuer /
+   * user-info-uri on the manual path) are not re-thrown: that would undo ADR-0029 for the same
+   * config the no-network pass already treated as warn-only.
    */
   private static void requireResolvedUserInfoEndpoint(
       final String registrationId, final OidcConfiguration oidc, final ClientRegistration built) {
-    if (oidc.isUserInfoRequired()
-        && !StringUtils.hasText(built.getProviderDetails().getUserInfoEndpoint().getUri())) {
-      throw new IllegalStateException(
-          "Cannot build ClientRegistration '"
-              + registrationId
-              + "': user-info-required=true has no effect because this provider resolved no"
-              + " UserInfo endpoint to call — issuer discovery returned no userinfo_endpoint, or"
-              + " user-info-enabled/user-info-uri leave none configured. Configure a reachable"
-              + " UserInfo endpoint for this provider, or remove user-info-required.");
+    if (!oidc.isUserInfoRequired()
+        || StringUtils.hasText(built.getProviderDetails().getUserInfoEndpoint().getUri())) {
+      return;
     }
+    // Already diagnosed without the network — do not abort a build that validateWithoutNetwork
+    // deliberately let through.
+    if (!oidc.isUserInfoEnabled()
+        || (!StringUtils.hasText(oidc.getIssuerUri())
+            && !StringUtils.hasText(oidc.getUserInfoUri()))) {
+      return;
+    }
+    throw new IllegalStateException(
+        "Cannot build ClientRegistration '"
+            + registrationId
+            + "': user-info-required=true has no effect because this provider resolved no"
+            + " UserInfo endpoint to call — issuer discovery returned no userinfo_endpoint, or"
+            + " user-info-enabled/user-info-uri leave none configured. Configure a reachable"
+            + " UserInfo endpoint for this provider, or remove user-info-required.");
   }
 
   /**

@@ -315,7 +315,7 @@ class ScopedClientRegistrationFactoryDiscoveryCacheTest {
 
     // when a caller mounts no login chain, and therefore never constructs a FailSoftOidcUserService
     // then the flag resolving to nothing is no reason to refuse to start, while a login path still
-    // rejects it — requireUserInfoRequiredConsistency alone can't see this: it only runs before any
+    // rejects it — warnIfUserInfoRequiredInconsistent alone can't see this: it only runs before any
     // network call, and userinfo_endpoint absence is only known after discovery
     assertThatNoException().isThrownBy(() -> factory.createWithoutLoginRoutes(providers));
     assertThatThrownBy(() -> factory.createFromProviderMap(providers))
