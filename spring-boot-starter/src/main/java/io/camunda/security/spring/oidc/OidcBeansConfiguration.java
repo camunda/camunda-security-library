@@ -13,6 +13,7 @@ import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
+import io.camunda.security.spring.converter.AdditionalJwkSetUrisByRegistrationId;
 import io.camunda.security.spring.converter.TokenClaimsConvertersByIssuer;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -26,6 +27,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.util.StringUtils;
 
 /**
  * Provides default OIDC infrastructure beans not tied to client registration ({@link
@@ -70,6 +72,38 @@ public class OidcBeansConfiguration {
         oidcProviderConfigurationPort.getOidcAuthenticationConfigurations(),
         OidcConfiguration.DEFAULT_CLOCK_SKEW,
         List.of());
+  }
+
+  /**
+   * Per-registration {@code additional-jwk-set-uris} lookup for {@code
+   * OidcUserAuthenticationConverter}. Keyed by registration ID rather than by issuer URI so a
+   * provider configured with explicit endpoints and no {@code issuer-uri} still contributes its
+   * supplementary key sets; see <a
+   * href="https://github.com/camunda/camunda-security-library/blob/main/docs/adr/0030-additional-jwk-set-uris-by-registration-id.md">ADR-0030</a>.
+   *
+   * <p>Registrations that declare no usable URI are left out, so the lookup answers {@code null}
+   * for them and the decoder takes its single-URI path.
+   */
+  @Bean
+  @ConditionalOnMissingBean
+  public AdditionalJwkSetUrisByRegistrationId additionalJwkSetUrisByRegistrationId(
+      final OidcProviderConfigurationPort oidcProviderConfigurationPort) {
+    final Map<String, List<String>> byRegistrationId = new LinkedHashMap<>();
+    // Blank ids are filtered for the same reason the claims-converter bean below filters them: a
+    // blank key can never match a ClientRegistration's registrationId, so it would only ever be
+    // dead weight in the lookup.
+    ScopedClientRegistrationFactory.withoutBlankRegistrationIds(
+            oidcProviderConfigurationPort.getOidcAuthenticationConfigurations())
+        .forEach(
+            (registrationId, config) -> {
+              final var additionalUris = config.getAdditionalJwkSetUris();
+              if (additionalUris != null
+                  && additionalUris.stream().anyMatch(StringUtils::hasText)) {
+                byRegistrationId.put(registrationId, additionalUris);
+              }
+            });
+    LOG.debug("Additional JWK Set URIs by registration id: {}", byRegistrationId.keySet());
+    return new AdditionalJwkSetUrisByRegistrationId(byRegistrationId);
   }
 
   @Bean
