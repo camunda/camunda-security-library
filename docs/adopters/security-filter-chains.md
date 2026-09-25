@@ -329,7 +329,9 @@ Two constraints to be aware of:
 - **A resolvable `jwk-set-uri` is required.** Set `jwk-set-uri` explicitly, or set `issuer-uri` so OIDC discovery populates it. A provider that resolves neither fails with `OIDC Provider '<id>' is missing a valid 'jwk-set-uri'. Issuer URI: <issuer>` at the first token decode. The decoder is built on first use, so an identity provider that CSL cannot reach at startup does not stop the application context. A deployment with several providers resolves each of them at the first token of its issuer, so a provider that does not answer fails the tokens of its own issuer alone. This holds for the repository CSL builds and for a `LazyClientRegistrationRepository` the host application wires itself, because both name the providers of their routes. A `ClientRegistrationRepository` of any other type can hold registrations that no configuration describes, so the decoder reads such a repository as a whole, and one provider that does not answer fails every token.
 - **`kid` collision precedence.** If two JWK Sets publish a key with the same `kid` (unlikely in practice), the primary `jwk-set-uri` wins because it is queried first. Reorder `additional-jwk-set-uris` to change precedence among the additional URIs.
 
-See [ADR-0006](../adr/0006-multi-idp-oidc-configuration.md) for the design rationale, the choice of composite `JWKSource` over Spring's `JwtIssuerAuthenticationManagerResolver`, and the lazy failure model, and [ADR-0025](../adr/0025-deferred-oidc-resolution.md) for the first-use resolution lifecycle.
+This applies on both the bearer-token path and the interactive login flow. The login flow's access-token decode reaches these URIs through `OidcUserAuthenticationConverter`, which resolves them per registration id, see [Authentication converters](#authentication-converters). Before [#649](https://github.com/camunda/camunda-security-library/issues/649) that resolution was keyed by issuer URI, so a provider configured with explicit endpoints and no `issuer-uri` silently lost its additional key sets on login and fell back to ID-token claims.
+
+See [ADR-0006](../adr/0006-multi-idp-oidc-configuration.md) for the design rationale, the choice of composite `JWKSource` over Spring's `JwtIssuerAuthenticationManagerResolver`, and the lazy failure model, [ADR-0025](../adr/0025-deferred-oidc-resolution.md) for the first-use resolution lifecycle, and [ADR-0030](../adr/0030-additional-jwk-set-uris-by-registration-id.md) for the login flow's per-registration keying.
 
 #### Disabling the UserInfo fetch
 
@@ -485,12 +487,13 @@ Many library-supplied infrastructure beans intended to be overridden (including 
 
 ### Authentication converters
 
-CSL ships two `CamundaAuthenticationConverter<Authentication>` implementations for OIDC resource-server chains. Neither is auto-wired — the host registers whichever one it needs as a bean.
+CSL ships two `CamundaAuthenticationConverter<Authentication>` implementations for OIDC resource-server chains, plus `OidcUserAuthenticationConverter` for the session-based `oauth2Login` chain. None is auto-wired — the host registers whichever one it needs as a bean.
 
 | Converter | When to use |
 |---|---|
 | `OidcTokenAuthenticationConverter` | Standard OIDC deployments where memberships (roles, groups, tenants) are resolved from a database via `MembershipPort`. Reads `sub` or a client-id claim and delegates resolution to `LazyTokenClaimsConverter`. |
 | `JwtGrantedAuthoritiesAuthenticationConverter` | Deployments where the JWT itself is the authoritative source of roles — for example, SaaS tokens where an upstream `JwtAuthenticationConverter` has already extracted role authorities from a fixed claim before CSL runs. No `MembershipPort` call is made. Only suitable for user tokens where the configured claim (`sub` by default) identifies the principal; M2M/client-credentials tokens must be handled separately. |
+| `OidcUserAuthenticationConverter` | The session-based `oauth2Login` chain, where the `Authentication` is an `OAuth2AuthenticationToken` rather than a `JwtAuthenticationToken`. Decodes the stored access token so claims come from it rather than the ID token, and falls back to ID-token claims when the access token cannot be decoded. |
 
 **Registering `OidcTokenAuthenticationConverter`.**
 
@@ -508,6 +511,29 @@ public CamundaAuthenticationConverter<Authentication> authenticationConverter(
 CSL supplies `TokenClaimsConvertersByIssuer` as a bean (when `MembershipPort` and `LazyTokenClaimsConverter` are both present) so a multi-provider deployment resolves each bearer token's claims using the `usernameClaim`/`clientIdClaim` config of the registration that declared its `iss`, instead of always the primary provider's. It's optional — passing `null` (or omitting it via the two-argument constructor) keeps every token on the primary provider's claim config.
 
 Per-provider claim configuration does not inherit from the flat block: a `providers.oidc.<id>` entry that omits `username-claim`/`client-id-claim` gets `OidcConfiguration`'s own defaults, not the flat block's — a BYOIDP provider declaring only `issuer-uri` and `client-id` loses client-credentials/M2M claim resolution unless it repeats `client-id-claim` itself.
+
+**Registering `OidcUserAuthenticationConverter`.** The login-flow counterpart: it converts the `OAuth2AuthenticationToken` of a browser session by decoding the stored access token, so authorization-relevant claims come from the access token rather than the ID token.
+
+```java
+@Bean
+public CamundaAuthenticationConverter<Authentication> oidcUserAuthenticationConverter(
+    final OAuth2AuthorizedClientRepository authorizedClientRepository,
+    final OidcAccessTokenDecoderFactory accessTokenDecoderFactory,
+    final LazyTokenClaimsConverter tokenClaimsConverter,
+    final HttpServletRequest request,
+    final AdditionalJwkSetUrisByRegistrationId additionalJwkSetUris) {
+  return new OidcUserAuthenticationConverter(
+      authorizedClientRepository,
+      accessTokenDecoderFactory,
+      tokenClaimsConverter,
+      request,
+      additionalJwkSetUris);
+}
+```
+
+CSL supplies `AdditionalJwkSetUrisByRegistrationId` as a bean (`OidcBeansConfiguration`), built from every configured provider that declares `additional-jwk-set-uris`, with or without an `issuer-uri`, since the lookup is keyed by registration id. It is optional: the four-argument constructor, or an empty lookup, decodes against each registration's primary `jwk-set-uri` only. A host that registers its own must key it by registration id; a map keyed by anything else resolves nothing and the converter silently falls back to ID-token claims. See [ADR-0030](../adr/0030-additional-jwk-set-uris-by-registration-id.md).
+
+There is also a six-argument constructor taking `Map<String, Boolean> preferIdTokenClaimsByRegistrationId`, which short-circuits the access-token decode for the named registrations and uses the merged ID-token/UserInfo claims instead. For setups where the access token is signed by a key set Camunda cannot reach, or lacks claims Camunda needs.
 
 **Registering `JwtGrantedAuthoritiesAuthenticationConverter`.** Pass the `usernameClaim` so this converter resolves the principal from the same claim `OidcTokenAuthenticationConverter` uses — but note the two are not equivalent: this converter only ever reads `usernameClaim` (it ignores `clientIdClaim` and `preferUsernameClaim`) and always resolves to `CamundaAuthentication.user`, never `clientId` — by design, it has no client-credentials/M2M support (see #475). A claim configured but absent, blank, or not a string fails the token rather than falling back to `sub`, matching `LazyTokenClaimsConverter`'s behavior for the same misconfiguration; only an unconfigured (default) claim falls back to `sub`.
 
