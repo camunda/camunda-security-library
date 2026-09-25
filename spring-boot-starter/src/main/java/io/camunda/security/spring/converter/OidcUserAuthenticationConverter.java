@@ -13,11 +13,9 @@ import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -44,7 +42,7 @@ public class OidcUserAuthenticationConverter
   private final LazyTokenClaimsConverter tokenClaimsConverter;
   private final HttpServletRequest request;
   private final Map<String, JwtDecoder> jwtDecoders;
-  private final Map<String, List<String>> additionalJwkSetUrisByIssuer;
+  private final AdditionalJwkSetUrisByRegistrationId additionalJwkSetUris;
   private final Map<String, Boolean> preferIdTokenClaimsByRegistrationId;
 
   public OidcUserAuthenticationConverter(
@@ -57,7 +55,7 @@ public class OidcUserAuthenticationConverter
         accessTokenDecoderFactory,
         tokenClaimsConverter,
         request,
-        Collections.emptyMap(),
+        AdditionalJwkSetUrisByRegistrationId.empty(),
         Collections.emptyMap());
   }
 
@@ -66,13 +64,13 @@ public class OidcUserAuthenticationConverter
       final OidcAccessTokenDecoderFactory accessTokenDecoderFactory,
       final LazyTokenClaimsConverter tokenClaimsConverter,
       final HttpServletRequest request,
-      final Map<String, List<String>> additionalJwkSetUrisByIssuer) {
+      final AdditionalJwkSetUrisByRegistrationId additionalJwkSetUris) {
     this(
         authorizedClientRepository,
         accessTokenDecoderFactory,
         tokenClaimsConverter,
         request,
-        additionalJwkSetUrisByIssuer,
+        additionalJwkSetUris,
         Collections.emptyMap());
   }
 
@@ -81,18 +79,16 @@ public class OidcUserAuthenticationConverter
       final OidcAccessTokenDecoderFactory accessTokenDecoderFactory,
       final LazyTokenClaimsConverter tokenClaimsConverter,
       final HttpServletRequest request,
-      final Map<String, List<String>> additionalJwkSetUrisByIssuer,
+      final AdditionalJwkSetUrisByRegistrationId additionalJwkSetUris,
       final Map<String, Boolean> preferIdTokenClaimsByRegistrationId) {
     this.authorizedClientRepository = authorizedClientRepository;
     this.accessTokenDecoderFactory = accessTokenDecoderFactory;
     this.tokenClaimsConverter = tokenClaimsConverter;
     this.request = request;
-    this.additionalJwkSetUrisByIssuer =
-        additionalJwkSetUrisByIssuer != null
-            ? additionalJwkSetUrisByIssuer.entrySet().stream()
-                .collect(
-                    Collectors.toUnmodifiableMap(Map.Entry::getKey, e -> List.copyOf(e.getValue())))
-            : Collections.emptyMap();
+    this.additionalJwkSetUris =
+        additionalJwkSetUris != null
+            ? additionalJwkSetUris
+            : AdditionalJwkSetUrisByRegistrationId.empty();
     this.preferIdTokenClaimsByRegistrationId =
         preferIdTokenClaimsByRegistrationId != null
             ? Map.copyOf(preferIdTokenClaimsByRegistrationId)
@@ -186,15 +182,9 @@ public class OidcUserAuthenticationConverter
     final var clientRegistrationId = clientRegistration.getRegistrationId();
     return jwtDecoders.computeIfAbsent(
         clientRegistrationId,
-        k -> {
-          final var issuerUri = clientRegistration.getProviderDetails().getIssuerUri();
-          // issuerUri may be null when configured without auto-discovery (e.g. explicit
-          // jwkSetUri/authorizationUri/tokenUri). Guard against NPE on the immutable map.
-          final var additionalUris =
-              issuerUri != null ? additionalJwkSetUrisByIssuer.get(issuerUri) : null;
-          return accessTokenDecoderFactory.createAccessTokenDecoder(
-              clientRegistration, additionalUris);
-        });
+        k ->
+            accessTokenDecoderFactory.createAccessTokenDecoder(
+                clientRegistration, additionalJwkSetUris.get(k)));
   }
 
   protected Map<String, Object> getIdTokenClaims(
