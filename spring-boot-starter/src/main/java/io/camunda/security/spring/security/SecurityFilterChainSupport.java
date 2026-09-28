@@ -32,6 +32,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.authentication.logout.LogoutHandler;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfToken;
@@ -487,5 +488,26 @@ public final class SecurityFilterChainSupport {
                       CrossOriginResourcePolicyHeaderWriter.CrossOriginResourcePolicy.valueOf(
                           headerConfig.getCrossOriginResourcePolicy().getValue().name())));
         });
+  }
+
+  /**
+   * A {@link LogoutHandler} that expires a single cookie under the given path, so a path-scoped
+   * cookie is cleared on exactly the path it was set on. Shared by the scoped webapp chain's logout
+   * and by {@link io.camunda.security.spring.scope.ApiTokenRefreshSupport}, whose forced logout on
+   * a failed token refresh has to clear the very same cookies.
+   *
+   * @param cookieName the cookie to expire
+   * @param cookiePath the path the cookie was set on, without the servlet context path
+   */
+  public static LogoutHandler pathScopedCookieClearingLogoutHandler(
+      final String cookieName, final String cookiePath) {
+    return (request, response, authentication) -> {
+      final var cookie = new jakarta.servlet.http.Cookie(cookieName, "");
+      cookie.setMaxAge(0);
+      // Prepend the context path so the clear path matches the set path under any deployment.
+      // request.getContextPath() is a deployment constant — same value for every request.
+      cookie.setPath(request.getContextPath() + cookiePath);
+      response.addCookie(cookie);
+    };
   }
 }

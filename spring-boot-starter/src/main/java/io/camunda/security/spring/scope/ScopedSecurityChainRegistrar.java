@@ -12,8 +12,11 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
 import io.camunda.security.api.context.CamundaSecurityScopeProvider;
+import io.camunda.security.api.model.config.AuthenticationMethod;
 import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
+import io.camunda.security.spring.oidc.LazyClientRegistrationRepository;
+import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
 import io.camunda.security.spring.oidc.ScopedJwtDecoderFactory;
 import io.camunda.security.spring.security.ScopedWebappSecurityChainBuilder;
 import io.camunda.security.spring.session.ScopedWebSessionRepositoryFactory;
@@ -34,6 +37,7 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.session.MapSessionRepository;
 import org.springframework.session.SessionRepository;
@@ -70,6 +74,14 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
    * concurrently.
    */
   private final Map<String, SessionRepositoryFilter<?>> sessionFiltersByBasePath =
+      new ConcurrentHashMap<>();
+
+  /**
+   * Shared per-scope {@link ApiTokenRefreshSupport} instances, keyed by basePath, built once per
+   * OIDC descriptor by {@link #getOrBuildRefreshSupport} for the same build-once reason as {@link
+   * #sessionFiltersByBasePath} above.
+   */
+  private final Map<String, ApiTokenRefreshSupport> refreshSupportByBasePath =
       new ConcurrentHashMap<>();
 
   @Override
@@ -231,7 +243,9 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
                         missing);
                   }
                 },
-                sessionFilter);
+                () -> null,
+                sessionFilter,
+                getOrBuildRefreshSupport(beanFactory, descriptor));
       }
       return new OrderedSecurityFilterChainWrapper(chain, ORDER_API);
     } catch (final IllegalStateException ex) {
@@ -240,6 +254,66 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
       throw new IllegalStateException(
           "Failed to build scoped API security chain for basePath=" + descriptor.basePath(), ex);
     }
+  }
+
+  /**
+   * Resolves or creates the scope's {@link ApiTokenRefreshSupport}, so the scoped API chain
+   * refreshes a session-authenticated caller's access token the way the scoped webapp chain does
+   * (camunda-security-library#662). Returns {@code null} — meaning "install no refresh filter" —
+   * for a BASIC scope, which holds no OAuth2 token, and for an OIDC scope that configures no
+   * provider, whose decoder supplier reports the misconfiguration with a better message.
+   *
+   * <p>The authorized-client repository is a fresh {@link
+   * HttpSessionOAuth2AuthorizedClientRepository} rather than the instance the scope's webapp chain
+   * holds: it keeps no per-instance state and resolves the authorized clients from a session
+   * attribute named by a class-level constant, so it reads exactly what the login flow stored. The
+   * client-registration repository is likewise built here rather than shared, because the refresh
+   * path resolves no registration from it — {@code DefaultOAuth2AuthorizedClientManager} takes the
+   * registration off the stored authorized client whenever the authorize request carries one, as
+   * the refresh filter's does. See ADR-0031.
+   *
+   * <p>It is built {@linkplain LazyClientRegistrationRepository#withoutLoginRoutes without login
+   * routes}, like every other non-login consumer of the provider map ({@code
+   * ScopedJwtDecoderFactory}, {@code ScopedOidcClaimsProviderFactory}). A scope whose host declares
+   * no webapp paths gets an API chain and an inert webapp chain, so login-only validation would
+   * otherwise reject a configuration no login route in this application ever reads — {@code
+   * user-info-required=true} with {@code user-info-enabled=false} being the one such check that
+   * throws rather than warns.
+   */
+  private ApiTokenRefreshSupport getOrBuildRefreshSupport(
+      final ConfigurableListableBeanFactory beanFactory,
+      final ScopedSecurityDescriptor descriptor) {
+    if (descriptor.authentication() == null
+        || descriptor.authentication().getMethod() != AuthenticationMethod.OIDC) {
+      return null;
+    }
+    final var registrationFactory = beanFactory.getBean(ScopedClientRegistrationFactory.class);
+    final var providers = registrationFactory.flatten(descriptor.authentication());
+    if (providers.isEmpty()) {
+      LOG.debug(
+          "Scope basePath={} configures no OIDC provider; its API chain gets no refresh filter",
+          descriptor.basePath());
+      return null;
+    }
+    return refreshSupportByBasePath.computeIfAbsent(
+        descriptor.basePath(),
+        basePath -> {
+          final var prefix = BasePaths.normalize(basePath, "basePath");
+          final var clientRegistrationRepository =
+              LazyClientRegistrationRepository.withoutLoginRoutes(
+                  registrationFactory, providers, "basePath=" + prefix);
+          final var authorizedClientRepository = new HttpSessionOAuth2AuthorizedClientRepository();
+          final var authorizedClientManager =
+              beanFactory
+                  .getBean(OAuth2AuthorizedClientManagerFactory.class)
+                  .create(clientRegistrationRepository, authorizedClientRepository);
+          return ApiTokenRefreshSupport.forScope(
+              authorizedClientRepository,
+              authorizedClientManager,
+              basePath,
+              sessionCookieName(basePath),
+              csrfCookieName(basePath));
+        });
   }
 
   /**

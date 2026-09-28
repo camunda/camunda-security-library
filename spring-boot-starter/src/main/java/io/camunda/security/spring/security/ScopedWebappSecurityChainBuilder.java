@@ -1103,13 +1103,6 @@ public final class ScopedWebappSecurityChainBuilder {
 
   private static LogoutHandler pathScopedCookieClearingLogoutHandler(
       final String cookieName, final String cookiePath) {
-    return (request, response, authentication) -> {
-      final var cookie = new jakarta.servlet.http.Cookie(cookieName, "");
-      cookie.setMaxAge(0);
-      // Prepend the context path so the clear path matches the set path under any deployment.
-      // request.getContextPath() is a deployment constant — same value for every request.
-      cookie.setPath(request.getContextPath() + cookiePath);
-      response.addCookie(cookie);
-    };
+    return SecurityFilterChainSupport.pathScopedCookieClearingLogoutHandler(cookieName, cookiePath);
   }
 }
