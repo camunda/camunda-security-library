@@ -51,6 +51,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0036: Revoke the session refresh token on OIDC logout](../adr/0036-revoke-refresh-token-on-oidc-logout.md)
 - [ADR-0037: Resolve the web app authorization flag per request](../adr/0037-resolve-web-app-authorization-flag-per-request.md)
 - [ADR-0038: A verified token carries the principal claims of the provider that verified it](../adr/0038-verified-token-carries-its-provider-claims.md)
+- [ADR-0039: API chains refresh the session access token, with their own authorized-client stack](../adr/0039-refresh-access-tokens-on-api-chains.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 

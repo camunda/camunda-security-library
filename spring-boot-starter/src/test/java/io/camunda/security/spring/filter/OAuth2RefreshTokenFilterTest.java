@@ -554,6 +554,30 @@ class OAuth2RefreshTokenFilterTest {
         .orElseThrow();
   }
 
+  @Test
+  void shouldLeaveARequestTheSkipMatcherClaimsAlone() throws Exception {
+    // given an expired client with no refresh token, which on any other path logs the caller out
+    final var authenticationToken = authenticationToken();
+    request.setRequestURI("/api/public");
+    final var skipping =
+        new OAuth2RefreshTokenFilter(
+            authorizedClientRepository,
+            authorizedClientManager,
+            logoutHandler,
+            () -> new SecurityContextImpl(authenticationToken),
+            r -> true);
+
+    // when
+    skipping.doFilter(request, response, chain);
+
+    // then the request passes straight through, untouched
+    verify(chain).doFilter(request, response);
+    verify(authorizedClientManager, never()).authorize(any());
+    verify(logoutHandler, never()).logout(any(), any(), any());
+    assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+    verify(authorizedClientRepository, never()).loadAuthorizedClient(any(), any(), any());
+  }
+
   private OAuth2RefreshTokenFilter filter(final SecurityContext securityContext) {
     return new OAuth2RefreshTokenFilter(
         authorizedClientRepository, authorizedClientManager, logoutHandler, () -> securityContext);

@@ -10,16 +10,20 @@ package io.camunda.security.spring.security;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_API;
 
 import io.camunda.security.core.port.out.SecurityPathPort;
+import io.camunda.security.spring.scope.ApiTokenRefreshSupport;
 import io.camunda.security.spring.scope.ScopedApiSecurityChainBuilder;
 import io.camunda.security.spring.scope.ScopedApiSecurityChainBuilderConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.session.web.http.SessionRepositoryFilter;
@@ -51,7 +55,9 @@ public class OidcApiSecurityConfiguration {
       final ScopedApiSecurityChainBuilder builder,
       final JwtDecoder jwtDecoder,
       final SecurityPathPort pathPort,
-      final SessionRepositoryFilter<?> defaultSessionRepositoryFilter)
+      final SessionRepositoryFilter<?> defaultSessionRepositoryFilter,
+      final ObjectProvider<OAuth2AuthorizedClientRepository> authorizedClientRepositoryProvider,
+      final ObjectProvider<OAuth2AuthorizedClientManager> authorizedClientManagerProvider)
       throws Exception {
     LOG.info("The API is protected by OIDC JWT authentication.");
     return builder.buildOidcApiChain(
@@ -59,6 +65,31 @@ public class OidcApiSecurityConfiguration {
         pathPort.apiPaths(),
         pathPort.unprotectedApiPaths(),
         jwtDecoder,
-        defaultSessionRepositoryFilter);
+        null,
+        defaultSessionRepositoryFilter,
+        resolveRefreshSupport(authorizedClientRepositoryProvider, authorizedClientManagerProvider));
+  }
+
+  /**
+   * Builds the refresh support from the OAuth2 client beans the webapp chain already uses, so a
+   * session restored on this chain refreshes against the same stored authorized client
+   * (camunda-security-library#662). Both beans come from {@code OidcWebappClientBeansConfiguration}
+   * and are therefore absent in a bearer-only deployment ({@code webapp-enabled=false}), where no
+   * session login exists and there is nothing to refresh — the chain is then built without the
+   * filter, exactly as before.
+   */
+  private static ApiTokenRefreshSupport resolveRefreshSupport(
+      final ObjectProvider<OAuth2AuthorizedClientRepository> authorizedClientRepositoryProvider,
+      final ObjectProvider<OAuth2AuthorizedClientManager> authorizedClientManagerProvider) {
+    final var authorizedClientRepository = authorizedClientRepositoryProvider.getIfAvailable();
+    final var authorizedClientManager = authorizedClientManagerProvider.getIfAvailable();
+    if (authorizedClientRepository == null || authorizedClientManager == null) {
+      LOG.debug(
+          "No OAuth2 authorized-client beans present; the OIDC API chain will not refresh"
+              + " session access tokens");
+      return null;
+    }
+    return ApiTokenRefreshSupport.forPrimaryChain(
+        authorizedClientRepository, authorizedClientManager);
   }
 }

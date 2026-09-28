@@ -36,6 +36,7 @@ import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.web.authentication.logout.LogoutHandler;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -72,16 +73,43 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
   private final OAuth2AuthorizedClientManager authorizedClientManager;
   private final LogoutHandler logoutHandler;
   private final Supplier<SecurityContext> securityContextSupplier;
+  private final RequestMatcher skipMatcher;
 
   public OAuth2RefreshTokenFilter(
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
       final OAuth2AuthorizedClientManager authorizedClientManager,
       final LogoutHandler logoutHandler,
       final Supplier<SecurityContext> securityContextSupplier) {
+    this(
+        authorizedClientRepository,
+        authorizedClientManager,
+        logoutHandler,
+        securityContextSupplier,
+        null);
+  }
+
+  /**
+   * As above, with a {@code skipMatcher} naming the requests this filter must leave alone, so an
+   * endpoint that answers without authentication keeps answering whatever state the caller's
+   * session is in (camunda-security-library#662). A {@code null} matcher skips nothing, which is
+   * what every other constructor passes.
+   *
+   * <p>There is deliberately no four-argument {@code (…, LogoutHandler, RequestMatcher)} overload:
+   * it would make an existing {@code (…, logoutHandler, null)} call ambiguous against the {@link
+   * Supplier} overload above, and so break a consumer's compile on upgrade. A caller that wants the
+   * default security context passes {@code SecurityContextHolder::getContext} here.
+   */
+  public OAuth2RefreshTokenFilter(
+      final OAuth2AuthorizedClientRepository authorizedClientRepository,
+      final OAuth2AuthorizedClientManager authorizedClientManager,
+      final LogoutHandler logoutHandler,
+      final Supplier<SecurityContext> securityContextSupplier,
+      final RequestMatcher skipMatcher) {
     this.authorizedClientRepository = authorizedClientRepository;
     this.authorizedClientManager = authorizedClientManager;
     this.logoutHandler = logoutHandler;
     this.securityContextSupplier = securityContextSupplier;
+    this.skipMatcher = skipMatcher;
   }
 
   public OAuth2RefreshTokenFilter(
@@ -93,6 +121,11 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
         authorizedClientManager,
         logoutHandler,
         SecurityContextHolder::getContext);
+  }
+
+  @Override
+  protected boolean shouldNotFilter(final HttpServletRequest request) {
+    return skipMatcher != null && skipMatcher.matches(request);
   }
 
   @Override

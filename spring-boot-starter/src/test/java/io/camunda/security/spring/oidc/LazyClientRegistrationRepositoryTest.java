@@ -314,6 +314,45 @@ final class LazyClientRegistrationRepositoryTest {
     appender.stop();
   }
 
+  @Test
+  void shouldAcceptALoginOnlyMisconfigurationWhenBuiltWithoutLoginRoutes() {
+    // given a flag that only ever affects the browser login chain, turned on with the call it
+    // would make turned off
+    final var loginOnlyMisconfiguration = userInfoRequiredWithoutUserInfo();
+
+    // when / then a caller that derives no login route is not concerned by it (ADR-0039)
+    assertThatNoException()
+        .isThrownBy(
+            () ->
+                LazyClientRegistrationRepository.withoutLoginRoutes(
+                    new ScopedClientRegistrationFactory(),
+                    loginOnlyMisconfiguration,
+                    "basePath=/physical-tenants/a"));
+  }
+
+  @Test
+  void shouldRejectALoginOnlyMisconfigurationWhenBuiltWithLoginRoutes() {
+    // given the same configuration
+    final var loginOnlyMisconfiguration = userInfoRequiredWithoutUserInfo();
+
+    // when / then a caller that does mount a login route still gets the failure
+    assertThatThrownBy(() -> newRepository(loginOnlyMisconfiguration))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("user-info-required=true");
+  }
+
+  private static Map<String, OidcConfiguration> userInfoRequiredWithoutUserInfo() {
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("client")
+            .redirectUri("{baseUrl}/sso-callback")
+            .issuerUri("https://idp.example.com/realms/camunda")
+            .build();
+    oidc.setUserInfoRequired(true);
+    oidc.setUserInfoEnabled(false);
+    return Map.of("oidc", oidc);
+  }
+
   private static LazyClientRegistrationRepository newRepository(
       final Map<String, OidcConfiguration> providers) {
     return new LazyClientRegistrationRepository(new ScopedClientRegistrationFactory(), providers);

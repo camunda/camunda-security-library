@@ -12,6 +12,8 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
+import io.camunda.security.spring.csrf.CsrfProtectionRequestMatcher;
+import io.camunda.security.spring.filter.OAuth2RefreshTokenFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.handler.LoggingAuthenticationFailureHandler;
 import io.camunda.security.spring.security.HttpsRedirectCustomizer;
@@ -21,6 +23,7 @@ import io.camunda.security.spring.security.SecurityHeadersCustomizer;
 import io.camunda.security.spring.spi.OidcApiAuthenticationEntryPoint;
 import java.util.Collection;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +35,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
@@ -39,6 +43,7 @@ import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthen
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.AuthenticationEntryPointFailureHandler;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.savedrequest.NullRequestCache;
@@ -134,6 +139,7 @@ public final class ScopedApiSecurityChainBuilder {
         null,
         sessionRepositoryFilter,
         null,
+        null,
         X_CSRF_TOKEN);
   }
 
@@ -169,6 +175,39 @@ public final class ScopedApiSecurityChainBuilder {
         jwtAuthenticationConverter,
         sessionRepositoryFilter,
         null,
+        null,
+        X_CSRF_TOKEN);
+  }
+
+  /**
+   * Overload that additionally installs an {@link OAuth2RefreshTokenFilter} from the supplied
+   * {@link ApiTokenRefreshSupport}, so a session-authenticated caller on this chain gets the same
+   * transparent access-token refresh the webapp chain performs (camunda-security-library#662). A
+   * {@code null} {@code refreshSupport} installs no filter, which is what every other overload
+   * passes.
+   *
+   * <p>Only session-authenticated requests are affected: the filter acts on an {@code
+   * OAuth2AuthenticationToken} and ignores the {@code JwtAuthenticationToken} a bearer request
+   * produces.
+   */
+  public SecurityFilterChain buildOidcApiChain(
+      final HttpSecurity http,
+      final Collection<String> matchers,
+      final Collection<String> unprotectedMatchers,
+      final JwtDecoder jwtDecoder,
+      final Converter<Jwt, Authentication> jwtAuthenticationConverter,
+      final SessionRepositoryFilter<?> sessionRepositoryFilter,
+      final ApiTokenRefreshSupport refreshSupport)
+      throws Exception {
+    return buildOidcApiChainWith(
+        http,
+        matchers,
+        unprotectedMatchers,
+        jwtDecoder,
+        jwtAuthenticationConverter,
+        sessionRepositoryFilter,
+        refreshSupport,
+        null,
         X_CSRF_TOKEN);
   }
 
@@ -179,6 +218,7 @@ public final class ScopedApiSecurityChainBuilder {
       final JwtDecoder jwtDecoder,
       final Converter<Jwt, Authentication> jwtAuthenticationConverter,
       final SessionRepositoryFilter<?> sessionRepositoryFilter,
+      final ApiTokenRefreshSupport refreshSupport,
       final String csrfCookiePath,
       final String csrfCookieName)
       throws Exception {
@@ -230,6 +270,28 @@ public final class ScopedApiSecurityChainBuilder {
             .oauth2Login(AbstractHttpConfigurer::disable)
             .oidcLogout(AbstractHttpConfigurer::disable)
             .logout(AbstractHttpConfigurer::disable);
+
+    if (refreshSupport != null) {
+      // Anchored on AuthorizationFilter exactly as on the webapp chain, so a session restored here
+      // carries a current access token instead of the expired one it kept until the next webapp
+      // request (camunda-security-library#662). The filter force-logs-out and raises an
+      // OAuth2AuthenticationException when the token is expired and cannot be renewed;
+      // ExceptionTranslationFilter then answers with this chain's authentication entry point.
+      //
+      // The unprotected matchers are skipped: those endpoints answer without authentication, so a
+      // browser whose session token has expired must still get an answer from them rather than the
+      // 401/503 — and the forced logout — a protected path would give it.
+      LOG.debug("Installing OAuth2RefreshTokenFilter on OIDC API chain for matchers={}", matchers);
+      filterChainBuilder.addFilterAfter(
+          new OAuth2RefreshTokenFilter(
+              refreshSupport.authorizedClientRepository(),
+              refreshSupport.authorizedClientManager(),
+              refreshSupport.logoutHandler(),
+              SecurityContextHolder::getContext,
+              CsrfProtectionRequestMatcher.buildPathsMatcher(Set.copyOf(unprotectedMatchers))),
+          AuthorizationFilter.class);
+    }
+
     SecurityFilterChainSupport.applyCorsConfiguration(filterChainBuilder, corsSource);
     SecurityFilterChainSupport.applyHttpsRedirectCustomizers(
         filterChainBuilder, httpsRedirectCustomizers);
@@ -347,6 +409,32 @@ public final class ScopedApiSecurityChainBuilder {
       final Supplier<Converter<Jwt, Authentication>> oidcAuthenticationConverterSupplier,
       final SessionRepositoryFilter<?> sessionRepositoryFilter)
       throws Exception {
+    return buildScopedApiChain(
+        http,
+        basePath,
+        authentication,
+        oidcDecoderSupplier,
+        oidcAuthenticationConverterSupplier,
+        sessionRepositoryFilter,
+        null);
+  }
+
+  /**
+   * Overload of {@link #buildScopedApiChain(HttpSecurity, String, AuthenticationConfiguration,
+   * Supplier, Supplier, SessionRepositoryFilter)} that additionally installs an {@link
+   * OAuth2RefreshTokenFilter} on the OIDC arm from the supplied {@link ApiTokenRefreshSupport}
+   * (camunda-security-library#662). A {@code null} {@code refreshSupport} installs no filter. The
+   * BASIC arm ignores it: it authenticates no OAuth2 client and so holds no token to refresh.
+   */
+  public SecurityFilterChain buildScopedApiChain(
+      final HttpSecurity http,
+      final String basePath,
+      final AuthenticationConfiguration authentication,
+      final Supplier<JwtDecoder> oidcDecoderSupplier,
+      final Supplier<Converter<Jwt, Authentication>> oidcAuthenticationConverterSupplier,
+      final SessionRepositoryFilter<?> sessionRepositoryFilter,
+      final ApiTokenRefreshSupport refreshSupport)
+      throws Exception {
     Objects.requireNonNull(basePath, "basePath must not be null");
     Objects.requireNonNull(authentication, "authentication must not be null");
     final var method =
@@ -378,6 +466,7 @@ public final class ScopedApiSecurityChainBuilder {
             decoder,
             converter,
             sessionRepositoryFilter,
+            refreshSupport,
             basePath,
             csrfCookieName);
       }
