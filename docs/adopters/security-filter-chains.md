@@ -1136,8 +1136,22 @@ HTTP response headers are configured by `HeaderConfiguration`. Defaults are the 
 
 Session policy:
 
-- API chains (OIDC and basic) — `SessionCreationPolicy.NEVER`. Stateless; no cookie issued.
+- API chains (OIDC and basic) — `SessionCreationPolicy.NEVER`. They never create a session and never issue a cookie, but they do **restore** one: the same `SessionRepositoryFilter` the matching webapp chain uses is installed before `SecurityContextHolderFilter`, so a browser that logged in on the webapp chain is authenticated on API paths without presenting a bearer token. A bearer-only request is unaffected and still creates nothing.
 - Webapp chains — session-backed. The cookie is `camunda-session`; logout clears it along with `X-CSRF-TOKEN`.
+
+### Access-token refresh on API chains
+
+An OIDC API chain refreshes a session-authenticated caller's access token exactly as the webapp chain does: an `OAuth2RefreshTokenFilter` runs after `AuthorizationFilter`, renews an access token that has expired — or, for tokens whose lifetime exceeds two minutes, one that expires within the next 60 seconds; the skew is deliberately skipped for shorter-lived tokens, which would otherwise sit in a perpetual refresh loop — and writes the renewed authorized client back to the session. Host code that reads the stored access token — for example to re-verify a permission against the IdP — can therefore rely on it being current on every request, not only after a webapp request. See [ADR-0039](../adr/0039-refresh-access-tokens-on-api-chains.md).
+
+What this means operationally:
+
+- When the access token has expired **and cannot be renewed** — no refresh token was issued, or the IdP rejects the refresh — the caller is logged out and the request gets `401` with the chain's RFC 6750 bearer challenge, instead of being served with a stale token. Deployments whose IdP issues no refresh token (for example, no `offline_access` scope) will see API sessions end at the access token's lifetime. Request `offline_access` if you need the session to outlive the access token.
+- When the refresh fails because the **IdP is unreachable or erroring**, the session is kept and the request gets `503` with a `Retry-After` header, so the client can retry once the IdP recovers. Previously such a request went through with the stale token, so this is visible to operators during an IdP outage.
+- The forced logout invalidates the session and expires the session and CSRF cookies — the scope's own cookie names, under the scope's path, for a path-scoped chain.
+- Bearer requests are untouched: the filter acts on an `OAuth2AuthenticationToken` and ignores the `JwtAuthenticationToken` a bearer request produces.
+- **Unprotected API paths are exempt.** Anything in `unprotectedApiPaths()` is permit-all, so the refresh filter skips it: a browser whose session token has expired still gets an answer from a public endpoint rather than a `401` and a forced logout.
+- HTTP Basic API chains hold no OAuth2 token and get no refresh filter. Neither do the permit-all chains built for `unprotected-api=true`.
+- A bearer-only deployment (`camunda.security.authentication.webapp-enabled=false`) registers no `OAuth2AuthorizedClientRepository`/`OAuth2AuthorizedClientManager`, so its API chain is built without the filter — there is no session login and so no stored token to refresh.
 
 ## What this library deliberately does *not* provide
 
