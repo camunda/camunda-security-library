@@ -8,7 +8,7 @@
 package io.camunda.security.spring.filter;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -23,7 +23,6 @@ import jakarta.servlet.FilterChain;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -60,12 +59,92 @@ class OAuth2RefreshTokenFilterTest {
   @Mock private FilterChain chain;
 
   @Test
+  void shouldPassThroughWhenNoOAuth2AuthenticationPresent() throws Exception {
+    // given - an unauthenticated request (empty security context)
+    final var filter = filter(new SecurityContextImpl());
+    final var request = new MockHttpServletRequest();
+    final var response = new MockHttpServletResponse();
+
+    // when
+    filter.doFilter(request, response, chain);
+
+    // then - filter is a no-op for non-OAuth2 authentication
+    verify(chain).doFilter(request, response);
+    verify(authorizedClientRepository, never()).loadAuthorizedClient(any(), any(), any());
+  }
+
+  @Test
+  void shouldLogoutWhenNoAuthorizedClientCanBeLoaded() throws Exception {
+    // given - the repository has nothing stored for this principal/registration
+    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    when(authorizedClientRepository.loadAuthorizedClient(
+            eq(REGISTRATION_ID), eq(authenticationToken), any()))
+        .thenReturn(null);
+    final var filter = filter(authenticationToken);
+    final var request = new MockHttpServletRequest();
+    final var response = new MockHttpServletResponse();
+
+    // when
+    final OAuth2AuthenticationException thrown =
+        catchThrowableOfType(
+            () -> filter.doFilter(request, response, chain), OAuth2AuthenticationException.class);
+
+    // then
+    assertThat(thrown.getError().getErrorCode()).isEqualTo("unauthorized_client");
+    verify(logoutHandler).logout(eq(request), eq(response), eq(authenticationToken));
+    verify(chain, never()).doFilter(any(), any());
+  }
+
+  @Test
+  void shouldPassThroughWhenAccessTokenNotExpired() throws Exception {
+    // given - a still-valid access token
+    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    final OAuth2AuthorizedClient authorizedClient = authorizedClient(false, true);
+    when(authorizedClientRepository.loadAuthorizedClient(
+            eq(REGISTRATION_ID), eq(authenticationToken), any()))
+        .thenReturn(authorizedClient);
+    final var filter = filter(authenticationToken);
+    final var request = new MockHttpServletRequest();
+    final var response = new MockHttpServletResponse();
+
+    // when
+    filter.doFilter(request, response, chain);
+
+    // then - no refresh is attempted
+    verify(chain).doFilter(request, response);
+    verify(authorizedClientManager, never()).authorize(any());
+  }
+
+  @Test
+  void shouldLogoutWhenAccessTokenExpiredAndNoRefreshTokenExists() throws Exception {
+    // given - an expired access token with no refresh token to fall back on
+    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    final OAuth2AuthorizedClient authorizedClient = authorizedClient(true, false);
+    when(authorizedClientRepository.loadAuthorizedClient(
+            eq(REGISTRATION_ID), eq(authenticationToken), any()))
+        .thenReturn(authorizedClient);
+    final var filter = filter(authenticationToken);
+    final var request = new MockHttpServletRequest();
+    final var response = new MockHttpServletResponse();
+
+    // when
+    final OAuth2AuthenticationException thrown =
+        catchThrowableOfType(
+            () -> filter.doFilter(request, response, chain), OAuth2AuthenticationException.class);
+
+    // then
+    assertThat(thrown.getError().getErrorCode()).isEqualTo("access_token_expired");
+    verify(logoutHandler).logout(eq(request), eq(response), eq(authenticationToken));
+    verify(authorizedClientManager, never()).authorize(any());
+  }
+
+  @Test
   void shouldLogWarnAndConvertToControlledLogoutWhenRefreshFailsWithInvalidGrant()
       throws Exception {
     // given - an expired access token with a refresh token, whose refresh attempt fails because
     // the refresh token itself is no longer valid (invalid_grant), as reported by the IdP
     final OAuth2AuthenticationToken authenticationToken = authenticationToken();
-    final OAuth2AuthorizedClient authorizedClient = expiredAuthorizedClientWithRefreshToken();
+    final OAuth2AuthorizedClient authorizedClient = authorizedClient(true, true);
     when(authorizedClientRepository.loadAuthorizedClient(
             eq(REGISTRATION_ID), eq(authenticationToken), any()))
         .thenReturn(authorizedClient);
@@ -75,35 +154,152 @@ class OAuth2RefreshTokenFilterTest {
         .thenThrow(
             new ClientAuthorizationException(
                 new OAuth2Error("invalid_grant"), REGISTRATION_ID, "Token is not active"));
-    final var filter =
-        new OAuth2RefreshTokenFilter(
-            authorizedClientRepository,
-            authorizedClientManager,
-            logoutHandler,
-            securityContextSupplier(authenticationToken));
-
+    final var filter = filter(authenticationToken);
     final var request = new MockHttpServletRequest();
     final var response = new MockHttpServletResponse();
 
     final ListAppender<ILoggingEvent> appender = attachAppender();
+    final OAuth2AuthenticationException thrown;
     try {
       // when / then - the raw ClientAuthorizationException must not escape the filter: it is
       // caught and converted to the controlled OAuth2AuthenticationException + logout flow
-      assertThatThrownBy(() -> filter.doFilter(request, response, chain))
-          .isInstanceOf(OAuth2AuthenticationException.class)
-          .isNotInstanceOf(ClientAuthorizationException.class);
+      thrown =
+          catchThrowableOfType(
+              () -> filter.doFilter(request, response, chain), OAuth2AuthenticationException.class);
     } finally {
       detachAppender(appender);
     }
 
+    assertThat(thrown).isNotInstanceOf(ClientAuthorizationException.class);
+    assertThat(thrown.getError().getErrorCode()).isEqualTo("refresh_token_failed");
     verify(logoutHandler).logout(eq(request), eq(response), eq(authenticationToken));
     verify(chain, never()).doFilter(any(), any());
     assertThat(appender.list)
         .anySatisfy(
             event -> {
               assertThat(event.getLevel()).isEqualTo(Level.WARN);
-              assertThat(event.getFormattedMessage()).contains("Failed to refresh access token");
+              assertThat(event.getFormattedMessage()).contains("Token is not active");
             });
+  }
+
+  @Test
+  void shouldSanitizeAndTruncateOverlongMultilineErrorMessageBeforeLogging() throws Exception {
+    // given - a refresh failure whose message contains injected newlines (a log-forging attempt)
+    // and far exceeds any reasonable log line length
+    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    final OAuth2AuthorizedClient authorizedClient = authorizedClient(true, true);
+    when(authorizedClientRepository.loadAuthorizedClient(
+            eq(REGISTRATION_ID), eq(authenticationToken), any()))
+        .thenReturn(authorizedClient);
+    final String maliciousMessage =
+        "invalid_grant\nWARN some.other.Logger -- fabricated log line\r\n" + "x".repeat(400);
+    when(authorizedClientManager.authorize(any()))
+        .thenThrow(
+            new ClientAuthorizationException(
+                new OAuth2Error("invalid_grant"), REGISTRATION_ID, maliciousMessage));
+    final var filter = filter(authenticationToken);
+    final var request = new MockHttpServletRequest();
+    final var response = new MockHttpServletResponse();
+
+    final ListAppender<ILoggingEvent> appender = attachAppender();
+    try {
+      catchThrowableOfType(
+          () -> filter.doFilter(request, response, chain), OAuth2AuthenticationException.class);
+    } finally {
+      detachAppender(appender);
+    }
+
+    // then - the logged line is single-line and bounded, regardless of what the IdP sent
+    assertThat(appender.list)
+        .anySatisfy(
+            event -> {
+              assertThat(event.getLevel()).isEqualTo(Level.WARN);
+              final String formatted = event.getFormattedMessage();
+              assertThat(formatted).doesNotContain("\n").doesNotContain("\r");
+              assertThat(formatted).contains("...(truncated)");
+            });
+  }
+
+  @Test
+  void shouldLogoutWhenAuthorizedClientManagerDeclinesReauthorization() throws Exception {
+    // given - the manager returns the same (already-expired) instance, meaning re-authorization
+    // is not supported for this client
+    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    final OAuth2AuthorizedClient authorizedClient = authorizedClient(true, true);
+    when(authorizedClientRepository.loadAuthorizedClient(
+            eq(REGISTRATION_ID), eq(authenticationToken), any()))
+        .thenReturn(authorizedClient);
+    when(authorizedClientManager.authorize(any())).thenReturn(authorizedClient);
+    final var filter = filter(authenticationToken);
+    final var request = new MockHttpServletRequest();
+    final var response = new MockHttpServletResponse();
+
+    // when
+    final OAuth2AuthenticationException thrown =
+        catchThrowableOfType(
+            () -> filter.doFilter(request, response, chain), OAuth2AuthenticationException.class);
+
+    // then
+    assertThat(thrown.getError().getErrorCode()).isEqualTo("refresh_token_failed");
+    verify(logoutHandler).logout(eq(request), eq(response), eq(authenticationToken));
+    verify(chain, never()).doFilter(any(), any());
+  }
+
+  @Test
+  void shouldLogoutWhenRefreshedClientIsStillExpired() throws Exception {
+    // given - the manager hands back a genuinely new client, but its access token is already
+    // expired too (e.g. a clock-skewed IdP)
+    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    final OAuth2AuthorizedClient authorizedClient = authorizedClient(true, true);
+    final OAuth2AuthorizedClient stillExpiredRefreshedClient = authorizedClient(true, true);
+    when(authorizedClientRepository.loadAuthorizedClient(
+            eq(REGISTRATION_ID), eq(authenticationToken), any()))
+        .thenReturn(authorizedClient);
+    when(authorizedClientManager.authorize(any())).thenReturn(stillExpiredRefreshedClient);
+    final var filter = filter(authenticationToken);
+    final var request = new MockHttpServletRequest();
+    final var response = new MockHttpServletResponse();
+
+    // when
+    final OAuth2AuthenticationException thrown =
+        catchThrowableOfType(
+            () -> filter.doFilter(request, response, chain), OAuth2AuthenticationException.class);
+
+    // then
+    assertThat(thrown.getError().getErrorCode()).isEqualTo("access_token_expired");
+    verify(logoutHandler).logout(eq(request), eq(response), eq(authenticationToken));
+    verify(chain, never()).doFilter(any(), any());
+  }
+
+  @Test
+  void shouldContinueFilterChainWhenRefreshSucceeds() throws Exception {
+    // given - the manager successfully refreshes into a new, unexpired client
+    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    final OAuth2AuthorizedClient authorizedClient = authorizedClient(true, true);
+    final OAuth2AuthorizedClient refreshedClient = authorizedClient(false, true);
+    when(authorizedClientRepository.loadAuthorizedClient(
+            eq(REGISTRATION_ID), eq(authenticationToken), any()))
+        .thenReturn(authorizedClient);
+    when(authorizedClientManager.authorize(any())).thenReturn(refreshedClient);
+    final var filter = filter(authenticationToken);
+    final var request = new MockHttpServletRequest();
+    final var response = new MockHttpServletResponse();
+
+    // when
+    filter.doFilter(request, response, chain);
+
+    // then
+    verify(chain).doFilter(request, response);
+    verify(logoutHandler, never()).logout(any(), any(), any());
+  }
+
+  private OAuth2RefreshTokenFilter filter(final SecurityContext securityContext) {
+    return new OAuth2RefreshTokenFilter(
+        authorizedClientRepository, authorizedClientManager, logoutHandler, () -> securityContext);
+  }
+
+  private OAuth2RefreshTokenFilter filter(final OAuth2AuthenticationToken authenticationToken) {
+    return filter(new SecurityContextImpl(authenticationToken));
   }
 
   private static OAuth2AuthenticationToken authenticationToken() {
@@ -113,7 +309,8 @@ class OAuth2RefreshTokenFilterTest {
     return new OAuth2AuthenticationToken(principal, principal.getAuthorities(), REGISTRATION_ID);
   }
 
-  private static OAuth2AuthorizedClient expiredAuthorizedClientWithRefreshToken() {
+  private static OAuth2AuthorizedClient authorizedClient(
+      final boolean expired, final boolean withRefreshToken) {
     final ClientRegistration clientRegistration =
         ClientRegistration.withRegistrationId(REGISTRATION_ID)
             .clientId("client-id")
@@ -123,22 +320,24 @@ class OAuth2RefreshTokenFilterTest {
             .authorizationUri("https://idp.example.com/authorize")
             .tokenUri("https://idp.example.com/token")
             .build();
-    final OAuth2AccessToken expiredAccessToken =
-        new OAuth2AccessToken(
-            OAuth2AccessToken.TokenType.BEARER,
-            "expired-token",
-            Instant.now().minusSeconds(120),
-            Instant.now().minusSeconds(60));
+    final OAuth2AccessToken accessToken =
+        expired
+            ? new OAuth2AccessToken(
+                OAuth2AccessToken.TokenType.BEARER,
+                "expired-token",
+                Instant.now().minusSeconds(120),
+                Instant.now().minusSeconds(60))
+            : new OAuth2AccessToken(
+                OAuth2AccessToken.TokenType.BEARER,
+                "valid-token",
+                Instant.now(),
+                Instant.now().plusSeconds(3600));
+    if (!withRefreshToken) {
+      return new OAuth2AuthorizedClient(clientRegistration, "user-1", accessToken);
+    }
     final OAuth2RefreshToken refreshToken =
         new OAuth2RefreshToken("refresh-token", Instant.now().minusSeconds(120));
-    return new OAuth2AuthorizedClient(
-        clientRegistration, "user-1", expiredAccessToken, refreshToken);
-  }
-
-  private static Supplier<SecurityContext> securityContextSupplier(
-      final OAuth2AuthenticationToken authenticationToken) {
-    final SecurityContext securityContext = new SecurityContextImpl(authenticationToken);
-    return () -> securityContext;
+    return new OAuth2AuthorizedClient(clientRegistration, "user-1", accessToken, refreshToken);
   }
 
   private static ListAppender<ILoggingEvent> attachAppender() {

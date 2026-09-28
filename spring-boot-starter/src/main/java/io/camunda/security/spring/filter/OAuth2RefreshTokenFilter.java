@@ -43,6 +43,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
 
   private static final Logger LOG = LoggerFactory.getLogger(OAuth2RefreshTokenFilter.class);
+  private static final int MAX_LOGGED_ERROR_MESSAGE_LENGTH = 200;
 
   private final Duration clockSkew = Duration.ofSeconds(60L);
   private final Duration doubleClockSkew = clockSkew.multipliedBy(2);
@@ -135,7 +136,7 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
       LOG.warn(
           "Failed to refresh access token for principal '{}': {}",
           authenticationToken.getName(),
-          e.getMessage());
+          sanitizeForLog(e.getMessage()));
       logoutAndThrowAuthenticationException(
           request, response, authenticationToken, "refresh_token_failed", e);
     }
@@ -240,6 +241,21 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
       final Throwable e) {
     forceLogout(authenticationToken, request, response);
     throw new OAuth2AuthenticationException(new OAuth2Error(reasonCode), e);
+  }
+
+  /**
+   * The message comes from the IdP's OAuth2 error response and is otherwise logged verbatim; strip
+   * newlines to prevent log forging and bound the length so a misbehaving IdP can't flood the log.
+   */
+  private static String sanitizeForLog(final String message) {
+    if (message == null) {
+      return "no error detail provided";
+    }
+
+    final String singleLine = message.replaceAll("[\\r\\n]+", " ").strip();
+    return singleLine.length() > MAX_LOGGED_ERROR_MESSAGE_LENGTH
+        ? singleLine.substring(0, MAX_LOGGED_ERROR_MESSAGE_LENGTH) + "...(truncated)"
+        : singleLine;
   }
 
   private void forceLogout(
