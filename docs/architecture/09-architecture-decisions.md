@@ -48,6 +48,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0033: Carry the interactive-login settings in the client registration](../adr/0033-login-settings-carried-by-the-registration.md)
 - [ADR-0034: Named providers inherit the principal claims of the default slot](../adr/0034-named-providers-inherit-principal-claims.md)
 - [ADR-0035: Explain failed OIDC browser logins on a page the host can word](../adr/0035-explain-failed-oidc-browser-logins.md)
+- [ADR-0036: Revoke the session refresh token on OIDC logout](../adr/0036-revoke-refresh-token-on-oidc-logout.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 

@@ -288,6 +288,12 @@
       "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
     },
     {
+      "name": "camunda.security.authentication.oidc.revocation-endpoint-uri",
+      "type": "java.lang.String",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "description": "The provider's RFC 7009 token revocation endpoint, used at logout to revoke the session's refresh token. Issuer discovery already supplies this as 'revocation_endpoint', so it only needs setting when endpoints are configured explicitly. Unset by default; a provider that publishes no revocation endpoint skips revocation. Resolved per OIDC provider."
+    },
+    {
       "name": "camunda.security.authentication.oidc.grant-type",
       "type": "java.lang.String",
       "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
@@ -369,7 +375,10 @@
       "name": "camunda.security.authentication.oidc.scope",
       "type": "java.util.List<java.lang.String>",
       "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
-      "defaultValue": ["openid", "profile"]
+      "defaultValue": [
+        "openid",
+        "profile"
+      ]
     },
     {
       "name": "camunda.security.authentication.oidc.token-uri",

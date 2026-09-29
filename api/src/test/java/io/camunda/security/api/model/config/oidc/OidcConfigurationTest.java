@@ -68,6 +68,10 @@ public class OidcConfigurationTest {
             "endSessionEndpointUri is set",
             OidcConfiguration.builder().endSessionEndpointUri("end-session-endpoint-uri").build(),
             true),
+        Arguments.of(
+            "revocationEndpointUri is set",
+            OidcConfiguration.builder().revocationEndpointUri("revocation-endpoint-uri").build(),
+            true),
         Arguments.of("clientId is set", OidcConfiguration.builder().clientId("cid").build(), true),
         Arguments.of(
             "clientName is set",
