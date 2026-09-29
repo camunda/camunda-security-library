@@ -184,9 +184,11 @@ class OAuth2RefreshTokenFilterTest {
 
   @Test
   void shouldSanitizeAndTruncateOverlongMultilineErrorMessageBeforeLogging() throws Exception {
-    // given - a refresh failure whose message contains injected newlines (a log-forging attempt)
-    // and far exceeds any reasonable log line length
-    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    // given - a refresh failure whose message AND principal name (both provider-controlled)
+    // contain injected newlines (a log-forging attempt); the message also far exceeds any
+    // reasonable log line length
+    final OAuth2AuthenticationToken authenticationToken =
+        authenticationToken("user-1\nWARN some.other.Logger -- fabricated principal name");
     final OAuth2AuthorizedClient authorizedClient = authorizedClient(true, true);
     when(authorizedClientRepository.loadAuthorizedClient(
             eq(REGISTRATION_ID), eq(authenticationToken), any()))
@@ -303,9 +305,13 @@ class OAuth2RefreshTokenFilterTest {
   }
 
   private static OAuth2AuthenticationToken authenticationToken() {
+    return authenticationToken("user-1");
+  }
+
+  private static OAuth2AuthenticationToken authenticationToken(final String principalName) {
     final OAuth2User principal =
         new DefaultOAuth2User(
-            List.of(new SimpleGrantedAuthority("ROLE_USER")), Map.of("sub", "user-1"), "sub");
+            List.of(new SimpleGrantedAuthority("ROLE_USER")), Map.of("sub", principalName), "sub");
     return new OAuth2AuthenticationToken(principal, principal.getAuthorities(), REGISTRATION_ID);
   }
 
