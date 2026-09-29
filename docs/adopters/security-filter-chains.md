@@ -376,6 +376,10 @@ When `resource` is set on a provider, every entry in the list is added as a `res
 
 Arbitrary key/value pairs that are appended verbatim to the authorization request. Useful for IdP-specific extensions such as `prompt`, `audience`, or vendor-specific switches. Values are passed through unchanged — the library does not interpret them.
 
+#### `max_age` in SaaS
+
+When `camunda.security.saas.organization-id` and `cluster-id` are set, CSL also adds the OIDC `max_age` parameter to every authorization request, set to `camunda.security.session.max-inactive-interval` in seconds. The IdP then shows its login page instead of silently re-authenticating a user whose last sign-in there is older than the session timeout. Outside SaaS nothing is added. To use a different value, set `max_age` under `authorize-request.additional-parameters`; it takes precedence. See [ADR-0031](../adr/0031-oidc-max-age-in-saas.md).
+
 #### Worked example
 
 Both knobs are valid on the flat block and on any `providers.oidc.<id>.*` entry:

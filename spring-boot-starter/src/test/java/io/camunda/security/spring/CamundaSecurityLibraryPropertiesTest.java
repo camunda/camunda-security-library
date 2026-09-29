@@ -17,6 +17,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcProvidersConfiguration;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -435,5 +436,28 @@ class CamundaSecurityLibraryPropertiesTest {
               final var properties = context.getBean(CamundaSecurityLibraryProperties.class);
               assertThat(properties.getAuthentication().isWebappEnabled()).isFalse();
             });
+  }
+
+  @Test
+  void shouldUseTheSessionIdleTimeoutAsOidcAuthorizeMaxAgeInSaas() {
+    runner
+        .withPropertyValues(
+            "camunda.security.saas.organization-id=org",
+            "camunda.security.saas.cluster-id=cluster",
+            "camunda.security.session.max-inactive-interval=45m")
+        .run(
+            context -> {
+              final var properties = context.getBean(CamundaSecurityLibraryProperties.class);
+              assertThat(properties.oidcAuthorizeMaxAge()).isEqualTo(Duration.ofMinutes(45));
+            });
+  }
+
+  @Test
+  void shouldNotSetOidcAuthorizeMaxAgeOutsideSaas() {
+    runner.run(
+        context -> {
+          final var properties = context.getBean(CamundaSecurityLibraryProperties.class);
+          assertThat(properties.oidcAuthorizeMaxAge()).isNull();
+        });
   }
 }

@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.model.config.oidc.AuthorizeRequestConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -186,6 +187,68 @@ class CamundaOidcAuthorizationRequestResolverTest {
     assertThat(result.getAdditionalParameters())
         .containsEntry("prompt", "consent")
         .containsEntry("resource", List.of("https://api.example.com"));
+  }
+
+  @Test
+  void shouldSendMaxAgeInWholeSecondsWhenConfigured() {
+    // given
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration);
+    final var resolver =
+        new CamundaOidcAuthorizationRequestResolver(
+            clientRegistrationRepository,
+            Map.of(REGISTRATION_ID, new OidcConfiguration()),
+            "/oauth2/authorization",
+            Duration.ofMinutes(30));
+
+    // when
+    final var result =
+        resolver.resolve(new MockHttpServletRequest("GET", AUTHORIZATION_REQUEST_URI));
+
+    // then
+    assertThat(result.getAdditionalParameters()).containsEntry("max_age", 1800L);
+    assertThat(result.getAuthorizationRequestUri()).contains("max_age=1800");
+  }
+
+  @Test
+  void shouldNotSendMaxAgeWhenNotConfigured() {
+    // given
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration);
+    final var resolver =
+        new CamundaOidcAuthorizationRequestResolver(
+            clientRegistrationRepository, Map.of(REGISTRATION_ID, new OidcConfiguration()));
+
+    // when
+    final var result =
+        resolver.resolve(new MockHttpServletRequest("GET", AUTHORIZATION_REQUEST_URI));
+
+    // then
+    assertThat(result.getAdditionalParameters()).doesNotContainKey("max_age");
+  }
+
+  @Test
+  void shouldPreferAnExplicitMaxAgeAdditionalParameter() {
+    // given
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration);
+    final var oidc = new OidcConfiguration();
+    final var authorize = new AuthorizeRequestConfiguration();
+    authorize.setAdditionalParameters(Map.<String, Object>of("max_age", "60"));
+    oidc.setAuthorizeRequest(authorize);
+    final var resolver =
+        new CamundaOidcAuthorizationRequestResolver(
+            clientRegistrationRepository,
+            Map.of(REGISTRATION_ID, oidc),
+            "/oauth2/authorization",
+            Duration.ofMinutes(30));
+
+    // when
+    final var result =
+        resolver.resolve(new MockHttpServletRequest("GET", AUTHORIZATION_REQUEST_URI));
+
+    // then
+    assertThat(result.getAdditionalParameters()).containsEntry("max_age", "60");
   }
 
   @Test
