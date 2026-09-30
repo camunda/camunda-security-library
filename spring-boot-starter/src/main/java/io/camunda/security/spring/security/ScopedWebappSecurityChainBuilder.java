@@ -15,6 +15,7 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.SESSION_COOKIE;
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
+import com.nimbusds.jose.jwk.JWK;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
@@ -27,6 +28,7 @@ import io.camunda.security.spring.filter.SessionHeartbeatFilter;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
 import io.camunda.security.spring.handler.OAuth2AuthenticationExceptionHandler;
+import io.camunda.security.spring.oidc.AssertionJwkProvider;
 import io.camunda.security.spring.oidc.CamundaOidcAuthorizationRequestResolver;
 import io.camunda.security.spring.oidc.LazyClientRegistrationRepository;
 import io.camunda.security.spring.oidc.OidcRedirectionEndpoint;
@@ -37,11 +39,13 @@ import io.camunda.security.spring.scope.BasePaths;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import io.camunda.security.spring.spi.OidcAuthenticationEntryPoint;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -268,7 +272,15 @@ public final class ScopedWebappSecurityChainBuilder {
                   logout
                       .logoutUrl(logoutUrl)
                       .deleteCookies(SESSION_COOKIE, X_CSRF_TOKEN)
-                      .invalidateHttpSession(true);
+                      .invalidateHttpSession(true)
+                      // Added, not set as the success handler, so it runs before
+                      // LogoutConfigurer's own SecurityContextLogoutHandler invalidates the
+                      // session the refresh token lives in (ADR-0032).
+                      .addLogoutHandler(
+                          refreshTokenRevocationLogoutHandler(
+                              clientRegistrationRepository,
+                              authorizedClientRepository,
+                              primaryOidcSources()));
                   logout.logoutSuccessHandler(
                       oidcLogoutSuccessHandler(
                           clientRegistrationRepository, "", primaryOidcSources()));
@@ -685,6 +697,76 @@ public final class ScopedWebappSecurityChainBuilder {
   }
 
   /**
+   * Builds the handler that revokes the session refresh token at logout (ADR-0032).
+   *
+   * <p>{@code sources} is the OIDC configuration of the scope this chain belongs to, passed in the
+   * same way {@link #oidcLogoutSuccessHandler} takes it, and for the same reason: a scoped chain
+   * may point at its own IdP(s), whose registrationIds the cluster-wide {@link
+   * OidcProviderConfigurationPort} has never heard of. Resolving an assertion key through that port
+   * would fail for a scoped {@code private_key_jwt} provider, or — where two scopes share a
+   * registrationId — sign with the wrong scope's key. Both failures are swallowed by the handler's
+   * fail-soft path, so the refresh token would simply stay valid with nothing but a {@code WARN} to
+   * show for it.
+   *
+   * <p>An empty {@code sources} map yields no resolver, and the handler then says so on the one
+   * client-authentication method that needs one.
+   */
+  private LogoutHandler refreshTokenRevocationLogoutHandler(
+      final ClientRegistrationRepository repo,
+      final OAuth2AuthorizedClientRepository authorizedClientRepository,
+      final Map<String, OidcConfiguration> sources) {
+    return new RefreshTokenRevocationLogoutHandler(
+        repo, authorizedClientRepository, assertionJwkResolver(sources));
+  }
+
+  /**
+   * Resolves an assertion signing key from the given scope's OIDC configuration, or {@code null}
+   * when the scope configures no providers at all.
+   *
+   * <p>Package-private so a test can assert that a scope resolves its own key and misses a
+   * registration it does not configure, which is the distinction the cluster-wide port loses.
+   *
+   * <p>{@link AssertionJwkProvider} is built once per chain but {@code createJwk} runs per
+   * revocation, so a rotated keystore is picked up without a restart.
+   */
+  static Function<ClientRegistration, JWK> assertionJwkResolver(
+      final Map<String, OidcConfiguration> sources) {
+    if (sources == null || sources.isEmpty()) {
+      return null;
+    }
+    final var jwkProvider = new AssertionJwkProvider(scopedPort(sources));
+    return registration -> jwkProvider.createJwk(registration.getRegistrationId());
+  }
+
+  /**
+   * Adapts a resolved {@code registrationId -> OidcConfiguration} map to the port {@link
+   * AssertionJwkProvider} reads, so the provider can be reused per scope without the library
+   * growing a second way to look a registration up.
+   */
+  private static OidcProviderConfigurationPort scopedPort(
+      final Map<String, OidcConfiguration> sources) {
+    // LinkedHashMap, not Map.copyOf: this runs during chain construction, and Map.copyOf throws
+    // on a null key or value. A host-supplied OidcProviderConfigurationPort may return a map with
+    // a blank registrationId — the provider-map invariant treats that as warn-only, not fatal
+    // (see ScopedClientRegistrationFactory#withoutBlankRegistrationIds and the filtering in
+    // LazyClientRegistrationRepository) — so copying it must not turn a tolerated entry into a
+    // failed startup. A blank key simply never matches the registrationId a real logout looks up.
+    final Map<String, OidcConfiguration> byRegistrationId =
+        Collections.unmodifiableMap(new LinkedHashMap<>(sources));
+    return new OidcProviderConfigurationPort() {
+      @Override
+      public OidcConfiguration getOidcAuthenticationConfigurationById(final String registrationId) {
+        return byRegistrationId.get(registrationId);
+      }
+
+      @Override
+      public Map<String, OidcConfiguration> getOidcAuthenticationConfigurations() {
+        return byRegistrationId;
+      }
+    };
+  }
+
+  /**
    * Builds the chain's logout success handler, resolving {@code post_logout_redirect_uri} per
    * registration.
    *
@@ -937,7 +1019,13 @@ public final class ScopedWebappSecurityChainBuilder {
                       .addLogoutHandler(
                           pathScopedCookieClearingLogoutHandler(scopedSessionCookieName, prefix))
                       .addLogoutHandler(
-                          pathScopedCookieClearingLogoutHandler(scopedCsrfCookieName, prefix));
+                          pathScopedCookieClearingLogoutHandler(scopedCsrfCookieName, prefix))
+                      // See the primary chain above on why this is a logout handler.
+                      .addLogoutHandler(
+                          refreshTokenRevocationLogoutHandler(
+                              clientRegistrationRepository,
+                              authorizedClientRepository,
+                              scopedClientRegistrationFactory.flatten(authentication)));
                   logout.logoutSuccessHandler(
                       oidcLogoutSuccessHandler(
                           clientRegistrationRepository,

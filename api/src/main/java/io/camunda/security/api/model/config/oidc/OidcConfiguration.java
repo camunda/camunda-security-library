@@ -53,6 +53,7 @@ public class OidcConfiguration {
   private List<String> additionalJwkSetUris;
   private String authorizationUri;
   private String endSessionEndpointUri;
+  private String revocationEndpointUri;
   private String tokenUri;
   private String userInfoUri;
   private AuthorizeRequestConfiguration authorizeRequestConfiguration =
@@ -211,6 +212,20 @@ public class OidcConfiguration {
 
   public void setEndSessionEndpointUri(final String endSessionEndpointUri) {
     this.endSessionEndpointUri = endSessionEndpointUri;
+  }
+
+  /**
+   * The provider's RFC 7009 token revocation endpoint, used at logout to revoke the session's
+   * refresh token (ADR-0032). Issuer discovery already supplies this as {@code
+   * revocation_endpoint}, so it only needs setting when endpoints are configured explicitly.
+   * Leaving it unset on a provider that publishes none, as MS Entra does, skips revocation.
+   */
+  public String getRevocationEndpointUri() {
+    return revocationEndpointUri;
+  }
+
+  public void setRevocationEndpointUri(final String revocationEndpointUri) {
+    this.revocationEndpointUri = revocationEndpointUri;
   }
 
   public String getTokenUri() {
@@ -465,6 +480,7 @@ public class OidcConfiguration {
         || additionalJwkSetUris != null
         || authorizationUri != null
         || endSessionEndpointUri != null
+        || revocationEndpointUri != null
         || tokenUri != null
         || userInfoUri != null
         || authorizeRequestConfiguration == null
@@ -513,6 +529,7 @@ public class OidcConfiguration {
     private List<String> additionalJwkSetUris;
     private String authorizationUri;
     private String endSessionEndpointUri;
+    private String revocationEndpointUri;
     private String tokenUri;
     private String userInfoUri;
     private AuthorizeRequestConfiguration authorizeRequestConfiguration =
@@ -598,6 +615,11 @@ public class OidcConfiguration {
 
     public Builder endSessionEndpointUri(final String endSessionEndpointUri) {
       this.endSessionEndpointUri = endSessionEndpointUri;
+      return this;
+    }
+
+    public Builder revocationEndpointUri(final String revocationEndpointUri) {
+      this.revocationEndpointUri = revocationEndpointUri;
       return this;
     }
 
@@ -710,6 +732,7 @@ public class OidcConfiguration {
       config.setGrantType(grantType);
       config.setRedirectUri(redirectUri);
       config.setEndSessionEndpointUri(endSessionEndpointUri);
+      config.setRevocationEndpointUri(revocationEndpointUri);
       config.setScope(scope);
       config.setJwkSetUri(jwkSetUri);
       config.setAdditionalJwkSetUris(additionalJwkSetUris);

@@ -43,6 +43,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0028: OIDC login fails soft when the IdP rejects UserInfo, unless required](../adr/0028-oidc-userinfo-fail-soft-login.md)
 - [ADR-0029: Warn instead of block on provider-block validation](../adr/0029-warn-instead-of-block-on-provider-block-validation.md)
 - [ADR-0030: Key the login flow's supplementary JWK Set URIs by registration ID, not by issuer](../adr/0030-additional-jwk-set-uris-by-registration-id.md)
+- [ADR-0032: Revoke the session refresh token on OIDC logout](../adr/0032-revoke-refresh-token-on-oidc-logout.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 

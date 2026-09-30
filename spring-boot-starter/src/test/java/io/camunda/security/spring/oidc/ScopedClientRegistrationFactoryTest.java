@@ -270,6 +270,42 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
+  void shouldCarryConfiguredRevocationEndpointInMetadata() {
+    // given a provider configured with explicit endpoints, including a revocation endpoint, as a
+    // deployment that does not use issuer discovery must do to get revocation at all (ADR-0032)
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("my-client")
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .authorizationUri("https://idp.example.com/auth")
+            .tokenUri("https://idp.example.com/token")
+            .jwkSetUri("https://idp.example.com/jwks")
+            .revocationEndpointUri("https://idp.example.com/revoke")
+            .build();
+
+    // when
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    // then RefreshTokenRevocationLogoutHandler finds it under the standard RFC 8414 metadata key
+    final var metadata = registrations.get(0).getProviderDetails().getConfigurationMetadata();
+    assertThat(metadata.get("revocation_endpoint")).isEqualTo("https://idp.example.com/revoke");
+  }
+
+  @Test
+  void shouldOmitRevocationEndpointFromMetadataWhenUnset() {
+    // given a provider that configures no revocation endpoint, as MS Entra deployments cannot
+    final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
+
+    // when
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    // then the key is absent rather than present-and-empty, which is what the handler treats as
+    // "this provider cannot revoke"
+    final var metadata = registrations.get(0).getProviderDetails().getConfigurationMetadata();
+    assertThat(metadata).doesNotContainKey("revocation_endpoint");
+  }
+
+  @Test
   void shouldStashEmptyAudiencesEntryWhenAudiencesUnset() {
     // given a scoped provider with no audiences configured
     final var oidc = explicitEndpoints("my-client", "https://idp.example.com");

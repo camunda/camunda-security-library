@@ -599,6 +599,9 @@ public final class ScopedClientRegistrationFactory {
       // chain. A caller that mounts no such chain never dereferences the value.
       warnIfNotAbsoluteHttpUrl(
           registrationId, "end-session-endpoint-uri", oidc.getEndSessionEndpointUri());
+      // RefreshTokenRevocationLogoutHandler is likewise only wired onto the webapp logout chain.
+      warnIfNotAbsoluteHttpUrl(
+          registrationId, "revocation-endpoint-uri", oidc.getRevocationEndpointUri());
     }
     if (oidc.getAdditionalJwkSetUris() != null) {
       oidc.getAdditionalJwkSetUris()
@@ -1210,9 +1213,10 @@ public final class ScopedClientRegistrationFactory {
   /**
    * Adds this registration's own entries to the discovered metadata by build-then-rebuild, since
    * {@code providerConfigurationMetadata} replaces the map and would drop a discovered {@code
-   * end_session_endpoint}. The audiences key and the {@link
+   * end_session_endpoint} or {@code revocation_endpoint}. The audiences key and the {@link
    * FailSoftOidcUserService#USER_INFO_REQUIRED_METADATA_KEY} key are always set, even when
-   * false/empty, because both are authoritative by presence; an explicit end-session endpoint wins.
+   * false/empty, because both are authoritative by presence; an explicitly configured end-session
+   * or revocation endpoint wins over the discovered one.
    *
    * <p>The map is fresh per registration — the only reason registrations sharing an issuer cannot
    * see each other's audiences or user-info-required flag.
@@ -1227,6 +1231,9 @@ public final class ScopedClientRegistrationFactory {
     merged.put(FailSoftOidcUserService.USER_INFO_REQUIRED_METADATA_KEY, oidc.isUserInfoRequired());
     if (StringUtils.hasText(oidc.getEndSessionEndpointUri())) {
       merged.put("end_session_endpoint", oidc.getEndSessionEndpointUri());
+    }
+    if (StringUtils.hasText(oidc.getRevocationEndpointUri())) {
+      merged.put("revocation_endpoint", oidc.getRevocationEndpointUri());
     }
     return ClientRegistration.withClientRegistration(built)
         .providerConfigurationMetadata(merged)

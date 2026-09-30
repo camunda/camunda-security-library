@@ -65,6 +65,21 @@ class ScopedClientRegistrationFactoryDiscoveryCacheTest {
       }
       """;
 
+  /** Discovery document that advertises a {@code revocation_endpoint}, as real IdPs do. */
+  private static final String DISCOVERY_TEMPLATE_WITH_REVOCATION =
+      """
+      {
+        "issuer": "%1$s",
+        "authorization_endpoint": "%1$s/auth",
+        "token_endpoint": "%1$s/token",
+        "jwks_uri": "%1$s/jwks",
+        "revocation_endpoint": "%1$s/revoke",
+        "response_types_supported": ["code"],
+        "subject_types_supported": ["public"],
+        "id_token_signing_alg_values_supported": ["RS256"]
+      }
+      """;
+
   /** Discovery document that advertises a {@code userinfo_endpoint}, as real IdPs do. */
   private static final String DISCOVERY_TEMPLATE_WITH_USERINFO =
       """
@@ -452,6 +467,53 @@ class ScopedClientRegistrationFactoryDiscoveryCacheTest {
     assertThat(metadata.get(TokenValidatorFactory.AUDIENCES_METADATA_KEY))
         .asInstanceOf(InstanceOfAssertFactories.collection(String.class))
         .containsExactly("scoped-aud");
+  }
+
+  @Test
+  void shouldPreserveDiscoveredRevocationEndpointWhenStashingAudiences() throws Exception {
+    // given an IdP advertising a revocation_endpoint and no explicitly-configured revocation URI.
+    // This is the zero-configuration path and therefore the common one: if the rebuild in
+    // mergeProviderMetadata drops the key, logout silently stops revoking anything (ADR-0032).
+    oidcServer = OidcTestServer.startDiscovery(DISCOVERY_TEMPLATE_WITH_REVOCATION);
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("my-client")
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .issuerUri(oidcServer.issuerUri())
+            .audiences(Set.of("scoped-aud"))
+            .build();
+
+    // when discovery populates the registration's metadata and we merge our additions on top
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    // then the discovered revocation_endpoint survives alongside the stashed audiences
+    final var metadata = registrations.get(0).getProviderDetails().getConfigurationMetadata();
+    assertThat(metadata.get("revocation_endpoint")).isEqualTo(oidcServer.issuerUri() + "/revoke");
+    assertThat(metadata.get(TokenValidatorFactory.AUDIENCES_METADATA_KEY))
+        .asInstanceOf(InstanceOfAssertFactories.collection(String.class))
+        .containsExactly("scoped-aud");
+  }
+
+  @Test
+  void shouldOverrideDiscoveredRevocationEndpointWithExplicitConfig() throws Exception {
+    // given an IdP advertising a revocation_endpoint, and an explicitly-configured override
+    oidcServer = OidcTestServer.startDiscovery(DISCOVERY_TEMPLATE_WITH_REVOCATION);
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("my-client")
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .issuerUri(oidcServer.issuerUri())
+            .revocationEndpointUri("https://explicit.example.com/revoke")
+            .build();
+
+    // when
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    // then the configured value wins, so an operator can redirect revocation at a provider whose
+    // discovery document advertises an endpoint that does not work for them
+    final var metadata = registrations.get(0).getProviderDetails().getConfigurationMetadata();
+    assertThat(metadata.get("revocation_endpoint"))
+        .isEqualTo("https://explicit.example.com/revoke");
   }
 
   @Test
