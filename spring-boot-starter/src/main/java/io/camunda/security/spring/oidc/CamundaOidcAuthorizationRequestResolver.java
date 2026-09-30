@@ -11,6 +11,7 @@ import io.camunda.security.api.model.config.oidc.AuthorizeRequestConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.spring.scope.BasePaths;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -40,22 +41,30 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
  * <authorizationRequestBaseUri>/{registrationId}}. Per-registrationId delegating resolvers are
  * cached in a {@link ConcurrentHashMap} so the customizer is built once per id.
  *
+ * <p>When constructed with a {@code maxAge}, every outgoing request also carries the OIDC {@code
+ * max_age} parameter (OpenID Connect Core 1.0 §3.1.2.1), so the IdP re-authenticates the user
+ * unless they authenticated at the IdP within that window. An explicit {@code max_age} in {@code
+ * authorize-request.additional-parameters} takes precedence. See ADR-0031.
+ *
  * <p>The {@code sourcesByRegistrationId} map MUST be built from the same flat-plus-providers merge
  * that produced the {@link ClientRegistrationRepository} so registrationIds stay aligned.
  */
 public final class CamundaOidcAuthorizationRequestResolver
     implements OAuth2AuthorizationRequestResolver {
 
+  static final String AUTHORIZATION_REQUEST_BASE_URI = "/oauth2/authorization";
+
   private static final String ERROR_INVALID_CLIENT_REGISTRATION_ID =
       "Invalid Client Registration with ID '%s'";
-  private static final String AUTHORIZATION_REQUEST_BASE_URI = "/oauth2/authorization";
   private static final String REGISTRATION_ID = "registrationId";
+  private static final String MAX_AGE = "max_age";
 
   private final ClientRegistrationRepository clientRegistrationRepository;
   private final Map<String, OidcConfiguration> sourcesByRegistrationId;
   private final Map<String, OAuth2AuthorizationRequestResolver> resolvers;
   private final String authorizationRequestBaseUri;
   private final RequestMatcher authorizationRequestMatcher;
+  private final Long maxAgeSeconds;
 
   /** Uses the default unprefixed authorization base URI {@code /oauth2/authorization}. */
   public CamundaOidcAuthorizationRequestResolver(
@@ -73,6 +82,18 @@ public final class CamundaOidcAuthorizationRequestResolver
       final ClientRegistrationRepository clientRegistrationRepository,
       final Map<String, OidcConfiguration> sourcesByRegistrationId,
       final String authorizationRequestBaseUri) {
+    this(clientRegistrationRepository, sourcesByRegistrationId, authorizationRequestBaseUri, null);
+  }
+
+  /**
+   * @param maxAge when non-null, sent as {@code max_age} (whole seconds) on every authorization
+   *     request that does not already configure one; {@code null} sends none
+   */
+  public CamundaOidcAuthorizationRequestResolver(
+      final ClientRegistrationRepository clientRegistrationRepository,
+      final Map<String, OidcConfiguration> sourcesByRegistrationId,
+      final String authorizationRequestBaseUri,
+      final Duration maxAge) {
     Objects.requireNonNull(
         clientRegistrationRepository, "clientRegistrationRepository must not be null");
     Objects.requireNonNull(sourcesByRegistrationId, "sourcesByRegistrationId must not be null");
@@ -91,6 +112,10 @@ public final class CamundaOidcAuthorizationRequestResolver
         Map.copyOf(
             ScopedClientRegistrationFactory.withoutBlankRegistrationIds(sourcesByRegistrationId));
     this.authorizationRequestBaseUri = normalizedBaseUri;
+    if (maxAge != null && maxAge.isNegative()) {
+      throw new IllegalArgumentException("maxAge must not be negative: " + maxAge);
+    }
+    maxAgeSeconds = maxAge == null ? null : maxAge.toSeconds();
     resolvers = new ConcurrentHashMap<>();
     authorizationRequestMatcher =
         PathPatternRequestMatcher.withDefaults()
@@ -147,23 +172,29 @@ public final class CamundaOidcAuthorizationRequestResolver
         new DefaultOAuth2AuthorizationRequestResolver(
             clientRegistrationRepository, authorizationRequestBaseUri);
     final var source = sourcesByRegistrationId.get(registrationId);
-    if (source != null) {
+    if (source != null || maxAgeSeconds != null) {
       resolver.setAuthorizationRequestCustomizer(createCustomizer(source));
     }
     return resolver;
   }
 
-  private static Consumer<Builder> createCustomizer(final OidcConfiguration source) {
+  private Consumer<Builder> createCustomizer(final OidcConfiguration source) {
     return builder -> {
-      final AuthorizeRequestConfiguration authorize = source.getAuthorizeRequest();
+      final AuthorizeRequestConfiguration authorize =
+          source != null ? source.getAuthorizeRequest() : null;
       final Map<String, Object> additionalParameters =
           authorize != null ? authorize.getAdditionalParameters() : null;
       if (additionalParameters != null && !additionalParameters.isEmpty()) {
         builder.additionalParameters(additionalParameters);
       }
-      final var resource = source.getResource();
+      final var resource = source != null ? source.getResource() : null;
       if (resource != null && !resource.isEmpty()) {
         builder.additionalParameters(Map.of(OAuth2ParameterNames.RESOURCE, resource));
+      }
+      final boolean maxAgeConfigured =
+          additionalParameters != null && additionalParameters.containsKey(MAX_AGE);
+      if (maxAgeSeconds != null && !maxAgeConfigured) {
+        builder.additionalParameters(Map.of(MAX_AGE, maxAgeSeconds));
       }
     };
   }

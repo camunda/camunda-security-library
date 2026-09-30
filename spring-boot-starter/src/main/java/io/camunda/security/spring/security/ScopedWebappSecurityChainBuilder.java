@@ -873,7 +873,10 @@ public final class ScopedWebappSecurityChainBuilder {
             clientRegistrationRepository, authorizedClientRepository);
     final var scopedResolver =
         new CamundaOidcAuthorizationRequestResolver(
-            clientRegistrationRepository, providerMap, authorizationBaseUri);
+            clientRegistrationRepository,
+            providerMap,
+            authorizationBaseUri,
+            properties.oidcAuthorizeMaxAge());
     final var scopedPicker =
         new CamundaLoginPickerFilter(clientRegistrationRepository, loginUrl, prefix);
 

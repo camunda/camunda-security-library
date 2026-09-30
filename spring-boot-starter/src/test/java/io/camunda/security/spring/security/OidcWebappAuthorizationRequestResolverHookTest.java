@@ -10,6 +10,7 @@ package io.camunda.security.spring.security;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
@@ -162,6 +163,57 @@ class OidcWebappAuthorizationRequestResolverHookTest {
     runOidcChainAndAssertNoLoginLoop("/logout");
   }
 
+  @Test
+  void loginRedirectCarriesMaxAgeFromTheSessionTimeoutInSaas() {
+    // Guards the wiring between OidcWebappClientBeansConfiguration and the resolver: the resolver
+    // and CamundaSecurityLibraryProperties#oidcAuthorizeMaxAge are unit-tested separately, so a
+    // regression to the shorter constructor would otherwise pass every test and silently stop
+    // SaaS logins from sending max_age (ADR-0031).
+    oidcEndpointRunner()
+        .withPropertyValues(
+            "camunda.security.saas.organization-id=org",
+            "camunda.security.saas.cluster-id=cluster",
+            "camunda.security.session.max-inactive-interval=45m")
+        .run(ctx -> assertThat(authorizationRedirect(ctx)).contains("max_age=2700"));
+  }
+
+  @Test
+  void loginRedirectOmitsMaxAgeOutsideSaas() {
+    oidcEndpointRunner()
+        .run(ctx -> assertThat(authorizationRedirect(ctx)).doesNotContain("max_age"));
+  }
+
+  private WebApplicationContextRunner oidcEndpointRunner() {
+    return new WebApplicationContextRunner()
+        .withUserConfiguration(ObjectMapperConfig.class, StubPathsWithOidcEndpoints.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                BaseSecurityConfiguration.class,
+                OidcWebappSecurityConfiguration.class,
+                ScopedWebappSecurityChainBuilderConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                OidcBeansConfiguration.class,
+                OidcWebappClientBeansConfiguration.class,
+                ScopedOidcInfrastructureConfiguration.class))
+        .withPropertyValues(OIDC_PROPERTIES);
+  }
+
+  private static String authorizationRedirect(
+      final org.springframework.context.ApplicationContext ctx) throws Exception {
+    final var chain = ctx.getBean(OIDC_CHAIN_BEAN, SecurityFilterChain.class);
+    final var request =
+        new MockHttpServletRequest(
+            "GET", "/oauth2/authorization/" + OidcConfiguration.DEFAULT_REGISTRATION_ID);
+    final var response = new MockHttpServletResponse();
+    assertThat(chain.matches(request)).isTrue();
+
+    new FilterChainProxy(List.of(chain)).doFilter(request, response, new MockFilterChain());
+
+    assertThat(response.getStatus()).isEqualTo(302);
+    return response.getRedirectedUrl();
+  }
+
   private void runOidcChainAndAssertNoLoginLoop(final String path) {
     runner.run(
         ctx -> {
@@ -209,6 +261,17 @@ class OidcWebappAuthorizationRequestResolverHookTest {
     @Bean
     SecurityPathPort securityPathPort() {
       return StubSecurityPaths.builder().build();
+    }
+  }
+
+  @Configuration
+  static class StubPathsWithOidcEndpoints {
+
+    @Bean
+    SecurityPathPort securityPathPort() {
+      return StubSecurityPaths.builder()
+          .webappPaths("/operate/**", "/login", "/logout", "/oauth2/authorization/**")
+          .build();
     }
   }
 

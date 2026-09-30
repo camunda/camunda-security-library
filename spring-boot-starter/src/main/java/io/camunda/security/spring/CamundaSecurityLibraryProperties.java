@@ -135,6 +135,14 @@ public class CamundaSecurityLibraryProperties {
     this.session = session;
   }
 
+  /**
+   * The OIDC {@code max_age} to send on authorization requests: the session idle timeout when
+   * running in SaaS, {@code null} (send none) otherwise. See ADR-0031.
+   */
+  public Duration oidcAuthorizeMaxAge() {
+    return saas.isConfigured() ? session.getMaxInactiveInterval() : null;
+  }
+
   public String getIdValidationPattern() {
     return idValidationPattern;
   }

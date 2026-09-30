@@ -9,6 +9,7 @@ package io.camunda.security.spring.oidc;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
+import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.security.ProtectedOidcWebappCondition;
 import java.util.ArrayList;
 import java.util.List;
@@ -166,10 +167,13 @@ public class OidcWebappClientBeansConfiguration {
   @ConditionalOnMissingBean(OAuth2AuthorizationRequestResolver.class)
   public OAuth2AuthorizationRequestResolver oauth2AuthorizationRequestResolver(
       final ClientRegistrationRepository clientRegistrationRepository,
-      final OidcProviderConfigurationPort oidcProviderConfigurationPort) {
+      final OidcProviderConfigurationPort oidcProviderConfigurationPort,
+      final CamundaSecurityLibraryProperties properties) {
     return new CamundaOidcAuthorizationRequestResolver(
         clientRegistrationRepository,
-        oidcProviderConfigurationPort.getOidcAuthenticationConfigurations());
+        oidcProviderConfigurationPort.getOidcAuthenticationConfigurations(),
+        CamundaOidcAuthorizationRequestResolver.AUTHORIZATION_REQUEST_BASE_URI,
+        properties.oidcAuthorizeMaxAge());
   }
 
   @Bean
