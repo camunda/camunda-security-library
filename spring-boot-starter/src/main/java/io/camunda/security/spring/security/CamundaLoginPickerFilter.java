@@ -13,6 +13,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.time.Year;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -187,14 +188,37 @@ public class CamundaLoginPickerFilter extends OncePerRequestFilter {
     response.setStatus(HttpServletResponse.SC_OK);
     response.setContentType(MediaType.TEXT_HTML_VALUE);
     response.setCharacterEncoding("UTF-8");
-    response.getWriter().write(renderPickerHtml(links));
+    response.getWriter().write(renderPickerHtml(withContextPath(links, request.getContextPath())));
+  }
+
+  /**
+   * Prefixes every link with the request's servlet context path. Unlike the single-provider
+   * redirect above and the unauthenticated entry point's redirect ({@link
+   * ScopedWebappSecurityChainBuilder#resolveOauthRedirectTarget}), which both go through {@link
+   * DefaultRedirectStrategy} and get the context path prepended automatically, this filter writes
+   * the links straight into HTML — so it has to apply that same prefix itself, or every rendered
+   * link 404s on a context-path'd deployment (every SaaS Orchestration Cluster instance).
+   *
+   * <p>{@code request.getContextPath()} is never {@code null} per the Servlet contract, and is
+   * {@code ""} for a root-deployed app, in which case the links are returned unchanged.
+   */
+  private static Map<String, String> withContextPath(
+      final Map<String, String> links, final String contextPath) {
+    if (contextPath.isEmpty()) {
+      return links;
+    }
+    final var prefixed = new LinkedHashMap<String, String>();
+    links.forEach((url, name) -> prefixed.put(contextPath + url, name));
+    return prefixed;
   }
 
   /**
    * Renders the full picker HTML for the given {@code authorizationUrl -> displayName} links. Names
    * come from {@link org.springframework.security.oauth2.client.registration.ClientRegistration
    * #getClientName()} — host-configured, untrusted input — so both the name and the URL are
-   * HTML-escaped before being written into the page.
+   * HTML-escaped before being written into the page. The URL is already servlet
+   * context-path–prefixed (see {@link #withContextPath}); a subclass overriding this method should
+   * not prefix it again.
    */
   protected String renderPickerHtml(final Map<String, String> links) {
     final var providers = new StringBuilder();
