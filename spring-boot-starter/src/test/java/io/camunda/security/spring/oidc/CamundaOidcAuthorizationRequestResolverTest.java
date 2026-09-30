@@ -245,6 +245,37 @@ class CamundaOidcAuthorizationRequestResolverTest {
   }
 
   @Test
+  void shouldRejectNegativeMaxAge() {
+    // when / then
+    assertThatThrownBy(
+            () ->
+                new CamundaOidcAuthorizationRequestResolver(
+                    clientRegistrationRepository,
+                    Map.of(),
+                    "/oauth2/authorization",
+                    Duration.ofSeconds(-1)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("maxAge");
+  }
+
+  @Test
+  void shouldSendZeroMaxAgeToForceReauthentication() {
+    // given
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration);
+    final var resolver =
+        new CamundaOidcAuthorizationRequestResolver(
+            clientRegistrationRepository, Map.of(), "/oauth2/authorization", Duration.ZERO);
+
+    // when
+    final var result =
+        resolver.resolve(new MockHttpServletRequest("GET", AUTHORIZATION_REQUEST_URI));
+
+    // then
+    assertThat(result.getAdditionalParameters()).containsEntry("max_age", 0L);
+  }
+
+  @Test
   void shouldPreferAnExplicitMaxAgeAdditionalParameter() {
     // given
     when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))

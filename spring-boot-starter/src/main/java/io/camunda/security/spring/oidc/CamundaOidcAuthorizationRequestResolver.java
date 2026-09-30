@@ -112,6 +112,9 @@ public final class CamundaOidcAuthorizationRequestResolver
         Map.copyOf(
             ScopedClientRegistrationFactory.withoutBlankRegistrationIds(sourcesByRegistrationId));
     this.authorizationRequestBaseUri = normalizedBaseUri;
+    if (maxAge != null && maxAge.isNegative()) {
+      throw new IllegalArgumentException("maxAge must not be negative: " + maxAge);
+    }
     maxAgeSeconds = maxAge == null ? null : maxAge.toSeconds();
     resolvers = new ConcurrentHashMap<>();
     authorizationRequestMatcher =
