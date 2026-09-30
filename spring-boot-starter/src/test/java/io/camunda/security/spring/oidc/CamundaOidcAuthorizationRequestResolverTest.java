@@ -228,6 +228,23 @@ class CamundaOidcAuthorizationRequestResolverTest {
   }
 
   @Test
+  void shouldSendMaxAgeForARegistrationAbsentFromTheSourcesMap() {
+    // given a registration the host added to the repository without a matching OidcConfiguration
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration);
+    final var resolver =
+        new CamundaOidcAuthorizationRequestResolver(
+            clientRegistrationRepository, Map.of(), "/oauth2/authorization", Duration.ofMinutes(5));
+
+    // when
+    final var result =
+        resolver.resolve(new MockHttpServletRequest("GET", AUTHORIZATION_REQUEST_URI));
+
+    // then
+    assertThat(result.getAdditionalParameters()).containsEntry("max_age", 300L);
+  }
+
+  @Test
   void shouldPreferAnExplicitMaxAgeAdditionalParameter() {
     // given
     when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))

@@ -169,7 +169,7 @@ public final class CamundaOidcAuthorizationRequestResolver
         new DefaultOAuth2AuthorizationRequestResolver(
             clientRegistrationRepository, authorizationRequestBaseUri);
     final var source = sourcesByRegistrationId.get(registrationId);
-    if (source != null) {
+    if (source != null || maxAgeSeconds != null) {
       resolver.setAuthorizationRequestCustomizer(createCustomizer(source));
     }
     return resolver;
@@ -177,13 +177,14 @@ public final class CamundaOidcAuthorizationRequestResolver
 
   private Consumer<Builder> createCustomizer(final OidcConfiguration source) {
     return builder -> {
-      final AuthorizeRequestConfiguration authorize = source.getAuthorizeRequest();
+      final AuthorizeRequestConfiguration authorize =
+          source != null ? source.getAuthorizeRequest() : null;
       final Map<String, Object> additionalParameters =
           authorize != null ? authorize.getAdditionalParameters() : null;
       if (additionalParameters != null && !additionalParameters.isEmpty()) {
         builder.additionalParameters(additionalParameters);
       }
-      final var resource = source.getResource();
+      final var resource = source != null ? source.getResource() : null;
       if (resource != null && !resource.isEmpty()) {
         builder.additionalParameters(Map.of(OAuth2ParameterNames.RESOURCE, resource));
       }

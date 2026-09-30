@@ -769,6 +769,52 @@ class ScopedWebappSecurityChainBuilderScopedTest {
   }
 
   @Test
+  void scopedLoginRedirectCarriesMaxAgeFromTheSessionTimeoutInSaas() {
+    // Guards the wiring between buildOidcWebappChainInternal and the resolver (ADR-0031): the
+    // resolver and CamundaSecurityLibraryProperties#oidcAuthorizeMaxAge are unit-tested separately,
+    // so a regression to the shorter constructor would otherwise pass every test and silently stop
+    // SaaS logins from sending max_age.
+    scopedOidcEndpointRunner()
+        .withPropertyValues(
+            "camunda.security.saas.organization-id=org",
+            "camunda.security.saas.cluster-id=cluster",
+            "camunda.security.session.max-inactive-interval=45m")
+        .run(ctx -> assertThat(scopedAuthorizationRedirect(ctx)).contains("max_age=2700"));
+  }
+
+  @Test
+  void scopedLoginRedirectOmitsMaxAgeOutsideSaas() {
+    scopedOidcEndpointRunner()
+        .run(ctx -> assertThat(scopedAuthorizationRedirect(ctx)).doesNotContain("max_age"));
+  }
+
+  private static WebApplicationContextRunner scopedOidcEndpointRunner() {
+    return new WebApplicationContextRunner()
+        .withUserConfiguration(
+            ObjectMapperConfig.class, StubPathsWithOidcEndpoints.class, ScopedSingleIdpConfig.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                BaseSecurityConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                ScopedOidcInfrastructureConfiguration.class,
+                ScopedWebappSecurityChainBuilderConfiguration.class));
+  }
+
+  private static String scopedAuthorizationRedirect(
+      final org.springframework.context.ApplicationContext ctx) throws Exception {
+    final var chain = ctx.getBean("scopedOidcTestChain", SecurityFilterChain.class);
+    final var request = new MockHttpServletRequest("GET", BASE_PATH + "/oauth2/authorization/oidc");
+    final var response = new MockHttpServletResponse();
+    assertThat(chain.matches(request)).isTrue();
+
+    new FilterChainProxy(List.of(chain)).doFilter(request, response, new MockFilterChain());
+
+    assertThat(response.getStatus()).isEqualTo(302);
+    return response.getRedirectedUrl();
+  }
+
+  @Test
   void scopedLoginRedirectsStraightToSoleProviderInsteadOfRenderingPicker() throws Exception {
     // Mirrors the primary-chain assertion in
     // OidcWebappLoginPickerTest#anonymousLoginRedirectsStraightToSoleProviderInsteadOfRenderingPicker
