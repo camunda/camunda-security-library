@@ -19,6 +19,9 @@ import java.net.URI;
 import java.net.URL;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -30,6 +33,9 @@ import org.springframework.util.StringUtils;
  * <p>This class provides a default set of secure algorithms (RSA and EC families).
  */
 public class JWSKeySelectorFactory {
+
+  /** Thread-name prefix shared by both refresh executors, so a thread dump identifies them. */
+  static final String REFRESH_THREAD_NAME_PREFIX = "csl-jwks-refresh-";
 
   private static final String ERROR_MISSING_JWK_SET_URI = "Missing or empty 'jwkSetUri'";
   private static final String ERROR_INVALID_JWK_SET_URI =
@@ -82,6 +88,8 @@ public class JWSKeySelectorFactory {
    * default ({@link JWKSourceBuilder#DEFAULT_REFRESH_AHEAD_TIME}).
    */
   private static final long REFRESH_AHEAD_TIME_MILLIS = JWKSourceBuilder.DEFAULT_REFRESH_AHEAD_TIME;
+
+  private static final AtomicInteger JWK_SOURCE_COUNTER = new AtomicInteger();
 
   private final Set<JWSAlgorithm> jwsAlgorithms;
 
@@ -163,9 +171,12 @@ public class JWSKeySelectorFactory {
    * <p>Configures scheduled refresh-ahead caching (background refresh, independent of request
    * timing — see ADR-0032) and an explicit, longer-than-Nimbus-default HTTP connect/read timeout,
    * so that a slow or briefly unavailable JWKS endpoint does not block every concurrent decode
-   * request at once. Rate limiting stays disabled; coordinating refresh cadence across a fleet of
-   * independently-scaled instances is a separate design question (see ADR-0032's "Alternatives
-   * Considered").
+   * request at once. Rate limiting stays disabled; whether to enable it is a separate design
+   * question (see ADR-0032's "Alternatives Considered").
+   *
+   * <p>The refresh executors are supplied explicitly rather than left to Nimbus, whose own defaults
+   * are <em>non-daemon</em> single-thread pools that nothing shuts down — they would keep a host's
+   * JVM from exiting after its Spring context closes.
    *
    * @see org.springframework.security.oauth2.jwt.NimbusJwtDecoder.JwkSetUriJwtDecoderBuilder
    * @param jwkSetUri the JWK Set URI
@@ -177,11 +188,29 @@ public class JWSKeySelectorFactory {
             getHttpConnectTimeoutMillis(),
             getHttpReadTimeoutMillis(),
             JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT);
+    final var sourceId = JWK_SOURCE_COUNTER.incrementAndGet();
     return JWKSourceBuilder.<SecurityContext>create(jwkSetUri, retriever)
         .cache(getCacheTimeToLiveMillis(), getCacheRefreshTimeoutMillis())
-        .refreshAheadCache(getRefreshAheadTimeMillis(), true)
+        .refreshAheadCache(
+            getRefreshAheadTimeMillis(),
+            null,
+            Executors.newSingleThreadExecutor(
+                daemonThreadFactory(REFRESH_THREAD_NAME_PREFIX + sourceId)),
+            true,
+            Executors.newSingleThreadScheduledExecutor(
+                daemonThreadFactory(REFRESH_THREAD_NAME_PREFIX + "scheduled-" + sourceId)),
+            true)
         .rateLimited(false)
         .build();
+  }
+
+  /** A factory for a single named daemon thread. */
+  private static ThreadFactory daemonThreadFactory(final String threadName) {
+    return runnable -> {
+      final var thread = new Thread(runnable, threadName);
+      thread.setDaemon(true);
+      return thread;
+    };
   }
 
   /**
@@ -204,6 +233,11 @@ public class JWSKeySelectorFactory {
    * The maximum staleness of a cached JWK Set, in milliseconds, before a fresh fetch is forced.
    * Overridable by a host (or a test) that needs a different value than {@link
    * #CACHE_TIME_TO_LIVE_MILLIS}.
+   *
+   * <p>An override must keep {@code getRefreshAheadTimeMillis() + getCacheRefreshTimeoutMillis() <=
+   * getCacheTimeToLiveMillis()}, or Nimbus rejects the configuration with an {@link
+   * IllegalArgumentException} at bean creation; and the closer that sum gets to the TTL, the more
+   * the background refresh cadence collapses towards continuously polling the IdP.
    */
   protected long getCacheTimeToLiveMillis() {
     return CACHE_TIME_TO_LIVE_MILLIS;
@@ -212,6 +246,8 @@ public class JWSKeySelectorFactory {
   /**
    * The upper bound on a single synchronous JWK Set fetch, in milliseconds. Overridable by a host
    * (or a test) that needs a different value than {@link #CACHE_REFRESH_TIMEOUT_MILLIS}.
+   *
+   * <p>Subject to the same invariant as {@link #getCacheTimeToLiveMillis()}.
    */
   protected long getCacheRefreshTimeoutMillis() {
     return CACHE_REFRESH_TIMEOUT_MILLIS;
@@ -221,6 +257,8 @@ public class JWSKeySelectorFactory {
    * How far ahead of expiry the cached JWK Set is refreshed in the background, in milliseconds.
    * Overridable by a host (or a test) that needs a different value than {@link
    * #REFRESH_AHEAD_TIME_MILLIS}.
+   *
+   * <p>Subject to the same invariant as {@link #getCacheTimeToLiveMillis()}.
    */
   protected long getRefreshAheadTimeMillis() {
     return REFRESH_AHEAD_TIME_MILLIS;
