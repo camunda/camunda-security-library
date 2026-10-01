@@ -4,7 +4,7 @@ status: Proposed
 
 # ADR-0034: Add a parallel Gradle build; Maven remains the source of truth and publishes
 
-**Deciders**: Patrick Wunderlich
+**Deciders**: Patrick Wunderlich, Nicolas Pepin-Perreault
 
 ## Status
 
@@ -49,7 +49,8 @@ publishes nothing.
 
 - **Maven stays authoritative.** Maven builds, tests, and publishes every artifact consumers resolve.
   `release.yml`, the `central-sonatype-publish` profile, and `camunda-release-parent` stay unchanged.
-  The Gradle build runs as an extra CI job and does not gate releases.
+  The Gradle build runs as an extra CI job on every PR. It starts as advisory, not a required check,
+  and becomes a required PR check once it runs reliably. It never gates releases.
 - **Versions come from the POM.** CSL forks `PomResolver` and `SettingsPomResolverPlugin` (plugin id
   `io.camunda.gradle.settings-pom-resolver`) from camunda/camunda#52869 into an included build,
   `gradle/build-logic`. A header comment records the source commit SHA. `settings.gradle.kts` builds
@@ -65,9 +66,8 @@ publishes nothing.
   - the replacement for `maven-release-plugin` and where the project version lives;
   - the published artifact changes;
   - how pre-cutover maintenance branches are released;
-  - what replaces `camunda-release-parent`.
-
-  The intended hooks location after `.mvn/` is removed is `.githooks/`. That ADR may revise it.
+  - what replaces `camunda-release-parent`;
+  - where the git hooks live once `.mvn/` is removed.
 - **Merge hold.** Nothing under #698 merges before the Camunda 8.10 release (13 Oct 2026).
 
 ### Why these particular boundaries
@@ -78,8 +78,9 @@ publishes nothing.
   8.10 maintenance window.
 - **Fork, not dependency.** camunda/camunda#52869 is unmerged and is not published as a plugin, so a
   copy is the only option today. CSL takes only the POM resolver. It skips the monorepo's
-  `catalog/*Libraries.kt` / `CatalogVersions.kt` split, because CSL's catalog has about ten entries and
-  fits inline in `settings.gradle.kts`.
+  `catalog/*Libraries.kt` / `CatalogVersions.kt` split, because the root POM pins only a handful of
+  library versions (Spring Boot, ArchUnit, Testcontainers, nimbus-jose-jwt, commons-validator), plus
+  tool versions. The BOMs supply the rest, so the catalog fits inline in `settings.gradle.kts`.
 
 ## Consequences
 
@@ -90,8 +91,8 @@ publishes nothing.
 - Release automation is untouched.
 - Gradle's build time and cache behaviour can be measured on the real codebase before anything depends
   on it.
-- The version resolver is the only piece of Gradle that exists solely for the parallel phase. A
-  cutover removes it together with the POMs.
+- The version resolver and the Maven/Gradle classpath comparison script (#700) exist only for the
+  parallel phase. A cutover removes them together with the POMs.
 
 **Negative / accepted trade-offs**
 
@@ -100,6 +101,10 @@ publishes nothing.
 - A green Gradle build does not verify the shipped artifact, because Maven builds what is published.
 - The version resolver is a fork of unmerged code and does not get upstream fixes on its own.
 - Changes to `camunda-release-parent` keep reaching only the Maven build.
+- While the Gradle job is advisory, D3 relies on review: a PR that breaks Gradle can still merge.
+- The git hooks stay in `.mvn/hooks/`, and only a Maven build sets `core.hooksPath` (during
+  `initialize`). A Gradle-only contributor gets no hooks until they run Maven once or set
+  `core.hooksPath` themselves.
 
 ## Alternatives Considered
 
