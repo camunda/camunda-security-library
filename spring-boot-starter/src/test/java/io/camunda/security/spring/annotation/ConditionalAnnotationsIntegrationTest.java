@@ -10,10 +10,13 @@ package io.camunda.security.spring.annotation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.camunda.security.api.model.config.AuthenticationMethod;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.StandardEnvironment;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
 
 class ConditionalAnnotationsIntegrationTest {
 
@@ -78,6 +81,41 @@ class ConditionalAnnotationsIntegrationTest {
         .withPropertyValues(
             "camunda.security.authentication.method=oidc",
             "camunda.security.authentication.oidc.groupsClaim=groups")
+        .run(context -> assertThat(context).doesNotHaveBean("camundaGroupsBean"));
+  }
+
+  @Test
+  void conditionalOnCamundaGroupsEnabledDoesNotMatchWhenGroupsClaimIsConfiguredKebabCase() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.method=oidc",
+            "camunda.security.authentication.oidc.groups-claim=groups")
+        .run(context -> assertThat(context).doesNotHaveBean("camundaGroupsBean"));
+  }
+
+  @Test
+  void conditionalOnCamundaGroupsEnabledMatchesWhenGroupsClaimIsBlank() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.method=oidc",
+            "camunda.security.authentication.oidc.groups-claim=")
+        .run(context -> assertThat(context).hasBean("camundaGroupsBean"));
+  }
+
+  @Test
+  void conditionalOnCamundaGroupsEnabledDoesNotMatchWhenGroupsClaimIsConfiguredViaEnvVarStyle() {
+    runner
+        .withInitializer(
+            context ->
+                context
+                    .getEnvironment()
+                    .getPropertySources()
+                    .addFirst(
+                        new SystemEnvironmentPropertySource(
+                            StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME,
+                            Map.of(
+                                "CAMUNDA_SECURITY_AUTHENTICATION_METHOD", "oidc",
+                                "CAMUNDA_SECURITY_AUTHENTICATION_OIDC_GROUPSCLAIM", "groups"))))
         .run(context -> assertThat(context).doesNotHaveBean("camundaGroupsBean"));
   }
 
