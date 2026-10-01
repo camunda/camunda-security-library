@@ -1,5 +1,5 @@
 ---
-status: Accepted
+status: Proposed
 ---
 
 # ADR-0034: Add a parallel Gradle build; Maven remains the source of truth and publishes
@@ -8,7 +8,7 @@ status: Accepted
 
 ## Status
 
-Accepted
+Proposed
 
 ## Context
 
@@ -107,8 +107,7 @@ publishes nothing.
   publishing plugin, a release mechanism, and artifact changes chosen before #702 shows whether Gradle
   pays off, and it puts the 8.10 patch releases on an untested release path. The follow-up ADR
   revisits it.
-- **A separate `gradle/libs.versions.toml` during the parallel phase.** This was suggested by the
-  camunda/camunda#52869 author for a short parallel window. Rejected: it contradicts D2, and with no
-  fixed end to the parallel phase, two version sources would drift. The toml becomes the version source
-  only at cutover.
+- **A separate `gradle/libs.versions.toml` during the parallel phase.** Viable if the parallel window
+  is short. Rejected: it contradicts D2, and with no fixed end to the parallel phase, two version
+  sources would drift. The toml becomes the version source only at cutover.
 - **No Gradle build.** Rejected: without it, #698 has nothing to measure.
