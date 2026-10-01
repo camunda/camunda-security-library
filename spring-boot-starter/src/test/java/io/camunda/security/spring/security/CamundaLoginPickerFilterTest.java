@@ -118,6 +118,62 @@ class CamundaLoginPickerFilterTest {
   }
 
   @Test
+  void rendersLinksPrefixedWithTheServletContextPath() throws Exception {
+    final var filter =
+        new CamundaLoginPickerFilter(registrations("oidc", "oidc-secondary"), "/login");
+    final var request = new MockHttpServletRequest("GET", "/some-context/login");
+    request.setContextPath("/some-context");
+    final var response = new MockHttpServletResponse();
+
+    filter.doFilter(request, response, filterChain);
+
+    assertThat(response.getStatus()).isEqualTo(200);
+    final var body = response.getContentAsString();
+    assertThat(body)
+        .contains("href=\"/some-context/oauth2/authorization/oidc\"")
+        .contains("href=\"/some-context/oauth2/authorization/oidc-secondary\"")
+        .as("the unprefixed form must not appear — this is the 404 this test guards against")
+        .doesNotContain("href=\"/oauth2/authorization/oidc\"")
+        .doesNotContain("href=\"/oauth2/authorization/oidc-secondary\"");
+  }
+
+  @Test
+  void rendersScopedLinksWithTheContextPathOuterAndTheScopePrefixInner() throws Exception {
+    final var filter =
+        new CamundaLoginPickerFilter(
+            registrations("oidc", "oidc-secondary"),
+            "/physical-tenants/t1/login",
+            "/physical-tenants/t1");
+    final var request =
+        new MockHttpServletRequest("GET", "/some-context/physical-tenants/t1/login");
+    request.setContextPath("/some-context");
+    final var response = new MockHttpServletResponse();
+
+    filter.doFilter(request, response, filterChain);
+
+    final var body = response.getContentAsString();
+    assertThat(body)
+        .contains("href=\"/some-context/physical-tenants/t1/oauth2/authorization/oidc\"")
+        .contains("href=\"/some-context/physical-tenants/t1/oauth2/authorization/oidc-secondary\"");
+  }
+
+  @Test
+  void doesNotDoublePrefixTheSingleProviderRedirectWhenAContextPathIsSet() throws Exception {
+    // DefaultRedirectStrategy already prepends the context path for this branch; the fix above
+    // must only touch the multi-provider HTML-rendering branch, or this would become
+    // "/some-context/some-context/oauth2/authorization/oidc".
+    final var filter = new CamundaLoginPickerFilter(registrations("oidc"), "/login");
+    final var request = new MockHttpServletRequest("GET", "/some-context/login");
+    request.setContextPath("/some-context");
+    final var response = new MockHttpServletResponse();
+
+    filter.doFilter(request, response, filterChain);
+
+    assertThat(response.getStatus()).isEqualTo(302);
+    assertThat(response.getRedirectedUrl()).isEqualTo("/some-context/oauth2/authorization/oidc");
+  }
+
+  @Test
   void escapesProviderDisplayNamesToPreventMarkupInjection() throws Exception {
     final var registration =
         ClientRegistration.withRegistrationId("oidc")
