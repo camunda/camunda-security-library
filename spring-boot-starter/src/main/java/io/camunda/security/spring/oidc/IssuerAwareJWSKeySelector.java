@@ -94,19 +94,40 @@ public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelecto
   }
 
   /**
-   * The key selector of {@code issuer}, kept after a successful resolution only. The resolution
-   * runs outside the lock of a map entry, because it can hold a request thread for the discovery
-   * timeout of the provider, and the tokens of the other issuers must keep their answer meanwhile.
+   * The key selector of {@code issuer}, kept after a successful resolution only.
+   *
+   * <p>{@link ConcurrentHashMap#computeIfAbsent} single-flights construction per issuer: at most
+   * one thread resolves and builds the selector for a given issuer at a time, even when several
+   * requests for that issuer race on its first resolution — see {@link
+   * #createJWSKeySelectorOrWrap(String)}. This matters because building a selector now also builds
+   * a Nimbus {@code JWKSource} with a live background refresh-ahead thread pair (see ADR-0032); the
+   * previous get-then-build-then-{@code putIfAbsent} pattern let every racing thread build (and
+   * then discard) its own selector, orphaning one background thread pair per losing race. A failed
+   * resolution is not cached, so the next request retries it, same as before. Resolution of one
+   * issuer does not block requests for a different issuer, because {@code computeIfAbsent} only
+   * holds its internal lock for the entry being computed.
    */
   private JWSKeySelector<SecurityContext> keySelectorFor(final String issuer)
       throws KeySourceException {
-    final var cached = selectors.get(issuer);
-    if (cached != null) {
-      return cached;
+    try {
+      return selectors.computeIfAbsent(issuer, this::createJWSKeySelectorOrWrap);
+    } catch (final KeySourceExceptionCarrier carrier) {
+      throw (KeySourceException) carrier.getCause();
     }
-    final var selector = createJWSKeySelector(issuer);
-    final var winner = selectors.putIfAbsent(issuer, selector);
-    return winner != null ? winner : selector;
+  }
+
+  /**
+   * Adapts {@link #createJWSKeySelector(String)} to {@link java.util.function.Function}, since
+   * {@link ConcurrentHashMap#computeIfAbsent} cannot propagate a checked exception — the checked
+   * {@link KeySourceException} is carried across in an unchecked wrapper and unwrapped by {@link
+   * #keySelectorFor(String)}.
+   */
+  private JWSKeySelector<SecurityContext> createJWSKeySelectorOrWrap(final String issuer) {
+    try {
+      return createJWSKeySelector(issuer);
+    } catch (final KeySourceException e) {
+      throw new KeySourceExceptionCarrier(e);
+    }
   }
 
   /**
@@ -145,6 +166,13 @@ public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelecto
       return jwsKeySelectorFactory.createJWSKeySelector(jwkSetUri, additionalUris);
     } catch (final IllegalArgumentException invalidJwkSetUri) {
       throw new KeySourceException(ERROR_INVALID_JWK_SET_URI.formatted(issuer), invalidJwkSetUri);
+    }
+  }
+
+  /** Unchecked carrier so a checked {@link KeySourceException} can cross a {@code Function}. */
+  private static final class KeySourceExceptionCarrier extends RuntimeException {
+    KeySourceExceptionCarrier(final KeySourceException cause) {
+      super(cause);
     }
   }
 }

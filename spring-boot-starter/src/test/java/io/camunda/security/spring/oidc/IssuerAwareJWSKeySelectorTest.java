@@ -25,6 +25,13 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -33,6 +40,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistration.ProviderDetails;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 
 @ExtendWith(MockitoExtension.class)
 class IssuerAwareJWSKeySelectorTest {
@@ -151,6 +159,72 @@ class IssuerAwareJWSKeySelectorTest {
         .isInstanceOf(KeySourceException.class)
         .isNotInstanceOf(BadJwtKeySourceException.class)
         .hasMessageContaining("https://known-issuer");
+  }
+
+  @Test
+  void shouldBuildTheSelectorOfANeverBeforeSeenIssuerOnlyOnceUnderConcurrentFirstResolution()
+      throws Exception {
+    try (var server = OidcTestServer.startRsa("race-kid")) {
+      final var registration =
+          ClientRegistration.withRegistrationId("race-registration")
+              .clientId("test-client")
+              .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+              .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+              .authorizationUri(server.issuerUri() + "/auth")
+              .tokenUri(server.issuerUri() + "/token")
+              .issuerUri(server.issuerUri())
+              .jwkSetUri(server.jwksUri())
+              .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+              .build();
+      final var buildCount = new AtomicInteger();
+      final var factory =
+          new JWSKeySelectorFactory() {
+            @Override
+            public JWSKeySelector<SecurityContext> createJWSKeySelector(final String jwkSetUri) {
+              buildCount.incrementAndGet();
+              // Widens the race window so, before this task's fix, several of the threads below
+              // reliably pass the "no cached selector yet" check before the first build
+              // completes — without this, the race is real but timing-dependent enough that this
+              // step could pass by luck even on the pre-fix code.
+              try {
+                Thread.sleep(50);
+              } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+              }
+              return super.createJWSKeySelector(jwkSetUri);
+            }
+          };
+      final var selector = new IssuerAwareJWSKeySelector(List.of(registration), factory);
+      final var header = new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(server.kid()).build();
+      final var claims = new JWTClaimsSet.Builder().issuer(server.issuerUri()).build();
+
+      // when 20 threads resolve this never-before-seen issuer at the same time
+      final var threadCount = 20;
+      final var executor = Executors.newFixedThreadPool(threadCount);
+      final var startLatch = new CountDownLatch(1);
+      try {
+        final List<Callable<Object>> tasks =
+            IntStream.range(0, threadCount)
+                .<Callable<Object>>mapToObj(
+                    i ->
+                        () -> {
+                          startLatch.await();
+                          return selector.selectKeys(header, claims, null);
+                        })
+                .toList();
+        final List<Future<Object>> futures = tasks.stream().map(executor::submit).toList();
+        startLatch.countDown();
+        for (final var future : futures) {
+          future.get(10, TimeUnit.SECONDS);
+        }
+      } finally {
+        executor.shutdownNow();
+      }
+
+      // then exactly one selector (and the background refresh-ahead threads behind it) was ever
+      // built for this issuer — the race no longer orphans up to 19 discarded builds
+      assertThat(buildCount.get()).isEqualTo(1);
+    }
   }
 
   private static OidcConfiguration providerWithIssuer(final String issuerUri) {
