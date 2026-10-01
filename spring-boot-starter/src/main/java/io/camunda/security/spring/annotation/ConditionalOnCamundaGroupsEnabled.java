@@ -29,9 +29,10 @@ import org.springframework.core.type.AnnotatedTypeMetadata;
  *
  * <p>Resolves {@link
  * io.camunda.security.api.model.config.oidc.OidcConfiguration#GROUPS_CLAIM_PROPERTY} via {@link
- * Binder} with a relaxed {@link ConfigurationPropertyName} so that both the camelCase ({@code
- * groupsClaim}) and kebab-case ({@code groups-claim}) property spellings match identically. A plain
- * {@code @ConditionalOnExpression}'s SpEL {@code ${...}} placeholder resolution performs an
+ * Binder} with a relaxed {@link ConfigurationPropertyName} so that the camelCase ({@code
+ * groupsClaim}), kebab-case ({@code groups-claim}), and environment-variable ({@code
+ * CAMUNDA_SECURITY_AUTHENTICATION_OIDC_GROUPSCLAIM}) property spellings all match identically. A
+ * plain {@code @ConditionalOnExpression}'s SpEL {@code ${...}} placeholder resolution performs an
  * exact-key lookup and does not apply Spring Boot's relaxed binding, which previously caused the
  * kebab-case form to be silently ignored.
  */
