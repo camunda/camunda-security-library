@@ -93,10 +93,6 @@ class JWSKeySelectorFactoryTest {
         // never once per thread.
         assertThat(requestCount.get()).isLessThanOrEqualTo(2);
       } finally {
-        // The factory/JWKSource built above is intentionally never closed: this is a single short
-        // JVM-lifetime test process, so the one background refresh-ahead thread pair it starts
-        // lives no longer than the test run. Production and long-lived test contexts are a
-        // different concern, addressed in ADR-0032's accepted trade-offs.
         executor.shutdownNow();
       }
     }
@@ -127,20 +123,72 @@ class JWSKeySelectorFactoryTest {
       assertThatThrownBy(() -> selector.selectJWSKeys(header, null))
           .isInstanceOf(KeySourceException.class);
     }
+  }
 
-    // and when the IdP comes back, a subsequent call recovers rather than staying stuck
-    try (var recoveredServer = startJwksServer(jwkSetJson, 0L, new AtomicInteger())) {
-      final var recoveredSelector = factory.createJWSKeySelector(recoveredServer.jwksUri());
+  @Test
+  void shouldRefreshTheCachedJwkSetInTheBackgroundWithoutAnyFurtherRequests() throws Exception {
+    // given a factory with short timings, so the scheduled refresh-ahead cadence
+    // (ttl - refreshAhead - refreshTimeout = 100ms) fires several times inside the test
+    final var factory = shortTimingFactory();
+    final var keyPair = generateRsaKeyPair();
+    final var jwkSetJson = publicJwkSetJson(keyPair);
+    final var requestCount = new AtomicInteger();
+    try (var server = startJwksServer(jwkSetJson, 0L, requestCount)) {
+      final JWSKeySelector<?> selector = factory.createJWSKeySelector(server.jwksUri());
       final var header = new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KID).build();
-      assertThat(recoveredSelector.selectJWSKeys(header, null)).hasSize(1);
+
+      // when a single call populates the cache, which also starts the scheduled refresh
+      assertThat(selector.selectJWSKeys(header, null)).hasSize(1);
+      final var afterFirstCall = requestCount.get();
+
+      // and nothing asks the selector for a key for the next 500ms
+      Thread.sleep(500L);
+
+      // then the JWKS endpoint was still fetched again, on the background schedule alone — this is
+      // the `scheduled = true` behaviour ADR-0032 turns on, and the reason a provider serving
+      // near-zero traffic no longer lets its cache lapse and block the next request that arrives
+      assertThat(requestCount.get()).isGreaterThan(afterFirstCall);
+    }
+  }
+
+  @Test
+  void shouldRunTheBackgroundRefreshOnDaemonThreadsSoAHostJvmCanStillExit() throws Exception {
+    // given a factory with short timings, so the background refresh threads are created (lazily,
+    // on first task submission) well inside the test's own runtime
+    final var factory = shortTimingFactory();
+    final var keyPair = generateRsaKeyPair();
+    final var jwkSetJson = publicJwkSetJson(keyPair);
+    try (var server = startJwksServer(jwkSetJson, 0L, new AtomicInteger())) {
+      final JWSKeySelector<?> selector = factory.createJWSKeySelector(server.jwksUri());
+      final var header = new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KID).build();
+
+      // when a real fetch succeeds, which is what makes Nimbus schedule the background refresh
+      assertThat(selector.selectJWSKeys(header, null)).hasSize(1);
+      Thread.sleep(300L);
+
+      // then the threads behind that refresh are daemon threads. Nimbus's own default executors
+      // are non-daemon and nothing closes a JWKSource, so without this a host's JVM would hang
+      // after its Spring context closed. Surefire cannot catch that — it exits its fork
+      // explicitly — hence this direct assertion. See ADR-0032.
+      final var refreshThreads =
+          Thread.getAllStackTraces().keySet().stream()
+              .filter(
+                  thread ->
+                      thread.getName().startsWith(JWSKeySelectorFactory.REFRESH_THREAD_NAME_PREFIX))
+              .toList();
+      assertThat(refreshThreads).isNotEmpty();
+      assertThat(refreshThreads).allMatch(Thread::isDaemon, "is a daemon thread");
     }
   }
 
   @Test
   void shouldForceAFreshFetchWhenKidIsUnknownEvenWithinTtl() throws Exception {
-    // given a factory with the same short timings, and a JWKS endpoint that always serves the same
-    // single key (kid "test-key-1")
-    final var factory = shortTimingFactory();
+    // given a factory with a long TTL — deliberately NOT shortTimingFactory(), whose ~100ms
+    // scheduled-refresh cadence would bump the request count between this test's two calls and
+    // confuse an unrelated background refresh with the kid-miss fetch being asserted. Here the
+    // cadence is ttl - refreshAhead - refreshTimeout = 58s, far outside the test's runtime, so the
+    // only thing that can fetch is the test's own calls.
+    final var factory = longTtlFactory();
     final var keyPair = generateRsaKeyPair();
     final var jwkSetJson = publicJwkSetJson(keyPair);
     final var requestCount = new AtomicInteger();
@@ -153,7 +201,7 @@ class JWSKeySelectorFactoryTest {
       assertThat(requestCount.get()).isEqualTo(1);
 
       // and a second call immediately follows, asking for a kid the cached set does not contain —
-      // still well within the 500ms TTL, so a TTL-expiry fetch is not what should explain this
+      // still well within the 60s TTL, so a TTL-expiry fetch is not what should explain this
       final var unknownKidHeader =
           new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("never-seen-kid").build();
       final var keysForUnknownKid = selector.selectJWSKeys(unknownKidHeader, null);
@@ -183,6 +231,41 @@ class JWSKeySelectorFactoryTest {
       @Override
       protected long getRefreshAheadTimeMillis() {
         return 100L;
+      }
+
+      @Override
+      protected int getHttpConnectTimeoutMillis() {
+        return 300;
+      }
+
+      @Override
+      protected int getHttpReadTimeoutMillis() {
+        return 300;
+      }
+    };
+  }
+
+  /**
+   * Same shape as the real defaults, but with the TTL left long enough that the scheduled
+   * background refresh (cadence = {@code ttl - refreshAhead - cacheRefreshTimeout} = 58s) cannot
+   * fire inside a test's runtime, while HTTP timeouts stay short so an unreachable server fails
+   * fast.
+   */
+  private static JWSKeySelectorFactory longTtlFactory() {
+    return new JWSKeySelectorFactory() {
+      @Override
+      protected long getCacheTimeToLiveMillis() {
+        return 60_000L;
+      }
+
+      @Override
+      protected long getCacheRefreshTimeoutMillis() {
+        return 1_000L;
+      }
+
+      @Override
+      protected long getRefreshAheadTimeMillis() {
+        return 1_000L;
       }
 
       @Override
