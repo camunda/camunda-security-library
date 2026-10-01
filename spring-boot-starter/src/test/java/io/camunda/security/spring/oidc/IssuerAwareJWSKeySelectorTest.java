@@ -25,7 +25,9 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -162,7 +164,7 @@ class IssuerAwareJWSKeySelectorTest {
   }
 
   @Test
-  void shouldBuildTheSelectorOfANeverBeforeSeenIssuerOnlyOnceUnderConcurrentFirstResolution()
+  void shouldResolveAllConcurrentRequestsForANeverBeforeSeenIssuerToTheSameSelector()
       throws Exception {
     try (var server = OidcTestServer.startRsa("race-kid")) {
       final var registration =
@@ -177,21 +179,27 @@ class IssuerAwareJWSKeySelectorTest {
               .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
               .build();
       final var buildCount = new AtomicInteger();
+      final Set<JWSKeySelector<SecurityContext>> selectorsThatServedARequest =
+          ConcurrentHashMap.newKeySet();
       final var factory =
           new JWSKeySelectorFactory() {
             @Override
             public JWSKeySelector<SecurityContext> createJWSKeySelector(final String jwkSetUri) {
               buildCount.incrementAndGet();
-              // Widens the race window so, before this task's fix, several of the threads below
-              // reliably pass the "no cached selector yet" check before the first build
-              // completes — without this, the race is real but timing-dependent enough that this
-              // step could pass by luck even on the pre-fix code.
+              // Widens the race window so several of the threads below reliably pass the "no
+              // cached selector yet" check before the first build completes.
               try {
                 Thread.sleep(50);
               } catch (final InterruptedException e) {
                 Thread.currentThread().interrupt();
               }
-              return super.createJWSKeySelector(jwkSetUri);
+              final var built = super.createJWSKeySelector(jwkSetUri);
+              // Records which of the built selectors are actually asked for a key. Identity
+              // semantics: neither the wrapper nor the wrapped selector overrides equals.
+              return (header, context) -> {
+                selectorsThatServedARequest.add(built);
+                return built.selectJWSKeys(header, context);
+              };
             }
           };
       final var selector = new IssuerAwareJWSKeySelector(List.of(registration), factory);
@@ -203,27 +211,33 @@ class IssuerAwareJWSKeySelectorTest {
       final var executor = Executors.newFixedThreadPool(threadCount);
       final var startLatch = new CountDownLatch(1);
       try {
-        final List<Callable<Object>> tasks =
+        final List<Callable<Integer>> tasks =
             IntStream.range(0, threadCount)
-                .<Callable<Object>>mapToObj(
+                .<Callable<Integer>>mapToObj(
                     i ->
                         () -> {
                           startLatch.await();
-                          return selector.selectKeys(header, claims, null);
+                          return selector.selectKeys(header, claims, null).size();
                         })
                 .toList();
-        final List<Future<Object>> futures = tasks.stream().map(executor::submit).toList();
+        final List<Future<Integer>> futures = tasks.stream().map(executor::submit).toList();
         startLatch.countDown();
+
+        // then every thread gets the issuer's key
         for (final var future : futures) {
-          future.get(10, TimeUnit.SECONDS);
+          assertThat(future.get(10, TimeUnit.SECONDS)).isEqualTo(1);
         }
       } finally {
         executor.shutdownNow();
       }
 
-      // then exactly one selector (and the background refresh-ahead threads behind it) was ever
-      // built for this issuer — the race no longer orphans up to 19 discarded builds
-      assertThat(buildCount.get()).isEqualTo(1);
+      // and all 20 of them were served by one and the same selector — the single entry the race
+      // settled on. The losers of the putIfAbsent race may each have built a candidate, which is
+      // why buildCount is not pinned to 1; a candidate that never serves a request also never
+      // fetches a JWK Set and never starts a background refresh thread, so discarding it is free
+      // (see ADR-0032).
+      assertThat(selectorsThatServedARequest).hasSize(1);
+      assertThat(buildCount.get()).isGreaterThanOrEqualTo(1);
     }
   }
 
