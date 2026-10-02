@@ -97,6 +97,11 @@ public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelecto
    * The key selector of {@code issuer}, kept after a successful resolution only. The resolution
    * runs outside the lock of a map entry, because it can hold a request thread for the discovery
    * timeout of the provider, and the tokens of the other issuers must keep their answer meanwhile.
+   *
+   * <p>Two requests that race on the first resolution of an issuer therefore each build a selector,
+   * and the loser of the {@code putIfAbsent} discards its own. That is harmless: a selector's
+   * Nimbus {@code JWKSource} fetches nothing and starts no thread until it is actually asked for a
+   * key (see ADR-0032), so a never-used candidate holds no live resources.
    */
   private JWSKeySelector<SecurityContext> keySelectorFor(final String issuer)
       throws KeySourceException {

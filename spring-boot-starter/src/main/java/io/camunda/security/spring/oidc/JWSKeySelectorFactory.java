@@ -13,11 +13,15 @@ import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.nimbusds.jose.proc.JWSKeySelector;
 import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
+import com.nimbusds.jose.util.DefaultResourceRetriever;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -29,6 +33,9 @@ import org.springframework.util.StringUtils;
  * <p>This class provides a default set of secure algorithms (RSA and EC families).
  */
 public class JWSKeySelectorFactory {
+
+  /** Thread-name prefix shared by both refresh executors, so a thread dump identifies them. */
+  static final String REFRESH_THREAD_NAME_PREFIX = "csl-jwks-refresh-";
 
   private static final String ERROR_MISSING_JWK_SET_URI = "Missing or empty 'jwkSetUri'";
   private static final String ERROR_INVALID_JWK_SET_URI =
@@ -44,6 +51,45 @@ public class JWSKeySelectorFactory {
           JWSAlgorithm.ES256,
           JWSAlgorithm.ES384,
           JWSAlgorithm.ES512);
+
+  /**
+   * HTTP connect/read timeout for JWK Set retrieval, in milliseconds. Nimbus's own default is 500ms
+   * ({@link JWKSourceBuilder#DEFAULT_HTTP_CONNECT_TIMEOUT}), which a real external IdP can exceed
+   * under ordinary load, not just during an outage. Raised to comfortably exceed realistic
+   * network/IdP latency while still failing fast. See ADR-0032.
+   */
+  private static final int HTTP_CONNECT_TIMEOUT_MILLIS = 3_000;
+
+  /**
+   * @see #HTTP_CONNECT_TIMEOUT_MILLIS
+   */
+  private static final int HTTP_READ_TIMEOUT_MILLIS = 3_000;
+
+  /**
+   * Maximum time a cached JWK Set is trusted before a fresh, bounded fetch is forced — the
+   * staleness bound discussed in ADR-0032. Matches Nimbus's own default ({@link
+   * JWKSourceBuilder#DEFAULT_CACHE_TIME_TO_LIVE}), set explicitly here so the bound is documented
+   * rather than an implicit library default.
+   */
+  private static final long CACHE_TIME_TO_LIVE_MILLIS = JWKSourceBuilder.DEFAULT_CACHE_TIME_TO_LIVE;
+
+  /**
+   * Upper bound on a single synchronous JWK Set fetch — reached only when the background
+   * refresh-ahead has not kept the cache current (e.g. a sustained IdP outage) or an unrecognized
+   * {@code kid} forces an immediate refresh. Matches Nimbus's own default ({@link
+   * JWKSourceBuilder#DEFAULT_CACHE_REFRESH_TIMEOUT}).
+   */
+  private static final long CACHE_REFRESH_TIMEOUT_MILLIS =
+      JWKSourceBuilder.DEFAULT_CACHE_REFRESH_TIMEOUT;
+
+  /**
+   * How far ahead of its expiry the cached JWK Set is refreshed in the background, so live decode
+   * requests read an already-warm cache instead of blocking on the refresh. Matches Nimbus's own
+   * default ({@link JWKSourceBuilder#DEFAULT_REFRESH_AHEAD_TIME}).
+   */
+  private static final long REFRESH_AHEAD_TIME_MILLIS = JWKSourceBuilder.DEFAULT_REFRESH_AHEAD_TIME;
+
+  private static final AtomicInteger JWK_SOURCE_COUNTER = new AtomicInteger();
 
   private final Set<JWSAlgorithm> jwsAlgorithms;
 
@@ -122,16 +168,100 @@ public class JWSKeySelectorFactory {
   /**
    * Creates a {@link JWKSource} for the given JWK Set URL.
    *
+   * <p>Configures scheduled refresh-ahead caching (background refresh, independent of request
+   * timing — see ADR-0032) and an explicit, longer-than-Nimbus-default HTTP connect/read timeout,
+   * so that a slow or briefly unavailable JWKS endpoint does not block every concurrent decode
+   * request at once. Rate limiting stays disabled; whether to enable it is a separate design
+   * question (see ADR-0032's "Alternatives Considered").
+   *
+   * <p>The refresh executors are supplied explicitly rather than left to Nimbus, whose own defaults
+   * are <em>non-daemon</em> single-thread pools that nothing shuts down — they would keep a host's
+   * JVM from exiting after its Spring context closes.
+   *
    * @see org.springframework.security.oauth2.jwt.NimbusJwtDecoder.JwkSetUriJwtDecoderBuilder
    * @param jwkSetUri the JWK Set URI
    * @return a {@link JWKSource} for use in verifying JWT signatures
    */
   protected JWKSource<SecurityContext> createJWKSource(final URL jwkSetUri) {
-    return JWKSourceBuilder.create(jwkSetUri)
-        .refreshAheadCache(false)
+    final var retriever =
+        new DefaultResourceRetriever(
+            getHttpConnectTimeoutMillis(),
+            getHttpReadTimeoutMillis(),
+            JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT);
+    final var sourceId = JWK_SOURCE_COUNTER.incrementAndGet();
+    return JWKSourceBuilder.<SecurityContext>create(jwkSetUri, retriever)
+        .cache(getCacheTimeToLiveMillis(), getCacheRefreshTimeoutMillis())
+        .refreshAheadCache(
+            getRefreshAheadTimeMillis(),
+            null,
+            Executors.newSingleThreadExecutor(
+                daemonThreadFactory(REFRESH_THREAD_NAME_PREFIX + sourceId)),
+            true,
+            Executors.newSingleThreadScheduledExecutor(
+                daemonThreadFactory(REFRESH_THREAD_NAME_PREFIX + "scheduled-" + sourceId)),
+            true)
         .rateLimited(false)
-        .cache(true)
         .build();
+  }
+
+  /** A factory for a single named daemon thread. */
+  private static ThreadFactory daemonThreadFactory(final String threadName) {
+    return runnable -> {
+      final var thread = new Thread(runnable, threadName);
+      thread.setDaemon(true);
+      return thread;
+    };
+  }
+
+  /**
+   * The HTTP connect timeout for JWK Set retrieval, in milliseconds. Overridable by a host (or a
+   * test) that needs a different value than {@link #HTTP_CONNECT_TIMEOUT_MILLIS}.
+   */
+  protected int getHttpConnectTimeoutMillis() {
+    return HTTP_CONNECT_TIMEOUT_MILLIS;
+  }
+
+  /**
+   * The HTTP read timeout for JWK Set retrieval, in milliseconds. Overridable by a host (or a test)
+   * that needs a different value than {@link #HTTP_READ_TIMEOUT_MILLIS}.
+   */
+  protected int getHttpReadTimeoutMillis() {
+    return HTTP_READ_TIMEOUT_MILLIS;
+  }
+
+  /**
+   * The maximum staleness of a cached JWK Set, in milliseconds, before a fresh fetch is forced.
+   * Overridable by a host (or a test) that needs a different value than {@link
+   * #CACHE_TIME_TO_LIVE_MILLIS}.
+   *
+   * <p>An override must keep {@code getRefreshAheadTimeMillis() + getCacheRefreshTimeoutMillis() <=
+   * getCacheTimeToLiveMillis()}, or Nimbus rejects the configuration with an {@link
+   * IllegalArgumentException} at bean creation; and the closer that sum gets to the TTL, the more
+   * the background refresh cadence collapses towards continuously polling the IdP.
+   */
+  protected long getCacheTimeToLiveMillis() {
+    return CACHE_TIME_TO_LIVE_MILLIS;
+  }
+
+  /**
+   * The upper bound on a single synchronous JWK Set fetch, in milliseconds. Overridable by a host
+   * (or a test) that needs a different value than {@link #CACHE_REFRESH_TIMEOUT_MILLIS}.
+   *
+   * <p>Subject to the same invariant as {@link #getCacheTimeToLiveMillis()}.
+   */
+  protected long getCacheRefreshTimeoutMillis() {
+    return CACHE_REFRESH_TIMEOUT_MILLIS;
+  }
+
+  /**
+   * How far ahead of expiry the cached JWK Set is refreshed in the background, in milliseconds.
+   * Overridable by a host (or a test) that needs a different value than {@link
+   * #REFRESH_AHEAD_TIME_MILLIS}.
+   *
+   * <p>Subject to the same invariant as {@link #getCacheTimeToLiveMillis()}.
+   */
+  protected long getRefreshAheadTimeMillis() {
+    return REFRESH_AHEAD_TIME_MILLIS;
   }
 
   /**
