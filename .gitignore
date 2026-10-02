@@ -20,6 +20,9 @@ buildNumber.properties
 .mvn/timing.properties
 .mvn/wrapper/maven-wrapper.jar
 
+# Python (CI helper scripts under .github/scripts)
+__pycache__/
+
 # Java
 *.class
 *.log
@@ -70,3 +73,8 @@ Desktop.ini
 
 # Linux
 *~
+
+# Gradle
+.gradle/
+build/
+.kotlin/
