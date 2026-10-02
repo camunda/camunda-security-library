@@ -84,3 +84,31 @@ jobs:
 
       - name: Deploy SNAPSHOT
         run: ./mvnw --batch-mode --no-transfer-progress -DskipTests deploy
+
+  # Advisory per ADR-0034: the parallel Gradle build is not required for merging and is not in any
+  # `needs`. Maven (the `verify` job) remains the source of truth.
+  gradle:
+    name: Gradle build (parallel, advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Java 21
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21.0.12+101.0.LTS'
+          cache: maven
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - name: Gradle build
+        run: ./gradlew build
+
+      - name: Build-logic tests (included builds are not run by the root build)
+        run: ./gradlew -p gradle/build-logic check
+
+      - name: Compare Maven and Gradle resolved dependencies
+        run: python3 .github/scripts/compare-module-deps.py
