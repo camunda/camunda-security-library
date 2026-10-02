@@ -70,3 +70,8 @@ Desktop.ini
 
 # Linux
 *~
+
+# Gradle
+.gradle/
+build/
+.kotlin/
