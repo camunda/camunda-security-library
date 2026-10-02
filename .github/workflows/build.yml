@@ -177,5 +177,8 @@ jobs:
       - name: Build-logic tests (included builds are not run by the root build)
         run: ./gradlew -p gradle/build-logic check
 
+      - name: Test the dependency comparison script
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
+
       - name: Compare Maven and Gradle resolved dependencies
         run: python3 .github/scripts/compare-module-deps.py
