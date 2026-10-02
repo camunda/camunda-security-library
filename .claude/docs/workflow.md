@@ -24,6 +24,7 @@ Conventional Commits format: `<type>(<scope>): <subject>`
 - Required before merge: CI checks green, no unresolved comments
 - Squash-merge to keep main history clean
 - Link relevant issues in the PR description
+- Build changes go into both builds in the same PR: a `pom.xml` change is mirrored in the Gradle build (ADR-0034, rule D3). The advisory `Gradle build (parallel, advisory)` CI job checks this; see [`docs/workflows/gradle-build-parity.md`](../../docs/workflows/gradle-build-parity.md)
 
 ## Architecture Decision Records
 

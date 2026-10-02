@@ -12,7 +12,7 @@ This tour is the single entry point for understanding what you can do here: slas
 
 ## Slash commands
 
-Six AI-agent workflows live in this repo. Three create well-structured GitHub issues, two write or capture documentation, and one is this tour. Every workflow is defined in `docs/workflows/` and exposed as a Claude Code skill in `.claude/skills/`.
+Seven AI-agent workflows live in this repo. Three create well-structured GitHub issues, two write or capture documentation, one keeps the parallel Gradle build in step with Maven, and one is this tour. Every workflow is defined in `docs/workflows/` and exposed as a Claude Code skill in `.claude/skills/`.
 
 | Command | Use when | Workflow doc |
 |---|---|---|
@@ -21,6 +21,7 @@ Six AI-agent workflows live in this repo. Three create well-structured GitHub is
 | `/bug` | Something is broken; expected behavior isn't happening | [bug-issues.md](bug-issues.md) |
 | `/docs` | Document code, modules, features, or architecture | [documenting-code.md](documenting-code.md) |
 | `/adr` | Capture an architectural decision before/alongside the change that introduces it | [adr.md](adr.md) |
+| `/gradle-build-parity` | You change a `pom.xml` or Gradle file, or the advisory Gradle CI job fails | [gradle-build-parity.md](gradle-build-parity.md) |
 | `/tour` | This tour — orientation only | [tour.md](tour.md) |
 
 The three issue-creating workflows all produce self-contained issues — a fresh agent session can read them and deliver without further conversation. Shared helpers (setting issue types, native sub-issue linking, how to link files in issue bodies) live in [github-issue-operations.md](github-issue-operations.md).

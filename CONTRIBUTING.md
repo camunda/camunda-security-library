@@ -24,6 +24,7 @@ Common AI-assisted workflows are documented in `docs/workflows/` — these are a
 | Creating feature issues | `docs/workflows/feature-issues.md` | Produces a structured GitHub feature issue from a short description. Includes motivation, scope boundaries, implementation location, and acceptance criteria so a fresh session can implement it cold. |
 | Creating task issues | `docs/workflows/tasks.md` | Produces a small, self-contained, independently mergeable task issue. A task can stand alone, or be one of several that together deliver a feature. |
 | Documenting code | `docs/workflows/documenting-code.md` | Creates or updates documentation — Javadoc, module READMEs, feature guides, or ADRs — and ensures related docs stay in sync. |
+| Gradle build parity | `docs/workflows/gradle-build-parity.md` | Keeps the parallel Gradle build in step with Maven (ADR-0034): where each concern lives in both builds, how to port a `pom.xml` change, and the commands that verify parity. |
 
 **Claude Code users:** these workflows are also available as slash commands via `.claude/skills/`:
 
@@ -33,6 +34,7 @@ Common AI-assisted workflows are documented in `docs/workflows/` — these are a
 | `/feature` | Creating feature issues |
 | `/task` | Creating task issues |
 | `/docs` | Documenting code |
+| `/gradle-build-parity` | Gradle build parity |
 
 **Users of other AI tools (Copilot, Cursor, Gemini, etc.):** point your agent at the relevant file in `docs/workflows/` when you want it to follow one of these workflows.
 
