@@ -172,6 +172,15 @@ jobs:
             exit 1
           fi
 
+          # A task restored from the cache instead of UP-TO-DATE had its outputs changed after it ran
+          # (e.g. overlapping output directories), which the executed count alone does not catch.
+          from_cache="$(sed -nE 's/.* ([0-9]+) from cache.*/\1/p' <<< "$summary")"
+          if (( ${from_cache:-0} > 0 )); then
+            echo "::error::Cache verification failed: tasks restored from cache on an unchanged build ($summary)"
+            grep -E '^> Task [^ ]+ FROM-CACHE$' "$verification_log" || true
+            exit 1
+          fi
+
           echo "Cache verification passed: $summary (projectHealth runs tolerated: $tolerated)"
 
       - name: Build-logic tests (included builds are not run by the root build)
