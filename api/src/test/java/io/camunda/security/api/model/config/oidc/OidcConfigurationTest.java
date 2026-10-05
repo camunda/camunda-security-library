@@ -8,6 +8,7 @@
 package io.camunda.security.api.model.config.oidc;
 
 import static io.camunda.security.api.model.config.oidc.OidcConfiguration.CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC;
+import static io.camunda.security.api.model.config.oidc.OidcConfiguration.CLIENT_AUTHENTICATION_METHOD_NONE;
 import static io.camunda.security.api.model.config.oidc.OidcConfiguration.DEFAULT_CLOCK_SKEW;
 import static io.camunda.security.api.model.config.oidc.OidcConfiguration.DEFAULT_GRANT_TYPE;
 import static io.camunda.security.api.model.config.oidc.OidcConfiguration.DEFAULT_ID_TOKEN_ALGORITHM;
@@ -41,6 +42,65 @@ public class OidcConfigurationTest {
     Assertions.assertThat(oidcAuthenticationConfiguration.isAnyPropertySet())
         .withFailMessage(description)
         .isEqualTo(expected);
+  }
+
+  @Test
+  void validateAcceptsPublicClientWithNoClientSecret() {
+    final var config =
+        OidcConfiguration.builder()
+            .registrationId("public-idp")
+            .clientId("public-client")
+            .clientAuthenticationMethod(CLIENT_AUTHENTICATION_METHOD_NONE)
+            .build();
+
+    Assertions.assertThatCode(config::validate).doesNotThrowAnyException();
+  }
+
+  @Test
+  void validateRejectsPublicClientWithANonBlankClientSecret() {
+    final var config =
+        OidcConfiguration.builder()
+            .registrationId("public-idp")
+            .clientId("public-client")
+            .clientAuthenticationMethod(CLIENT_AUTHENTICATION_METHOD_NONE)
+            .clientSecret("should-not-be-here")
+            .build();
+
+    Assertions.assertThatThrownBy(config::validate)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("client-authentication-method=none")
+        .hasMessageContaining("public-idp");
+  }
+
+  @Test
+  void validateRejectsAnUnsupportedClientAuthenticationMethod() {
+    final var config =
+        OidcConfiguration.builder()
+            .registrationId("broken-idp")
+            .clientId("some-client")
+            .clientAuthenticationMethod("tls_client_auth")
+            .build();
+
+    Assertions.assertThatThrownBy(config::validate)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("Unsupported client-authentication-method")
+        .hasMessageContaining("tls_client_auth");
+  }
+
+  @Test
+  void validateAcceptsEachDocumentedClientAuthenticationMethod() {
+    for (final var method : OidcConfiguration.CLIENT_AUTHENTICATION_METHODS) {
+      final var config =
+          OidcConfiguration.builder()
+              .registrationId("idp")
+              .clientId("client")
+              .clientAuthenticationMethod(method)
+              .build();
+
+      Assertions.assertThatCode(config::validate)
+          .withFailMessage("expected %s to be accepted", method)
+          .doesNotThrowAnyException();
+    }
   }
 
   @Test

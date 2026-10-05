@@ -25,10 +25,12 @@ public class OidcConfiguration {
   public static final String CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC =
       "client_secret_basic";
   public static final String CLIENT_AUTHENTICATION_METHOD_PRIVATE_KEY_JWT = "private_key_jwt";
+  public static final String CLIENT_AUTHENTICATION_METHOD_NONE = "none";
   public static final List<String> CLIENT_AUTHENTICATION_METHODS =
       List.of(
           CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC,
-          CLIENT_AUTHENTICATION_METHOD_PRIVATE_KEY_JWT);
+          CLIENT_AUTHENTICATION_METHOD_PRIVATE_KEY_JWT,
+          CLIENT_AUTHENTICATION_METHOD_NONE);
   public static final Duration DEFAULT_CLOCK_SKEW = Duration.ofSeconds(60);
   public static final String DEFAULT_GRANT_TYPE = "authorization_code";
   public static final String DEFAULT_ID_TOKEN_ALGORITHM = "RS256";
@@ -78,6 +80,29 @@ public class OidcConfiguration {
   private OidcDiagnosticsConfiguration diagnostics = new OidcDiagnosticsConfiguration();
 
   public void validate() {
+    if (!CLIENT_AUTHENTICATION_METHODS.contains(clientAuthenticationMethod)) {
+      throw new IllegalStateException(
+          "Unsupported client-authentication-method '"
+              + clientAuthenticationMethod
+              + "' for OIDC provider '"
+              + registrationId
+              + "'. Supported values are "
+              + CLIENT_AUTHENTICATION_METHODS
+              + ". Set camunda.security.authentication.oidc.client-authentication-method (flat) or"
+              + " camunda.security.authentication.providers.oidc."
+              + registrationId
+              + ".client-authentication-method.");
+    }
+    if (CLIENT_AUTHENTICATION_METHOD_NONE.equals(clientAuthenticationMethod)
+        && clientSecret != null
+        && !clientSecret.isBlank()) {
+      throw new IllegalStateException(
+          "OIDC provider '"
+              + registrationId
+              + "' configures client-authentication-method=none (a public client using PKCE) together"
+              + " with a non-blank client-secret, which is contradictory. Either remove"
+              + " client-secret, or use client-authentication-method=client_secret_basic.");
+    }
     if (assertionConfiguration != null) {
       assertionConfiguration.validate();
     }

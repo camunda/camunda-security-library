@@ -30,6 +30,8 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
+import org.springframework.security.oauth2.core.endpoint.PkceParameterNames;
 
 /**
  * Unit tests for {@link CamundaOidcAuthorizationRequestResolver}. The resolver lifts OC's
@@ -297,6 +299,102 @@ class CamundaOidcAuthorizationRequestResolverTest {
 
     // then
     assertThat(result.getAdditionalParameters()).containsEntry("max_age", "60");
+  }
+
+  @Test
+  void shouldSendPkceParametersForAPublicClientRegistration() {
+    // given a registration built with ClientAuthenticationMethod.NONE (public client, issue #689)
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(publicClientRegistration());
+    final var resolver =
+        new CamundaOidcAuthorizationRequestResolver(
+            clientRegistrationRepository, Map.of(REGISTRATION_ID, new OidcConfiguration()));
+
+    // when
+    final var result =
+        resolver.resolve(new MockHttpServletRequest("GET", AUTHORIZATION_REQUEST_URI));
+
+    // then
+    assertThat(result.getAttributes()).containsKey(PkceParameterNames.CODE_VERIFIER);
+    assertThat(result.getAdditionalParameters())
+        .containsEntry(PkceParameterNames.CODE_CHALLENGE_METHOD, "S256")
+        .containsKey(PkceParameterNames.CODE_CHALLENGE);
+  }
+
+  @Test
+  void shouldNotSendPkceParametersForAConfidentialClientRegistration() {
+    // given a confidential (client_secret_basic) registration that explicitly opts out of proof
+    // key. Spring Security 7.1's ClientRegistration.ClientSettings defaults requireProofKey=true
+    // for every authorization-code registration regardless of client-authentication-method (PKCE
+    // for all, per OAuth 2.1), which would otherwise mask what this test wants to isolate: that
+    // CSL's own customizer — unlike Spring's built-in one — keys PKCE only off
+    // ClientAuthenticationMethod.NONE, not off ClientSettings, and so adds nothing extra for a
+    // genuinely confidential client.
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(confidentialClientRegistrationWithoutProofKey());
+    final var resolver =
+        new CamundaOidcAuthorizationRequestResolver(
+            clientRegistrationRepository, Map.of(REGISTRATION_ID, new OidcConfiguration()));
+
+    // when
+    final var result =
+        resolver.resolve(new MockHttpServletRequest("GET", AUTHORIZATION_REQUEST_URI));
+
+    // then
+    assertThat(result.getAttributes()).doesNotContainKey(PkceParameterNames.CODE_VERIFIER);
+    assertThat(result.getAdditionalParameters())
+        .doesNotContainKey(PkceParameterNames.CODE_CHALLENGE);
+  }
+
+  private static ClientRegistration confidentialClientRegistrationWithoutProofKey() {
+    return ClientRegistration.withRegistrationId(REGISTRATION_ID)
+        .clientId("test-client")
+        .clientSecret("test-secret")
+        .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+        .clientSettings(ClientRegistration.ClientSettings.builder().requireProofKey(false).build())
+        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+        .redirectUri("http://localhost/login/oauth2/code/" + REGISTRATION_ID)
+        .scope("openid")
+        .authorizationUri("http://idp.example.com/auth")
+        .tokenUri("http://idp.example.com/token")
+        .build();
+  }
+
+  @Test
+  void shouldComposePkceWithOtherCustomizersForAPublicClientRegistration() {
+    // given a public client with additional_parameters and resource also configured
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(publicClientRegistration());
+    final var oidc = new OidcConfiguration();
+    oidc.setResource(List.of("https://api.example.com"));
+    final var authorize = new AuthorizeRequestConfiguration();
+    authorize.setAdditionalParameters(Map.<String, Object>of("prompt", "consent"));
+    oidc.setAuthorizeRequest(authorize);
+    final var resolver =
+        new CamundaOidcAuthorizationRequestResolver(
+            clientRegistrationRepository, Map.of(REGISTRATION_ID, oidc));
+
+    // when
+    final var result =
+        resolver.resolve(new MockHttpServletRequest("GET", AUTHORIZATION_REQUEST_URI));
+
+    // then
+    assertThat(result.getAdditionalParameters())
+        .containsEntry("prompt", "consent")
+        .containsEntry("resource", List.of("https://api.example.com"))
+        .containsKey(PkceParameterNames.CODE_CHALLENGE);
+  }
+
+  private static ClientRegistration publicClientRegistration() {
+    return ClientRegistration.withRegistrationId(REGISTRATION_ID)
+        .clientId("test-public-client")
+        .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
+        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+        .redirectUri("http://localhost/login/oauth2/code/" + REGISTRATION_ID)
+        .scope("openid")
+        .authorizationUri("http://idp.example.com/auth")
+        .tokenUri("http://idp.example.com/token")
+        .build();
   }
 
   @Test

@@ -20,7 +20,9 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestCustomizers;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest.Builder;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
@@ -172,31 +174,50 @@ public final class CamundaOidcAuthorizationRequestResolver
         new DefaultOAuth2AuthorizationRequestResolver(
             clientRegistrationRepository, authorizationRequestBaseUri);
     final var source = sourcesByRegistrationId.get(registrationId);
-    if (source != null || maxAgeSeconds != null) {
-      resolver.setAuthorizationRequestCustomizer(createCustomizer(source));
+    final var isPublicClient =
+        ClientAuthenticationMethod.NONE.equals(registration.getClientAuthenticationMethod());
+    if (source != null || maxAgeSeconds != null || isPublicClient) {
+      resolver.setAuthorizationRequestCustomizer(createCustomizer(source, isPublicClient));
     }
     return resolver;
   }
 
-  private Consumer<Builder> createCustomizer(final OidcConfiguration source) {
-    return builder -> {
-      final AuthorizeRequestConfiguration authorize =
-          source != null ? source.getAuthorizeRequest() : null;
-      final Map<String, Object> additionalParameters =
-          authorize != null ? authorize.getAdditionalParameters() : null;
-      if (additionalParameters != null && !additionalParameters.isEmpty()) {
-        builder.additionalParameters(additionalParameters);
-      }
-      final var resource = source != null ? source.getResource() : null;
-      if (resource != null && !resource.isEmpty()) {
-        builder.additionalParameters(Map.of(OAuth2ParameterNames.RESOURCE, resource));
-      }
-      final boolean maxAgeConfigured =
-          additionalParameters != null && additionalParameters.containsKey(MAX_AGE);
-      if (maxAgeSeconds != null && !maxAgeConfigured) {
-        builder.additionalParameters(Map.of(MAX_AGE, maxAgeSeconds));
-      }
-    };
+  private Consumer<Builder> createCustomizer(
+      final OidcConfiguration source, final boolean isPublicClient) {
+    final Consumer<Builder> customizer =
+        builder -> {
+          final AuthorizeRequestConfiguration authorize =
+              source != null ? source.getAuthorizeRequest() : null;
+          final Map<String, Object> additionalParameters =
+              authorize != null ? authorize.getAdditionalParameters() : null;
+          if (additionalParameters != null && !additionalParameters.isEmpty()) {
+            builder.additionalParameters(additionalParameters);
+          }
+          final var resource = source != null ? source.getResource() : null;
+          if (resource != null && !resource.isEmpty()) {
+            builder.additionalParameters(Map.of(OAuth2ParameterNames.RESOURCE, resource));
+          }
+          final boolean maxAgeConfigured =
+              additionalParameters != null && additionalParameters.containsKey(MAX_AGE);
+          if (maxAgeSeconds != null && !maxAgeConfigured) {
+            builder.additionalParameters(Map.of(MAX_AGE, maxAgeSeconds));
+          }
+        };
+    // PKCE (S256 code challenge) is required for a public client (ClientAuthenticationMethod.NONE)
+    // using the authorization-code grant, since it has no client secret to authenticate the token
+    // exchange. Spring's own DefaultOAuth2AuthorizationRequestResolver already applies PKCE
+    // whenever ClientAuthenticationMethod.NONE OR
+    // ClientRegistration.ClientSettings#isRequireProofKey
+    // is set — true by default for every authorization-code registration since Spring Security 7.1
+    // (PKCE for all, per OAuth 2.1) — so this is belt-and-suspenders: it keeps PKCE mandatory for a
+    // public client even if a registration's ClientSettings is ever built with
+    // requireProofKey=false
+    // elsewhere, which combined with no client secret would be insecure. Composed last so it still
+    // runs even if a host's additional-parameters accidentally name
+    // "code_challenge"/"code_challenge_method".
+    return isPublicClient
+        ? customizer.andThen(OAuth2AuthorizationRequestCustomizers.withPkce())
+        : customizer;
   }
 
   private String resolveRegistrationId(final HttpServletRequest request) {
