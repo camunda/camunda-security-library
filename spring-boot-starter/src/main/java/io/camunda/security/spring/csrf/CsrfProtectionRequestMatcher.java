@@ -68,9 +68,14 @@ public final class CsrfProtectionRequestMatcher implements RequestMatcher {
         enforcedPaths);
   }
 
+  /** Whether {@code method} is GET, HEAD, TRACE or OPTIONS (exempt from CSRF). */
+  public static boolean isSafeMethod(final String method) {
+    return ALLOWED_METHODS.matcher(method).matches();
+  }
+
   @Override
   public boolean matches(final HttpServletRequest request) {
-    if (ALLOWED_METHODS.matcher(request.getMethod()).matches()) {
+    if (isSafeMethod(request.getMethod())) {
       return false;
     }
 
@@ -90,13 +95,20 @@ public final class CsrfProtectionRequestMatcher implements RequestMatcher {
   }
 
   public static RequestMatcher buildPathsMatcher(final Set<String> paths) {
+    return buildPathsMatcher(PathPatternRequestMatcher.withDefaults(), paths);
+  }
+
+  /**
+   * As {@link #buildPathsMatcher(Set)}, using the host's {@code builder} (e.g. with a servlet
+   * {@code basePath}).
+   */
+  public static RequestMatcher buildPathsMatcher(
+      final PathPatternRequestMatcher.Builder builder, final Set<String> paths) {
     if (paths == null || paths.isEmpty()) {
       return NEVER_MATCHES;
     }
     final List<RequestMatcher> matchers =
-        paths.stream()
-            .map(path -> (RequestMatcher) PathPatternRequestMatcher.withDefaults().matcher(path))
-            .toList();
+        paths.stream().map(path -> (RequestMatcher) builder.matcher(path)).toList();
     return matchers.size() == 1 ? matchers.get(0) : new OrRequestMatcher(matchers);
   }
 

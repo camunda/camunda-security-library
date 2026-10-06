@@ -20,6 +20,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 /** Unit tests for {@link SecurityFilterChainSupport}. */
 final class SecurityFilterChainSupportTest {
@@ -393,26 +394,41 @@ final class SecurityFilterChainSupportTest {
   }
 
   @Test
-  void rejectUnprotectedPathOverlapDoesNothingWhenNoOverlap() {
+  void rejectScopedLoginOverlapDoesNothingWhenNoOverlap() {
     assertThatCode(
             () ->
-                SecurityFilterChainSupport.rejectUnprotectedPathOverlap(
-                    Set.of("/error", "/actuator/**"), Set.of("/login")))
+                SecurityFilterChainSupport.rejectScopedLoginOverlap(
+                    Set.of("/error", "/actuator/**"),
+                    SecurityFilterChainSupport.csrfEnforcedPaths("/physical-tenants/t1")))
         .doesNotThrowAnyException();
   }
 
   @Test
-  void rejectUnprotectedPathOverlapRejectsExactLoginMatch() {
-    assertThatIllegalStateException()
-        .isThrownBy(
+  void rejectScopedLoginOverlapIgnoresUnscopedLogin() {
+    assertThatCode(
             () ->
-                SecurityFilterChainSupport.rejectUnprotectedPathOverlap(
-                    Set.of("/login"), Set.of("/login")))
-        .withMessageContaining("/login");
+                SecurityFilterChainSupport.rejectScopedLoginOverlap(
+                    Set.of("/login"), SecurityFilterChainSupport.csrfEnforcedPaths(null)))
+        .doesNotThrowAnyException();
+    assertThatCode(
+            () ->
+                SecurityFilterChainSupport.rejectScopedLoginOverlap(
+                    Set.of("/login"),
+                    SecurityFilterChainSupport.csrfEnforcedPaths("/physical-tenants/t1")))
+        .doesNotThrowAnyException();
   }
 
   @Test
-  void rejectUnprotectedPathOverlapRejectsScopedLoginPathReachableThroughABroaderPattern() {
+  void rejectScopedLoginOverlapDoesNotMutateEnforcedPaths() {
+    final var enforcedPaths = SecurityFilterChainSupport.csrfEnforcedPaths("/physical-tenants/t1");
+
+    SecurityFilterChainSupport.rejectScopedLoginOverlap(Set.of("/error"), enforcedPaths);
+
+    assertThat(enforcedPaths).contains("/login", "/physical-tenants/t1/login");
+  }
+
+  @Test
+  void rejectScopedLoginOverlapRejectsScopedLoginPathReachableThroughABroaderPattern() {
     // Regression for the exact bypass a reviewer flagged on PR #680 (camunda-security-library):
     // "/physical-tenants/**" does not match the literal "/login", but it does match the scoped
     // login path "/physical-tenants/t1/login" that a scoped chain actually enforces CSRF on.
@@ -421,8 +437,69 @@ final class SecurityFilterChainSupportTest {
     assertThatIllegalStateException()
         .isThrownBy(
             () ->
-                SecurityFilterChainSupport.rejectUnprotectedPathOverlap(
+                SecurityFilterChainSupport.rejectScopedLoginOverlap(
                     Set.of("/physical-tenants/**"), enforcedPaths))
-        .withMessageContaining("/physical-tenants/t1/login");
+        .withMessageContaining("/physical-tenants/t1/login")
+        .withMessageContaining("/physical-tenants/**")
+        .withMessageContaining("ADR-0032");
+  }
+
+  @Test
+  void findUnprotectedPathOverlapsReturnsEmptyWhenNoOverlap() {
+    assertThat(
+            SecurityFilterChainSupport.findUnprotectedPathOverlaps(
+                Set.of("/error", "/actuator/**"), Set.of("/login")))
+        .isEmpty();
+  }
+
+  @Test
+  void findUnprotectedPathOverlapsReturnsEnforcedPathForExactAndWildcardPattern() {
+    assertThat(
+            SecurityFilterChainSupport.findUnprotectedPathOverlaps(
+                Set.of("/login"), Set.of("/login")))
+        .containsExactly("/login");
+    assertThat(
+            SecurityFilterChainSupport.findUnprotectedPathOverlaps(
+                Set.of("/log*"), Set.of("/login")))
+        .containsExactly("/login");
+  }
+
+  @Test
+  void findUnprotectedPathOverlapsReturnsScopedLoginPath() {
+    assertThat(
+            SecurityFilterChainSupport.findUnprotectedPathOverlaps(
+                Set.of("/physical-tenants/**"),
+                SecurityFilterChainSupport.csrfEnforcedPaths("/physical-tenants/t1")))
+        .containsExactly("/physical-tenants/t1/login");
+  }
+
+  @Test
+  void stateChangingRequestToMatchesUnsafeMethodsOnPath() {
+    final var matcher = SecurityFilterChainSupport.stateChangingRequestTo(Set.of("/login"));
+
+    assertThat(matcher.matches(new MockHttpServletRequest("POST", "/login"))).isTrue();
+    assertThat(matcher.matches(new MockHttpServletRequest("PUT", "/login"))).isTrue();
+    assertThat(matcher.matches(new MockHttpServletRequest("DELETE", "/login"))).isTrue();
+  }
+
+  @Test
+  void stateChangingRequestToIgnoresSafeMethodsAndOtherPaths() {
+    final var matcher = SecurityFilterChainSupport.stateChangingRequestTo(Set.of("/login"));
+
+    assertThat(matcher.matches(new MockHttpServletRequest("GET", "/login"))).isFalse();
+    assertThat(matcher.matches(new MockHttpServletRequest("HEAD", "/login"))).isFalse();
+    assertThat(matcher.matches(new MockHttpServletRequest("OPTIONS", "/login"))).isFalse();
+    assertThat(matcher.matches(new MockHttpServletRequest("POST", "/other"))).isFalse();
+  }
+
+  @Test
+  void stateChangingRequestToHonoursBuilderBasePath() {
+    final var matcher =
+        SecurityFilterChainSupport.stateChangingRequestTo(
+            PathPatternRequestMatcher.withDefaults().basePath("/app"), Set.of("/login"));
+
+    assertThat(matcher.matches(new MockHttpServletRequest("POST", "/app/login"))).isTrue();
+    assertThat(matcher.matches(new MockHttpServletRequest("GET", "/app/login"))).isFalse();
+    assertThat(matcher.matches(new MockHttpServletRequest("POST", "/login"))).isFalse();
   }
 }

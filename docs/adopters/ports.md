@@ -302,6 +302,10 @@ default Set<String> adminFilterBypassPaths();           // paths admin-user filt
 Path patterns use Spring Security ant-style syntax (`**` for multi-level, `*` for single-level).
 `webComponentNames()` are bare path-segment identifiers, not ant patterns.
 
+`unprotectedPaths()` may include `/login`; only its safe methods are then unprotected, and
+state-changing requests still require CSRF. See
+[security-filter-chains](security-filter-chains.md#camundasecuritycsrf) for details and caveats.
+
 **CSL default:** none — the host must supply this bean.
 
 **OC example:** `SecurityPathAdapter` in `authentication/` — returns OC-specific path sets

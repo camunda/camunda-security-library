@@ -11,6 +11,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpSession;
 
@@ -146,6 +148,18 @@ class CsrfProtectionRequestMatcherTest {
     request.setSession(new MockHttpSession());
     request.addHeader("Referer", "http://localhost/swagger-ui/index.html");
     assertThat(enforcingMatcher.matches(request)).isTrue();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"GET", "HEAD", "TRACE", "OPTIONS"})
+  void isSafeMethodShouldReturnTrueForSafeMethods(final String method) {
+    assertThat(CsrfProtectionRequestMatcher.isSafeMethod(method)).isTrue();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"POST", "PUT", "PATCH", "DELETE"})
+  void isSafeMethodShouldReturnFalseForUnsafeMethods(final String method) {
+    assertThat(CsrfProtectionRequestMatcher.isSafeMethod(method)).isFalse();
   }
 
   private MockHttpServletRequest createRequest(final String method, final String servletPath) {

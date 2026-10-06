@@ -444,6 +444,15 @@ In this example, the library treats `groups` as the claim source for group mappi
 
 The login endpoint (`/login`, and its scoped `<basePath>/login` variants) always requires a valid CSRF token, even for a browser that holds no session yet — it cannot be exempted via `ignored-path-patterns`. Without this, a cross-site `POST /login` is otherwise indistinguishable from a legitimate one on a browser that already has an authenticated session, and silently replaces the victim's session with an attacker-controlled one (camunda/security-testing-findings#281). An anonymous `GET /login` still receives a CSRF token (via the same cookie/response-header mechanism used for authenticated requests) so a legitimate login can obtain one to submit back.
 
+`SecurityPathPort#unprotectedPaths()` may cover `/login` (e.g. via `/**`). The unprotected chain then serves only GET/HEAD/OPTIONS/TRACE on `/login` and issues the CSRF token on `GET /login`; state-changing requests fall through to the CSRF-enforcing API or webapp chain. Caveats:
+
+- Exact `/login` only: `/login/foo` under `/login/**` stays unprotected for all methods.
+- A pattern matching a scoped `<basePath>/login` fails startup.
+- OIDC: `GET /login` never reaches `CamundaLoginPickerFilter`.
+- With `catch-all-unhandled-paths-enabled=false` and no chain claiming `POST /login`, it is unsecured (logged as `WARN`).
+
+**Migrating from 1.1.0:** a host that moved `/login` into `unprotectedApiPaths()` can move it back. See [ADR-0032](../adr/0032-scope-login-csrf-guard-to-state-changing-requests.md).
+
 ### `camunda.security.http-headers.*`
 
 Each subkey configures one HTTP response header. Shapes:
