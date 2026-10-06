@@ -27,6 +27,7 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.web.authentication.logout.LogoutHandler;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -42,6 +43,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
 
   private static final Logger LOG = LoggerFactory.getLogger(OAuth2RefreshTokenFilter.class);
+  private static final int MAX_LOGGED_ERROR_MESSAGE_LENGTH = 200;
 
   private final Duration clockSkew = Duration.ofSeconds(60L);
   private final Duration doubleClockSkew = clockSkew.multipliedBy(2);
@@ -128,7 +130,13 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
             "Re-authorization is not supported or not required for the client");
       }
 
-    } catch (final OAuth2AuthenticationException e) {
+    } catch (final OAuth2AuthenticationException | OAuth2AuthorizationException e) {
+      // A failed refresh (e.g. invalid_grant) surfaces as OAuth2AuthorizationException, not
+      // OAuth2AuthenticationException; uncaught, it escapes to the container and logs as ERROR.
+      LOG.warn(
+          "Failed to refresh access token for principal '{}': {}",
+          sanitizeForLog(authenticationToken.getName()),
+          sanitizeForLog(e.getMessage()));
       logoutAndThrowAuthenticationException(
           request, response, authenticationToken, "refresh_token_failed", e);
     }
@@ -233,6 +241,22 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
       final Throwable e) {
     forceLogout(authenticationToken, request, response);
     throw new OAuth2AuthenticationException(new OAuth2Error(reasonCode), e);
+  }
+
+  /**
+   * Both the IdP's OAuth2 error message and the OAuth2 principal name are provider/IdP-controlled
+   * and are otherwise logged verbatim; strip newlines to prevent log forging and bound the length
+   * so a misbehaving IdP can't flood the log.
+   */
+  private static String sanitizeForLog(final String value) {
+    if (value == null) {
+      return "n/a";
+    }
+
+    final String singleLine = value.replaceAll("[\\r\\n]+", " ").strip();
+    return singleLine.length() > MAX_LOGGED_ERROR_MESSAGE_LENGTH
+        ? singleLine.substring(0, MAX_LOGGED_ERROR_MESSAGE_LENGTH) + "...(truncated)"
+        : singleLine;
   }
 
   private void forceLogout(
