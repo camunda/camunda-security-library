@@ -449,7 +449,7 @@ The login endpoint (`/login`, and its scoped `<basePath>/login` variants) always
 - Exact `/login` only: `/login/foo` under `/login/**` stays unprotected for all methods.
 - With CSRF enabled, a pattern matching a scoped `<basePath>/login` fails startup.
 - OIDC: `GET /login` never reaches `CamundaLoginPickerFilter`.
-- With `catch-all-unhandled-paths-enabled=false` and neither `apiPaths()` nor `webappPaths()` covering `/login`, startup fails, because `POST /login` would reach no security chain.
+- With `catch-all-unhandled-paths-enabled=false` and neither `apiPaths()` nor (with the webapp chain enabled) `webappPaths()` covering `/login`, startup fails, because `POST /login` would reach no security chain.
 
 **Migrating from 1.1.0:** a host that moved `/login` into `unprotectedApiPaths()` can move it back. See [ADR-0032](../adr/0032-scope-login-csrf-guard-to-state-changing-requests.md).
 

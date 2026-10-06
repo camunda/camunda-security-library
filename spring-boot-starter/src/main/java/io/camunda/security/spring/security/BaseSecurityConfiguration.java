@@ -110,15 +110,17 @@ public class BaseSecurityConfiguration {
 
   /**
    * State-changing {@code /login} requests are routed away from the unprotected chain. Without the
-   * catch-all chain and without an API or webapp pattern covering {@code /login}, they would reach
-   * no security chain and skip the CSRF check, so startup fails (ADR-0032).
+   * catch-all chain and without an API pattern or (with the webapp chain enabled) a webapp pattern
+   * covering {@code /login}, they would reach no security chain and skip the CSRF check, so startup
+   * fails (ADR-0032).
    */
   private static void rejectUnclaimedStateChangingLogin(
       final SecurityPathPort pathPort,
       final CamundaSecurityLibraryProperties properties,
       final String overlappingPattern) {
     if (properties.getAuthentication().isCatchAllUnhandledPathsEnabled()
-        || isClaimedByApiOrWebappChain(pathPort)) {
+        || isClaimedByApiOrWebappChain(
+            pathPort, properties.getAuthentication().isWebappEnabled())) {
       return;
     }
     throw new IllegalStateException(
@@ -127,7 +129,7 @@ public class BaseSecurityConfiguration {
             + "' overlaps the login endpoint '"
             + LOGIN_URL
             + "' and camunda.security.authentication.catch-all-unhandled-paths-enabled=false,"
-            + " but neither apiPaths() nor webappPaths() covers '"
+            + " but neither apiPaths() nor (with the webapp chain enabled) webappPaths() covers '"
             + LOGIN_URL
             + "': state-changing requests to '"
             + LOGIN_URL
@@ -137,9 +139,13 @@ public class BaseSecurityConfiguration {
             + " the unprotected pattern (see ADR-0032).");
   }
 
-  private static boolean isClaimedByApiOrWebappChain(final SecurityPathPort pathPort) {
+  /** {@code webappPaths()} only count when the webapp chain exists. */
+  private static boolean isClaimedByApiOrWebappChain(
+      final SecurityPathPort pathPort, final boolean webappEnabled) {
     final var claimingPaths = new HashSet<>(pathPort.apiPaths());
-    claimingPaths.addAll(pathPort.webappPaths());
+    if (webappEnabled) {
+      claimingPaths.addAll(pathPort.webappPaths());
+    }
     return SecurityFilterChainSupport.firstMatchingPattern(claimingPaths, LOGIN_URL) != null;
   }
 

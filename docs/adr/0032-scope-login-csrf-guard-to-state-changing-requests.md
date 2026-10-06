@@ -46,9 +46,9 @@ and OPTIONS, via `CsrfProtectionRequestMatcher.isSafeMethod`.
   logging and the startup check below.
 - Startup fails with an `IllegalStateException` when an `unprotectedPaths()` pattern overlaps
   `/login`, `camunda.security.authentication.catch-all-unhandled-paths-enabled` is `false` and no
-  `apiPaths()` or `webappPaths()` pattern covers `/login`, because state-changing requests to
-  `/login` would then reach no security chain. This applies regardless of `csrf.enabled` and uses
-  default-parser matching.
+  `apiPaths()` pattern or (with the webapp chain enabled) `webappPaths()` pattern covers `/login`,
+  because state-changing requests to `/login` would then reach no security chain. This applies
+  regardless of `csrf.enabled` and uses default-parser matching.
 - `SecurityFilterChainSupport#rejectScopedLoginOverlap` replaces the unscoped fail-fast. When
   `camunda.security.csrf.enabled` is true, a pattern in `unprotectedPaths()` that matches a scoped
   `<basePath>/login` still fails startup with an `IllegalStateException` citing this ADR.

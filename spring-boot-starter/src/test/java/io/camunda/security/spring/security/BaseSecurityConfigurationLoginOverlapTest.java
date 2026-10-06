@@ -365,6 +365,25 @@ class BaseSecurityConfigurationLoginOverlapTest {
         .run(ctx -> assertThat(ctx).hasNotFailed());
   }
 
+  @Test
+  void failsStartupWhenOnlyWebappPathsCoverLoginButWebappChainIsDisabled() {
+    runnerWithPaths(
+            StubSecurityPaths.builder()
+                .unprotectedPaths("/login")
+                .apiPaths("/api/**")
+                .webappPaths("/login"))
+        .withPropertyValues(
+            CATCH_ALL_DISABLED, "camunda.security.authentication.webapp-enabled=false")
+        .run(
+            ctx ->
+                assertThat(ctx)
+                    .hasFailed()
+                    .getFailure()
+                    .rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("with the webapp chain enabled"));
+  }
+
   private static List<ILoggingEvent> captureLogs(final Runnable action) {
     final var logger = (Logger) LoggerFactory.getLogger(BaseSecurityConfiguration.class);
     final var appender = new ListAppender<ILoggingEvent>();
