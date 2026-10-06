@@ -447,7 +447,7 @@ The login endpoint (`/login`, and its scoped `<basePath>/login` variants) always
 `SecurityPathPort#unprotectedPaths()` may cover `/login` (e.g. via `/**`). The unprotected chain then serves only GET/HEAD/OPTIONS/TRACE on `/login` and issues the CSRF token on `GET /login`; state-changing requests fall through to the CSRF-enforcing API or webapp chain. Caveats:
 
 - Exact `/login` only: `/login/foo` under `/login/**` stays unprotected for all methods.
-- A pattern matching a scoped `<basePath>/login` fails startup.
+- With CSRF enabled, a pattern matching a scoped `<basePath>/login` fails startup.
 - OIDC: `GET /login` never reaches `CamundaLoginPickerFilter`.
 - With `catch-all-unhandled-paths-enabled=false` and no chain claiming `POST /login`, it is unsecured (logged as `WARN`).
 

@@ -76,7 +76,8 @@ public class BaseSecurityConfiguration {
     } else {
       logLoginOverlap(
           SecurityFilterChainSupport.firstMatchingPattern(unprotectedPaths, LOGIN_URL), properties);
-      SecurityFilterChainSupport.applyLoginTokenIssuance(filterChainBuilder, properties);
+      SecurityFilterChainSupport.applyLoginTokenIssuance(
+          filterChainBuilder, properties, pathMatcherBuilder);
     }
 
     SecurityFilterChainSupport.applyCorsConfiguration(filterChainBuilder, corsSource);

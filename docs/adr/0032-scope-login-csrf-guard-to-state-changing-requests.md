@@ -26,6 +26,10 @@ state-changing method, while serving `GET /login` unauthenticated is what the lo
 Scoped login paths differ: scoped chains use a per-scope CSRF cookie name and path, so the
 unprotected chain cannot issue a token that a scoped `POST <basePath>/login` would accept.
 
+The question this ADR answers: how can safe-method requests to an unscoped `/login` covered by
+`unprotectedPaths()` be served unauthenticated while every state-changing login request still
+requires a valid CSRF token?
+
 ## Decision
 
 The `unprotectedPathsSecurityFilterChain` (order 0, `BaseSecurityConfiguration`) matches
@@ -39,9 +43,9 @@ and OPTIONS, via `CsrfProtectionRequestMatcher.isSafeMethod`.
 - When an unprotected pattern overlaps `/login` and `camunda.security.csrf.enabled` is true, the
   unprotected chain issues the `X-CSRF-TOKEN` header and cookie on `GET /login`, using the same
   cookie repository as the unscoped chains. It never enforces CSRF itself.
-- `SecurityFilterChainSupport#rejectScopedLoginOverlap` replaces the unscoped fail-fast. A pattern
-  in `unprotectedPaths()` that matches a scoped `<basePath>/login` still fails startup with an
-  `IllegalStateException` citing this ADR.
+- `SecurityFilterChainSupport#rejectScopedLoginOverlap` replaces the unscoped fail-fast. When
+  `camunda.security.csrf.enabled` is true, a pattern in `unprotectedPaths()` that matches a scoped
+  `<basePath>/login` still fails startup with an `IllegalStateException` citing this ADR.
 
 ### Why these particular boundaries
 
@@ -50,8 +54,8 @@ and OPTIONS, via `CsrfProtectionRequestMatcher.isSafeMethod`.
   drifting.
 - **Routing instead of exempting.** The unprotected chain never sees a state-changing login, so no
   chain other than the CSRF-enforcing one can accept it.
-- **Scoped overlaps still fail fast.** The failure mode of routing them is a login page that can
-  never be submitted, which is worse than a startup error naming the pattern.
+- **Scoped overlaps still fail fast (with CSRF enabled).** The failure mode of routing them is a
+  login page that can never be submitted, which is worse than a startup error naming the pattern.
 
 ## Consequences
 
@@ -71,8 +75,13 @@ and OPTIONS, via `CsrfProtectionRequestMatcher.isSafeMethod`.
 - An OIDC host that lists `/login` as unprotected shadows `CamundaLoginPickerFilter`, because
   `GET /login` never reaches the webapp chain.
 - With the catch-all chain disabled and no chain claiming `POST /login`, that request is unsecured.
-- Scoped overlaps still fail fast, so a host with scoped chains must keep its unprotected patterns
-  off every `<basePath>/login`.
+- With CSRF enabled, scoped overlaps still fail fast, so a host with scoped chains must keep its
+  unprotected patterns off every `<basePath>/login`. With CSRF disabled the check does not run.
+- Under a servlet path (a host `PathPatternRequestMatcher.Builder` with a basePath), the downstream
+  `CsrfProtectionRequestMatcher` and the webapp/API chains' token response filter still match with
+  `PathPatternRequestMatcher.withDefaults()`. This gap predates this ADR (it exists on main for all
+  hosts) and is out of its scope, so the unconditional login guard does not yet hold for
+  `<servlet-path>/login`. Only the unprotected chain's token issuance honours the builder.
 
 ## Alternatives Considered
 

@@ -156,6 +156,24 @@ class BaseSecurityConfigurationLoginOverlapTest {
   }
 
   @Test
+  void issuesCsrfTokenOnGetLoginUnderHostPathPatternBuilderBasePath() {
+    runnerWith("/login")
+        .withBean(
+            PathPatternRequestMatcher.Builder.class,
+            () -> PathPatternRequestMatcher.withDefaults().basePath("/app"))
+        .run(
+            ctx -> {
+              final var proxy =
+                  new FilterChainProxy(List.of(ctx.getBean(CHAIN, SecurityFilterChain.class)));
+              final var response = new MockHttpServletResponse();
+              proxy.doFilter(servletRequest("GET", "/app/login"), response, new MockFilterChain());
+
+              assertThat(response.getHeader(TOKEN_HEADER)).isNotNull();
+              assertThat(response.getCookie(TOKEN_HEADER)).isNotNull();
+            });
+  }
+
+  @Test
   void issuesNoCsrfTokenWhenUnprotectedPathsDoNotOverlapLogin() {
     runnerWith("/error", "/logs/**")
         .run(
