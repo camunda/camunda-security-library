@@ -9,23 +9,34 @@ package io.camunda.security.spring.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
+import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
+import org.springframework.mock.web.MockFilterChain;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.web.FilterChainProxy;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 /**
- * Regression coverage for a bypass a reviewer flagged on the PR implementing ADR-0027
- * (camunda/security-testing-findings#281): {@code BaseSecurityConfiguration}'s always-first,
- * CSRF-disabled unprotected-paths chain is driven entirely by the host-supplied {@code
- * SecurityPathPort#unprotectedPaths()}. If a host ever declared a pattern overlapping the login
- * endpoint there, {@code FilterChainProxy} would route {@code /login} to that chain and never reach
- * the webapp chain that enforces CSRF on it, silently defeating the "unconditional" guarantee.
- * {@code BaseSecurityConfiguration} now fails fast at startup instead.
+ * Covers {@code BaseSecurityConfiguration}'s handling of an unprotected pattern that overlaps the
+ * unscoped {@code /login} (ADR-0032, issue #710). Scoped overlaps are covered by {@link
+ * ScopedLoginOverlapTest}.
  */
 class BaseSecurityConfigurationLoginOverlapTest {
+
+  private static final String CHAIN = "unprotectedPathsSecurityFilterChain";
+  private static final String TOKEN_HEADER = CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
   private final WebApplicationContextRunner runner =
       new WebApplicationContextRunner()
@@ -33,44 +44,217 @@ class BaseSecurityConfigurationLoginOverlapTest {
               AutoConfigurations.of(
                   CamundaSecurityConfiguration.class, BaseSecurityConfiguration.class));
 
+  private WebApplicationContextRunner runnerWith(final String... unprotectedPaths) {
+    return runner.withBean(
+        SecurityPathPort.class,
+        () -> StubSecurityPaths.builder().unprotectedPaths(unprotectedPaths).build());
+  }
+
+  private static boolean matches(
+      final SecurityFilterChain chain, final String method, final String uri) {
+    return chain.matches(new MockHttpServletRequest(method, uri));
+  }
+
   @Test
   void startsNormallyWhenUnprotectedPathsDoNotOverlapLogin() {
-    runner
-        .withBean(
-            SecurityPathPort.class,
-            () -> StubSecurityPaths.builder().unprotectedPaths("/error", "/logs/**").build())
-        .run(ctx -> assertThat(ctx).hasNotFailed().hasBean("unprotectedPathsSecurityFilterChain"));
+    runnerWith("/error", "/logs/**").run(ctx -> assertThat(ctx).hasNotFailed().hasBean(CHAIN));
   }
 
   @Test
-  void rejectsUnprotectedPathThatExactlyMatchesLogin() {
-    runner
-        .withBean(
-            SecurityPathPort.class,
-            () -> StubSecurityPaths.builder().unprotectedPaths("/login").build())
+  void servesSafeMethodsButNotStateChangingMethodsOnExactLogin() {
+    runnerWith("/login")
         .run(
-            ctx ->
-                assertThat(ctx)
-                    .hasFailed()
-                    .getFailure()
-                    .rootCause()
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("/login"));
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              final var chain = ctx.getBean(CHAIN, SecurityFilterChain.class);
+              for (final var method : List.of("GET", "HEAD", "OPTIONS")) {
+                assertThat(matches(chain, method, "/login")).as(method).isTrue();
+              }
+              for (final var method : List.of("POST", "PUT", "DELETE")) {
+                assertThat(matches(chain, method, "/login")).as(method).isFalse();
+              }
+            });
   }
 
   @Test
-  void rejectsUnprotectedPathThatMatchesLoginViaWildcard() {
-    runner
-        .withBean(
-            SecurityPathPort.class,
-            () -> StubSecurityPaths.builder().unprotectedPaths("/log*").build())
+  void servesSafeMethodsButNotStateChangingMethodsOnWildcardOverlappingLogin() {
+    runnerWith("/log*")
         .run(
-            ctx ->
-                assertThat(ctx)
-                    .hasFailed()
-                    .getFailure()
-                    .rootCause()
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("/log*"));
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              final var chain = ctx.getBean(CHAIN, SecurityFilterChain.class);
+              for (final var method : List.of("GET", "HEAD", "OPTIONS")) {
+                assertThat(matches(chain, method, "/login")).as(method).isTrue();
+              }
+              for (final var method : List.of("POST", "PUT", "DELETE")) {
+                assertThat(matches(chain, method, "/login")).as(method).isFalse();
+              }
+            });
+  }
+
+  /**
+   * Spring Boot registers a {@link PathPatternRequestMatcher.Builder} with {@code
+   * basePath(spring.mvc.servlet.path)} when the dispatcher servlet is not mapped to {@code /}. Both
+   * the unprotected-paths matcher and the state-changing {@code /login} exclusion must honour it:
+   * fixing only the former would let {@code POST /app/login} into the CSRF-disabled chain.
+   */
+  @Test
+  void honoursHostPathPatternBuilderBasePathForPathsAndLoginExclusion() {
+    runnerWith("/error", "/login")
+        .withBean(
+            PathPatternRequestMatcher.Builder.class,
+            () -> PathPatternRequestMatcher.withDefaults().basePath("/app"))
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              final var chain = ctx.getBean(CHAIN, SecurityFilterChain.class);
+              assertThat(chain.matches(servletRequest("GET", "/app/error"))).isTrue();
+              assertThat(chain.matches(servletRequest("POST", "/app/error"))).isTrue();
+              for (final var method : List.of("GET", "HEAD", "OPTIONS")) {
+                assertThat(chain.matches(servletRequest(method, "/app/login"))).as(method).isTrue();
+              }
+              for (final var method : List.of("POST", "PUT", "DELETE")) {
+                assertThat(chain.matches(servletRequest(method, "/app/login")))
+                    .as(method)
+                    .isFalse();
+              }
+            });
+  }
+
+  /** A request dispatched to a servlet mapped at {@code /app}. */
+  private static MockHttpServletRequest servletRequest(final String method, final String uri) {
+    final var request = new MockHttpServletRequest(method, uri);
+    request.setServletPath("/app");
+    request.setPathInfo(uri.substring("/app".length()));
+    return request;
+  }
+
+  @Test
+  void stillServesStateChangingRequestsToOtherUnprotectedPaths() {
+    runnerWith("/login", "/error")
+        .run(
+            ctx -> {
+              final var chain = ctx.getBean(CHAIN, SecurityFilterChain.class);
+              assertThat(matches(chain, "POST", "/error")).isTrue();
+            });
+  }
+
+  @Test
+  void issuesCsrfTokenOnGetLoginWhenUnprotectedPathsOverlapLogin() {
+    runnerWith("/login")
+        .run(
+            ctx -> {
+              final var proxy =
+                  new FilterChainProxy(List.of(ctx.getBean(CHAIN, SecurityFilterChain.class)));
+              final var response = new MockHttpServletResponse();
+              proxy.doFilter(
+                  new MockHttpServletRequest("GET", "/login"), response, new MockFilterChain());
+
+              assertThat(response.getHeader(TOKEN_HEADER)).isNotNull();
+              assertThat(response.getCookie(TOKEN_HEADER)).isNotNull();
+            });
+  }
+
+  @Test
+  void issuesNoCsrfTokenWhenUnprotectedPathsDoNotOverlapLogin() {
+    runnerWith("/error", "/logs/**")
+        .run(
+            ctx -> {
+              final var proxy =
+                  new FilterChainProxy(List.of(ctx.getBean(CHAIN, SecurityFilterChain.class)));
+              final var response = new MockHttpServletResponse();
+              proxy.doFilter(
+                  new MockHttpServletRequest("GET", "/error"), response, new MockFilterChain());
+
+              assertThat(response.getHeader(TOKEN_HEADER)).isNull();
+              assertThat(response.getCookie(TOKEN_HEADER)).isNull();
+            });
+  }
+
+  @Test
+  void startsAndWritesNoTokenWhenCsrfIsDisabled() {
+    runnerWith("/login")
+        .withPropertyValues("camunda.security.csrf.enabled=false")
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              final var proxy =
+                  new FilterChainProxy(List.of(ctx.getBean(CHAIN, SecurityFilterChain.class)));
+              final var response = new MockHttpServletResponse();
+              proxy.doFilter(
+                  new MockHttpServletRequest("GET", "/login"), response, new MockFilterChain());
+
+              assertThat(response.getHeader(TOKEN_HEADER)).isNull();
+            });
+  }
+
+  @Test
+  void emptyUnprotectedPathsYieldAChainThatMatchesNothing() {
+    runnerWith()
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              final var chain = ctx.getBean(CHAIN, SecurityFilterChain.class);
+              assertThat(matches(chain, "GET", "/error")).isFalse();
+              assertThat(matches(chain, "GET", "/login")).isFalse();
+            });
+  }
+
+  @Test
+  void logsCsrfEnforcedRoutingAndNoWarningByDefault() {
+    final var events = captureLogs(() -> runnerWith("/login").run(ctx -> {}));
+
+    assertThat(messages(events, Level.INFO))
+        .anyMatch(m -> m.contains("'/login'") && m.contains("CSRF-enforcing"));
+    assertThat(messages(events, Level.WARN)).isEmpty();
+  }
+
+  @Test
+  void logsThatCsrfIsDisabledWhenItIs() {
+    final var events =
+        captureLogs(
+            () ->
+                runnerWith("/login")
+                    .withPropertyValues("camunda.security.csrf.enabled=false")
+                    .run(ctx -> {}));
+
+    assertThat(messages(events, Level.INFO))
+        .anyMatch(m -> m.contains("CSRF protection is disabled"))
+        .noneMatch(m -> m.contains("CSRF-enforcing"));
+  }
+
+  @Test
+  void warnsWhenLoginOverlapsAndCatchAllChainIsDisabled() {
+    final var events =
+        captureLogs(
+            () ->
+                runnerWith("/log*")
+                    .withPropertyValues(
+                        "camunda.security.authentication.catch-all-unhandled-paths-enabled=false")
+                    .run(ctx -> {}));
+
+    assertThat(messages(events, Level.WARN))
+        .singleElement()
+        .satisfies(m -> assertThat(m).contains("'/log*'", "another filter chain"));
+  }
+
+  private static List<ILoggingEvent> captureLogs(final Runnable action) {
+    final var logger = (Logger) LoggerFactory.getLogger(BaseSecurityConfiguration.class);
+    final var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    logger.addAppender(appender);
+    try {
+      action.run();
+    } finally {
+      logger.detachAppender(appender);
+    }
+    return appender.list;
+  }
+
+  private static List<String> messages(final List<ILoggingEvent> events, final Level level) {
+    return events.stream()
+        .filter(event -> event.getLevel() == level)
+        .map(ILoggingEvent::getFormattedMessage)
+        .toList();
   }
 }

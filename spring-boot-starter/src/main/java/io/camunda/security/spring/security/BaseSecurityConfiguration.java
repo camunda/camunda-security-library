@@ -14,8 +14,11 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.cors.NoOpCorsConfigurationSource;
+import io.camunda.security.spring.csrf.CsrfProtectionRequestMatcher;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -25,15 +28,24 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.AndRequestMatcher;
+import org.springframework.security.web.util.matcher.NegatedRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 /**
  * Always-on filter chains: unprotected paths (highest priority) and a catch-all deny chain (lowest
  * priority). Activates Spring Security's web security infrastructure via {@link EnableWebSecurity}.
+ *
+ * <p>The unprotected chain never serves state-changing requests to {@code /login}; they fall
+ * through to the CSRF-enforcing chain (ADR-0032).
  */
 @Configuration
 @EnableWebSecurity
 public class BaseSecurityConfiguration {
+
+  private static final Logger LOG = LoggerFactory.getLogger(BaseSecurityConfiguration.class);
 
   @Bean
   @Order(ORDER_UNPROTECTED)
@@ -43,17 +55,29 @@ public class BaseSecurityConfiguration {
       final SecurityPathPort pathPort,
       final ObjectProvider<CorsConfigurationSource> corsSourceProvider,
       final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
-      final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers)
+      final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers,
+      final ObjectProvider<PathPatternRequestMatcher.Builder> pathMatcherBuilderProvider)
       throws Exception {
     final var unprotectedPaths = pathPort.unprotectedPaths();
-    rejectLoginPathOverlap(unprotectedPaths);
+    // Same builder resolution as HttpSecurity#securityMatcher(String...).
+    final var pathMatcherBuilder =
+        pathMatcherBuilderProvider.getIfUnique(PathPatternRequestMatcher::withDefaults);
+    final var loginOverlaps =
+        SecurityFilterChainSupport.findUnprotectedPathOverlaps(unprotectedPaths, Set.of(LOGIN_URL));
     final var corsSource = corsSourceProvider.getIfAvailable(NoOpCorsConfigurationSource::new);
     final var filterChainBuilder =
-        http.securityMatcher(unprotectedPaths.toArray(String[]::new))
+        http.securityMatcher(unprotectedPathsMatcher(pathMatcherBuilder, unprotectedPaths))
             .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
-            .csrf(AbstractHttpConfigurer::disable)
             .formLogin(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable);
+
+    if (loginOverlaps.isEmpty()) {
+      filterChainBuilder.csrf(AbstractHttpConfigurer::disable);
+    } else {
+      logLoginOverlap(
+          SecurityFilterChainSupport.firstMatchingPattern(unprotectedPaths, LOGIN_URL), properties);
+      SecurityFilterChainSupport.applyLoginTokenIssuance(filterChainBuilder, properties);
+    }
 
     SecurityFilterChainSupport.applyCorsConfiguration(filterChainBuilder, corsSource);
     SecurityFilterChainSupport.applyHttpsRedirectCustomizers(
@@ -65,20 +89,41 @@ public class BaseSecurityConfiguration {
     return filterChainBuilder.build();
   }
 
+  private static void logLoginOverlap(
+      final String overlappingPattern, final CamundaSecurityLibraryProperties properties) {
+    final var stateChangingRouting =
+        properties.getCsrf().isEnabled()
+            ? "routed to the CSRF-enforcing API or webapp chain"
+            : "routed to the API or webapp chain (CSRF protection is disabled)";
+    LOG.info(
+        "SecurityPathPort#unprotectedPaths() pattern '{}' overlaps the login endpoint '{}':"
+            + " GET/HEAD/OPTIONS/TRACE requests to it are served unauthenticated, while"
+            + " state-changing requests are {}.",
+        overlappingPattern,
+        LOGIN_URL,
+        stateChangingRouting);
+    if (!properties.getAuthentication().isCatchAllUnhandledPathsEnabled()) {
+      LOG.warn(
+          "SecurityPathPort#unprotectedPaths() pattern '{}' overlaps the login endpoint '{}' and"
+              + " camunda.security.authentication.catch-all-unhandled-paths-enabled=false:"
+              + " state-changing requests to '{}' are only secured if another filter chain"
+              + " claims that path.",
+          overlappingPattern,
+          LOGIN_URL,
+          LOGIN_URL);
+    }
+  }
+
   /**
-   * Fails fast if any declared unprotected path would also match the (unscoped) login endpoint.
-   * This chain is always ordered first ({@code ORDER_UNPROTECTED}) and unconditionally disables
-   * CSRF ({@code .csrf(AbstractHttpConfigurer::disable)}) for whatever it matches — Spring's {@code
-   * FilterChainProxy} routes a matching request here and never reaches the webapp chain that
-   * actually enforces CSRF on {@code /login}. Delegates to {@link
-   * SecurityFilterChainSupport#rejectUnprotectedPathOverlap}, the same check every scoped chain
-   * runs (via {@link SecurityFilterChainSupport#applyCsrfConfiguration}) against its own scoped
-   * login path — that one only covers scopes as they are built, so this unscoped check still needs
-   * to run here for the primary login path, which no {@code applyCsrfConfiguration} call is
-   * guaranteed to validate if a host runs this bean without a primary webapp chain at all.
+   * Unprotected paths minus state-changing requests to {@code /login}. Both halves use the same
+   * {@code builder}, otherwise a servlet {@code basePath} would open a gap.
    */
-  private static void rejectLoginPathOverlap(final Set<String> unprotectedPaths) {
-    SecurityFilterChainSupport.rejectUnprotectedPathOverlap(unprotectedPaths, Set.of(LOGIN_URL));
+  private static RequestMatcher unprotectedPathsMatcher(
+      final PathPatternRequestMatcher.Builder builder, final Set<String> unprotectedPaths) {
+    return new AndRequestMatcher(
+        CsrfProtectionRequestMatcher.buildPathsMatcher(builder, unprotectedPaths),
+        new NegatedRequestMatcher(
+            SecurityFilterChainSupport.stateChangingRequestTo(builder, Set.of(LOGIN_URL))));
   }
 
   /**

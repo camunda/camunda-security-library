@@ -34,6 +34,11 @@ public interface SecurityPathPort {
    * #apiPaths()} (e.g., {@code "/actuator/**"}, {@code "/error"}). A public endpoint under the API
    * namespace that is not in {@link #apiPaths()} — for example a login callback — belongs here, not
    * in {@link #unprotectedApiPaths()}.
+   *
+   * <p>May cover the unscoped {@code /login}: only its safe methods are then served here;
+   * state-changing requests go to the CSRF-enforcing chain. This applies to the exact {@code
+   * /login} path only. A pattern matching a scoped {@code <basePath>/login} fails startup
+   * (ADR-0032).
    */
   Set<String> unprotectedPaths();
 
