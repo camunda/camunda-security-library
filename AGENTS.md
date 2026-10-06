@@ -122,6 +122,16 @@ mvn test -pl <module> -Dtest=ClassName#methodName
 mvn verify
 ```
 
+A parallel Gradle build runs next to Maven ([ADR-0034](docs/adr/0034-parallel-gradle-build-maven-remains-source-of-truth.md)).
+Maven stays the source of truth and the only build that publishes. Any change to a `pom.xml` must
+be mirrored in the Gradle build, following [docs/workflows/gradle-build-parity.md](docs/workflows/gradle-build-parity.md):
+
+```
+./gradlew build
+./gradlew -p gradle/build-logic check
+python3 .github/scripts/compare-module-deps.py
+```
+
 ## Workflow
 
 - Branch naming: `<type>/<short-description>` (e.g., `feat/add-policy-model`)
@@ -159,8 +169,9 @@ Common AI-assisted workflows are documented in `docs/workflows/` and are usable 
 | Creating task issues | `docs/workflows/tasks.md` | "track this task", "break this into tasks", "we need to implement X" |
 | Documenting code | `docs/workflows/documenting-code.md` | "document this", "add docs for", "write documentation for" |
 | Writing ADRs | `docs/workflows/adr.md` | "create an ADR", "document this decision", or before any architectural change |
+| Gradle build parity | `docs/workflows/gradle-build-parity.md` | changing a `pom.xml` or Gradle file, a failing Gradle CI job, Maven/Gradle differences |
 
-Claude Code users can invoke these as slash commands (`/tour`, `/bug`, `/feature`, `/task`, `/docs`, `/adr`) via `.claude/skills/`. Other agents should read the `docs/workflows/` files directly when triggered. `/tour` is the recommended starting point for anyone new to the repo — it links out to everything else.
+Claude Code users can invoke these as slash commands (`/tour`, `/bug`, `/feature`, `/task`, `/docs`, `/adr`, `/gradle-build-parity`) via `.claude/skills/`. Other agents should read the `docs/workflows/` files directly when triggered. `/tour` is the recommended starting point for anyone new to the repo — it links out to everything else.
 
 ### Features vs tasks
 

@@ -1,0 +1,31 @@
+// Gradle init script used by compare-module-deps.py (not applied to normal builds).
+// Registers `cslResolvedDeps`, which prints one JSON line per project and per classpath:
+//   {"project": "...", "configuration": "...", "third_party": {"group:artifact": "version"}, "internal": ["project-name"]}
+// Platform/BOM components are skipped: Maven's dependency:list does not report imported BOMs either.
+allprojects {
+  afterEvaluate { project ->
+    if (!project.plugins.hasPlugin('java')) return
+    project.tasks.register('cslResolvedDeps') {
+      notCompatibleWithConfigurationCache('prints resolved dependencies at execution time')
+      doLast {
+        ['compileClasspath', 'runtimeClasspath', 'testRuntimeClasspath'].each { name ->
+          def thirdParty = new TreeMap<String, String>()
+          def internal = new TreeSet<String>()
+          project.configurations.getByName(name).incoming.resolutionResult.allComponents.each { c ->
+            def id = c.id
+            if (id instanceof org.gradle.api.artifacts.component.ProjectComponentIdentifier) {
+              if (id.projectName != project.name) internal.add(id.projectName)
+            } else if (id instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier) {
+              def isPlatform = c.variants.any { v ->
+                v.attributes.keySet().any { it.name == 'org.gradle.category' && v.attributes.getAttribute(it).toString().endsWith('platform') }
+              }
+              if (!isPlatform) thirdParty.put("${id.group}:${id.module}".toString(), id.version)
+            }
+          }
+          println groovy.json.JsonOutput.toJson([
+            project: project.name, configuration: name, third_party: thirdParty, internal: internal])
+        }
+      }
+    }
+  }
+}
