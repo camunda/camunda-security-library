@@ -40,9 +40,10 @@ and OPTIONS, via `CsrfProtectionRequestMatcher.isSafeMethod`.
 - State-changing requests to `/login` are excluded from that chain and fall through to the API or
   webapp chain, which still enforces CSRF on `/login` unconditionally (ADR-0027), or to the
   catch-all deny chain, which rejects them.
-- When an unprotected pattern overlaps `/login` and `camunda.security.csrf.enabled` is true, the
-  unprotected chain issues the `X-CSRF-TOKEN` header and cookie on `GET /login`, using the same
-  cookie repository as the unscoped chains. It never enforces CSRF itself.
+- With CSRF enabled the unprotected chain always installs token issuance, never enforcement; it
+  writes the token only on a login-path request it serves (with the host's path builder), using
+  the same cookie repository as the unscoped chains. The overlap check only drives startup
+  logging.
 - `SecurityFilterChainSupport#rejectScopedLoginOverlap` replaces the unscoped fail-fast. When
   `camunda.security.csrf.enabled` is true, a pattern in `unprotectedPaths()` that matches a scoped
   `<basePath>/login` still fails startup with an `IllegalStateException` citing this ADR.

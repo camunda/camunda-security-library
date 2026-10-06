@@ -24,9 +24,15 @@ import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.web.util.pattern.PathPatternParser;
 
 /**
  * Covers {@code BaseSecurityConfiguration}'s handling of an unprotected pattern that overlaps the
@@ -171,6 +177,62 @@ class BaseSecurityConfigurationLoginOverlapTest {
               assertThat(response.getHeader(TOKEN_HEADER)).isNotNull();
               assertThat(response.getCookie(TOKEN_HEADER)).isNotNull();
             });
+  }
+
+  /**
+   * A host builder with a case-insensitive parser routes {@code GET /login} into the unprotected
+   * chain via {@code /LOGIN}, although the default-parser overlap check finds no overlap. Token
+   * issuance must not depend on that check.
+   */
+  @Test
+  void issuesCsrfTokenOnGetLoginWhenHostParserMatchesLoginButDefaultParserDoesNot() {
+    final var parser = new PathPatternParser();
+    parser.setCaseSensitive(false);
+    runnerWith("/LOGIN")
+        .withBean(
+            PathPatternRequestMatcher.Builder.class,
+            () -> PathPatternRequestMatcher.withPathPatternParser(parser))
+        .run(
+            ctx -> {
+              final var chain = ctx.getBean(CHAIN, SecurityFilterChain.class);
+              assertThat(matches(chain, "GET", "/login")).isTrue();
+              assertThat(matches(chain, "POST", "/login")).isFalse();
+
+              final var proxy = new FilterChainProxy(List.of(chain));
+              final var response = new MockHttpServletResponse();
+              proxy.doFilter(
+                  new MockHttpServletRequest("GET", "/login"), response, new MockFilterChain());
+
+              assertThat(response.getHeader(TOKEN_HEADER)).isNotNull();
+              assertThat(response.getCookie(TOKEN_HEADER)).isNotNull();
+            });
+  }
+
+  @Test
+  void writesNoTokenOnAuthenticatedGetOfOtherUnprotectedPath() {
+    runnerWith("/login", "/error")
+        .run(
+            ctx -> {
+              final var proxy =
+                  new FilterChainProxy(List.of(ctx.getBean(CHAIN, SecurityFilterChain.class)));
+              final var request = new MockHttpServletRequest("GET", "/error");
+              request.setSession(authenticatedSession());
+              final var response = new MockHttpServletResponse();
+              proxy.doFilter(request, response, new MockFilterChain());
+
+              assertThat(response.getHeader(TOKEN_HEADER)).isNull();
+              assertThat(response.getCookie(TOKEN_HEADER)).isNull();
+            });
+  }
+
+  private static MockHttpSession authenticatedSession() {
+    final var context = new SecurityContextImpl();
+    context.setAuthentication(
+        new UsernamePasswordAuthenticationToken(
+            "demo", "n/a", List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+    final var session = new MockHttpSession();
+    session.setAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY, context);
+    return session;
   }
 
   @Test
