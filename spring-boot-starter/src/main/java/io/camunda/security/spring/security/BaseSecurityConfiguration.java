@@ -71,14 +71,13 @@ public class BaseSecurityConfiguration {
             .formLogin(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable);
 
-    if (loginOverlaps.isEmpty()) {
-      filterChainBuilder.csrf(AbstractHttpConfigurer::disable);
-    } else {
+    // Best-effort (default parser semantics), so it only drives logging, never token issuance.
+    if (!loginOverlaps.isEmpty()) {
       logLoginOverlap(
           SecurityFilterChainSupport.firstMatchingPattern(unprotectedPaths, LOGIN_URL), properties);
-      SecurityFilterChainSupport.applyLoginTokenIssuance(
-          filterChainBuilder, properties, pathMatcherBuilder);
     }
+    SecurityFilterChainSupport.applyLoginTokenIssuance(
+        filterChainBuilder, properties, pathMatcherBuilder);
 
     SecurityFilterChainSupport.applyCorsConfiguration(filterChainBuilder, corsSource);
     SecurityFilterChainSupport.applyHttpsRedirectCustomizers(

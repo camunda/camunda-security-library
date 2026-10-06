@@ -319,13 +319,13 @@ public final class SecurityFilterChainSupport {
         cookiePath,
         csrfCookieName,
         protectionMatcher,
-        PathPatternRequestMatcher.withDefaults());
+        csrfTokenResponseHeaderFilter(PathPatternRequestMatcher.withDefaults(), cookiePath));
   }
 
   /**
    * {@link #applyCsrfConfiguration(HttpSecurity, CamundaSecurityLibraryProperties, String, String,
-   * RequestMatcher)}, resolving the token response filter's login/logout paths with the host's
-   * {@code builder} (e.g. a servlet {@code basePath}).
+   * RequestMatcher)} with a caller-supplied {@code tokenResponseFilter}, so the caller decides when
+   * the token is written (e.g. with the host's servlet {@code basePath} applied).
    */
   static void applyCsrfConfiguration(
       final HttpSecurity http,
@@ -333,7 +333,7 @@ public final class SecurityFilterChainSupport {
       final String cookiePath,
       final String csrfCookieName,
       final RequestMatcher protectionMatcher,
-      final PathPatternRequestMatcher.Builder builder)
+      final OncePerRequestFilter tokenResponseFilter)
       throws Exception {
     if (!properties.getCsrf().isEnabled()) {
       http.csrf(AbstractHttpConfigurer::disable);
@@ -350,21 +350,27 @@ public final class SecurityFilterChainSupport {
         csrf ->
             csrf.csrfTokenRepository(csrfTokenRepository)
                 .requireCsrfProtectionMatcher(protectionMatcher));
-    http.addFilterAfter(csrfTokenResponseHeaderFilter(builder, cookiePath), CsrfFilter.class);
+    http.addFilterAfter(tokenResponseFilter, CsrfFilter.class);
   }
 
   /**
    * Issues (never enforces) the CSRF token on the unprotected chain, so {@code GET /login} still
-   * gets one when it never reaches the webapp chain. The login path is resolved with the host's
-   * {@code builder}, so it follows the same servlet {@code basePath} as the chain's security
-   * matcher.
+   * gets one when it never reaches the webapp chain. The token is written only on a login-path
+   * request, resolved with the host's {@code builder} so it follows the same servlet {@code
+   * basePath} as the chain's security matcher; no header or cookie appears on any other path.
    */
   static void applyLoginTokenIssuance(
       final HttpSecurity http,
       final CamundaSecurityLibraryProperties properties,
       final PathPatternRequestMatcher.Builder builder)
       throws Exception {
-    applyCsrfConfiguration(http, properties, null, X_CSRF_TOKEN, request -> false, builder);
+    applyCsrfConfiguration(
+        http,
+        properties,
+        null,
+        X_CSRF_TOKEN,
+        request -> false,
+        loginTokenResponseHeaderFilter(builder));
   }
 
   /**
@@ -481,6 +487,29 @@ public final class SecurityFilterChainSupport {
     };
   }
 
+  /**
+   * As {@link #csrfTokenResponseHeaderFilter(PathPatternRequestMatcher.Builder, String)}, but
+   * writes the token only on a login-path request; the authenticated-GET branch is omitted.
+   */
+  static OncePerRequestFilter loginTokenResponseHeaderFilter(
+      final PathPatternRequestMatcher.Builder builder) {
+    final RequestMatcher loginMatcher =
+        CsrfProtectionRequestMatcher.buildPathsMatcher(builder, csrfEnforcedPaths(null));
+    return new OncePerRequestFilter() {
+      @Override
+      protected void doFilterInternal(
+          final HttpServletRequest request,
+          final HttpServletResponse response,
+          final FilterChain filterChain)
+          throws ServletException, IOException {
+        if (loginMatcher.matches(request)) {
+          writeCsrfTokenHeader(request, response);
+        }
+        filterChain.doFilter(request, response);
+      }
+    };
+  }
+
   private static void writeCsrfTokenHeaderIfApplicable(
       final HttpServletRequest request,
       final HttpServletResponse response,
@@ -504,6 +533,11 @@ public final class SecurityFilterChainSupport {
         return;
       }
     }
+    writeCsrfTokenHeader(request, response);
+  }
+
+  private static void writeCsrfTokenHeader(
+      final HttpServletRequest request, final HttpServletResponse response) {
     final CsrfToken token = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
     if (token != null) {
       response.setHeader(X_CSRF_TOKEN, token.getToken());
