@@ -13,13 +13,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.camunda.security.core.port.out.BasicAuthUserDetailsPort;
 import io.camunda.security.core.port.out.BasicAuthUserDetailsPort.CamundaUserDetails;
 import io.camunda.security.core.port.out.SecurityPathPort;
+import io.camunda.security.spring.CamundaSecurityAutoConfiguration;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import io.camunda.security.spring.user.UserConfiguration;
 import jakarta.servlet.http.Cookie;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
@@ -30,6 +30,8 @@ import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.jwt.BadJwtException;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
 
@@ -37,13 +39,28 @@ import org.springframework.security.web.SecurityFilterChain;
  * End-to-end routing for an unprotected pattern that overlaps {@code /login} (issue #710), through
  * one assembled {@link FilterChainProxy}. Asserts reachability ({@link
  * MockFilterChain#getRequest()} non-null), not status codes, since a CSRF rejection can surface as
- * 401 or 403; each negative case has a tokened control.
+ * 401 or 403. The webapp-shaped (basic-auth form-login) negative cases have a tokened control; the
+ * Hub-shaped ones model camunda-hub's OIDC wiring, which never submits {@code POST /login}.
  */
 class UnprotectedLoginPathRoutingIntegrationTest {
 
   private static final String USER = "alice";
   private static final String PASSWORD = "s3cret";
   private static final String UNPROTECTED_CHAIN = "unprotectedPathsSecurityFilterChain";
+  private static final String OIDC_API_CHAIN = "oidcApiSecurityFilterChain";
+
+  private static final String[] HUB_PROPERTIES = {
+    "camunda.security.authentication.method=oidc",
+    "camunda.security.authentication.webapp-enabled=false",
+    "camunda.security.authentication.catch-all-unhandled-paths-enabled=false",
+    "camunda.security.authentication.oidc.jwk-set-uri=http://localhost/jwks",
+    "camunda.security.authentication.oidc.client-id=test-client",
+    "camunda.security.authentication.oidc.client-secret=secret",
+    "camunda.security.authentication.oidc.authorization-uri=http://localhost/auth",
+    "camunda.security.authentication.oidc.token-uri=http://localhost/token",
+    "camunda.security.authentication.oidc.user-info-uri=http://localhost/userinfo",
+    "camunda.security.authentication.oidc.redirect-uri=http://localhost/sso-callback"
+  };
 
   private WebApplicationContextRunner runnerWith(final SecurityPathPort paths) {
     return new WebApplicationContextRunner()
@@ -60,57 +77,84 @@ class UnprotectedLoginPathRoutingIntegrationTest {
         .withPropertyValues("camunda.security.authentication.method=basic");
   }
 
-  /** Hub: {@code /**} API paths, no webapp paths, {@code /login} unprotected for safe methods. */
+  /**
+   * Mirrors camunda-hub's {@code HubSecurityPathAdapter} / {@code application-self-managed.yml}:
+   * OIDC API chain on {@code /**}, no webapp chain, catch-all off; {@code /login} is an SPA route,
+   * the OIDC flow runs in the browser. Activated through {@link CamundaSecurityAutoConfiguration},
+   * as Hub does. Like Hub's {@code SelfManagedJwtConfiguration}, the host supplies the {@link
+   * JwtDecoder}, since CSL provides none with the webapp chain disabled; it is never called because
+   * no bearer token is sent. Path sets are a representative subset of Hub's (no static suffixes or
+   * health paths).
+   */
   private WebApplicationContextRunner hubShapedRunner() {
-    return runnerWith(
-            StubSecurityPaths.builder()
-                .apiPaths("/**")
-                .webappPaths()
-                .unprotectedPaths("/login")
-                .build())
-        .withPropertyValues(
-            "camunda.security.authentication.catch-all-unhandled-paths-enabled=false");
+    final var paths =
+        StubSecurityPaths.builder()
+            .apiPaths("/**")
+            .unprotectedPaths("/login", "/login-callback", "/logout", "/error")
+            .unprotectedApiPaths(
+                "/login", "/login-callback", "/logout", "/error", "/api/internal/shares/*")
+            .webappPaths(
+                "/login",
+                "/login-callback",
+                "/logout",
+                "/embed/*",
+                "/share/*",
+                "/shares/*",
+                "/maintenance")
+            .build();
+    return new WebApplicationContextRunner()
+        .withUserConfiguration(ObjectMapperConfig.class)
+        .withBean("securityPathPort", SecurityPathPort.class, () -> paths)
+        .withBean(
+            JwtDecoder.class,
+            () ->
+                token -> {
+                  throw new BadJwtException("no bearer token is expected in these tests");
+                })
+        .withConfiguration(AutoConfigurations.of(CamundaSecurityAutoConfiguration.class))
+        .withPropertyValues(HUB_PROPERTIES);
   }
 
   @Test
-  void hubShapedGetLoginReachesAppAndCarriesCsrfToken() {
+  void hubStartsAndServesGetLoginUnauthenticatedViaUnprotectedChain() {
     hubShapedRunner()
         .run(
             ctx -> {
-              final var proxy = proxyWithUser(ctx);
+              assertThat(ctx)
+                  .as("catch-all off with apiPaths=/** must pass the /login startup check")
+                  .hasNotFailed();
+              final var unprotected = ctx.getBean(UNPROTECTED_CHAIN, SecurityFilterChain.class);
+              final var proxy = proxy(ctx);
 
-              final var response = new MockHttpServletResponse();
-              final var next = new MockFilterChain();
-              proxy.doFilter(new MockHttpServletRequest("GET", "/login"), response, next);
-
-              assertThat(next.getRequest()).as("GET /login must reach the app").isNotNull();
-              assertThat(response.getHeader(CamundaSecurityFilterChainConstants.X_CSRF_TOKEN))
-                  .as("GET /login must issue a CSRF token for the login form")
-                  .isNotNull();
+              for (final var path : List.of("/login", "/login-callback")) {
+                final var get = new MockHttpServletRequest("GET", path);
+                assertThat(firstMatchingChain(ctx, get))
+                    .as("GET " + path + " must be served by the unprotected-paths chain")
+                    .isSameAs(unprotected);
+                final var next = new MockFilterChain();
+                proxy.doFilter(get, new MockHttpServletResponse(), next);
+                assertThat(next.getRequest())
+                    .as("GET " + path + " without credentials must reach the app")
+                    .isNotNull();
+              }
             });
   }
 
   @Test
-  void hubShapedTokenlessPostLoginDoesNotReachAppButTokenedOneDoes() {
+  void hubStateChangingLoginIsRoutedToOidcApiChainAndRejectedWithoutCsrfToken() {
     hubShapedRunner()
         .run(
             ctx -> {
-              final var proxy = proxyWithUser(ctx);
+              final var post = new MockHttpServletRequest("POST", "/login");
+              assertThat(firstMatchingChain(ctx, post))
+                  .as("POST /login must be routed to the CSRF-enforcing OIDC API chain")
+                  .isSameAs(ctx.getBean(OIDC_API_CHAIN, SecurityFilterChain.class));
 
-              final var tokenlessNext = new MockFilterChain();
-              proxy.doFilter(basicAuthPost("/login"), new MockHttpServletResponse(), tokenlessNext);
-              assertThat(tokenlessNext.getRequest())
-                  .as("a tokenless POST /login with valid credentials must not reach the app")
+              final var next = new MockFilterChain();
+              proxy(ctx).doFilter(post, new MockHttpServletResponse(), next);
+              assertThat(next.getRequest())
+                  .as("a tokenless POST /login must not reach the app")
                   .isNull();
-
-              // Control: same credentials plus the token from a GET reach the app.
-              final var tokened = basicAuthPost("/login");
-              attachCsrfFrom(proxy, "/login", tokened);
-              final var tokenedNext = new MockFilterChain();
-              proxy.doFilter(tokened, new MockHttpServletResponse(), tokenedNext);
-              assertThat(tokenedNext.getRequest())
-                  .as("a POST /login carrying the CSRF cookie and header must reach the app")
-                  .isNotNull();
             });
   }
 
@@ -178,6 +222,10 @@ class UnprotectedLoginPathRoutingIntegrationTest {
     final var encoder = ctx.getBean(PasswordEncoder.class);
     ((ConfigurableUserDetailsPort) ctx.getBean(BasicAuthUserDetailsPort.class))
         .resolve(USER, encoder.encode(PASSWORD));
+    return proxy(ctx);
+  }
+
+  private static FilterChainProxy proxy(final ApplicationContext ctx) {
     // orderedStream() honours @Order on the @Bean factory methods, which sorting the bean
     // instances would not see.
     final var chains = ctx.getBeanProvider(SecurityFilterChain.class).orderedStream().toList();
@@ -195,13 +243,6 @@ class UnprotectedLoginPathRoutingIntegrationTest {
     final Cookie[] cookies = getResponse.getCookies();
     post.setCookies(cookies);
     post.addHeader(CamundaSecurityFilterChainConstants.X_CSRF_TOKEN, token);
-  }
-
-  private static MockHttpServletRequest basicAuthPost(final String url) {
-    final var request = new MockHttpServletRequest("POST", url);
-    final var credentials = (USER + ":" + PASSWORD).getBytes(StandardCharsets.UTF_8);
-    request.addHeader("Authorization", "Basic " + Base64.getEncoder().encodeToString(credentials));
-    return request;
   }
 
   private static MockHttpServletRequest formLoginPost() {
