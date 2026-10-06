@@ -16,6 +16,7 @@ import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.cors.NoOpCorsConfigurationSource;
 import io.camunda.security.spring.csrf.CsrfProtectionRequestMatcher;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.HashSet;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,7 +40,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
  * priority). Activates Spring Security's web security infrastructure via {@link EnableWebSecurity}.
  *
  * <p>The unprotected chain never serves state-changing requests to {@code /login}; they fall
- * through to the CSRF-enforcing chain (ADR-0032).
+ * through to the CSRF-enforcing chain, and startup fails if none would claim them (ADR-0032).
  */
 @Configuration
 @EnableWebSecurity
@@ -71,10 +72,13 @@ public class BaseSecurityConfiguration {
             .formLogin(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable);
 
-    // Best-effort (default parser semantics), so it only drives logging, never token issuance.
+    // Best-effort (default parser semantics), so it only drives logging and the startup check,
+    // never token issuance.
     if (!loginOverlaps.isEmpty()) {
-      logLoginOverlap(
-          SecurityFilterChainSupport.firstMatchingPattern(unprotectedPaths, LOGIN_URL), properties);
+      final var overlappingPattern =
+          SecurityFilterChainSupport.firstMatchingPattern(unprotectedPaths, LOGIN_URL);
+      logLoginOverlap(overlappingPattern, properties);
+      rejectUnclaimedStateChangingLogin(pathPort, properties, overlappingPattern);
     }
     SecurityFilterChainSupport.applyLoginTokenIssuance(
         filterChainBuilder, properties, pathMatcherBuilder);
@@ -102,16 +106,41 @@ public class BaseSecurityConfiguration {
         overlappingPattern,
         LOGIN_URL,
         stateChangingRouting);
-    if (!properties.getAuthentication().isCatchAllUnhandledPathsEnabled()) {
-      LOG.warn(
-          "SecurityPathPort#unprotectedPaths() pattern '{}' overlaps the login endpoint '{}' and"
-              + " camunda.security.authentication.catch-all-unhandled-paths-enabled=false:"
-              + " state-changing requests to '{}' are only secured if another filter chain"
-              + " claims that path.",
-          overlappingPattern,
-          LOGIN_URL,
-          LOGIN_URL);
+  }
+
+  /**
+   * State-changing {@code /login} requests are routed away from the unprotected chain. Without the
+   * catch-all chain and without an API or webapp pattern covering {@code /login}, they would reach
+   * no security chain and skip the CSRF check, so startup fails (ADR-0032).
+   */
+  private static void rejectUnclaimedStateChangingLogin(
+      final SecurityPathPort pathPort,
+      final CamundaSecurityLibraryProperties properties,
+      final String overlappingPattern) {
+    if (properties.getAuthentication().isCatchAllUnhandledPathsEnabled()
+        || isClaimedByApiOrWebappChain(pathPort)) {
+      return;
     }
+    throw new IllegalStateException(
+        "SecurityPathPort#unprotectedPaths() pattern '"
+            + overlappingPattern
+            + "' overlaps the login endpoint '"
+            + LOGIN_URL
+            + "' and camunda.security.authentication.catch-all-unhandled-paths-enabled=false,"
+            + " but neither apiPaths() nor webappPaths() covers '"
+            + LOGIN_URL
+            + "': state-changing requests to '"
+            + LOGIN_URL
+            + "' would reach no security chain. Cover '"
+            + LOGIN_URL
+            + "' by apiPaths() or webappPaths(), enable the catch-all chain, or remove or narrow"
+            + " the unprotected pattern (see ADR-0032).");
+  }
+
+  private static boolean isClaimedByApiOrWebappChain(final SecurityPathPort pathPort) {
+    final var claimingPaths = new HashSet<>(pathPort.apiPaths());
+    claimingPaths.addAll(pathPort.webappPaths());
+    return SecurityFilterChainSupport.firstMatchingPattern(claimingPaths, LOGIN_URL) != null;
   }
 
   /**
