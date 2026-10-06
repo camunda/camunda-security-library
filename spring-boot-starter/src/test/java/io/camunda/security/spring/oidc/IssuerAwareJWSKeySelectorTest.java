@@ -179,6 +179,7 @@ class IssuerAwareJWSKeySelectorTest {
               .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
               .build();
       final var buildCount = new AtomicInteger();
+      final var twoBuildsInFlight = new CountDownLatch(2);
       final Set<JWSKeySelector<SecurityContext>> selectorsThatServedARequest =
           ConcurrentHashMap.newKeySet();
       final var factory =
@@ -186,10 +187,13 @@ class IssuerAwareJWSKeySelectorTest {
             @Override
             public JWSKeySelector<SecurityContext> createJWSKeySelector(final String jwkSetUri) {
               buildCount.incrementAndGet();
-              // Widens the race window so several of the threads below reliably pass the "no
-              // cached selector yet" check before the first build completes.
+              // Holds every build open until a second one has started, so at least two threads
+              // deterministically pass the "no cached selector yet" check before any build
+              // completes. The bounded wait only matters if resolution ever serialises builds, in
+              // which case the second never arrives and the assertions below still hold.
+              twoBuildsInFlight.countDown();
               try {
-                Thread.sleep(50);
+                twoBuildsInFlight.await(5, TimeUnit.SECONDS);
               } catch (final InterruptedException e) {
                 Thread.currentThread().interrupt();
               }
@@ -234,10 +238,10 @@ class IssuerAwareJWSKeySelectorTest {
       // and all 20 of them were served by one and the same selector — the single entry the race
       // settled on. The losers of the putIfAbsent race may each have built a candidate, which is
       // why buildCount is not pinned to 1; a candidate that never serves a request also never
-      // fetches a JWK Set and never starts a background refresh thread, so discarding it is free
+      // fetches a JWK Set and never starts a background refresh, so discarding it is free
       // (see ADR-0032).
       assertThat(selectorsThatServedARequest).hasSize(1);
-      assertThat(buildCount.get()).isGreaterThanOrEqualTo(1);
+      assertThat(buildCount.get()).isGreaterThanOrEqualTo(2);
     }
   }
 

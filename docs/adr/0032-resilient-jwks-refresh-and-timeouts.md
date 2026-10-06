@@ -43,17 +43,19 @@ while still bounding how long a signing-key set can go unrefreshed?
 `JWKSource` CSL builds, on both the single-URI path and inside `CompositeJWKSource` — now builds
 each source with:
 
-- **`refreshAheadCache(30_000, null, <executor>, true, <scheduledExecutor>, true)`** — the cache is
+- **`refreshAheadCache(30_000, null, <executor>, false, <scheduledExecutor>, false)`** — the cache is
   refreshed roughly 30 seconds ahead of its expiry, on a dedicated background executor, scheduled
   regardless of whether a request arrives (supplying a non-null scheduled executor is what sets
   Nimbus's `scheduled = true`). Live decode requests read the already-warm cache; they are not
-  blocked by the refresh. Both executors are single-threaded and built here, rather than left to
-  the shorter `refreshAheadCache(long, boolean)` overload, because Nimbus's own defaults are
-  **non-daemon** `Executors.newSingleThread*` pools: since nothing in CSL closes a `JWKSource`,
-  a non-daemon refresh thread would outlive a host's Spring context and stop its JVM from exiting
-  on shutdown. The threads are named `csl-jwks-refresh-<n>` / `csl-jwks-refresh-scheduled-<n>` so a
-  thread dump identifies them, and both `shutdownOnClose` flags are `true` so a future disposal
-  path works without further change.
+  blocked by the refresh. Both executors are built here and shared by every source, rather than
+  left to the shorter `refreshAheadCache(long, boolean)` overload, because Nimbus's own defaults
+  are **non-daemon** `Executors.newSingleThread*` pools created per source: since nothing in CSL
+  closes a `JWKSource`, a non-daemon refresh thread would outlive a host's Spring context and stop
+  its JVM from exiting on shutdown. The scheduled task only dispatches the fetch, so one daemon
+  scheduler thread (`csl-jwks-refresh-scheduler`) serves all sources, and the blocking fetches run
+  on a shared virtual-thread-per-task executor (`csl-jwks-refresh-fetch-<n>`; virtual threads are
+  always daemon). The footprint therefore does not grow with the number of issuers. Because the
+  executors are shared, both `shutdownOnClose` flags are `false`.
 - **`cache(300_000, 15_000)`** — an explicit 5-minute cache time-to-live and 15-second refresh
   timeout. This is the staleness bound: if the background refresh cannot keep the cache current
   for a full 5 minutes (a sustained IdP outage outlasting the refresh-ahead window), the next

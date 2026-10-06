@@ -19,9 +19,9 @@ import java.net.URI;
 import java.net.URL;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.stream.Stream;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -34,8 +34,11 @@ import org.springframework.util.StringUtils;
  */
 public class JWSKeySelectorFactory {
 
-  /** Thread-name prefix shared by both refresh executors, so a thread dump identifies them. */
-  static final String REFRESH_THREAD_NAME_PREFIX = "csl-jwks-refresh-";
+  /** Name of the shared scheduler thread, so a thread dump identifies it. */
+  static final String REFRESH_SCHEDULER_THREAD_NAME = "csl-jwks-refresh-scheduler";
+
+  /** Name prefix of the virtual threads that run the background fetches. */
+  static final String REFRESH_FETCH_THREAD_NAME_PREFIX = "csl-jwks-refresh-fetch-";
 
   private static final String ERROR_MISSING_JWK_SET_URI = "Missing or empty 'jwkSetUri'";
   private static final String ERROR_INVALID_JWK_SET_URI =
@@ -89,7 +92,27 @@ public class JWSKeySelectorFactory {
    */
   private static final long REFRESH_AHEAD_TIME_MILLIS = JWKSourceBuilder.DEFAULT_REFRESH_AHEAD_TIME;
 
-  private static final AtomicInteger JWK_SOURCE_COUNTER = new AtomicInteger();
+  /**
+   * Shared by every {@link JWKSource} this class builds, so the footprint does not grow with the
+   * number of issuers. Nimbus's scheduled task only dispatches the fetch to the refresh executor
+   * below, so a single thread suffices. Daemon, so it cannot keep a host's JVM from exiting; never
+   * shut down, which is why the sources are built with {@code shutdownOnClose = false}.
+   */
+  private static final ScheduledExecutorService REFRESH_SCHEDULER =
+      Executors.newSingleThreadScheduledExecutor(
+          runnable -> {
+            final var thread = new Thread(runnable, REFRESH_SCHEDULER_THREAD_NAME);
+            thread.setDaemon(true);
+            return thread;
+          });
+
+  /**
+   * Runs the blocking background fetches, one virtual thread per fetch. Virtual threads are always
+   * daemon, and unlike Nimbus's default non-daemon pools, nothing keeps a host's JVM alive.
+   */
+  private static final ExecutorService REFRESH_FETCH_EXECUTOR =
+      Executors.newThreadPerTaskExecutor(
+          Thread.ofVirtual().name(REFRESH_FETCH_THREAD_NAME_PREFIX, 0).factory());
 
   private final Set<JWSAlgorithm> jwsAlgorithms;
 
@@ -174,9 +197,9 @@ public class JWSKeySelectorFactory {
    * request at once. Rate limiting stays disabled; whether to enable it is a separate design
    * question (see ADR-0032's "Alternatives Considered").
    *
-   * <p>The refresh executors are supplied explicitly rather than left to Nimbus, whose own defaults
-   * are <em>non-daemon</em> single-thread pools that nothing shuts down — they would keep a host's
-   * JVM from exiting after its Spring context closes.
+   * <p>The refresh executors are supplied explicitly (and shared across all sources) rather than
+   * left to Nimbus, whose own defaults are <em>non-daemon</em> single-thread pools per source that
+   * nothing shuts down — they would keep a host's JVM from exiting after its Spring context closes.
    *
    * @see org.springframework.security.oauth2.jwt.NimbusJwtDecoder.JwkSetUriJwtDecoderBuilder
    * @param jwkSetUri the JWK Set URI
@@ -188,29 +211,17 @@ public class JWSKeySelectorFactory {
             getHttpConnectTimeoutMillis(),
             getHttpReadTimeoutMillis(),
             JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT);
-    final var sourceId = JWK_SOURCE_COUNTER.incrementAndGet();
     return JWKSourceBuilder.<SecurityContext>create(jwkSetUri, retriever)
         .cache(getCacheTimeToLiveMillis(), getCacheRefreshTimeoutMillis())
         .refreshAheadCache(
             getRefreshAheadTimeMillis(),
             null,
-            Executors.newSingleThreadExecutor(
-                daemonThreadFactory(REFRESH_THREAD_NAME_PREFIX + sourceId)),
-            true,
-            Executors.newSingleThreadScheduledExecutor(
-                daemonThreadFactory(REFRESH_THREAD_NAME_PREFIX + "scheduled-" + sourceId)),
-            true)
+            REFRESH_FETCH_EXECUTOR,
+            false,
+            REFRESH_SCHEDULER,
+            false)
         .rateLimited(false)
         .build();
-  }
-
-  /** A factory for a single named daemon thread. */
-  private static ThreadFactory daemonThreadFactory(final String threadName) {
-    return runnable -> {
-      final var thread = new Thread(runnable, threadName);
-      thread.setDaemon(true);
-      return thread;
-    };
   }
 
   /**

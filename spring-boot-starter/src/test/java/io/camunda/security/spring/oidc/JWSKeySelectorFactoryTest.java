@@ -152,7 +152,8 @@ class JWSKeySelectorFactoryTest {
   }
 
   @Test
-  void shouldRunTheBackgroundRefreshOnDaemonThreadsSoAHostJvmCanStillExit() throws Exception {
+  void shouldRunTheBackgroundRefreshSchedulerOnADaemonThreadSoAHostJvmCanStillExit()
+      throws Exception {
     // given a factory with short timings, so the background refresh threads are created (lazily,
     // on first task submission) well inside the test's own runtime
     final var factory = shortTimingFactory();
@@ -166,18 +167,19 @@ class JWSKeySelectorFactoryTest {
       assertThat(selector.selectJWSKeys(header, null)).hasSize(1);
       Thread.sleep(300L);
 
-      // then the threads behind that refresh are daemon threads. Nimbus's own default executors
-      // are non-daemon and nothing closes a JWKSource, so without this a host's JVM would hang
-      // after its Spring context closed. Surefire cannot catch that — it exits its fork
-      // explicitly — hence this direct assertion. See ADR-0032.
-      final var refreshThreads =
+      // then the scheduler thread behind that refresh is a daemon thread. Nimbus's own default
+      // executors are non-daemon and nothing closes a JWKSource, so without this a host's JVM
+      // would hang after its Spring context closed. Surefire cannot catch that — it exits its
+      // fork explicitly — hence this direct assertion. The fetches themselves run on virtual
+      // threads, which are always daemon. See ADR-0032.
+      final var schedulerThreads =
           Thread.getAllStackTraces().keySet().stream()
               .filter(
                   thread ->
-                      thread.getName().startsWith(JWSKeySelectorFactory.REFRESH_THREAD_NAME_PREFIX))
+                      thread.getName().equals(JWSKeySelectorFactory.REFRESH_SCHEDULER_THREAD_NAME))
               .toList();
-      assertThat(refreshThreads).isNotEmpty();
-      assertThat(refreshThreads).allMatch(Thread::isDaemon, "is a daemon thread");
+      assertThat(schedulerThreads).hasSize(1);
+      assertThat(schedulerThreads).allMatch(Thread::isDaemon, "is a daemon thread");
     }
   }
 
