@@ -73,7 +73,7 @@ class BaseSecurityConfigurationLoginOverlapTest {
             ctx -> {
               assertThat(ctx).hasNotFailed();
               final var chain = ctx.getBean(CHAIN, SecurityFilterChain.class);
-              for (final var method : List.of("GET", "HEAD", "OPTIONS")) {
+              for (final var method : List.of("GET", "HEAD", "TRACE", "OPTIONS")) {
                 assertThat(matches(chain, method, "/login")).as(method).isTrue();
               }
               for (final var method : List.of("POST", "PUT", "DELETE")) {
@@ -89,7 +89,7 @@ class BaseSecurityConfigurationLoginOverlapTest {
             ctx -> {
               assertThat(ctx).hasNotFailed();
               final var chain = ctx.getBean(CHAIN, SecurityFilterChain.class);
-              for (final var method : List.of("GET", "HEAD", "OPTIONS")) {
+              for (final var method : List.of("GET", "HEAD", "TRACE", "OPTIONS")) {
                 assertThat(matches(chain, method, "/login")).as(method).isTrue();
               }
               for (final var method : List.of("POST", "PUT", "DELETE")) {
@@ -116,7 +116,7 @@ class BaseSecurityConfigurationLoginOverlapTest {
               final var chain = ctx.getBean(CHAIN, SecurityFilterChain.class);
               assertThat(chain.matches(servletRequest("GET", "/app/error"))).isTrue();
               assertThat(chain.matches(servletRequest("POST", "/app/error"))).isTrue();
-              for (final var method : List.of("GET", "HEAD", "OPTIONS")) {
+              for (final var method : List.of("GET", "HEAD", "TRACE", "OPTIONS")) {
                 assertThat(chain.matches(servletRequest(method, "/app/login"))).as(method).isTrue();
               }
               for (final var method : List.of("POST", "PUT", "DELETE")) {
