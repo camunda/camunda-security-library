@@ -47,7 +47,7 @@ public final class CsrfProtectionRequestMatcher implements RequestMatcher {
 
   private static final Logger LOG = LoggerFactory.getLogger(CsrfProtectionRequestMatcher.class);
 
-  private static final Pattern ALLOWED_METHODS = Pattern.compile("^(GET|HEAD|TRACE|OPTIONS)$");
+  private static final Pattern SAFE_METHODS = Pattern.compile("^(GET|HEAD|TRACE|OPTIONS)$");
 
   private static final RequestMatcher NEVER_MATCHES = request -> false;
 
@@ -70,7 +70,7 @@ public final class CsrfProtectionRequestMatcher implements RequestMatcher {
 
   /** Whether {@code method} is GET, HEAD, TRACE or OPTIONS (exempt from CSRF). */
   public static boolean isSafeMethod(final String method) {
-    return ALLOWED_METHODS.matcher(method).matches();
+    return SAFE_METHODS.matcher(method).matches();
   }
 
   @Override
