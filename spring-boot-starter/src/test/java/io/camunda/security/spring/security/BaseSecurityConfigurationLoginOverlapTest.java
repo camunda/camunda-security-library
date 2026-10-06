@@ -44,6 +44,9 @@ class BaseSecurityConfigurationLoginOverlapTest {
   private static final String CHAIN = "unprotectedPathsSecurityFilterChain";
   private static final String TOKEN_HEADER = CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
+  private static final String CATCH_ALL_DISABLED =
+      "camunda.security.authentication.catch-all-unhandled-paths-enabled=false";
+
   private final WebApplicationContextRunner runner =
       new WebApplicationContextRunner()
           .withConfiguration(
@@ -54,6 +57,10 @@ class BaseSecurityConfigurationLoginOverlapTest {
     return runner.withBean(
         SecurityPathPort.class,
         () -> StubSecurityPaths.builder().unprotectedPaths(unprotectedPaths).build());
+  }
+
+  private WebApplicationContextRunner runnerWithPaths(final StubSecurityPaths.Builder paths) {
+    return runner.withBean(SecurityPathPort.class, paths::build);
   }
 
   private static boolean matches(
@@ -304,18 +311,58 @@ class BaseSecurityConfigurationLoginOverlapTest {
   }
 
   @Test
-  void warnsWhenLoginOverlapsAndCatchAllChainIsDisabled() {
+  void failsStartupWhenStateChangingLoginWouldReachNoChain() {
+    runnerWithPaths(
+            StubSecurityPaths.builder()
+                .unprotectedPaths("/log*")
+                .apiPaths("/api/**")
+                .webappPaths("/operate/**"))
+        .withPropertyValues(CATCH_ALL_DISABLED)
+        .run(
+            ctx ->
+                assertThat(ctx)
+                    .hasFailed()
+                    .getFailure()
+                    .rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("'/log*'")
+                    .hasMessageContaining("catch-all-unhandled-paths-enabled")
+                    .hasMessageContaining("ADR-0032"));
+  }
+
+  @Test
+  void failsStartupWhenLoginWouldReachNoChainEvenIfCsrfIsDisabled() {
+    runnerWithPaths(
+            StubSecurityPaths.builder()
+                .unprotectedPaths("/log*")
+                .apiPaths("/api/**")
+                .webappPaths("/operate/**"))
+        .withPropertyValues(CATCH_ALL_DISABLED, "camunda.security.csrf.enabled=false")
+        .run(ctx -> assertThat(ctx).hasFailed());
+  }
+
+  @Test
+  void startsWhenCatchAllDisabledButApiPathsCoverLogin() {
     final var events =
         captureLogs(
             () ->
-                runnerWith("/log*")
-                    .withPropertyValues(
-                        "camunda.security.authentication.catch-all-unhandled-paths-enabled=false")
-                    .run(ctx -> {}));
+                runnerWithPaths(
+                        StubSecurityPaths.builder().unprotectedPaths("/login").apiPaths("/**"))
+                    .withPropertyValues(CATCH_ALL_DISABLED)
+                    .run(ctx -> assertThat(ctx).hasNotFailed()));
 
-    assertThat(messages(events, Level.WARN))
-        .singleElement()
-        .satisfies(m -> assertThat(m).contains("'/log*'", "another filter chain"));
+    assertThat(messages(events, Level.WARN)).isEmpty();
+  }
+
+  @Test
+  void startsWhenCatchAllDisabledButWebappPathsCoverLogin() {
+    runnerWithPaths(
+            StubSecurityPaths.builder()
+                .unprotectedPaths("/login")
+                .apiPaths("/api/**")
+                .webappPaths("/login"))
+        .withPropertyValues(CATCH_ALL_DISABLED)
+        .run(ctx -> assertThat(ctx).hasNotFailed());
   }
 
   private static List<ILoggingEvent> captureLogs(final Runnable action) {
