@@ -212,7 +212,7 @@ class JWSKeySelectorFactoryTest {
   }
 
   @Test
-  void shouldWarnWithTheJwkSetUriWhenABackgroundRefreshFails() throws Exception {
+  void shouldWarnWithTheRedactedJwkSetUriWhenABackgroundRefreshFails() throws Exception {
     // given a cached JWK Set whose IdP then goes away, so the scheduled refresh has nothing to hit
     final var logger = (Logger) LoggerFactory.getLogger(JWSKeySelectorFactory.class);
     final var appender = new ListAppender<ILoggingEvent>();
@@ -222,7 +222,8 @@ class JWSKeySelectorFactoryTest {
     final var keyPair = generateRsaKeyPair();
     final var jwkSetJson = publicJwkSetJson(keyPair);
     try (var server = startJwksServer(jwkSetJson, new AtomicInteger())) {
-      final var jwksUri = server.jwksUri();
+      // a URL carrying user-info and a query secret, which must never reach the log
+      final var jwksUri = server.jwksUri().replace("://", "://user:pw@") + "?sig=secret";
       final JWSKeySelector<?> selector = factory.createJWSKeySelector(jwksUri);
       final var header = new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KID).build();
       assertThat(selector.selectJWSKeys(header, null)).hasSize(1);
@@ -230,7 +231,7 @@ class JWSKeySelectorFactoryTest {
       // when the endpoint goes down and the background refresh runs
       server.close();
 
-      // then the failure is logged at WARN with the JWK Set URI, rather than swallowed
+      // then the failure is logged at WARN with the redacted JWK Set URI, rather than swallowed
       await()
           .atMost(AWAIT_TIMEOUT)
           .untilAsserted(
@@ -239,7 +240,10 @@ class JWSKeySelectorFactoryTest {
                       .anySatisfy(
                           event -> {
                             assertThat(event.getLevel()).isEqualTo(Level.WARN);
-                            assertThat(event.getFormattedMessage()).contains(jwksUri);
+                            assertThat(event.getFormattedMessage())
+                                .contains(UrlRedaction.redact(jwksUri))
+                                .doesNotContain("pw")
+                                .doesNotContain("secret");
                           }));
     } finally {
       logger.detachAppender(appender);

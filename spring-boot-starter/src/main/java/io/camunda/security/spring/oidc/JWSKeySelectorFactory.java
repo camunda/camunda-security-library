@@ -236,23 +236,26 @@ public class JWSKeySelectorFactory {
   /**
    * Nimbus reports failed background refreshes only through its event listener and otherwise
    * swallows them, so without this an IdP outage is silent until the cache expires and decoding
-   * starts failing. Logs at {@code WARN}; the JWK Set URI is the only identifier, and no token data
-   * is ever involved.
+   * starts failing. Logs at {@code WARN}; the JWK Set URI is the only identifier, redacted because
+   * an operator-supplied URL can carry user-info or a signed query (see {@link UrlRedaction}), and
+   * no token data is ever involved.
    */
   private static EventListener<CachingJWKSetSource<SecurityContext>, SecurityContext>
       refreshFailureLogger(final URL jwkSetUri) {
+    final var redactedUri = UrlRedaction.redact(jwkSetUri.toString());
     return event -> {
       if (event instanceof ScheduledRefreshFailed<SecurityContext> failed) {
+        // Only the exception type: an HTTP client's message and stack can embed the full URL.
         LOG.warn(
-            "Scheduling the background refresh of the JWK Set at '{}' failed; the cached keys will"
-                + " expire unrefreshed unless a later refresh succeeds",
-            jwkSetUri,
-            failed.getException());
+            "Scheduling the background refresh of the JWK Set at '{}' failed ({}); the cached keys"
+                + " will expire unrefreshed unless a later refresh succeeds",
+            redactedUri,
+            failed.getException().getClass().getSimpleName());
       } else if (event instanceof UnableToRefreshAheadOfExpirationEvent<SecurityContext>) {
         LOG.warn(
             "Background refresh of the JWK Set at '{}' failed; keeps serving the cached keys until"
                 + " they expire, after which decoding fails if the endpoint is still unavailable",
-            jwkSetUri);
+            redactedUri);
       }
     };
   }
