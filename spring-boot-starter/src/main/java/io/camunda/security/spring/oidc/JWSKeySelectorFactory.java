@@ -8,12 +8,16 @@
 package io.camunda.security.spring.oidc;
 
 import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.jwk.source.CachingJWKSetSource;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
+import com.nimbusds.jose.jwk.source.RefreshAheadCachingJWKSetSource.ScheduledRefreshFailed;
+import com.nimbusds.jose.jwk.source.RefreshAheadCachingJWKSetSource.UnableToRefreshAheadOfExpirationEvent;
 import com.nimbusds.jose.proc.JWSKeySelector;
 import com.nimbusds.jose.proc.JWSVerificationKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jose.util.DefaultResourceRetriever;
+import com.nimbusds.jose.util.events.EventListener;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
@@ -23,6 +27,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.stream.Stream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
@@ -39,6 +45,8 @@ public class JWSKeySelectorFactory {
 
   /** Name prefix of the virtual threads that run the background fetches. */
   static final String REFRESH_FETCH_THREAD_NAME_PREFIX = "csl-jwks-refresh-fetch-";
+
+  private static final Logger LOG = LoggerFactory.getLogger(JWSKeySelectorFactory.class);
 
   private static final String ERROR_MISSING_JWK_SET_URI = "Missing or empty 'jwkSetUri'";
   private static final String ERROR_INVALID_JWK_SET_URI =
@@ -215,13 +223,37 @@ public class JWSKeySelectorFactory {
         .cache(getCacheTimeToLiveMillis(), getCacheRefreshTimeoutMillis())
         .refreshAheadCache(
             getRefreshAheadTimeMillis(),
-            null,
+            refreshFailureLogger(jwkSetUri),
             REFRESH_FETCH_EXECUTOR,
             false,
             REFRESH_SCHEDULER,
             false)
         .rateLimited(false)
         .build();
+  }
+
+  /**
+   * Nimbus reports failed background refreshes only through its event listener and otherwise
+   * swallows them, so without this an IdP outage is silent until the cache expires and decoding
+   * starts failing. Logs at {@code WARN}; the JWK Set URI is the only identifier, and no token data
+   * is ever involved.
+   */
+  private static EventListener<CachingJWKSetSource<SecurityContext>, SecurityContext>
+      refreshFailureLogger(final URL jwkSetUri) {
+    return event -> {
+      if (event instanceof ScheduledRefreshFailed<SecurityContext> failed) {
+        LOG.warn(
+            "Scheduling the background refresh of the JWK Set at '{}' failed; the cached keys will"
+                + " expire unrefreshed unless a later refresh succeeds",
+            jwkSetUri,
+            failed.getException());
+      } else if (event instanceof UnableToRefreshAheadOfExpirationEvent<SecurityContext>) {
+        LOG.warn(
+            "Background refresh of the JWK Set at '{}' failed; keeps serving the cached keys until"
+                + " they expire, after which decoding fails if the endpoint is still unavailable",
+            jwkSetUri);
+      }
+    };
   }
 
   /**
