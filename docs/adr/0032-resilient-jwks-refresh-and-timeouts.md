@@ -8,7 +8,7 @@ status: Accepted
 
 ## Status
 
-Accepted. Supersedes the `JWKSource` construction settings of [ADR-0006](0006-multi-idp-oidc-configuration.md), see [Supersedes](#supersedes). Every other decision of that record — the multi-IdP configuration model, `CompositeJWKSource`, the per-issuer key selector — stays in force.
+Accepted. Partially supersedes [ADR-0006](0006-multi-idp-oidc-configuration.md) — its `JWKSource` construction settings only, see [Supersedes](#supersedes). Every other decision of that record — the multi-IdP configuration model, `CompositeJWKSource`, the per-issuer key selector — stays in force.
 
 ## Context
 
@@ -43,11 +43,15 @@ while still bounding how long a signing-key set can go unrefreshed?
 `JWKSource` CSL builds, on both the single-URI path and inside `CompositeJWKSource` — now builds
 each source with:
 
-- **`refreshAheadCache(30_000, null, <executor>, false, <scheduledExecutor>, false)`** — the cache is
-  refreshed roughly 30 seconds ahead of its expiry, on a dedicated background executor, scheduled
-  regardless of whether a request arrives (supplying a non-null scheduled executor is what sets
-  Nimbus's `scheduled = true`). Live decode requests read the already-warm cache; they are not
-  blocked by the refresh. Both executors are built here and shared by every source, rather than
+- **`refreshAheadCache(30_000, <failure listener>, <executor>, false, <scheduledExecutor>, false)`** —
+  the cache is refreshed in the background ahead of its expiry, scheduled regardless of whether a
+  request arrives. Nimbus dispatches the refresh at `TTL − refresh-ahead − refresh timeout` after a
+  load — with the defaults, 4m15s into a 5m TTL, i.e. 45 seconds before expiry — so the 15-second
+  refresh budget finishes before the 30-second refresh-ahead window opens. (Supplying a non-null
+  scheduled executor is what sets Nimbus's `scheduled = true`.) Live decode requests read the
+  already-warm cache; they are not blocked by the refresh. A failed refresh is logged at `WARN` with
+  the JWK Set URI through the listener, because Nimbus otherwise swallows it and an IdP outage would
+  stay invisible until the cache expired. Both executors are built here and shared by every source, rather than
   left to the shorter `refreshAheadCache(long, boolean)` overload, because Nimbus's own defaults
   are **non-daemon** `Executors.newSingleThread*` pools created per source: since nothing in CSL
   closes a `JWKSource`, a non-daemon refresh thread would outlive a host's Spring context and stop
@@ -86,8 +90,8 @@ single-URI path and every source composed inside `CompositeJWKSource` — so beh
 whether or not `additional-jwk-set-uris` is configured.
 
 **When the background threads actually appear.** `JWKSourceBuilder#build()` performs no I/O and
-starts no thread: the executors above are ordinary Java objects whose threads are created lazily, on
-first task submission, and `RefreshAheadCachingJWKSetSource` only schedules its refresh *after* the
+starts no thread: the shared executors above create their threads lazily, on first task
+submission, and `RefreshAheadCachingJWKSetSource` only schedules its refresh *after* the
 source has successfully served a first JWK Set load. A `JWKSource` that is constructed and then
 never asked for a key is therefore inert and collectable.
 
@@ -95,7 +99,7 @@ That matters for `IssuerAwareJWSKeySelector` (the multi-issuer key selector used
 one OIDC provider is configured), which builds a candidate selector for a never-before-seen issuer
 outside any lock and discards whichever one loses a `ConcurrentHashMap#putIfAbsent` race. Because
 the losers' sources never fetch — every racing thread goes on to use the *winner's* selector — they
-start no thread and leak nothing, so that lock-free pattern is kept deliberately. Serialising
+schedule nothing and leak nothing, so that lock-free pattern is kept deliberately. Serialising
 construction instead (e.g. via `computeIfAbsent`) would hold one request thread per waiter for the
 full provider-discovery timeout whenever resolution of a new issuer *fails*, turning a parallel
 burst of N failures into N sequential ones — the very shape of request pile-up #612 exists to
@@ -109,9 +113,9 @@ that is later abandoned costs nothing as long as it never served a request.
   that happens to land inside the refresh-ahead window. Under genuinely low traffic against a given
   provider, that still risks the TTL lapsing with no request around to trigger the refresh —
   reintroducing exactly the blocking behavior this ADR removes, and doing so for the
-  hardest-to-notice case (a rarely used provider). Scheduling on a dedicated background executor
-  removes the dependency on request timing entirely, at the cost of a background refresh thread per
-  actively used JWKS source — see "Negative / accepted trade-offs" for how that cost scales.
+  hardest-to-notice case (a rarely used provider). Scheduling in the background removes the
+  dependency on request timing entirely, at the cost of recurring background fetches per actively
+  used JWKS source — see "Negative / accepted trade-offs" for how that cost scales.
 - **3 seconds, not Nimbus's 500ms default or a much larger number.** Chosen to comfortably exceed
   realistic network/IdP response-time jitter (typically tens to low hundreds of milliseconds) while
   still failing fast enough that a genuinely unreachable IdP is reported within a few seconds rather
@@ -128,10 +132,10 @@ that is later abandoned costs nothing as long as it never served a request.
   with key-rotation responsiveness and with how a fleet of instances behaves in aggregate. #612
   explicitly scopes that out of this change; see "Alternatives Considered".
 - **Daemon executors supplied explicitly, rather than Nimbus's defaults.** Nimbus's convenience
-  overload creates non-daemon single-thread pools, and CSL has no `.close()`/`@PreDestroy` path for
+  overload creates non-daemon single-thread pools per source, and CSL has no `.close()`/`@PreDestroy` path for
   a `JWKSource`, so such a thread would survive context shutdown and keep a host JVM from exiting.
   Surefire cannot detect this (it exits its fork explicitly), so a dedicated test asserts the
-  refresh threads are daemon threads.
+  scheduler thread is a daemon thread (the fetches run on virtual threads, always daemon).
 
 ### Default implementations and override boundaries
 
@@ -139,7 +143,7 @@ that is later abandoned costs nothing as long as it never served a request.
 |---|---|---|
 | HTTP connect / read timeout | 3s / 3s (`DefaultResourceRetriever`) | Host registers `@Bean JWSKeySelectorFactory` overriding `getHttpConnectTimeoutMillis()` / `getHttpReadTimeoutMillis()` |
 | Cache TTL / refresh timeout | 300,000ms / 15,000ms | Override `getCacheTimeToLiveMillis()` / `getCacheRefreshTimeoutMillis()` |
-| Refresh-ahead time / scheduling | 30,000ms, scheduled in the background on named daemon threads | Override `getRefreshAheadTimeMillis()`, or override `createJWKSource(URL)` directly for `scheduled = false` or different executors |
+| Refresh-ahead time / scheduling | 30,000ms, scheduled in the background on one shared daemon scheduler thread, fetching on shared virtual threads | Override `getRefreshAheadTimeMillis()`, or override `createJWKSource(URL)` directly for `scheduled = false` or different executors |
 | Rate limiting | Disabled | Override `createJWKSource(URL)` |
 
 Any override of the three cache getters must keep `getRefreshAheadTimeMillis() +
@@ -151,7 +155,7 @@ more the background refresh cadence collapses towards continuously polling the I
 
 | Superseded statement | Record | Now |
 |---|---|---|
-| Every `JWKSource` is built as `JWKSourceBuilder.create(url).refreshAheadCache(false).rateLimited(false).cache(true).build()`, mirroring Spring's `NimbusJwtDecoder.JwkSetUriJwtDecoderBuilder` | ADR-0006 | Refresh-ahead caching is enabled and scheduled on supplied daemon executors, cache TTL and refresh timeout are set explicitly, and a `DefaultResourceRetriever` with 3s HTTP timeouts replaces Nimbus's 500ms default; `rateLimited(false)` is unchanged |
+| Every `JWKSource` is built as `JWKSourceBuilder.create(url).refreshAheadCache(false).rateLimited(false).cache(true).build()`, mirroring Spring's `NimbusJwtDecoder.JwkSetUriJwtDecoderBuilder` | ADR-0006 | Refresh-ahead caching is enabled and scheduled on shared daemon executors, failures logged, cache TTL and refresh timeout are set explicitly, and a `DefaultResourceRetriever` with 3s HTTP timeouts replaces Nimbus's 500ms default; `rateLimited(false)` is unchanged |
 
 ## Consequences
 
@@ -170,19 +174,21 @@ more the background refresh cadence collapses towards continuously polling the I
 
 **Negative / accepted trade-offs**
 
-- Every *actively used* JWKS source now owns a background scheduled-refresh thread for the lifetime
-  of the process, and nothing closes it: CSL has no `.close()`/`@PreDestroy` path for a `JwtDecoder`
-  or a `JWKSource`. The threads are daemon threads, so this does not block JVM shutdown — but a
-  decoder or scope that is *rebuilt* at runtime (a config reload, a scope recreated on topology
-  change) would keep its predecessor's refresh thread alive until the process ends. The count scales
-  with **both** the number of configured JWKS URIs (primary + additional, per issuer) **and** the
-  number of independently-built decoder scopes: a host using the `Scoped*` per-physical-tenant chain
-  pattern (`ScopedJwtDecoderFactory`) builds one set of sources *per scope*. This ADR accepts that
-  cost on the basis that decoders are built once per process (or once per scope's first use, via
-  `DeferredJwtDecoder`) and are not rebuilt at runtime today, so the gap is latent. Wiring a
-  disposal path is a follow-up, not resolved here. Sources that are built and then abandoned without
-  ever serving a request — a `putIfAbsent` race loser, a `DeferredJwtDecoder` attempt that fails at a
-  later step — cost nothing, as explained under "Decision".
+- Every *actively used* JWKS source now keeps re-scheduling its own background refresh for the
+  lifetime of the process, and nothing closes it: CSL has no `.close()`/`@PreDestroy` path for a
+  `JwtDecoder` or a `JWKSource`. The executors are shared and daemon, so the cost is not a thread
+  per source and does not block JVM shutdown — it is one scheduled fetch of the IdP's JWKS endpoint
+  roughly every 4m15s per source, forever. A decoder or scope that is *rebuilt* at runtime (a config
+  reload, a scope recreated on topology change) would leave its predecessor's source refreshing
+  until the process ends. The count scales with **both** the number of configured JWKS URIs
+  (primary + additional, per issuer) **and** the number of independently-built decoder scopes: a
+  host using the `Scoped*` per-physical-tenant chain pattern (`ScopedJwtDecoderFactory`) builds one
+  set of sources *per scope*. This ADR accepts that cost on the basis that decoders are built once
+  per process (or once per scope's first use, via `DeferredJwtDecoder`) and are not rebuilt at
+  runtime today, so the gap is latent. Wiring a disposal path is a follow-up, not resolved here.
+  Sources that are built and then abandoned without ever serving a request — a `putIfAbsent` race
+  loser, a `DeferredJwtDecoder` attempt that fails at a later step — cost nothing, as explained
+  under "Decision".
 - An unrecognized `kid` forces an immediate synchronous fetch independent of TTL (Nimbus's `noMatch`
   refresh evaluator), and with `rateLimited(false)` nothing caps how often that happens. Raising the
   HTTP timeouts therefore also raises what a single such request can cost: up to 3s connect + 3s
