@@ -50,8 +50,9 @@ each source with:
   15-second refresh timeout as margin before the 30-second refresh-ahead window opens. (Supplying a non-null
   scheduled executor is what sets Nimbus's `scheduled = true`.) Live decode requests read the
   already-warm cache; they are not blocked by the refresh. A failed refresh is logged at `WARN` with
-  the JWK Set URI through the listener, because Nimbus otherwise swallows it and an IdP outage would
-  stay invisible until the cache expired. Both executors are built here and shared by every source, rather than
+  the JWK Set URI (user-info, query and fragment redacted, as the URL is operator-supplied) through
+  the listener, because Nimbus otherwise swallows it and an IdP outage would stay invisible until
+  the cache expired. Both executors are built here and shared by every source, rather than
   left to the shorter `refreshAheadCache(long, boolean)` overload, because Nimbus's own defaults
   are **non-daemon** `Executors.newSingleThread*` pools created per source: since nothing in CSL
   closes a `JWKSource`, a non-daemon refresh thread would outlive a host's Spring context and stop
