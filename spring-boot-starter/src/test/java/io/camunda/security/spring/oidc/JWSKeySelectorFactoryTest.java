@@ -317,7 +317,7 @@ class JWSKeySelectorFactoryTest {
   }
 
   private static JWSKeySelectorFactory shortTimingFactory() {
-    // Same shape as the real defaults (refreshAheadTime + cacheRefreshTimeout <= timeToLive),
+    // Same shape as the real defaults (refreshAheadTime + cacheRefreshTimeout < timeToLive),
     // scaled from minutes down to hundreds of milliseconds so the tests run fast.
     return timingFactory(500L, 300L, 100L, 300);
   }

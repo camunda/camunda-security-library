@@ -85,10 +85,11 @@ public class JWSKeySelectorFactory {
   private static final long CACHE_TIME_TO_LIVE_MILLIS = JWKSourceBuilder.DEFAULT_CACHE_TIME_TO_LIVE;
 
   /**
-   * Upper bound on a single synchronous JWK Set fetch — reached only when the background
-   * refresh-ahead has not kept the cache current (e.g. a sustained IdP outage) or an unrecognized
-   * {@code kid} forces an immediate refresh. Matches Nimbus's own default ({@link
-   * JWKSourceBuilder#DEFAULT_CACHE_REFRESH_TIMEOUT}).
+   * How long a caller waits for another thread's in-flight refresh to finish — Nimbus's lock-wait
+   * limit. It does not bound the fetch itself, which is bounded by the HTTP connect/read timeouts.
+   * Reached only when the background refresh-ahead has not kept the cache current (e.g. a sustained
+   * IdP outage) or an unrecognized {@code kid} forces an immediate refresh. Matches Nimbus's own
+   * default ({@link JWKSourceBuilder#DEFAULT_CACHE_REFRESH_TIMEOUT}).
    */
   private static final long CACHE_REFRESH_TIMEOUT_MILLIS =
       JWKSourceBuilder.DEFAULT_CACHE_REFRESH_TIMEOUT;
@@ -277,18 +278,21 @@ public class JWSKeySelectorFactory {
    * Overridable by a host (or a test) that needs a different value than {@link
    * #CACHE_TIME_TO_LIVE_MILLIS}.
    *
-   * <p>An override must keep {@code getRefreshAheadTimeMillis() + getCacheRefreshTimeoutMillis() <=
-   * getCacheTimeToLiveMillis()}, or Nimbus rejects the configuration with an {@link
-   * IllegalArgumentException} at bean creation; and the closer that sum gets to the TTL, the more
-   * the background refresh cadence collapses towards continuously polling the IdP.
+   * <p>An override must keep {@code getRefreshAheadTimeMillis() + getCacheRefreshTimeoutMillis() <
+   * getCacheTimeToLiveMillis()}, strictly. Nimbus rejects a sum above the TTL with an {@link
+   * IllegalArgumentException} at bean creation, but accepts equality and then computes a zero
+   * scheduling delay, which it does not schedule — silently reverting to request-driven refresh.
+   * And the closer the sum gets to the TTL, the more the background refresh cadence collapses
+   * towards continuously polling the IdP.
    */
   protected long getCacheTimeToLiveMillis() {
     return CACHE_TIME_TO_LIVE_MILLIS;
   }
 
   /**
-   * The upper bound on a single synchronous JWK Set fetch, in milliseconds. Overridable by a host
-   * (or a test) that needs a different value than {@link #CACHE_REFRESH_TIMEOUT_MILLIS}.
+   * How long a caller waits for another thread's in-flight refresh, in milliseconds (Nimbus's
+   * lock-wait limit; the fetch itself is bounded by the HTTP timeouts). Overridable by a host (or a
+   * test) that needs a different value than {@link #CACHE_REFRESH_TIMEOUT_MILLIS}.
    *
    * <p>Subject to the same invariant as {@link #getCacheTimeToLiveMillis()}.
    */

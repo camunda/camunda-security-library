@@ -46,8 +46,8 @@ each source with:
 - **`refreshAheadCache(30_000, <failure listener>, <executor>, false, <scheduledExecutor>, false)`** —
   the cache is refreshed in the background ahead of its expiry, scheduled regardless of whether a
   request arrives. Nimbus dispatches the refresh at `TTL − refresh-ahead − refresh timeout` after a
-  load — with the defaults, 4m15s into a 5m TTL, i.e. 45 seconds before expiry — so the 15-second
-  refresh budget finishes before the 30-second refresh-ahead window opens. (Supplying a non-null
+  load — with the defaults, 4m15s into a 5m TTL, i.e. 45 seconds before expiry — which leaves the
+  15-second refresh timeout as margin before the 30-second refresh-ahead window opens. (Supplying a non-null
   scheduled executor is what sets Nimbus's `scheduled = true`.) Live decode requests read the
   already-warm cache; they are not blocked by the refresh. A failed refresh is logged at `WARN` with
   the JWK Set URI through the listener, because Nimbus otherwise swallows it and an IdP outage would
@@ -63,7 +63,8 @@ each source with:
 - **`cache(300_000, 15_000)`** — an explicit 5-minute cache time-to-live and 15-second refresh
   timeout. This is the staleness bound: if the background refresh cannot keep the cache current
   for a full 5 minutes (a sustained IdP outage outlasting the refresh-ahead window), the next
-  decode request forces a synchronous fetch bounded by the unchanged 15-second refresh timeout,
+  decode request forces a synchronous fetch, bounded by the 3-second HTTP timeouts per URI (the
+  15-second refresh timeout is only how long *other* callers wait on the lock while that fetch runs),
   rather than serving the expired set indefinitely. An unrecognized `kid` forces the same bounded
   synchronous fetch immediately, independent of TTL, through Nimbus's existing
   `JWKSetCacheRefreshEvaluator` — unchanged by this ADR, and covered by a dedicated test (see
@@ -123,8 +124,8 @@ that is later abandoned costs nothing as long as it never served a request.
   override the getters.
 - **5-minute TTL / 15-second refresh timeout, left at Nimbus's own defaults rather than widened
   further.** Widening the TTL would extend how long a key could stay trusted after an IdP revokes
-  it; the 15-second refresh timeout already bounds the worst case for a single synchronous fetch,
-  and it is the refresh-ahead *scheduling* above — not this value — that removes live-request
+  it; the 3-second HTTP timeouts already bound a single synchronous fetch (the 15-second refresh
+  timeout is the lock-wait limit for callers queued behind it), and it is the refresh-ahead *scheduling* above — not this value — that removes live-request
   blocking in the common case. Making both values explicit constants (rather than leaving them as
   implicit Nimbus defaults) documents the staleness bound instead of leaving it accidental.
 - **`rateLimited` left disabled.** Enabling it caps how often one instance re-fetches, which is a
@@ -147,9 +148,11 @@ that is later abandoned costs nothing as long as it never served a request.
 | Rate limiting | Disabled | Override `createJWKSource(URL)` |
 
 Any override of the three cache getters must keep `getRefreshAheadTimeMillis() +
-getCacheRefreshTimeoutMillis() <= getCacheTimeToLiveMillis()`, or Nimbus rejects the configuration
-with an `IllegalArgumentException` at bean creation; and the closer that sum gets to the TTL, the
-more the background refresh cadence collapses towards continuously polling the IdP.
+getCacheRefreshTimeoutMillis() < getCacheTimeToLiveMillis()`, strictly. Nimbus rejects a sum above
+the TTL with an `IllegalArgumentException` at bean creation, but accepts equality and then computes
+a zero scheduling delay, which it does not schedule — silently reverting to request-driven refresh.
+And the closer that sum gets to the TTL, the more the background refresh cadence collapses towards
+continuously polling the IdP.
 
 ## Supersedes
 
@@ -201,9 +204,11 @@ more the background refresh cadence collapses towards continuously polling the I
 - 3 seconds is still finite: an IdP outage exceeding it still fails the in-flight request. This ADR
   narrows the blocking window to realistic latency — it does not eliminate failures from genuine
   unavailability.
-- A key that should be revoked urgently can remain trusted for up to the now-explicit 5-minute TTL
-  plus however long the IdP itself stays unreachable beyond that. This is unchanged from the prior
-  implicit behavior — ADR-0006's defaults already had this property — but is now a documented,
+- A key that should be revoked urgently can remain trusted for up to the now-explicit 5-minute TTL.
+  After that the source forces a refresh, and if the IdP is still unreachable decoding fails rather
+  than continuing to trust the stale set (Nimbus's outage-tolerant mode is not enabled), so an
+  outage does not extend the bound — it costs availability instead. The 5-minute bound is unchanged
+  from the prior implicit behavior — ADR-0006's defaults already had it — but is now a documented,
   deliberate bound rather than an accident of Nimbus's defaults.
 
 ## Alternatives Considered
