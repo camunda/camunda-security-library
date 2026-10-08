@@ -280,6 +280,13 @@ public final class SecurityFilterChainSupport {
    * cookie-backed token repository with a {@link CsrfProtectionRequestMatcher} and adds a response
    * header filter that includes the CSRF token on authenticated GET/login responses. When disabled,
    * CSRF protection is turned off entirely.
+   *
+   * <p>An unprotected pattern overlapping a scoped {@code <basePath>/login} fails startup, but one
+   * overlapping the unscoped {@code /login} no longer does (ADR-0032): {@link
+   * BaseSecurityConfiguration}'s unprotected chain passes state-changing {@code /login} requests on
+   * to the CSRF-enforcing chain instead. A host that builds its own unprotected chain must likewise
+   * exclude state-changing requests to {@code /login} from it, otherwise that chain serves them
+   * without CSRF.
    */
   public static void applyCsrfConfiguration(
       final HttpSecurity http,
