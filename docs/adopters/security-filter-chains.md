@@ -440,9 +440,25 @@ In this example, the library treats `groups` as the claim source for group mappi
 |---|---|---|---|
 | `enabled` | boolean | `true` | Toggles CSRF protection on the webapp chains. |
 | `cookie-http-only` | boolean | `false` | When `false`, the CSRF cookie is readable by browser-side JavaScript so it can echo the token. Flip to `true` only for API-only hosts. |
-| `ignored-path-patterns` | set&lt;string&gt; | empty | Ant-style patterns CSRF protection skips, in addition to the always-ignored unprotected paths and the logout endpoint. |
+| `ignored-path-patterns` | set&lt;string&gt; | empty | Ant-style patterns CSRF protection skips, in addition to the always-ignored unprotected paths and the logout endpoint. Under a non-root servlet path, patterns are relative to it (like `SecurityPathPort` paths). |
 
 The login endpoint (`/login`, and its scoped `<basePath>/login` variants) always requires a valid CSRF token, even for a browser that holds no session yet — it cannot be exempted via `ignored-path-patterns`. Without this, a cross-site `POST /login` is otherwise indistinguishable from a legitimate one on a browser that already has an authenticated session, and silently replaces the victim's session with an attacker-controlled one (camunda/security-testing-findings#281). An anonymous `GET /login` still receives a CSRF token (via the same cookie/response-header mechanism used for authenticated requests) so a legitimate login can obtain one to submit back.
+
+`SecurityPathPort#unprotectedPaths()` may cover `/login` (e.g. via `/**`). The unprotected chain then serves only GET/HEAD/OPTIONS/TRACE on `/login` and issues the CSRF token on `GET /login` (the chain only ever issues the token, and only on login-path requests; it never enforces CSRF); state-changing requests are passed on to the next chain: the API or webapp chain covering `/login` (which enforces CSRF), otherwise a deny chain, which rejects them with 404: the catch-all, or with it disabled `unclaimedLoginGuardSecurityFilterChain`, which matches exactly the requests the unprotected chain passes on. With `camunda.security.csrf.enabled=false` nothing is rerouted: the unprotected chain serves every method on `/login`. Caveats:
+
+- Exact `/login` only: `/login/foo` under `/login/**` stays unprotected for all methods.
+- With CSRF enabled, a pattern matching a scoped `<basePath>/login` fails startup.
+- OIDC: `GET /login` never reaches `CamundaLoginPickerFilter`.
+- With `catch-all-unhandled-paths-enabled=false`, a host chain that should serve state-changing `/login` must be ordered before `ORDER_UNHANDLED`, and must enforce CSRF on `/login` itself: CSL routes these requests but cannot check the claiming chain's CSRF configuration.
+
+**Migrating from 1.1.0:**
+
+- A host that moved `/login` into `unprotectedApiPaths()` can move it back.
+- With `camunda.security.authentication.catch-all-unhandled-paths-enabled=false`, CSL now registers `unclaimedLoginGuardSecurityFilterChain` at `ORDER_UNHANDLED` (3). A host catch-all chain without a `securityMatcher` (matching any request) must be ordered after it; otherwise Spring Security fails startup with an `UnreachableFilterChainException` naming the guard chain.
+- Under a non-root servlet path (a host `PathPatternRequestMatcher.Builder` with a `basePath`), all CSRF-exempt patterns (`unprotectedPaths()`, `unprotectedApiPaths()`, logout, `camunda.security.csrf.ignored-path-patterns`) are now resolved relative to the servlet path, like every chain's routing. Write `ignored-path-patterns` without the servlet path prefix: `/foo` exempts `<servlet-path>/foo`, while `<servlet-path>/foo` no longer matches.
+- `SecurityFilterChainSupport.applyCsrfConfiguration(...)` no longer fails startup when an unprotected pattern overlaps the unscoped `/login`. A host that builds its own unprotected chain (instead of using `BaseSecurityConfiguration`'s) must exclude state-changing requests to `/login` from it, as `BaseSecurityConfiguration` does, otherwise they are served without CSRF.
+
+See [ADR-0032](../adr/0032-scope-login-csrf-guard-to-state-changing-requests.md).
 
 ### `camunda.security.http-headers.*`
 

@@ -11,8 +11,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 class CsrfProtectionRequestMatcherTest {
 
@@ -141,11 +144,43 @@ class CsrfProtectionRequestMatcherTest {
   }
 
   @Test
+  void shouldMatchBothPathSetsUnderTheHostBuilderBasePath() {
+    // A broad allowed pattern must not exempt POST /app/login under a servlet mapped at /app.
+    final var matcher =
+        new CsrfProtectionRequestMatcher(
+            PathPatternRequestMatcher.withDefaults().basePath("/app"),
+            Set.of("/**"),
+            Set.of("/login"));
+    final var login = new MockHttpServletRequest("POST", "/app/login");
+    login.setServletPath("/app");
+    login.setPathInfo("/login");
+    final var other = new MockHttpServletRequest("POST", "/app/other");
+    other.setServletPath("/app");
+    other.setPathInfo("/other");
+    other.setSession(new MockHttpSession());
+
+    assertThat(matcher.matches(login)).isTrue();
+    assertThat(matcher.matches(other)).isFalse();
+  }
+
+  @Test
   void shouldEnforceEvenWithSwaggerUiReferer() {
     final var request = createRequest("POST", "/login");
     request.setSession(new MockHttpSession());
     request.addHeader("Referer", "http://localhost/swagger-ui/index.html");
     assertThat(enforcingMatcher.matches(request)).isTrue();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"GET", "HEAD", "TRACE", "OPTIONS"})
+  void isSafeMethodShouldReturnTrueForSafeMethods(final String method) {
+    assertThat(CsrfProtectionRequestMatcher.isSafeMethod(method)).isTrue();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"POST", "PUT", "PATCH", "DELETE"})
+  void isSafeMethodShouldReturnFalseForUnsafeMethods(final String method) {
+    assertThat(CsrfProtectionRequestMatcher.isSafeMethod(method)).isFalse();
   }
 
   private MockHttpServletRequest createRequest(final String method, final String servletPath) {

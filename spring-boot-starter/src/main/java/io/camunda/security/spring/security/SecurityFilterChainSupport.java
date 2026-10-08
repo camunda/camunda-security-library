@@ -24,9 +24,12 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationContext;
 import org.springframework.http.server.PathContainer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -40,6 +43,7 @@ import org.springframework.security.web.header.writers.CrossOriginEmbedderPolicy
 import org.springframework.security.web.header.writers.CrossOriginOpenerPolicyHeaderWriter;
 import org.springframework.security.web.header.writers.CrossOriginResourcePolicyHeaderWriter;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -128,41 +132,98 @@ public final class SecurityFilterChainSupport {
   }
 
   /**
-   * Fails fast if any of {@code unprotectedPaths} would also match one of {@code enforcedPaths}
-   * (the login endpoint, unprefixed or under a scoped {@code basePath}). {@link
-   * BaseSecurityConfiguration}'s unprotected-paths chain is always checked first by Spring's {@code
-   * FilterChainProxy} and unconditionally disables CSRF for whatever it matches, so an overlapping
-   * declaration would route the login request there instead of the webapp chain that actually
-   * enforces CSRF on it — silently defeating the unconditional login-CSRF protection ADR-0027
-   * requires (camunda/security-testing-findings#281), for that one scope. Called once per chain
-   * build (primary and each scope) precisely because a scope's login path is only known once its
-   * {@code cookiePath}/{@code basePath} is resolved — {@code unprotectedPaths()} is a single,
-   * unscoped set the host declares once, and a scope's own base path is arbitrary, host-decided,
-   * and not enumerable up front.
+   * Fails fast if an unprotected pattern matches a scoped {@code <basePath>/login}. The unscoped
+   * {@code /login} is skipped: {@link BaseSecurityConfiguration} routes its state-changing requests
+   * instead. Scoped paths get no such carve-out because the unprotected chain cannot issue a scoped
+   * CSRF token (ADR-0032). Only runs when {@code camunda.security.csrf.enabled} is true.
    */
-  static void rejectUnprotectedPathOverlap(
+  static void rejectScopedLoginOverlap(
       final Set<String> unprotectedPaths, final Set<String> enforcedPaths) {
+    final Set<String> scopedLoginPaths =
+        enforcedPaths.stream()
+            .filter(path -> !LOGIN_URL.equals(path))
+            .collect(Collectors.toUnmodifiableSet());
+    findUnprotectedPathOverlaps(unprotectedPaths, scopedLoginPaths).stream()
+        .findFirst()
+        .ifPresent(
+            scopedLoginPath -> {
+              throw new IllegalStateException(
+                  "SecurityPathPort#unprotectedPaths() declares '"
+                      + firstMatchingPattern(unprotectedPaths, scopedLoginPath)
+                      + "', which matches the scoped login path '"
+                      + scopedLoginPath
+                      + "'. The login endpoint requires a valid CSRF token unconditionally"
+                      + " (camunda/security-testing-findings#281), so a scoped login path must not"
+                      + " be covered by an unprotected path — remove or narrow this pattern (see"
+                      + " ADR-0032).");
+            });
+  }
+
+  /**
+   * Returns the {@code enforcedPaths} matched by any unprotected pattern, in iteration order.
+   *
+   * <p>Package-private for unit testing.
+   */
+  static Set<String> findUnprotectedPathOverlaps(
+      final Set<String> unprotectedPaths, final Set<String> enforcedPaths) {
+    final var overlaps = new LinkedHashSet<String>();
     for (final var enforcedPath : enforcedPaths) {
-      final var enforcedPathContainer = PathContainer.parsePath(enforcedPath);
-      final var offendingPattern =
-          unprotectedPaths.stream()
-              .filter(
-                  pattern ->
-                      PathPatternParser.defaultInstance
-                          .parse(pattern)
-                          .matches(enforcedPathContainer))
-              .findFirst();
-      if (offendingPattern.isPresent()) {
-        throw new IllegalStateException(
-            "SecurityPathPort#unprotectedPaths() declares '"
-                + offendingPattern.get()
-                + "', which matches the CSRF-enforced path '"
-                + enforcedPath
-                + "'. The login endpoint requires a valid CSRF token unconditionally"
-                + " (camunda/security-testing-findings#281) and must not be declared as, or"
-                + " overlap, an unprotected path — remove or narrow this pattern.");
+      if (firstMatchingPattern(unprotectedPaths, enforcedPath) != null) {
+        overlaps.add(enforcedPath);
       }
     }
+    return overlaps;
+  }
+
+  /** Returns the first pattern matching {@code enforcedPath}, or {@code null}. */
+  static String firstMatchingPattern(final Set<String> patterns, final String enforcedPath) {
+    final var pathContainer = PathContainer.parsePath(enforcedPath);
+    return patterns.stream()
+        .filter(pattern -> PathPatternParser.defaultInstance.parse(pattern).matches(pathContainer))
+        .findFirst()
+        .orElse(null);
+  }
+
+  /**
+   * Resolves the path matcher builder exactly as {@link HttpSecurity#securityMatcher(String...)}
+   * does: the host's unique {@link PathPatternRequestMatcher.Builder} bean (e.g. with a servlet
+   * {@code basePath}), else the one Spring Security shares on {@code http} (which follows Spring
+   * MVC's pattern parser). Matchers built with it agree with every chain's own security matcher.
+   */
+  static PathPatternRequestMatcher.Builder pathMatcherBuilder(final HttpSecurity http) {
+    final var shared = http.getSharedObject(PathPatternRequestMatcher.Builder.class);
+    final var fallback = shared != null ? shared : PathPatternRequestMatcher.withDefaults();
+    final var context = http.getSharedObject(ApplicationContext.class);
+    if (context == null) {
+      return fallback;
+    }
+    return context
+        .getBeanProvider(PathPatternRequestMatcher.Builder.class)
+        .getIfUnique(() -> fallback);
+  }
+
+  /**
+   * Matches non-safe-method requests to {@code paths}.
+   *
+   * <p>Package-private for unit testing.
+   */
+  static RequestMatcher stateChangingRequestTo(final Set<String> paths) {
+    return stateChangingRequestTo(PathPatternRequestMatcher.withDefaults(), paths);
+  }
+
+  /**
+   * As {@link #stateChangingRequestTo(Set)}, built with {@code builder}; use the same builder as
+   * the matcher this is subtracted from.
+   *
+   * <p>Package-private for unit testing.
+   */
+  static RequestMatcher stateChangingRequestTo(
+      final PathPatternRequestMatcher.Builder builder, final Set<String> paths) {
+    final RequestMatcher pathsMatcher =
+        CsrfProtectionRequestMatcher.buildPathsMatcher(builder, paths);
+    return request ->
+        !CsrfProtectionRequestMatcher.isSafeMethod(request.getMethod())
+            && pathsMatcher.matches(request);
   }
 
   public static CookieCsrfTokenRepository cookieCsrfTokenRepository(
@@ -219,6 +280,13 @@ public final class SecurityFilterChainSupport {
    * cookie-backed token repository with a {@link CsrfProtectionRequestMatcher} and adds a response
    * header filter that includes the CSRF token on authenticated GET/login responses. When disabled,
    * CSRF protection is turned off entirely.
+   *
+   * <p>An unprotected pattern overlapping a scoped {@code <basePath>/login} fails startup (with
+   * CSRF enabled, matched with the default path parser), but one overlapping the unscoped {@code
+   * /login} no longer does (ADR-0032): {@link BaseSecurityConfiguration}'s unprotected chain passes
+   * state-changing {@code /login} requests on to the CSRF-enforcing chain instead. A host that
+   * builds its own unprotected chain must likewise exclude state-changing requests to {@code
+   * /login} from it, otherwise that chain serves them without CSRF.
    */
   public static void applyCsrfConfiguration(
       final HttpSecurity http,
@@ -251,8 +319,34 @@ public final class SecurityFilterChainSupport {
 
     final var allowedPaths = csrfAllowedPaths(properties, pathPort, cookiePath);
     final var enforcedPaths = csrfEnforcedPaths(cookiePath);
-    rejectUnprotectedPathOverlap(pathPort.unprotectedPaths(), enforcedPaths);
+    rejectScopedLoginOverlap(pathPort.unprotectedPaths(), enforcedPaths);
+    final var builder = pathMatcherBuilder(http);
+    applyCsrfConfiguration(
+        http,
+        properties,
+        cookiePath,
+        csrfCookieName,
+        new CsrfProtectionRequestMatcher(builder, allowedPaths, enforcedPaths),
+        csrfTokenResponseHeaderFilter(builder, cookiePath));
+  }
 
+  /**
+   * Applies the CSRF token repository, {@code protectionMatcher} and caller-supplied {@code
+   * tokenResponseFilter}, or disables CSRF when it is turned off. The caller decides when the token
+   * is written (e.g. with the host's servlet {@code basePath} applied).
+   */
+  static void applyCsrfConfiguration(
+      final HttpSecurity http,
+      final CamundaSecurityLibraryProperties properties,
+      final String cookiePath,
+      final String csrfCookieName,
+      final RequestMatcher protectionMatcher,
+      final OncePerRequestFilter tokenResponseFilter)
+      throws Exception {
+    if (!properties.getCsrf().isEnabled()) {
+      http.csrf(AbstractHttpConfigurer::disable);
+      return;
+    }
     final String resolvedCookiePath = resolveCookiePath(cookiePath);
     final CookieCsrfTokenRepository repo =
         buildCookieCsrfTokenRepository(properties, resolvedCookiePath, csrfCookieName);
@@ -263,9 +357,28 @@ public final class SecurityFilterChainSupport {
     http.csrf(
         csrf ->
             csrf.csrfTokenRepository(csrfTokenRepository)
-                .requireCsrfProtectionMatcher(
-                    new CsrfProtectionRequestMatcher(allowedPaths, enforcedPaths)));
-    http.addFilterAfter(csrfTokenResponseHeaderFilter(cookiePath), CsrfFilter.class);
+                .requireCsrfProtectionMatcher(protectionMatcher));
+    http.addFilterAfter(tokenResponseFilter, CsrfFilter.class);
+  }
+
+  /**
+   * Issues (never enforces) the CSRF token on the unprotected chain, so {@code GET /login} still
+   * gets one when it never reaches the webapp chain. The token is written only on a login-path
+   * request, resolved with the host's {@code builder} so it follows the same servlet {@code
+   * basePath} as the chain's security matcher; no header or cookie appears on any other path.
+   */
+  static void applyLoginTokenIssuance(
+      final HttpSecurity http,
+      final CamundaSecurityLibraryProperties properties,
+      final PathPatternRequestMatcher.Builder builder)
+      throws Exception {
+    applyCsrfConfiguration(
+        http,
+        properties,
+        null,
+        X_CSRF_TOKEN,
+        request -> false,
+        loginTokenResponseHeaderFilter(builder));
   }
 
   /**
@@ -360,10 +473,15 @@ public final class SecurityFilterChainSupport {
   }
 
   public static OncePerRequestFilter csrfTokenResponseHeaderFilter(final String cookiePath) {
+    return csrfTokenResponseHeaderFilter(PathPatternRequestMatcher.withDefaults(), cookiePath);
+  }
+
+  static OncePerRequestFilter csrfTokenResponseHeaderFilter(
+      final PathPatternRequestMatcher.Builder builder, final String cookiePath) {
     final RequestMatcher loginMatcher =
-        CsrfProtectionRequestMatcher.buildPathsMatcher(csrfEnforcedPaths(cookiePath));
+        CsrfProtectionRequestMatcher.buildPathsMatcher(builder, csrfEnforcedPaths(cookiePath));
     final RequestMatcher logoutMatcher =
-        CsrfProtectionRequestMatcher.buildPathsMatcher(csrfLogoutPaths(cookiePath));
+        CsrfProtectionRequestMatcher.buildPathsMatcher(builder, csrfLogoutPaths(cookiePath));
     return new OncePerRequestFilter() {
       @Override
       protected void doFilterInternal(
@@ -372,6 +490,29 @@ public final class SecurityFilterChainSupport {
           final FilterChain filterChain)
           throws ServletException, IOException {
         writeCsrfTokenHeaderIfApplicable(request, response, loginMatcher, logoutMatcher);
+        filterChain.doFilter(request, response);
+      }
+    };
+  }
+
+  /**
+   * As {@link #csrfTokenResponseHeaderFilter(PathPatternRequestMatcher.Builder, String)}, but
+   * writes the token only on a login-path request; the authenticated-GET branch is omitted.
+   */
+  static OncePerRequestFilter loginTokenResponseHeaderFilter(
+      final PathPatternRequestMatcher.Builder builder) {
+    final RequestMatcher loginMatcher =
+        CsrfProtectionRequestMatcher.buildPathsMatcher(builder, csrfEnforcedPaths(null));
+    return new OncePerRequestFilter() {
+      @Override
+      protected void doFilterInternal(
+          final HttpServletRequest request,
+          final HttpServletResponse response,
+          final FilterChain filterChain)
+          throws ServletException, IOException {
+        if (loginMatcher.matches(request)) {
+          writeCsrfTokenHeader(request, response);
+        }
         filterChain.doFilter(request, response);
       }
     };
@@ -400,6 +541,11 @@ public final class SecurityFilterChainSupport {
         return;
       }
     }
+    writeCsrfTokenHeader(request, response);
+  }
+
+  private static void writeCsrfTokenHeader(
+      final HttpServletRequest request, final HttpServletResponse response) {
     final CsrfToken token = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
     if (token != null) {
       response.setHeader(X_CSRF_TOKEN, token.getToken());
