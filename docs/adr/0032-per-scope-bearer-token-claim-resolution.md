@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0033: Resolve bearer-token claims per scope for path-scoped OIDC API chains
+# ADR-0032: Resolve bearer-token claims per scope for path-scoped OIDC API chains
 
 **Deciders**: Tim Cline
 

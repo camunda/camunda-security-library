@@ -8,9 +8,13 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.camunda.security.api.context.CamundaAuthenticationConverter;
+import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
+import io.camunda.security.spring.scope.ScopedCamundaAuthenticationConverter;
 import java.util.Iterator;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -19,6 +23,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
@@ -88,6 +93,66 @@ class ScopedOidcInfrastructureConfigurationTest {
               assertThat(ctx.getBean(ScopedOidcClaimsProviderFactory.class))
                   .isSameAs(ctx.getBean(CustomScopedFactory.class).customFactory);
             });
+  }
+
+  @Test
+  void scopedCamundaAuthenticationConverterIsRegisteredEvenWhenAHostConverterIsPresent() {
+    // Regression guard: the unwrapper's back-off must be keyed to its own type, not the broad
+    // CamundaAuthenticationConverter interface. A host's global OIDC converter is a
+    // CamundaAuthenticationConverter too, and a bare @ConditionalOnMissingBean would wrongly drop
+    // this unwrapper — leaving a ScopedCamundaAuthenticationToken with no matching delegate.
+    new ApplicationContextRunner()
+        .withPropertyValues("camunda.security.authentication.method=oidc")
+        .withUserConfiguration(StubClientRegistrationRepository.class, StubObjectMapper.class)
+        .withBean(
+            "hostGlobalConverter", CamundaAuthenticationConverter.class, HostGlobalConverter::new)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class, ScopedOidcInfrastructureConfiguration.class))
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              assertThat(ctx).hasSingleBean(ScopedCamundaAuthenticationConverter.class);
+            });
+  }
+
+  @Test
+  void scopedTokenConverterFactoryIsRegisteredOnlyWhenMembershipPortIsPresent() {
+    new ApplicationContextRunner()
+        .withPropertyValues("camunda.security.authentication.method=oidc")
+        .withUserConfiguration(StubClientRegistrationRepository.class, StubObjectMapper.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class, ScopedOidcInfrastructureConfiguration.class))
+        .run(
+            ctx ->
+                assertThat(ctx)
+                    .doesNotHaveBean(ScopedOidcTokenAuthenticationConverterFactory.class));
+
+    new ApplicationContextRunner()
+        .withPropertyValues("camunda.security.authentication.method=oidc")
+        .withUserConfiguration(StubClientRegistrationRepository.class, StubObjectMapper.class)
+        .withBean(MembershipPort.class, () -> mock(MembershipPort.class))
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class, ScopedOidcInfrastructureConfiguration.class))
+        .run(
+            ctx ->
+                assertThat(ctx).hasSingleBean(ScopedOidcTokenAuthenticationConverterFactory.class));
+  }
+
+  /** A stand-in for a host-registered global converter (e.g. the OIDC bearer-token converter). */
+  static final class HostGlobalConverter implements CamundaAuthenticationConverter<Authentication> {
+    @Override
+    public boolean supports(final Authentication authentication) {
+      return true;
+    }
+
+    @Override
+    public io.camunda.security.api.model.CamundaAuthentication convert(
+        final Authentication authentication) {
+      return null;
+    }
   }
 
   /**

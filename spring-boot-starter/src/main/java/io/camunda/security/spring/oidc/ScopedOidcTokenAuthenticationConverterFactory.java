@@ -36,7 +36,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
  * ADR-0016). Because the conversion runs inside the scope's own filter chain — where the request
  * path, and therefore the scope, is known — two scopes that share one OIDC issuer but configure
  * different claims each resolve correctly, which the single, path-unaware global issuer-keyed map
- * (ADR-0024) cannot do. See ADR-0033 and {@link ScopedCamundaAuthenticationToken}.
+ * (ADR-0024) cannot do. See ADR-0032 and {@link ScopedCamundaAuthenticationToken}.
  *
  * <p>The produced converter runs the scope's {@link OidcTokenAuthenticationConverter} — built from
  * the scope's own {@link #buildScopePerIssuerMap per-issuer claim map}, default converter, and
@@ -91,10 +91,14 @@ public final class ScopedOidcTokenAuthenticationConverterFactory {
     final var oidcConverter =
         new OidcTokenAuthenticationConverter(
             defaultConverter, claimsProvider, new TokenClaimsConvertersByIssuer(byIssuer));
-    LOG.debug(
-        "Built per-scope token claims converter for {} with issuers {}",
-        scopeDescription,
-        byIssuer.keySet());
+    if (LOG.isDebugEnabled()) {
+      // Redact like IssuerOwnership: the issuer-uri check is warn-only, so a credential-bearing or
+      // control-character value can reach this map and must not leak into the log.
+      LOG.debug(
+          "Built per-scope token claims converter for {} with issuers {}",
+          scopeDescription,
+          byIssuer.keySet().stream().map(UrlRedaction::redact).toList());
+    }
     // Resolve the principal with the scope's own converter and carry it on a token the global
     // converter will not re-resolve (ScopedCamundaAuthenticationToken is not a
     // JwtAuthenticationToken).

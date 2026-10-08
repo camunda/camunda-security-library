@@ -249,7 +249,7 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
 
   /**
    * Builds the per-scope {@code Converter<Jwt, Authentication>} that resolves a bearer token with
-   * this scope's own claim configuration (ADR-0033), or {@code null} to fall back to the global
+   * this scope's own claim configuration (ADR-0032), or {@code null} to fall back to the global
    * converter. It returns {@code null} when the {@link
    * ScopedOidcTokenAuthenticationConverterFactory} bean is absent — i.e. no {@link
    * io.camunda.security.core.port.out.MembershipPort} is present, so the deployment does no CSL

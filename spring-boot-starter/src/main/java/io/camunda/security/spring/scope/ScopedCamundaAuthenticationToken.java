@@ -26,7 +26,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
  * <p>This is what lets two scopes that share one OIDC issuer but configure different claims resolve
  * their principals independently: the scope-correct resolution happens inside the scope's own
  * filter chain, where the path (and therefore the scope) is known, and is carried on this token
- * instead of being recomputed later by the single, path-unaware global converter. See ADR-0033 and
+ * instead of being recomputed later by the single, path-unaware global converter. See ADR-0032 and
  * {@link ScopedCamundaAuthenticationConverter}, which unwraps this token back into its {@link
  * CamundaAuthentication}.
  *

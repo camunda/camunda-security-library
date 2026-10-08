@@ -410,7 +410,7 @@ class ScopedSecurityChainConfigurationTest {
     }
   }
 
-  // 9b. Per-scope claim resolution (ADR-0033): the scoped chain resolves the principal with the
+  // 9b. Per-scope claim resolution (ADR-0032): the scoped chain resolves the principal with the
   // scope's OWN username-claim and places a ScopedCamundaAuthenticationToken in the
   // SecurityContext,
   // not a plain JwtAuthenticationToken for the global converter to re-resolve.

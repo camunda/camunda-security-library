@@ -29,7 +29,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 /**
  * Verifies that {@link ScopedOidcTokenAuthenticationConverterFactory} resolves a bearer token with
  * the scope's own claim configuration — including the case the global issuer-keyed map cannot
- * handle: two scopes that share one issuer but configure different claims (ADR-0033, fixing
+ * handle: two scopes that share one issuer but configure different claims (ADR-0032, fixing
  * camunda/camunda#64685's shared-issuer variant).
  */
 @ExtendWith(MockitoExtension.class)

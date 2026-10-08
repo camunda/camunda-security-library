@@ -130,7 +130,7 @@ public class ScopedOidcInfrastructureConfiguration {
 
   /**
    * Builds a {@link ScopedOidcTokenAuthenticationConverterFactory} so a scope's API chain can
-   * resolve a bearer token's principal with the scope's own claim configuration (ADR-0033). Gated
+   * resolve a bearer token's principal with the scope's own claim configuration (ADR-0032). Gated
    * on {@link MembershipPort} because the per-scope {@link
    * io.camunda.security.core.authz.LazyTokenClaimsConverter}s it builds need it; when it is absent
    * the deployment does no CSL OIDC principal resolution at all, and {@code
@@ -159,12 +159,19 @@ public class ScopedOidcInfrastructureConfiguration {
 
   /**
    * Registers the {@link ScopedCamundaAuthenticationConverter} that unwraps the token a scoped
-   * chain produces. Registered unconditionally so it is collected into the {@code
-   * CamundaAuthenticationProvider}'s converter list; it only ever matches a scoped token, so it is
-   * inert in a deployment with no scopes. See ADR-0033.
+   * chain produces. It is collected into the {@code CamundaAuthenticationProvider}'s converter list
+   * and only ever matches a scoped token, so it is inert in a deployment with no scopes. See
+   * ADR-0032.
+   *
+   * <p>The back-off is keyed to {@link ScopedCamundaAuthenticationConverter} specifically, not to
+   * the broad {@code CamundaAuthenticationConverter} return type: a bare
+   * {@code @ConditionalOnMissingBean} would infer that interface and back off whenever <em>any</em>
+   * converter is present — including the host's global OIDC converter — which would drop this
+   * unwrapper from the list and leave a scoped token with no matching delegate. Mirrors the keyed
+   * back-off on {@code CamundaAuthenticationBeansConfiguration#unprotectedAuthenticationConverter}.
    */
   @Bean
-  @ConditionalOnMissingBean
+  @ConditionalOnMissingBean(ScopedCamundaAuthenticationConverter.class)
   public CamundaAuthenticationConverter<Authentication> scopedCamundaAuthenticationConverter() {
     return new ScopedCamundaAuthenticationConverter();
   }

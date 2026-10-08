@@ -20,7 +20,7 @@ import org.springframework.security.core.Authentication;
  * DefaultCamundaAuthenticationProvider}'s delegating converter routes scoped tokens here. Because
  * it supports only {@link ScopedCamundaAuthenticationToken} — a sibling of {@code
  * JwtAuthenticationToken}, not a subtype — it never competes with a host's global {@code
- * OidcTokenAuthenticationConverter}, so no bean ordering is required between them. See ADR-0033.
+ * OidcTokenAuthenticationConverter}, so no bean ordering is required between them. See ADR-0032.
  */
 public final class ScopedCamundaAuthenticationConverter
     implements CamundaAuthenticationConverter<Authentication> {
