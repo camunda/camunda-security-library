@@ -10,10 +10,10 @@ package io.camunda.security.spring.oidc;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.source.CachingJWKSetSource;
 import com.nimbusds.jose.jwk.source.CachingJWKSetSource.RefreshCompletedEvent;
+import com.nimbusds.jose.jwk.source.CachingJWKSetSource.RefreshInitiatedEvent;
 import com.nimbusds.jose.jwk.source.JWKSetCacheRefreshEvaluator;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
-import com.nimbusds.jose.jwk.source.RefreshAheadCachingJWKSetSource.ScheduledRefreshCompletedEvent;
 import com.nimbusds.jose.jwk.source.RefreshAheadCachingJWKSetSource.ScheduledRefreshFailed;
 import com.nimbusds.jose.jwk.source.RefreshAheadCachingJWKSetSource.UnableToRefreshAheadOfExpirationEvent;
 import com.nimbusds.jose.proc.JWSKeySelector;
@@ -237,8 +237,7 @@ public class JWSKeySelectorFactory {
         .cache(timeToLive, refreshTimeout)
         .refreshAheadCache(
             refreshAhead,
-            refreshFailureListener(
-                jwkSetUri, new RetryChain(refreshTimeout, refreshAhead + refreshTimeout)),
+            refreshFailureListener(jwkSetUri, new RetryChain(refreshTimeout, timeToLive)),
             REFRESH_FETCH_EXECUTOR,
             false,
             REFRESH_SCHEDULER,
@@ -290,8 +289,9 @@ public class JWSKeySelectorFactory {
             describe(failed.getException()));
       } else if (event instanceof UnableToRefreshAheadOfExpirationEvent<SecurityContext>) {
         // Nimbus raises this for every failed background fetch, including each one a request in the
-        // refresh-ahead window starts, so only the first failure of a streak starts a chain.
-        final var chain = retryChain.tryStart();
+        // refresh-ahead window starts, so only the first failure of a streak starts a chain — and
+        // none once the cache has expired or has no room left for a retry.
+        final var chain = retryChain.tryStart(System.currentTimeMillis());
         LOG.warn(
             "Background refresh of the JWK Set at '{}' failed; keeps serving the cached keys until"
                 + " they expire, after which decoding fails if the endpoint is still unavailable."
@@ -299,13 +299,13 @@ public class JWSKeySelectorFactory {
             redactedUri,
             chain < 0 ? "" : " Retrying every " + retryChain.delayMillis() + "ms until then");
         if (chain >= 0) {
-          final var deadline = System.currentTimeMillis() + retryChain.windowMillis();
-          scheduleRetry(event.getSource(), redactedUri, retryChain, chain, deadline);
+          scheduleRetry(event.getSource(), redactedUri, retryChain, chain);
         }
-      } else if (event instanceof ScheduledRefreshCompletedEvent<SecurityContext>
-          || event instanceof RefreshCompletedEvent<SecurityContext>) {
+      } else if (event instanceof RefreshInitiatedEvent<SecurityContext>) {
+        retryChain.loadStarted(System.currentTimeMillis());
+      } else if (event instanceof RefreshCompletedEvent<SecurityContext>) {
         // Whoever refreshed it, the cache is current again and pending retries are redundant.
-        retryChain.finish();
+        retryChain.loadCompleted();
       }
     };
   }
@@ -324,18 +324,17 @@ public class JWSKeySelectorFactory {
   }
 
   /**
-   * Retries a failed background refresh, spaced by the cache refresh timeout, until {@code
-   * deadline} — the remainder of the margin the scheduled refresh leaves before expiry. A retry
-   * that lands just past expiry is harmless: it is an ordinary background load.
+   * Retries a failed background refresh, spaced by the cache refresh timeout, for as long as the
+   * cached set is still valid. Past its expiry a refresh is the request path's to make, and a
+   * forced retry would only contend with it for Nimbus's cache lock.
    */
   private void scheduleRetry(
       final CachingJWKSetSource<SecurityContext> source,
       final String redactedUri,
       final RetryChain retryChain,
-      final long chain,
-      final long deadline) {
+      final long chain) {
     final var delay = retryChain.delayMillis();
-    if (System.currentTimeMillis() + delay > deadline) {
+    if (!retryChain.hasRoomForRetry(System.currentTimeMillis())) {
       LOG.warn(
           "Giving up retrying the background refresh of the JWK Set at '{}'; the cached keys are"
               + " about to expire and token validation fails if the endpoint is still unavailable",
@@ -346,7 +345,7 @@ public class JWSKeySelectorFactory {
     REFRESH_SCHEDULER.schedule(
         () ->
             REFRESH_FETCH_EXECUTOR.execute(
-                () -> retryRefresh(source, redactedUri, retryChain, chain, deadline)),
+                () -> retryRefresh(source, redactedUri, retryChain, chain)),
         delay,
         TimeUnit.MILLISECONDS);
   }
@@ -355,8 +354,7 @@ public class JWSKeySelectorFactory {
       final CachingJWKSetSource<SecurityContext> source,
       final String redactedUri,
       final RetryChain retryChain,
-      final long chain,
-      final long deadline) {
+      final long chain) {
     if (!retryChain.isCurrent(chain)) {
       return;
     }
@@ -371,7 +369,7 @@ public class JWSKeySelectorFactory {
           "Retry of the background refresh of the JWK Set at '{}' failed ({})",
           redactedUri,
           describe(e));
-      scheduleRetry(source, redactedUri, retryChain, chain, deadline);
+      scheduleRetry(source, redactedUri, retryChain, chain);
     }
   }
 
@@ -450,30 +448,47 @@ public class JWSKeySelectorFactory {
     static final long MIN_DELAY_MILLIS = 100L;
 
     private final long delayMillis;
-    private final long windowMillis;
+    private final long timeToLiveMillis;
+    private long loadStartedAt;
+    private long expiresAt;
     private long generation;
     private boolean active;
 
     /**
      * @param delayMillis spacing between retries (raised to {@link #MIN_DELAY_MILLIS})
-     * @param windowMillis how long after the first failure retries may still be scheduled
+     * @param timeToLiveMillis how long a loaded JWK Set stays valid, from the start of its load
      */
-    RetryChain(final long delayMillis, final long windowMillis) {
+    RetryChain(final long delayMillis, final long timeToLiveMillis) {
       this.delayMillis = Math.max(delayMillis, MIN_DELAY_MILLIS);
-      this.windowMillis = windowMillis;
+      this.timeToLiveMillis = timeToLiveMillis;
     }
 
     long delayMillis() {
       return delayMillis;
     }
 
-    long windowMillis() {
-      return windowMillis;
+    /** A load of the JWK Set has begun; its result, if any, expires a TTL after this. */
+    synchronized void loadStarted(final long nowMillis) {
+      loadStartedAt = nowMillis;
     }
 
-    /** Starts a chain unless one is running; returns its id, or -1 when one already is. */
-    synchronized long tryStart() {
-      if (active) {
+    /** The load that last began succeeded: the cache is current again, so any chain is over. */
+    synchronized void loadCompleted() {
+      expiresAt = loadStartedAt + timeToLiveMillis;
+      active = false;
+    }
+
+    /** Whether a retry spaced one delay from {@code nowMillis} still lands before expiry. */
+    synchronized boolean hasRoomForRetry(final long nowMillis) {
+      return nowMillis + delayMillis <= expiresAt;
+    }
+
+    /**
+     * Starts a chain unless one is running or the cache has no room left for a retry; returns its
+     * id, or -1.
+     */
+    synchronized long tryStart(final long nowMillis) {
+      if (active || !hasRoomForRetry(nowMillis)) {
         return -1;
       }
       active = true;

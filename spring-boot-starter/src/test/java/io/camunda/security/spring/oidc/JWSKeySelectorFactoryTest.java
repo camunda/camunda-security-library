@@ -329,32 +329,59 @@ class JWSKeySelectorFactoryTest {
 
   @Test
   void shouldStartOnlyOneRetryChainWhileOneIsRunning() {
-    // given a chain already running, as after the first failed background fetch of a streak
-    final var retryChain = new JWSKeySelectorFactory.RetryChain(100L, 1_000L);
-    final var first = retryChain.tryStart();
+    // given a cache loaded at t=0 that is valid for 10s, and a chain already running, as after the
+    // first failed background fetch of a streak
+    final var retryChain = loadedAtZeroWithTtl(10_000L);
+    final var first = retryChain.tryStart(1_000L);
 
     // when further failures arrive — Nimbus raises one per failed fetch, and a request in the
     // refresh-ahead window starts each — then none of them starts another chain
-    assertThat(retryChain.tryStart()).isEqualTo(-1);
-    assertThat(retryChain.tryStart()).isEqualTo(-1);
+    assertThat(retryChain.tryStart(1_100L)).isEqualTo(-1);
+    assertThat(retryChain.tryStart(1_200L)).isEqualTo(-1);
     assertThat(retryChain.isCurrent(first)).isTrue();
   }
 
   @Test
   void shouldLetANewChainStartOnceTheRunningOneFinishesAndRetireTheOldOne() {
     // given a finished chain, e.g. because some refresh succeeded
-    final var retryChain = new JWSKeySelectorFactory.RetryChain(100L, 1_000L);
-    final var first = retryChain.tryStart();
+    final var retryChain = loadedAtZeroWithTtl(10_000L);
+    final var first = retryChain.tryStart(1_000L);
     retryChain.finish();
     assertThat(retryChain.isCurrent(first)).isFalse();
 
     // when the next streak of failures starts a new chain
-    final var second = retryChain.tryStart();
+    final var second = retryChain.tryStart(2_000L);
 
     // then only the new chain is current, so a retry still pending from the old one does nothing
     assertThat(second).isNotEqualTo(-1).isNotEqualTo(first);
     assertThat(retryChain.isCurrent(second)).isTrue();
     assertThat(retryChain.isCurrent(first)).isFalse();
+  }
+
+  @Test
+  void shouldNotStartARetryChainOnceTheCacheHasExpiredOrHasNoRoomForARetry() {
+    // given a cache loaded at t=0 that expires at t=10s, with retries spaced 100ms apart
+    final var retryChain = loadedAtZeroWithTtl(10_000L);
+
+    // when a failure is reported after expiry — say a request near the end started a fetch that
+    // only failed once the cache had already gone — or too close to it for a retry to land first
+    // then no chain starts, so no forced retry contends with the request path for the cache lock
+    assertThat(retryChain.tryStart(10_500L)).isEqualTo(-1);
+    assertThat(retryChain.tryStart(9_950L)).isEqualTo(-1);
+    assertThat(retryChain.hasRoomForRetry(9_900L)).isTrue();
+    assertThat(retryChain.hasRoomForRetry(9_901L)).isFalse();
+  }
+
+  @Test
+  void shouldMeasureTheRetryWindowFromWhenTheLoadStartedNotFromWhenItFinished() {
+    // given a load that began at t=1s and, being slow, completed later
+    final var retryChain = new JWSKeySelectorFactory.RetryChain(100L, 10_000L);
+    retryChain.loadStarted(1_000L);
+    retryChain.loadCompleted();
+
+    // then the set expires a TTL after the start, which is how Nimbus times it
+    assertThat(retryChain.hasRoomForRetry(10_900L)).isTrue();
+    assertThat(retryChain.hasRoomForRetry(10_901L)).isFalse();
   }
 
   @Test
@@ -531,6 +558,13 @@ class JWSKeySelectorFactoryTest {
         .filter(
             thread -> thread.getName().equals(JWSKeySelectorFactory.REFRESH_SCHEDULER_THREAD_NAME))
         .toList();
+  }
+
+  private static JWSKeySelectorFactory.RetryChain loadedAtZeroWithTtl(final long timeToLiveMillis) {
+    final var retryChain = new JWSKeySelectorFactory.RetryChain(100L, timeToLiveMillis);
+    retryChain.loadStarted(0L);
+    retryChain.loadCompleted();
+    return retryChain;
   }
 
   private static JWSKeySelectorFactory shortTimingFactory() {

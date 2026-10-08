@@ -56,9 +56,13 @@ each source with:
   fails, only a later decode request landing in the final refresh-ahead window retries it, so a
   brief outage at that one attempt followed by no traffic until expiry would still leave the next
   requests to refresh synchronously. The listener therefore retries a failed background fetch,
-  spaced by the cache refresh timeout, until the margin the schedule left before expiry
-  (`refresh-ahead + refresh timeout`) has passed — up to three retries with the defaults, one chain
-  per source however many failures Nimbus reports — and logs a recovery at `INFO`. Giving up is
+  spaced by the cache refresh timeout, for as long as the cached set is still valid — its expiry
+  is tracked as one TTL after the start of the last successful load, which is how Nimbus times it,
+  so two or three retries with the defaults. One chain per source however many failures Nimbus
+  reports, and none starts once the cache has expired: a failure reported late (a request-started
+  fetch that only failed after expiry) is not given a fresh window, since past expiry the refresh
+  is the request path's to make and a forced retry would only contend with it for Nimbus's cache
+  lock. A recovery is logged at `INFO`. Giving up is
   logged at `WARN`, and each failed retry names the exception types of its cause chain (types
   only, since an HTTP client's message can embed the URL). The first failure carries no cause,
   because Nimbus does not pass one. CSL does not log the moment the cache expires: Nimbus raises
