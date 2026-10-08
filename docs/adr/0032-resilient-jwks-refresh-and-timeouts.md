@@ -52,7 +52,18 @@ each source with:
   already-warm cache; they are not blocked by the refresh. A failed refresh is logged at `WARN` with
   the JWK Set URI (user-info, query and fragment redacted, as the URL is operator-supplied) through
   the listener, because Nimbus otherwise swallows it and an IdP outage would stay invisible until
-  the cache expired. Both executors are built here and shared by every source, rather than
+  the cache expired. Nimbus also schedules only **one** refresh per successful load: if that fetch
+  fails, only a later decode request landing in the final refresh-ahead window retries it, so a
+  brief outage at that one attempt followed by no traffic until expiry would still leave the next
+  requests to refresh synchronously. The listener therefore retries a failed background fetch,
+  spaced by the cache refresh timeout, until the margin the schedule left before expiry
+  (`refresh-ahead + refresh timeout`) has passed — up to three retries with the defaults, one chain
+  per source however many failures Nimbus reports — and logs a recovery at `INFO`. Giving up is
+  logged at `WARN`, and each failed retry names the exception types of its cause chain (types
+  only, since an HTTP client's message can embed the URL). The first failure carries no cause,
+  because Nimbus does not pass one. CSL does not log the moment the cache expires: Nimbus raises
+  no event when a refresh made by a decode request fails, so from then on the failure is visible to
+  the caller as the decode error, not as a log line from this class. Both executors are built here and shared by every source, rather than
   left to the shorter `refreshAheadCache(long, boolean)` overload, because Nimbus's own defaults
   are **non-daemon** `Executors.newSingleThread*` pools created per source: since nothing in CSL
   closes a `JWKSource`, a non-daemon refresh thread would outlive a host's Spring context and stop
@@ -149,11 +160,14 @@ that is later abandoned costs nothing as long as it never served a request.
 | Rate limiting | Disabled | Override `createJWKSource(URL)` |
 
 Any override of the three cache getters must keep `getRefreshAheadTimeMillis() +
-getCacheRefreshTimeoutMillis() < getCacheTimeToLiveMillis()`, strictly. Nimbus rejects a sum above
-the TTL with an `IllegalArgumentException` at bean creation, but accepts equality and then computes
-a zero scheduling delay, which it does not schedule — silently reverting to request-driven refresh.
-And the closer that sum gets to the TTL, the more the background refresh cadence collapses towards
-continuously polling the IdP.
+getCacheRefreshTimeoutMillis() < getCacheTimeToLiveMillis()`, strictly, or
+`createJWKSource` throws an `IllegalArgumentException` when the source is built (with several
+issuers, on the first token for each, not at startup). Nimbus itself rejects only a sum *above* the
+TTL; at equality it computes a zero scheduling delay and never schedules the refresh, silently
+reverting to request-driven refresh, so CSL rejects equality as well. The values are read once per
+source, and the retry spacing has a 100ms floor so a zero refresh timeout cannot make the retry a
+busy loop. And the closer the sum gets to the TTL, the more the background refresh cadence
+collapses towards continuously polling the IdP.
 
 ## Supersedes
 
@@ -199,9 +213,16 @@ continuously polling the IdP.
   read per JWKS URI — multiplied by the number of URIs when `additional-jwk-set-uris` is configured,
   and up to the 15s refresh timeout under lock contention — where Nimbus's 500ms default bounded it
   much sooner. A caller presenting tokens with random `kid`s can thus tie up more decode-thread time
-  per request than before. Accepted here because tokens still have to carry a configured issuer to
-  reach this path at all, and because capping the cadence is exactly the `rateLimited(true)`
-  discussion #612 defers.
+  per request than before. The requirement that a token name a configured issuer is a weak barrier —
+  issuer URLs are public, and the claim is attacker-controlled text — so it is not a mitigation. It
+  is accepted here because capping the cadence is exactly the `rateLimited(true)` discussion #612
+  defers, and `rateLimited` is the follow-up that would close it.
+- With `additional-jwk-set-uris`, a lookup for a key held only by an additional source first
+  misses the primary's cache, which forces a synchronous primary fetch before the composite falls
+  through. If the primary is slow or down, each such request can wait up to 3s connect + 3s read
+  there, so a slow endpoint still blocks those requests on that path. The background refresh does
+  not change this: it keeps the primary's cache warm, but a key the primary does not hold is a
+  `kid` miss like any other. This path predates the change; the larger timeouts make it costlier.
 - 3 seconds is still finite: an IdP outage exceeding it still fails the in-flight request. This ADR
   narrows the blocking window to realistic latency — it does not eliminate failures from genuine
   unavailability.
@@ -239,3 +260,9 @@ continuously polling the IdP.
   requests in parallel in one timeout. The lock-free build-then-discard pattern is kept, which also
   keeps it consistent with the same deliberate choice already documented in
   `ScopedClientRegistrationFactory` and `CamundaOidcAuthorizationRequestResolver`.
+- **Nimbus's `retrying(true)`.** Rejected — it retries once, immediately, on the same request or
+  fetch. For the outage this retry addresses (the IdP is down for seconds to minutes) the second
+  attempt fails just as the first did, and it still leaves nothing trying again before expiry.
+- **Nimbus's outage-tolerant mode.** Rejected — it serves the last known key set for an extended
+  period after expiry, which extends how long a revoked key stays trusted past the 5-minute bound
+  this ADR makes explicit.

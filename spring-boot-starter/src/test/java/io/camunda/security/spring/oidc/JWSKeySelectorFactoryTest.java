@@ -14,7 +14,7 @@ import static org.awaitility.Awaitility.await;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
+import ch.qos.logback.core.AppenderBase;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.KeySourceException;
@@ -32,6 +32,7 @@ import java.security.interfaces.RSAPublicKey;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -116,7 +117,7 @@ class JWSKeySelectorFactoryTest {
   }
 
   @Test
-  void shouldForceABoundedFetchOnExpiryRatherThanServingStaleKeysForever() throws Exception {
+  void shouldFailInsteadOfServingStaleKeysOnceTheCacheHasExpiredAndTheIdpIsDown() throws Exception {
     // given a factory with a short, explicit staleness bound (500ms TTL / 100ms refresh-ahead /
     // 300ms refresh timeout)
     final var factory = shortTimingFactory();
@@ -190,7 +191,8 @@ class JWSKeySelectorFactoryTest {
       await().atMost(AWAIT_TIMEOUT).until(() -> requestCount.get() > afterPriming);
 
       // then 20 concurrent callers all still get the key, and they do so while the refresh is
-      // still held — they read the warm cache rather than waiting on it (#612)
+      // still held — they read the warm cache rather than waiting on it. That the refresh goes out
+      // unprompted is covered by the background-refresh test above
       final var threadCount = 20;
       final var executor = Executors.newFixedThreadPool(threadCount);
       try {
@@ -212,10 +214,220 @@ class JWSKeySelectorFactoryTest {
   }
 
   @Test
+  void shouldRetryAFailedBackgroundRefreshBeforeExpiryWithoutAnyRequestTraffic() throws Exception {
+    // given a primed cache and an IdP that is briefly unavailable when the one scheduled refresh
+    // goes out. Nimbus schedules a single refresh per load and leaves a retry to a later request,
+    // so with no traffic nothing else would refresh the cache before it expires
+    final var logger = (Logger) LoggerFactory.getLogger(JWSKeySelectorFactory.class);
+    final var appender = new ThreadSafeAppender();
+    appender.start();
+    logger.addAppender(appender);
+    final var factory = warmCacheWindowFactory();
+    final var keyPair = generateRsaKeyPair();
+    final var jwkSetJson = publicJwkSetJson(keyPair);
+    final var requestCount = new AtomicInteger();
+    final var status = new AtomicInteger(200);
+    try (var server =
+        startJwksServer(
+            jwkSetJson, requestCount, new AtomicReference<>(new CountDownLatch(0)), status)) {
+      final JWSKeySelector<?> selector = factory.createJWSKeySelector(server.jwksUri());
+      final var header = new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KID).build();
+      assertThat(selector.selectJWSKeys(header, null)).hasSize(1);
+      final var afterPriming = requestCount.get();
+      status.set(503);
+
+      // when the scheduled refresh fails against the unavailable endpoint, which then recovers —
+      // and nothing at all asks the selector for a key in the meantime
+      await().atMost(AWAIT_TIMEOUT).until(() -> requestCount.get() > afterPriming);
+      status.set(200);
+
+      // then a retry before the cache expires refreshes it
+      await()
+          .atMost(AWAIT_TIMEOUT)
+          .untilAsserted(
+              () ->
+                  assertThat(appender.list)
+                      .anySatisfy(
+                          event -> {
+                            assertThat(event.getLevel()).isEqualTo(Level.INFO);
+                            assertThat(event.getFormattedMessage()).contains("succeeded on retry");
+                          }));
+    } finally {
+      logger.detachAppender(appender);
+    }
+  }
+
+  @Test
+  void shouldApplyTheConfiguredHttpReadTimeoutToTheJwksFetch() throws Exception {
+    // given an endpoint that accepts the request and never answers, and a read timeout well above
+    // Nimbus's own 500ms default — so a source built without this factory's retriever would give up
+    // far sooner
+    final var factory = timingFactory(60_000L, 1_000L, 1_000L, 1_500);
+    final var keyPair = generateRsaKeyPair();
+    final var jwkSetJson = publicJwkSetJson(keyPair);
+    final var gate = new CountDownLatch(1);
+    try (var server = startGatedJwksServer(jwkSetJson, new AtomicInteger(), gate)) {
+      final JWSKeySelector<?> selector = factory.createJWSKeySelector(server.jwksUri());
+      final var header = new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KID).build();
+
+      // when the fetch runs into the read timeout
+      final var start = System.nanoTime();
+      assertThatThrownBy(() -> selector.selectJWSKeys(header, null))
+          .isInstanceOf(KeySourceException.class);
+      final var elapsed = Duration.ofNanos(System.nanoTime() - start);
+
+      // then it waited out the configured timeout rather than Nimbus's default. A timeout never
+      // fires early, so this lower bound cannot flake
+      assertThat(elapsed).isGreaterThanOrEqualTo(Duration.ofMillis(1_000));
+    } finally {
+      gate.countDown();
+    }
+  }
+
+  @Test
+  void shouldScheduleTheBackgroundRefreshForEverySourceOfACompositeSelector() throws Exception {
+    // given a primary source that does not hold the key and an additional one that does, so a
+    // lookup loads both
+    final var factory = shortTimingFactory();
+    final var keyPair = generateRsaKeyPair();
+    final var primaryCount = new AtomicInteger();
+    final var additionalCount = new AtomicInteger();
+    try (var primary = startJwksServer(publicJwkSetJson(keyPair, "other-key"), primaryCount);
+        var additional = startJwksServer(publicJwkSetJson(keyPair), additionalCount)) {
+      final var selector =
+          factory.createJWSKeySelector(primary.jwksUri(), List.of(additional.jwksUri()));
+      final var header = new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KID).build();
+      assertThat(selector.selectJWSKeys(header, null)).hasSize(1);
+      final var primaryAfterLookup = primaryCount.get();
+      final var additionalAfterLookup = additionalCount.get();
+
+      // when nothing asks for a key any more
+      // then each source is still refreshed in the background, on its own schedule
+      await()
+          .atMost(AWAIT_TIMEOUT)
+          .until(
+              () ->
+                  primaryCount.get() > primaryAfterLookup
+                      && additionalCount.get() > additionalAfterLookup);
+    }
+  }
+
+  @Test
+  void shouldNotQuoteCredentialsOfAMalformedJwkSetUriInTheError() {
+    // given a malformed URI carrying user-info and a query secret
+    final var factory = new JWSKeySelectorFactory();
+
+    // when / then the error names the endpoint but neither secret, and does not chain the parser's
+    // exception, whose message quotes the input
+    assertThatThrownBy(() -> factory.toURL("http://user:pw@127.0.0.1/jwks path?sig=secret"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("127.0.0.1")
+        .hasMessageNotContaining("pw")
+        .hasMessageNotContaining("secret")
+        .hasNoCause();
+  }
+
+  @Test
+  void shouldStartOnlyOneRetryChainWhileOneIsRunning() {
+    // given a chain already running, as after the first failed background fetch of a streak
+    final var retryChain = new JWSKeySelectorFactory.RetryChain(100L, 1_000L);
+    final var first = retryChain.tryStart();
+
+    // when further failures arrive — Nimbus raises one per failed fetch, and a request in the
+    // refresh-ahead window starts each — then none of them starts another chain
+    assertThat(retryChain.tryStart()).isEqualTo(-1);
+    assertThat(retryChain.tryStart()).isEqualTo(-1);
+    assertThat(retryChain.isCurrent(first)).isTrue();
+  }
+
+  @Test
+  void shouldLetANewChainStartOnceTheRunningOneFinishesAndRetireTheOldOne() {
+    // given a finished chain, e.g. because some refresh succeeded
+    final var retryChain = new JWSKeySelectorFactory.RetryChain(100L, 1_000L);
+    final var first = retryChain.tryStart();
+    retryChain.finish();
+    assertThat(retryChain.isCurrent(first)).isFalse();
+
+    // when the next streak of failures starts a new chain
+    final var second = retryChain.tryStart();
+
+    // then only the new chain is current, so a retry still pending from the old one does nothing
+    assertThat(second).isNotEqualTo(-1).isNotEqualTo(first);
+    assertThat(retryChain.isCurrent(second)).isTrue();
+    assertThat(retryChain.isCurrent(first)).isFalse();
+  }
+
+  @Test
+  void shouldNeverSpaceRetriesTighterThanTheFloorEvenWithAZeroRefreshTimeout() {
+    final var retryChain = new JWSKeySelectorFactory.RetryChain(0L, 1_000L);
+
+    assertThat(retryChain.delayMillis())
+        .isEqualTo(JWSKeySelectorFactory.RetryChain.MIN_DELAY_MILLIS);
+  }
+
+  @Test
+  void shouldRejectAnOverrideWhoseRefreshMarginReachesTheTtlBecauseItWouldNeverBeScheduled() {
+    // given a host override where refreshAhead + refreshTimeout == TTL: Nimbus accepts it but
+    // computes a zero scheduling delay and never schedules the background refresh
+    final var factory = timingFactory(1_000L, 400L, 600L, 300);
+
+    // when / then the source is rejected at construction, with the values in the message
+    assertThatThrownBy(() -> factory.createJWSKeySelector("http://127.0.0.1:1/jwks"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("600ms")
+        .hasMessageContaining("400ms")
+        .hasMessageContaining("1000ms");
+  }
+
+  @Test
+  void shouldWarnWhenRetriesAreExhaustedAndNameTheCauseOfEachFailedRetry() throws Exception {
+    // given a cached JWK Set whose IdP is gone for good, so every retry fails until the window ends
+    final var logger = (Logger) LoggerFactory.getLogger(JWSKeySelectorFactory.class);
+    final var appender = new ThreadSafeAppender();
+    appender.start();
+    logger.addAppender(appender);
+    final var factory = shortTimingFactory();
+    final var keyPair = generateRsaKeyPair();
+    final var jwkSetJson = publicJwkSetJson(keyPair);
+    try (var server = startJwksServer(jwkSetJson, new AtomicInteger())) {
+      final JWSKeySelector<?> selector = factory.createJWSKeySelector(server.jwksUri());
+      final var header = new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KID).build();
+      assertThat(selector.selectJWSKeys(header, null)).hasSize(1);
+
+      // when the endpoint goes down
+      server.close();
+
+      // then a failed retry names the exception chain, and giving up is logged at WARN rather
+      // than only at DEBUG
+      await()
+          .atMost(AWAIT_TIMEOUT)
+          .untilAsserted(
+              () -> {
+                assertThat(appender.list)
+                    .anySatisfy(
+                        event -> {
+                          assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                          assertThat(event.getFormattedMessage())
+                              .contains("Retry of the background refresh")
+                              .contains(" <- ");
+                        });
+                assertThat(appender.list)
+                    .anySatisfy(
+                        event -> {
+                          assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                          assertThat(event.getFormattedMessage()).contains("Giving up retrying");
+                        });
+              });
+    } finally {
+      logger.detachAppender(appender);
+    }
+  }
+
+  @Test
   void shouldWarnWithTheRedactedJwkSetUriWhenABackgroundRefreshFails() throws Exception {
     // given a cached JWK Set whose IdP then goes away, so the scheduled refresh has nothing to hit
     final var logger = (Logger) LoggerFactory.getLogger(JWSKeySelectorFactory.class);
-    final var appender = new ListAppender<ILoggingEvent>();
+    final var appender = new ThreadSafeAppender();
     appender.start();
     logger.addAppender(appender);
     final var factory = shortTimingFactory();
@@ -251,8 +463,7 @@ class JWSKeySelectorFactoryTest {
   }
 
   @Test
-  void shouldRunTheBackgroundRefreshSchedulerOnADaemonThreadSoAHostJvmCanStillExit()
-      throws Exception {
+  void shouldRunTheSharedRefreshSchedulerOnADaemonThreadSoAHostJvmCanStillExit() throws Exception {
     // given a factory with short timings, so the background refresh threads are created (lazily,
     // on first task submission) well inside the test's own runtime
     final var factory = shortTimingFactory();
@@ -265,7 +476,9 @@ class JWSKeySelectorFactoryTest {
       // when a real fetch succeeds, which is what makes Nimbus schedule the background refresh
       assertThat(selector.selectJWSKeys(header, null)).hasSize(1);
 
-      // then the scheduler thread behind that refresh is a daemon thread. Nimbus's own default
+      // then the shared scheduler thread is a daemon thread. (It is JVM-wide, so an earlier test
+      // may
+      // have created it; what this pins is that it is a daemon whoever did.) Nimbus's own default
       // executors are non-daemon and nothing closes a JWKSource, so without this a host's JVM
       // would hang after its Spring context closed. Surefire cannot catch that — it exits its
       // fork explicitly — hence this direct assertion. The fetches themselves run on virtual
@@ -386,12 +599,16 @@ class JWSKeySelectorFactoryTest {
   }
 
   private static String publicJwkSetJson(final KeyPair keyPair) {
+    return publicJwkSetJson(keyPair, KID);
+  }
+
+  private static String publicJwkSetJson(final KeyPair keyPair, final String kid) {
     final var jwk =
         new RSAKey.Builder((RSAPublicKey) keyPair.getPublic())
             .privateKey((RSAPrivateKey) keyPair.getPrivate())
             .keyUse(KeyUse.SIGNATURE)
             .algorithm(JWSAlgorithm.RS256)
-            .keyID(KID)
+            .keyID(kid)
             .build();
     return new JWKSet(jwk).toPublicJWKSet().toString();
   }
@@ -421,14 +638,35 @@ class JWSKeySelectorFactoryTest {
       final AtomicInteger requestCount,
       final AtomicReference<CountDownLatch> gate)
       throws Exception {
+    return startJwksServer(jwkSetJson, requestCount, gate, new AtomicInteger(200));
+  }
+
+  /**
+   * As above, and the HTTP status it answers with can be changed while the server runs: anything
+   * other than 200 is returned with an empty body, so a test can fail and then recover the
+   * endpoint.
+   */
+  private static JwksServer startJwksServer(
+      final String jwkSetJson,
+      final AtomicInteger requestCount,
+      final AtomicReference<CountDownLatch> gate,
+      final AtomicInteger status)
+      throws Exception {
     final var httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     httpServer.createContext(
         "/jwks",
         exchange -> {
           try (exchange) {
+            // Decided before the request is counted, so a test that sees the count rise knows the
+            // status it then changes cannot affect this response.
+            final var responseStatus = status.get();
             requestCount.incrementAndGet();
             if (!gate.get().await(10, TimeUnit.SECONDS)) {
               throw new IllegalStateException("The test never released the JWKS response");
+            }
+            if (responseStatus != 200) {
+              exchange.sendResponseHeaders(responseStatus, -1);
+              return;
             }
             final byte[] bytes = jwkSetJson.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
@@ -441,6 +679,19 @@ class JWSKeySelectorFactoryTest {
         });
     httpServer.start();
     return new JwksServer(httpServer);
+  }
+
+  /**
+   * Collects log events from any thread. Logback's {@code ListAppender} is backed by a plain {@code
+   * ArrayList}, which a test iterating it while the background refresh logs would corrupt.
+   */
+  private static final class ThreadSafeAppender extends AppenderBase<ILoggingEvent> {
+    private final List<ILoggingEvent> list = new CopyOnWriteArrayList<>();
+
+    @Override
+    protected void append(final ILoggingEvent event) {
+      list.add(event);
+    }
   }
 
   private record JwksServer(HttpServer server) implements AutoCloseable {

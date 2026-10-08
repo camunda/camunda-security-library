@@ -9,8 +9,11 @@ package io.camunda.security.spring.oidc;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.source.CachingJWKSetSource;
+import com.nimbusds.jose.jwk.source.CachingJWKSetSource.RefreshCompletedEvent;
+import com.nimbusds.jose.jwk.source.JWKSetCacheRefreshEvaluator;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
+import com.nimbusds.jose.jwk.source.RefreshAheadCachingJWKSetSource.ScheduledRefreshCompletedEvent;
 import com.nimbusds.jose.jwk.source.RefreshAheadCachingJWKSetSource.ScheduledRefreshFailed;
 import com.nimbusds.jose.jwk.source.RefreshAheadCachingJWKSetSource.UnableToRefreshAheadOfExpirationEvent;
 import com.nimbusds.jose.proc.JWSKeySelector;
@@ -21,11 +24,13 @@ import com.nimbusds.jose.util.events.EventListener;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -192,8 +197,11 @@ public class JWSKeySelectorFactory {
     try {
       return URI.create(jwkSetUri).toURL();
     } catch (final MalformedURLException | IllegalArgumentException ex) {
+      // Redacted, and not chained: the URI is operator-supplied and may carry user-info or a query
+      // secret, and the parser's own message (and so the cause) quotes it back verbatim.
       throw new IllegalArgumentException(
-          ERROR_INVALID_JWK_SET_URI.formatted(jwkSetUri, ex.getMessage()), ex);
+          ERROR_INVALID_JWK_SET_URI.formatted(
+              UrlRedaction.redact(jwkSetUri), ex.getClass().getSimpleName()));
     }
   }
 
@@ -220,11 +228,17 @@ public class JWSKeySelectorFactory {
             getHttpConnectTimeoutMillis(),
             getHttpReadTimeoutMillis(),
             JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT);
+    // Read once: the listener's retry timing must agree with what Nimbus is built with.
+    final var timeToLive = getCacheTimeToLiveMillis();
+    final var refreshTimeout = getCacheRefreshTimeoutMillis();
+    final var refreshAhead = getRefreshAheadTimeMillis();
+    requireRefreshToBeScheduled(timeToLive, refreshTimeout, refreshAhead);
     return JWKSourceBuilder.<SecurityContext>create(jwkSetUri, retriever)
-        .cache(getCacheTimeToLiveMillis(), getCacheRefreshTimeoutMillis())
+        .cache(timeToLive, refreshTimeout)
         .refreshAheadCache(
-            getRefreshAheadTimeMillis(),
-            refreshFailureLogger(jwkSetUri),
+            refreshAhead,
+            refreshFailureListener(
+                jwkSetUri, new RetryChain(refreshTimeout, refreshAhead + refreshTimeout)),
             REFRESH_FETCH_EXECUTOR,
             false,
             REFRESH_SCHEDULER,
@@ -234,30 +248,131 @@ public class JWSKeySelectorFactory {
   }
 
   /**
-   * Nimbus reports failed background refreshes only through its event listener and otherwise
-   * swallows them, so without this an IdP outage is silent until the cache expires and decoding
-   * starts failing. Logs at {@code WARN}; the JWK Set URI is the only identifier, redacted because
-   * an operator-supplied URL can carry user-info or a signed query (see {@link UrlRedaction}), and
-   * no token data is ever involved.
+   * Nimbus rejects a refresh-ahead time plus refresh timeout above the TTL, but accepts equality
+   * and then computes a zero scheduling delay, which it does not schedule — silently reverting to
+   * request-driven refresh, the behaviour this class exists to replace. Reject equality too.
    */
-  private static EventListener<CachingJWKSetSource<SecurityContext>, SecurityContext>
-      refreshFailureLogger(final URL jwkSetUri) {
+  private static void requireRefreshToBeScheduled(
+      final long timeToLive, final long refreshTimeout, final long refreshAhead) {
+    if (refreshAhead + refreshTimeout >= timeToLive) {
+      throw new IllegalArgumentException(
+          "The refresh-ahead time (%dms) plus the cache refresh timeout (%dms) must be less than the"
+                  .formatted(refreshAhead, refreshTimeout)
+              + " cache time-to-live (%dms), or the background refresh is never scheduled"
+                  .formatted(timeToLive));
+    }
+  }
+
+  /**
+   * Handles the failures Nimbus reports for a background refresh: logs them and, for a failed
+   * background fetch, retries before the cache expires.
+   *
+   * <p>Nimbus schedules one refresh per successful load and, if that fetch fails, leaves any retry
+   * to a later decode request landing in the final refresh-ahead window — so a provider with a
+   * brief outage at that one attempt and no traffic until expiry would still make the next requests
+   * block on a synchronous refresh. A bounded retry closes that gap; see ADR-0032. Nimbus reports
+   * failures only through its event listener and otherwise swallows them, so without logging an IdP
+   * outage would also be silent until the cache expired.
+   *
+   * <p>Logs at {@code WARN}; the JWK Set URI is the only identifier, redacted because an
+   * operator-supplied URL can carry user-info or a signed query (see {@link UrlRedaction}), and no
+   * token data is ever involved.
+   */
+  private EventListener<CachingJWKSetSource<SecurityContext>, SecurityContext>
+      refreshFailureListener(final URL jwkSetUri, final RetryChain retryChain) {
     final var redactedUri = UrlRedaction.redact(jwkSetUri.toString());
     return event -> {
       if (event instanceof ScheduledRefreshFailed<SecurityContext> failed) {
-        // Only the exception type: an HTTP client's message and stack can embed the full URL.
         LOG.warn(
             "Scheduling the background refresh of the JWK Set at '{}' failed ({}); the cached keys"
                 + " will expire unrefreshed unless a later refresh succeeds",
             redactedUri,
-            failed.getException().getClass().getSimpleName());
+            describe(failed.getException()));
       } else if (event instanceof UnableToRefreshAheadOfExpirationEvent<SecurityContext>) {
+        // Nimbus raises this for every failed background fetch, including each one a request in the
+        // refresh-ahead window starts, so only the first failure of a streak starts a chain.
+        final var chain = retryChain.tryStart();
         LOG.warn(
             "Background refresh of the JWK Set at '{}' failed; keeps serving the cached keys until"
-                + " they expire, after which decoding fails if the endpoint is still unavailable",
-            redactedUri);
+                + " they expire, after which decoding fails if the endpoint is still unavailable."
+                + "{}",
+            redactedUri,
+            chain < 0 ? "" : " Retrying every " + retryChain.delayMillis() + "ms until then");
+        if (chain >= 0) {
+          final var deadline = System.currentTimeMillis() + retryChain.windowMillis();
+          scheduleRetry(event.getSource(), redactedUri, retryChain, chain, deadline);
+        }
+      } else if (event instanceof ScheduledRefreshCompletedEvent<SecurityContext>
+          || event instanceof RefreshCompletedEvent<SecurityContext>) {
+        // Whoever refreshed it, the cache is current again and pending retries are redundant.
+        retryChain.finish();
       }
     };
+  }
+
+  /**
+   * The exception types in a cause chain, outermost first, e.g. {@code JWKSetRetrievalException <-
+   * SocketTimeoutException}. Types only: an HTTP client's message and stack can embed the full URL,
+   * but the types are what tell a timeout from a refused connection or a bad certificate.
+   */
+  private static String describe(final Throwable failure) {
+    final var types = new ArrayList<String>();
+    for (var cause = failure; cause != null && types.size() < 5; cause = cause.getCause()) {
+      types.add(cause.getClass().getSimpleName());
+    }
+    return String.join(" <- ", types);
+  }
+
+  /**
+   * Retries a failed background refresh, spaced by the cache refresh timeout, until {@code
+   * deadline} — the remainder of the margin the scheduled refresh leaves before expiry. A retry
+   * that lands just past expiry is harmless: it is an ordinary background load.
+   */
+  private void scheduleRetry(
+      final CachingJWKSetSource<SecurityContext> source,
+      final String redactedUri,
+      final RetryChain retryChain,
+      final long chain,
+      final long deadline) {
+    final var delay = retryChain.delayMillis();
+    if (System.currentTimeMillis() + delay > deadline) {
+      LOG.warn(
+          "Giving up retrying the background refresh of the JWK Set at '{}'; the cached keys are"
+              + " about to expire and token validation fails if the endpoint is still unavailable",
+          redactedUri);
+      retryChain.finish();
+      return;
+    }
+    REFRESH_SCHEDULER.schedule(
+        () ->
+            REFRESH_FETCH_EXECUTOR.execute(
+                () -> retryRefresh(source, redactedUri, retryChain, chain, deadline)),
+        delay,
+        TimeUnit.MILLISECONDS);
+  }
+
+  private void retryRefresh(
+      final CachingJWKSetSource<SecurityContext> source,
+      final String redactedUri,
+      final RetryChain retryChain,
+      final long chain,
+      final long deadline) {
+    if (!retryChain.isCurrent(chain)) {
+      return;
+    }
+    try {
+      // On success Nimbus caches the new set and schedules its own next refresh as usual.
+      source.getJWKSet(
+          JWKSetCacheRefreshEvaluator.forceRefresh(), System.currentTimeMillis(), null);
+      retryChain.finish();
+      LOG.info("Background refresh of the JWK Set at '{}' succeeded on retry", redactedUri);
+    } catch (final Exception e) {
+      LOG.warn(
+          "Retry of the background refresh of the JWK Set at '{}' failed ({})",
+          redactedUri,
+          describe(e));
+      scheduleRetry(source, redactedUri, retryChain, chain, deadline);
+    }
   }
 
   /**
@@ -282,11 +397,11 @@ public class JWSKeySelectorFactory {
    * #CACHE_TIME_TO_LIVE_MILLIS}.
    *
    * <p>An override must keep {@code getRefreshAheadTimeMillis() + getCacheRefreshTimeoutMillis() <
-   * getCacheTimeToLiveMillis()}, strictly. Nimbus rejects a sum above the TTL with an {@link
-   * IllegalArgumentException} at bean creation, but accepts equality and then computes a zero
-   * scheduling delay, which it does not schedule — silently reverting to request-driven refresh.
-   * And the closer the sum gets to the TTL, the more the background refresh cadence collapses
-   * towards continuously polling the IdP.
+   * getCacheTimeToLiveMillis()}, strictly: otherwise {@link #createJWKSource(URL)} throws an {@link
+   * IllegalArgumentException}, because the background refresh would never be scheduled. That
+   * happens when the source for a URL is built — with several issuers, on the first token for each
+   * one, not at startup. And the closer the sum gets to the TTL, the more the background refresh
+   * cadence collapses towards continuously polling the IdP.
    */
   protected long getCacheTimeToLiveMillis() {
     return CACHE_TIME_TO_LIVE_MILLIS;
@@ -321,5 +436,57 @@ public class JWSKeySelectorFactory {
    */
   public Set<JWSAlgorithm> getJWSAlgorithms() {
     return jwsAlgorithms;
+  }
+
+  /**
+   * The one retry chain a source may have running. A failed background fetch raises an event per
+   * failure, and under traffic that is many, so without this every one would start its own chain of
+   * forced fetches against an IdP that is already struggling.
+   */
+  static final class RetryChain {
+    /**
+     * Floor for the retry spacing, so a zero refresh timeout cannot turn a chain into a busy loop.
+     */
+    static final long MIN_DELAY_MILLIS = 100L;
+
+    private final long delayMillis;
+    private final long windowMillis;
+    private long generation;
+    private boolean active;
+
+    /**
+     * @param delayMillis spacing between retries (raised to {@link #MIN_DELAY_MILLIS})
+     * @param windowMillis how long after the first failure retries may still be scheduled
+     */
+    RetryChain(final long delayMillis, final long windowMillis) {
+      this.delayMillis = Math.max(delayMillis, MIN_DELAY_MILLIS);
+      this.windowMillis = windowMillis;
+    }
+
+    long delayMillis() {
+      return delayMillis;
+    }
+
+    long windowMillis() {
+      return windowMillis;
+    }
+
+    /** Starts a chain unless one is running; returns its id, or -1 when one already is. */
+    synchronized long tryStart() {
+      if (active) {
+        return -1;
+      }
+      active = true;
+      return ++generation;
+    }
+
+    /** Whether {@code chain} is still the running chain (not finished, not superseded). */
+    synchronized boolean isCurrent(final long chain) {
+      return active && chain == generation;
+    }
+
+    synchronized void finish() {
+      active = false;
+    }
   }
 }
