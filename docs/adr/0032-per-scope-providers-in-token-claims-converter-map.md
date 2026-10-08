@@ -6,6 +6,10 @@ status: Accepted
 
 **Deciders**: Tim Cline
 
+**Amends**: [ADR-0024](0024-per-issuer-token-claims-converter-map.md) (delivers its deferred
+follow-up [#668](https://github.com/camunda/camunda-security-library/issues/668); ADR-0024 itself
+stays in force)
+
 ## Status
 
 Accepted
@@ -61,14 +65,24 @@ unchanged and shared between both sources through a private helper.
   providers is therefore byte-for-byte unchanged, and the common case where the same issuer recurs
   across scopes (the default tenant appears both at root and as its own scope) keeps the existing
   root/default converter rather than rebuilding it.
-- **Cross-source issuer overlap is logged at `DEBUG`, not `WARN`.** Unlike two root registrations
-  colliding on an issuer — which ADR-0024 deliberately warns about on every collision because it can
-  silently misattribute a principal — the same issuer legitimately recurring across scopes is an
-  expected shape of a physical-tenant deployment. Warning on it would be noise, so the overlap is
-  recorded at `DEBUG`. The within-source duplicate-issuer `WARN` from `IssuerOwnership` is preserved
-  for each source.
+- **Cross-source issuer overlap warns only when the dropped claim settings differ.** When a scope
+  repeats an issuer an earlier source already owns, the owning source keeps it. If the two sources'
+  `username-claim` / `client-id-claim` / `prefer-username-claim` are *identical* (the default tenant
+  appearing both at root and as its own scope) the overlap is benign and logged at `DEBUG`. If they
+  *differ*, a token from the dropped source can be misresolved, so it is logged at `WARN` naming both
+  sources and linking the follow-up
+  [#714](https://github.com/camunda/camunda-security-library/issues/714). Both diagnostics name the
+  owning source and redact the issuer URI (the issuer-uri check is warn-only, so a credential-bearing
+  value can reach them). The within-source duplicate-issuer `WARN` from `IssuerOwnership` is
+  preserved for each source, now carrying the scope's `basePath`. The map is a startup singleton, so
+  each diagnostic fires at most once per overlapping issuer at context build, not per request.
 - **Scope providers injected via `ObjectProvider`.** Zero scope-provider beans (Hub, single-tenant
-  OC) resolves to an empty stream, so the map is identical to the pre-change output.
+  OC) resolves to an empty stream, so the map is identical to the pre-change output. Its iteration
+  order is not guaranteed to match `ScopedSecurityChainRegistrar`'s bean-name order; that only
+  affects which of two scopes *sharing one issuer* wins, which is exactly the case #714 resolves, so
+  until then "first scope wins" is best-effort for that overlap and exact for every distinct issuer.
+  The `get()` results are null-checked here with the same messages the registrar uses, so a provider
+  contract violation fails with a clear error rather than an anonymous `NullPointerException`.
 
 ## Consequences
 
@@ -81,25 +95,38 @@ unchanged and shared between both sources through a private helper.
 
 **Negative / accepted trade-offs**
 
-- The map remains keyed by issuer alone. If two scopes share one issuer but configure *different*
-  claims, the first-contributed scope's converter wins for that issuer; a genuinely
-  per-scope-and-per-issuer converter (giving each scoped chain its own converter) is out of scope
-  here, as it was in #668. The physical-tenant motivating case uses a distinct issuer per tenant, so
-  this does not affect it.
+- The map remains keyed by issuer alone, so two sources sharing one issuer with *different* claim
+  settings cannot both be honoured — the first-processed source wins and the other is dropped. This
+  is not only the benign default-tenant overlap: a single Microsoft Entra issuer can serve multiple
+  app registrations whose claims differ (`preferred_username` vs `upn`, `azp` vs `appid`, v1 vs v2
+  tokens), so two physical tenants backed by one Entra tenant hit it. This change surfaces the
+  collision with a `WARN` but does not yet resolve it; a genuinely per-scope converter (giving each
+  scoped chain its own converter) is tracked as
+  [#714](https://github.com/camunda/camunda-security-library/issues/714). A deployment that gives
+  each tenant a distinct issuer — the motivating case — is unaffected.
 - A scope whose issuer a root-level provider already owns keeps the root converter; a scope cannot
-  override the cluster default's claim configuration for a shared issuer through this path.
+  override the cluster default's claim configuration for a shared issuer through this path (also
+  #714).
 
 ## Alternatives Considered
 
 - **Give each scoped API chain its own `OidcTokenAuthenticationConverter` / `TokenClaimsConvertersByIssuer`.**
-  Rejected for this fix — it would disambiguate scopes that share an issuer with different claims,
+  Deferred, not rejected — it would disambiguate scopes that share an issuer with different claims,
   but the scoped API chain delegates `CamundaAuthentication` conversion to the single global
   converter today, so this is a larger restructuring than the bug needs. #668 scoped it out, and the
-  motivating deployment uses distinct issuers per tenant.
+  motivating deployment uses distinct issuers per tenant; it is now tracked as
+  [#714](https://github.com/camunda/camunda-security-library/issues/714).
 - **Feed scope providers into `OidcProviderConfigurationPort#getOidcAuthenticationConfigurations()`
   instead.** Rejected — that port backs the cluster-level decoder, client-registration, and
   validation wiring; merging scope-only providers into it would change those unrelated surfaces and
   the cluster's primary chain, well beyond the claim-converter map this bug concerns.
 - **Warn on every cross-source issuer overlap, mirroring the root duplicate-issuer `WARN`.**
-  Rejected — the overlap is an expected, benign shape of physical-tenant deployments (the default
-  tenant recurs at root and as a scope), so a `WARN` per request-chain build would be alarming noise.
+  Rejected — the default tenant legitimately recurs at root and as a scope with *identical* claim
+  settings, so warning on every overlap would fire a spurious startup `WARN` for the most common
+  physical-tenant layout. Warning only when the claim settings actually differ keeps the signal
+  meaningful while staying quiet for the benign case.
+- **Say nothing when the dropped claim settings differ (keep the original `DEBUG`-only overlap).**
+  Rejected after review — the Entra single-issuer / multiple-app-registration case makes a differing
+  overlap a realistic misconfiguration, not a corner case, so it warrants a `WARN` and a tracked
+  follow-up ([#714](https://github.com/camunda/camunda-security-library/issues/714)) rather than a
+  silent `DEBUG` line.

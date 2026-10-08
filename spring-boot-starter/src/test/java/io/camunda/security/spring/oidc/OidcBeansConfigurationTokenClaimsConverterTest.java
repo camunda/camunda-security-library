@@ -8,6 +8,7 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 import ch.qos.logback.classic.Level;
@@ -24,6 +25,7 @@ import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.converter.TokenClaimsConvertersByIssuer;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -404,22 +406,112 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
                   .containsKey(SCOPE_ISSUER)
                   .extractingByKey(SCOPE_ISSUER)
                   .isNotSameAs(defaultConverter);
-              // The scope converter reads the scope's own username-claim, not the root default's.
-              final var authentication =
-                  byIssuer(ctx)
-                      .get(SCOPE_ISSUER)
-                      .convert(Map.of("iss", SCOPE_ISSUER, "tenant_user", "dave"));
+              // The token carries only the scope's own claim. The scope converter resolves it...
+              final var scopeOnlyClaims =
+                  Map.<String, Object>of("iss", SCOPE_ISSUER, "tenant_user", "dave");
+              final var authentication = byIssuer(ctx).get(SCOPE_ISSUER).convert(scopeOnlyClaims);
               assertThat(authentication.authenticatedUsername()).isEqualTo("dave");
+              // ...while a converter configured with the cluster default's claims — what the bearer
+              // path used before this fix — finds neither claim and throws the
+              // IllegalArgumentException
+              // that surfaces as the reported 401.
+              final var rootStyleConverter =
+                  new LazyTokenClaimsConverter(
+                      "preferred_username", "client_id", false, mockMembershipPort);
+              assertThatThrownBy(() -> rootStyleConverter.convert(scopeOnlyClaims))
+                  .isInstanceOf(IllegalArgumentException.class);
             });
+  }
+
+  @Test
+  void twoScopesWithDistinctIssuersEachResolveWithTheirOwnClaims() {
+    // The realistic multi-tenant shape: two physical tenants, each with its own IdP (distinct
+    // issuer) and its own username-claim. Each issuer resolves with its own scope's configuration.
+    final var otherIssuer = "https://tenantb.example.com";
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=default-client",
+            "camunda.security.authentication.oidc.issuer-uri=" + DEFAULT_ISSUER)
+        .withBean(
+            "scopeA",
+            CamundaSecurityScopeProvider.class,
+            () -> scopeProvider("/physical-tenants/a", SCOPE_ISSUER, "a_user"))
+        .withBean(
+            "scopeB",
+            CamundaSecurityScopeProvider.class,
+            () -> scopeProvider("/physical-tenants/b", otherIssuer, "b_user"))
+        .run(
+            ctx -> {
+              assertThat(
+                      byIssuer(ctx)
+                          .get(SCOPE_ISSUER)
+                          .convert(Map.of("iss", SCOPE_ISSUER, "a_user", "alice"))
+                          .authenticatedUsername())
+                  .isEqualTo("alice");
+              assertThat(
+                      byIssuer(ctx)
+                          .get(otherIssuer)
+                          .convert(Map.of("iss", otherIssuer, "b_user", "bob"))
+                          .authenticatedUsername())
+                  .isEqualTo("bob");
+            });
+  }
+
+  @Test
+  void resolvesAScopeProviderDeclaredOnlyViaItsProvidersBlock() {
+    // A scope whose OIDC provider is declared under providers.oidc.<id> (no flat oidc.* client) is
+    // flattened the same way the root config is, so its issuer is keyed too.
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=default-client",
+            "camunda.security.authentication.oidc.issuer-uri=" + DEFAULT_ISSUER)
+        .withBean(
+            CamundaSecurityScopeProvider.class,
+            () ->
+                scopeProviderWithProvidersBlock(
+                    "/physical-tenants/tenanta",
+                    Map.of("okta", providerConfig(SCOPE_ISSUER, "tenant_user"))))
+        .run(
+            ctx ->
+                assertThat(
+                        byIssuer(ctx)
+                            .get(SCOPE_ISSUER)
+                            .convert(Map.of("iss", SCOPE_ISSUER, "tenant_user", "dave"))
+                            .authenticatedUsername())
+                    .isEqualTo("dave"));
+  }
+
+  @Test
+  void skipsAScopeProviderConfiguredWithoutIssuerUri() {
+    // A scope provider with no issuer-uri contributes no entry, exactly as a root provider without
+    // one does; only the root issuer remains.
+    final var noIssuer = new OidcConfiguration();
+    noIssuer.setClientId("scope-client");
+    noIssuer.setAuthorizationUri("https://legacy.example.com/auth");
+    noIssuer.setTokenUri("https://legacy.example.com/token");
+    noIssuer.setJwkSetUri("https://legacy.example.com/jwks");
+    final var authentication = new AuthenticationConfiguration();
+    authentication.setMethod(AuthenticationMethod.OIDC);
+    authentication.setOidc(noIssuer);
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=default-client",
+            "camunda.security.authentication.oidc.issuer-uri=" + DEFAULT_ISSUER)
+        .withBean(
+            CamundaSecurityScopeProvider.class,
+            () ->
+                () ->
+                    List.of(
+                        new ScopedSecurityDescriptor("/physical-tenants/legacy", authentication)))
+        .run(ctx -> assertThat(byIssuer(ctx)).containsOnlyKeys(DEFAULT_ISSUER));
   }
 
   @Test
   void rootLevelProviderOwnsIssuerSharedWithAScopeProvider() {
     // Acceptance: root-level providers are processed first, so a deployment behaves as before for
     // an
-    // issuer a scope happens to share with root (e.g. the default tenant appears both at root and
-    // as
-    // its own scope). The root/default converter stays, and the scope's converter is not built.
+    // issuer a scope happens to share with root. The root/default converter stays and the scope's
+    // converter is not built — the map still holds exactly the one root entry.
     runner
         .withPropertyValues(
             "camunda.security.authentication.oidc.client-id=default-client",
@@ -430,7 +522,10 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
         .run(
             ctx -> {
               final var defaultConverter = ctx.getBean(LazyTokenClaimsConverter.class);
-              assertThat(byIssuer(ctx)).containsEntry(DEFAULT_ISSUER, defaultConverter);
+              assertThat(byIssuer(ctx)).hasSize(1).containsEntry(DEFAULT_ISSUER, defaultConverter);
+              // The scope's tenant_user claim is not applied: the owning converter is the root
+              // default (a mock), so a token carrying only tenant_user does not resolve through it.
+              assertThat(byIssuer(ctx).get(DEFAULT_ISSUER)).isSameAs(mockDefaultConverter);
             });
   }
 
@@ -465,10 +560,41 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
   }
 
   @Test
-  void redactsCredentialsFromTheCrossSourceSkipDiagnostic() {
-    // A scope provider shares a credential-bearing issuer with the root provider. The issuer-uri
-    // check is warn-only, so such a value reaches the DEBUG "already owned, skipping" diagnostic —
-    // which must redact it just like the IssuerOwnership warning does.
+  void warnsWhenAScopeSharesTheRootIssuerWithDifferentClaims() {
+    // #714: issuer-only keying drops the scope's differing claim config. The WARN must name both
+    // sources and link the follow-up, so an operator understands which claims win and why.
+    final ListAppender<ILoggingEvent> appender = attachAppender();
+    try {
+      runner
+          .withPropertyValues(
+              "camunda.security.authentication.oidc.client-id=default-client",
+              "camunda.security.authentication.oidc.issuer-uri=" + DEFAULT_ISSUER,
+              "camunda.security.authentication.oidc.username-claim=preferred_username")
+          .withBean(
+              CamundaSecurityScopeProvider.class,
+              () -> scopeProvider("/physical-tenants/tenanta", DEFAULT_ISSUER, "upn"))
+          .run(
+              ctx ->
+                  assertThat(appender.list)
+                      .anySatisfy(
+                          event -> {
+                            assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                            assertThat(event.getFormattedMessage())
+                                .contains(DEFAULT_ISSUER)
+                                .contains("the root providers")
+                                .contains("scope '/physical-tenants/tenanta'")
+                                .contains("different claim settings")
+                                .contains("issues/714");
+                          }));
+    } finally {
+      detachAppender(appender);
+    }
+  }
+
+  @Test
+  void logsAtDebugAndDoesNotWarnWhenAScopeRepeatsTheRootIssuerWithIdenticalClaims() {
+    // The benign default-tenant-at-root-and-as-scope overlap: identical claim settings must stay
+    // quiet (DEBUG), not warn, so the common physical-tenant layout doesn't spam startup logs.
     final var logger = (Logger) LoggerFactory.getLogger(OidcBeansConfiguration.class);
     final var previousLevel = logger.getLevel();
     logger.setLevel(Level.DEBUG);
@@ -477,41 +603,162 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
       runner
           .withPropertyValues(
               "camunda.security.authentication.oidc.client-id=default-client",
-              "camunda.security.authentication.oidc.issuer-uri=https://user:s3cret@shared.example.com")
+              "camunda.security.authentication.oidc.issuer-uri=" + DEFAULT_ISSUER,
+              "camunda.security.authentication.oidc.username-claim=tenant_user",
+              "camunda.security.authentication.oidc.prefer-username-claim=true")
           .withBean(
               CamundaSecurityScopeProvider.class,
-              () ->
-                  scopeProvider(
-                      "/physical-tenants/tenanta",
-                      "https://user:s3cret@shared.example.com",
-                      "tenant_user"))
+              () -> scopeProvider("/physical-tenants/default", DEFAULT_ISSUER, "tenant_user"))
           .run(
-              ctx ->
-                  assertThat(appender.list)
-                      .anySatisfy(
-                          event -> {
-                            assertThat(event.getLevel()).isEqualTo(Level.DEBUG);
-                            assertThat(event.getFormattedMessage())
-                                .contains("already has a claim converter")
-                                .doesNotContain("s3cret");
-                          }));
+              ctx -> {
+                assertThat(appender.list).noneMatch(event -> event.getLevel() == Level.WARN);
+                assertThat(appender.list)
+                    .anySatisfy(
+                        event -> {
+                          assertThat(event.getLevel()).isEqualTo(Level.DEBUG);
+                          assertThat(event.getFormattedMessage())
+                              .contains(DEFAULT_ISSUER)
+                              .contains("identical claim settings");
+                        });
+              });
     } finally {
       detachAppender(appender);
       logger.setLevel(previousLevel);
     }
   }
 
+  @Test
+  void warnsWithTheScopeLabelOnADuplicateIssuerWithinOneScope() {
+    // Two providers inside a single scope share an issuer. IssuerOwnership's within-source WARN
+    // must
+    // carry the scope's basePath so an operator can locate the offending descriptor.
+    final ListAppender<ILoggingEvent> appender = attachAppender();
+    try {
+      runner
+          .withPropertyValues(
+              "camunda.security.authentication.oidc.client-id=default-client",
+              "camunda.security.authentication.oidc.issuer-uri=" + DEFAULT_ISSUER)
+          .withBean(
+              CamundaSecurityScopeProvider.class,
+              () ->
+                  scopeProviderWithProvidersBlock(
+                      "/physical-tenants/multi",
+                      Map.of(
+                          "primary", providerConfig(SCOPE_ISSUER, "primary_user"),
+                          "secondary", providerConfig(SCOPE_ISSUER, "secondary_user"))))
+          .run(
+              ctx ->
+                  assertThat(appender.list)
+                      .anySatisfy(
+                          event -> {
+                            assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                            assertThat(event.getFormattedMessage())
+                                .contains(SCOPE_ISSUER)
+                                .contains("scope '/physical-tenants/multi'");
+                          }));
+    } finally {
+      detachAppender(appender);
+    }
+  }
+
+  @Test
+  void redactsCredentialsFromTheSharedIssuerDiagnostic() {
+    // A scope provider shares a credential-bearing issuer with the root provider. The issuer-uri
+    // check is warn-only, so such a value reaches the cross-source diagnostic — which must redact
+    // it
+    // just like the IssuerOwnership warning does.
+    final var credentialIssuer = "https://user:s3cret@shared.example.com";
+    final ListAppender<ILoggingEvent> appender = attachAppender();
+    try {
+      runner
+          .withPropertyValues(
+              "camunda.security.authentication.oidc.client-id=default-client",
+              "camunda.security.authentication.oidc.issuer-uri=" + credentialIssuer,
+              "camunda.security.authentication.oidc.username-claim=preferred_username")
+          .withBean(
+              CamundaSecurityScopeProvider.class,
+              () -> scopeProvider("/physical-tenants/tenanta", credentialIssuer, "upn"))
+          .run(
+              ctx -> {
+                assertThat(appender.list)
+                    .noneSatisfy(
+                        event -> assertThat(event.getFormattedMessage()).contains("s3cret"));
+                assertThat(appender.list)
+                    .anySatisfy(
+                        event -> {
+                          assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                          assertThat(event.getFormattedMessage())
+                              .contains("different claim settings")
+                              .contains("issues/714");
+                        });
+              });
+    } finally {
+      detachAppender(appender);
+    }
+  }
+
+  @Test
+  void failsClearlyWhenAScopeProviderReturnsNull() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=default-client",
+            "camunda.security.authentication.oidc.issuer-uri=" + DEFAULT_ISSUER)
+        .withBean(
+            CamundaSecurityScopeProvider.class, () -> (CamundaSecurityScopeProvider) () -> null)
+        .run(
+            ctx ->
+                assertThat(ctx)
+                    .hasFailed()
+                    .getFailure()
+                    .rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("returned null"));
+  }
+
+  @Test
+  void failsClearlyWhenAScopeProviderReturnsAListWithANullElement() {
+    final List<ScopedSecurityDescriptor> withNull = new ArrayList<>();
+    withNull.add(null);
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=default-client",
+            "camunda.security.authentication.oidc.issuer-uri=" + DEFAULT_ISSUER)
+        .withBean(
+            CamundaSecurityScopeProvider.class, () -> (CamundaSecurityScopeProvider) () -> withNull)
+        .run(
+            ctx ->
+                assertThat(ctx)
+                    .hasFailed()
+                    .getFailure()
+                    .rootCause()
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("null element"));
+  }
+
   private static CamundaSecurityScopeProvider scopeProvider(
       final String basePath, final String issuerUri, final String usernameClaim) {
+    final var authentication = new AuthenticationConfiguration();
+    authentication.setMethod(AuthenticationMethod.OIDC);
+    authentication.setOidc(providerConfig(issuerUri, usernameClaim));
+    return () -> List.of(new ScopedSecurityDescriptor(basePath, authentication));
+  }
+
+  private static CamundaSecurityScopeProvider scopeProviderWithProvidersBlock(
+      final String basePath, final Map<String, OidcConfiguration> providers) {
+    final var authentication = new AuthenticationConfiguration();
+    authentication.setMethod(AuthenticationMethod.OIDC);
+    authentication.getProviders().getOidc().putAll(providers);
+    return () -> List.of(new ScopedSecurityDescriptor(basePath, authentication));
+  }
+
+  private static OidcConfiguration providerConfig(
+      final String issuerUri, final String usernameClaim) {
     final var oidc = new OidcConfiguration();
     oidc.setClientId("scope-client");
     oidc.setIssuerUri(issuerUri);
     oidc.setUsernameClaim(usernameClaim);
     oidc.setPreferUsernameClaim(true);
-    final var authentication = new AuthenticationConfiguration();
-    authentication.setMethod(AuthenticationMethod.OIDC);
-    authentication.setOidc(oidc);
-    return () -> List.of(new ScopedSecurityDescriptor(basePath, authentication));
+    return oidc;
   }
 
   private static Map<String, LazyTokenClaimsConverter> byIssuer(final ApplicationContext ctx) {
