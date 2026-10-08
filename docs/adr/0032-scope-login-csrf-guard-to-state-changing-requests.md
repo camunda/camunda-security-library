@@ -32,9 +32,11 @@ requires a valid CSRF token?
 
 ## Decision
 
-The `unprotectedPathsSecurityFilterChain` (order 0, `BaseSecurityConfiguration`) matches
-`unprotectedPaths() AND NOT (state-changing request to /login)`. Safe methods are GET, HEAD, TRACE
-and OPTIONS, via `CsrfProtectionRequestMatcher.isSafeMethod`.
+With `camunda.security.csrf.enabled=true`, the `unprotectedPathsSecurityFilterChain` (order 0,
+`BaseSecurityConfiguration`) matches `unprotectedPaths() AND NOT (state-changing request to /login)`.
+Safe methods are GET, HEAD, TRACE and OPTIONS, via `CsrfProtectionRequestMatcher.isSafeMethod`. With
+CSRF disabled there is no check to route to, so the chain matches `unprotectedPaths()` for every
+method, as before ADR-0027.
 
 - Safe-method requests to `/login` are served by the unprotected chain without authentication.
 - State-changing requests to `/login` are excluded from that chain and fall through to the API or
@@ -47,8 +49,8 @@ and OPTIONS, via `CsrfProtectionRequestMatcher.isSafeMethod`.
 - Startup fails with an `IllegalStateException` when an `unprotectedPaths()` pattern overlaps
   `/login`, `camunda.security.authentication.catch-all-unhandled-paths-enabled` is `false` and no
   `apiPaths()` pattern or (with the webapp chain enabled) `webappPaths()` pattern covers `/login`,
-  because state-changing requests to `/login` would then reach no security chain. This applies
-  regardless of `csrf.enabled` and uses default-parser matching.
+  because state-changing requests to `/login` would then reach no security chain. This only applies
+  with CSRF enabled and uses default-parser matching.
 - `SecurityFilterChainSupport#rejectScopedLoginOverlap` replaces the unscoped fail-fast. When
   `camunda.security.csrf.enabled` is true, a pattern in `unprotectedPaths()` that matches a scoped
   `<basePath>/login` still fails startup with an `IllegalStateException` citing this ADR.
