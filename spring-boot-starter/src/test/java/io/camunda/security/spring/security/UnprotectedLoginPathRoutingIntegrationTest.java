@@ -38,10 +38,10 @@ import org.springframework.security.web.servlet.util.matcher.PathPatternRequestM
 
 /**
  * End-to-end routing for an unprotected pattern that overlaps {@code /login} (issue #710), through
- * one assembled {@link FilterChainProxy}. Asserts reachability ({@link
- * MockFilterChain#getRequest()} non-null), not status codes, since a CSRF rejection can surface as
- * 401 or 403. The webapp-shaped (basic-auth form-login) negative cases have a tokened control; the
- * Hub-shaped ones model camunda-hub's OIDC wiring, which never submits {@code POST /login}.
+ * one assembled {@link FilterChainProxy}. Mostly asserts reachability ({@link
+ * MockFilterChain#getRequest()} non-null) rather than status codes, since a CSRF rejection can
+ * surface as 401 or 403; every tokenless negative case has a tokened control. The Hub-shaped cases
+ * model camunda-hub's OIDC wiring, which never submits {@code POST /login}.
  */
 class UnprotectedLoginPathRoutingIntegrationTest {
 
@@ -51,6 +51,7 @@ class UnprotectedLoginPathRoutingIntegrationTest {
   private static final String OIDC_API_CHAIN = "oidcApiSecurityFilterChain";
   private static final String WEBAPP_CHAIN = "basicAuthWebappSecurityFilterChain";
   private static final String GUARD_CHAIN = "unclaimedLoginGuardSecurityFilterChain";
+  private static final String CATCH_ALL_CHAIN = "protectedUnhandledPathsSecurityFilterChain";
 
   private static final String[] HUB_PROPERTIES = {
     "camunda.security.authentication.method=oidc",
@@ -154,11 +155,27 @@ class UnprotectedLoginPathRoutingIntegrationTest {
                   .as("POST /login must be routed to the CSRF-enforcing OIDC API chain")
                   .isSameAs(ctx.getBean(OIDC_API_CHAIN, SecurityFilterChain.class));
 
-              final var next = new MockFilterChain();
-              proxy(ctx).doFilter(post, new MockHttpServletResponse(), next);
-              assertThat(next.getRequest())
+              final var proxy = proxy(ctx);
+              final var tokenlessResponse = new MockHttpServletResponse();
+              final var tokenlessNext = new MockFilterChain();
+              proxy.doFilter(post, tokenlessResponse, tokenlessNext);
+              assertThat(tokenlessNext.getRequest())
                   .as("a tokenless POST /login must not reach the app")
                   .isNull();
+
+              assertThat(tokenlessResponse.getContentAsString())
+                  .as("the rejection must come from CSRF enforcement")
+                  .contains("CSRF token");
+
+              // Control: the same request with a valid CSRF token reaches the app (Hub lists
+              // /login in unprotectedApiPaths), so only CSRF blocked the tokenless one.
+              final var tokened = new MockHttpServletRequest("POST", "/login");
+              attachCsrfFrom(proxy, "/login", tokened);
+              final var tokenedNext = new MockFilterChain();
+              proxy.doFilter(tokened, new MockHttpServletResponse(), tokenedNext);
+              assertThat(tokenedNext.getRequest())
+                  .as("a tokened POST /login must pass CSRF and reach the app")
+                  .isNotNull();
             });
   }
 
@@ -242,15 +259,12 @@ class UnprotectedLoginPathRoutingIntegrationTest {
     runnerWith(StubSecurityPaths.builder().unprotectedPaths("/error", "/login").build())
         .run(
             ctx -> {
-              final var unprotected = ctx.getBean(UNPROTECTED_CHAIN, SecurityFilterChain.class);
-
               assertThat(firstMatchingChain(ctx, new MockHttpServletRequest("GET", "/login")))
                   .as("GET /login must be served by the unprotected-paths chain")
-                  .isSameAs(unprotected);
+                  .isSameAs(ctx.getBean(UNPROTECTED_CHAIN, SecurityFilterChain.class));
               assertThat(firstMatchingChain(ctx, formLoginPost()))
-                  .as("POST /login must be routed past the CSRF-disabled unprotected-paths chain")
-                  .isNotNull()
-                  .isNotSameAs(unprotected);
+                  .as("POST /login must be routed to the CSRF-enforcing webapp chain")
+                  .isSameAs(ctx.getBean(WEBAPP_CHAIN, SecurityFilterChain.class));
             });
   }
 
@@ -264,6 +278,78 @@ class UnprotectedLoginPathRoutingIntegrationTest {
               assertThat(ctx).hasNotFailed().hasBean(GUARD_CHAIN);
               assertThat(firstMatchingChain(ctx, formLoginPost()))
                   .isSameAs(ctx.getBean(WEBAPP_CHAIN, SecurityFilterChain.class));
+            });
+  }
+
+  @Test
+  void webappShapedHeadAndOptionsLoginGetATokenAndAreNotEnforced() {
+    runnerWith(StubSecurityPaths.builder().unprotectedPaths("/error", "/login").build())
+        .run(
+            ctx -> {
+              final var proxy = proxy(ctx);
+              for (final var method : List.of("HEAD", "OPTIONS")) {
+                final var response = new MockHttpServletResponse();
+                final var next = new MockFilterChain();
+                proxy.doFilter(new MockHttpServletRequest(method, "/login"), response, next);
+                assertThat(next.getRequest()).as(method + " /login must reach the app").isNotNull();
+                assertThat(response.getHeader(CamundaSecurityFilterChainConstants.X_CSRF_TOKEN))
+                    .as(method + " /login must issue a CSRF token")
+                    .isNotNull();
+              }
+            });
+  }
+
+  /**
+   * The exclusion covers the exact {@code /login} only. Other paths under a broad pattern stay
+   * fully unprotected for every method, and are never processed as a login (form login lives on the
+   * webapp chain, which they do not reach).
+   */
+  @Test
+  void webappShapedExclusionCoversExactLoginOnly() {
+    runnerWith(StubSecurityPaths.builder().unprotectedPaths("/error", "/login/**", "/log*").build())
+        .run(
+            ctx -> {
+              final var unprotected = ctx.getBean(UNPROTECTED_CHAIN, SecurityFilterChain.class);
+              assertThat(firstMatchingChain(ctx, formLoginPost()))
+                  .isSameAs(ctx.getBean(WEBAPP_CHAIN, SecurityFilterChain.class));
+
+              final var proxy = proxyWithUser(ctx);
+              for (final var path : List.of("/login/", "/login/foo", "/loginx")) {
+                final var post = withCredentials(new MockHttpServletRequest("POST", path));
+                assertThat(firstMatchingChain(ctx, post))
+                    .as("POST " + path + " stays fully unprotected")
+                    .isSameAs(unprotected);
+                final var response = new MockHttpServletResponse();
+                final var next = new MockFilterChain();
+                proxy.doFilter(post, response, next);
+                assertThat(next.getRequest()).as("POST " + path + " reaches the app").isNotNull();
+                assertThat(response.getCookie(CamundaSecurityFilterChainConstants.SESSION_COOKIE))
+                    .as("POST " + path + " must not log in")
+                    .isNull();
+              }
+            });
+  }
+
+  /**
+   * With only the exact {@code /login} unprotected, near-misses (default parser: case-sensitive, no
+   * optional trailing slash) match neither it nor the webapp chain's {@code /login}, so they reach
+   * the catch-all deny chain.
+   */
+  @Test
+  void webappShapedNearMissLoginPathsReachTheCatchAll() {
+    runnerWith(StubSecurityPaths.builder().unprotectedPaths("/error", "/login").build())
+        .run(
+            ctx -> {
+              final var proxy = proxyWithUser(ctx);
+              for (final var path : List.of("/login/", "/LOGIN")) {
+                final var post = withCredentials(new MockHttpServletRequest("POST", path));
+                assertThat(firstMatchingChain(ctx, post))
+                    .as("POST " + path)
+                    .isSameAs(ctx.getBean(CATCH_ALL_CHAIN, SecurityFilterChain.class));
+                final var response = new MockHttpServletResponse();
+                proxy.doFilter(post, response, new MockFilterChain());
+                assertThat(response.getStatus()).as("POST " + path).isEqualTo(404);
+              }
             });
   }
 
