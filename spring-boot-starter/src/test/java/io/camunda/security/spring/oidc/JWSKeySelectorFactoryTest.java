@@ -214,50 +214,6 @@ class JWSKeySelectorFactoryTest {
   }
 
   @Test
-  void shouldRetryAFailedBackgroundRefreshBeforeExpiryWithoutAnyRequestTraffic() throws Exception {
-    // given a primed cache and an IdP that is briefly unavailable when the one scheduled refresh
-    // goes out. Nimbus schedules a single refresh per load and leaves a retry to a later request,
-    // so with no traffic nothing else would refresh the cache before it expires
-    final var logger = (Logger) LoggerFactory.getLogger(JWSKeySelectorFactory.class);
-    final var appender = new ThreadSafeAppender();
-    appender.start();
-    logger.addAppender(appender);
-    final var factory = warmCacheWindowFactory();
-    final var keyPair = generateRsaKeyPair();
-    final var jwkSetJson = publicJwkSetJson(keyPair);
-    final var requestCount = new AtomicInteger();
-    final var status = new AtomicInteger(200);
-    try (var server =
-        startJwksServer(
-            jwkSetJson, requestCount, new AtomicReference<>(new CountDownLatch(0)), status)) {
-      final JWSKeySelector<?> selector = factory.createJWSKeySelector(server.jwksUri());
-      final var header = new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KID).build();
-      assertThat(selector.selectJWSKeys(header, null)).hasSize(1);
-      final var afterPriming = requestCount.get();
-      status.set(503);
-
-      // when the scheduled refresh fails against the unavailable endpoint, which then recovers —
-      // and nothing at all asks the selector for a key in the meantime
-      await().atMost(AWAIT_TIMEOUT).until(() -> requestCount.get() > afterPriming);
-      status.set(200);
-
-      // then a retry before the cache expires refreshes it
-      await()
-          .atMost(AWAIT_TIMEOUT)
-          .untilAsserted(
-              () ->
-                  assertThat(appender.list)
-                      .anySatisfy(
-                          event -> {
-                            assertThat(event.getLevel()).isEqualTo(Level.INFO);
-                            assertThat(event.getFormattedMessage()).contains("succeeded on retry");
-                          }));
-    } finally {
-      logger.detachAppender(appender);
-    }
-  }
-
-  @Test
   void shouldApplyTheConfiguredHttpReadTimeoutToTheJwksFetch() throws Exception {
     // given an endpoint that accepts the request and never answers, and a read timeout well above
     // Nimbus's own 500ms default — so a source built without this factory's retriever would give up
@@ -328,103 +284,6 @@ class JWSKeySelectorFactoryTest {
   }
 
   @Test
-  void shouldStartOnlyOneRetryChainWhileOneIsRunning() {
-    // given a cache loaded at t=0 that is valid for 10s, and a chain already running, as after the
-    // first failed background fetch of a streak
-    final var retryChain = loadedAtZeroWithTtl(10_000L);
-    final var first = retryChain.tryStart(1_000L);
-
-    // when further failures arrive — Nimbus raises one per failed fetch, and a request in the
-    // refresh-ahead window starts each — then none of them starts another chain
-    assertThat(retryChain.tryStart(1_100L)).isEqualTo(-1);
-    assertThat(retryChain.tryStart(1_200L)).isEqualTo(-1);
-    assertThat(retryChain.isCurrent(first)).isTrue();
-  }
-
-  @Test
-  void shouldLetANewChainStartOnceTheRunningOneFinishesAndRetireTheOldOne() {
-    // given a finished chain, e.g. because some refresh succeeded
-    final var retryChain = loadedAtZeroWithTtl(10_000L);
-    final var first = retryChain.tryStart(1_000L);
-    retryChain.finish();
-    assertThat(retryChain.isCurrent(first)).isFalse();
-
-    // when the next streak of failures starts a new chain
-    final var second = retryChain.tryStart(2_000L);
-
-    // then only the new chain is current, so a retry still pending from the old one does nothing
-    assertThat(second).isNotEqualTo(-1).isNotEqualTo(first);
-    assertThat(retryChain.isCurrent(second)).isTrue();
-    assertThat(retryChain.isCurrent(first)).isFalse();
-  }
-
-  @Test
-  void shouldNotStartARetryChainOnceTheCacheHasExpiredOrHasNoRoomForARetry() {
-    // given a cache loaded at t=0 that expires at t=10s, with retries spaced 100ms apart
-    final var retryChain = loadedAtZeroWithTtl(10_000L);
-
-    // when a failure is reported after expiry — say a request near the end started a fetch that
-    // only failed once the cache had already gone — or too close to it for a retry to land first
-    // then no chain starts, so no forced retry contends with the request path for the cache lock
-    assertThat(retryChain.tryStart(10_500L)).isEqualTo(-1);
-    assertThat(retryChain.tryStart(9_950L)).isEqualTo(-1);
-    assertThat(retryChain.hasRoomForRetry(9_900L)).isTrue();
-    assertThat(retryChain.hasRoomForRetry(9_901L)).isFalse();
-  }
-
-  @Test
-  void shouldMeasureTheRetryWindowFromWhenTheLoadStartedNotFromWhenItFinished() {
-    // given a load that began at t=1s and, being slow, completed later
-    final var retryChain = new JWSKeySelectorFactory.RetryChain(100L, 10_000L);
-    retryChain.loadStarted(1_000L);
-    retryChain.loadCompleted();
-
-    // then the set expires a TTL after the start, which is how Nimbus times it
-    assertThat(retryChain.hasRoomForRetry(10_900L)).isTrue();
-    assertThat(retryChain.hasRoomForRetry(10_901L)).isFalse();
-  }
-
-  @Test
-  void shouldDateALoadFromBeforeItWaitedForTheCacheLock() {
-    // given a refresh that found the cache lock taken at t=1s and only got it, and so only began
-    // its load, at t=13s — within the 15s a caller can wait. Nimbus dates the cached set from the
-    // call at t=1s, not from t=13s
-    final var retryChain = new JWSKeySelectorFactory.RetryChain(15_000L, 60_000L);
-    retryChain.loadWaiting(1_000L);
-    retryChain.loadStarted(13_000L);
-    retryChain.loadCompleted();
-
-    // then the retry window ends a retry-spacing before t=61s, not before t=73s, so no retry lands
-    // after Nimbus considers the set expired and contends with the request path for the lock
-    assertThat(retryChain.hasRoomForRetry(46_000L)).isTrue();
-    assertThat(retryChain.hasRoomForRetry(46_001L)).isFalse();
-  }
-
-  @Test
-  void shouldIgnoreAWaitTooOldToBelongToTheLoad() {
-    // given a wait left behind on a thread that then reused another thread's refresh and so never
-    // began a load of its own — Nimbus raises no event when that happens
-    final var retryChain = new JWSKeySelectorFactory.RetryChain(1_000L, 10_000L);
-    retryChain.loadWaiting(1_000L);
-
-    // when that thread much later makes a load of its own
-    retryChain.loadStarted(50_000L);
-    retryChain.loadCompleted();
-
-    // then the load is dated from its own start, not from the stale wait
-    assertThat(retryChain.hasRoomForRetry(59_000L)).isTrue();
-    assertThat(retryChain.hasRoomForRetry(59_001L)).isFalse();
-  }
-
-  @Test
-  void shouldNeverSpaceRetriesTighterThanTheFloorEvenWithAZeroRefreshTimeout() {
-    final var retryChain = new JWSKeySelectorFactory.RetryChain(0L, 1_000L);
-
-    assertThat(retryChain.delayMillis())
-        .isEqualTo(JWSKeySelectorFactory.RetryChain.MIN_DELAY_MILLIS);
-  }
-
-  @Test
   void shouldRejectAnOverrideWhoseRefreshMarginReachesTheTtlBecauseItWouldNeverBeScheduled() {
     // given a host override where refreshAhead + refreshTimeout == TTL: Nimbus accepts it but
     // computes a zero scheduling delay and never schedules the background refresh
@@ -436,50 +295,6 @@ class JWSKeySelectorFactoryTest {
         .hasMessageContaining("600ms")
         .hasMessageContaining("400ms")
         .hasMessageContaining("1000ms");
-  }
-
-  @Test
-  void shouldWarnWhenRetriesAreExhaustedAndNameTheCauseOfEachFailedRetry() throws Exception {
-    // given a cached JWK Set whose IdP is gone for good, so every retry fails until the window ends
-    final var logger = (Logger) LoggerFactory.getLogger(JWSKeySelectorFactory.class);
-    final var appender = new ThreadSafeAppender();
-    appender.start();
-    logger.addAppender(appender);
-    final var factory = shortTimingFactory();
-    final var keyPair = generateRsaKeyPair();
-    final var jwkSetJson = publicJwkSetJson(keyPair);
-    try (var server = startJwksServer(jwkSetJson, new AtomicInteger())) {
-      final JWSKeySelector<?> selector = factory.createJWSKeySelector(server.jwksUri());
-      final var header = new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KID).build();
-      assertThat(selector.selectJWSKeys(header, null)).hasSize(1);
-
-      // when the endpoint goes down
-      server.close();
-
-      // then a failed retry names the exception chain, and giving up is logged at WARN rather
-      // than only at DEBUG
-      await()
-          .atMost(AWAIT_TIMEOUT)
-          .untilAsserted(
-              () -> {
-                assertThat(appender.list)
-                    .anySatisfy(
-                        event -> {
-                          assertThat(event.getLevel()).isEqualTo(Level.WARN);
-                          assertThat(event.getFormattedMessage())
-                              .contains("Retry of the background refresh")
-                              .contains(" <- ");
-                        });
-                assertThat(appender.list)
-                    .anySatisfy(
-                        event -> {
-                          assertThat(event.getLevel()).isEqualTo(Level.WARN);
-                          assertThat(event.getFormattedMessage()).contains("Giving up retrying");
-                        });
-              });
-    } finally {
-      logger.detachAppender(appender);
-    }
   }
 
   @Test
@@ -592,13 +407,6 @@ class JWSKeySelectorFactoryTest {
         .toList();
   }
 
-  private static JWSKeySelectorFactory.RetryChain loadedAtZeroWithTtl(final long timeToLiveMillis) {
-    final var retryChain = new JWSKeySelectorFactory.RetryChain(100L, timeToLiveMillis);
-    retryChain.loadStarted(0L);
-    retryChain.loadCompleted();
-    return retryChain;
-  }
-
   private static JWSKeySelectorFactory shortTimingFactory() {
     // Same shape as the real defaults (refreshAheadTime + cacheRefreshTimeout < timeToLive),
     // scaled from minutes down to hundreds of milliseconds so the tests run fast.
@@ -704,35 +512,14 @@ class JWSKeySelectorFactoryTest {
       final AtomicInteger requestCount,
       final AtomicReference<CountDownLatch> gate)
       throws Exception {
-    return startJwksServer(jwkSetJson, requestCount, gate, new AtomicInteger(200));
-  }
-
-  /**
-   * As above, and the HTTP status it answers with can be changed while the server runs: anything
-   * other than 200 is returned with an empty body, so a test can fail and then recover the
-   * endpoint.
-   */
-  private static JwksServer startJwksServer(
-      final String jwkSetJson,
-      final AtomicInteger requestCount,
-      final AtomicReference<CountDownLatch> gate,
-      final AtomicInteger status)
-      throws Exception {
     final var httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     httpServer.createContext(
         "/jwks",
         exchange -> {
           try (exchange) {
-            // Decided before the request is counted, so a test that sees the count rise knows the
-            // status it then changes cannot affect this response.
-            final var responseStatus = status.get();
             requestCount.incrementAndGet();
             if (!gate.get().await(10, TimeUnit.SECONDS)) {
               throw new IllegalStateException("The test never released the JWKS response");
-            }
-            if (responseStatus != 200) {
-              exchange.sendResponseHeaders(responseStatus, -1);
-              return;
             }
             final byte[] bytes = jwkSetJson.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");

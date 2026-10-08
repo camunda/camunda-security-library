@@ -9,10 +9,6 @@ package io.camunda.security.spring.oidc;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.source.CachingJWKSetSource;
-import com.nimbusds.jose.jwk.source.CachingJWKSetSource.RefreshCompletedEvent;
-import com.nimbusds.jose.jwk.source.CachingJWKSetSource.RefreshInitiatedEvent;
-import com.nimbusds.jose.jwk.source.CachingJWKSetSource.WaitingForRefreshEvent;
-import com.nimbusds.jose.jwk.source.JWKSetCacheRefreshEvaluator;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.nimbusds.jose.jwk.source.RefreshAheadCachingJWKSetSource.ScheduledRefreshFailed;
@@ -31,7 +27,6 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -224,7 +219,7 @@ public class JWSKeySelectorFactory {
             getHttpConnectTimeoutMillis(),
             getHttpReadTimeoutMillis(),
             JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT);
-    // Read once: the listener's retry timing must agree with what Nimbus is built with.
+    // Read once, so the check below sees exactly what Nimbus is built with.
     final var timeToLive = getCacheTimeToLiveMillis();
     final var refreshTimeout = getCacheRefreshTimeoutMillis();
     final var refreshAhead = getRefreshAheadTimeMillis();
@@ -233,7 +228,7 @@ public class JWSKeySelectorFactory {
         .cache(timeToLive, refreshTimeout)
         .refreshAheadCache(
             refreshAhead,
-            refreshFailureListener(jwkSetUri, new RetryChain(refreshTimeout, timeToLive)),
+            refreshFailureListener(jwkSetUri),
             REFRESH_FETCH_EXECUTOR,
             false,
             REFRESH_SCHEDULER,
@@ -259,16 +254,14 @@ public class JWSKeySelectorFactory {
   }
 
   /**
-   * Logs the background refresh failures Nimbus reports only through its event listener, and
-   * retries a failed background fetch while the cached set is still valid. Nimbus schedules one
-   * refresh per load and leaves a retry to a later request, so a blip at that attempt followed by
-   * no traffic would still end in a synchronous refresh (ADR-0032).
+   * Logs the background refresh failures Nimbus reports only through its event listener; without it
+   * an IdP outage is invisible until the cache expires and decoding starts failing.
    *
    * <p>The JWK Set URI is the only identifier logged, redacted ({@link UrlRedaction}); no token
    * data.
    */
-  private EventListener<CachingJWKSetSource<SecurityContext>, SecurityContext>
-      refreshFailureListener(final URL jwkSetUri, final RetryChain retryChain) {
+  private static EventListener<CachingJWKSetSource<SecurityContext>, SecurityContext>
+      refreshFailureListener(final URL jwkSetUri) {
     final var redactedUri = UrlRedaction.redact(jwkSetUri.toString());
     return event -> {
       if (event instanceof ScheduledRefreshFailed<SecurityContext> failed) {
@@ -278,28 +271,10 @@ public class JWSKeySelectorFactory {
             redactedUri,
             describe(failed.getException()));
       } else if (event instanceof UnableToRefreshAheadOfExpirationEvent<SecurityContext>) {
-        // Nimbus raises this for every failed background fetch, including each one a request in the
-        // refresh-ahead window starts, so only the first failure of a streak starts a chain — and
-        // none once the cache has expired or has no room left for a retry.
-        final var chain = retryChain.tryStart(System.currentTimeMillis());
         LOG.warn(
             "Background refresh of the JWK Set at '{}' failed; keeps serving the cached keys until"
-                + " they expire, after which decoding fails if the endpoint is still unavailable."
-                + "{}",
-            redactedUri,
-            chain < 0 ? "" : " Retrying every " + retryChain.delayMillis() + "ms until then");
-        if (chain >= 0) {
-          scheduleRetry(event.getSource(), redactedUri, retryChain, chain);
-        }
-      } else if (event instanceof WaitingForRefreshEvent<SecurityContext>) {
-        // Raised on the calling thread as soon as the cache lock is found taken — still at the
-        // time Nimbus will date this load from, unlike the initiated event that follows the wait.
-        retryChain.loadWaiting(System.currentTimeMillis());
-      } else if (event instanceof RefreshInitiatedEvent<SecurityContext>) {
-        retryChain.loadStarted(System.currentTimeMillis());
-      } else if (event instanceof RefreshCompletedEvent<SecurityContext>) {
-        // Whoever refreshed it, the cache is current again and pending retries are redundant.
-        retryChain.loadCompleted();
+                + " they expire, after which decoding fails if the endpoint is still unavailable",
+            redactedUri);
       }
     };
   }
@@ -315,56 +290,6 @@ public class JWSKeySelectorFactory {
       types.add(cause.getClass().getSimpleName());
     }
     return String.join(" <- ", types);
-  }
-
-  /**
-   * Retries a failed background refresh, spaced by the cache refresh timeout, for as long as the
-   * cached set is still valid. Past its expiry a refresh is the request path's to make, and a
-   * forced retry would only contend with it for Nimbus's cache lock.
-   */
-  private void scheduleRetry(
-      final CachingJWKSetSource<SecurityContext> source,
-      final String redactedUri,
-      final RetryChain retryChain,
-      final long chain) {
-    final var delay = retryChain.delayMillis();
-    if (!retryChain.hasRoomForRetry(System.currentTimeMillis())) {
-      LOG.warn(
-          "Giving up retrying the background refresh of the JWK Set at '{}'; the cached keys are"
-              + " about to expire and token validation fails if the endpoint is still unavailable",
-          redactedUri);
-      retryChain.finish();
-      return;
-    }
-    REFRESH_SCHEDULER.schedule(
-        () ->
-            REFRESH_FETCH_EXECUTOR.execute(
-                () -> retryRefresh(source, redactedUri, retryChain, chain)),
-        delay,
-        TimeUnit.MILLISECONDS);
-  }
-
-  private void retryRefresh(
-      final CachingJWKSetSource<SecurityContext> source,
-      final String redactedUri,
-      final RetryChain retryChain,
-      final long chain) {
-    if (!retryChain.isCurrent(chain)) {
-      return;
-    }
-    try {
-      // On success Nimbus caches the new set and schedules its own next refresh as usual.
-      source.getJWKSet(
-          JWKSetCacheRefreshEvaluator.forceRefresh(), System.currentTimeMillis(), null);
-      retryChain.finish();
-      LOG.info("Background refresh of the JWK Set at '{}' succeeded on retry", redactedUri);
-    } catch (final Exception e) {
-      LOG.warn(
-          "Retry of the background refresh of the JWK Set at '{}' failed ({})",
-          redactedUri,
-          describe(e));
-      scheduleRetry(source, redactedUri, retryChain, chain);
-    }
   }
 
   /** The HTTP connect timeout for JWK Set retrieval, in milliseconds. */
@@ -413,100 +338,5 @@ public class JWSKeySelectorFactory {
    */
   public Set<JWSAlgorithm> getJWSAlgorithms() {
     return jwsAlgorithms;
-  }
-
-  /**
-   * The one retry chain a source may have running. A failed background fetch raises an event per
-   * failure, and under traffic that is many, so without this every one would start its own chain of
-   * forced fetches against an IdP that is already struggling.
-   */
-  static final class RetryChain {
-    /**
-     * Floor for the retry spacing, so a zero refresh timeout cannot turn a chain into a busy loop.
-     */
-    static final long MIN_DELAY_MILLIS = 100L;
-
-    private final long delayMillis;
-    private final long maxLockWaitMillis;
-    private final long timeToLiveMillis;
-
-    /** Per calling thread: when it began waiting for the cache lock, if it had to. */
-    private final ThreadLocal<Long> waitingSince = new ThreadLocal<>();
-
-    private long loadStartedAt;
-    private long expiresAt;
-    private long generation;
-    private boolean active;
-
-    /**
-     * @param refreshTimeoutMillis the cache refresh timeout: the longest a caller waits for the
-     *     cache lock, and the spacing between retries (raised to {@link #MIN_DELAY_MILLIS})
-     * @param timeToLiveMillis how long a loaded JWK Set stays valid, from the start of its load
-     */
-    RetryChain(final long refreshTimeoutMillis, final long timeToLiveMillis) {
-      this.delayMillis = Math.max(refreshTimeoutMillis, MIN_DELAY_MILLIS);
-      this.maxLockWaitMillis = refreshTimeoutMillis;
-      this.timeToLiveMillis = timeToLiveMillis;
-    }
-
-    long delayMillis() {
-      return delayMillis;
-    }
-
-    /**
-     * The calling thread found the cache lock taken and is about to wait for it. Nimbus dates the
-     * load it then makes from the time of the call, before this wait, so remember that time.
-     */
-    void loadWaiting(final long nowMillis) {
-      waitingSince.set(nowMillis);
-    }
-
-    /**
-     * A load of the JWK Set has begun, after any wait for the lock; its result, if any, expires a
-     * TTL after the call that made it, which is the earlier time when there was a wait.
-     *
-     * <p>A wait does not always end in a load: a caller that gets the lock after another thread
-     * refreshed reuses that cache and raises no event. So a remembered time only counts if it is
-     * recent enough to be this load's wait — a wait cannot outlast the refresh timeout — and an
-     * older one, left behind on a pooled thread, is ignored.
-     */
-    synchronized void loadStarted(final long nowMillis) {
-      final var waited = waitingSince.get();
-      waitingSince.remove();
-      loadStartedAt =
-          waited != null && nowMillis - waited <= maxLockWaitMillis ? waited : nowMillis;
-    }
-
-    /** The load that last began succeeded: the cache is current again, so any chain is over. */
-    synchronized void loadCompleted() {
-      expiresAt = loadStartedAt + timeToLiveMillis;
-      active = false;
-    }
-
-    /** Whether a retry spaced one delay from {@code nowMillis} still lands before expiry. */
-    synchronized boolean hasRoomForRetry(final long nowMillis) {
-      return nowMillis + delayMillis <= expiresAt;
-    }
-
-    /**
-     * Starts a chain unless one is running or the cache has no room left for a retry; returns its
-     * id, or -1.
-     */
-    synchronized long tryStart(final long nowMillis) {
-      if (active || !hasRoomForRetry(nowMillis)) {
-        return -1;
-      }
-      active = true;
-      return ++generation;
-    }
-
-    /** Whether {@code chain} is still the running chain (not finished, not superseded). */
-    synchronized boolean isCurrent(final long chain) {
-      return active && chain == generation;
-    }
-
-    synchronized void finish() {
-      active = false;
-    }
   }
 }

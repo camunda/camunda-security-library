@@ -52,22 +52,9 @@ each source with:
   already-warm cache; they are not blocked by the refresh. A failed refresh is logged at `WARN` with
   the JWK Set URI (user-info, query and fragment redacted, as the URL is operator-supplied) through
   the listener, because Nimbus otherwise swallows it and an IdP outage would stay invisible until
-  the cache expired. Nimbus also schedules only **one** refresh per successful load: if that fetch
-  fails, only a later decode request landing in the final refresh-ahead window retries it, so a
-  brief outage at that one attempt followed by no traffic until expiry would still leave the next
-  requests to refresh synchronously. The listener therefore retries a failed background fetch,
-  spaced by the cache refresh timeout, for as long as the cached set is still valid — its expiry
-  is tracked as one TTL after the call that made the last successful load — dated before any wait
-  for Nimbus's cache lock, which is how Nimbus times it — so two or three retries with the defaults. One chain per source however many failures Nimbus
-  reports, and none starts once the cache has expired: a failure reported late (a request-started
-  fetch that only failed after expiry) is not given a fresh window, since past expiry the refresh
-  is the request path's to make and a forced retry would only contend with it for Nimbus's cache
-  lock. A recovery is logged at `INFO`. Giving up is
-  logged at `WARN`, and each failed retry names the exception types of its cause chain (types
-  only, since an HTTP client's message can embed the URL). The first failure carries no cause,
-  because Nimbus does not pass one. CSL does not log the moment the cache expires: Nimbus raises
-  no event when a refresh made by a decode request fails, so from then on the failure is visible to
-  the caller as the decode error, not as a log line from this class. Both executors are built here and shared by every source, rather than
+  the cache expired. Nimbus schedules only **one** refresh per successful load: if that fetch fails,
+  only a later decode request landing in the final refresh-ahead window retries it (see the known
+  limitation under "Negative / accepted trade-offs"). Both executors are built here and shared by every source, rather than
   left to the shorter `refreshAheadCache(long, boolean)` overload, because Nimbus's own defaults
   are **non-daemon** `Executors.newSingleThread*` pools created per source: since nothing in CSL
   closes a `JWKSource`, a non-daemon refresh thread would outlive a host's Spring context and stop
@@ -169,9 +156,8 @@ getCacheRefreshTimeoutMillis() < getCacheTimeToLiveMillis()`, strictly, or
 issuers, on the first token for each, not at startup). Nimbus itself rejects only a sum *above* the
 TTL; at equality it computes a zero scheduling delay and never schedules the refresh, silently
 reverting to request-driven refresh, so CSL rejects equality as well. The values are read once per
-source, and the retry spacing has a 100ms floor so a zero refresh timeout cannot make the retry a
-busy loop. And the closer the sum gets to the TTL, the more the background refresh cadence
-collapses towards continuously polling the IdP.
+source. And the closer the sum gets to the TTL, the more the background refresh cadence collapses
+towards continuously polling the IdP.
 
 ## Supersedes
 
@@ -227,6 +213,15 @@ collapses towards continuously polling the IdP.
   there, so a slow endpoint still blocks those requests on that path. The background refresh does
   not change this: it keeps the primary's cache warm, but a key the primary does not hold is a
   `kid` miss like any other. This path predates the change; the larger timeouts make it costlier.
+- **Known limitation: no retry before expiry.** Nimbus schedules one background refresh per
+  successful load. If that one attempt fails and no request arrives in the final refresh-ahead
+  window — any request there starts a background retry on Nimbus's own — the cache expires
+  unrefreshed and the next requests refresh synchronously, as they did before this change, now
+  with the 3s timeouts. This only bites when the attempt fails, traffic then pauses through the
+  last ~30s, a burst follows, and the IdP is slow again at that point. A bounded retry was built
+  and removed for proportionality: it needed a single-chain guard, expiry tracked from Nimbus's
+  load events (dated before the cache-lock wait), and a bound on the remembered wait. Tracked in
+  #713.
 - 3 seconds is still finite: an IdP outage exceeding it still fails the in-flight request. This ADR
   narrows the blocking window to realistic latency — it does not eliminate failures from genuine
   unavailability.
@@ -264,9 +259,8 @@ collapses towards continuously polling the IdP.
   requests in parallel in one timeout. The lock-free build-then-discard pattern is kept, which also
   keeps it consistent with the same deliberate choice already documented in
   `ScopedClientRegistrationFactory` and `CamundaOidcAuthorizationRequestResolver`.
-- **Nimbus's `retrying(true)`.** Rejected — it retries once, immediately, on the same request or
-  fetch. For the outage this retry addresses (the IdP is down for seconds to minutes) the second
-  attempt fails just as the first did, and it still leaves nothing trying again before expiry.
-- **Nimbus's outage-tolerant mode.** Rejected — it serves the last known key set for an extended
-  period after expiry, which extends how long a revoked key stays trusted past the 5-minute bound
-  this ADR makes explicit.
+- **Retrying a failed background refresh before expiry.** Deferred, not rejected on the merits —
+  see the known limitation above and #713. Nimbus's own options do not fit: `retrying(true)`
+  retries once, immediately, so for an outage of seconds to minutes the second attempt fails like the
+  first, and outage-tolerant mode serves the last known key set past expiry, extending how long a
+  revoked key stays trusted beyond the 5-minute bound this ADR makes explicit.
