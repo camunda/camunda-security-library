@@ -15,6 +15,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 class CsrfProtectionRequestMatcherTest {
 
@@ -140,6 +141,26 @@ class CsrfProtectionRequestMatcherTest {
     final var matcher = new CsrfProtectionRequestMatcher(Set.of("/log*"), Set.of("/login"));
     final var request = createRequest("POST", "/login");
     assertThat(matcher.matches(request)).isTrue();
+  }
+
+  @Test
+  void shouldMatchBothPathSetsUnderTheHostBuilderBasePath() {
+    // A broad allowed pattern must not exempt POST /app/login under a servlet mapped at /app.
+    final var matcher =
+        new CsrfProtectionRequestMatcher(
+            PathPatternRequestMatcher.withDefaults().basePath("/app"),
+            Set.of("/**"),
+            Set.of("/login"));
+    final var login = new MockHttpServletRequest("POST", "/app/login");
+    login.setServletPath("/app");
+    login.setPathInfo("/login");
+    final var other = new MockHttpServletRequest("POST", "/app/other");
+    other.setServletPath("/app");
+    other.setPathInfo("/other");
+    other.setSession(new MockHttpSession());
+
+    assertThat(matcher.matches(login)).isTrue();
+    assertThat(matcher.matches(other)).isFalse();
   }
 
   @Test

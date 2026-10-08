@@ -35,6 +35,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 /**
  * Scoped counterpart of {@link BaseSecurityConfigurationLoginOverlapTest}: an unprotected pattern
@@ -86,50 +87,91 @@ class ScopedLoginOverlapTest {
         .run(
             ctx -> {
               assertThat(ctx).hasNotFailed();
-              final var encoder = ctx.getBean(PasswordEncoder.class);
-              ((ConfigurableUserDetailsPort) ctx.getBean(BasicAuthUserDetailsPort.class))
-                  .resolve("alice", encoder.encode("s3cret"));
-              final var proxy =
-                  new FilterChainProxy(
-                      List.of(chainWithPrefix(ctx, "scopedWebappSecurityFilterChain-")));
-
-              final var tokenless = loginPost();
-              final var tokenlessResponse = new MockHttpServletResponse();
-              final var tokenlessNext = new MockFilterChain();
-              proxy.doFilter(tokenless, tokenlessResponse, tokenlessNext);
-
-              assertThat(tokenlessNext.getRequest())
-                  .as("a tokenless POST to the scoped login must not reach the application")
-                  .isNull();
-              assertThat(tokenlessResponse.getStatus())
-                  .as("valid credentials alone must not log in without a CSRF token")
-                  .isNotEqualTo(204);
-              assertThat(tokenlessResponse.getHeaders("Set-Cookie"))
-                  .as("a rejected login must not commit a session")
-                  .noneMatch(h -> h.startsWith("camunda-session"));
-
-              // Control: the very same request with a valid token succeeds, so the rejection
-              // above is attributable to CSRF enforcement and not to the credentials.
-              final var tokenResponse = new MockHttpServletResponse();
-              proxy.doFilter(
-                  new MockHttpServletRequest("GET", BASE + "/login"),
-                  tokenResponse,
-                  new MockFilterChain());
-              final var tokened = loginPost();
-              tokened.setCookies(tokenResponse.getCookies());
-              tokened.addHeader(
-                  CamundaSecurityFilterChainConstants.X_CSRF_TOKEN,
-                  tokenResponse.getHeader(CamundaSecurityFilterChainConstants.X_CSRF_TOKEN));
-              final var tokenedResponse = new MockHttpServletResponse();
-              proxy.doFilter(tokened, tokenedResponse, new MockFilterChain());
-              assertThat(tokenedResponse.getStatus()).isEqualTo(204);
+              assertThat(assertTokenlessLoginRejectedButTokenedPassesCsrf(ctx, "").getStatus())
+                  .as("a tokened login with valid credentials must succeed")
+                  .isEqualTo(204);
             });
   }
 
-  private static MockHttpServletRequest loginPost() {
-    final var request = new MockHttpServletRequest("POST", BASE + "/login");
+  /**
+   * With the dispatcher servlet at {@code /app}, Spring Boot registers a {@code basePath} builder
+   * and the scoped chain matches {@code /app<basePath>/login}. Its CSRF matcher must use that
+   * builder too: a default-builder login matcher misses the request, so a session-less tokenless
+   * {@code POST} would skip CSRF.
+   */
+  @Test
+  void scopedWebappChainEnforcesLoginCsrfUnderHostPathPatternBuilderBasePath() {
+    runnerWith("/error")
+        .withBean(
+            PathPatternRequestMatcher.Builder.class,
+            () -> PathPatternRequestMatcher.withDefaults().basePath("/app"))
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              assertTokenlessLoginRejectedButTokenedPassesCsrf(ctx, "/app");
+            });
+  }
+
+  /**
+   * Asserts a tokenless login {@code POST} is rejected and the same request with a valid token is
+   * not, so the rejection is attributable to CSRF. Returns the tokened response: Spring Security's
+   * form-login matcher ignores a host {@code basePath} builder, so only a root servlet logs in.
+   */
+  private static MockHttpServletResponse assertTokenlessLoginRejectedButTokenedPassesCsrf(
+      final ApplicationContext ctx, final String servletPath) throws Exception {
+    final var encoder = ctx.getBean(PasswordEncoder.class);
+    ((ConfigurableUserDetailsPort) ctx.getBean(BasicAuthUserDetailsPort.class))
+        .resolve("alice", encoder.encode("s3cret"));
+    final var proxy =
+        new FilterChainProxy(List.of(chainWithPrefix(ctx, "scopedWebappSecurityFilterChain-")));
+
+    final var tokenless = loginPost(servletPath);
+    final var tokenlessResponse = new MockHttpServletResponse();
+    final var tokenlessNext = new MockFilterChain();
+    proxy.doFilter(tokenless, tokenlessResponse, tokenlessNext);
+
+    assertThat(tokenlessNext.getRequest())
+        .as("a tokenless POST to the scoped login must not reach the application")
+        .isNull();
+    assertThat(tokenlessResponse.getStatus())
+        .as("valid credentials alone must not log in without a CSRF token")
+        .isIn(401, 403);
+    assertThat(tokenlessResponse.getHeaders("Set-Cookie"))
+        .as("a rejected login must not commit a session")
+        .noneMatch(h -> h.startsWith("camunda-session"));
+
+    // Control: the very same request with a valid token is not rejected.
+    final var tokenResponse = new MockHttpServletResponse();
+    proxy.doFilter(
+        request("GET", servletPath, BASE + "/login"), tokenResponse, new MockFilterChain());
+    final var tokened = loginPost(servletPath);
+    tokened.setCookies(tokenResponse.getCookies());
+    tokened.addHeader(
+        CamundaSecurityFilterChainConstants.X_CSRF_TOKEN,
+        tokenResponse.getHeader(CamundaSecurityFilterChainConstants.X_CSRF_TOKEN));
+    final var tokenedResponse = new MockHttpServletResponse();
+    proxy.doFilter(tokened, tokenedResponse, new MockFilterChain());
+    assertThat(tokenedResponse.getStatus())
+        .as("a tokened login must pass CSRF enforcement")
+        .isNotIn(401, 403);
+    return tokenedResponse;
+  }
+
+  private static MockHttpServletRequest loginPost(final String servletPath) {
+    final var request = request("POST", servletPath, BASE + "/login");
     request.setParameter("username", "alice");
     request.setParameter("password", "s3cret");
+    return request;
+  }
+
+  /** A request dispatched to a servlet mapped at {@code servletPath} ({@code ""} for root). */
+  private static MockHttpServletRequest request(
+      final String method, final String servletPath, final String path) {
+    final var request = new MockHttpServletRequest(method, servletPath + path);
+    if (!servletPath.isEmpty()) {
+      request.setServletPath(servletPath);
+      request.setPathInfo(path);
+    }
     return request;
   }
 

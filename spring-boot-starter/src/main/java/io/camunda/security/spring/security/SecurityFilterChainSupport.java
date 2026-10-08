@@ -29,6 +29,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationContext;
 import org.springframework.http.server.PathContainer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -184,6 +185,24 @@ public final class SecurityFilterChainSupport {
   }
 
   /**
+   * Resolves the path matcher builder exactly as {@link HttpSecurity#securityMatcher(String...)}
+   * does: the host's unique {@link PathPatternRequestMatcher.Builder} bean (e.g. with a servlet
+   * {@code basePath}), else the one Spring Security shares on {@code http} (which follows Spring
+   * MVC's pattern parser). Matchers built with it agree with every chain's own security matcher.
+   */
+  static PathPatternRequestMatcher.Builder pathMatcherBuilder(final HttpSecurity http) {
+    final var shared = http.getSharedObject(PathPatternRequestMatcher.Builder.class);
+    final var fallback = shared != null ? shared : PathPatternRequestMatcher.withDefaults();
+    final var context = http.getSharedObject(ApplicationContext.class);
+    if (context == null) {
+      return fallback;
+    }
+    return context
+        .getBeanProvider(PathPatternRequestMatcher.Builder.class)
+        .getIfUnique(() -> fallback);
+  }
+
+  /**
    * Matches non-safe-method requests to {@code paths}.
    *
    * <p>Package-private for unit testing.
@@ -294,12 +313,14 @@ public final class SecurityFilterChainSupport {
     final var allowedPaths = csrfAllowedPaths(properties, pathPort, cookiePath);
     final var enforcedPaths = csrfEnforcedPaths(cookiePath);
     rejectScopedLoginOverlap(pathPort.unprotectedPaths(), enforcedPaths);
+    final var builder = pathMatcherBuilder(http);
     applyCsrfConfiguration(
         http,
         properties,
         cookiePath,
         csrfCookieName,
-        new CsrfProtectionRequestMatcher(allowedPaths, enforcedPaths));
+        new CsrfProtectionRequestMatcher(builder, allowedPaths, enforcedPaths),
+        csrfTokenResponseHeaderFilter(builder, cookiePath));
   }
 
   /**
@@ -319,7 +340,7 @@ public final class SecurityFilterChainSupport {
         cookiePath,
         csrfCookieName,
         protectionMatcher,
-        csrfTokenResponseHeaderFilter(PathPatternRequestMatcher.withDefaults(), cookiePath));
+        csrfTokenResponseHeaderFilter(pathMatcherBuilder(http), cookiePath));
   }
 
   /**

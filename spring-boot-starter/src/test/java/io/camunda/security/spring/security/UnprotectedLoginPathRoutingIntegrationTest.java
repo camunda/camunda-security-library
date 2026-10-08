@@ -34,6 +34,7 @@ import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 /**
  * End-to-end routing for an unprotected pattern that overlaps {@code /login} (issue #710), through
@@ -191,6 +192,48 @@ class UnprotectedLoginPathRoutingIntegrationTest {
             });
   }
 
+  /**
+   * With the dispatcher servlet at {@code /app}, Spring Boot registers a {@code basePath} builder.
+   * {@code POST /app/login} is then routed past the unprotected {@code /**} to the webapp chain,
+   * whose CSRF matcher must use the same builder: a default-builder {@code /login} matcher misses
+   * {@code /app/login}, and the unprotected {@code /**} would exempt it from CSRF.
+   */
+  @Test
+  void webappShapedPostLoginUnderServletBasePathIsCsrfEnforced() {
+    runnerWith(StubSecurityPaths.builder().unprotectedPaths("/**").build())
+        .withBean(
+            PathPatternRequestMatcher.Builder.class,
+            () -> PathPatternRequestMatcher.withDefaults().basePath("/app"))
+        .run(
+            ctx -> {
+              final var proxy = proxyWithUser(ctx);
+
+              final var tokenlessResponse = new MockHttpServletResponse();
+              final var tokenlessNext = new MockFilterChain();
+              proxy.doFilter(
+                  withCredentials(appRequest("POST", "/login")), tokenlessResponse, tokenlessNext);
+              assertThat(tokenlessNext.getRequest())
+                  .as("a tokenless POST /app/login must not pass through to the app")
+                  .isNull();
+              assertThat(tokenlessResponse.getStatus())
+                  .as("valid credentials alone must not log in without a CSRF token")
+                  .isIn(401, 403);
+              assertThat(tokenlessResponse.getHeaders("Set-Cookie"))
+                  .as("a rejected login must not commit a session")
+                  .noneMatch(h -> h.startsWith(CamundaSecurityFilterChainConstants.SESSION_COOKIE));
+
+              // Control: the same request with a valid token passes CSRF. (Spring Security's
+              // form-login matcher ignores the host basePath builder, so it is not logged in.)
+              final var tokened = withCredentials(appRequest("POST", "/login"));
+              attachCsrfFrom(proxy, appRequest("GET", "/login"), tokened);
+              final var tokenedResponse = new MockHttpServletResponse();
+              proxy.doFilter(tokened, tokenedResponse, new MockFilterChain());
+              assertThat(tokenedResponse.getStatus())
+                  .as("a tokened POST /app/login must pass CSRF enforcement")
+                  .isNotIn(401, 403);
+            });
+  }
+
   @Test
   void webappShapedGetLoginIsServedByUnprotectedChainButPostLoginIsNot() {
     runnerWith(StubSecurityPaths.builder().unprotectedPaths("/error", "/login").build())
@@ -236,19 +279,38 @@ class UnprotectedLoginPathRoutingIntegrationTest {
   private static void attachCsrfFrom(
       final FilterChainProxy proxy, final String url, final MockHttpServletRequest post)
       throws Exception {
+    attachCsrfFrom(proxy, new MockHttpServletRequest("GET", url), post);
+  }
+
+  private static void attachCsrfFrom(
+      final FilterChainProxy proxy,
+      final MockHttpServletRequest get,
+      final MockHttpServletRequest post)
+      throws Exception {
     final var getResponse = new MockHttpServletResponse();
-    proxy.doFilter(new MockHttpServletRequest("GET", url), getResponse, new MockFilterChain());
+    proxy.doFilter(get, getResponse, new MockFilterChain());
     final var token = getResponse.getHeader(CamundaSecurityFilterChainConstants.X_CSRF_TOKEN);
-    assertThat(token).as("GET " + url + " must issue a CSRF token").isNotNull();
+    assertThat(token).as("GET " + get.getRequestURI() + " must issue a CSRF token").isNotNull();
     final Cookie[] cookies = getResponse.getCookies();
     post.setCookies(cookies);
     post.addHeader(CamundaSecurityFilterChainConstants.X_CSRF_TOKEN, token);
   }
 
   private static MockHttpServletRequest formLoginPost() {
-    final var request = new MockHttpServletRequest("POST", "/login");
+    return withCredentials(new MockHttpServletRequest("POST", "/login"));
+  }
+
+  private static MockHttpServletRequest withCredentials(final MockHttpServletRequest request) {
     request.setParameter("username", USER);
     request.setParameter("password", PASSWORD);
+    return request;
+  }
+
+  /** A request dispatched to a servlet mapped at {@code /app}. */
+  private static MockHttpServletRequest appRequest(final String method, final String path) {
+    final var request = new MockHttpServletRequest(method, "/app" + path);
+    request.setServletPath("/app");
+    request.setPathInfo(path);
     return request;
   }
 

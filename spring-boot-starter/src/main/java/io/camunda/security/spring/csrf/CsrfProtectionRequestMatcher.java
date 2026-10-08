@@ -60,8 +60,20 @@ public final class CsrfProtectionRequestMatcher implements RequestMatcher {
 
   public CsrfProtectionRequestMatcher(
       final Set<String> allowedPaths, final Set<String> enforcedPaths) {
-    this.allowedPathsMatcher = buildPathsMatcher(allowedPaths);
-    this.enforcedPathsMatcher = buildPathsMatcher(enforcedPaths);
+    this(PathPatternRequestMatcher.withDefaults(), allowedPaths, enforcedPaths);
+  }
+
+  /**
+   * As {@link #CsrfProtectionRequestMatcher(Set, Set)}, matching both path sets with the host's
+   * {@code builder} (e.g. with a servlet {@code basePath}), so they agree with the chain's own
+   * security matcher.
+   */
+  public CsrfProtectionRequestMatcher(
+      final PathPatternRequestMatcher.Builder builder,
+      final Set<String> allowedPaths,
+      final Set<String> enforcedPaths) {
+    this.allowedPathsMatcher = buildPathsMatcher(builder, allowedPaths);
+    this.enforcedPathsMatcher = buildPathsMatcher(builder, enforcedPaths);
     LOG.debug(
         "CSRF protection configuration - allowed paths: {}, enforced paths: {}",
         allowedPaths,
