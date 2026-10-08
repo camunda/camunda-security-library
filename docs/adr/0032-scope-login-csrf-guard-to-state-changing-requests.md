@@ -84,11 +84,11 @@ and OPTIONS, via `CsrfProtectionRequestMatcher.isSafeMethod`.
   `GET /login` never reaches the webapp chain.
 - With CSRF enabled, scoped overlaps still fail fast, so a host with scoped chains must keep its
   unprotected patterns off every `<basePath>/login`. With CSRF disabled the check does not run.
-- Under a servlet path (a host `PathPatternRequestMatcher.Builder` with a basePath), the downstream
-  `CsrfProtectionRequestMatcher` and the webapp/API chains' token response filter still match with
-  `PathPatternRequestMatcher.withDefaults()`. This gap predates this ADR (it exists on main for all
-  hosts) and is out of its scope, so the unconditional login guard does not yet hold for
-  `<servlet-path>/login`. Only the unprotected chain's token issuance honours the builder.
+- Under a servlet path (a host `PathPatternRequestMatcher.Builder` with a basePath), every CSL
+  chain's CSRF matchers and token response filter resolve the path builder exactly as
+  `HttpSecurity#securityMatcher(String...)` does, so `<servlet-path>/login` is enforced by the same
+  chain that claims it. As a side effect, allowed (unprotected) paths are now also exempt from CSRF
+  under the servlet path, matching how they are routed.
 
 ## Alternatives Considered
 

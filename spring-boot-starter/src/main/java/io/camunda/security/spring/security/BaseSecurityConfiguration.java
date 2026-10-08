@@ -56,13 +56,10 @@ public class BaseSecurityConfiguration {
       final SecurityPathPort pathPort,
       final ObjectProvider<CorsConfigurationSource> corsSourceProvider,
       final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
-      final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers,
-      final ObjectProvider<PathPatternRequestMatcher.Builder> pathMatcherBuilderProvider)
+      final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers)
       throws Exception {
     final var unprotectedPaths = pathPort.unprotectedPaths();
-    // Same builder resolution as HttpSecurity#securityMatcher(String...).
-    final var pathMatcherBuilder =
-        pathMatcherBuilderProvider.getIfUnique(PathPatternRequestMatcher::withDefaults);
+    final var pathMatcherBuilder = SecurityFilterChainSupport.pathMatcherBuilder(http);
     final var loginOverlaps =
         SecurityFilterChainSupport.findUnprotectedPathOverlaps(unprotectedPaths, Set.of(LOGIN_URL));
     final var corsSource = corsSourceProvider.getIfAvailable(NoOpCorsConfigurationSource::new);
