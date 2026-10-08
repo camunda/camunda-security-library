@@ -130,6 +130,34 @@ class ScopedOidcTokenAuthenticationConverterFactoryTest {
   }
 
   @Test
+  void preservesSpringScopeAuthoritiesFromTheScopeAndScpClaims() {
+    // The per-scope converter replaces Spring's default JwtAuthenticationConverter; it must still
+    // carry the SCOPE_* authorities that default maps from scope/scp, so host @PreAuthorize /
+    // hasAuthority checks keep working on scoped endpoints as they do on the primary chain.
+    final var converter =
+        factory()
+            .buildConverter(
+                scope("https://idp.example.com", "preferred_username"),
+                "basePath=/physical-tenants/a");
+    final var jwt =
+        Jwt.withTokenValue("t")
+            .header("alg", "RS256")
+            .claim("iss", "https://idp.example.com")
+            .claim("preferred_username", "alice")
+            .claim("scope", "read write")
+            .build();
+
+    final var authentication = converter.convert(jwt);
+
+    // contains (not exactly): Spring Security also grants an authentication-factor authority
+    // (FACTOR_BEARER) that the carrier now preserves too — the point is the SCOPE_* survive.
+    assertThat(authentication.getAuthorities())
+        .extracting("authority")
+        .contains("SCOPE_read", "SCOPE_write");
+    assertThat(camundaUsername(authentication)).isEqualTo("alice");
+  }
+
+  @Test
   void failsWithInvalidTokenWhenTheScopesClaimIsAbsent() {
     final var converter =
         factory().buildConverter(scope(SHARED_ISSUER, "upn"), "basePath=/physical-tenants/a");

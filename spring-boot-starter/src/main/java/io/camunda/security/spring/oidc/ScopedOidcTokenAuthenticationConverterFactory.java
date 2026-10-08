@@ -23,7 +23,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 
 /**
  * Builds a per-scope {@code Converter<Jwt, Authentication>} that resolves a bearer token's
@@ -43,11 +43,23 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
  * claims provider — then carries the resulting {@code CamundaAuthentication} on a {@link
  * ScopedCamundaAuthenticationToken}. A token the scope cannot resolve still fails with the same
  * {@code invalid_token} the global path would raise, now judged by the scope's claims.
+ *
+ * <p>It first runs Spring Security's default {@link JwtAuthenticationConverter} and carries the
+ * {@code SCOPE_*} authorities it maps from the {@code scope}/{@code scp} claims onto the carrier,
+ * so host authority-based checks ({@code @PreAuthorize}, {@code hasAuthority}) on scoped endpoints
+ * keep behaving exactly as on the primary chain, which also uses that default converter.
  */
 public final class ScopedOidcTokenAuthenticationConverterFactory {
 
   private static final Logger LOG =
       LoggerFactory.getLogger(ScopedOidcTokenAuthenticationConverterFactory.class);
+
+  // Spring Security's default JWT → Authentication mapping (scope/scp → SCOPE_* authorities).
+  // Reused
+  // so the carrier keeps the same Spring authorities the primary chain's default converter grants,
+  // and stateless/thread-safe to share across scopes and requests.
+  private static final JwtAuthenticationConverter DEFAULT_JWT_AUTHENTICATION_CONVERTER =
+      new JwtAuthenticationConverter();
 
   private final ScopedClientRegistrationFactory clientRegistrationFactory;
   private final ScopedOidcClaimsProviderFactory claimsProviderFactory;
@@ -99,12 +111,18 @@ public final class ScopedOidcTokenAuthenticationConverterFactory {
           scopeDescription,
           byIssuer.keySet().stream().map(UrlRedaction::redact).toList());
     }
-    // Resolve the principal with the scope's own converter and carry it on a token the global
-    // converter will not re-resolve (ScopedCamundaAuthenticationToken is not a
-    // JwtAuthenticationToken).
-    return jwt ->
-        new ScopedCamundaAuthenticationToken(
-            jwt, oidcConverter.convert(new JwtAuthenticationToken(jwt)));
+    // Run Spring's default JwtAuthenticationConverter first so the carrier keeps the SCOPE_*
+    // authorities it maps from the scope/scp claims — otherwise replacing the default converter
+    // would
+    // strip them and break host authority-based checks (@PreAuthorize/hasAuthority) on scoped
+    // endpoints, which still work on the primary chain. Then resolve the principal with the scope's
+    // own converter and carry both on a token the global converter will not re-resolve
+    // (ScopedCamundaAuthenticationToken is not a JwtAuthenticationToken).
+    return jwt -> {
+      final var jwtToken = DEFAULT_JWT_AUTHENTICATION_CONVERTER.convert(jwt);
+      return new ScopedCamundaAuthenticationToken(
+          jwt, oidcConverter.convert(jwtToken), jwtToken.getAuthorities());
+    };
   }
 
   /**

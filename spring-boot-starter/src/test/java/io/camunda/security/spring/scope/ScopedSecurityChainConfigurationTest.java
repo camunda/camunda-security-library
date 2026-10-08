@@ -425,7 +425,9 @@ class ScopedSecurityChainConfigurationTest {
       auth.setMethod(AuthenticationMethod.OIDC);
       auth.setOidc(oidcConfig);
 
-      final var token = server.sign(server.issuerUri(), Map.of("custom_user", "dave-from-scope"));
+      final var token =
+          server.sign(
+              server.issuerUri(), Map.of("custom_user", "dave-from-scope", "scope", "read write"));
       final CamundaSecurityScopeProvider scopeProvider =
           () -> List.of(new ScopedSecurityDescriptor(SCOPED_BASE, auth));
 
@@ -460,6 +462,10 @@ class ScopedSecurityChainConfigurationTest {
                             .authenticatedUsername())
                     .as("principal must be resolved with the scope's own custom_user claim")
                     .isEqualTo("dave-from-scope");
+                assertThat(captured.get().getAuthorities())
+                    .as("Spring SCOPE_* authorities from the scope claim must be preserved")
+                    .extracting("authority")
+                    .contains("SCOPE_read", "SCOPE_write");
               });
     } finally {
       server.stop();
