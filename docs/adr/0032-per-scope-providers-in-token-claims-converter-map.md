@@ -6,13 +6,13 @@ status: Accepted
 
 **Deciders**: Tim Cline
 
-**Amends**: [ADR-0024](0024-per-issuer-token-claims-converter-map.md) (delivers its deferred
-follow-up [#668](https://github.com/camunda/camunda-security-library/issues/668); ADR-0024 itself
-stays in force)
-
 ## Status
 
-Accepted
+Accepted. This ADR delivers the per-scope follow-up
+([#668](https://github.com/camunda/camunda-security-library/issues/668)) that
+[ADR-0024](0024-per-issuer-token-claims-converter-map.md) deferred; ADR-0024 itself remains in
+force. The shared-issuer gap it surfaces (below) is tracked onward as
+[#714](https://github.com/camunda/camunda-security-library/issues/714).
 
 ## Context
 
@@ -89,7 +89,9 @@ unchanged and shared between both sources through a private helper.
 **Positive**
 
 - REST and gRPC now resolve a physical tenant's bearer tokens with the same per-provider claim
-  configuration; the `401` of camunda/camunda#64685 is fixed server-side, with no client release.
+  configuration **when each tenant has a distinct issuer** (the motivating case); the `401` of
+  camunda/camunda#64685 is fixed server-side, with no client release. Tenants that share one issuer
+  with differing claims remain unresolved — see the trade-off below and #714.
 - Purely additive: closes the trade-off ADR-0024 recorded without changing any existing wiring or
   requiring a new SPI — the fix extends the data the existing bean is built from.
 

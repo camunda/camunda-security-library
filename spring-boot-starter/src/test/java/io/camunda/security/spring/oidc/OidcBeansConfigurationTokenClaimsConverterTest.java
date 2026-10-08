@@ -482,6 +482,49 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
   }
 
   @Test
+  void ignoresABasicScopeEvenWhenItCarriesAnOidcBlockAndDoesNotShadowAnOidcScope() {
+    // A BASIC scope's OIDC block is inactive (AuthenticationConfiguration), and the scoped chains
+    // ignore it. It must not claim an issuer; if it did, it would shadow a later OIDC scope that
+    // shares the issuer, converting that scope's tokens with the wrong (BASIC-block) claims.
+    final var basicScope = new OidcConfiguration();
+    basicScope.setClientId("basic-client");
+    basicScope.setIssuerUri(SCOPE_ISSUER);
+    basicScope.setUsernameClaim("basic_user");
+    final var basicAuth = new AuthenticationConfiguration();
+    basicAuth.setMethod(AuthenticationMethod.BASIC);
+    basicAuth.setOidc(basicScope);
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=default-client",
+            "camunda.security.authentication.oidc.issuer-uri=" + DEFAULT_ISSUER)
+        .withBean(
+            "basicScope",
+            CamundaSecurityScopeProvider.class,
+            () ->
+                (CamundaSecurityScopeProvider)
+                    () ->
+                        List.of(new ScopedSecurityDescriptor("/physical-tenants/basic", basicAuth)))
+        .withBean(
+            "oidcScope",
+            CamundaSecurityScopeProvider.class,
+            () -> scopeProvider("/physical-tenants/oidc", SCOPE_ISSUER, "oidc_user"))
+        .run(
+            ctx ->
+                // The OIDC scope owns the issuer and resolves its own claim; the BASIC block is
+                // gone.
+                assertThat(
+                        byIssuer(ctx)
+                            .get(SCOPE_ISSUER)
+                            .convert(
+                                Map.of(
+                                    "iss", SCOPE_ISSUER,
+                                    "basic_user", "mallory",
+                                    "oidc_user", "dave"))
+                            .authenticatedUsername())
+                    .isEqualTo("dave"));
+  }
+
+  @Test
   void skipsAScopeProviderConfiguredWithoutIssuerUri() {
     // A scope provider with no issuer-uri contributes no entry, exactly as a root provider without
     // one does; only the root issuer remains.

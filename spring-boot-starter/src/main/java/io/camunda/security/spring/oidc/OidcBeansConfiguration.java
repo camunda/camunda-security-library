@@ -9,6 +9,7 @@ package io.camunda.security.spring.oidc;
 
 import io.camunda.security.api.context.CamundaSecurityScopeProvider;
 import io.camunda.security.api.context.MembershipResolutionContextPropagator;
+import io.camunda.security.api.model.config.AuthenticationMethod;
 import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
@@ -141,7 +142,9 @@ public class OidcBeansConfiguration {
    * bearer token issued by a scope-only provider resolves with that provider's own claim
    * configuration instead of the cluster default. The root-level providers are processed first and
    * own any issuer they share with a scope, so a deployment with no scope providers is unchanged
-   * (ADR-0024 / issue #668, fixing camunda/camunda#64685).
+   * (ADR-0024 / issue #668, fixing camunda/camunda#64685). Only scopes whose {@code
+   * AuthenticationConfiguration.method} is {@code OIDC} contribute — a BASIC scope's OIDC block is
+   * inactive, so it must not claim an issuer and shadow an OIDC scope that shares it.
    *
    * <p><b>Shared-issuer limitation.</b> The map is keyed by issuer alone, so when two sources (root
    * and a scope, or two scopes) declare the <em>same</em> issuer the first-processed source owns it
@@ -192,6 +195,15 @@ public class OidcBeansConfiguration {
     // Then providers declared only through per-scope descriptors (ADR-0013). flatten() merges each
     // scope's own flat + providers.oidc.* block the same way the root config port does.
     for (final var descriptor : collectScopeDescriptors(scopeProviders)) {
+      // Only OIDC scopes contribute claim converters. A scope's OIDC block is inactive unless its
+      // method is OIDC (see AuthenticationConfiguration), and the scoped chains ignore it for
+      // BASIC.
+      // A BASIC scope that still carries a populated oidc block must not claim an issuer and shadow
+      // a
+      // later OIDC scope's converter for the same issuer.
+      if (descriptor.authentication().getMethod() != AuthenticationMethod.OIDC) {
+        continue;
+      }
       final var scopeLabel = "scope '" + descriptor.basePath() + "'";
       addConvertersByIssuer(
           byIssuer,
