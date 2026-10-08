@@ -40,17 +40,18 @@ method, as before ADR-0027.
 
 - Safe-method requests to `/login` are served by the unprotected chain without authentication.
 - State-changing requests to `/login` are excluded from that chain and fall through to the API or
-  webapp chain, which still enforces CSRF on `/login` unconditionally (ADR-0027), or to the
-  catch-all deny chain, which rejects them.
+  webapp chain, which still enforces CSRF on `/login` unconditionally (ADR-0027), or to a deny
+  chain, which rejects them.
 - With CSRF enabled the unprotected chain always installs token issuance, never enforcement; it
   writes the token only on a login-path request it serves (with the host's path builder), using
-  the same cookie repository as the unscoped chains. The overlap check only drives startup
-  logging and the startup check below.
-- Startup fails with an `IllegalStateException` when an `unprotectedPaths()` pattern overlaps
-  `/login`, `camunda.security.authentication.catch-all-unhandled-paths-enabled` is `false` and no
-  `apiPaths()` pattern or (with the webapp chain enabled) `webappPaths()` pattern covers `/login`,
-  because state-changing requests to `/login` would then reach no security chain. This only applies
-  with CSRF enabled and uses default-parser matching.
+  the same cookie repository as the unscoped chains. The (default-parser) overlap check only
+  drives startup logging.
+- With `camunda.security.authentication.catch-all-unhandled-paths-enabled=false`,
+  `unclaimedLoginGuardSecurityFilterChain` takes the catch-all's slot (`ORDER_UNHANDLED`) and
+  rejects with 404 exactly the requests the unprotected chain passes on, so a state-changing
+  `/login` that no API or webapp chain claims can never reach the application without a security
+  chain. Its matcher is built like the unprotected chain's exclusion, with the same path builder,
+  so the two cannot disagree on a servlet `basePath` or a custom parser.
 - `SecurityFilterChainSupport#rejectScopedLoginOverlap` replaces the unscoped fail-fast. When
   `camunda.security.csrf.enabled` is true, a pattern in `unprotectedPaths()` that matches a scoped
   `<basePath>/login` still fails startup with an `IllegalStateException` citing this ADR.
@@ -62,6 +63,9 @@ method, as before ADR-0027.
   drifting.
 - **Routing instead of exempting.** The unprotected chain never sees a state-changing login, so no
   chain other than the CSRF-enforcing one can accept it.
+- **A guard chain instead of a startup check.** A startup check can only compare pattern strings,
+  while routing uses the host's path builder, so the two could disagree and fail open. A deny chain
+  built from the same matcher is fail-closed by construction.
 - **Scoped overlaps still fail fast (with CSRF enabled).** The failure mode of routing them is a
   login page that can never be submitted, which is worse than a startup error naming the pattern.
 
@@ -69,9 +73,7 @@ method, as before ADR-0027.
 
 **Positive**
 
-- Hub (and any host with a broad unprotected pattern) starts again with no host-side change,
-  except when the catch-all chain is disabled and neither `apiPaths()` nor `webappPaths()` covers
-  `/login`.
+- Hub (and any host with a broad unprotected pattern) starts again with no host-side change.
 - Login CSRF protection from ADR-0027 is unchanged for every state-changing request.
 - Hosts that moved `/login` into `unprotectedApiPaths()` to get past the 1.1.0 startup failure can
   move it back to `unprotectedPaths()`.
@@ -84,6 +86,10 @@ method, as before ADR-0027.
   and logged at startup.
 - An OIDC host that lists `/login` as unprotected shadows `CamundaLoginPickerFilter`, because
   `GET /login` never reaches the webapp chain.
+- CSL only routes state-changing `/login` requests; it cannot verify that the chain claiming them
+  enforces CSRF. A host chain that covers `/login` but disables CSRF (or ignores `/login`) silently
+  accepts them. With the catch-all disabled, such a chain must also be ordered before
+  `ORDER_UNHANDLED`, or the guard chain rejects the requests first.
 - With CSRF enabled, scoped overlaps still fail fast, so a host with scoped chains must keep its
   unprotected patterns off every `<basePath>/login`. With CSRF disabled the check does not run.
 - Under a servlet path (a host `PathPatternRequestMatcher.Builder` with a basePath), every CSL
