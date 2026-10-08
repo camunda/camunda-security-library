@@ -464,6 +464,43 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
             });
   }
 
+  @Test
+  void redactsCredentialsFromTheCrossSourceSkipDiagnostic() {
+    // A scope provider shares a credential-bearing issuer with the root provider. The issuer-uri
+    // check is warn-only, so such a value reaches the DEBUG "already owned, skipping" diagnostic —
+    // which must redact it just like the IssuerOwnership warning does.
+    final var logger = (Logger) LoggerFactory.getLogger(OidcBeansConfiguration.class);
+    final var previousLevel = logger.getLevel();
+    logger.setLevel(Level.DEBUG);
+    final ListAppender<ILoggingEvent> appender = attachAppender();
+    try {
+      runner
+          .withPropertyValues(
+              "camunda.security.authentication.oidc.client-id=default-client",
+              "camunda.security.authentication.oidc.issuer-uri=https://user:s3cret@shared.example.com")
+          .withBean(
+              CamundaSecurityScopeProvider.class,
+              () ->
+                  scopeProvider(
+                      "/physical-tenants/tenanta",
+                      "https://user:s3cret@shared.example.com",
+                      "tenant_user"))
+          .run(
+              ctx ->
+                  assertThat(appender.list)
+                      .anySatisfy(
+                          event -> {
+                            assertThat(event.getLevel()).isEqualTo(Level.DEBUG);
+                            assertThat(event.getFormattedMessage())
+                                .contains("already has a claim converter")
+                                .doesNotContain("s3cret");
+                          }));
+    } finally {
+      detachAppender(appender);
+      logger.setLevel(previousLevel);
+    }
+  }
+
   private static CamundaSecurityScopeProvider scopeProvider(
       final String basePath, final String issuerUri, final String usernameClaim) {
     final var oidc = new OidcConfiguration();

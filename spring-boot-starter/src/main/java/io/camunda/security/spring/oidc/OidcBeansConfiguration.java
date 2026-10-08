@@ -215,10 +215,12 @@ public class OidcBeansConfiguration {
     winningRegistrationIdByIssuer.forEach(
         (issuerUri, registrationId) -> {
           if (byIssuer.containsKey(issuerUri)) {
+            // Redacted like the IssuerOwnership warning: the issuer-uri check is warn-only, so a
+            // malformed, credential-bearing value can reach this cross-source diagnostic too.
             LOG.debug(
                 "Issuer '{}' already has a claim converter from an earlier provider; keeping it and"
                     + " ignoring {}.",
-                issuerUri,
+                UrlRedaction.redact(issuerUri),
                 ownershipLabel);
             return;
           }
