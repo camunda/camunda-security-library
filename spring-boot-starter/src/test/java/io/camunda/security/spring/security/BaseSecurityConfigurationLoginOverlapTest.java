@@ -452,18 +452,6 @@ class BaseSecurityConfigurationLoginOverlapTest {
             });
   }
 
-  @Configuration
-  static class LateHostChain {
-
-    @Bean
-    @Order(10)
-    SecurityFilterChain lateHostChain(final HttpSecurity http) throws Exception {
-      return http.securityMatcher("/**")
-          .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
-          .build();
-    }
-  }
-
   private static List<ILoggingEvent> captureLogs(final Runnable action) {
     final var logger = (Logger) LoggerFactory.getLogger(BaseSecurityConfiguration.class);
     final var appender = new ListAppender<ILoggingEvent>();
@@ -482,5 +470,17 @@ class BaseSecurityConfigurationLoginOverlapTest {
         .filter(event -> event.getLevel() == level)
         .map(ILoggingEvent::getFormattedMessage)
         .toList();
+  }
+
+  @Configuration
+  static class LateHostChain {
+
+    @Bean
+    @Order(10)
+    SecurityFilterChain lateHostChain(final HttpSecurity http) throws Exception {
+      return http.securityMatcher("/**")
+          .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+          .build();
+    }
   }
 }
