@@ -21,11 +21,15 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.security.web.FilterChainProxy;
@@ -42,6 +46,7 @@ import org.springframework.web.util.pattern.PathPatternParser;
 class BaseSecurityConfigurationLoginOverlapTest {
 
   private static final String CHAIN = "unprotectedPathsSecurityFilterChain";
+  private static final String GUARD = "unclaimedLoginGuardSecurityFilterChain";
   private static final String TOKEN_HEADER = CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
   private static final String CATCH_ALL_DISABLED =
@@ -316,27 +321,92 @@ class BaseSecurityConfigurationLoginOverlapTest {
   }
 
   @Test
-  void failsStartupWhenStateChangingLoginWouldReachNoChain() {
-    runnerWithPaths(
-            StubSecurityPaths.builder()
-                .unprotectedPaths("/log*")
-                .apiPaths("/api/**")
-                .webappPaths("/operate/**"))
-        .withPropertyValues(CATCH_ALL_DISABLED)
-        .run(
-            ctx ->
-                assertThat(ctx)
-                    .hasFailed()
-                    .getFailure()
-                    .rootCause()
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("'/log*'")
-                    .hasMessageContaining("catch-all-unhandled-paths-enabled")
-                    .hasMessageContaining("ADR-0032"));
+  void guardsStateChangingLoginThatNoChainClaimsWhenCatchAllIsDisabled() {
+    final var events =
+        captureLogs(
+            () ->
+                runnerWithPaths(
+                        StubSecurityPaths.builder()
+                            .unprotectedPaths("/log*")
+                            .apiPaths("/api/**")
+                            .webappPaths("/operate/**"))
+                    .withPropertyValues(CATCH_ALL_DISABLED)
+                    .run(
+                        ctx -> {
+                          assertThat(ctx).hasNotFailed();
+                          final var unprotected = ctx.getBean(CHAIN, SecurityFilterChain.class);
+                          final var guard = ctx.getBean(GUARD, SecurityFilterChain.class);
+                          for (final var method : List.of("POST", "PUT", "DELETE")) {
+                            assertThat(matches(guard, method, "/login")).as(method).isTrue();
+                          }
+                          assertThat(matches(guard, "GET", "/login")).isFalse();
+                          assertThat(matches(guard, "POST", "/logs")).isFalse();
+                          assertThat(matches(unprotected, "POST", "/logs")).isTrue();
+
+                          final var response = new MockHttpServletResponse();
+                          final var next = new MockFilterChain();
+                          new FilterChainProxy(List.of(unprotected, guard))
+                              .doFilter(
+                                  new MockHttpServletRequest("POST", "/login"), response, next);
+                          assertThat(next.getRequest()).isNull();
+                          assertThat(response.getStatus()).isEqualTo(404);
+                        }));
+
+    assertThat(messages(events, Level.INFO)).anyMatch(m -> m.contains(GUARD));
   }
 
   @Test
-  void startsWithCatchAllDisabledWhenCsrfIsDisabled() {
+  void guardMatchesNothingWhenUnprotectedPathsDoNotOverlapLogin() {
+    runnerWith("/error")
+        .withPropertyValues(CATCH_ALL_DISABLED)
+        .run(
+            ctx -> {
+              final var guard = ctx.getBean(GUARD, SecurityFilterChain.class);
+              assertThat(matches(guard, "POST", "/login")).isFalse();
+              assertThat(matches(guard, "POST", "/error")).isFalse();
+            });
+  }
+
+  /**
+   * A host builder with a case-insensitive parser routes {@code POST /login} off the unprotected
+   * chain via {@code /LOGIN}, although the default parser sees no overlap. The guard is built with
+   * the same builder, so it still claims the request.
+   */
+  @Test
+  void guardsStateChangingLoginWhenHostParserMatchesLoginButDefaultParserDoesNot() {
+    final var parser = new PathPatternParser();
+    parser.setCaseSensitive(false);
+    runnerWith("/LOGIN")
+        .withBean(
+            PathPatternRequestMatcher.Builder.class,
+            () -> PathPatternRequestMatcher.withPathPatternParser(parser))
+        .withPropertyValues(CATCH_ALL_DISABLED)
+        .run(
+            ctx -> {
+              assertThat(matches(ctx.getBean(CHAIN, SecurityFilterChain.class), "POST", "/login"))
+                  .isFalse();
+              assertThat(matches(ctx.getBean(GUARD, SecurityFilterChain.class), "POST", "/login"))
+                  .isTrue();
+            });
+  }
+
+  @Test
+  void guardFollowsHostPathPatternBuilderBasePath() {
+    runnerWith("/**")
+        .withBean(
+            PathPatternRequestMatcher.Builder.class,
+            () -> PathPatternRequestMatcher.withDefaults().basePath("/app"))
+        .withPropertyValues(CATCH_ALL_DISABLED)
+        .run(
+            ctx -> {
+              final var post = servletRequest("POST", "/app/login");
+              assertThat(ctx.getBean(CHAIN, SecurityFilterChain.class).matches(post)).isFalse();
+              assertThat(ctx.getBean(GUARD, SecurityFilterChain.class).matches(post)).isTrue();
+            });
+  }
+
+  @Test
+  void startsWithCatchAllDisabledWhenCsrfIsDisabledAndKeepsLoginOnTheUnprotectedChain() {
     runnerWithPaths(
             StubSecurityPaths.builder()
                 .unprotectedPaths("/log*")
@@ -349,50 +419,49 @@ class BaseSecurityConfigurationLoginOverlapTest {
               assertThat(matches(ctx.getBean(CHAIN, SecurityFilterChain.class), "POST", "/login"))
                   .as("POST /login stays on the unprotected chain")
                   .isTrue();
+              assertThat(matches(ctx.getBean(GUARD, SecurityFilterChain.class), "POST", "/login"))
+                  .isFalse();
             });
   }
 
   @Test
-  void startsWhenCatchAllDisabledButApiPathsCoverLogin() {
-    final var events =
-        captureLogs(
-            () ->
-                runnerWithPaths(
-                        StubSecurityPaths.builder().unprotectedPaths("/login").apiPaths("/**"))
-                    .withPropertyValues(CATCH_ALL_DISABLED)
-                    .run(ctx -> assertThat(ctx).hasNotFailed()));
-
-    assertThat(messages(events, Level.WARN)).isEmpty();
+  void installsNoGuardWhileTheCatchAllIsEnabled() {
+    runnerWith("/login").run(ctx -> assertThat(ctx).hasNotFailed().doesNotHaveBean(GUARD));
   }
 
+  /**
+   * The guard takes the catch-all's slot: a host chain ordered after it starts fine but never sees
+   * the guarded requests, so a chain that should serve them must be ordered before it.
+   */
   @Test
-  void startsWhenCatchAllDisabledButWebappPathsCoverLogin() {
-    runnerWithPaths(
-            StubSecurityPaths.builder()
-                .unprotectedPaths("/login")
-                .apiPaths("/api/**")
-                .webappPaths("/login"))
+  void hostChainOrderedAfterTheGuardDoesNotSeeGuardedLogin() {
+    runnerWith("/login")
+        .withUserConfiguration(LateHostChain.class)
         .withPropertyValues(CATCH_ALL_DISABLED)
-        .run(ctx -> assertThat(ctx).hasNotFailed());
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              final var post = new MockHttpServletRequest("POST", "/login");
+              final var first =
+                  ctx.getBeanProvider(SecurityFilterChain.class)
+                      .orderedStream()
+                      .filter(chain -> chain.matches(post))
+                      .findFirst()
+                      .orElseThrow();
+              assertThat(first).isSameAs(ctx.getBean(GUARD, SecurityFilterChain.class));
+            });
   }
 
-  @Test
-  void failsStartupWhenOnlyWebappPathsCoverLoginButWebappChainIsDisabled() {
-    runnerWithPaths(
-            StubSecurityPaths.builder()
-                .unprotectedPaths("/login")
-                .apiPaths("/api/**")
-                .webappPaths("/login"))
-        .withPropertyValues(
-            CATCH_ALL_DISABLED, "camunda.security.authentication.webapp-enabled=false")
-        .run(
-            ctx ->
-                assertThat(ctx)
-                    .hasFailed()
-                    .getFailure()
-                    .rootCause()
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("with the webapp chain enabled"));
+  @Configuration
+  static class LateHostChain {
+
+    @Bean
+    @Order(10)
+    SecurityFilterChain lateHostChain(final HttpSecurity http) throws Exception {
+      return http.securityMatcher("/**")
+          .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+          .build();
+    }
   }
 
   private static List<ILoggingEvent> captureLogs(final Runnable action) {

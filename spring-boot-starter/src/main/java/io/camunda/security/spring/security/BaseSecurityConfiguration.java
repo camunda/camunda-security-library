@@ -16,7 +16,6 @@ import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.cors.NoOpCorsConfigurationSource;
 import io.camunda.security.spring.csrf.CsrfProtectionRequestMatcher;
 import jakarta.servlet.http.HttpServletResponse;
-import java.util.HashSet;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,6 +27,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.annotation.web.configurers.ExceptionHandlingConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.AndRequestMatcher;
@@ -40,8 +40,8 @@ import org.springframework.web.cors.CorsConfigurationSource;
  * priority). Activates Spring Security's web security infrastructure via {@link EnableWebSecurity}.
  *
  * <p>With CSRF enabled, the unprotected chain never serves state-changing requests to {@code
- * /login}; they fall through to the CSRF-enforcing chain, and startup fails if none would claim
- * them (ADR-0032).
+ * /login}; they fall through to the CSRF-enforcing chain, or to a deny chain if none claims them
+ * (ADR-0032).
  */
 @Configuration
 @EnableWebSecurity
@@ -77,13 +77,10 @@ public class BaseSecurityConfiguration {
             .formLogin(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable);
 
-    // Best-effort (default parser semantics), so it only drives logging and the startup check,
-    // never token issuance. With CSRF disabled nothing is rerouted, so there is nothing to check.
+    // Best-effort (default parser semantics), so it only drives logging, never routing or token
+    // issuance. With CSRF disabled nothing is rerouted, so there is nothing to log.
     if (csrfEnabled && !loginOverlaps.isEmpty()) {
-      final var overlappingPattern =
-          SecurityFilterChainSupport.firstMatchingPattern(unprotectedPaths, LOGIN_URL);
-      logLoginOverlap(overlappingPattern);
-      rejectUnclaimedStateChangingLogin(pathPort, properties, overlappingPattern);
+      logLoginOverlap(SecurityFilterChainSupport.firstMatchingPattern(unprotectedPaths, LOGIN_URL));
     }
     SecurityFilterChainSupport.applyLoginTokenIssuance(
         filterChainBuilder, properties, pathMatcherBuilder);
@@ -103,51 +100,11 @@ public class BaseSecurityConfiguration {
         "SecurityPathPort#unprotectedPaths() pattern '{}' overlaps the login endpoint '{}':"
             + " GET/HEAD/OPTIONS/TRACE requests to it are served unauthenticated, while"
             + " state-changing requests are passed on to the next chain: an API or webapp chain"
-            + " covering '{}' (which enforces CSRF), otherwise the catch-all deny chain.",
+            + " covering '{}' (which enforces CSRF), otherwise a deny chain (the catch-all, or with"
+            + " it disabled the unclaimed-login guard).",
         overlappingPattern,
         LOGIN_URL,
         LOGIN_URL);
-  }
-
-  /**
-   * State-changing {@code /login} requests are routed away from the unprotected chain. Without the
-   * catch-all chain and without an API pattern or (with the webapp chain enabled) a webapp pattern
-   * covering {@code /login}, they would reach no security chain and skip the CSRF check, so startup
-   * fails (ADR-0032).
-   */
-  private static void rejectUnclaimedStateChangingLogin(
-      final SecurityPathPort pathPort,
-      final CamundaSecurityLibraryProperties properties,
-      final String overlappingPattern) {
-    if (properties.getAuthentication().isCatchAllUnhandledPathsEnabled()
-        || isClaimedByApiOrWebappChain(
-            pathPort, properties.getAuthentication().isWebappEnabled())) {
-      return;
-    }
-    throw new IllegalStateException(
-        "SecurityPathPort#unprotectedPaths() pattern '"
-            + overlappingPattern
-            + "' overlaps the login endpoint '"
-            + LOGIN_URL
-            + "' and camunda.security.authentication.catch-all-unhandled-paths-enabled=false,"
-            + " but neither apiPaths() nor (with the webapp chain enabled) webappPaths() covers '"
-            + LOGIN_URL
-            + "': state-changing requests to '"
-            + LOGIN_URL
-            + "' would reach no security chain. Cover '"
-            + LOGIN_URL
-            + "' by apiPaths() or webappPaths(), enable the catch-all chain, or remove or narrow"
-            + " the unprotected pattern (see ADR-0032).");
-  }
-
-  /** {@code webappPaths()} only count when the webapp chain exists. */
-  private static boolean isClaimedByApiOrWebappChain(
-      final SecurityPathPort pathPort, final boolean webappEnabled) {
-    final var claimingPaths = new HashSet<>(pathPort.apiPaths());
-    if (webappEnabled) {
-      claimingPaths.addAll(pathPort.webappPaths());
-    }
-    return SecurityFilterChainSupport.firstMatchingPattern(claimingPaths, LOGIN_URL) != null;
   }
 
   /**
@@ -195,14 +152,7 @@ public class BaseSecurityConfiguration {
     final var filterChainBuilder =
         http.securityMatcher("/**")
             .authorizeHttpRequests(auth -> auth.anyRequest().denyAll())
-            .exceptionHandling(
-                eh ->
-                    eh.authenticationEntryPoint(
-                            (request, response, authenticationException) ->
-                                response.sendError(HttpServletResponse.SC_NOT_FOUND))
-                        .accessDeniedHandler(
-                            (request, response, accessDeniedException) ->
-                                response.sendError(HttpServletResponse.SC_NOT_FOUND)))
+            .exceptionHandling(BaseSecurityConfiguration::respondNotFound)
             .csrf(AbstractHttpConfigurer::disable)
             .formLogin(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable);
@@ -215,5 +165,51 @@ public class BaseSecurityConfiguration {
         filterChainBuilder, httpsRedirectCustomizers);
 
     return filterChainBuilder.build();
+  }
+
+  /**
+   * Stands in for the catch-all deny chain when it is disabled: rejects (404) the state-changing
+   * {@code /login} requests the unprotected chain passes on and no earlier API or webapp chain
+   * claims, which would otherwise reach no security chain and skip CSRF (ADR-0032). Its matcher is
+   * built exactly like the unprotected chain's exclusion, so the two cannot disagree on the host's
+   * path builder (servlet {@code basePath}, parser). A host chain that should serve these requests
+   * must be ordered before {@code ORDER_UNHANDLED}.
+   */
+  @Bean
+  @Order(ORDER_UNHANDLED)
+  @ConditionalOnProperty(
+      name = "camunda.security.authentication.catch-all-unhandled-paths-enabled",
+      havingValue = "false")
+  public SecurityFilterChain unclaimedLoginGuardSecurityFilterChain(
+      final HttpSecurity http,
+      final CamundaSecurityLibraryProperties properties,
+      final SecurityPathPort pathPort)
+      throws Exception {
+    final var unprotectedPaths = pathPort.unprotectedPaths();
+    final var csrfEnabled = properties.getCsrf().isEnabled();
+    if (csrfEnabled && !unprotectedPaths.isEmpty()) {
+      LOG.info(
+          "Catch-all chain disabled: state-changing requests to '{}' that no API or webapp chain"
+              + " claims are rejected with 404 by unclaimedLoginGuardSecurityFilterChain.",
+          LOGIN_URL);
+    }
+    return http.securityMatcher(
+            excludedFromUnprotectedChain(
+                SecurityFilterChainSupport.pathMatcherBuilder(http), unprotectedPaths, csrfEnabled))
+        .authorizeHttpRequests(auth -> auth.anyRequest().denyAll())
+        .exceptionHandling(BaseSecurityConfiguration::respondNotFound)
+        .csrf(AbstractHttpConfigurer::disable)
+        .formLogin(AbstractHttpConfigurer::disable)
+        .anonymous(AbstractHttpConfigurer::disable)
+        .build();
+  }
+
+  private static void respondNotFound(final ExceptionHandlingConfigurer<HttpSecurity> eh) {
+    eh.authenticationEntryPoint(
+            (request, response, authenticationException) ->
+                response.sendError(HttpServletResponse.SC_NOT_FOUND))
+        .accessDeniedHandler(
+            (request, response, accessDeniedException) ->
+                response.sendError(HttpServletResponse.SC_NOT_FOUND));
   }
 }

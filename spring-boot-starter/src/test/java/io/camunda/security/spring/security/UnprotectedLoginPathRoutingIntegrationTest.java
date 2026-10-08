@@ -49,6 +49,8 @@ class UnprotectedLoginPathRoutingIntegrationTest {
   private static final String PASSWORD = "s3cret";
   private static final String UNPROTECTED_CHAIN = "unprotectedPathsSecurityFilterChain";
   private static final String OIDC_API_CHAIN = "oidcApiSecurityFilterChain";
+  private static final String WEBAPP_CHAIN = "basicAuthWebappSecurityFilterChain";
+  private static final String GUARD_CHAIN = "unclaimedLoginGuardSecurityFilterChain";
 
   private static final String[] HUB_PROPERTIES = {
     "camunda.security.authentication.method=oidc",
@@ -146,6 +148,7 @@ class UnprotectedLoginPathRoutingIntegrationTest {
     hubShapedRunner()
         .run(
             ctx -> {
+              assertThat(ctx).hasBean(GUARD_CHAIN);
               final var post = new MockHttpServletRequest("POST", "/login");
               assertThat(firstMatchingChain(ctx, post))
                   .as("POST /login must be routed to the CSRF-enforcing OIDC API chain")
@@ -248,6 +251,19 @@ class UnprotectedLoginPathRoutingIntegrationTest {
                   .as("POST /login must be routed past the CSRF-disabled unprotected-paths chain")
                   .isNotNull()
                   .isNotSameAs(unprotected);
+            });
+  }
+
+  @Test
+  void webappShapedPostLoginIsClaimedByWebappChainBeforeTheGuardWhenCatchAllIsDisabled() {
+    runnerWith(StubSecurityPaths.builder().unprotectedPaths("/error", "/login").build())
+        .withPropertyValues(
+            "camunda.security.authentication.catch-all-unhandled-paths-enabled=false")
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed().hasBean(GUARD_CHAIN);
+              assertThat(firstMatchingChain(ctx, formLoginPost()))
+                  .isSameAs(ctx.getBean(WEBAPP_CHAIN, SecurityFilterChain.class));
             });
   }
 
