@@ -65,7 +65,11 @@ method, as before ADR-0027.
   chain other than the CSRF-enforcing one can accept it.
 - **A guard chain instead of a startup check.** A startup check can only compare pattern strings,
   while routing uses the host's path builder, so the two could disagree and fail open. A deny chain
-  built from the same matcher is fail-closed by construction.
+  built from the same matcher is fail-closed by construction. This covers the unscoped `/login`
+  only: the scoped overlap check below still compares pattern strings with the default parser, so
+  a host parser that disagrees (e.g. case-insensitive) can let an unprotected pattern claim a
+  scoped login without failing startup. CSRF is not bypassed then (the unprotected chain has no
+  form login), but that scoped login cannot be submitted.
 - **Scoped overlaps still fail fast (with CSRF enabled).** The failure mode of routing them is a
   login page that can never be submitted, which is worse than a startup error naming the pattern.
 
@@ -103,8 +107,11 @@ method, as before ADR-0027.
 - Under a servlet path (a host `PathPatternRequestMatcher.Builder` with a basePath), every CSL
   chain's CSRF matchers and token response filter resolve the path builder exactly as
   `HttpSecurity#securityMatcher(String...)` does, so `<servlet-path>/login` is enforced by the same
-  chain that claims it. As a side effect, allowed (unprotected) paths are now also exempt from CSRF
-  under the servlet path, matching how they are routed.
+  chain that claims it. As a side effect, every CSRF-exempt pattern (`unprotectedPaths()`,
+  `unprotectedApiPaths()`, the logout endpoint and `camunda.security.csrf.ignored-path-patterns`)
+  is now resolved under the servlet path, matching how requests are routed: an ignored pattern
+  `/foo` now exempts `<servlet-path>/foo`, and one written as `<servlet-path>/foo` no longer
+  matches.
 
 ## Alternatives Considered
 

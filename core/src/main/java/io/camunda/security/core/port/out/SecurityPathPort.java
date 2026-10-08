@@ -37,8 +37,8 @@ public interface SecurityPathPort {
    *
    * <p>May cover the unscoped {@code /login}: with CSRF enabled, only its safe methods are then
    * served here; state-changing requests go to the CSRF-enforcing chain. This applies to the exact
-   * {@code /login} path only. A pattern matching a scoped {@code <basePath>/login} fails startup
-   * (ADR-0032).
+   * {@code /login} path only. With CSRF enabled, a pattern matching a scoped {@code
+   * <basePath>/login} fails startup (ADR-0032).
    */
   Set<String> unprotectedPaths();
 

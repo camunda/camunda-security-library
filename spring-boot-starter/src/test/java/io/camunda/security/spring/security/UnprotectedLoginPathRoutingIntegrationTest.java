@@ -125,7 +125,7 @@ class UnprotectedLoginPathRoutingIntegrationTest {
         .run(
             ctx -> {
               assertThat(ctx)
-                  .as("catch-all off with apiPaths=/** must pass the /login startup check")
+                  .as("Hub's wiring (catch-all off, apiPaths=/**) must start")
                   .hasNotFailed();
               final var unprotected = ctx.getBean(UNPROTECTED_CHAIN, SecurityFilterChain.class);
               final var proxy = proxy(ctx);
@@ -278,6 +278,33 @@ class UnprotectedLoginPathRoutingIntegrationTest {
               assertThat(ctx).hasNotFailed().hasBean(GUARD_CHAIN);
               assertThat(firstMatchingChain(ctx, formLoginPost()))
                   .isSameAs(ctx.getBean(WEBAPP_CHAIN, SecurityFilterChain.class));
+            });
+  }
+
+  /**
+   * The webapp chain's token response filter must use the host {@code basePath} builder too:
+   * anonymous {@code GET /app/login} gets a token (for the first login), {@code /app/logout} none.
+   */
+  @Test
+  void webappShapedTokenFilterFollowsServletBasePath() {
+    runnerWith(StubSecurityPaths.builder().unprotectedPaths("/error").build())
+        .withBean(
+            PathPatternRequestMatcher.Builder.class,
+            () -> PathPatternRequestMatcher.withDefaults().basePath("/app"))
+        .run(
+            ctx -> {
+              final var proxy = proxy(ctx);
+              final var login = new MockHttpServletResponse();
+              proxy.doFilter(appRequest("GET", "/login"), login, new MockFilterChain());
+              assertThat(login.getHeader(CamundaSecurityFilterChainConstants.X_CSRF_TOKEN))
+                  .as("anonymous GET /app/login must issue a CSRF token")
+                  .isNotNull();
+
+              final var logout = new MockHttpServletResponse();
+              proxy.doFilter(appRequest("POST", "/logout"), logout, new MockFilterChain());
+              assertThat(logout.getHeader(CamundaSecurityFilterChainConstants.X_CSRF_TOKEN))
+                  .as("POST /app/logout must not issue a CSRF token")
+                  .isNull();
             });
   }
 

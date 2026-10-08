@@ -187,7 +187,11 @@ public class BaseSecurityConfiguration {
       throws Exception {
     final var unprotectedPaths = pathPort.unprotectedPaths();
     final var csrfEnabled = properties.getCsrf().isEnabled();
-    if (csrfEnabled && !unprotectedPaths.isEmpty()) {
+    // Best-effort (default parser semantics): only drives logging, never the guard's matcher.
+    if (csrfEnabled
+        && !SecurityFilterChainSupport.findUnprotectedPathOverlaps(
+                unprotectedPaths, Set.of(LOGIN_URL))
+            .isEmpty()) {
       LOG.info(
           "Catch-all chain disabled: state-changing requests to '{}' that no API or webapp chain"
               + " claims are rejected with 404 by unclaimedLoginGuardSecurityFilterChain.",
