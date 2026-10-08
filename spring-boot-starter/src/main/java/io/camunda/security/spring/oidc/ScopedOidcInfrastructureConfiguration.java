@@ -8,7 +8,11 @@
 package io.camunda.security.spring.oidc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.camunda.security.api.context.CamundaAuthenticationConverter;
+import io.camunda.security.api.context.MembershipResolutionContextPropagator;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.camunda.security.core.port.out.MembershipPort;
+import io.camunda.security.spring.scope.ScopedCamundaAuthenticationConverter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpClient;
 import java.util.List;
@@ -16,10 +20,12 @@ import java.util.Map;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
+import org.springframework.security.core.Authentication;
 
 /**
  * Provides the per-scope OIDC infrastructure beans unconditionally, and independently of the global
@@ -120,5 +126,46 @@ public class ScopedOidcInfrastructureConfiguration {
     final ObjectMapper mapper = objectMapper.getIfAvailable(ObjectMapper::new);
     return new ScopedOidcClaimsProviderFactory(
         scopedClientRegistrationFactory, httpClient, mapper, meterRegistry);
+  }
+
+  /**
+   * Builds a {@link ScopedOidcTokenAuthenticationConverterFactory} so a scope's API chain can
+   * resolve a bearer token's principal with the scope's own claim configuration (ADR-0033). Gated
+   * on {@link MembershipPort} because the per-scope {@link
+   * io.camunda.security.core.authz.LazyTokenClaimsConverter}s it builds need it; when it is absent
+   * the deployment does no CSL OIDC principal resolution at all, and {@code
+   * ScopedSecurityChainRegistrar} falls back to the global converter rather than wiring a per-scope
+   * one. The {@link MembershipResolutionContextPropagator} defaults to {@link
+   * MembershipResolutionContextPropagator#identity()} when no host bean is present, mirroring
+   * {@code CamundaAuthenticationBeansConfiguration}.
+   */
+  @Bean
+  @ConditionalOnBean(MembershipPort.class)
+  @ConditionalOnMissingBean
+  public ScopedOidcTokenAuthenticationConverterFactory
+      scopedOidcTokenAuthenticationConverterFactory(
+          final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
+          final ScopedOidcClaimsProviderFactory scopedOidcClaimsProviderFactory,
+          final MembershipPort membershipPort,
+          final ObjectProvider<MembershipResolutionContextPropagator> contextPropagatorProvider) {
+    final var contextPropagator =
+        contextPropagatorProvider.getIfAvailable(MembershipResolutionContextPropagator::identity);
+    return new ScopedOidcTokenAuthenticationConverterFactory(
+        scopedClientRegistrationFactory,
+        scopedOidcClaimsProviderFactory,
+        membershipPort,
+        contextPropagator);
+  }
+
+  /**
+   * Registers the {@link ScopedCamundaAuthenticationConverter} that unwraps the token a scoped
+   * chain produces. Registered unconditionally so it is collected into the {@code
+   * CamundaAuthenticationProvider}'s converter list; it only ever matches a scoped token, so it is
+   * inert in a deployment with no scopes. See ADR-0033.
+   */
+  @Bean
+  @ConditionalOnMissingBean
+  public CamundaAuthenticationConverter<Authentication> scopedCamundaAuthenticationConverter() {
+    return new ScopedCamundaAuthenticationConverter();
   }
 }

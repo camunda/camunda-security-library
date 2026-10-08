@@ -16,6 +16,7 @@ import io.camunda.security.api.model.config.AuthenticationMethod;
 import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
 import io.camunda.security.core.port.out.BasicAuthUserDetailsPort;
 import io.camunda.security.core.port.out.BasicAuthUserDetailsPort.CamundaUserDetails;
+import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
@@ -26,9 +27,13 @@ import io.camunda.security.spring.security.BasicAuthApiSecurityConfiguration;
 import io.camunda.security.spring.security.CamundaSecurityFilterChainConstants;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import io.camunda.security.spring.user.UserConfiguration;
+import jakarta.servlet.Filter;
+import jakarta.servlet.Servlet;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -38,6 +43,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
@@ -397,6 +404,62 @@ class ScopedSecurityChainConfigurationTest {
                 assertThat(wrongResp.getStatus())
                     .as("token from unregistered issuer must be rejected with 401")
                     .isEqualTo(401);
+              });
+    } finally {
+      server.stop();
+    }
+  }
+
+  // 9b. Per-scope claim resolution (ADR-0033): the scoped chain resolves the principal with the
+  // scope's OWN username-claim and places a ScopedCamundaAuthenticationToken in the
+  // SecurityContext,
+  // not a plain JwtAuthenticationToken for the global converter to re-resolve.
+  @Test
+  void scopedOidcChainResolvesPrincipalWithTheScopesOwnClaim() throws Exception {
+    final var server = OidcTestServer.startRsa("scope-key");
+    try {
+      final var oidcConfig = server.oidcConfiguration("scope-client");
+      // A non-default username-claim that only this scope configures.
+      oidcConfig.setUsernameClaim("custom_user");
+      final var auth = new AuthenticationConfiguration();
+      auth.setMethod(AuthenticationMethod.OIDC);
+      auth.setOidc(oidcConfig);
+
+      final var token = server.sign(server.issuerUri(), Map.of("custom_user", "dave-from-scope"));
+      final CamundaSecurityScopeProvider scopeProvider =
+          () -> List.of(new ScopedSecurityDescriptor(SCOPED_BASE, auth));
+
+      basicRunner()
+          // MembershipPort presence activates ScopedOidcTokenAuthenticationConverterFactory, which
+          // wires the per-scope converter into this scope's chain.
+          .withBean(MembershipPort.class, () -> Mockito.mock(MembershipPort.class))
+          .withBean(CamundaSecurityScopeProvider.class, () -> scopeProvider)
+          .run(
+              ctx -> {
+                assertThat(ctx).hasNotFailed();
+                final var proxy = new FilterChainProxy(List.of(contributedChain(ctx)));
+
+                final var request = new MockHttpServletRequest("GET", SCOPED_V2);
+                request.addHeader("Authorization", "Bearer " + token);
+                final var response = new MockHttpServletResponse();
+
+                final var captured = new AtomicReference<Authentication>();
+                final Filter capture =
+                    (req, res, chain) ->
+                        captured.set(SecurityContextHolder.getContext().getAuthentication());
+                proxy.doFilter(
+                    request, response, new MockFilterChain(Mockito.mock(Servlet.class), capture));
+
+                assertThat(response.getStatus()).isNotEqualTo(401);
+                assertThat(captured.get())
+                    .as("scoped chain must place a ScopedCamundaAuthenticationToken in the context")
+                    .isInstanceOf(ScopedCamundaAuthenticationToken.class);
+                assertThat(
+                        ((ScopedCamundaAuthenticationToken) captured.get())
+                            .getCamundaAuthentication()
+                            .authenticatedUsername())
+                    .as("principal must be resolved with the scope's own custom_user claim")
+                    .isEqualTo("dave-from-scope");
               });
     } finally {
       server.stop();
