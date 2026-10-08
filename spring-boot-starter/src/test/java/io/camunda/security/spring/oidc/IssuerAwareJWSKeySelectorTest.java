@@ -25,6 +25,15 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -33,6 +42,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistration.ProviderDetails;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 
 @ExtendWith(MockitoExtension.class)
 class IssuerAwareJWSKeySelectorTest {
@@ -151,6 +161,89 @@ class IssuerAwareJWSKeySelectorTest {
         .isInstanceOf(KeySourceException.class)
         .isNotInstanceOf(BadJwtKeySourceException.class)
         .hasMessageContaining("https://known-issuer");
+  }
+
+  @Test
+  void shouldResolveAllConcurrentRequestsForANeverBeforeSeenIssuerToTheSameSelector()
+      throws Exception {
+    try (var server = OidcTestServer.startRsa("race-kid")) {
+      final var registration =
+          ClientRegistration.withRegistrationId("race-registration")
+              .clientId("test-client")
+              .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+              .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+              .authorizationUri(server.issuerUri() + "/auth")
+              .tokenUri(server.issuerUri() + "/token")
+              .issuerUri(server.issuerUri())
+              .jwkSetUri(server.jwksUri())
+              .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+              .build();
+      final var buildCount = new AtomicInteger();
+      final var twoBuildsInFlight = new CountDownLatch(2);
+      final Set<JWSKeySelector<SecurityContext>> selectorsThatServedARequest =
+          ConcurrentHashMap.newKeySet();
+      final var factory =
+          new JWSKeySelectorFactory() {
+            @Override
+            public JWSKeySelector<SecurityContext> createJWSKeySelector(final String jwkSetUri) {
+              buildCount.incrementAndGet();
+              // Holds every build open until a second one has started, so at least two threads
+              // deterministically pass the "no cached selector yet" check before any build
+              // completes. If resolution ever serialised builds the second would never arrive,
+              // every
+              // build would wait out the bound, and the test would fail on the timeout below.
+              twoBuildsInFlight.countDown();
+              try {
+                twoBuildsInFlight.await(5, TimeUnit.SECONDS);
+              } catch (final InterruptedException e) {
+                Thread.currentThread().interrupt();
+              }
+              final var built = super.createJWSKeySelector(jwkSetUri);
+              // Records which of the built selectors are actually asked for a key. Identity
+              // semantics: neither the wrapper nor the wrapped selector overrides equals.
+              return (header, context) -> {
+                selectorsThatServedARequest.add(built);
+                return built.selectJWSKeys(header, context);
+              };
+            }
+          };
+      final var selector = new IssuerAwareJWSKeySelector(List.of(registration), factory);
+      final var header = new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(server.kid()).build();
+      final var claims = new JWTClaimsSet.Builder().issuer(server.issuerUri()).build();
+
+      // when 20 threads resolve this never-before-seen issuer at the same time
+      final var threadCount = 20;
+      final var executor = Executors.newFixedThreadPool(threadCount);
+      final var startLatch = new CountDownLatch(1);
+      try {
+        final List<Callable<Integer>> tasks =
+            IntStream.range(0, threadCount)
+                .<Callable<Integer>>mapToObj(
+                    i ->
+                        () -> {
+                          startLatch.await();
+                          return selector.selectKeys(header, claims, null).size();
+                        })
+                .toList();
+        final List<Future<Integer>> futures = tasks.stream().map(executor::submit).toList();
+        startLatch.countDown();
+
+        // then every thread gets the issuer's key
+        for (final var future : futures) {
+          assertThat(future.get(10, TimeUnit.SECONDS)).isEqualTo(1);
+        }
+      } finally {
+        executor.shutdownNow();
+      }
+
+      // and all 20 of them were served by one and the same selector — the single entry the race
+      // settled on. The losers of the putIfAbsent race may each have built a candidate, which is
+      // why buildCount is not pinned to 1; a candidate that never serves a request also never
+      // fetches a JWK Set and never starts a background refresh, so discarding it is free
+      // (see ADR-0032).
+      assertThat(selectorsThatServedARequest).hasSize(1);
+      assertThat(buildCount.get()).isGreaterThanOrEqualTo(2);
+    }
   }
 
   private static OidcConfiguration providerWithIssuer(final String issuerUri) {
