@@ -281,12 +281,12 @@ public final class SecurityFilterChainSupport {
    * header filter that includes the CSRF token on authenticated GET/login responses. When disabled,
    * CSRF protection is turned off entirely.
    *
-   * <p>An unprotected pattern overlapping a scoped {@code <basePath>/login} fails startup, but one
-   * overlapping the unscoped {@code /login} no longer does (ADR-0032): {@link
-   * BaseSecurityConfiguration}'s unprotected chain passes state-changing {@code /login} requests on
-   * to the CSRF-enforcing chain instead. A host that builds its own unprotected chain must likewise
-   * exclude state-changing requests to {@code /login} from it, otherwise that chain serves them
-   * without CSRF.
+   * <p>An unprotected pattern overlapping a scoped {@code <basePath>/login} fails startup (with
+   * CSRF enabled, matched with the default path parser), but one overlapping the unscoped {@code
+   * /login} no longer does (ADR-0032): {@link BaseSecurityConfiguration}'s unprotected chain passes
+   * state-changing {@code /login} requests on to the CSRF-enforcing chain instead. A host that
+   * builds its own unprotected chain must likewise exclude state-changing requests to {@code
+   * /login} from it, otherwise that chain serves them without CSRF.
    */
   public static void applyCsrfConfiguration(
       final HttpSecurity http,
@@ -331,29 +331,9 @@ public final class SecurityFilterChainSupport {
   }
 
   /**
-   * Applies the CSRF token repository, {@code protectionMatcher} and token response header filter,
-   * or disables CSRF when it is turned off.
-   */
-  static void applyCsrfConfiguration(
-      final HttpSecurity http,
-      final CamundaSecurityLibraryProperties properties,
-      final String cookiePath,
-      final String csrfCookieName,
-      final RequestMatcher protectionMatcher)
-      throws Exception {
-    applyCsrfConfiguration(
-        http,
-        properties,
-        cookiePath,
-        csrfCookieName,
-        protectionMatcher,
-        csrfTokenResponseHeaderFilter(pathMatcherBuilder(http), cookiePath));
-  }
-
-  /**
-   * {@link #applyCsrfConfiguration(HttpSecurity, CamundaSecurityLibraryProperties, String, String,
-   * RequestMatcher)} with a caller-supplied {@code tokenResponseFilter}, so the caller decides when
-   * the token is written (e.g. with the host's servlet {@code basePath} applied).
+   * Applies the CSRF token repository, {@code protectionMatcher} and caller-supplied {@code
+   * tokenResponseFilter}, or disables CSRF when it is turned off. The caller decides when the token
+   * is written (e.g. with the host's servlet {@code basePath} applied).
    */
   static void applyCsrfConfiguration(
       final HttpSecurity http,
