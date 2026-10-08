@@ -11,7 +11,6 @@ import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.source.CachingJWKSetSource;
 import com.nimbusds.jose.jwk.source.CachingJWKSetSource.RefreshCompletedEvent;
 import com.nimbusds.jose.jwk.source.CachingJWKSetSource.RefreshInitiatedEvent;
-import com.nimbusds.jose.jwk.source.CachingJWKSetSource.RefreshTimedOutEvent;
 import com.nimbusds.jose.jwk.source.CachingJWKSetSource.WaitingForRefreshEvent;
 import com.nimbusds.jose.jwk.source.JWKSetCacheRefreshEvaluator;
 import com.nimbusds.jose.jwk.source.JWKSource;
@@ -307,8 +306,6 @@ public class JWSKeySelectorFactory {
         // Raised on the calling thread as soon as the cache lock is found taken — still at the
         // time Nimbus will date this load from, unlike the initiated event that follows the wait.
         retryChain.loadWaiting(System.currentTimeMillis());
-      } else if (event instanceof RefreshTimedOutEvent<SecurityContext>) {
-        retryChain.loadAbandoned();
       } else if (event instanceof RefreshInitiatedEvent<SecurityContext>) {
         retryChain.loadStarted(System.currentTimeMillis());
       } else if (event instanceof RefreshCompletedEvent<SecurityContext>) {
@@ -456,6 +453,7 @@ public class JWSKeySelectorFactory {
     static final long MIN_DELAY_MILLIS = 100L;
 
     private final long delayMillis;
+    private final long maxLockWaitMillis;
     private final long timeToLiveMillis;
 
     /** Per calling thread: when it began waiting for the cache lock, if it had to. */
@@ -467,11 +465,13 @@ public class JWSKeySelectorFactory {
     private boolean active;
 
     /**
-     * @param delayMillis spacing between retries (raised to {@link #MIN_DELAY_MILLIS})
+     * @param refreshTimeoutMillis the cache refresh timeout: the longest a caller waits for the
+     *     cache lock, and the spacing between retries (raised to {@link #MIN_DELAY_MILLIS})
      * @param timeToLiveMillis how long a loaded JWK Set stays valid, from the start of its load
      */
-    RetryChain(final long delayMillis, final long timeToLiveMillis) {
-      this.delayMillis = Math.max(delayMillis, MIN_DELAY_MILLIS);
+    RetryChain(final long refreshTimeoutMillis, final long timeToLiveMillis) {
+      this.delayMillis = Math.max(refreshTimeoutMillis, MIN_DELAY_MILLIS);
+      this.maxLockWaitMillis = refreshTimeoutMillis;
       this.timeToLiveMillis = timeToLiveMillis;
     }
 
@@ -487,19 +487,20 @@ public class JWSKeySelectorFactory {
       waitingSince.set(nowMillis);
     }
 
-    /** The calling thread gave up waiting for the cache lock, so no load of its own follows. */
-    void loadAbandoned() {
-      waitingSince.remove();
-    }
-
     /**
      * A load of the JWK Set has begun, after any wait for the lock; its result, if any, expires a
      * TTL after the call that made it, which is the earlier time when there was a wait.
+     *
+     * <p>A wait does not always end in a load: a caller that gets the lock after another thread
+     * refreshed reuses that cache and raises no event. So a remembered time only counts if it is
+     * recent enough to be this load's wait — a wait cannot outlast the refresh timeout — and an
+     * older one, left behind on a pooled thread, is ignored.
      */
     synchronized void loadStarted(final long nowMillis) {
       final var waited = waitingSince.get();
       waitingSince.remove();
-      loadStartedAt = waited != null ? waited : nowMillis;
+      loadStartedAt =
+          waited != null && nowMillis - waited <= maxLockWaitMillis ? waited : nowMillis;
     }
 
     /** The load that last began succeeded: the cache is current again, so any chain is over. */

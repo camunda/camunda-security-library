@@ -387,32 +387,33 @@ class JWSKeySelectorFactoryTest {
   @Test
   void shouldDateALoadFromBeforeItWaitedForTheCacheLock() {
     // given a refresh that found the cache lock taken at t=1s and only got it, and so only began
-    // its load, at t=13s. Nimbus dates the cached set from the call at t=1s, not from t=13s
-    final var retryChain = new JWSKeySelectorFactory.RetryChain(100L, 10_000L);
+    // its load, at t=13s — within the 15s a caller can wait. Nimbus dates the cached set from the
+    // call at t=1s, not from t=13s
+    final var retryChain = new JWSKeySelectorFactory.RetryChain(15_000L, 60_000L);
     retryChain.loadWaiting(1_000L);
     retryChain.loadStarted(13_000L);
     retryChain.loadCompleted();
 
-    // then the retry window ends at t=11s, not t=23s, so no retry lands after Nimbus considers the
-    // set expired and contends with the request path for the lock
-    assertThat(retryChain.hasRoomForRetry(10_900L)).isTrue();
-    assertThat(retryChain.hasRoomForRetry(10_901L)).isFalse();
+    // then the retry window ends a retry-spacing before t=61s, not before t=73s, so no retry lands
+    // after Nimbus considers the set expired and contends with the request path for the lock
+    assertThat(retryChain.hasRoomForRetry(46_000L)).isTrue();
+    assertThat(retryChain.hasRoomForRetry(46_001L)).isFalse();
   }
 
   @Test
-  void shouldForgetAWaitThatEndedWithoutALoad() {
-    // given a refresh that waited for the lock and timed out, so it made no load of its own
-    final var retryChain = new JWSKeySelectorFactory.RetryChain(100L, 10_000L);
+  void shouldIgnoreAWaitTooOldToBelongToTheLoad() {
+    // given a wait left behind on a thread that then reused another thread's refresh and so never
+    // began a load of its own — Nimbus raises no event when that happens
+    final var retryChain = new JWSKeySelectorFactory.RetryChain(1_000L, 10_000L);
     retryChain.loadWaiting(1_000L);
-    retryChain.loadAbandoned();
 
-    // when the same thread later makes a load without waiting
+    // when that thread much later makes a load of its own
     retryChain.loadStarted(50_000L);
     retryChain.loadCompleted();
 
-    // then it is dated from that load, not from the abandoned wait
-    assertThat(retryChain.hasRoomForRetry(59_900L)).isTrue();
-    assertThat(retryChain.hasRoomForRetry(59_901L)).isFalse();
+    // then the load is dated from its own start, not from the stale wait
+    assertThat(retryChain.hasRoomForRetry(59_000L)).isTrue();
+    assertThat(retryChain.hasRoomForRetry(59_001L)).isFalse();
   }
 
   @Test
