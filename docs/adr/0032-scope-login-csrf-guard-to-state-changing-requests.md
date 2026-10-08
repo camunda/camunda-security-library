@@ -89,7 +89,10 @@ method, as before ADR-0027.
 - CSL only routes state-changing `/login` requests; it cannot verify that the chain claiming them
   enforces CSRF. A host chain that covers `/login` but disables CSRF (or ignores `/login`) silently
   accepts them. With the catch-all disabled, such a chain must also be ordered before
-  `ORDER_UNHANDLED`, or the guard chain rejects the requests first.
+  `ORDER_UNHANDLED`, or the guard chain rejects the requests first. The guard is registered
+  whenever the catch-all is disabled, so a host chain without a `securityMatcher` (matching any
+  request) must now be ordered after `ORDER_UNHANDLED`, or Spring Security fails startup with an
+  `UnreachableFilterChainException`.
 - The public `SecurityFilterChainSupport.applyCsrfConfiguration(...)` helpers no longer reject an
   unscoped `/login` overlap. A host that builds its own unprotected chain and uses these helpers on
   its own webapp chain gets no error and must exclude state-changing `/login` from that unprotected

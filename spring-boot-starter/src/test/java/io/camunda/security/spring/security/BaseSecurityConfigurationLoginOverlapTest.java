@@ -34,6 +34,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.UnreachableFilterChainException;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.web.util.pattern.PathPatternParser;
@@ -452,6 +453,29 @@ class BaseSecurityConfigurationLoginOverlapTest {
             });
   }
 
+  /**
+   * Spring Security rejects any chain after one without a security matcher, so with the catch-all
+   * off a host's match-everything chain must be ordered after the guard ({@code ORDER_UNHANDLED}).
+   */
+  @Test
+  void hostAnyRequestChainMustBeOrderedAfterTheGuard() {
+    runnerWith("/error")
+        .withUserConfiguration(AnyRequestHostChainAtGuardOrder.class)
+        .withPropertyValues(CATCH_ALL_DISABLED)
+        .run(
+            ctx ->
+                assertThat(ctx)
+                    .hasFailed()
+                    .getFailure()
+                    .rootCause()
+                    .isInstanceOf(UnreachableFilterChainException.class)
+                    .hasMessageContaining(GUARD));
+    runnerWith("/error")
+        .withUserConfiguration(AnyRequestHostChainAfterGuard.class)
+        .withPropertyValues(CATCH_ALL_DISABLED)
+        .run(ctx -> assertThat(ctx).hasNotFailed());
+  }
+
   private static List<ILoggingEvent> captureLogs(final Runnable action) {
     final var logger = (Logger) LoggerFactory.getLogger(BaseSecurityConfiguration.class);
     final var appender = new ListAppender<ILoggingEvent>();
@@ -481,6 +505,26 @@ class BaseSecurityConfigurationLoginOverlapTest {
       return http.securityMatcher("/**")
           .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
           .build();
+    }
+  }
+
+  @Configuration
+  static class AnyRequestHostChainAtGuardOrder {
+
+    @Bean
+    @Order(CamundaSecurityFilterChainConstants.ORDER_UNHANDLED)
+    SecurityFilterChain anyRequestHostChain(final HttpSecurity http) throws Exception {
+      return http.authorizeHttpRequests(auth -> auth.anyRequest().permitAll()).build();
+    }
+  }
+
+  @Configuration
+  static class AnyRequestHostChainAfterGuard {
+
+    @Bean
+    @Order(CamundaSecurityFilterChainConstants.ORDER_UNHANDLED + 1)
+    SecurityFilterChain anyRequestHostChain(final HttpSecurity http) throws Exception {
+      return http.authorizeHttpRequests(auth -> auth.anyRequest().permitAll()).build();
     }
   }
 }

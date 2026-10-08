@@ -454,6 +454,7 @@ The login endpoint (`/login`, and its scoped `<basePath>/login` variants) always
 **Migrating from 1.1.0:**
 
 - A host that moved `/login` into `unprotectedApiPaths()` can move it back.
+- With `camunda.security.authentication.catch-all-unhandled-paths-enabled=false`, CSL now registers `unclaimedLoginGuardSecurityFilterChain` at `ORDER_UNHANDLED` (3). A host catch-all chain without a `securityMatcher` (matching any request) must be ordered after it; otherwise Spring Security fails startup with an `UnreachableFilterChainException` naming the guard chain.
 - `SecurityFilterChainSupport.applyCsrfConfiguration(...)` no longer fails startup when an unprotected pattern overlaps the unscoped `/login`. A host that builds its own unprotected chain (instead of using `BaseSecurityConfiguration`'s) must exclude state-changing requests to `/login` from it, as `BaseSecurityConfiguration` does, otherwise they are served without CSRF.
 
 See [ADR-0032](../adr/0032-scope-login-csrf-guard-to-state-changing-requests.md).

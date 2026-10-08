@@ -35,9 +35,9 @@ public interface SecurityPathPort {
    * namespace that is not in {@link #apiPaths()} — for example a login callback — belongs here, not
    * in {@link #unprotectedApiPaths()}.
    *
-   * <p>May cover the unscoped {@code /login}: only its safe methods are then served here;
-   * state-changing requests go to the CSRF-enforcing chain. This applies to the exact {@code
-   * /login} path only. A pattern matching a scoped {@code <basePath>/login} fails startup
+   * <p>May cover the unscoped {@code /login}: with CSRF enabled, only its safe methods are then
+   * served here; state-changing requests go to the CSRF-enforcing chain. This applies to the exact
+   * {@code /login} path only. A pattern matching a scoped {@code <basePath>/login} fails startup
    * (ADR-0032).
    */
   Set<String> unprotectedPaths();
