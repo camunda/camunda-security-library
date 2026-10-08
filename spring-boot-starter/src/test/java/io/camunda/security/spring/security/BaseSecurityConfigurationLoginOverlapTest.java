@@ -288,26 +288,31 @@ class BaseSecurityConfigurationLoginOverlapTest {
   }
 
   @Test
-  void logsCsrfEnforcedRoutingAndNoWarningByDefault() {
+  void logsStateChangingLoginRoutingAndNoWarningByDefault() {
     final var events = captureLogs(() -> runnerWith("/login").run(ctx -> {}));
 
     assertThat(messages(events, Level.INFO))
-        .anyMatch(m -> m.contains("'/login'") && m.contains("CSRF-enforcing"));
+        .anyMatch(m -> m.contains("'/login'") && m.contains("enforces CSRF"));
     assertThat(messages(events, Level.WARN)).isEmpty();
   }
 
+  /** With CSRF disabled there is nothing to enforce, so {@code /login} is not rerouted (1.0.x). */
   @Test
-  void logsThatCsrfIsDisabledWhenItIs() {
+  void servesAllMethodsOnLoginAndLogsNothingWhenCsrfIsDisabled() {
     final var events =
         captureLogs(
             () ->
                 runnerWith("/login")
                     .withPropertyValues("camunda.security.csrf.enabled=false")
-                    .run(ctx -> {}));
+                    .run(
+                        ctx -> {
+                          final var chain = ctx.getBean(CHAIN, SecurityFilterChain.class);
+                          for (final var method : List.of("GET", "POST", "PUT", "DELETE")) {
+                            assertThat(matches(chain, method, "/login")).as(method).isTrue();
+                          }
+                        }));
 
-    assertThat(messages(events, Level.INFO))
-        .anyMatch(m -> m.contains("CSRF protection is disabled"))
-        .noneMatch(m -> m.contains("CSRF-enforcing"));
+    assertThat(messages(events, Level.INFO)).noneMatch(m -> m.contains("'/login'"));
   }
 
   @Test
@@ -331,14 +336,20 @@ class BaseSecurityConfigurationLoginOverlapTest {
   }
 
   @Test
-  void failsStartupWhenLoginWouldReachNoChainEvenIfCsrfIsDisabled() {
+  void startsWithCatchAllDisabledWhenCsrfIsDisabled() {
     runnerWithPaths(
             StubSecurityPaths.builder()
                 .unprotectedPaths("/log*")
                 .apiPaths("/api/**")
                 .webappPaths("/operate/**"))
         .withPropertyValues(CATCH_ALL_DISABLED, "camunda.security.csrf.enabled=false")
-        .run(ctx -> assertThat(ctx).hasFailed());
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              assertThat(matches(ctx.getBean(CHAIN, SecurityFilterChain.class), "POST", "/login"))
+                  .as("POST /login stays on the unprotected chain")
+                  .isTrue();
+            });
   }
 
   @Test

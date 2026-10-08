@@ -39,8 +39,9 @@ import org.springframework.web.cors.CorsConfigurationSource;
  * Always-on filter chains: unprotected paths (highest priority) and a catch-all deny chain (lowest
  * priority). Activates Spring Security's web security infrastructure via {@link EnableWebSecurity}.
  *
- * <p>The unprotected chain never serves state-changing requests to {@code /login}; they fall
- * through to the CSRF-enforcing chain, and startup fails if none would claim them (ADR-0032).
+ * <p>With CSRF enabled, the unprotected chain never serves state-changing requests to {@code
+ * /login}; they fall through to the CSRF-enforcing chain, and startup fails if none would claim
+ * them (ADR-0032).
  */
 @Configuration
 @EnableWebSecurity
@@ -62,19 +63,26 @@ public class BaseSecurityConfiguration {
     final var pathMatcherBuilder = SecurityFilterChainSupport.pathMatcherBuilder(http);
     final var loginOverlaps =
         SecurityFilterChainSupport.findUnprotectedPathOverlaps(unprotectedPaths, Set.of(LOGIN_URL));
+    final var csrfEnabled = properties.getCsrf().isEnabled();
     final var corsSource = corsSourceProvider.getIfAvailable(NoOpCorsConfigurationSource::new);
     final var filterChainBuilder =
-        http.securityMatcher(unprotectedPathsMatcher(pathMatcherBuilder, unprotectedPaths))
+        http.securityMatcher(
+                new AndRequestMatcher(
+                    CsrfProtectionRequestMatcher.buildPathsMatcher(
+                        pathMatcherBuilder, unprotectedPaths),
+                    new NegatedRequestMatcher(
+                        excludedFromUnprotectedChain(
+                            pathMatcherBuilder, unprotectedPaths, csrfEnabled))))
             .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
             .formLogin(AbstractHttpConfigurer::disable)
             .anonymous(AbstractHttpConfigurer::disable);
 
     // Best-effort (default parser semantics), so it only drives logging and the startup check,
-    // never token issuance.
-    if (!loginOverlaps.isEmpty()) {
+    // never token issuance. With CSRF disabled nothing is rerouted, so there is nothing to check.
+    if (csrfEnabled && !loginOverlaps.isEmpty()) {
       final var overlappingPattern =
           SecurityFilterChainSupport.firstMatchingPattern(unprotectedPaths, LOGIN_URL);
-      logLoginOverlap(overlappingPattern, properties);
+      logLoginOverlap(overlappingPattern);
       rejectUnclaimedStateChangingLogin(pathPort, properties, overlappingPattern);
     }
     SecurityFilterChainSupport.applyLoginTokenIssuance(
@@ -90,19 +98,15 @@ public class BaseSecurityConfiguration {
     return filterChainBuilder.build();
   }
 
-  private static void logLoginOverlap(
-      final String overlappingPattern, final CamundaSecurityLibraryProperties properties) {
-    final var stateChangingRouting =
-        properties.getCsrf().isEnabled()
-            ? "routed to the CSRF-enforcing API or webapp chain"
-            : "routed to the API or webapp chain (CSRF protection is disabled)";
+  private static void logLoginOverlap(final String overlappingPattern) {
     LOG.info(
         "SecurityPathPort#unprotectedPaths() pattern '{}' overlaps the login endpoint '{}':"
             + " GET/HEAD/OPTIONS/TRACE requests to it are served unauthenticated, while"
-            + " state-changing requests are {}.",
+            + " state-changing requests are passed on to the next chain: an API or webapp chain"
+            + " covering '{}' (which enforces CSRF), otherwise the catch-all deny chain.",
         overlappingPattern,
         LOGIN_URL,
-        stateChangingRouting);
+        LOGIN_URL);
   }
 
   /**
@@ -147,15 +151,21 @@ public class BaseSecurityConfiguration {
   }
 
   /**
-   * Unprotected paths minus state-changing requests to {@code /login}. Both halves use the same
-   * {@code builder}, otherwise a servlet {@code basePath} would open a gap.
+   * The requests the unprotected chain passes on: state-changing requests to {@code /login} it
+   * would otherwise claim. Built with the chain's {@code builder}, otherwise a servlet {@code
+   * basePath} would open a gap. Matches nothing when CSRF is disabled: there is no check to route
+   * to, so {@code /login} stays fully unprotected as declared.
    */
-  private static RequestMatcher unprotectedPathsMatcher(
-      final PathPatternRequestMatcher.Builder builder, final Set<String> unprotectedPaths) {
+  private static RequestMatcher excludedFromUnprotectedChain(
+      final PathPatternRequestMatcher.Builder builder,
+      final Set<String> unprotectedPaths,
+      final boolean csrfEnabled) {
+    if (!csrfEnabled) {
+      return request -> false;
+    }
     return new AndRequestMatcher(
         CsrfProtectionRequestMatcher.buildPathsMatcher(builder, unprotectedPaths),
-        new NegatedRequestMatcher(
-            SecurityFilterChainSupport.stateChangingRequestTo(builder, Set.of(LOGIN_URL))));
+        SecurityFilterChainSupport.stateChangingRequestTo(builder, Set.of(LOGIN_URL)));
   }
 
   /**
