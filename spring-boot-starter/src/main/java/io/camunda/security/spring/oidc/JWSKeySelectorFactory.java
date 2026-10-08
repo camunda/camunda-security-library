@@ -70,10 +70,9 @@ public class JWSKeySelectorFactory {
           JWSAlgorithm.ES512);
 
   /**
-   * HTTP connect/read timeout for JWK Set retrieval, in milliseconds. Nimbus's own default is 500ms
-   * ({@link JWKSourceBuilder#DEFAULT_HTTP_CONNECT_TIMEOUT}), which a real external IdP can exceed
-   * under ordinary load, not just during an outage. Raised to comfortably exceed realistic
-   * network/IdP latency while still failing fast. See ADR-0032.
+   * HTTP connect/read timeout for JWK Set retrieval, in milliseconds. Nimbus's 500ms default
+   * ({@link JWKSourceBuilder#DEFAULT_HTTP_CONNECT_TIMEOUT}) is tight for a real IdP under ordinary
+   * load. See ADR-0032.
    */
   private static final int HTTP_CONNECT_TIMEOUT_MILLIS = 3_000;
 
@@ -83,27 +82,23 @@ public class JWSKeySelectorFactory {
   private static final int HTTP_READ_TIMEOUT_MILLIS = 3_000;
 
   /**
-   * Maximum time a cached JWK Set is trusted before a fresh, bounded fetch is forced — the
-   * staleness bound discussed in ADR-0032. Matches Nimbus's own default ({@link
-   * JWKSourceBuilder#DEFAULT_CACHE_TIME_TO_LIVE}), set explicitly here so the bound is documented
-   * rather than an implicit library default.
+   * Maximum time a cached JWK Set is trusted before a fresh fetch is forced: the staleness bound of
+   * ADR-0032. Nimbus's default ({@link JWKSourceBuilder#DEFAULT_CACHE_TIME_TO_LIVE}), made
+   * explicit.
    */
   private static final long CACHE_TIME_TO_LIVE_MILLIS = JWKSourceBuilder.DEFAULT_CACHE_TIME_TO_LIVE;
 
   /**
-   * How long a caller waits for another thread's in-flight refresh to finish — Nimbus's lock-wait
-   * limit. It does not bound the fetch itself, which is bounded by the HTTP connect/read timeouts.
-   * Reached only when the background refresh-ahead has not kept the cache current (e.g. a sustained
-   * IdP outage) or an unrecognized {@code kid} forces an immediate refresh. Matches Nimbus's own
-   * default ({@link JWKSourceBuilder#DEFAULT_CACHE_REFRESH_TIMEOUT}).
+   * How long a caller waits for another thread's in-flight refresh — Nimbus's lock-wait limit; the
+   * fetch itself is bounded by the HTTP timeouts. Nimbus's default ({@link
+   * JWKSourceBuilder#DEFAULT_CACHE_REFRESH_TIMEOUT}).
    */
   private static final long CACHE_REFRESH_TIMEOUT_MILLIS =
       JWKSourceBuilder.DEFAULT_CACHE_REFRESH_TIMEOUT;
 
   /**
-   * How far ahead of its expiry the cached JWK Set is refreshed in the background, so live decode
-   * requests read an already-warm cache instead of blocking on the refresh. Matches Nimbus's own
-   * default ({@link JWKSourceBuilder#DEFAULT_REFRESH_AHEAD_TIME}).
+   * How far ahead of expiry the cache is refreshed in the background, so requests read a warm
+   * cache. Nimbus's default ({@link JWKSourceBuilder#DEFAULT_REFRESH_AHEAD_TIME}).
    */
   private static final long REFRESH_AHEAD_TIME_MILLIS = JWKSourceBuilder.DEFAULT_REFRESH_AHEAD_TIME;
 
@@ -264,19 +259,13 @@ public class JWSKeySelectorFactory {
   }
 
   /**
-   * Handles the failures Nimbus reports for a background refresh: logs them and, for a failed
-   * background fetch, retries before the cache expires.
+   * Logs the background refresh failures Nimbus reports only through its event listener, and
+   * retries a failed background fetch while the cached set is still valid. Nimbus schedules one
+   * refresh per load and leaves a retry to a later request, so a blip at that attempt followed by
+   * no traffic would still end in a synchronous refresh (ADR-0032).
    *
-   * <p>Nimbus schedules one refresh per successful load and, if that fetch fails, leaves any retry
-   * to a later decode request landing in the final refresh-ahead window — so a provider with a
-   * brief outage at that one attempt and no traffic until expiry would still make the next requests
-   * block on a synchronous refresh. A bounded retry closes that gap; see ADR-0032. Nimbus reports
-   * failures only through its event listener and otherwise swallows them, so without logging an IdP
-   * outage would also be silent until the cache expired.
-   *
-   * <p>Logs at {@code WARN}; the JWK Set URI is the only identifier, redacted because an
-   * operator-supplied URL can carry user-info or a signed query (see {@link UrlRedaction}), and no
-   * token data is ever involved.
+   * <p>The JWK Set URI is the only identifier logged, redacted ({@link UrlRedaction}); no token
+   * data.
    */
   private EventListener<CachingJWKSetSource<SecurityContext>, SecurityContext>
       refreshFailureListener(final URL jwkSetUri, final RetryChain retryChain) {
@@ -378,55 +367,40 @@ public class JWSKeySelectorFactory {
     }
   }
 
-  /**
-   * The HTTP connect timeout for JWK Set retrieval, in milliseconds. Overridable by a host (or a
-   * test) that needs a different value than {@link #HTTP_CONNECT_TIMEOUT_MILLIS}.
-   */
+  /** The HTTP connect timeout for JWK Set retrieval, in milliseconds. */
   protected int getHttpConnectTimeoutMillis() {
     return HTTP_CONNECT_TIMEOUT_MILLIS;
   }
 
-  /**
-   * The HTTP read timeout for JWK Set retrieval, in milliseconds. Overridable by a host (or a test)
-   * that needs a different value than {@link #HTTP_READ_TIMEOUT_MILLIS}.
-   */
+  /** The HTTP read timeout for JWK Set retrieval, in milliseconds. */
   protected int getHttpReadTimeoutMillis() {
     return HTTP_READ_TIMEOUT_MILLIS;
   }
 
   /**
-   * The maximum staleness of a cached JWK Set, in milliseconds, before a fresh fetch is forced.
-   * Overridable by a host (or a test) that needs a different value than {@link
-   * #CACHE_TIME_TO_LIVE_MILLIS}.
+   * The maximum staleness of a cached JWK Set, in milliseconds.
    *
    * <p>An override must keep {@code getRefreshAheadTimeMillis() + getCacheRefreshTimeoutMillis() <
-   * getCacheTimeToLiveMillis()}, strictly: otherwise {@link #createJWKSource(URL)} throws an {@link
-   * IllegalArgumentException}, because the background refresh would never be scheduled. That
-   * happens when the source for a URL is built — with several issuers, on the first token for each
-   * one, not at startup. And the closer the sum gets to the TTL, the more the background refresh
-   * cadence collapses towards continuously polling the IdP.
+   * getCacheTimeToLiveMillis()}, strictly, or {@link #createJWKSource(URL)} throws an {@link
+   * IllegalArgumentException} when the source for a URL is built (with several issuers, on the
+   * first token for each, not at startup): a sum at the TTL never schedules the background refresh,
+   * and one near it polls the IdP continuously.
    */
   protected long getCacheTimeToLiveMillis() {
     return CACHE_TIME_TO_LIVE_MILLIS;
   }
 
   /**
-   * How long a caller waits for another thread's in-flight refresh, in milliseconds (Nimbus's
-   * lock-wait limit; the fetch itself is bounded by the HTTP timeouts). Overridable by a host (or a
-   * test) that needs a different value than {@link #CACHE_REFRESH_TIMEOUT_MILLIS}.
-   *
-   * <p>Subject to the same invariant as {@link #getCacheTimeToLiveMillis()}.
+   * How long a caller waits for another thread's in-flight refresh, in milliseconds. Subject to the
+   * invariant on {@link #getCacheTimeToLiveMillis()}.
    */
   protected long getCacheRefreshTimeoutMillis() {
     return CACHE_REFRESH_TIMEOUT_MILLIS;
   }
 
   /**
-   * How far ahead of expiry the cached JWK Set is refreshed in the background, in milliseconds.
-   * Overridable by a host (or a test) that needs a different value than {@link
-   * #REFRESH_AHEAD_TIME_MILLIS}.
-   *
-   * <p>Subject to the same invariant as {@link #getCacheTimeToLiveMillis()}.
+   * How far ahead of expiry the cache is refreshed in the background, in milliseconds. Subject to
+   * the invariant on {@link #getCacheTimeToLiveMillis()}.
    */
   protected long getRefreshAheadTimeMillis() {
     return REFRESH_AHEAD_TIME_MILLIS;
