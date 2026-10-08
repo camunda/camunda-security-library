@@ -90,6 +90,11 @@ method, as before ADR-0027.
   enforces CSRF. A host chain that covers `/login` but disables CSRF (or ignores `/login`) silently
   accepts them. With the catch-all disabled, such a chain must also be ordered before
   `ORDER_UNHANDLED`, or the guard chain rejects the requests first.
+- The public `SecurityFilterChainSupport.applyCsrfConfiguration(...)` helpers no longer reject an
+  unscoped `/login` overlap. A host that builds its own unprotected chain and uses these helpers on
+  its own webapp chain gets no error and must exclude state-changing `/login` from that unprotected
+  chain itself. Keeping the unscoped check there would fail startup for CSL's own webapp chain
+  whenever `/login` is unprotected, which is the case this ADR enables.
 - With CSRF enabled, scoped overlaps still fail fast, so a host with scoped chains must keep its
   unprotected patterns off every `<basePath>/login`. With CSRF disabled the check does not run.
 - Under a servlet path (a host `PathPatternRequestMatcher.Builder` with a basePath), every CSL

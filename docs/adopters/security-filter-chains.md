@@ -451,7 +451,12 @@ The login endpoint (`/login`, and its scoped `<basePath>/login` variants) always
 - OIDC: `GET /login` never reaches `CamundaLoginPickerFilter`.
 - With `catch-all-unhandled-paths-enabled=false`, a host chain that should serve state-changing `/login` must be ordered before `ORDER_UNHANDLED`, and must enforce CSRF on `/login` itself: CSL routes these requests but cannot check the claiming chain's CSRF configuration.
 
-**Migrating from 1.1.0:** a host that moved `/login` into `unprotectedApiPaths()` can move it back. See [ADR-0032](../adr/0032-scope-login-csrf-guard-to-state-changing-requests.md).
+**Migrating from 1.1.0:**
+
+- A host that moved `/login` into `unprotectedApiPaths()` can move it back.
+- `SecurityFilterChainSupport.applyCsrfConfiguration(...)` no longer fails startup when an unprotected pattern overlaps the unscoped `/login`. A host that builds its own unprotected chain (instead of using `BaseSecurityConfiguration`'s) must exclude state-changing requests to `/login` from it, as `BaseSecurityConfiguration` does, otherwise they are served without CSRF.
+
+See [ADR-0032](../adr/0032-scope-login-csrf-guard-to-state-changing-requests.md).
 
 ### `camunda.security.http-headers.*`
 
