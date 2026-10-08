@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.oidc;
 
+import io.camunda.security.api.context.CamundaSecurityScopeProvider;
 import io.camunda.security.api.context.MembershipResolutionContextPropagator;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
@@ -131,6 +132,16 @@ public class OidcBeansConfiguration {
    * getOidcAuthenticationConfigurations()}, which is the order of the configuration with the flat
    * block first. The decoder of the same deployment reads that order as well, so the converter of a
    * token comes from the provider that verified it.
+   *
+   * <p>Providers declared only through a per-scope {@link CamundaSecurityScopeProvider} descriptor
+   * (ADR-0013) — for example a physical tenant's own identity provider — are included too, so a
+   * bearer token issued by a scope-only provider resolves with that provider's own claim
+   * configuration instead of the cluster default. The root-level providers are processed first and
+   * own any issuer they share with a scope, so a deployment with no scope providers is unchanged
+   * (ADR-0024 / issue #668, fixing camunda/camunda#64685). A scope whose issuer a root-level or
+   * earlier scope provider already owns is skipped — the same issuer legitimately recurs across
+   * scopes (e.g. the default tenant appears both at root and as its own scope), so that overlap is
+   * logged at {@code DEBUG} rather than warned about.
    */
   @Bean
   @ConditionalOnBean({MembershipPort.class, LazyTokenClaimsConverter.class})
@@ -140,28 +151,81 @@ public class OidcBeansConfiguration {
       final OidcProviderConfigurationPort oidcProviderConfigurationPort,
       final LazyTokenClaimsConverter lazyTokenClaimsConverter,
       final MembershipPort membershipPort,
-      final ObjectProvider<MembershipResolutionContextPropagator> contextPropagatorProvider) {
+      final ObjectProvider<MembershipResolutionContextPropagator> contextPropagatorProvider,
+      final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
+      final ObjectProvider<CamundaSecurityScopeProvider> scopeProviders) {
     final var contextPropagator =
         contextPropagatorProvider.getIfAvailable(MembershipResolutionContextPropagator::identity);
     final var flatOidcConfiguration = properties.getAuthentication().getOidc();
-    final var configurations = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
-    // IssuerOwnership decides the winner per issuer and logs the duplicate-issuer warning — the
-    // one place that warning is built, redacted and sanitized, rather than a second copy of it
-    // here. Filtered first: a blank/null registrationId must not win ownership over a valid
-    // provider sharing its issuer, or the claims converter is built from the wrong configuration
-    // while the decoder verifies the token with the valid one.
+    final Map<String, LazyTokenClaimsConverter> byIssuer = new LinkedHashMap<>();
+
+    // Root-level providers (flat oidc.* block + providers.oidc.*) first, so they own any issuer a
+    // scope provider shares with them and a deployment without scope providers is unchanged.
+    addConvertersByIssuer(
+        byIssuer,
+        oidcProviderConfigurationPort.getOidcAuthenticationConfigurations(),
+        flatOidcConfiguration,
+        lazyTokenClaimsConverter,
+        membershipPort,
+        contextPropagator,
+        "the claim configuration");
+
+    // Then providers declared only through per-scope descriptors (ADR-0013). flatten() merges each
+    // scope's own flat + providers.oidc.* block the same way the root config port does.
+    scopeProviders.stream()
+        .flatMap(provider -> provider.get().stream())
+        .forEach(
+            descriptor ->
+                addConvertersByIssuer(
+                    byIssuer,
+                    scopedClientRegistrationFactory.flatten(descriptor.authentication()),
+                    flatOidcConfiguration,
+                    lazyTokenClaimsConverter,
+                    membershipPort,
+                    contextPropagator,
+                    "the claim configuration of scope '" + descriptor.basePath() + "'"));
+
+    return new TokenClaimsConvertersByIssuer(byIssuer);
+  }
+
+  /**
+   * Adds one issuer-keyed {@link LazyTokenClaimsConverter} per provider in {@code configurations}
+   * that declares an {@code issuer-uri}, skipping any issuer already present in {@code byIssuer} so
+   * an earlier source (the root config, or an earlier scope) keeps ownership.
+   *
+   * <p>{@link IssuerOwnership} decides the winner per issuer and logs the duplicate-issuer warning
+   * — the one place that warning is built, redacted and sanitized. Blank/null registrationIds are
+   * filtered first: a blank id must not win ownership over a valid provider sharing its issuer, or
+   * the claims converter is built from the wrong configuration while the decoder verifies the token
+   * with the valid one.
+   */
+  private static void addConvertersByIssuer(
+      final Map<String, LazyTokenClaimsConverter> byIssuer,
+      final Map<String, OidcConfiguration> configurations,
+      final OidcConfiguration flatOidcConfiguration,
+      final LazyTokenClaimsConverter defaultConverter,
+      final MembershipPort membershipPort,
+      final MembershipResolutionContextPropagator contextPropagator,
+      final String ownershipLabel) {
     final var winningRegistrationIdByIssuer =
         IssuerOwnership.registrationIdByIssuer(
             ScopedClientRegistrationFactory.withoutBlankRegistrationIds(configurations),
             LOG,
-            "the claim configuration");
-    final Map<String, LazyTokenClaimsConverter> byIssuer = new LinkedHashMap<>();
+            ownershipLabel);
     winningRegistrationIdByIssuer.forEach(
         (issuerUri, registrationId) -> {
+          if (byIssuer.containsKey(issuerUri)) {
+            LOG.debug(
+                "Issuer '{}' already has a claim converter from an earlier provider; keeping it and"
+                    + " ignoring {}.",
+                issuerUri,
+                ownershipLabel);
+            return;
+          }
           final var config = configurations.get(registrationId);
           final var converter =
               config == flatOidcConfiguration
-                  ? lazyTokenClaimsConverter
+                  ? defaultConverter
                   : new LazyTokenClaimsConverter(
                       config.getUsernameClaim(),
                       config.getClientIdClaim(),
@@ -170,6 +234,5 @@ public class OidcBeansConfiguration {
                       contextPropagator);
           byIssuer.put(issuerUri, converter);
         });
-    return new TokenClaimsConvertersByIssuer(byIssuer);
   }
 }

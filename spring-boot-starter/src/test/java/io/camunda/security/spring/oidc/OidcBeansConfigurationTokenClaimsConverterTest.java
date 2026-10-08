@@ -14,11 +14,17 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.camunda.security.api.context.CamundaSecurityScopeProvider;
 import io.camunda.security.api.context.MembershipResolutionContextPropagator;
+import io.camunda.security.api.model.config.AuthenticationConfiguration;
+import io.camunda.security.api.model.config.AuthenticationMethod;
+import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.converter.TokenClaimsConvertersByIssuer;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -51,6 +57,7 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
 
   private static final String DEFAULT_ISSUER = "https://auth0.example.com";
   private static final String ENTRA_ISSUER = "https://entra.example.com";
+  private static final String SCOPE_ISSUER = "https://tenanta.example.com";
 
   @Mock MembershipPort mockMembershipPort;
   @Mock LazyTokenClaimsConverter mockDefaultConverter;
@@ -375,6 +382,99 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
             ctx ->
                 assertThat(ctx.getBean(HostConsumerOfIssuerConverters.class).received.byIssuer())
                     .containsKey(DEFAULT_ISSUER));
+  }
+
+  @Test
+  void includesProviderDeclaredOnlyViaScopeDescriptorKeyedByItsIssuer() {
+    // Reproduces camunda/camunda#64685: a physical tenant's own IdP is declared only through a
+    // CamundaSecurityScopeProvider descriptor (ADR-0013), not at root. Its issuer must resolve to
+    // its own claim converter so the REST bearer path accepts the same tokens gRPC accepts, instead
+    // of falling back to the cluster-default converter and rejecting them with 401.
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=default-client",
+            "camunda.security.authentication.oidc.issuer-uri=" + DEFAULT_ISSUER)
+        .withBean(
+            CamundaSecurityScopeProvider.class,
+            () -> scopeProvider("/physical-tenants/tenanta", SCOPE_ISSUER, "tenant_user"))
+        .run(
+            ctx -> {
+              final var defaultConverter = ctx.getBean(LazyTokenClaimsConverter.class);
+              assertThat(byIssuer(ctx))
+                  .containsKey(SCOPE_ISSUER)
+                  .extractingByKey(SCOPE_ISSUER)
+                  .isNotSameAs(defaultConverter);
+              // The scope converter reads the scope's own username-claim, not the root default's.
+              final var authentication =
+                  byIssuer(ctx)
+                      .get(SCOPE_ISSUER)
+                      .convert(Map.of("iss", SCOPE_ISSUER, "tenant_user", "dave"));
+              assertThat(authentication.authenticatedUsername()).isEqualTo("dave");
+            });
+  }
+
+  @Test
+  void rootLevelProviderOwnsIssuerSharedWithAScopeProvider() {
+    // Acceptance: root-level providers are processed first, so a deployment behaves as before for
+    // an
+    // issuer a scope happens to share with root (e.g. the default tenant appears both at root and
+    // as
+    // its own scope). The root/default converter stays, and the scope's converter is not built.
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=default-client",
+            "camunda.security.authentication.oidc.issuer-uri=" + DEFAULT_ISSUER)
+        .withBean(
+            CamundaSecurityScopeProvider.class,
+            () -> scopeProvider("/physical-tenants/default", DEFAULT_ISSUER, "tenant_user"))
+        .run(
+            ctx -> {
+              final var defaultConverter = ctx.getBean(LazyTokenClaimsConverter.class);
+              assertThat(byIssuer(ctx)).containsEntry(DEFAULT_ISSUER, defaultConverter);
+            });
+  }
+
+  @Test
+  void firstScopeOwnsAnIssuerSharedByTwoScopeProviders() {
+    // Two scope providers declare the same issuer; the first contributed descriptor wins, matching
+    // the "first provider owns the issuer" rule the root path already uses.
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=default-client",
+            "camunda.security.authentication.oidc.issuer-uri=" + DEFAULT_ISSUER)
+        .withBean(
+            "firstScope",
+            CamundaSecurityScopeProvider.class,
+            () -> scopeProvider("/physical-tenants/first", SCOPE_ISSUER, "first_user"))
+        .withBean(
+            "secondScope",
+            CamundaSecurityScopeProvider.class,
+            () -> scopeProvider("/physical-tenants/second", SCOPE_ISSUER, "second_user"))
+        .run(
+            ctx -> {
+              final var authentication =
+                  byIssuer(ctx)
+                      .get(SCOPE_ISSUER)
+                      .convert(
+                          Map.of(
+                              "iss", SCOPE_ISSUER,
+                              "first_user", "alice",
+                              "second_user", "bob"));
+              assertThat(authentication.authenticatedUsername()).isEqualTo("alice");
+            });
+  }
+
+  private static CamundaSecurityScopeProvider scopeProvider(
+      final String basePath, final String issuerUri, final String usernameClaim) {
+    final var oidc = new OidcConfiguration();
+    oidc.setClientId("scope-client");
+    oidc.setIssuerUri(issuerUri);
+    oidc.setUsernameClaim(usernameClaim);
+    oidc.setPreferUsernameClaim(true);
+    final var authentication = new AuthenticationConfiguration();
+    authentication.setMethod(AuthenticationMethod.OIDC);
+    authentication.setOidc(oidc);
+    return () -> List.of(new ScopedSecurityDescriptor(basePath, authentication));
   }
 
   private static Map<String, LazyTokenClaimsConverter> byIssuer(final ApplicationContext ctx) {
