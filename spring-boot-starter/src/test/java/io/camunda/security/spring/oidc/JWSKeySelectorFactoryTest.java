@@ -385,6 +385,37 @@ class JWSKeySelectorFactoryTest {
   }
 
   @Test
+  void shouldDateALoadFromBeforeItWaitedForTheCacheLock() {
+    // given a refresh that found the cache lock taken at t=1s and only got it, and so only began
+    // its load, at t=13s. Nimbus dates the cached set from the call at t=1s, not from t=13s
+    final var retryChain = new JWSKeySelectorFactory.RetryChain(100L, 10_000L);
+    retryChain.loadWaiting(1_000L);
+    retryChain.loadStarted(13_000L);
+    retryChain.loadCompleted();
+
+    // then the retry window ends at t=11s, not t=23s, so no retry lands after Nimbus considers the
+    // set expired and contends with the request path for the lock
+    assertThat(retryChain.hasRoomForRetry(10_900L)).isTrue();
+    assertThat(retryChain.hasRoomForRetry(10_901L)).isFalse();
+  }
+
+  @Test
+  void shouldForgetAWaitThatEndedWithoutALoad() {
+    // given a refresh that waited for the lock and timed out, so it made no load of its own
+    final var retryChain = new JWSKeySelectorFactory.RetryChain(100L, 10_000L);
+    retryChain.loadWaiting(1_000L);
+    retryChain.loadAbandoned();
+
+    // when the same thread later makes a load without waiting
+    retryChain.loadStarted(50_000L);
+    retryChain.loadCompleted();
+
+    // then it is dated from that load, not from the abandoned wait
+    assertThat(retryChain.hasRoomForRetry(59_900L)).isTrue();
+    assertThat(retryChain.hasRoomForRetry(59_901L)).isFalse();
+  }
+
+  @Test
   void shouldNeverSpaceRetriesTighterThanTheFloorEvenWithAZeroRefreshTimeout() {
     final var retryChain = new JWSKeySelectorFactory.RetryChain(0L, 1_000L);
 

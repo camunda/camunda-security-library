@@ -11,6 +11,8 @@ import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.source.CachingJWKSetSource;
 import com.nimbusds.jose.jwk.source.CachingJWKSetSource.RefreshCompletedEvent;
 import com.nimbusds.jose.jwk.source.CachingJWKSetSource.RefreshInitiatedEvent;
+import com.nimbusds.jose.jwk.source.CachingJWKSetSource.RefreshTimedOutEvent;
+import com.nimbusds.jose.jwk.source.CachingJWKSetSource.WaitingForRefreshEvent;
 import com.nimbusds.jose.jwk.source.JWKSetCacheRefreshEvaluator;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
@@ -301,6 +303,12 @@ public class JWSKeySelectorFactory {
         if (chain >= 0) {
           scheduleRetry(event.getSource(), redactedUri, retryChain, chain);
         }
+      } else if (event instanceof WaitingForRefreshEvent<SecurityContext>) {
+        // Raised on the calling thread as soon as the cache lock is found taken — still at the
+        // time Nimbus will date this load from, unlike the initiated event that follows the wait.
+        retryChain.loadWaiting(System.currentTimeMillis());
+      } else if (event instanceof RefreshTimedOutEvent<SecurityContext>) {
+        retryChain.loadAbandoned();
       } else if (event instanceof RefreshInitiatedEvent<SecurityContext>) {
         retryChain.loadStarted(System.currentTimeMillis());
       } else if (event instanceof RefreshCompletedEvent<SecurityContext>) {
@@ -449,6 +457,10 @@ public class JWSKeySelectorFactory {
 
     private final long delayMillis;
     private final long timeToLiveMillis;
+
+    /** Per calling thread: when it began waiting for the cache lock, if it had to. */
+    private final ThreadLocal<Long> waitingSince = new ThreadLocal<>();
+
     private long loadStartedAt;
     private long expiresAt;
     private long generation;
@@ -467,9 +479,27 @@ public class JWSKeySelectorFactory {
       return delayMillis;
     }
 
-    /** A load of the JWK Set has begun; its result, if any, expires a TTL after this. */
+    /**
+     * The calling thread found the cache lock taken and is about to wait for it. Nimbus dates the
+     * load it then makes from the time of the call, before this wait, so remember that time.
+     */
+    void loadWaiting(final long nowMillis) {
+      waitingSince.set(nowMillis);
+    }
+
+    /** The calling thread gave up waiting for the cache lock, so no load of its own follows. */
+    void loadAbandoned() {
+      waitingSince.remove();
+    }
+
+    /**
+     * A load of the JWK Set has begun, after any wait for the lock; its result, if any, expires a
+     * TTL after the call that made it, which is the earlier time when there was a wait.
+     */
     synchronized void loadStarted(final long nowMillis) {
-      loadStartedAt = nowMillis;
+      final var waited = waitingSince.get();
+      waitingSince.remove();
+      loadStartedAt = waited != null ? waited : nowMillis;
     }
 
     /** The load that last began succeeded: the cache is current again, so any chain is over. */
