@@ -189,8 +189,9 @@ class IssuerAwareJWSKeySelectorTest {
               buildCount.incrementAndGet();
               // Holds every build open until a second one has started, so at least two threads
               // deterministically pass the "no cached selector yet" check before any build
-              // completes. The bounded wait only matters if resolution ever serialises builds, in
-              // which case the second never arrives and the assertions below still hold.
+              // completes. If resolution ever serialised builds the second would never arrive,
+              // every
+              // build would wait out the bound, and the test would fail on the timeout below.
               twoBuildsInFlight.countDown();
               try {
                 twoBuildsInFlight.await(5, TimeUnit.SECONDS);

@@ -109,7 +109,7 @@ without a debugger attached.
 - Contract tests for APIs (Pact consumer-driven contracts)
 - ArchUnit tests enforce hexagonal boundaries
 - Mockito style: use `@ExtendWith(MockitoExtension.class)` with `@Mock` fields; use `@InjectMocks` when possible for the unit under test; avoid `Mockito.mock(...)` in new tests
-- **No `Thread.sleep` in tests.** A fixed sleep is either too short (flaky) or too long (slow, for no reason), and says nothing when it fails. Wait on a condition with Awaitility (`await().atMost(...).until(...)`), or control the event yourself (e.g. a `CountDownLatch` that a fake endpoint waits on). See ADR-0033.
+- **No `Thread.sleep` in tests.** A fixed sleep is either too short (flaky) or too long (slow, for no reason), and says nothing when it fails. Wait on a condition with Awaitility (`await().atMost(...).until(...)`), or control the event yourself (e.g. a `CountDownLatch` that a fake endpoint waits on), or inject a controllable clock where the code accepts one. See ADR-0033.
 - All new classes must have corresponding tests
 
 ## Key Commands
