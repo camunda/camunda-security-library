@@ -51,4 +51,14 @@ class PermissionTypeTest {
     // RESTORE is a control operation (e.g. restoring a backup), not a read.
     assertThat(PermissionType.RESTORE.isReadPermission()).isFalse();
   }
+
+  @Test
+  void readSnapshotIsFlaggedAsReadPermission() {
+    assertThat(PermissionType.READ_SNAPSHOT.isReadPermission()).isTrue();
+    assertThat(PermissionType.CREATE_SNAPSHOT.isReadPermission()).isFalse();
+    assertThat(PermissionType.UPDATE_SNAPSHOT.isReadPermission()).isFalse();
+    assertThat(PermissionType.DELETE_SNAPSHOT.isReadPermission()).isFalse();
+    assertThat(PermissionType.REQUEST_REVIEW.isReadPermission()).isFalse();
+    assertThat(PermissionType.SUBMIT_REVIEW.isReadPermission()).isFalse();
+  }
 }

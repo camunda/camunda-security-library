@@ -91,6 +91,19 @@ public enum ResourceType {
   USER_TASK(
       PermissionType.READ, PermissionType.UPDATE, PermissionType.CLAIM, PermissionType.COMPLETE),
 
+  WORKSPACE(PermissionType.READ),
+  PROCESS_APPLICATION(
+      PermissionType.CREATE,
+      PermissionType.READ,
+      PermissionType.UPDATE,
+      PermissionType.DELETE,
+      PermissionType.READ_SNAPSHOT,
+      PermissionType.CREATE_SNAPSHOT,
+      PermissionType.UPDATE_SNAPSHOT,
+      PermissionType.DELETE_SNAPSHOT,
+      PermissionType.REQUEST_REVIEW,
+      PermissionType.SUBMIT_REVIEW),
+
   /** Internal default when no resource was set. */
   UNSPECIFIED();
 

@@ -101,4 +101,26 @@ class AuthorizationResourceTypeTest {
         .isInstanceOf(UnsupportedOperationException.class);
     assertThatThrownBy(permissions::clear).isInstanceOf(UnsupportedOperationException.class);
   }
+
+  @Test
+  void workspaceSupportsRead() {
+    assertThat(AuthorizationResourceType.WORKSPACE.getSupportedPermissionTypes())
+        .containsExactly(PermissionType.READ);
+  }
+
+  @Test
+  void processApplicationSupportsHubPermissions() {
+    assertThat(AuthorizationResourceType.PROCESS_APPLICATION.getSupportedPermissionTypes())
+        .containsExactlyInAnyOrder(
+            PermissionType.CREATE,
+            PermissionType.READ,
+            PermissionType.UPDATE,
+            PermissionType.DELETE,
+            PermissionType.READ_SNAPSHOT,
+            PermissionType.CREATE_SNAPSHOT,
+            PermissionType.UPDATE_SNAPSHOT,
+            PermissionType.DELETE_SNAPSHOT,
+            PermissionType.REQUEST_REVIEW,
+            PermissionType.SUBMIT_REVIEW);
+  }
 }

@@ -58,7 +58,15 @@ public enum PermissionType {
   SUSPEND_PROCESS_INSTANCE,
   UPDATE_PROCESS_INSTANCE,
   UPDATE_TASK_LISTENER,
-  UPDATE_USER_TASK;
+  UPDATE_USER_TASK,
+
+  /** Hub usage permissions. */
+  CREATE_SNAPSHOT,
+  DELETE_SNAPSHOT,
+  READ_SNAPSHOT(true),
+  REQUEST_REVIEW,
+  SUBMIT_REVIEW,
+  UPDATE_SNAPSHOT;
 
   private final boolean isReadPermission;
 
