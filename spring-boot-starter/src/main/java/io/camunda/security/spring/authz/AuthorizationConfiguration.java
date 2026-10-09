@@ -8,11 +8,16 @@
 package io.camunda.security.spring.authz;
 
 import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
+import io.camunda.security.api.context.ResourceAttributeExtractor;
 import io.camunda.security.api.context.ResourceScopeExtractor;
 import io.camunda.security.core.authz.AuthorizationChecker;
 import io.camunda.security.core.authz.AuthorizationService;
+import io.camunda.security.core.authz.ConditionalResourceAccessProvider;
+import io.camunda.security.core.authz.DisabledResourceAccessProvider;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.authz.PropertyAuthorizationEvaluatorRegistry;
+import io.camunda.security.core.authz.ResourceAccessProvider;
+import io.camunda.security.core.authz.ResourceAttributeExtractorRegistry;
 import io.camunda.security.core.authz.ResourceScopeExtractorRegistry;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
@@ -44,6 +49,10 @@ import org.springframework.context.annotation.Configuration;
  * {@link io.camunda.security.api.model.CamundaAuthentication}. Without extractors, checks behave as
  * before.
  *
+ * <p>All {@link ResourceAttributeExtractor} beans are collected into a {@link
+ * ResourceAttributeExtractorRegistry}, which the conditional role checks of the service and the
+ * {@link ConditionalResourceAccessProvider} read the attributes of resources from.
+ *
  * <p><strong>Ordering note:</strong> same timing constraint as {@link
  * AuthorizationCheckerConfiguration} — activate via the {@link
  * io.camunda.security.spring.CamundaSecurityAutoConfiguration} umbrella so that {@link
@@ -52,6 +61,33 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 @ConditionalOnBean(AuthorizationChecker.class)
 public class AuthorizationConfiguration {
+
+  /**
+   * Collects all registered {@link ResourceAttributeExtractor} beans; an empty list is valid. Backs
+   * off if the host registers its own registry.
+   */
+  @Bean
+  @ConditionalOnMissingBean
+  public ResourceAttributeExtractorRegistry resourceAttributeExtractorRegistry(
+      final List<ResourceAttributeExtractor<?>> attributeExtractors) {
+    return new ResourceAttributeExtractorRegistry(attributeExtractors);
+  }
+
+  /**
+   * Provides the generic {@link ConditionalResourceAccessProvider}, or a provider that grants every
+   * resource when authorizations are disabled. Backs off if the host registers its own {@link
+   * ResourceAccessProvider}.
+   */
+  @Bean
+  @ConditionalOnMissingBean(ResourceAccessProvider.class)
+  public ResourceAccessProvider resourceAccessProvider(
+      final AuthorizationChecker authorizationChecker,
+      final ResourceAttributeExtractorRegistry attributeExtractorRegistry,
+      final CamundaSecurityLibraryProperties properties) {
+    return properties.getAuthorizations().isEnabled()
+        ? new ConditionalResourceAccessProvider(authorizationChecker, attributeExtractorRegistry)
+        : new DisabledResourceAccessProvider();
+  }
 
   /**
    * Provides the default {@link AuthorizationService} backed by the host-supplied {@link
@@ -67,6 +103,7 @@ public class AuthorizationConfiguration {
    * @param evaluators all registered property-based evaluators; empty list is valid
    * @param properties CSL configuration properties for authorization and multi-tenancy flags
    * @param scopeExtractors all registered resource scope extractors; empty list is valid
+   * @param attributeExtractorRegistry the registry of all resource attribute extractors
    * @param claimsConverter converter from raw JWT claims to {@link
    *     io.camunda.security.api.model.CamundaAuthentication}; provided by the host application
    * @param meterRegistry the host's {@link MeterRegistry} bean, or {@code null} if metrics are not
@@ -78,6 +115,7 @@ public class AuthorizationConfiguration {
       final AuthorizationChecker authorizationChecker,
       final List<PropertyAuthorizationEvaluator<?>> evaluators,
       final List<ResourceScopeExtractor<?>> scopeExtractors,
+      final ResourceAttributeExtractorRegistry attributeExtractorRegistry,
       final CamundaSecurityLibraryProperties properties,
       final LazyTokenClaimsConverter claimsConverter,
       @Autowired(required = false) final MeterRegistry meterRegistry) {
@@ -85,6 +123,7 @@ public class AuthorizationConfiguration {
         authorizationChecker,
         new PropertyAuthorizationEvaluatorRegistry(evaluators),
         new ResourceScopeExtractorRegistry(scopeExtractors),
+        attributeExtractorRegistry,
         properties.getAuthorizations().isEnabled(),
         properties.getMultiTenancy().isChecksEnabled(),
         claimsConverter,

@@ -123,4 +123,38 @@ class AuthorizationResourceTypeTest {
             PermissionType.REQUEST_REVIEW,
             PermissionType.SUBMIT_REVIEW);
   }
+
+  @Test
+  void workspaceDeclaresTheWorkspaceAttribute() {
+    assertThat(AuthorizationResourceType.WORKSPACE.getSupportedAttributes())
+        .containsExactly(ResourceAttribute.WORKSPACE);
+  }
+
+  @Test
+  void processApplicationDeclaresTheWorkspaceAttribute() {
+    assertThat(AuthorizationResourceType.PROCESS_APPLICATION.getSupportedAttributes())
+        .containsExactly(ResourceAttribute.WORKSPACE);
+  }
+
+  @Test
+  void userTaskDeclaresTheAttributesOfItsPropertyGrants() {
+    assertThat(AuthorizationResourceType.USER_TASK.getSupportedAttributes())
+        .containsExactlyInAnyOrder(
+            ResourceAttribute.ASSIGNEE,
+            ResourceAttribute.CANDIDATE_USERS,
+            ResourceAttribute.CANDIDATE_GROUPS);
+  }
+
+  @Test
+  void otherResourceTypesDeclareNoAttributes() {
+    assertThat(AuthorizationResourceType.PROCESS_DEFINITION.getSupportedAttributes()).isEmpty();
+    assertThat(AuthorizationResourceType.UNSPECIFIED.getSupportedAttributes()).isEmpty();
+  }
+
+  @Test
+  void supportedAttributesAreImmutable() {
+    final var attributes = AuthorizationResourceType.USER_TASK.getSupportedAttributes();
+
+    assertThatThrownBy(attributes::clear).isInstanceOf(UnsupportedOperationException.class);
+  }
 }

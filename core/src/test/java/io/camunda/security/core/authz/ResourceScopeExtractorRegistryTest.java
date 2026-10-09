@@ -74,6 +74,34 @@ class ResourceScopeExtractorRegistryTest {
         .isInstanceOf(IllegalStateException.class);
   }
 
+  @Test
+  void findMatchingReturnsEmptyWhenNoClassMatchesInsteadOfThrowing() {
+    final var registry =
+        new ResourceScopeExtractorRegistry(
+            List.of(new TestExtractor<>(PROCESS_APPLICATION, String.class)));
+
+    assertThat(registry.findMatching(PROCESS_APPLICATION, 1L)).isEmpty();
+    assertThat(registry.findMatching(WORKSPACE, "w")).isEmpty();
+  }
+
+  @Test
+  void findMatchingReturnsTheExtractorOfTheMatchingClass() {
+    final var extractor = new TestExtractor<>(PROCESS_APPLICATION, String.class);
+    final var registry = new ResourceScopeExtractorRegistry(List.of(extractor));
+
+    assertThat(registry.<String>findMatching(PROCESS_APPLICATION, "pa")).contains(extractor);
+  }
+
+  @Test
+  void hasExtractorsForIsTrueOnlyForRegisteredResourceTypes() {
+    final var registry =
+        new ResourceScopeExtractorRegistry(
+            List.of(new TestExtractor<>(PROCESS_APPLICATION, String.class)));
+
+    assertThat(registry.hasExtractorsFor(PROCESS_APPLICATION)).isTrue();
+    assertThat(registry.hasExtractorsFor(WORKSPACE)).isFalse();
+  }
+
   private record TestExtractor<T>(AuthorizationResourceType resourceType, Class<T> resourceClass)
       implements ResourceScopeExtractor<T> {
 

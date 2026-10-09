@@ -65,6 +65,22 @@ public final class AuthorizationChecker {
   }
 
   /**
+   * Returns all {@link AuthorizationScope} records that the role {@code roleId} holds for the
+   * resource type and permission declared in {@code authorization}. Used to resolve the grants of a
+   * role the principal holds conditionally.
+   *
+   * @param roleId the ID of the role that owns the grants
+   * @param authorization the authorization requirement specifying the resource type and permission
+   */
+  public List<AuthorizationScope> retrieveAuthorizedAuthorizationScopesOfRole(
+      final String roleId, final RequiredAuthorization<?> authorization) {
+    return scopeRepository.findAuthorizedScopes(
+        Map.of(EntityType.ROLE, Set.of(roleId)),
+        authorization.resourceType(),
+        authorization.permissionType());
+  }
+
+  /**
    * Returns all {@link AuthorizationScope} records the principal holds for the resource type and
    * permission declared in {@code authorization}. Used to populate pre-query filters in search
    * backends.
@@ -110,8 +126,23 @@ public final class AuthorizationChecker {
       final CamundaAuthentication authentication,
       final RequiredAuthorization<?> authorization,
       final Set<String> propertyNames) {
+    return retrieveAuthorizedPropertyScopes(authentication, authorization, propertyNames, Set.of());
+  }
+
+  /**
+   * Same as {@link #retrieveAuthorizedPropertyScopes(CamundaAuthentication, RequiredAuthorization,
+   * Set)}, but additionally treats {@code additionalRoleIds} as roles of the principal.
+   *
+   * @param additionalRoleIds role IDs to add to the principal's roles for this retrieval only
+   */
+  public List<AuthorizationScope> retrieveAuthorizedPropertyScopes(
+      final CamundaAuthentication authentication,
+      final RequiredAuthorization<?> authorization,
+      final Set<String> propertyNames,
+      final Set<String> additionalRoleIds) {
     return getOrElseDefaultResult(
         authentication,
+        additionalRoleIds,
         ownerIds -> {
           final var scopes =
               scopeRepository.findAuthorizedPropertyScopes(

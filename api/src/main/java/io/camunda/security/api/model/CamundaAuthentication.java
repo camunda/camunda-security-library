@@ -7,6 +7,7 @@
  */
 package io.camunda.security.api.model;
 
+import io.camunda.security.api.model.authz.RoleMembership;
 import io.camunda.security.api.model.authz.ScopedRoleMembership;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -37,9 +38,15 @@ import java.util.function.Supplier;
  * ADR-0005. Lazy fields are resolved at most once on the first read operation against the returned
  * list; the public accessor signature is unchanged in both cases.
  *
- * <p>{@code scopedRoleMemberships} holds role memberships restricted to one scope, next to the
- * unscoped {@code authenticatedRoleIds}. It is optional, normalised to empty, and may be supplied
- * eagerly or lazily like the membership fields above.
+ * <p>Three accessors carry roles. {@code scopedRoleMemberships} and {@code roleMemberships} are
+ * optional, normalised to empty, and may be supplied eagerly or lazily like the membership fields
+ * above. The scoped and the conditional membership concepts coexist only to demonstrate different
+ * approaches in the prototype.
+ *
+ * @param authenticatedRoleIds the IDs of the roles that apply to every resource
+ * @param scopedRoleMemberships the roles that apply only within the scope of one resource
+ * @param roleMemberships the roles that apply to resources that meet the conditions of the
+ *     membership
  */
 public record CamundaAuthentication(
     String authenticatedUsername,
@@ -50,8 +57,32 @@ public record CamundaAuthentication(
     List<String> authenticatedTenantIds,
     List<String> authenticatedMappingRuleIds,
     Map<String, Object> claims,
-    List<ScopedRoleMembership> scopedRoleMemberships)
+    List<ScopedRoleMembership> scopedRoleMemberships,
+    List<RoleMembership> roleMemberships)
     implements Serializable {
+
+  public CamundaAuthentication(
+      final String authenticatedUsername,
+      final String authenticatedClientId,
+      final boolean anonymousUser,
+      final List<String> authenticatedGroupIds,
+      final List<String> authenticatedRoleIds,
+      final List<String> authenticatedTenantIds,
+      final List<String> authenticatedMappingRuleIds,
+      final Map<String, Object> claims,
+      final List<ScopedRoleMembership> scopedRoleMemberships) {
+    this(
+        authenticatedUsername,
+        authenticatedClientId,
+        anonymousUser,
+        authenticatedGroupIds,
+        authenticatedRoleIds,
+        authenticatedTenantIds,
+        authenticatedMappingRuleIds,
+        claims,
+        scopedRoleMemberships,
+        null);
+  }
 
   public CamundaAuthentication(
       final String authenticatedUsername,
@@ -71,6 +102,7 @@ public record CamundaAuthentication(
         authenticatedTenantIds,
         authenticatedMappingRuleIds,
         claims,
+        null,
         null);
   }
 
@@ -99,6 +131,7 @@ public record CamundaAuthentication(
     authenticatedMappingRuleIds = listOrEmpty(authenticatedMappingRuleIds);
     claims = immutableClaimsWithoutNullValues(claims);
     scopedRoleMemberships = listOrEmpty(scopedRoleMemberships);
+    roleMemberships = listOrEmpty(roleMemberships);
   }
 
   /**
@@ -179,6 +212,8 @@ public record CamundaAuthentication(
     private Supplier<List<String>> mappingRulesSupplier;
     private final List<ScopedRoleMembership> scopedRoleMemberships = new ArrayList<>();
     private Supplier<List<ScopedRoleMembership>> scopedRoleMembershipsSupplier;
+    private final List<RoleMembership> roleMemberships = new ArrayList<>();
+    private Supplier<List<RoleMembership>> roleMembershipsSupplier;
     private Map<String, Object> claims;
 
     public Builder user(final String value) {
@@ -275,6 +310,19 @@ public record CamundaAuthentication(
       return this;
     }
 
+    public Builder roleMemberships(final List<RoleMembership> values) {
+      if (values != null) {
+        roleMemberships.addAll(values);
+      }
+      return this;
+    }
+
+    public Builder roleMembershipsSupplier(final Supplier<List<RoleMembership>> supplier) {
+      roleMembershipsSupplier =
+          Objects.requireNonNull(supplier, "roleMemberships supplier must not be null");
+      return this;
+    }
+
     public Builder claims(final Map<String, Object> value) {
       // Snapshot only — must tolerate null values; the canonical constructor normalizes.
       claims = value == null ? null : new LinkedHashMap<>(value);
@@ -292,7 +340,8 @@ public record CamundaAuthentication(
           resolveMembershipField("mappingRules", mappingRules, mappingRulesSupplier),
           claims,
           resolveMembershipField(
-              "scopedRoleMemberships", scopedRoleMemberships, scopedRoleMembershipsSupplier));
+              "scopedRoleMemberships", scopedRoleMemberships, scopedRoleMembershipsSupplier),
+          resolveMembershipField("roleMemberships", roleMemberships, roleMembershipsSupplier));
     }
 
     private static <T> List<T> resolveMembershipField(

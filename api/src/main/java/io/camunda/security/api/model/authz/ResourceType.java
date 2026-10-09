@@ -89,10 +89,18 @@ public enum ResourceType {
       PermissionType.DELETE_PROCESS_INSTANCE,
       PermissionType.SUSPEND_PROCESS_INSTANCE),
   USER_TASK(
-      PermissionType.READ, PermissionType.UPDATE, PermissionType.CLAIM, PermissionType.COMPLETE),
+      Set.of(
+          ResourceAttribute.ASSIGNEE,
+          ResourceAttribute.CANDIDATE_USERS,
+          ResourceAttribute.CANDIDATE_GROUPS),
+      PermissionType.READ,
+      PermissionType.UPDATE,
+      PermissionType.CLAIM,
+      PermissionType.COMPLETE),
 
-  WORKSPACE(PermissionType.READ),
+  WORKSPACE(Set.of(ResourceAttribute.WORKSPACE), PermissionType.READ),
   PROCESS_APPLICATION(
+      Set.of(ResourceAttribute.WORKSPACE),
       PermissionType.CREATE,
       PermissionType.READ,
       PermissionType.UPDATE,
@@ -108,13 +116,29 @@ public enum ResourceType {
   UNSPECIFIED();
 
   private final Set<PermissionType> supportedPermissionTypes;
+  private final Set<ResourceAttribute> supportedAttributes;
 
   ResourceType(final PermissionType... supportedPermissionTypes) {
+    this(Set.of(), supportedPermissionTypes);
+  }
+
+  ResourceType(
+      final Set<ResourceAttribute> supportedAttributes,
+      final PermissionType... supportedPermissionTypes) {
+    this.supportedAttributes = Set.copyOf(supportedAttributes);
     this.supportedPermissionTypes = Set.copyOf(Arrays.asList(supportedPermissionTypes));
   }
 
   public Set<PermissionType> getSupportedPermissionTypes() {
     return supportedPermissionTypes;
+  }
+
+  /**
+   * Returns the {@link ResourceAttribute}s that resources of this type can provide to conditions. A
+   * condition on any other attribute can never be met for this type.
+   */
+  public Set<ResourceAttribute> getSupportedAttributes() {
+    return supportedAttributes;
   }
 
   /**

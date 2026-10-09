@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -48,6 +49,32 @@ public final class ResourceScopeExtractorRegistry {
                 Collectors.groupingBy(
                     ResourceScopeExtractor::resourceType,
                     Collectors.<ResourceScopeExtractor<?>>toUnmodifiableList()));
+  }
+
+  /** Returns whether any extractor is registered for {@code resourceType}. */
+  public boolean hasExtractorsFor(final AuthorizationResourceType resourceType) {
+    return extractors.containsKey(resourceType);
+  }
+
+  /**
+   * Returns the extractor for {@code resourceType} whose resource class accepts {@code resource},
+   * or {@link Optional#empty()} if there is none.
+   */
+  @SuppressWarnings("unchecked")
+  public <T> Optional<ResourceScopeExtractor<T>> findMatching(
+      final AuthorizationResourceType resourceType, final Object resource) {
+    return extractors.getOrDefault(resourceType, List.of()).stream()
+        .filter(extractor -> extractor.resourceClass().isInstance(resource))
+        .findFirst()
+        .map(extractor -> (ResourceScopeExtractor<T>) extractor);
+  }
+
+  /** The (resource type, resource class) pairs that have an extractor. */
+  Set<List<Object>> registrations() {
+    return extractors.values().stream()
+        .flatMap(List::stream)
+        .map(extractor -> List.<Object>of(extractor.resourceType(), extractor.resourceClass()))
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   /**

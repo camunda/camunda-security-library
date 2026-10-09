@@ -8,6 +8,7 @@
 package io.camunda.security.core.authz;
 
 import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
+import io.camunda.security.api.context.ResourceAttributeExtractor;
 import io.camunda.security.api.context.ResourceScopeExtractor;
 import io.camunda.security.api.context.TokenClaimsAuthenticationResolver;
 import io.camunda.security.api.model.CamundaAuthentication;
@@ -20,6 +21,7 @@ import io.camunda.security.api.model.authz.ScopedRoleMembership;
 import io.camunda.security.core.auth.RequiredAuthorization;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.core.port.out.AuthorizationCheckLatencyRecorder;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -63,6 +65,14 @@ import org.slf4j.LoggerFactory;
  * fast if {@code authorization} declares resource property names, as the property path is not
  * evaluated for such resource types.
  *
+ * <p><strong>Conditional role checks</strong> (same overload, for resource types with a registered
+ * {@link ResourceAttributeExtractor}): the resource ID is derived like for the scope-restricted
+ * checks. The principal's roles are extended by the roles of its {@link
+ * io.camunda.security.api.model.authz.RoleMembership}s whose conditions are all met by the
+ * attributes of the resource. Property names of {@code authorization} are evaluated as principal
+ * conditions against the attributes of the resource instead of through a {@link
+ * PropertyAuthorizationEvaluator}.
+ *
  * <p>{@link #skipChecks()} is a hot-path convenience for callers: it returns {@code true} when both
  * authorization and multi-tenancy checks are globally disabled, so callers can avoid constructing
  * expensive authentication objects before invoking a check method.
@@ -74,6 +84,8 @@ public final class AuthorizationService implements AuthorizationCheckPort {
   private final AuthorizationChecker authorizationChecker;
   private final PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry;
   private final ResourceScopeExtractorRegistry scopeExtractorRegistry;
+  private final ResourceAttributeExtractorRegistry attributeExtractorRegistry;
+  private final ConditionalRoleEvaluator conditionalRoleEvaluator;
   private final boolean authorizationEnabled;
   private final boolean multiTenancyChecksEnabled;
 
@@ -131,16 +143,75 @@ public final class AuthorizationService implements AuthorizationCheckPort {
       final boolean multiTenancyChecksEnabled,
       final TokenClaimsAuthenticationResolver claimsResolver,
       final AuthorizationCheckLatencyRecorder latencyRecorder) {
+    this(
+        authorizationChecker,
+        propertyEvaluatorRegistry,
+        scopeExtractorRegistry,
+        new ResourceAttributeExtractorRegistry(List.of()),
+        authorizationEnabled,
+        multiTenancyChecksEnabled,
+        claimsResolver,
+        latencyRecorder);
+  }
+
+  /**
+   * Full-control constructor also accepting the {@link ResourceAttributeExtractorRegistry} of the
+   * conditional role checks, which read the principal's {@link
+   * CamundaAuthentication#roleMemberships()}.
+   *
+   * @throws IllegalStateException if a resource type has both a {@link ResourceScopeExtractor} and
+   *     a {@link ResourceAttributeExtractor} for resource classes of which one is assignable to the
+   *     other
+   */
+  public AuthorizationService(
+      final AuthorizationChecker authorizationChecker,
+      final PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry,
+      final ResourceScopeExtractorRegistry scopeExtractorRegistry,
+      final ResourceAttributeExtractorRegistry attributeExtractorRegistry,
+      final boolean authorizationEnabled,
+      final boolean multiTenancyChecksEnabled,
+      final TokenClaimsAuthenticationResolver claimsResolver,
+      final AuthorizationCheckLatencyRecorder latencyRecorder) {
     this.authorizationChecker =
         Objects.requireNonNull(authorizationChecker, "authorizationChecker");
     this.propertyEvaluatorRegistry =
         Objects.requireNonNull(propertyEvaluatorRegistry, "propertyEvaluatorRegistry");
     this.scopeExtractorRegistry =
         Objects.requireNonNull(scopeExtractorRegistry, "scopeExtractorRegistry");
+    this.attributeExtractorRegistry =
+        Objects.requireNonNull(attributeExtractorRegistry, "attributeExtractorRegistry");
+    rejectOverlappingExtractors(scopeExtractorRegistry, attributeExtractorRegistry);
+    conditionalRoleEvaluator =
+        new ConditionalRoleEvaluator(authorizationChecker, attributeExtractorRegistry);
     this.claimsResolver = Objects.requireNonNull(claimsResolver, "claimsResolver");
     this.latencyRecorder = Objects.requireNonNull(latencyRecorder, "latencyRecorder");
     this.authorizationEnabled = authorizationEnabled;
     this.multiTenancyChecksEnabled = multiTenancyChecksEnabled;
+  }
+
+  private static void rejectOverlappingExtractors(
+      final ResourceScopeExtractorRegistry scopeRegistry,
+      final ResourceAttributeExtractorRegistry attributeRegistry) {
+    final var overlap = new ArrayList<List<Object>>();
+    for (final var scope : scopeRegistry.registrations()) {
+      for (final var attribute : attributeRegistry.registrations()) {
+        if (scope.get(0).equals(attribute.get(0))
+            && classesOverlap(scope.get(1), attribute.get(1))) {
+          overlap.add(List.of(scope.get(0), scope.get(1), attribute.get(1)));
+        }
+      }
+    }
+    if (!overlap.isEmpty()) {
+      throw new IllegalStateException(
+          "Each (resource type, resource class) may have either a ResourceScopeExtractor or a"
+              + " ResourceAttributeExtractor, but both are registered for "
+              + overlap);
+    }
+  }
+
+  private static boolean classesOverlap(final Object first, final Object second) {
+    return ((Class<?>) first).isAssignableFrom((Class<?>) second)
+        || ((Class<?>) second).isAssignableFrom((Class<?>) first);
   }
 
   /**
@@ -252,18 +323,21 @@ public final class AuthorizationService implements AuthorizationCheckPort {
    * properties with no registered evaluator, do not authorize. Only runs when authorization is
    * globally enabled.
    *
-   * <p>If a {@link ResourceScopeExtractor} is registered for the resource type of {@code
-   * authorization}, the scope-restricted role check described in the class documentation runs
-   * instead of the property path.
+   * <p>If a {@link ResourceScopeExtractor} or a {@link ResourceAttributeExtractor} is registered
+   * for the resource type of {@code authorization}, the scope-restricted or conditional role check
+   * described in the class documentation runs instead of the property path.
    *
-   * @param resource the resource instance to evaluate the property against, or whose scope the
-   *     scope-restricted role check uses
+   * @param resource the resource instance to evaluate the property against, or whose scope or
+   *     attributes the scope-restricted or conditional role check uses
    * @return {@link Either#right(Object) right(null)} when authorized or when authorization is
    *     disabled; {@link Either#left(Object) left(rejection)} otherwise
-   * @throws IllegalArgumentException on the scope-restricted path if {@code authorization} has no
-   *     {@code resourceIdSupplier}, carries explicit resource IDs, declares resource property
-   *     names, or no extractor registered for the resource type accepts {@code resource}
-   * @throws NullPointerException on the scope-restricted path if {@code resource} is {@code null}
+   * @throws IllegalArgumentException on the scope-restricted and conditional paths if {@code
+   *     authorization} has no {@code resourceIdSupplier} (unless it asks for property grants only
+   *     on the conditional path), carries explicit resource IDs, or no extractor registered for the
+   *     resource type accepts {@code resource}; on the scope-restricted path also if it declares
+   *     resource property names
+   * @throws NullPointerException on the scope-restricted and conditional paths if {@code resource}
+   *     is {@code null}
    */
   @Override
   public <T> Either<AuthorizationRejection, Void> check(
@@ -276,10 +350,8 @@ public final class AuthorizationService implements AuthorizationCheckPort {
         return Either.right(null);
       }
 
-      final Optional<ResourceScopeExtractor<T>> scopeExtractor =
-          scopeExtractorRegistry.findExtractor(authorization.resourceType(), resource);
-      if (scopeExtractor.isPresent()) {
-        return checkScopedRoles(authentication, authorization, resource, scopeExtractor.get());
+      if (hasExtractorsFor(authorization.resourceType())) {
+        return checkWithExtractors(authentication, authorization, resource);
       }
 
       if (!authorization.hasAnyResourcePropertyNames()) {
@@ -317,6 +389,58 @@ public final class AuthorizationService implements AuthorizationCheckPort {
     } finally {
       recordLatencySafely(startNanos);
     }
+  }
+
+  private boolean hasExtractorsFor(final AuthorizationResourceType resourceType) {
+    return scopeExtractorRegistry.hasExtractorsFor(resourceType)
+        || attributeExtractorRegistry.hasExtractorsFor(resourceType);
+  }
+
+  private <T> Either<AuthorizationRejection, Void> checkWithExtractors(
+      final CamundaAuthentication authentication,
+      final RequiredAuthorization<T> authorization,
+      final T resource) {
+    Objects.requireNonNull(resource, "resource");
+    final Optional<ResourceScopeExtractor<T>> scopeExtractor =
+        scopeExtractorRegistry.findMatching(authorization.resourceType(), resource);
+    if (scopeExtractor.isPresent()) {
+      return checkScopedRoles(authentication, authorization, resource, scopeExtractor.get());
+    }
+    if (attributeExtractorRegistry
+        .findMatching(authorization.resourceType(), resource)
+        .isPresent()) {
+      return checkConditionalRoles(authentication, authorization, resource);
+    }
+    throw new IllegalArgumentException(
+        "No ResourceScopeExtractor or ResourceAttributeExtractor for resource type "
+            + authorization.resourceType()
+            + " accepts resource of class "
+            + resource.getClass().getName());
+  }
+
+  private <T> Either<AuthorizationRejection, Void> checkConditionalRoles(
+      final CamundaAuthentication authentication,
+      final RequiredAuthorization<T> authorization,
+      final T resource) {
+    final var decision = conditionalRoleEvaluator.evaluate(authentication, authorization, resource);
+    if (decision.allowed()) {
+      return Either.right(null);
+    }
+    LOG.debug(
+        "Authorization denied for [{}] on [{}:{}] of a resource with conditional role memberships",
+        principalType(authentication),
+        authorization.resourceType(),
+        authorization.permissionType());
+    if (decision.resourceId() != null) {
+      return Either.left(
+          new AuthorizationRejection.Permission(
+              authorization.resourceType(), authorization.permissionType(), decision.resourceId()));
+    }
+    return Either.left(
+        new AuthorizationRejection.Property(
+            authorization.resourceType(),
+            authorization.permissionType(),
+            new TreeSet<>(authorization.resourcePropertyNames())));
   }
 
   private <T> Either<AuthorizationRejection, Void> checkScopedRoles(

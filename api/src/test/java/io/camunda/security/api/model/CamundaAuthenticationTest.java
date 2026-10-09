@@ -11,6 +11,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatExceptionOfType;
 
+import io.camunda.security.api.model.authz.Condition;
+import io.camunda.security.api.model.authz.Operand;
+import io.camunda.security.api.model.authz.ResourceAttribute;
+import io.camunda.security.api.model.authz.RoleMembership;
 import io.camunda.security.api.model.authz.ScopedRoleMembership;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -20,6 +24,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
@@ -453,5 +458,104 @@ class CamundaAuthenticationTest {
 
     assertThat(restored.scopedRoleMemberships())
         .containsExactly(new ScopedRoleMembership("editor", "w1"));
+  }
+
+  private static RoleMembership workspaceMembership(final String roleId, final String workspaceId) {
+    return new RoleMembership(
+        roleId,
+        List.of(
+            new Condition(ResourceAttribute.WORKSPACE, new Operand.Values(Set.of(workspaceId)))));
+  }
+
+  @Test
+  void shouldBuildAuthenticationWithEagerRoleMemberships() {
+    final var authentication =
+        CamundaAuthentication.of(
+            b -> b.user("demo-user").roleMemberships(List.of(workspaceMembership("editor", "w1"))));
+
+    assertThat(authentication.roleMemberships())
+        .containsExactly(workspaceMembership("editor", "w1"));
+    assertThatThrownBy(
+            () -> authentication.roleMemberships().add(workspaceMembership("viewer", "w2")))
+        .isInstanceOf(UnsupportedOperationException.class);
+  }
+
+  @Test
+  void shouldNotInvokeRoleMembershipsSupplierUntilRead() {
+    final var invocations = new AtomicInteger();
+    final var authentication =
+        CamundaAuthentication.of(
+            b ->
+                b.user("demo-user")
+                    .roleMembershipsSupplier(
+                        () -> {
+                          invocations.incrementAndGet();
+                          return List.of(workspaceMembership("editor", "w1"));
+                        }));
+
+    assertThat(invocations).hasValue(0);
+    assertThat(authentication.roleMemberships()).hasSize(1);
+    assertThat(authentication.roleMemberships()).hasSize(1);
+    assertThat(invocations).hasValue(1);
+  }
+
+  @Test
+  void shouldNormalizeNullRoleMembershipsSupplierResultToEmptyList() {
+    final var authentication =
+        CamundaAuthentication.of(b -> b.user("demo-user").roleMembershipsSupplier(() -> null));
+
+    assertThat(authentication.roleMemberships()).isEmpty();
+  }
+
+  @Test
+  void shouldRejectNullRoleMembershipsSupplier() {
+    assertThatExceptionOfType(NullPointerException.class)
+        .isThrownBy(() -> new CamundaAuthentication.Builder().roleMembershipsSupplier(null))
+        .withMessage("roleMemberships supplier must not be null");
+  }
+
+  @Test
+  void shouldRejectBothEagerRoleMembershipsAndSupplier() {
+    assertThatExceptionOfType(IllegalStateException.class)
+        .isThrownBy(
+            () ->
+                CamundaAuthentication.of(
+                    b ->
+                        b.user("demo-user")
+                            .roleMemberships(List.of(workspaceMembership("editor", "w1")))
+                            .roleMembershipsSupplier(List::of)))
+        .withMessageContaining("roleMemberships");
+  }
+
+  @Test
+  void shouldDefaultRoleMembershipsToEmptyForTheOlderConstructors() {
+    final var eightArguments =
+        new CamundaAuthentication("demo-user", null, false, null, null, null, null, null);
+    final var nineArguments =
+        new CamundaAuthentication("demo-user", null, false, null, null, null, null, null, null);
+
+    assertThat(eightArguments.roleMemberships()).isEmpty();
+    assertThat(nineArguments.roleMemberships()).isEmpty();
+  }
+
+  @Test
+  void shouldSerializeRoleMembershipsAsMaterializedList() throws Exception {
+    final var authentication =
+        CamundaAuthentication.of(
+            b ->
+                b.user("demo-user")
+                    .roleMembershipsSupplier(() -> List.of(workspaceMembership("editor", "w1"))));
+
+    final var bytes = new ByteArrayOutputStream();
+    try (var out = new ObjectOutputStream(bytes)) {
+      out.writeObject(authentication);
+    }
+
+    final CamundaAuthentication restored;
+    try (var in = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+      restored = (CamundaAuthentication) in.readObject();
+    }
+
+    assertThat(restored.roleMemberships()).containsExactly(workspaceMembership("editor", "w1"));
   }
 }

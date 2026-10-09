@@ -13,17 +13,25 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
+import io.camunda.security.api.context.ResourceAttributeExtractor;
 import io.camunda.security.api.context.ResourceScopeExtractor;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.authz.AuthorizationResourceType;
 import io.camunda.security.api.model.authz.AuthorizationScope;
+import io.camunda.security.api.model.authz.Condition;
 import io.camunda.security.api.model.authz.EntityType;
+import io.camunda.security.api.model.authz.Operand;
 import io.camunda.security.api.model.authz.PermissionType;
+import io.camunda.security.api.model.authz.ResourceAttribute;
+import io.camunda.security.api.model.authz.RoleMembership;
 import io.camunda.security.api.model.authz.ScopedRoleMembership;
 import io.camunda.security.core.auth.RequiredAuthorization;
 import io.camunda.security.core.authz.AuthorizationChecker;
 import io.camunda.security.core.authz.AuthorizationService;
+import io.camunda.security.core.authz.ConditionalResourceAccessProvider;
+import io.camunda.security.core.authz.DisabledResourceAccessProvider;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
+import io.camunda.security.core.authz.ResourceAccessProvider;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.core.port.out.AuthorizationCheckLatencyRecorder;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
@@ -251,6 +259,138 @@ class AuthorizationConfigurationTest {
                 CamundaAuthenticationBeansConfiguration.class,
                 AuthorizationConfiguration.class))
         .run(ctx -> assertThat(ctx).hasSingleBean(AuthorizationService.class));
+  }
+
+  @Test
+  void attributeExtractorsAreInjectedAndRoleMembershipsComeFromTheAuthentication() {
+    final ResourceAttributeExtractor<String> extractor = workspaceExtractor();
+    when(mockChecker.isAuthorized(any(), any(), any(), eq(Set.of("editor")))).thenReturn(true);
+    runner
+        .withPropertyValues("camunda.security.authorizations.enabled=true")
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
+        .withBean(ResourceAttributeExtractor.class, () -> extractor)
+        .run(
+            ctx -> {
+              final var service = ctx.getBean(AuthorizationService.class);
+              final var auth =
+                  CamundaAuthentication.of(
+                      b ->
+                          b.user("alice")
+                              .roleMemberships(
+                                  List.of(
+                                      new RoleMembership(
+                                          "editor",
+                                          List.of(
+                                              new Condition(
+                                                  ResourceAttribute.WORKSPACE,
+                                                  new Operand.Values(Set.of("w1"))))))));
+              final var req =
+                  RequiredAuthorization.<String>of(
+                      b ->
+                          b.resourceType(AuthorizationResourceType.PROCESS_APPLICATION)
+                              .permissionType(PermissionType.UPDATE)
+                              .resourceIdSupplier(resource -> "pa1"));
+
+              assertThat(service.check(auth, req, "w1").isRight()).isTrue();
+              assertThat(service.check(auth, req, "w2").isLeft()).isTrue();
+            });
+  }
+
+  @Test
+  void attributeExtractorRegistryRejectsDuplicateExtractors() {
+    final ResourceAttributeExtractor<String> extractor = workspaceExtractor();
+    runner
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
+        .withBean("first", ResourceAttributeExtractor.class, () -> extractor)
+        .withBean("second", ResourceAttributeExtractor.class, () -> extractor)
+        .run(ctx -> assertThat(ctx).hasFailed());
+  }
+
+  @Test
+  void conflictingScopeAndAttributeExtractorsFailTheContext() {
+    final ResourceAttributeExtractor<String> attributeExtractor = workspaceExtractor();
+    final ResourceScopeExtractor<String> scopeExtractor =
+        new ResourceScopeExtractor<>() {
+          @Override
+          public AuthorizationResourceType resourceType() {
+            return AuthorizationResourceType.PROCESS_APPLICATION;
+          }
+
+          @Override
+          public Class<String> resourceClass() {
+            return String.class;
+          }
+
+          @Override
+          public String scopeIdOf(final String resource) {
+            return resource;
+          }
+        };
+    runner
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
+        .withBean(ResourceAttributeExtractor.class, () -> attributeExtractor)
+        .withBean(ResourceScopeExtractor.class, () -> scopeExtractor)
+        .run(ctx -> assertThat(ctx).hasFailed());
+  }
+
+  @Test
+  void resourceAccessProviderIsTheConditionalProviderWhenAuthorizationsAreEnabled() {
+    runner
+        .withPropertyValues("camunda.security.authorizations.enabled=true")
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
+        .run(
+            ctx ->
+                assertThat(ctx.getBean(ResourceAccessProvider.class))
+                    .isInstanceOf(ConditionalResourceAccessProvider.class));
+  }
+
+  @Test
+  void resourceAccessProviderIsTheDisabledProviderWhenAuthorizationsAreDisabled() {
+    runner
+        .withPropertyValues("camunda.security.authorizations.enabled=false")
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
+        .run(
+            ctx ->
+                assertThat(ctx.getBean(ResourceAccessProvider.class))
+                    .isInstanceOf(DisabledResourceAccessProvider.class));
+  }
+
+  @Test
+  void hostCanOverrideTheResourceAccessProvider() {
+    final var hostProvider = new DisabledResourceAccessProvider();
+    runner
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
+        .withBean(ResourceAccessProvider.class, () -> hostProvider)
+        .run(ctx -> assertThat(ctx.getBean(ResourceAccessProvider.class)).isSameAs(hostProvider));
+  }
+
+  @Test
+  void resourceAccessProviderIsAbsentWhenAuthorizationCheckerIsMissing() {
+    runner.run(ctx -> assertThat(ctx).doesNotHaveBean(ResourceAccessProvider.class));
+  }
+
+  private static ResourceAttributeExtractor<String> workspaceExtractor() {
+    return new ResourceAttributeExtractor<>() {
+      @Override
+      public AuthorizationResourceType resourceType() {
+        return AuthorizationResourceType.PROCESS_APPLICATION;
+      }
+
+      @Override
+      public Class<String> resourceClass() {
+        return String.class;
+      }
+
+      @Override
+      public Set<ResourceAttribute> providedAttributes() {
+        return Set.of(ResourceAttribute.WORKSPACE);
+      }
+
+      @Override
+      public Map<ResourceAttribute, Set<String>> attributesOf(final String resource) {
+        return Map.of(ResourceAttribute.WORKSPACE, Set.of(resource));
+      }
+    };
   }
 
   @Configuration

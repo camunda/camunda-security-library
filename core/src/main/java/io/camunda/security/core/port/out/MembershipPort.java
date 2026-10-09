@@ -7,6 +7,7 @@
  */
 package io.camunda.security.core.port.out;
 
+import io.camunda.security.api.model.authz.RoleMembership;
 import io.camunda.security.api.model.authz.ScopedRoleMembership;
 import java.util.List;
 
@@ -24,7 +25,8 @@ import java.util.List;
  *   <li>{@link #groupIds(MembershipQuery)} additionally receives the resolved mapping-rule IDs.
  *   <li>{@link #roleIds(MembershipQuery)} additionally receives the resolved group IDs.
  *   <li>{@link #tenantIds(MembershipQuery)} additionally receives the resolved role IDs.
- *   <li>{@link #scopedRoleMemberships(MembershipQuery)} receives the same query as {@link
+ *   <li>{@link #scopedRoleMemberships(MembershipQuery)} and {@link
+ *       #roleMemberships(MembershipQuery)} receive the same query as {@link
  *       #roleIds(MembershipQuery)}.
  * </ul>
  *
@@ -48,6 +50,16 @@ public interface MembershipPort {
    * memberships keep the default, which returns no memberships.
    */
   default List<ScopedRoleMembership> scopedRoleMemberships(final MembershipQuery query) {
+    return List.of();
+  }
+
+  /**
+   * Returns the role memberships of the principal that apply to the resources that meet their
+   * conditions, in addition to {@link #roleIds(MembershipQuery)}. A membership without conditions
+   * applies everywhere. Hosts without conditional memberships keep the default, which returns no
+   * memberships.
+   */
+  default List<RoleMembership> roleMemberships(final MembershipQuery query) {
     return List.of();
   }
 
