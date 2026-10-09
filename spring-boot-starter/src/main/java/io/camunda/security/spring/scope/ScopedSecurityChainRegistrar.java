@@ -15,6 +15,7 @@ import io.camunda.security.api.context.CamundaSecurityScopeProvider;
 import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.oidc.ScopedJwtDecoderFactory;
+import io.camunda.security.spring.oidc.ScopedOidcTokenAuthenticationConverterFactory;
 import io.camunda.security.spring.security.ScopedWebappSecurityChainBuilder;
 import io.camunda.security.spring.session.ScopedWebSessionRepositoryFactory;
 import io.camunda.security.spring.session.WebSessionRepositories;
@@ -33,7 +34,10 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.beans.factory.support.RootBeanDefinition;
+import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.session.MapSessionRepository;
 import org.springframework.session.SessionRepository;
@@ -231,6 +235,7 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
                         missing);
                   }
                 },
+                () -> buildScopeTokenAuthenticationConverter(beanFactory, descriptor),
                 sessionFilter);
       }
       return new OrderedSecurityFilterChainWrapper(chain, ORDER_API);
@@ -239,6 +244,31 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
     } catch (final Exception ex) {
       throw new IllegalStateException(
           "Failed to build scoped API security chain for basePath=" + descriptor.basePath(), ex);
+    }
+  }
+
+  /**
+   * Builds the per-scope {@code Converter<Jwt, Authentication>} that resolves a bearer token with
+   * this scope's own claim configuration (ADR-0032), or {@code null} to fall back to the global
+   * converter. It returns {@code null} when the {@link
+   * ScopedOidcTokenAuthenticationConverterFactory} bean is absent — i.e. no {@link
+   * io.camunda.security.core.port.out.MembershipPort} is present, so the deployment does no CSL
+   * OIDC principal resolution anyway. The supplier is consumed only for OIDC scopes; a {@code null}
+   * result means "no override" for this scope (see ADR-0016).
+   */
+  private static Converter<Jwt, Authentication> buildScopeTokenAuthenticationConverter(
+      final ConfigurableListableBeanFactory beanFactory,
+      final ScopedSecurityDescriptor descriptor) {
+    try {
+      return beanFactory
+          .getBean(ScopedOidcTokenAuthenticationConverterFactory.class)
+          .buildConverter(descriptor.authentication(), "basePath=" + descriptor.basePath());
+    } catch (final NoSuchBeanDefinitionException missing) {
+      LOG.debug(
+          "No ScopedOidcTokenAuthenticationConverterFactory bean for basePath={}; the scoped OIDC"
+              + " chain uses the global token claims converter instead of a per-scope one.",
+          descriptor.basePath());
+      return null;
     }
   }
 
