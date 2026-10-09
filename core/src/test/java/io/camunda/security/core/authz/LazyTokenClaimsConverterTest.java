@@ -12,10 +12,12 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.context.MembershipResolutionContextPropagator;
+import io.camunda.security.api.model.authz.ScopedRoleMembership;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.core.port.out.MembershipQuery;
 import java.util.HashMap;
@@ -78,6 +80,7 @@ class LazyTokenClaimsConverterTest {
     verify(membershipPort, never()).groupIds(any());
     verify(membershipPort, never()).roleIds(any());
     verify(membershipPort, never()).tenantIds(any());
+    verify(membershipPort, never()).scopedRoleMemberships(any());
   }
 
   @Test
@@ -140,8 +143,8 @@ class LazyTokenClaimsConverterTest {
     capturingConverter.convert(Map.of("sub", "alice"));
 
     // then the propagator was applied once per membership supplier (mapping rules, groups, roles,
-    // tenants)
-    assertThat(decorateCalls.get()).isEqualTo(4);
+    // tenants, scoped role memberships)
+    assertThat(decorateCalls.get()).isEqualTo(5);
   }
 
   @Test
@@ -241,5 +244,92 @@ class LazyTokenClaimsConverterTest {
     final var auth = converter.convert(claims);
 
     assertThat(auth.authenticatedGroupIds()).containsExactly("g1");
+  }
+
+  @Test
+  void scopedRoleMembershipsAreResolvedLazilyWithTheQueryOfTheRoleLookup() {
+    final var claims = Map.<String, Object>of("sub", "alice");
+    when(membershipPort.mappingRuleIds(any())).thenReturn(List.of("mr1"));
+    when(membershipPort.groupIds(any())).thenReturn(List.of("g1"));
+    when(membershipPort.scopedRoleMemberships(any()))
+        .thenAnswer(
+            inv -> {
+              final MembershipQuery q = inv.getArgument(0);
+              assertThat(q.principalId()).isEqualTo("alice");
+              assertThat(q.principalType()).isEqualTo(MembershipPort.PrincipalType.USER);
+              assertThat(q.resolvedMappingRuleIds()).containsExactly("mr1");
+              assertThat(q.resolvedGroupIds()).containsExactly("g1");
+              return List.of(new ScopedRoleMembership("editor", "w1"));
+            });
+
+    final var auth = converter.convert(claims);
+    verify(membershipPort, never()).scopedRoleMemberships(any());
+
+    assertThat(auth.scopedRoleMemberships())
+        .containsExactly(new ScopedRoleMembership("editor", "w1"));
+    assertThat(auth.scopedRoleMemberships()).hasSize(1);
+    verify(membershipPort, times(1)).scopedRoleMemberships(any());
+  }
+
+  @Test
+  void scopedRoleMembershipsDefaultToEmptyForPortsWithoutScopedMemberships() {
+    final MembershipPort plainPort =
+        new MembershipPort() {
+          @Override
+          public List<String> mappingRuleIds(final MembershipQuery query) {
+            return List.of();
+          }
+
+          @Override
+          public List<String> groupIds(final MembershipQuery query) {
+            return List.of();
+          }
+
+          @Override
+          public List<String> roleIds(final MembershipQuery query) {
+            return List.of();
+          }
+
+          @Override
+          public List<String> tenantIds(final MembershipQuery query) {
+            return List.of();
+          }
+        };
+
+    final var auth =
+        new LazyTokenClaimsConverter("sub", "azp", true, plainPort).convert(Map.of("sub", "alice"));
+
+    assertThat(auth.scopedRoleMemberships()).isEmpty();
+  }
+
+  @Test
+  void bindsPropagatedContextAroundDeferredScopedRoleMembershipLookup() {
+    final AtomicReference<String> boundContext = new AtomicReference<>();
+    final MembershipResolutionContextPropagator propagator =
+        supplier ->
+            () -> {
+              boundContext.set("bound");
+              try {
+                return supplier.get();
+              } finally {
+                boundContext.set(null);
+              }
+            };
+    final AtomicReference<String> observedDuringLookup = new AtomicReference<>();
+    when(membershipPort.scopedRoleMemberships(any()))
+        .thenAnswer(
+            invocation -> {
+              observedDuringLookup.set(boundContext.get());
+              return List.of(new ScopedRoleMembership("editor", "w1"));
+            });
+    final var auth =
+        new LazyTokenClaimsConverter("sub", "azp", true, membershipPort, propagator)
+            .convert(Map.of("sub", "alice"));
+
+    assertThat(auth.scopedRoleMemberships())
+        .containsExactly(new ScopedRoleMembership("editor", "w1"));
+
+    assertThat(observedDuringLookup.get()).isEqualTo("bound");
+    assertThat(boundContext.get()).isNull();
   }
 }

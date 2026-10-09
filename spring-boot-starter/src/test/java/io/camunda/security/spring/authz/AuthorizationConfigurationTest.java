@@ -8,13 +8,19 @@
 package io.camunda.security.spring.authz;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
+import io.camunda.security.api.context.ResourceScopeExtractor;
+import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.authz.AuthorizationResourceType;
 import io.camunda.security.api.model.authz.AuthorizationScope;
 import io.camunda.security.api.model.authz.EntityType;
 import io.camunda.security.api.model.authz.PermissionType;
+import io.camunda.security.api.model.authz.ScopedRoleMembership;
+import io.camunda.security.core.auth.RequiredAuthorization;
 import io.camunda.security.core.authz.AuthorizationChecker;
 import io.camunda.security.core.authz.AuthorizationService;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
@@ -99,6 +105,51 @@ class AuthorizationConfigurationTest {
         .withBean(AuthorizationChecker.class, () -> mockChecker)
         .withBean(PropertyAuthorizationEvaluator.class, () -> mockEvaluator)
         .run(ctx -> assertThat(ctx).hasSingleBean(AuthorizationService.class));
+  }
+
+  @Test
+  void scopeExtractorsAreInjectedAndScopedRoleMembershipsComeFromTheAuthentication() {
+    final ResourceScopeExtractor<String> extractor =
+        new ResourceScopeExtractor<>() {
+          @Override
+          public AuthorizationResourceType resourceType() {
+            return AuthorizationResourceType.PROCESS_APPLICATION;
+          }
+
+          @Override
+          public Class<String> resourceClass() {
+            return String.class;
+          }
+
+          @Override
+          public String scopeIdOf(final String resource) {
+            return resource;
+          }
+        };
+    when(mockChecker.isAuthorized(any(), any(), any(), eq(Set.of("editor")))).thenReturn(true);
+    runner
+        .withPropertyValues("camunda.security.authorizations.enabled=true")
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
+        .withBean(ResourceScopeExtractor.class, () -> extractor)
+        .run(
+            ctx -> {
+              final var service = ctx.getBean(AuthorizationService.class);
+              final var auth =
+                  CamundaAuthentication.of(
+                      b ->
+                          b.user("alice")
+                              .scopedRoleMemberships(
+                                  List.of(new ScopedRoleMembership("editor", "w1"))));
+              final var req =
+                  RequiredAuthorization.<String>of(
+                      b ->
+                          b.resourceType(AuthorizationResourceType.PROCESS_APPLICATION)
+                              .permissionType(PermissionType.UPDATE)
+                              .resourceIdSupplier(resource -> "pa1"));
+
+              assertThat(service.check(auth, req, "w1").isRight()).isTrue();
+              assertThat(service.check(auth, req, "w2").isLeft()).isTrue();
+            });
   }
 
   @Test

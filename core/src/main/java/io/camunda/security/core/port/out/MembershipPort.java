@@ -7,6 +7,7 @@
  */
 package io.camunda.security.core.port.out;
 
+import io.camunda.security.api.model.authz.ScopedRoleMembership;
 import java.util.List;
 
 /**
@@ -23,6 +24,8 @@ import java.util.List;
  *   <li>{@link #groupIds(MembershipQuery)} additionally receives the resolved mapping-rule IDs.
  *   <li>{@link #roleIds(MembershipQuery)} additionally receives the resolved group IDs.
  *   <li>{@link #tenantIds(MembershipQuery)} additionally receives the resolved role IDs.
+ *   <li>{@link #scopedRoleMemberships(MembershipQuery)} receives the same query as {@link
+ *       #roleIds(MembershipQuery)}.
  * </ul>
  *
  * <p>The resolved-IDs fields on the query may hold lazy lists that materialise on first iteration;
@@ -37,6 +40,16 @@ public interface MembershipPort {
   List<String> roleIds(MembershipQuery query);
 
   List<String> tenantIds(MembershipQuery query);
+
+  /**
+   * Returns the role memberships of the principal that are restricted to one scope. They apply, in
+   * addition to {@link #roleIds(MembershipQuery)}, only to resources whose scope ID, as returned by
+   * a {@code ResourceScopeExtractor}, equals the scope ID of the membership. Hosts without scoped
+   * memberships keep the default, which returns no memberships.
+   */
+  default List<ScopedRoleMembership> scopedRoleMemberships(final MembershipQuery query) {
+    return List.of();
+  }
 
   /** Identity type of the authenticated principal. */
   enum PrincipalType {

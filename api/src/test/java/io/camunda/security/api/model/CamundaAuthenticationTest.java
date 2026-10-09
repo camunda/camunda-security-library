@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatExceptionOfType;
 
+import io.camunda.security.api.model.authz.ScopedRoleMembership;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
@@ -49,6 +50,7 @@ class CamundaAuthenticationTest {
     assertThat(authentication.authenticatedRoleIds()).isEmpty();
     assertThat(authentication.authenticatedTenantIds()).isEmpty();
     assertThat(authentication.authenticatedMappingRuleIds()).isEmpty();
+    assertThat(authentication.scopedRoleMemberships()).isEmpty();
     assertThat(authentication.claims()).isEmpty();
 
     assertThatThrownBy(() -> authentication.authenticatedGroupIds().add("group-1"))
@@ -353,5 +355,103 @@ class CamundaAuthenticationTest {
     assertThat(restored.authenticatedRoleIds()).containsExactly("role-1");
     assertThat(restored.authenticatedTenantIds()).isEmpty();
     assertThat(restored.authenticatedMappingRuleIds()).isEmpty();
+  }
+
+  @Test
+  void shouldBuildAuthenticationWithEagerScopedRoleMemberships() {
+    final var authentication =
+        CamundaAuthentication.of(
+            b ->
+                b.user("demo-user")
+                    .scopedRoleMemberships(List.of(new ScopedRoleMembership("editor", "w1"))));
+
+    assertThat(authentication.scopedRoleMemberships())
+        .containsExactly(new ScopedRoleMembership("editor", "w1"));
+    assertThatThrownBy(
+            () ->
+                authentication
+                    .scopedRoleMemberships()
+                    .add(new ScopedRoleMembership("viewer", "w2")))
+        .isInstanceOf(UnsupportedOperationException.class);
+  }
+
+  @Test
+  void shouldNotInvokeScopedRoleMembershipsSupplierUntilRead() {
+    final var invocations = new AtomicInteger();
+    final var authentication =
+        CamundaAuthentication.of(
+            b ->
+                b.user("demo-user")
+                    .scopedRoleMembershipsSupplier(
+                        () -> {
+                          invocations.incrementAndGet();
+                          return List.of(new ScopedRoleMembership("editor", "w1"));
+                        }));
+
+    assertThat(invocations).hasValue(0);
+    assertThat(authentication.scopedRoleMemberships()).hasSize(1);
+    assertThat(authentication.scopedRoleMemberships()).hasSize(1);
+    assertThat(invocations).hasValue(1);
+  }
+
+  @Test
+  void shouldNormalizeNullScopedRoleMembershipsSupplierResultToEmptyList() {
+    final var authentication =
+        CamundaAuthentication.of(
+            b -> b.user("demo-user").scopedRoleMembershipsSupplier(() -> null));
+
+    assertThat(authentication.scopedRoleMemberships()).isEmpty();
+  }
+
+  @Test
+  void shouldRejectNullScopedRoleMembershipsSupplier() {
+    assertThatExceptionOfType(NullPointerException.class)
+        .isThrownBy(() -> new CamundaAuthentication.Builder().scopedRoleMembershipsSupplier(null))
+        .withMessage("scopedRoleMemberships supplier must not be null");
+  }
+
+  @Test
+  void shouldRejectBothEagerScopedRoleMembershipsAndSupplier() {
+    assertThatExceptionOfType(IllegalStateException.class)
+        .isThrownBy(
+            () ->
+                CamundaAuthentication.of(
+                    b ->
+                        b.user("demo-user")
+                            .scopedRoleMemberships(
+                                List.of(new ScopedRoleMembership("editor", "w1")))
+                            .scopedRoleMembershipsSupplier(List::of)))
+        .withMessageContaining("scopedRoleMemberships");
+  }
+
+  @Test
+  void shouldKeepEightArgumentConstructorWithoutScopedRoleMemberships() {
+    final var authentication =
+        new CamundaAuthentication("demo-user", null, false, null, null, null, null, null);
+
+    assertThat(authentication.scopedRoleMemberships()).isEmpty();
+  }
+
+  @Test
+  void shouldSerializeScopedRoleMembershipsAsMaterializedList() throws Exception {
+    final var authentication =
+        CamundaAuthentication.of(
+            b ->
+                b.user("demo-user")
+                    .scopedRoleMembershipsSupplier(
+                        () -> List.of(new ScopedRoleMembership("editor", "w1"))));
+
+    final var bytes = new ByteArrayOutputStream();
+    try (var out = new ObjectOutputStream(bytes)) {
+      out.writeObject(authentication);
+    }
+
+    final CamundaAuthentication restored;
+    try (var in = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+      restored = (CamundaAuthentication) in.readObject();
+    }
+
+    assertThat(restored.scopedRoleMemberships())
+        .containsExactly(new ScopedRoleMembership("editor", "w1"));
   }
 }

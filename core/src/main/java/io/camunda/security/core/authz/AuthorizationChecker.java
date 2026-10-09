@@ -144,8 +144,24 @@ public final class AuthorizationChecker {
       final AuthorizationScope authorizationScope,
       final CamundaAuthentication authentication,
       final RequiredAuthorization<?> authorization) {
+    return isAuthorized(authorizationScope, authentication, authorization, Set.of());
+  }
+
+  /**
+   * Same as {@link #isAuthorized(AuthorizationScope, CamundaAuthentication,
+   * RequiredAuthorization)}, but additionally treats {@code additionalRoleIds} as roles of the
+   * principal. Used for roles that apply only to the scope of the resource being checked.
+   *
+   * @param additionalRoleIds role IDs to add to the principal's roles for this check only
+   */
+  public boolean isAuthorized(
+      final AuthorizationScope authorizationScope,
+      final CamundaAuthentication authentication,
+      final RequiredAuthorization<?> authorization,
+      final Set<String> additionalRoleIds) {
     return getOrElseDefaultResult(
         authentication,
+        additionalRoleIds,
         ownerIds ->
             scopeRepository.hasAuthorizedScope(
                 ownerIds,
@@ -186,7 +202,15 @@ public final class AuthorizationChecker {
       final CamundaAuthentication authentication,
       final Function<Map<EntityType, Set<String>>, T> resultSupplier,
       final Supplier<T> defaultResultSupplier) {
-    final var ownerTypeToOwnerIds = collectOwnerTypeToOwnerIds(authentication);
+    return getOrElseDefaultResult(authentication, Set.of(), resultSupplier, defaultResultSupplier);
+  }
+
+  private <T> T getOrElseDefaultResult(
+      final CamundaAuthentication authentication,
+      final Set<String> additionalRoleIds,
+      final Function<Map<EntityType, Set<String>>, T> resultSupplier,
+      final Supplier<T> defaultResultSupplier) {
+    final var ownerTypeToOwnerIds = collectOwnerTypeToOwnerIds(authentication, additionalRoleIds);
     return Optional.of(ownerTypeToOwnerIds)
         .filter(m -> !m.isEmpty())
         .map(resultSupplier)
@@ -194,7 +218,7 @@ public final class AuthorizationChecker {
   }
 
   private Map<EntityType, Set<String>> collectOwnerTypeToOwnerIds(
-      final CamundaAuthentication authentication) {
+      final CamundaAuthentication authentication, final Set<String> additionalRoleIds) {
     final var ownerTypeToOwnerIds = new HashMap<EntityType, Set<String>>();
     if (authentication.authenticatedUsername() != null) {
       ownerTypeToOwnerIds.put(EntityType.USER, Set.of(authentication.authenticatedUsername()));
@@ -206,9 +230,13 @@ public final class AuthorizationChecker {
     if (groups != null && !groups.isEmpty()) {
       ownerTypeToOwnerIds.put(EntityType.GROUP, new HashSet<>(groups));
     }
+    final var roleIds = new HashSet<String>(additionalRoleIds);
     final var roles = authentication.authenticatedRoleIds();
-    if (roles != null && !roles.isEmpty()) {
-      ownerTypeToOwnerIds.put(EntityType.ROLE, new HashSet<>(roles));
+    if (roles != null) {
+      roleIds.addAll(roles);
+    }
+    if (!roleIds.isEmpty()) {
+      ownerTypeToOwnerIds.put(EntityType.ROLE, roleIds);
     }
     final var mappingRules = authentication.authenticatedMappingRuleIds();
     if (mappingRules != null && !mappingRules.isEmpty()) {

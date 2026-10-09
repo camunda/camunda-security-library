@@ -7,6 +7,7 @@
  */
 package io.camunda.security.api.model;
 
+import io.camunda.security.api.model.authz.ScopedRoleMembership;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -35,6 +36,10 @@ import java.util.function.Supplier;
  * corresponding builder methods, or lazily via the {@code *Supplier} builder methods — see
  * ADR-0005. Lazy fields are resolved at most once on the first read operation against the returned
  * list; the public accessor signature is unchanged in both cases.
+ *
+ * <p>{@code scopedRoleMemberships} holds role memberships restricted to one scope, next to the
+ * unscoped {@code authenticatedRoleIds}. It is optional, normalised to empty, and may be supplied
+ * eagerly or lazily like the membership fields above.
  */
 public record CamundaAuthentication(
     String authenticatedUsername,
@@ -44,8 +49,30 @@ public record CamundaAuthentication(
     List<String> authenticatedRoleIds,
     List<String> authenticatedTenantIds,
     List<String> authenticatedMappingRuleIds,
-    Map<String, Object> claims)
+    Map<String, Object> claims,
+    List<ScopedRoleMembership> scopedRoleMemberships)
     implements Serializable {
+
+  public CamundaAuthentication(
+      final String authenticatedUsername,
+      final String authenticatedClientId,
+      final boolean anonymousUser,
+      final List<String> authenticatedGroupIds,
+      final List<String> authenticatedRoleIds,
+      final List<String> authenticatedTenantIds,
+      final List<String> authenticatedMappingRuleIds,
+      final Map<String, Object> claims) {
+    this(
+        authenticatedUsername,
+        authenticatedClientId,
+        anonymousUser,
+        authenticatedGroupIds,
+        authenticatedRoleIds,
+        authenticatedTenantIds,
+        authenticatedMappingRuleIds,
+        claims,
+        null);
+  }
 
   public CamundaAuthentication {
     if (anonymousUser) {
@@ -71,6 +98,7 @@ public record CamundaAuthentication(
     authenticatedTenantIds = listOrEmpty(authenticatedTenantIds);
     authenticatedMappingRuleIds = listOrEmpty(authenticatedMappingRuleIds);
     claims = immutableClaimsWithoutNullValues(claims);
+    scopedRoleMemberships = listOrEmpty(scopedRoleMemberships);
   }
 
   /**
@@ -149,6 +177,8 @@ public record CamundaAuthentication(
     private Supplier<List<String>> roleIdsSupplier;
     private Supplier<List<String>> tenantsSupplier;
     private Supplier<List<String>> mappingRulesSupplier;
+    private final List<ScopedRoleMembership> scopedRoleMemberships = new ArrayList<>();
+    private Supplier<List<ScopedRoleMembership>> scopedRoleMembershipsSupplier;
     private Map<String, Object> claims;
 
     public Builder user(final String value) {
@@ -231,6 +261,20 @@ public record CamundaAuthentication(
       return this;
     }
 
+    public Builder scopedRoleMemberships(final List<ScopedRoleMembership> values) {
+      if (values != null) {
+        scopedRoleMemberships.addAll(values);
+      }
+      return this;
+    }
+
+    public Builder scopedRoleMembershipsSupplier(
+        final Supplier<List<ScopedRoleMembership>> supplier) {
+      scopedRoleMembershipsSupplier =
+          Objects.requireNonNull(supplier, "scopedRoleMemberships supplier must not be null");
+      return this;
+    }
+
     public Builder claims(final Map<String, Object> value) {
       // Snapshot only — must tolerate null values; the canonical constructor normalizes.
       claims = value == null ? null : new LinkedHashMap<>(value);
@@ -246,11 +290,13 @@ public record CamundaAuthentication(
           resolveMembershipField("roleIds", roleIds, roleIdsSupplier),
           resolveMembershipField("tenants", tenants, tenantsSupplier),
           resolveMembershipField("mappingRules", mappingRules, mappingRulesSupplier),
-          claims);
+          claims,
+          resolveMembershipField(
+              "scopedRoleMemberships", scopedRoleMemberships, scopedRoleMembershipsSupplier));
     }
 
-    private static List<String> resolveMembershipField(
-        final String fieldName, final List<String> eager, final Supplier<List<String>> supplier) {
+    private static <T> List<T> resolveMembershipField(
+        final String fieldName, final List<T> eager, final Supplier<List<T>> supplier) {
       if (supplier != null) {
         if (!eager.isEmpty()) {
           throw new IllegalStateException(

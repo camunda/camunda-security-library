@@ -8,6 +8,7 @@
 package io.camunda.security.core.authz;
 
 import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
+import io.camunda.security.api.context.ResourceScopeExtractor;
 import io.camunda.security.api.context.TokenClaimsAuthenticationResolver;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.Either;
@@ -15,6 +16,7 @@ import io.camunda.security.api.model.authz.AuthorizationRejection;
 import io.camunda.security.api.model.authz.AuthorizationResourceMatcher;
 import io.camunda.security.api.model.authz.AuthorizationResourceType;
 import io.camunda.security.api.model.authz.AuthorizationScope;
+import io.camunda.security.api.model.authz.ScopedRoleMembership;
 import io.camunda.security.core.auth.RequiredAuthorization;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.core.port.out.AuthorizationCheckLatencyRecorder;
@@ -25,6 +27,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,6 +52,17 @@ import org.slf4j.LoggerFactory;
  * There is no equivalent path in {@link AuthorizationChecker}. Callers must not bypass this method
  * for property-based authorization.
  *
+ * <p><strong>Scope-restricted role checks</strong> (same overload, for resource types with a
+ * registered {@link ResourceScopeExtractor}): evaluates the resource IDs of the {@code
+ * authorization} like the scope-based path, with the principal's roles extended by the roles of its
+ * {@link ScopedRoleMembership}s whose scope ID equals the scope ID of the resource. Unlike the
+ * scope-based path, the resource ID is derived from the resource by the {@code resourceIdSupplier}
+ * of {@code authorization} (see {@link ResourceIdResolver}; the supplier returns the wildcard for
+ * create-type checks), and explicit resource IDs are rejected. The scope of a single resource
+ * object thus applies to one ID only; callers check multiple resources one at a time. It also fails
+ * fast if {@code authorization} declares resource property names, as the property path is not
+ * evaluated for such resource types.
+ *
  * <p>{@link #skipChecks()} is a hot-path convenience for callers: it returns {@code true} when both
  * authorization and multi-tenancy checks are globally disabled, so callers can avoid constructing
  * expensive authentication objects before invoking a check method.
@@ -58,6 +73,7 @@ public final class AuthorizationService implements AuthorizationCheckPort {
 
   private final AuthorizationChecker authorizationChecker;
   private final PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry;
+  private final ResourceScopeExtractorRegistry scopeExtractorRegistry;
   private final boolean authorizationEnabled;
   private final boolean multiTenancyChecksEnabled;
 
@@ -92,10 +108,35 @@ public final class AuthorizationService implements AuthorizationCheckPort {
       final boolean multiTenancyChecksEnabled,
       final TokenClaimsAuthenticationResolver claimsResolver,
       final AuthorizationCheckLatencyRecorder latencyRecorder) {
+    this(
+        authorizationChecker,
+        propertyEvaluatorRegistry,
+        new ResourceScopeExtractorRegistry(List.of()),
+        authorizationEnabled,
+        multiTenancyChecksEnabled,
+        claimsResolver,
+        latencyRecorder);
+  }
+
+  /**
+   * Full-control constructor also accepting the {@link ResourceScopeExtractorRegistry} of the
+   * scope-restricted role checks, which read the principal's {@link
+   * CamundaAuthentication#scopedRoleMemberships()}.
+   */
+  public AuthorizationService(
+      final AuthorizationChecker authorizationChecker,
+      final PropertyAuthorizationEvaluatorRegistry propertyEvaluatorRegistry,
+      final ResourceScopeExtractorRegistry scopeExtractorRegistry,
+      final boolean authorizationEnabled,
+      final boolean multiTenancyChecksEnabled,
+      final TokenClaimsAuthenticationResolver claimsResolver,
+      final AuthorizationCheckLatencyRecorder latencyRecorder) {
     this.authorizationChecker =
         Objects.requireNonNull(authorizationChecker, "authorizationChecker");
     this.propertyEvaluatorRegistry =
         Objects.requireNonNull(propertyEvaluatorRegistry, "propertyEvaluatorRegistry");
+    this.scopeExtractorRegistry =
+        Objects.requireNonNull(scopeExtractorRegistry, "scopeExtractorRegistry");
     this.claimsResolver = Objects.requireNonNull(claimsResolver, "claimsResolver");
     this.latencyRecorder = Objects.requireNonNull(latencyRecorder, "latencyRecorder");
     this.authorizationEnabled = authorizationEnabled;
@@ -156,31 +197,41 @@ public final class AuthorizationService implements AuthorizationCheckPort {
         return Either.right(null);
       }
 
-      final boolean isTenantResource =
-          AuthorizationResourceType.TENANT.equals(authorization.resourceType());
-
-      for (final String resourceId : authorization.resourceIds()) {
-        final AuthorizationScope scope = AuthorizationScope.of(resourceId);
-        if (!authorizationChecker.isAuthorized(scope, authentication, authorization)) {
-          LOG.debug(
-              "Authorization denied for [{}] on resource [{}:{}:{}]",
-              principalType(authentication),
-              authorization.resourceType(),
-              authorization.permissionType(),
-              resourceId);
-          if (isTenantResource) {
-            return Either.left(new AuthorizationRejection.Tenant(resourceId));
-          }
-          return Either.left(
-              new AuthorizationRejection.Permission(
-                  authorization.resourceType(), authorization.permissionType(), resourceId));
-        }
-      }
-
-      return Either.right(null);
+      return checkResourceIds(
+          authentication,
+          authorization,
+          scope -> authorizationChecker.isAuthorized(scope, authentication, authorization));
     } finally {
       recordLatencySafely(startNanos);
     }
+  }
+
+  private <T> Either<AuthorizationRejection, Void> checkResourceIds(
+      final CamundaAuthentication authentication,
+      final RequiredAuthorization<T> authorization,
+      final Predicate<AuthorizationScope> isAuthorized) {
+    final boolean isTenantResource =
+        AuthorizationResourceType.TENANT.equals(authorization.resourceType());
+
+    for (final String resourceId : authorization.resourceIds()) {
+      final AuthorizationScope scope = AuthorizationScope.of(resourceId);
+      if (!isAuthorized.test(scope)) {
+        LOG.debug(
+            "Authorization denied for [{}] on resource [{}:{}:{}]",
+            principalType(authentication),
+            authorization.resourceType(),
+            authorization.permissionType(),
+            resourceId);
+        if (isTenantResource) {
+          return Either.left(new AuthorizationRejection.Tenant(resourceId));
+        }
+        return Either.left(
+            new AuthorizationRejection.Permission(
+                authorization.resourceType(), authorization.permissionType(), resourceId));
+      }
+    }
+
+    return Either.right(null);
   }
 
   /**
@@ -201,9 +252,18 @@ public final class AuthorizationService implements AuthorizationCheckPort {
    * properties with no registered evaluator, do not authorize. Only runs when authorization is
    * globally enabled.
    *
-   * @param resource the resource instance to evaluate the property against
+   * <p>If a {@link ResourceScopeExtractor} is registered for the resource type of {@code
+   * authorization}, the scope-restricted role check described in the class documentation runs
+   * instead of the property path.
+   *
+   * @param resource the resource instance to evaluate the property against, or whose scope the
+   *     scope-restricted role check uses
    * @return {@link Either#right(Object) right(null)} when authorized or when authorization is
    *     disabled; {@link Either#left(Object) left(rejection)} otherwise
+   * @throws IllegalArgumentException on the scope-restricted path if {@code authorization} has no
+   *     {@code resourceIdSupplier}, carries explicit resource IDs, declares resource property
+   *     names, or no extractor registered for the resource type accepts {@code resource}
+   * @throws NullPointerException on the scope-restricted path if {@code resource} is {@code null}
    */
   @Override
   public <T> Either<AuthorizationRejection, Void> check(
@@ -214,6 +274,12 @@ public final class AuthorizationService implements AuthorizationCheckPort {
     try {
       if (!authorizationEnabled) {
         return Either.right(null);
+      }
+
+      final Optional<ResourceScopeExtractor<T>> scopeExtractor =
+          scopeExtractorRegistry.findExtractor(authorization.resourceType(), resource);
+      if (scopeExtractor.isPresent()) {
+        return checkScopedRoles(authentication, authorization, resource, scopeExtractor.get());
       }
 
       if (!authorization.hasAnyResourcePropertyNames()) {
@@ -251,6 +317,34 @@ public final class AuthorizationService implements AuthorizationCheckPort {
     } finally {
       recordLatencySafely(startNanos);
     }
+  }
+
+  private <T> Either<AuthorizationRejection, Void> checkScopedRoles(
+      final CamundaAuthentication authentication,
+      final RequiredAuthorization<T> authorization,
+      final T resource,
+      final ResourceScopeExtractor<T> scopeExtractor) {
+    if (authorization.hasAnyResourcePropertyNames()) {
+      throw new IllegalArgumentException(
+          "Scope-restricted check on resource type "
+              + authorization.resourceType()
+              + " does not support resource property names");
+    }
+
+    final var resolvedAuthorization =
+        authorization.withResourceId(ResourceIdResolver.resolveResourceId(authorization, resource));
+    final String resourceScopeId = scopeExtractor.scopeIdOf(resource);
+    final Set<String> scopedRoleIds =
+        authentication.scopedRoleMemberships().stream()
+            .filter(membership -> membership.scopeId().equals(resourceScopeId))
+            .map(ScopedRoleMembership::roleId)
+            .collect(Collectors.toSet());
+    return checkResourceIds(
+        authentication,
+        resolvedAuthorization,
+        scope ->
+            authorizationChecker.isAuthorized(
+                scope, authentication, resolvedAuthorization, scopedRoleIds));
   }
 
   private void recordLatencySafely(final long startNanos) {
