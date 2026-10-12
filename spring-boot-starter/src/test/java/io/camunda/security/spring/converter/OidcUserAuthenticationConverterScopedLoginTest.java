@@ -28,6 +28,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -175,6 +176,28 @@ final class OidcUserAuthenticationConverterScopedLoginTest {
         assertThat(claims).doesNotContainKey("source");
       }
     }
+  }
+
+  @Test
+  void shouldLetAFalseRegistrationEntryWinOverATrueHostLookup() throws Exception {
+    // the host map says prefer for "oidc", but the registration of scope B says no
+    final var decoderFactory =
+        new OidcAccessTokenDecoderFactory(
+            new JWSKeySelectorFactory(),
+            new TokenValidatorFactory(Map.of(), OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of()));
+    converter =
+        new OidcUserAuthenticationConverter(
+            authorizedClientRepository,
+            decoderFactory,
+            tokenClaimsConverter,
+            request,
+            AdditionalJwkSetUrisByRegistrationId.empty(),
+            Map.of(REGISTRATION_ID, true));
+    accessTokens.put(SCOPE_B, idpB.signWithAudience(idpB.issuerUri(), "audience-x"));
+
+    final var claims = login(SCOPE_B);
+
+    assertThat(claims).doesNotContainKey("source");
   }
 
   private Map<String, Object> login(final String scope) {
