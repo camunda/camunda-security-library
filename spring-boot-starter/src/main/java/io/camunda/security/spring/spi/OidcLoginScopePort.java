@@ -30,6 +30,10 @@ import java.util.Map;
 public interface OidcLoginScopePort {
 
   /**
+   * Returns the scope of the login. The converter calls this more than once per login, so keep it
+   * cheap and free of side effects. Return only keys from a fixed set, such as the configured
+   * scopes, because the converter caches decoders per scope and never evicts them.
+   *
    * @return the opaque scope key of the login being converted, or {@code null} when the login does
    *     not belong to a scope
    */
