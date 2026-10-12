@@ -46,6 +46,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0031: Send the session idle timeout as OIDC `max_age` on SaaS authorization requests](../adr/0031-oidc-max-age-in-saas.md)
 - [ADR-0032: Scope the login CSRF guard to state-changing requests](../adr/0032-scope-login-csrf-guard-to-state-changing-requests.md)
 - [ADR-0033: Carry the interactive-login settings in the client registration](../adr/0033-login-settings-carried-by-the-registration.md)
+- [ADR-0034: Named providers inherit the principal claims of the default slot](../adr/0034-named-providers-inherit-principal-claims.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 
