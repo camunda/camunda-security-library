@@ -45,6 +45,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0030: Key the login flow's supplementary JWK Set URIs by registration ID, not by issuer](../adr/0030-additional-jwk-set-uris-by-registration-id.md)
 - [ADR-0031: Send the session idle timeout as OIDC `max_age` on SaaS authorization requests](../adr/0031-oidc-max-age-in-saas.md)
 - [ADR-0032: Scope the login CSRF guard to state-changing requests](../adr/0032-scope-login-csrf-guard-to-state-changing-requests.md)
+- [ADR-0033: Resolve the interactive-login access-token decoder per scope](../adr/0033-scope-keyed-oidc-login-decoder.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 

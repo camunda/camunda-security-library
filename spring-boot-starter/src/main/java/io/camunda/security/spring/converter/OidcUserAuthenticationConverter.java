@@ -11,6 +11,7 @@ import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory;
+import io.camunda.security.spring.oidc.TokenValidatorFactory;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Collections;
 import java.util.Map;
@@ -41,9 +42,8 @@ public class OidcUserAuthenticationConverter
   private final OidcAccessTokenDecoderFactory accessTokenDecoderFactory;
   private final LazyTokenClaimsConverter tokenClaimsConverter;
   private final HttpServletRequest request;
-  private final Map<String, JwtDecoder> jwtDecoders;
-  private final AdditionalJwkSetUrisByRegistrationId additionalJwkSetUris;
-  private final Map<String, Boolean> preferIdTokenClaimsByRegistrationId;
+  private final Map<DecoderKey, JwtDecoder> jwtDecoders;
+  private final OidcLoginScopeResolver scopeResolver;
 
   public OidcUserAuthenticationConverter(
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
@@ -81,18 +81,25 @@ public class OidcUserAuthenticationConverter
       final HttpServletRequest request,
       final AdditionalJwkSetUrisByRegistrationId additionalJwkSetUris,
       final Map<String, Boolean> preferIdTokenClaimsByRegistrationId) {
+    this(
+        authorizedClientRepository,
+        accessTokenDecoderFactory,
+        tokenClaimsConverter,
+        request,
+        OidcLoginScopeResolver.unscoped(additionalJwkSetUris, preferIdTokenClaimsByRegistrationId));
+  }
+
+  public OidcUserAuthenticationConverter(
+      final OAuth2AuthorizedClientRepository authorizedClientRepository,
+      final OidcAccessTokenDecoderFactory accessTokenDecoderFactory,
+      final LazyTokenClaimsConverter tokenClaimsConverter,
+      final HttpServletRequest request,
+      final OidcLoginScopeResolver scopeResolver) {
     this.authorizedClientRepository = authorizedClientRepository;
     this.accessTokenDecoderFactory = accessTokenDecoderFactory;
     this.tokenClaimsConverter = tokenClaimsConverter;
     this.request = request;
-    this.additionalJwkSetUris =
-        additionalJwkSetUris != null
-            ? additionalJwkSetUris
-            : AdditionalJwkSetUrisByRegistrationId.empty();
-    this.preferIdTokenClaimsByRegistrationId =
-        preferIdTokenClaimsByRegistrationId != null
-            ? Map.copyOf(preferIdTokenClaimsByRegistrationId)
-            : Collections.emptyMap();
+    this.scopeResolver = scopeResolver;
     jwtDecoders = new ConcurrentHashMap<>();
   }
 
@@ -132,18 +139,19 @@ public class OidcUserAuthenticationConverter
     return Optional.ofNullable(getAccessTokenClaims(authenticationToken))
         .orElseGet(
             () -> {
-              LOGGER.warn("Falling back to ID Token claims");
+              LOGGER.warn(
+                  "Falling back to ID Token claims for registration '{}' in scope '{}'",
+                  authenticationToken.getAuthorizedClientRegistrationId(),
+                  currentScope());
               return getIdTokenClaims(authenticationToken);
             });
   }
 
   private boolean shouldPreferIdTokenClaims(final OAuth2AuthenticationToken authenticationToken) {
-    if (preferIdTokenClaimsByRegistrationId.isEmpty()) {
-      return false;
-    }
     final var registrationId = authenticationToken.getAuthorizedClientRegistrationId();
     return registrationId != null
-        && Boolean.TRUE.equals(preferIdTokenClaimsByRegistrationId.get(registrationId));
+        && Boolean.TRUE.equals(
+            scopeResolver.preferIdTokenClaims(currentScope()).get(registrationId));
   }
 
   protected Map<String, Object> getAccessTokenClaims(
@@ -155,8 +163,10 @@ public class OidcUserAuthenticationConverter
         .map(
             tokenValue -> {
               final var clientRegistration = authorizedClient.getClientRegistration();
-              final var jwtDecoder = getJwtDecoder(clientRegistration);
-              return decodeAccessToken(jwtDecoder, tokenValue);
+              final var scope = currentScope();
+              final var jwtDecoder = getJwtDecoder(clientRegistration, scope);
+              return decodeAccessToken(
+                  jwtDecoder, tokenValue, clientRegistration.getRegistrationId(), scope);
             })
         .map(Jwt::getClaims)
         .orElse(null);
@@ -170,25 +180,69 @@ public class OidcUserAuthenticationConverter
   }
 
   protected Jwt decodeAccessToken(final JwtDecoder jwtDecoder, final String accessTokenValue) {
+    return decodeAccessToken(jwtDecoder, accessTokenValue, null, currentScope());
+  }
+
+  private Jwt decodeAccessToken(
+      final JwtDecoder jwtDecoder,
+      final String accessTokenValue,
+      final String registrationId,
+      final String scope) {
     try {
       return jwtDecoder.decode(accessTokenValue);
     } catch (final JwtException e) {
-      LOGGER.warn("Failed to decode Access Token: '{}', returning null", e.getMessage());
+      LOGGER.warn(
+          "Failed to decode Access Token for registration '{}' in scope '{}': '{}', returning null",
+          registrationId,
+          scope,
+          e.getMessage());
       return null;
     }
   }
 
   protected JwtDecoder getJwtDecoder(final ClientRegistration clientRegistration) {
-    final var clientRegistrationId = clientRegistration.getRegistrationId();
+    return getJwtDecoder(clientRegistration, currentScope());
+  }
+
+  private JwtDecoder getJwtDecoder(
+      final ClientRegistration clientRegistration, final String scope) {
+    final var registrationId = clientRegistration.getRegistrationId();
+    final var key = decoderKey(scope, clientRegistration);
     return jwtDecoders.computeIfAbsent(
-        clientRegistrationId,
+        key,
         k ->
             accessTokenDecoderFactory.createAccessTokenDecoder(
-                clientRegistration, additionalJwkSetUris.get(k)));
+                clientRegistration, scopeResolver.additionalJwkSetUris(scope).get(registrationId)));
+  }
+
+  private static DecoderKey decoderKey(
+      final String scope, final ClientRegistration clientRegistration) {
+    final var details = clientRegistration.getProviderDetails();
+    if (details == null) {
+      return new DecoderKey(scope, clientRegistration.getRegistrationId(), null, null, null);
+    }
+    return new DecoderKey(
+        scope,
+        clientRegistration.getRegistrationId(),
+        details.getIssuerUri(),
+        details.getJwkSetUri(),
+        details.getConfigurationMetadata().get(TokenValidatorFactory.AUDIENCES_METADATA_KEY));
+  }
+
+  private String currentScope() {
+    return scopeResolver.resolveScope(request);
   }
 
   protected Map<String, Object> getIdTokenClaims(
       final OAuth2AuthenticationToken authenticationToken) {
     return authenticationToken.getPrincipal().getAttributes();
   }
+
+  /**
+   * Identifies the provider settings a decoder was built from. The scope and the registration's own
+   * issuer, JWK Set URI and audiences are part of the key, so scopes that share a registration id
+   * never share a decoder.
+   */
+  private record DecoderKey(
+      String scope, String registrationId, String issuerUri, String jwkSetUri, Object audiences) {}
 }
