@@ -14,6 +14,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -110,25 +111,46 @@ public class TokenValidatorFactory {
   }
 
   /**
-   * Resolves the issuer a registration's tokens must carry: the {@link #ISSUER_METADATA_KEY}
-   * metadata entry when present (authoritative, even when empty), otherwise the issuer of the
-   * registration itself, otherwise the {@code providers}-map issuer. Scoped registrations that
-   * share a registration ID can sit on different issuers, so the registration of the login at hand
-   * wins over the entry the map holds for that ID.
+   * Resolves the issuer a registration's tokens must carry: the issuer of the registration itself
+   * (see {@link #registrationIssuer}) when it declares one, otherwise the {@code providers}-map
+   * issuer. Scoped registrations that share a registration ID can sit on different issuers, so the
+   * registration of the login at hand wins over the entry the map holds for that ID.
    */
   private static String resolveIssuerUri(
       final ClientRegistration clientRegistration, final OidcConfiguration providerConfig) {
-    final var details = clientRegistration.getProviderDetails();
-    if (details != null) {
-      final var metadata = details.getConfigurationMetadata();
-      if (metadata != null && metadata.containsKey(ISSUER_METADATA_KEY)) {
-        return metadata.get(ISSUER_METADATA_KEY) instanceof final String issuer ? issuer : null;
-      }
-      if (StringUtils.hasText(details.getIssuerUri())) {
-        return details.getIssuerUri();
-      }
+    final var own = registrationIssuer(clientRegistration);
+    if (own != null) {
+      return own.orElse(null);
     }
     return providerConfig != null ? providerConfig.getIssuerUri() : null;
+  }
+
+  /**
+   * The issuer a registration declares for itself: the {@link #ISSUER_METADATA_KEY} metadata entry
+   * when present (authoritative, so an empty entry is an empty {@link Optional}, meaning no issuer
+   * check), otherwise {@code providerDetails.issuerUri} when set. {@code null} when the
+   * registration declares nothing, and the caller decides what to fall back to.
+   *
+   * @throws IllegalStateException if the metadata entry is not a {@code String}
+   */
+  public static Optional<String> registrationIssuer(final ClientRegistration clientRegistration) {
+    final var details = clientRegistration.getProviderDetails();
+    if (details == null) {
+      return null;
+    }
+    final var metadata = details.getConfigurationMetadata();
+    if (metadata != null && metadata.containsKey(ISSUER_METADATA_KEY)) {
+      final var issuer = metadata.get(ISSUER_METADATA_KEY);
+      if (!(issuer instanceof final String value)) {
+        throw new IllegalStateException(
+            "Metadata key '"
+                + ISSUER_METADATA_KEY
+                + "' must hold a String issuer but was: "
+                + (issuer == null ? "null" : issuer.getClass().getName()));
+      }
+      return Optional.ofNullable(StringUtils.hasText(value) ? value : null);
+    }
+    return StringUtils.hasText(details.getIssuerUri()) ? Optional.of(details.getIssuerUri()) : null;
   }
 
   /**

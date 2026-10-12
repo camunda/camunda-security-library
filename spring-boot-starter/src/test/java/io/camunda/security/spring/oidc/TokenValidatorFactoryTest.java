@@ -139,6 +139,17 @@ class TokenValidatorFactoryTest {
   }
 
   @Test
+  void shouldFailClosedWhenTheIssuerMetadataIsNotAString() {
+    when(providerDetails.getConfigurationMetadata())
+        .thenReturn(Map.of(TokenValidatorFactory.ISSUER_METADATA_KEY, 42));
+    final var factory = new TokenValidatorFactory(Map.of(), Duration.ofSeconds(60), List.of());
+
+    assertThatThrownBy(() -> factory.createTokenValidator(registration))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(TokenValidatorFactory.ISSUER_METADATA_KEY);
+  }
+
+  @Test
   void shouldIncludeAudienceValidatorWhenConfiguredForRegistration() {
     final var oidc = new OidcConfiguration();
     oidc.setAudiences(Set.of("expected-audience"));

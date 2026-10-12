@@ -197,6 +197,25 @@ final class OidcUserAuthenticationConverterScopeTest {
   }
 
   @Test
+  void shouldNotShareDecoderBetweenRegistrationsWithDifferentMetadataIssuers() {
+    final var first = registrationWithIssuer("https://issuer-1");
+    final var second = registrationWithIssuer("https://issuer-2");
+    scopeUris(null, null);
+    when(decoderFactory.createAccessTokenDecoder(first, null)).thenReturn(decoderA);
+    when(decoderFactory.createAccessTokenDecoder(second, null)).thenReturn(decoderB);
+    when(decoderA.decode("token")).thenReturn(jwt());
+    when(decoderB.decode("token")).thenReturn(jwt());
+    stubClients(first, second);
+    final var converter = converter();
+
+    converter.convert(login());
+    converter.convert(login());
+
+    verify(decoderA).decode("token");
+    verify(decoderB).decode("token");
+  }
+
+  @Test
   void shouldKeepUnscopedSettingsWhenNoResolverIsGiven() {
     final var registration = registration("https://idp/jwks", null);
     when(decoderFactory.createAccessTokenDecoder(registration, List.of("jwks-x")))
@@ -286,6 +305,12 @@ final class OidcUserAuthenticationConverterScopeTest {
   private static Jwt jwt() {
     final var now = Instant.now();
     return new Jwt("token", now, now.plusSeconds(60), Map.of("alg", "RS256"), Map.of("sub", "a"));
+  }
+
+  private static ClientRegistration registrationWithIssuer(final String issuer) {
+    return ClientRegistration.withClientRegistration(registration("https://idp/jwks", null))
+        .providerConfigurationMetadata(Map.of(TokenValidatorFactory.ISSUER_METADATA_KEY, issuer))
+        .build();
   }
 
   private static ClientRegistration registration(

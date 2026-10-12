@@ -189,7 +189,8 @@ public class OidcUserAuthenticationConverter
             tokenValue -> {
               final var clientRegistration = authorizedClient.getClientRegistration();
               final var jwtDecoder = getJwtDecoder(clientRegistration);
-              return decodeAccessToken(jwtDecoder, tokenValue);
+              return decodeAccessToken(
+                  loggingFailures(jwtDecoder, clientRegistration.getRegistrationId()), tokenValue);
             })
         .map(Jwt::getClaims)
         .orElse(null);
@@ -206,12 +207,29 @@ public class OidcUserAuthenticationConverter
     try {
       return jwtDecoder.decode(accessTokenValue);
     } catch (final JwtException e) {
-      LOGGER.warn(
-          "Failed to decode Access Token in scope '{}': '{}', returning null",
-          sanitizeForLog(currentScope()),
-          e.getMessage());
+      LOGGER.debug("Failed to decode Access Token: '{}', returning null", e.getMessage());
       return null;
     }
+  }
+
+  /**
+   * Wraps the decoder handed to {@link #decodeAccessToken} so a failure is logged at WARN with the
+   * registration and the scope, which that hook does not receive. Hosts that override the hook
+   * still get the wrapper as their decoder.
+   */
+  private JwtDecoder loggingFailures(final JwtDecoder jwtDecoder, final String registrationId) {
+    return token -> {
+      try {
+        return jwtDecoder.decode(token);
+      } catch (final JwtException e) {
+        LOGGER.warn(
+            "Failed to decode Access Token for registration '{}' in scope '{}': '{}'",
+            sanitizeForLog(registrationId),
+            sanitizeForLog(currentScope()),
+            e.getMessage());
+        throw e;
+      }
+    };
   }
 
   protected JwtDecoder getJwtDecoder(final ClientRegistration clientRegistration) {
@@ -235,10 +253,11 @@ public class OidcUserAuthenticationConverter
     if (details == null) {
       return new DecoderKey(scope, clientRegistration.getRegistrationId(), null, null, null);
     }
+    final var issuer = TokenValidatorFactory.registrationIssuer(clientRegistration);
     return new DecoderKey(
         scope,
         clientRegistration.getRegistrationId(),
-        details.getIssuerUri(),
+        issuer == null ? null : issuer.orElse(""),
         details.getJwkSetUri(),
         details.getConfigurationMetadata().get(TokenValidatorFactory.AUDIENCES_METADATA_KEY));
   }
