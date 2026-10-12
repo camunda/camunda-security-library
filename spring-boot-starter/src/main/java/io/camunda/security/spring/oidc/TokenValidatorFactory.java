@@ -14,6 +14,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -31,8 +32,10 @@ import org.springframework.util.StringUtils;
  *
  * <ul>
  *   <li>A {@link JwtTimestampValidator} using the configured clock skew
- *   <li>A {@link JwtIssuerValidator} when the matched {@link OidcConfiguration} declares an issuer
- *       URI
+ *   <li>A {@link JwtIssuerValidator} for the issuer in the registration's {@link
+ *       #ISSUER_METADATA_KEY} entry, which takes precedence; otherwise when the matched {@link
+ *       OidcConfiguration} declares an issuer URI. The entry adds the check even when the providers
+ *       map is empty, and an empty entry switches it off
  *   <li>An {@link AudienceValidator} when the matched {@link OidcConfiguration} declares audiences
  *   <li>Any extra validators supplied by the host (e.g. SaaS organization/cluster validators)
  * </ul>
@@ -49,6 +52,14 @@ public class TokenValidatorFactory {
    * a registration ID still validate their own audiences.
    */
   public static final String AUDIENCES_METADATA_KEY = "camunda.security.oidc.audiences";
+
+  /**
+   * Key under which a {@link ClientRegistration} carries the issuer its own scope configures, empty
+   * when the scope configures none (explicit endpoints only). Authoritative by presence, like the
+   * audiences: an empty value switches issuer validation off for that registration instead of
+   * borrowing the issuer another scope configures under the same registration ID.
+   */
+  public static final String ISSUER_METADATA_KEY = "camunda.security.oidc.issuer";
 
   private final Map<String, OidcConfiguration> providers;
   private final Duration clockSkew;
@@ -86,8 +97,9 @@ public class TokenValidatorFactory {
 
     validators.add(new JwtTimestampValidator(clockSkew));
 
-    if (providerConfig != null && StringUtils.hasText(providerConfig.getIssuerUri())) {
-      validators.add(new JwtIssuerValidator(providerConfig.getIssuerUri()));
+    final var issuerUri = resolveIssuerUri(clientRegistration, providerConfig);
+    if (StringUtils.hasText(issuerUri)) {
+      validators.add(new JwtIssuerValidator(issuerUri));
     }
 
     final var audiences = resolveAudiences(clientRegistration, providerConfig);
@@ -98,6 +110,53 @@ public class TokenValidatorFactory {
     validators.addAll(extraValidators);
 
     return new DelegatingOAuth2TokenValidator<>(validators);
+  }
+
+  /**
+   * Resolves the issuer a registration's tokens must carry: the issuer the registration declares
+   * for itself (see {@link #registrationIssuer}) when it declares one, otherwise the {@code
+   * providers}-map issuer. Scoped registrations that share a registration ID can sit on different
+   * issuers, so the registration of the login at hand wins over the entry the map holds for that
+   * ID.
+   */
+  private static String resolveIssuerUri(
+      final ClientRegistration clientRegistration, final OidcConfiguration providerConfig) {
+    final var own = registrationIssuer(clientRegistration);
+    if (own.isPresent()) {
+      // uri() is null for an explicitly empty declaration, which must not fall back to the map
+      return own.get().uri();
+    }
+    return providerConfig != null ? providerConfig.getIssuerUri() : null;
+  }
+
+  /**
+   * What a registration declares about its own issuer: the {@link #ISSUER_METADATA_KEY} metadata
+   * entry when present (authoritative, so an empty entry declares {@linkplain
+   * RegistrationIssuer#none() no issuer}). Only {@link ScopedClientRegistrationFactory} writes this
+   * entry. A registration without it declares nothing, and the caller decides what to fall back to.
+   *
+   * @throws IllegalStateException if the metadata entry is not a {@code String}
+   */
+  public static Optional<RegistrationIssuer> registrationIssuer(
+      final ClientRegistration clientRegistration) {
+    final var details = clientRegistration.getProviderDetails();
+    if (details == null) {
+      return Optional.empty();
+    }
+    final var metadata = details.getConfigurationMetadata();
+    if (metadata != null && metadata.containsKey(ISSUER_METADATA_KEY)) {
+      final var issuer = metadata.get(ISSUER_METADATA_KEY);
+      if (!(issuer instanceof final String value)) {
+        throw new IllegalStateException(
+            "Metadata key '"
+                + ISSUER_METADATA_KEY
+                + "' must hold a String issuer but was: "
+                + (issuer == null ? "null" : issuer.getClass().getName()));
+      }
+      return Optional.of(
+          StringUtils.hasText(value) ? new RegistrationIssuer(value) : RegistrationIssuer.none());
+    }
+    return Optional.empty();
   }
 
   /**
@@ -124,5 +183,19 @@ public class TokenValidatorFactory {
       return providerConfig.getAudiences();
     }
     return Set.of();
+  }
+
+  /**
+   * An issuer a registration declares for itself.
+   *
+   * @param uri the issuer, or {@code null} when the registration explicitly declares none, which
+   *     switches issuer validation off for it
+   */
+  public record RegistrationIssuer(String uri) {
+
+    /** A registration that explicitly declares no issuer. */
+    public static RegistrationIssuer none() {
+      return new RegistrationIssuer(null);
+    }
   }
 }
