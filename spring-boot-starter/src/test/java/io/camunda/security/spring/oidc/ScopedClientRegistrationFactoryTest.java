@@ -20,6 +20,8 @@ import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -40,6 +42,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.web.firewall.RequestRejectedException;
 import org.springframework.security.web.firewall.StrictHttpFirewall;
 
@@ -283,6 +286,34 @@ class ScopedClientRegistrationFactoryTest {
     assertThat(metadata.get(TokenValidatorFactory.AUDIENCES_METADATA_KEY))
         .asInstanceOf(InstanceOfAssertFactories.collection(String.class))
         .isEmpty();
+  }
+
+  @Test
+  void shouldStashEmptyIssuerEntryWhenIssuerUnsetSoItNeverInheritsAnotherScopesIssuer() {
+    // given a scoped provider on explicit endpoints, with no issuer-uri
+    final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
+
+    // when
+    final var registration = factory.createFromProviderMap(Map.of("myid", oidc)).get(0);
+
+    // then the issuer key is present (authoritative by presence) but empty
+    assertThat(registration.getProviderDetails().getConfigurationMetadata())
+        .containsEntry(TokenValidatorFactory.ISSUER_METADATA_KEY, "");
+    // and a validator built over a conflicting providers-map issuer for the same id ignores it
+    final var rootConfig = new OidcConfiguration();
+    rootConfig.setIssuerUri("https://root-issuer");
+    final var validator =
+        new TokenValidatorFactory(Map.of("myid", rootConfig), Duration.ofSeconds(60), List.of())
+            .createTokenValidator(registration);
+    final var now = Instant.now();
+    final var jwt =
+        new Jwt(
+            "t",
+            now,
+            now.plusSeconds(60),
+            Map.of("alg", "RS256"),
+            Map.of("sub", "alice", "iss", "https://scope-issuer"));
+    assertThat(validator.validate(jwt).hasErrors()).isFalse();
   }
 
   @Test
