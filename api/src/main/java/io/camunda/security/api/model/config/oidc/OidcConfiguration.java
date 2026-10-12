@@ -62,6 +62,11 @@ public class OidcConfiguration {
   private String clientIdClaim;
   private String groupsClaim;
   private boolean preferUsernameClaim;
+  // Set by the setters only. Spring calls a setter only for a property that the configuration
+  // has, so these flags tell an unset claim from one set to its default value.
+  private boolean usernameClaimSet;
+  private boolean clientIdClaimSet;
+  private boolean preferUsernameClaimSet;
   private boolean preferIdTokenClaims;
   private String organizationId;
   private List<String> resource;
@@ -252,6 +257,14 @@ public class OidcConfiguration {
 
   public void setUsernameClaim(final String usernameClaim) {
     this.usernameClaim = usernameClaim;
+    usernameClaimSet = true;
+  }
+
+  /**
+   * @return {@code true} when the configuration sets {@code username-claim}, also to its default
+   */
+  public boolean isUsernameClaimSet() {
+    return usernameClaimSet;
   }
 
   public String getClientIdClaim() {
@@ -260,6 +273,14 @@ public class OidcConfiguration {
 
   public void setClientIdClaim(final String clientIdClaim) {
     this.clientIdClaim = clientIdClaim;
+    clientIdClaimSet = true;
+  }
+
+  /**
+   * @return {@code true} when the configuration sets {@code client-id-claim}
+   */
+  public boolean isClientIdClaimSet() {
+    return clientIdClaimSet;
   }
 
   public String getOrganizationId() {
@@ -289,6 +310,15 @@ public class OidcConfiguration {
 
   public void setPreferUsernameClaim(final boolean preferUsernameClaim) {
     this.preferUsernameClaim = preferUsernameClaim;
+    preferUsernameClaimSet = true;
+  }
+
+  /**
+   * @return {@code true} when the configuration sets {@code prefer-username-claim}, also to {@code
+   *     false}
+   */
+  public boolean isPreferUsernameClaimSet() {
+    return preferUsernameClaimSet;
   }
 
   public boolean isPreferIdTokenClaims() {
@@ -522,6 +552,9 @@ public class OidcConfiguration {
     private String clientIdClaim;
     private String groupsClaim;
     private boolean preferUsernameClaim;
+    private boolean usernameClaimSet;
+    private boolean clientIdClaimSet;
+    private boolean preferUsernameClaimSet;
     private boolean preferIdTokenClaims;
     private String organizationId;
     private String clientAuthenticationMethod = CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC;
@@ -624,11 +657,13 @@ public class OidcConfiguration {
 
     public Builder usernameClaim(final String usernameClaim) {
       this.usernameClaim = usernameClaim;
+      usernameClaimSet = true;
       return this;
     }
 
     public Builder clientIdClaim(final String clientIdClaim) {
       this.clientIdClaim = clientIdClaim;
+      clientIdClaimSet = true;
       return this;
     }
 
@@ -640,6 +675,7 @@ public class OidcConfiguration {
 
     public Builder preferUsernameClaim(final boolean preferUsernameClaim) {
       this.preferUsernameClaim = preferUsernameClaim;
+      preferUsernameClaimSet = true;
       return this;
     }
 
@@ -718,10 +754,16 @@ public class OidcConfiguration {
       config.setUserInfoUri(userInfoUri);
       config.setAuthorizeRequest(authorizeRequestConfiguration);
       config.setAudiences(audiences);
-      config.setUsernameClaim(usernameClaim);
-      config.setClientIdClaim(clientIdClaim);
+      if (usernameClaimSet) {
+        config.setUsernameClaim(usernameClaim);
+      }
+      if (clientIdClaimSet) {
+        config.setClientIdClaim(clientIdClaim);
+      }
       config.setGroupsClaim(groupsClaim);
-      config.setPreferUsernameClaim(preferUsernameClaim);
+      if (preferUsernameClaimSet) {
+        config.setPreferUsernameClaim(preferUsernameClaim);
+      }
       config.setPreferIdTokenClaims(preferIdTokenClaims);
       config.setOrganizationId(organizationId);
       config.setClientAuthenticationMethod(clientAuthenticationMethod);

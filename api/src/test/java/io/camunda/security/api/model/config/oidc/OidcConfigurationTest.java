@@ -319,4 +319,41 @@ public class OidcConfigurationTest {
     config.setDiagnostics(diagnostics);
     return config;
   }
+
+  @Test
+  void shouldNotMarkPrincipalClaimsAsSetByDefault() {
+    // when
+    final var fromConstructor = new OidcConfiguration();
+    final var fromBuilder = OidcConfiguration.builder().clientId("client").build();
+
+    // then
+    for (final var config : List.of(fromConstructor, fromBuilder)) {
+      Assertions.assertThat(config.isUsernameClaimSet()).isFalse();
+      Assertions.assertThat(config.isClientIdClaimSet()).isFalse();
+      Assertions.assertThat(config.isPreferUsernameClaimSet()).isFalse();
+      Assertions.assertThat(config.getUsernameClaim()).isEqualTo(DEFAULT_USERNAME_CLAIM);
+    }
+  }
+
+  @Test
+  void shouldMarkPrincipalClaimsAsSetAlsoForTheDefaultValues() {
+    // when
+    final var fromSetters = new OidcConfiguration();
+    fromSetters.setUsernameClaim(DEFAULT_USERNAME_CLAIM);
+    fromSetters.setClientIdClaim(null);
+    fromSetters.setPreferUsernameClaim(false);
+    final var fromBuilder =
+        OidcConfiguration.builder()
+            .usernameClaim(DEFAULT_USERNAME_CLAIM)
+            .clientIdClaim(null)
+            .preferUsernameClaim(false)
+            .build();
+
+    // then
+    for (final var config : List.of(fromSetters, fromBuilder)) {
+      Assertions.assertThat(config.isUsernameClaimSet()).isTrue();
+      Assertions.assertThat(config.isClientIdClaimSet()).isTrue();
+      Assertions.assertThat(config.isPreferUsernameClaimSet()).isTrue();
+    }
+  }
 }
