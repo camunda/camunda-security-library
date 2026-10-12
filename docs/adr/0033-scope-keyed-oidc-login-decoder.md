@@ -36,9 +36,10 @@ what a scope is?
 - **Validator issuer.** `TokenValidatorFactory` takes the expected issuer from the login's own
   `ClientRegistration`. Registrations built by `ScopedClientRegistrationFactory` carry it under
   `camunda.security.oidc.issuer`, empty when the scope sets none, and that entry is authoritative
-  by presence like the audiences. The providers-map entry is used only for a registration that
-  carries neither the entry nor an issuer of its own. A scope that overrides `oidc` therefore validates against its own issuer, and still gets an
-  issuer check when the providers map is empty (scoped-only mode).
+  by presence like the audiences. The providers-map entry is used only for a registration without
+  the entry, such as one a host builds itself, so those keep their current behavior. A scope that
+  overrides `oidc` therefore validates against its own issuer, and still gets an issuer check when
+  the providers map is empty (scoped-only mode).
 - **Host SPI.** `io.camunda.security.spring.spi.OidcLoginScopePort` supplies an opaque scope key for
   the current login, plus that scope's additional JWK Set URIs and `prefer-id-token-claims` map. It
   is passed through `OidcUserAuthenticationConverter.scoped(...)`. The existing public constructors
@@ -82,8 +83,10 @@ key of the additional-JWKS lookup.
   separated.
 - One decoder is cached per distinct (scope, registration) pair, so memory grows with the number of
   scopes.
-- A hand-built registration with neither the metadata entry nor an issuer still validates against
-  the providers-map entry, which is what a host without scopes gets today.
+- A hand-built registration without the metadata entry still validates against the providers-map
+  entry, even when it sets its own issuer URI. This keeps the current behavior for such hosts.
+- A scope with explicit endpoints and no `issuer-uri` gets no issuer check, the same as a provider
+  without an issuer today. The signature check against the scope's JWK Set still applies.
 
 ## Alternatives Considered
 

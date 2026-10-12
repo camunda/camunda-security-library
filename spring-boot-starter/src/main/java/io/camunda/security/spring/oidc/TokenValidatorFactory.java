@@ -32,11 +32,10 @@ import org.springframework.util.StringUtils;
  *
  * <ul>
  *   <li>A {@link JwtTimestampValidator} using the configured clock skew
- *   <li>A {@link JwtIssuerValidator} when the registration declares an issuer, through its {@link
- *       #ISSUER_METADATA_KEY} entry or its own issuer URI, which take precedence; otherwise when
- *       the matched {@link OidcConfiguration} declares an issuer URI. A registration's own
- *       declaration adds the check even when the providers map is empty, and an empty {@link
- *       #ISSUER_METADATA_KEY} entry switches it off
+ *   <li>A {@link JwtIssuerValidator} for the issuer in the registration's {@link
+ *       #ISSUER_METADATA_KEY} entry, which takes precedence; otherwise when the matched {@link
+ *       OidcConfiguration} declares an issuer URI. The entry adds the check even when the providers
+ *       map is empty, and an empty entry switches it off
  *   <li>An {@link AudienceValidator} when the matched {@link OidcConfiguration} declares audiences
  *   <li>Any extra validators supplied by the host (e.g. SaaS organization/cluster validators)
  * </ul>
@@ -133,9 +132,8 @@ public class TokenValidatorFactory {
   /**
    * What a registration declares about its own issuer: the {@link #ISSUER_METADATA_KEY} metadata
    * entry when present (authoritative, so an empty entry declares {@linkplain
-   * RegistrationIssuer#none() no issuer}), otherwise {@code providerDetails.issuerUri} when set. An
-   * empty result means the registration declares nothing, and the caller decides what to fall back
-   * to.
+   * RegistrationIssuer#none() no issuer}). Only {@link ScopedClientRegistrationFactory} writes this
+   * entry. A registration without it declares nothing, and the caller decides what to fall back to.
    *
    * @throws IllegalStateException if the metadata entry is not a {@code String}
    */
@@ -158,9 +156,7 @@ public class TokenValidatorFactory {
       return Optional.of(
           StringUtils.hasText(value) ? new RegistrationIssuer(value) : RegistrationIssuer.none());
     }
-    return StringUtils.hasText(details.getIssuerUri())
-        ? Optional.of(new RegistrationIssuer(details.getIssuerUri()))
-        : Optional.empty();
+    return Optional.empty();
   }
 
   /**

@@ -73,22 +73,11 @@ class TokenValidatorFactoryTest {
   }
 
   @Test
-  void shouldValidateIssuerOfTheRegistrationWhenTheProvidersMapIsEmpty() {
-    // scoped-only mode: the providers map holds nothing, the registration carries the issuer
-    when(providerDetails.getIssuerUri()).thenReturn("https://scope-issuer");
-    final var factory = new TokenValidatorFactory(Map.of(), Duration.ofSeconds(60), List.of());
-
-    final var validator = factory.createTokenValidator(registration);
-
-    assertThat(validator.validate(jwtWithIssuer("https://scope-issuer")).hasErrors()).isFalse();
-    assertThat(validator.validate(jwtWithIssuer("https://other")).hasErrors()).isTrue();
-  }
-
-  @Test
-  void shouldPreferTheIssuerOfTheRegistrationOverTheProvidersMapEntry() {
+  void shouldPreferTheIssuerMetadataOverTheProvidersMapEntry() {
     final var oidc = new OidcConfiguration();
     oidc.setIssuerUri("https://root-issuer");
-    when(providerDetails.getIssuerUri()).thenReturn("https://scope-issuer");
+    when(providerDetails.getConfigurationMetadata())
+        .thenReturn(Map.of(TokenValidatorFactory.ISSUER_METADATA_KEY, "https://scope-issuer"));
     final var factory =
         new TokenValidatorFactory(Map.of("rid", oidc), Duration.ofSeconds(60), List.of());
 
@@ -96,6 +85,21 @@ class TokenValidatorFactoryTest {
 
     assertThat(validator.validate(jwtWithIssuer("https://scope-issuer")).hasErrors()).isFalse();
     assertThat(validator.validate(jwtWithIssuer("https://root-issuer")).hasErrors()).isTrue();
+  }
+
+  @Test
+  void shouldUseTheProvidersMapIssuerForARegistrationWithoutIssuerMetadata() {
+    // a host-built registration: its own issuer URI does not override the providers map
+    final var oidc = new OidcConfiguration();
+    oidc.setIssuerUri("https://root-issuer");
+    lenient().when(providerDetails.getIssuerUri()).thenReturn("https://other");
+    final var factory =
+        new TokenValidatorFactory(Map.of("rid", oidc), Duration.ofSeconds(60), List.of());
+
+    final var validator = factory.createTokenValidator(registration);
+
+    assertThat(validator.validate(jwtWithIssuer("https://root-issuer")).hasErrors()).isFalse();
+    assertThat(validator.validate(jwtWithIssuer("https://other")).hasErrors()).isTrue();
   }
 
   @Test
