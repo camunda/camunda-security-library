@@ -7,6 +7,8 @@
  */
 package io.camunda.security.spring.converter;
 
+import static io.camunda.security.spring.oidc.ScopedClientRegistrationFactory.sanitizeForLog;
+
 import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
@@ -164,8 +166,8 @@ public class OidcUserAuthenticationConverter
             () -> {
               LOGGER.warn(
                   "Falling back to ID Token claims for registration '{}' in scope '{}'",
-                  authenticationToken.getAuthorizedClientRegistrationId(),
-                  currentScope());
+                  sanitizeForLog(authenticationToken.getAuthorizedClientRegistrationId()),
+                  sanitizeForLog(currentScope()));
               return getIdTokenClaims(authenticationToken);
             });
   }
@@ -186,10 +188,8 @@ public class OidcUserAuthenticationConverter
         .map(
             tokenValue -> {
               final var clientRegistration = authorizedClient.getClientRegistration();
-              final var scope = currentScope();
-              final var jwtDecoder = getJwtDecoder(clientRegistration, scope);
-              return decodeAccessToken(
-                  jwtDecoder, tokenValue, clientRegistration.getRegistrationId(), scope);
+              final var jwtDecoder = getJwtDecoder(clientRegistration);
+              return decodeAccessToken(jwtDecoder, tokenValue);
             })
         .map(Jwt::getClaims)
         .orElse(null);
@@ -203,21 +203,12 @@ public class OidcUserAuthenticationConverter
   }
 
   protected Jwt decodeAccessToken(final JwtDecoder jwtDecoder, final String accessTokenValue) {
-    return decodeAccessToken(jwtDecoder, accessTokenValue, null, currentScope());
-  }
-
-  private Jwt decodeAccessToken(
-      final JwtDecoder jwtDecoder,
-      final String accessTokenValue,
-      final String registrationId,
-      final String scope) {
     try {
       return jwtDecoder.decode(accessTokenValue);
     } catch (final JwtException e) {
       LOGGER.warn(
-          "Failed to decode Access Token for registration '{}' in scope '{}': '{}', returning null",
-          registrationId,
-          scope,
+          "Failed to decode Access Token in scope '{}': '{}', returning null",
+          sanitizeForLog(currentScope()),
           e.getMessage());
       return null;
     }

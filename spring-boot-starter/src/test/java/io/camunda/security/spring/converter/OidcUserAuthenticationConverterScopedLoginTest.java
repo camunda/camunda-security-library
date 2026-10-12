@@ -9,7 +9,6 @@ package io.camunda.security.spring.converter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyMap;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -60,6 +59,8 @@ final class OidcUserAuthenticationConverterScopedLoginTest {
   private static final String SCOPE_B = "scope-b";
 
   @Mock private LazyTokenClaimsConverter tokenClaimsConverter;
+  @Mock private OAuth2AuthorizedClientRepository authorizedClientRepository;
+  @Mock private HttpServletRequest request;
 
   private final Map<String, ClientRegistration> registrationByScope = new ConcurrentHashMap<>();
   private final ThreadLocal<String> currentScope = new ThreadLocal<>();
@@ -77,7 +78,6 @@ final class OidcUserAuthenticationConverterScopedLoginTest {
     registrationByScope.put(SCOPE_A, registration(registrationFactory, idpA, null));
     registrationByScope.put(SCOPE_B, registration(registrationFactory, idpB, Set.of("audience-x")));
 
-    final var authorizedClientRepository = mock(OAuth2AuthorizedClientRepository.class);
     when(authorizedClientRepository.loadAuthorizedClient(
             org.mockito.ArgumentMatchers.eq(REGISTRATION_ID),
             org.mockito.ArgumentMatchers.any(),
@@ -106,7 +106,7 @@ final class OidcUserAuthenticationConverterScopedLoginTest {
             authorizedClientRepository,
             decoderFactory,
             tokenClaimsConverter,
-            mock(HttpServletRequest.class),
+            request,
             new OidcLoginScopePort() {
               @Override
               public String resolveScope(final HttpServletRequest request) {

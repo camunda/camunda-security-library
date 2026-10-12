@@ -192,7 +192,8 @@ final class OidcUserAuthenticationConverterScopeTest {
             .toList();
     assertThat(warnings)
         .hasSize(2)
-        .allSatisfy(message -> assertThat(message).contains("'oidc'").contains("'scope-b'"));
+        .allSatisfy(message -> assertThat(message).contains("'scope-b'"));
+    assertThat(warnings.getLast()).contains("'oidc'");
   }
 
   @Test
@@ -213,6 +214,30 @@ final class OidcUserAuthenticationConverterScopeTest {
     converter.convert(login());
 
     verify(decoderFactory).createAccessTokenDecoder(registration, List.of("jwks-x"));
+  }
+
+  @Test
+  void shouldGoThroughTheProtectedHooksSoHostOverridesStillApply() {
+    final var registration = registration("https://idp/jwks", null);
+    when(decoderA.decode("token")).thenReturn(jwt());
+    stubClients(registration);
+    final var converter =
+        new OidcUserAuthenticationConverter(
+            scopeResolver,
+            authorizedClientRepository,
+            decoderFactory,
+            tokenClaimsConverter,
+            request) {
+          @Override
+          protected JwtDecoder getJwtDecoder(final ClientRegistration clientRegistration) {
+            return decoderA;
+          }
+        };
+
+    converter.convert(login());
+
+    verify(decoderA).decode("token");
+    verify(decoderFactory, never()).createAccessTokenDecoder(any(), any());
   }
 
   private OidcUserAuthenticationConverter converter() {

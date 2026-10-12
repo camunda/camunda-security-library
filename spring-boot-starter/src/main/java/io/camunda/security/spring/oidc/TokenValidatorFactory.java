@@ -50,6 +50,14 @@ public class TokenValidatorFactory {
    */
   public static final String AUDIENCES_METADATA_KEY = "camunda.security.oidc.audiences";
 
+  /**
+   * Key under which a {@link ClientRegistration} carries the issuer its own scope configures, empty
+   * when the scope configures none (explicit endpoints only). Authoritative by presence, like the
+   * audiences: an empty value switches issuer validation off for that registration instead of
+   * borrowing the issuer another scope configures under the same registration ID.
+   */
+  public static final String ISSUER_METADATA_KEY = "camunda.security.oidc.issuer";
+
   private final Map<String, OidcConfiguration> providers;
   private final Duration clockSkew;
   private final List<OAuth2TokenValidator<Jwt>> extraValidators;
@@ -102,16 +110,23 @@ public class TokenValidatorFactory {
   }
 
   /**
-   * Resolves the issuer a registration's tokens must carry: the issuer of the registration itself
-   * when it has one, otherwise the {@code providers}-map issuer. Scoped registrations that share a
-   * registration ID can sit on different issuers, so the registration of the login at hand wins
-   * over the entry the map holds for that ID.
+   * Resolves the issuer a registration's tokens must carry: the {@link #ISSUER_METADATA_KEY}
+   * metadata entry when present (authoritative, even when empty), otherwise the issuer of the
+   * registration itself, otherwise the {@code providers}-map issuer. Scoped registrations that
+   * share a registration ID can sit on different issuers, so the registration of the login at hand
+   * wins over the entry the map holds for that ID.
    */
   private static String resolveIssuerUri(
       final ClientRegistration clientRegistration, final OidcConfiguration providerConfig) {
     final var details = clientRegistration.getProviderDetails();
-    if (details != null && StringUtils.hasText(details.getIssuerUri())) {
-      return details.getIssuerUri();
+    if (details != null) {
+      final var metadata = details.getConfigurationMetadata();
+      if (metadata != null && metadata.containsKey(ISSUER_METADATA_KEY)) {
+        return metadata.get(ISSUER_METADATA_KEY) instanceof final String issuer ? issuer : null;
+      }
+      if (StringUtils.hasText(details.getIssuerUri())) {
+        return details.getIssuerUri();
+      }
     }
     return providerConfig != null ? providerConfig.getIssuerUri() : null;
   }

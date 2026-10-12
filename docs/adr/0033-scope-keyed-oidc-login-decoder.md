@@ -32,8 +32,10 @@ what a scope is?
   issuer, JWK Set URI and audiences. Registrations that differ in any of these never share a
   decoder, even when the host supplies no scope.
 - **Validator issuer.** `TokenValidatorFactory` takes the expected issuer from the login's own
-  `ClientRegistration` and falls back to the providers-map entry only when the registration has
-  none. A scope that overrides `oidc` therefore validates against its own issuer, and still gets an
+  `ClientRegistration`. Registrations built by `ScopedClientRegistrationFactory` carry it under
+  `camunda.security.oidc.issuer`, empty when the scope sets none, and that entry is authoritative
+  by presence like the audiences. The providers-map entry is used only for a registration that
+  carries neither the entry nor an issuer of its own. A scope that overrides `oidc` therefore validates against its own issuer, and still gets an
   issuer check when the providers map is empty (scoped-only mode).
 - **Host SPI.** `io.camunda.security.spring.spi.OidcLoginScopePort` supplies an opaque scope key for
   the current login, plus that scope's additional JWK Set URIs and `prefer-id-token-claims` map. It
@@ -51,7 +53,8 @@ key of the additional-JWKS lookup.
   impossible for registrations that really differ, with no host change.
 - **The port lives in the starter, not `core`.** Its signature speaks `jakarta.servlet` types, and
   `core` must stay free of them and of any notion of a physical tenant. The scope stays an opaque
-  string (ADR-0013, ADR-0019).
+  string ([ADR-0013](0013-camunda-security-scope-provider-spi.md),
+  [ADR-0019](0019-authorization-check-latency-metric.md)).
 - **One port for scope, JWKS and preference.** The three answers are all "settings of this login's
   scope", so a host implements one contract instead of three.
 - **A static factory, not another public constructor.** A five-argument overload taking the port
@@ -77,8 +80,8 @@ key of the additional-JWKS lookup.
   separated.
 - One decoder is cached per distinct (scope, registration) pair, so memory grows with the number of
   scopes.
-- A registration whose issuer is set only through the providers map (not on the registration) still
-  validates against that map entry, which is what a host without scopes gets today.
+- A hand-built registration with neither the metadata entry nor an issuer still validates against
+  the providers-map entry, which is what a host without scopes gets today.
 
 ## Alternatives Considered
 

@@ -1210,7 +1210,7 @@ public final class ScopedClientRegistrationFactory {
   /**
    * Adds this registration's own entries to the discovered metadata by build-then-rebuild, since
    * {@code providerConfigurationMetadata} replaces the map and would drop a discovered {@code
-   * end_session_endpoint}. The audiences key and the {@link
+   * end_session_endpoint}. The audiences key, the issuer key and the {@link
    * FailSoftOidcUserService#USER_INFO_REQUIRED_METADATA_KEY} key are always set, even when
    * false/empty, because both are authoritative by presence; an explicit end-session endpoint wins.
    *
@@ -1224,6 +1224,9 @@ public final class ScopedClientRegistrationFactory {
     merged.put(
         TokenValidatorFactory.AUDIENCES_METADATA_KEY,
         oidc.getAudiences() != null ? List.copyOf(oidc.getAudiences()) : List.of());
+    merged.put(
+        TokenValidatorFactory.ISSUER_METADATA_KEY,
+        StringUtils.hasText(oidc.getIssuerUri()) ? oidc.getIssuerUri() : "");
     merged.put(FailSoftOidcUserService.USER_INFO_REQUIRED_METADATA_KEY, oidc.isUserInfoRequired());
     if (StringUtils.hasText(oidc.getEndSessionEndpointUri())) {
       merged.put("end_session_endpoint", oidc.getEndSessionEndpointUri());

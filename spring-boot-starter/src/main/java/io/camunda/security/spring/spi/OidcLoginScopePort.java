@@ -8,6 +8,7 @@
 package io.camunda.security.spring.spi;
 
 import io.camunda.security.spring.converter.AdditionalJwkSetUrisByRegistrationId;
+import io.camunda.security.spring.converter.OidcUserAuthenticationConverter;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 
