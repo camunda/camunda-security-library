@@ -9,6 +9,7 @@ package io.camunda.security.spring.oidc;
 
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.camunda.security.spring.converter.OidcUserAuthenticationConverter;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Arrays;
@@ -1210,10 +1211,9 @@ public final class ScopedClientRegistrationFactory {
   /**
    * Adds this registration's own entries to the discovered metadata by build-then-rebuild, since
    * {@code providerConfigurationMetadata} replaces the map and would drop a discovered {@code
-   * end_session_endpoint}. The audiences key, the issuer key and the {@link
-   * FailSoftOidcUserService#USER_INFO_REQUIRED_METADATA_KEY} key are always set, even when
-   * false/empty, because all three are authoritative by presence; an explicit end-session endpoint
-   * wins.
+   * end_session_endpoint}. The audiences, issuer, user-info-required, additional-JWK-Set-URIs and
+   * prefer-id-token-claims keys are always set, even when false/empty, because they are
+   * authoritative by presence; an explicit end-session endpoint wins.
    *
    * <p>The map is fresh per registration — the only reason registrations sharing an issuer cannot
    * see each other's audiences or user-info-required flag.
@@ -1229,6 +1229,14 @@ public final class ScopedClientRegistrationFactory {
         TokenValidatorFactory.ISSUER_METADATA_KEY,
         StringUtils.hasText(oidc.getIssuerUri()) ? oidc.getIssuerUri() : "");
     merged.put(FailSoftOidcUserService.USER_INFO_REQUIRED_METADATA_KEY, oidc.isUserInfoRequired());
+    merged.put(
+        OidcUserAuthenticationConverter.ADDITIONAL_JWK_SET_URIS_METADATA_KEY,
+        oidc.getAdditionalJwkSetUris() != null
+            ? oidc.getAdditionalJwkSetUris().stream().filter(StringUtils::hasText).toList()
+            : List.of());
+    merged.put(
+        OidcUserAuthenticationConverter.PREFER_ID_TOKEN_CLAIMS_METADATA_KEY,
+        oidc.isPreferIdTokenClaims());
     if (StringUtils.hasText(oidc.getEndSessionEndpointUri())) {
       merged.put("end_session_endpoint", oidc.getEndSessionEndpointUri());
     }
