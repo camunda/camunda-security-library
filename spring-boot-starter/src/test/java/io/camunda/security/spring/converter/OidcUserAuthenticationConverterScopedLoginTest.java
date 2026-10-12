@@ -109,8 +109,12 @@ final class OidcUserAuthenticationConverterScopedLoginTest {
 
   @AfterEach
   void tearDown() {
-    idpA.stop();
-    idpB.stop();
+    if (idpA != null) {
+      idpA.stop();
+    }
+    if (idpB != null) {
+      idpB.stop();
+    }
   }
 
   @ParameterizedTest
