@@ -5,8 +5,9 @@
  * Licensed under the Camunda License 1.0. You may not use this file
  * except in compliance with the Camunda License 1.0.
  */
-package io.camunda.security.spring.converter;
+package io.camunda.security.spring.spi;
 
+import io.camunda.security.spring.converter.AdditionalJwkSetUrisByRegistrationId;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 
@@ -20,7 +21,7 @@ import java.util.Map;
  * prefer-id-token-claims}. Keying those settings by registration id alone lets whichever scope logs
  * in first decide them for all the others, so the converter asks this resolver instead.
  */
-public interface OidcLoginScopeResolver {
+public interface OidcLoginScopePort {
 
   /**
    * @return the opaque scope key of the login being converted, or {@code null} when the login does
@@ -41,7 +42,7 @@ public interface OidcLoginScopeResolver {
   Map<String, Boolean> preferIdTokenClaims(String scope);
 
   /** A resolver for logins that belong to no scope, using the same settings for every login. */
-  static OidcLoginScopeResolver unscoped(
+  static OidcLoginScopePort unscoped(
       final AdditionalJwkSetUrisByRegistrationId additionalJwkSetUris,
       final Map<String, Boolean> preferIdTokenClaims) {
     final var uris =
@@ -50,7 +51,7 @@ public interface OidcLoginScopeResolver {
             : AdditionalJwkSetUrisByRegistrationId.empty();
     final var prefer =
         preferIdTokenClaims != null ? Map.copyOf(preferIdTokenClaims) : Map.<String, Boolean>of();
-    return new OidcLoginScopeResolver() {
+    return new OidcLoginScopePort() {
       @Override
       public String resolveScope(final HttpServletRequest request) {
         return null;

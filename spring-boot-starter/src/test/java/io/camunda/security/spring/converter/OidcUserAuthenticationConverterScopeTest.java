@@ -25,6 +25,7 @@ import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory;
 import io.camunda.security.spring.oidc.TokenValidatorFactory;
+import io.camunda.security.spring.spi.OidcLoginScopePort;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.List;
@@ -67,7 +68,7 @@ final class OidcUserAuthenticationConverterScopeTest {
   @Mock private OidcAccessTokenDecoderFactory decoderFactory;
   @Mock private LazyTokenClaimsConverter tokenClaimsConverter;
   @Mock private HttpServletRequest request;
-  @Mock private OidcLoginScopeResolver scopeResolver;
+  @Mock private OidcLoginScopePort scopeResolver;
   @Mock private JwtDecoder decoderA;
   @Mock private JwtDecoder decoderB;
 
@@ -215,7 +216,7 @@ final class OidcUserAuthenticationConverterScopeTest {
   }
 
   private OidcUserAuthenticationConverter converter() {
-    return new OidcUserAuthenticationConverter(
+    return OidcUserAuthenticationConverter.scoped(
         authorizedClientRepository, decoderFactory, tokenClaimsConverter, request, scopeResolver);
   }
 

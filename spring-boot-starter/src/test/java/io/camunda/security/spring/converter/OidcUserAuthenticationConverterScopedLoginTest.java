@@ -21,6 +21,7 @@ import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory;
 import io.camunda.security.spring.oidc.OidcTestServer;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
 import io.camunda.security.spring.oidc.TokenValidatorFactory;
+import io.camunda.security.spring.spi.OidcLoginScopePort;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.List;
@@ -101,12 +102,12 @@ final class OidcUserAuthenticationConverterScopedLoginTest {
                 OidcConfiguration.DEFAULT_CLOCK_SKEW,
                 List.of()));
     converter =
-        new OidcUserAuthenticationConverter(
+        OidcUserAuthenticationConverter.scoped(
             authorizedClientRepository,
             decoderFactory,
             tokenClaimsConverter,
             mock(HttpServletRequest.class),
-            new OidcLoginScopeResolver() {
+            new OidcLoginScopePort() {
               @Override
               public String resolveScope(final HttpServletRequest request) {
                 return currentScope.get();

@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.time.Duration;
@@ -69,6 +70,45 @@ class TokenValidatorFactoryTest {
 
     assertThatCode(() -> new TokenValidatorFactory(providers, Duration.ofSeconds(60), List.of()))
         .doesNotThrowAnyException();
+  }
+
+  @Test
+  void shouldValidateIssuerOfTheRegistrationWhenTheProvidersMapIsEmpty() {
+    // scoped-only mode: the providers map holds nothing, the registration carries the issuer
+    when(providerDetails.getIssuerUri()).thenReturn("https://scope-issuer");
+    final var factory = new TokenValidatorFactory(Map.of(), Duration.ofSeconds(60), List.of());
+
+    final var validator = factory.createTokenValidator(registration);
+
+    assertThat(validator.validate(jwtWithIssuer("https://scope-issuer")).hasErrors()).isFalse();
+    assertThat(validator.validate(jwtWithIssuer("https://other")).hasErrors()).isTrue();
+  }
+
+  @Test
+  void shouldPreferTheIssuerOfTheRegistrationOverTheProvidersMapEntry() {
+    final var oidc = new OidcConfiguration();
+    oidc.setIssuerUri("https://root-issuer");
+    when(providerDetails.getIssuerUri()).thenReturn("https://scope-issuer");
+    final var factory =
+        new TokenValidatorFactory(Map.of("rid", oidc), Duration.ofSeconds(60), List.of());
+
+    final var validator = factory.createTokenValidator(registration);
+
+    assertThat(validator.validate(jwtWithIssuer("https://scope-issuer")).hasErrors()).isFalse();
+    assertThat(validator.validate(jwtWithIssuer("https://root-issuer")).hasErrors()).isTrue();
+  }
+
+  @Test
+  void shouldFallBackToTheProvidersMapIssuerWhenTheRegistrationHasNone() {
+    final var oidc = new OidcConfiguration();
+    oidc.setIssuerUri("https://root-issuer");
+    final var factory =
+        new TokenValidatorFactory(Map.of("rid", oidc), Duration.ofSeconds(60), List.of());
+
+    final var validator = factory.createTokenValidator(registration);
+
+    assertThat(validator.validate(jwtWithIssuer("https://root-issuer")).hasErrors()).isFalse();
+    assertThat(validator.validate(jwtWithIssuer("https://other")).hasErrors()).isTrue();
   }
 
   @Test
@@ -328,6 +368,15 @@ class TokenValidatorFactoryTest {
         Instant.now().plusSeconds(60),
         Map.of("alg", "RS256"),
         Map.of("sub", "alice"));
+  }
+
+  private static Jwt jwtWithIssuer(final String issuer) {
+    return new Jwt(
+        "tv",
+        Instant.now(),
+        Instant.now().plusSeconds(60),
+        Map.of("alg", "RS256"),
+        Map.of("sub", "alice", "iss", issuer));
   }
 
   private static Jwt jwtWithAudience(final List<String> audiences) {

@@ -12,6 +12,7 @@ import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory;
 import io.camunda.security.spring.oidc.TokenValidatorFactory;
+import io.camunda.security.spring.spi.OidcLoginScopePort;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Collections;
 import java.util.Map;
@@ -43,7 +44,7 @@ public class OidcUserAuthenticationConverter
   private final LazyTokenClaimsConverter tokenClaimsConverter;
   private final HttpServletRequest request;
   private final Map<DecoderKey, JwtDecoder> jwtDecoders;
-  private final OidcLoginScopeResolver scopeResolver;
+  private final OidcLoginScopePort scopeResolver;
 
   public OidcUserAuthenticationConverter(
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
@@ -82,25 +83,47 @@ public class OidcUserAuthenticationConverter
       final AdditionalJwkSetUrisByRegistrationId additionalJwkSetUris,
       final Map<String, Boolean> preferIdTokenClaimsByRegistrationId) {
     this(
+        OidcLoginScopePort.unscoped(additionalJwkSetUris, preferIdTokenClaimsByRegistrationId),
         authorizedClientRepository,
         accessTokenDecoderFactory,
         tokenClaimsConverter,
-        request,
-        OidcLoginScopeResolver.unscoped(additionalJwkSetUris, preferIdTokenClaimsByRegistrationId));
+        request);
   }
 
-  public OidcUserAuthenticationConverter(
+  /**
+   * For logins that belong to a scope. The port goes first so that a call ending in {@code null}
+   * stays unambiguous against the constructors above.
+   */
+  protected OidcUserAuthenticationConverter(
+      final OidcLoginScopePort scopeResolver,
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
       final OidcAccessTokenDecoderFactory accessTokenDecoderFactory,
       final LazyTokenClaimsConverter tokenClaimsConverter,
-      final HttpServletRequest request,
-      final OidcLoginScopeResolver scopeResolver) {
+      final HttpServletRequest request) {
     this.authorizedClientRepository = authorizedClientRepository;
     this.accessTokenDecoderFactory = accessTokenDecoderFactory;
     this.tokenClaimsConverter = tokenClaimsConverter;
     this.request = request;
     this.scopeResolver = scopeResolver;
     jwtDecoders = new ConcurrentHashMap<>();
+  }
+
+  /**
+   * Creates a converter that asks {@code scopePort} which scope a login belongs to and which login
+   * settings that scope declares; see {@link OidcLoginScopePort}.
+   */
+  public static OidcUserAuthenticationConverter scoped(
+      final OAuth2AuthorizedClientRepository authorizedClientRepository,
+      final OidcAccessTokenDecoderFactory accessTokenDecoderFactory,
+      final LazyTokenClaimsConverter tokenClaimsConverter,
+      final HttpServletRequest request,
+      final OidcLoginScopePort scopePort) {
+    return new OidcUserAuthenticationConverter(
+        scopePort,
+        authorizedClientRepository,
+        accessTokenDecoderFactory,
+        tokenClaimsConverter,
+        request);
   }
 
   @Override
