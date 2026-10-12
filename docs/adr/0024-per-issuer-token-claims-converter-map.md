@@ -8,7 +8,7 @@ status: Accepted
 
 ## Status
 
-Accepted
+Accepted. Partly superseded by [ADR-0034](0034-named-providers-inherit-principal-claims.md): a named provider now uses the claims of the default slot that it does not set.
 
 ## Context
 
