@@ -59,6 +59,9 @@ public class OidcUserAuthenticationConverter
   private static final Logger LOGGER =
       LoggerFactory.getLogger(OidcUserAuthenticationConverter.class);
 
+  private static final String AUTHORIZED_CLIENT_ATTRIBUTE =
+      OidcUserAuthenticationConverter.class.getName() + ".AUTHORIZED_CLIENT";
+
   private final OAuth2AuthorizedClientRepository authorizedClientRepository;
   private final OidcAccessTokenDecoderFactory accessTokenDecoderFactory;
   private final LazyTokenClaimsConverter tokenClaimsConverter;
@@ -167,7 +170,7 @@ public class OidcUserAuthenticationConverter
       return false;
     }
     final var metadata =
-        Optional.ofNullable(getAuthorizedClient(authenticationToken, request))
+        Optional.ofNullable(authorizedClientOnce(authenticationToken))
             .map(OAuth2AuthorizedClient::getClientRegistration)
             .map(OidcUserAuthenticationConverter::metadata)
             .orElse(Map.of());
@@ -184,7 +187,7 @@ public class OidcUserAuthenticationConverter
 
   protected Map<String, Object> getAccessTokenClaims(
       final OAuth2AuthenticationToken authenticationToken) {
-    final var authorizedClient = getAuthorizedClient(authenticationToken, request);
+    final var authorizedClient = authorizedClientOnce(authenticationToken);
     return Optional.ofNullable(authorizedClient)
         .map(OAuth2AuthorizedClient::getAccessToken)
         .map(OAuth2AccessToken::getTokenValue)
@@ -196,6 +199,23 @@ public class OidcUserAuthenticationConverter
             })
         .map(Jwt::getClaims)
         .orElse(null);
+  }
+
+  /**
+   * Loads the authorized client of the login only once per request. Both the {@code
+   * prefer-id-token-claims} check and the access-token decode need it, and a custom {@link
+   * OAuth2AuthorizedClientRepository} can read it from a remote store.
+   */
+  private OAuth2AuthorizedClient authorizedClientOnce(
+      final OAuth2AuthenticationToken authenticationToken) {
+    if (request.getAttribute(AUTHORIZED_CLIENT_ATTRIBUTE) instanceof final LoadedClient loaded
+        && loaded.authenticationToken() == authenticationToken) {
+      return loaded.authorizedClient();
+    }
+    final var authorizedClient = getAuthorizedClient(authenticationToken, request);
+    request.setAttribute(
+        AUTHORIZED_CLIENT_ATTRIBUTE, new LoadedClient(authenticationToken, authorizedClient));
+    return authorizedClient;
   }
 
   protected OAuth2AuthorizedClient getAuthorizedClient(
@@ -305,4 +325,7 @@ public class OidcUserAuthenticationConverter
       String jwkSetUri,
       Object audiences,
       List<String> additionalJwkSetUris) {}
+
+  private record LoadedClient(
+      OAuth2AuthenticationToken authenticationToken, OAuth2AuthorizedClient authorizedClient) {}
 }

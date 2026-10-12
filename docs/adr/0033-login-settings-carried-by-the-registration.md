@@ -70,8 +70,9 @@ converter?
 
 **Negative / accepted trade-offs**
 
-- To read `prefer-id-token-claims`, the converter also loads the authorized client when it uses the
-  ID-token claims. This adds one session lookup.
+- To read `prefer-id-token-claims`, the converter loads the authorized client before it decides
+  which claims to use. It keeps the client in a request attribute, so it loads it only once per
+  request.
 - A registration that a host builds itself has no metadata entries. It keeps the ADR-0030 lookup and
   the issuer of the providers map. Scopes do not get their own settings for it.
 - A scope with explicit endpoints and no `issuer-uri` gets no issuer check. This is the same as for
