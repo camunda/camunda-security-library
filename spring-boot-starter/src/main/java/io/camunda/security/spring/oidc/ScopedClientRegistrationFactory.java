@@ -1212,7 +1212,8 @@ public final class ScopedClientRegistrationFactory {
    * {@code providerConfigurationMetadata} replaces the map and would drop a discovered {@code
    * end_session_endpoint}. The audiences key, the issuer key and the {@link
    * FailSoftOidcUserService#USER_INFO_REQUIRED_METADATA_KEY} key are always set, even when
-   * false/empty, because both are authoritative by presence; an explicit end-session endpoint wins.
+   * false/empty, because all three are authoritative by presence; an explicit end-session endpoint
+   * wins.
    *
    * <p>The map is fresh per registration — the only reason registrations sharing an issuer cannot
    * see each other's audiences or user-info-required flag.

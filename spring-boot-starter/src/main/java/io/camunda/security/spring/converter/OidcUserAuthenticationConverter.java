@@ -253,11 +253,11 @@ public class OidcUserAuthenticationConverter
     if (details == null) {
       return new DecoderKey(scope, clientRegistration.getRegistrationId(), null, null, null);
     }
-    final var issuer = TokenValidatorFactory.registrationIssuer(clientRegistration);
+    final var issuer = TokenValidatorFactory.registrationIssuer(clientRegistration).orElse(null);
     return new DecoderKey(
         scope,
         clientRegistration.getRegistrationId(),
-        issuer == null ? null : issuer.orElse(""),
+        issuer,
         details.getJwkSetUri(),
         details.getConfigurationMetadata().get(TokenValidatorFactory.AUDIENCES_METADATA_KEY));
   }
@@ -277,5 +277,9 @@ public class OidcUserAuthenticationConverter
    * never share a decoder.
    */
   private record DecoderKey(
-      String scope, String registrationId, String issuerUri, String jwkSetUri, Object audiences) {}
+      String scope,
+      String registrationId,
+      TokenValidatorFactory.RegistrationIssuer issuer,
+      String jwkSetUri,
+      Object audiences) {}
 }

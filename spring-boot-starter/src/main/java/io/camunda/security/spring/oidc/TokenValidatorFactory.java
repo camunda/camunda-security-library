@@ -32,8 +32,11 @@ import org.springframework.util.StringUtils;
  *
  * <ul>
  *   <li>A {@link JwtTimestampValidator} using the configured clock skew
- *   <li>A {@link JwtIssuerValidator} when the matched {@link OidcConfiguration} declares an issuer
- *       URI
+ *   <li>A {@link JwtIssuerValidator} when the registration declares an issuer, through its {@link
+ *       #ISSUER_METADATA_KEY} entry or its own issuer URI, which take precedence; otherwise when
+ *       the matched {@link OidcConfiguration} declares an issuer URI. A registration's own
+ *       declaration adds the check even when the providers map is empty, and an empty {@link
+ *       #ISSUER_METADATA_KEY} entry switches it off
  *   <li>An {@link AudienceValidator} when the matched {@link OidcConfiguration} declares audiences
  *   <li>Any extra validators supplied by the host (e.g. SaaS organization/cluster validators)
  * </ul>
@@ -111,32 +114,36 @@ public class TokenValidatorFactory {
   }
 
   /**
-   * Resolves the issuer a registration's tokens must carry: the issuer of the registration itself
-   * (see {@link #registrationIssuer}) when it declares one, otherwise the {@code providers}-map
-   * issuer. Scoped registrations that share a registration ID can sit on different issuers, so the
-   * registration of the login at hand wins over the entry the map holds for that ID.
+   * Resolves the issuer a registration's tokens must carry: the issuer the registration declares
+   * for itself (see {@link #registrationIssuer}) when it declares one, otherwise the {@code
+   * providers}-map issuer. Scoped registrations that share a registration ID can sit on different
+   * issuers, so the registration of the login at hand wins over the entry the map holds for that
+   * ID.
    */
   private static String resolveIssuerUri(
       final ClientRegistration clientRegistration, final OidcConfiguration providerConfig) {
     final var own = registrationIssuer(clientRegistration);
-    if (own != null) {
-      return own.orElse(null);
+    if (own.isPresent()) {
+      // uri() is null for an explicitly empty declaration, which must not fall back to the map
+      return own.get().uri();
     }
     return providerConfig != null ? providerConfig.getIssuerUri() : null;
   }
 
   /**
-   * The issuer a registration declares for itself: the {@link #ISSUER_METADATA_KEY} metadata entry
-   * when present (authoritative, so an empty entry is an empty {@link Optional}, meaning no issuer
-   * check), otherwise {@code providerDetails.issuerUri} when set. {@code null} when the
-   * registration declares nothing, and the caller decides what to fall back to.
+   * What a registration declares about its own issuer: the {@link #ISSUER_METADATA_KEY} metadata
+   * entry when present (authoritative, so an empty entry declares {@linkplain
+   * RegistrationIssuer#none() no issuer}), otherwise {@code providerDetails.issuerUri} when set. An
+   * empty result means the registration declares nothing, and the caller decides what to fall back
+   * to.
    *
    * @throws IllegalStateException if the metadata entry is not a {@code String}
    */
-  public static Optional<String> registrationIssuer(final ClientRegistration clientRegistration) {
+  public static Optional<RegistrationIssuer> registrationIssuer(
+      final ClientRegistration clientRegistration) {
     final var details = clientRegistration.getProviderDetails();
     if (details == null) {
-      return null;
+      return Optional.empty();
     }
     final var metadata = details.getConfigurationMetadata();
     if (metadata != null && metadata.containsKey(ISSUER_METADATA_KEY)) {
@@ -148,9 +155,12 @@ public class TokenValidatorFactory {
                 + "' must hold a String issuer but was: "
                 + (issuer == null ? "null" : issuer.getClass().getName()));
       }
-      return Optional.ofNullable(StringUtils.hasText(value) ? value : null);
+      return Optional.of(
+          StringUtils.hasText(value) ? new RegistrationIssuer(value) : RegistrationIssuer.none());
     }
-    return StringUtils.hasText(details.getIssuerUri()) ? Optional.of(details.getIssuerUri()) : null;
+    return StringUtils.hasText(details.getIssuerUri())
+        ? Optional.of(new RegistrationIssuer(details.getIssuerUri()))
+        : Optional.empty();
   }
 
   /**
@@ -177,5 +187,19 @@ public class TokenValidatorFactory {
       return providerConfig.getAudiences();
     }
     return Set.of();
+  }
+
+  /**
+   * An issuer a registration declares for itself.
+   *
+   * @param uri the issuer, or {@code null} when the registration explicitly declares none, which
+   *     switches issuer validation off for it
+   */
+  public record RegistrationIssuer(String uri) {
+
+    /** A registration that explicitly declares no issuer. */
+    public static RegistrationIssuer none() {
+      return new RegistrationIssuer(null);
+    }
   }
 }

@@ -8,10 +8,12 @@ status: Accepted
 
 ## Status
 
-Accepted. Complements [ADR-0030](0030-additional-jwk-set-uris-by-registration-id.md); does not
-supersede it.
+Accepted
 
 ## Context
+
+This ADR complements [ADR-0030](0030-additional-jwk-set-uris-by-registration-id.md) and does not
+supersede it.
 
 `OidcUserAuthenticationConverter` cached the access-token `JwtDecoder` per registration id. A host
 registers one converter for every scope, and scopes can share a registration id while differing in
