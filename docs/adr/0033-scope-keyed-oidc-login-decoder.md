@@ -43,7 +43,7 @@ what a scope is?
 - **Host SPI.** `io.camunda.security.spring.spi.OidcLoginScopePort` supplies an opaque scope key for
   the current login, plus that scope's additional JWK Set URIs and `prefer-id-token-claims` map. It
   is passed through `OidcUserAuthenticationConverter.scoped(...)`. The existing public constructors
-  wrap their arguments in `OidcLoginScopePort.unscoped(...)` and behave as before.
+  wrap their arguments in `OidcLoginScopePort.unscoped(...)`, so existing hosts still compile.
 - **Logging.** Decode-failure and ID-token-fallback WARNs name the registration id and the scope.
 
 ADR-0030's registration-id keying is unchanged: within one scope, the registration id is still the
@@ -74,7 +74,10 @@ key of the additional-JWKS lookup.
 - Scopes that share a registration id no longer share decoders, issuer validation or audiences, and
   the outcome no longer depends on login order or on a restart.
 - Scoped-only deployments get an issuer check where the providers map is empty.
-- Existing hosts compile and behave unchanged.
+- Existing hosts compile without changes. Their behavior changes only where it was wrong: CSL-built
+  registrations that share a registration id but differ in issuer, JWK Set URI or audiences get
+  separate decoders, and each validates against its own issuer. Registrations that do not differ
+  keep one shared decoder as before.
 
 **Negative / accepted trade-offs**
 
