@@ -9,6 +9,7 @@ package io.camunda.security.spring.oidc;
 
 import io.camunda.security.api.context.MembershipResolutionContextPropagator;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.camunda.security.api.model.config.oidc.OidcPrincipalClaims;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
 import io.camunda.security.core.port.out.MembershipPort;
@@ -159,15 +160,19 @@ public class OidcBeansConfiguration {
     winningRegistrationIdByIssuer.forEach(
         (issuerUri, registrationId) -> {
           final var config = configurations.get(registrationId);
+          if (config == flatOidcConfiguration) {
+            byIssuer.put(issuerUri, lazyTokenClaimsConverter);
+            return;
+          }
+          // A named provider uses the global claims for each claim that it does not set.
+          final var claims = OidcPrincipalClaims.resolve(config, flatOidcConfiguration);
           final var converter =
-              config == flatOidcConfiguration
-                  ? lazyTokenClaimsConverter
-                  : new LazyTokenClaimsConverter(
-                      config.getUsernameClaim(),
-                      config.getClientIdClaim(),
-                      config.isPreferUsernameClaim(),
-                      membershipPort,
-                      contextPropagator);
+              new LazyTokenClaimsConverter(
+                  claims.usernameClaim(),
+                  claims.clientIdClaim(),
+                  claims.preferUsernameClaim(),
+                  membershipPort,
+                  contextPropagator);
           byIssuer.put(issuerUri, converter);
         });
     return new TokenClaimsConvertersByIssuer(byIssuer);
