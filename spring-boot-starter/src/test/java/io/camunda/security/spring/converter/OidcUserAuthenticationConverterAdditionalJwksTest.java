@@ -111,6 +111,29 @@ final class OidcUserAuthenticationConverterAdditionalJwksTest {
 
     assertThat(claims).doesNotContainKey(ACCESS_TOKEN_ONLY_CLAIM).containsEntry("source", "id");
     assertThat(fallbackWarnings()).hasSize(1);
+    // the decode WARN names the registration and the client, so an operator can find the scope
+    assertThat(warnings())
+        .anySatisfy(
+            message ->
+                assertThat(message)
+                    .contains("Failed to decode Access Token for registration 'oidc'")
+                    .contains("with client 'test-client'"));
+  }
+
+  @Test
+  void shouldRedactTheIssuerInTheDecodeWarning() throws Exception {
+    // an issuer URL can hold credentials or tokens, which must not reach the log
+    startJwksServers();
+    registrationMetadata =
+        Map.of(TokenValidatorFactory.ISSUER_METADATA_KEY, "https://user:secret@idp.example/?k=v");
+    final var converter = converter(null, AdditionalJwkSetUrisByRegistrationId.empty());
+
+    convert(converter, additional.sign(null, accessTokenClaims()));
+
+    assertThat(warnings())
+        .anySatisfy(message -> assertThat(message).contains("Failed to decode Access Token"))
+        .noneSatisfy(message -> assertThat(message).contains("secret"))
+        .noneSatisfy(message -> assertThat(message).contains("k=v"));
   }
 
   @Test
@@ -260,6 +283,13 @@ final class OidcUserAuthenticationConverterAdditionalJwksTest {
     logAppender = new ListAppender<>();
     logAppender.start();
     converterLogger.addAppender(logAppender);
+  }
+
+  private List<String> warnings() {
+    return logAppender.list.stream()
+        .filter(event -> event.getLevel() == Level.WARN)
+        .map(ILoggingEvent::getFormattedMessage)
+        .toList();
   }
 
   private List<String> fallbackWarnings() {
