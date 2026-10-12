@@ -19,6 +19,7 @@ import static org.mockito.Mockito.when;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory;
+import io.camunda.security.spring.oidc.TokenValidatorFactory;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +33,7 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
@@ -160,6 +162,37 @@ class OidcUserAuthenticationConverterTest {
     converter.getJwtDecoder(registration);
 
     verify(oidcAccessTokenDecoderFactory).createAccessTokenDecoder(registration, null);
+  }
+
+  @Test
+  void shouldBuildOneDecoderPerProviderSettingForASharedRegistrationId() {
+    final var converter = converterWith(Map.of());
+    final var registrationA = registration("oidc", "https://idp-a/jwks", "https://idp-a");
+    final var registrationB = registration("oidc", "https://idp-b/jwks", "https://idp-b");
+    final var registrationASecondLogin =
+        registration("oidc", "https://idp-a/jwks", "https://idp-a");
+
+    converter.getJwtDecoder(registrationA);
+    converter.getJwtDecoder(registrationB);
+    converter.getJwtDecoder(registrationASecondLogin);
+
+    verify(oidcAccessTokenDecoderFactory).createAccessTokenDecoder(registrationA, null);
+    verify(oidcAccessTokenDecoderFactory).createAccessTokenDecoder(registrationB, null);
+    verify(oidcAccessTokenDecoderFactory, never())
+        .createAccessTokenDecoder(registrationASecondLogin, null);
+  }
+
+  private static ClientRegistration registration(
+      final String id, final String jwkSetUri, final String issuer) {
+    return ClientRegistration.withRegistrationId(id)
+        .clientId("client")
+        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+        .redirectUri("{baseUrl}/sso-callback")
+        .authorizationUri(issuer + "/auth")
+        .tokenUri(issuer + "/token")
+        .jwkSetUri(jwkSetUri)
+        .providerConfigurationMetadata(Map.of(TokenValidatorFactory.ISSUER_METADATA_KEY, issuer))
+        .build();
   }
 
   private OidcUserAuthenticationConverter converterWith(

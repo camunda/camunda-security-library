@@ -68,6 +68,7 @@ final class OidcUserAuthenticationConverterAdditionalJwksTest {
 
   private OidcTestServer primary;
   private OidcTestServer additional;
+  private Map<String, Object> registrationMetadata = Map.of();
   private ListAppender<ILoggingEvent> logAppender;
   private Logger converterLogger;
 
@@ -128,6 +129,35 @@ final class OidcUserAuthenticationConverterAdditionalJwksTest {
     assertThat(claims).containsEntry(ACCESS_TOKEN_ONLY_CLAIM, List.of("admins"));
     assertThat(claims).containsEntry("iss", issuerUri);
     assertThat(fallbackWarnings()).isEmpty();
+  }
+
+  @Test
+  void shouldUseTheAdditionalJwkSetUrisTheRegistrationCarries() throws Exception {
+    // a registration built per scope carries its own URIs; the host passes no lookup at all
+    startJwksServers();
+    registrationMetadata =
+        Map.of(
+            OidcUserAuthenticationConverter.ADDITIONAL_JWK_SET_URIS_METADATA_KEY,
+            List.of(additional.jwksUri()));
+    final var converter = converter(null, AdditionalJwkSetUrisByRegistrationId.empty());
+
+    final var claims = convert(converter, additional.sign(null, accessTokenClaims()));
+
+    assertThat(claims).containsEntry(ACCESS_TOKEN_ONLY_CLAIM, List.of("admins"));
+  }
+
+  @Test
+  void shouldNotBorrowTheLookupUrisWhenTheRegistrationCarriesNone() throws Exception {
+    // the lookup holds the URIs of another scope under the same registration id
+    startJwksServers();
+    registrationMetadata =
+        Map.of(OidcUserAuthenticationConverter.ADDITIONAL_JWK_SET_URIS_METADATA_KEY, List.of());
+    final var converter =
+        converter(null, new AdditionalJwkSetUrisByRegistrationId(additionalUrisByRegistrationId()));
+
+    final var claims = convert(converter, additional.sign(null, accessTokenClaims()));
+
+    assertThat(claims).doesNotContainKey(ACCESS_TOKEN_ONLY_CLAIM).containsEntry("source", "id");
   }
 
   private void startJwksServers() throws Exception {
@@ -221,6 +251,7 @@ final class OidcUserAuthenticationConverterAdditionalJwksTest {
         .tokenUri(primary.issuerUri() + "/token")
         .jwkSetUri(primary.jwksUri())
         .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+        .providerConfigurationMetadata(registrationMetadata)
         .build();
   }
 

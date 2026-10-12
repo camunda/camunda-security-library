@@ -19,6 +19,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.camunda.security.spring.converter.OidcUserAuthenticationConverter;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.time.Instant;
@@ -314,6 +315,30 @@ class ScopedClientRegistrationFactoryTest {
             Map.of("alg", "RS256"),
             Map.of("sub", "alice", "iss", "https://scope-issuer"));
     assertThat(validator.validate(jwt).hasErrors()).isFalse();
+  }
+
+  @Test
+  void shouldCarryTheLoginSettingsOfTheScopeInTheRegistration() {
+    // given two scopes that share a registration id with different login settings
+    final var withSettings = explicitEndpoints("my-client", "https://idp-a.example.com");
+    withSettings.setAdditionalJwkSetUris(List.of("https://idp-a.example.com/extra-jwks", " "));
+    withSettings.setPreferIdTokenClaims(true);
+    final var withoutSettings = explicitEndpoints("my-client", "https://idp-b.example.com");
+
+    // when
+    final var a = factory.createFromProviderMap(Map.of("myid", withSettings)).get(0);
+    final var b = factory.createFromProviderMap(Map.of("myid", withoutSettings)).get(0);
+
+    // then each registration carries its own values, and the empty ones are still present
+    assertThat(a.getProviderDetails().getConfigurationMetadata())
+        .containsEntry(
+            OidcUserAuthenticationConverter.ADDITIONAL_JWK_SET_URIS_METADATA_KEY,
+            List.of("https://idp-a.example.com/extra-jwks"))
+        .containsEntry(OidcUserAuthenticationConverter.PREFER_ID_TOKEN_CLAIMS_METADATA_KEY, true);
+    assertThat(b.getProviderDetails().getConfigurationMetadata())
+        .containsEntry(
+            OidcUserAuthenticationConverter.ADDITIONAL_JWK_SET_URIS_METADATA_KEY, List.of())
+        .containsEntry(OidcUserAuthenticationConverter.PREFER_ID_TOKEN_CLAIMS_METADATA_KEY, false);
   }
 
   @Test
