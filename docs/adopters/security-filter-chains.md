@@ -530,7 +530,7 @@ public CamundaAuthenticationConverter<Authentication> authenticationConverter(
 
 CSL supplies `TokenClaimsConvertersByIssuer` as a bean (when `MembershipPort` and `LazyTokenClaimsConverter` are both present) so a multi-provider deployment resolves each bearer token's claims using the `usernameClaim`/`clientIdClaim` config of the registration that declared its `iss`, instead of always the primary provider's. It's optional — passing `null` (or omitting it via the two-argument constructor) keeps every token on the primary provider's claim config.
 
-Per-provider claim configuration does not inherit from the flat block: a `providers.oidc.<id>` entry that omits `username-claim`/`client-id-claim` gets `OidcConfiguration`'s own defaults, not the flat block's — a BYOIDP provider declaring only `issuer-uri` and `client-id` loses client-credentials/M2M claim resolution unless it repeats `client-id-claim` itself.
+A named provider uses the claims of the flat block for each of `username-claim`, `client-id-claim` and `prefer-username-claim` that it does not set. A value that the provider sets wins, also when it is the default (for example `username-claim: sub`). A host that builds claim converters from providers itself must apply the same rule with `OidcPrincipalClaims.resolve(provider, flatBlock)`. See [ADR-0034](../adr/0034-named-providers-inherit-principal-claims.md).
 
 **Registering `OidcUserAuthenticationConverter`.** The login-flow counterpart: it converts the `OAuth2AuthenticationToken` of a browser session by decoding the stored access token, so authorization-relevant claims come from the access token rather than the ID token.
 
