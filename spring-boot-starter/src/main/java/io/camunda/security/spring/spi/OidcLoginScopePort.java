@@ -20,7 +20,12 @@ import java.util.Map;
  * <p>One converter instance serves every scope, and several scopes can share a registration id
  * while differing in issuer, JWKS, audience, additional JWK Set URIs or {@code
  * prefer-id-token-claims}. Keying those settings by registration id alone lets whichever scope logs
- * in first decide them for all the others, so the converter asks this resolver instead.
+ * in first decide them for all the others, so the converter asks this port instead.
+ *
+ * <p>See <a
+ * href="https://github.com/camunda/camunda-security-library/blob/main/docs/adr/0033-scope-keyed-oidc-login-decoder.md">ADR-0033</a>
+ * for the design rationale. Lives in the starter, not {@code core}, because its signature speaks
+ * {@code jakarta.servlet} types.
  */
 public interface OidcLoginScopePort {
 
