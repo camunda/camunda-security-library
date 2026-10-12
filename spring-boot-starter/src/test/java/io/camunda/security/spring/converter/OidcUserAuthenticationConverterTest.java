@@ -30,6 +30,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -95,6 +96,41 @@ class OidcUserAuthenticationConverterTest {
     when(tokenClaimsConverter.convert(jwt.getClaims())).thenReturn(expected);
 
     assertThat(converter.convert(token)).isSameAs(expected);
+  }
+
+  @Test
+  void shouldLoadTheAuthorizedClientOnlyOncePerLogin() {
+    // a custom repository can read the client from a remote store
+    final var realRequest = new MockHttpServletRequest();
+    final var converter =
+        new OidcUserAuthenticationConverter(
+            authorizedClientRepository,
+            oidcAccessTokenDecoderFactory,
+            tokenClaimsConverter,
+            realRequest);
+    final var token = mockAuthToken("oidc");
+    final var accessToken = mock(OAuth2AccessToken.class);
+    when(accessToken.getTokenValue()).thenReturn("at");
+    final var client = mock(OAuth2AuthorizedClient.class);
+    when(client.getAccessToken()).thenReturn(accessToken);
+    when(client.getClientRegistration())
+        .thenReturn(
+            registration(
+                "oidc",
+                "https://idp/jwks",
+                "https://idp",
+                Map.of(
+                    OidcUserAuthenticationConverter.PREFER_ID_TOKEN_CLAIMS_METADATA_KEY, false)));
+    when(authorizedClientRepository.loadAuthorizedClient("oidc", token, realRequest))
+        .thenReturn(client);
+    final var jwt = Jwt.withTokenValue("at").header("alg", "RS256").claim("sub", "alice").build();
+    when(jwtDecoder.decode("at")).thenReturn(jwt);
+    when(tokenClaimsConverter.convert(jwt.getClaims()))
+        .thenReturn(CamundaAuthentication.of(b -> b.user("alice")));
+
+    converter.convert(token);
+
+    verify(authorizedClientRepository).loadAuthorizedClient("oidc", token, realRequest);
   }
 
   @Test
