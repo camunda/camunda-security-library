@@ -14,6 +14,7 @@ import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory;
 import io.camunda.security.spring.oidc.TokenValidatorFactory;
+import io.camunda.security.spring.oidc.UrlRedaction;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Collection;
 import java.util.Collections;
@@ -214,7 +215,8 @@ public class OidcUserAuthenticationConverter
   }
 
   /**
-   * Logs a decode failure at WARN with the registration and its issuer. The {@link
+   * Logs a decode failure at WARN with the registration, its client ID and its issuer. Scopes can
+   * use the same registration ID and issuer, so the client ID helps to find the scope. The {@link
    * #decodeAccessToken} hook does not get these values. A host that overrides the hook also gets
    * this decoder.
    */
@@ -225,9 +227,11 @@ public class OidcUserAuthenticationConverter
         return jwtDecoder.decode(token);
       } catch (final JwtException e) {
         LOGGER.warn(
-            "Failed to decode Access Token for registration '{}' with issuer '{}': '{}'",
+            "Failed to decode Access Token for registration '{}' with client '{}' and issuer '{}':"
+                + " '{}'",
             sanitizeForLog(clientRegistration.getRegistrationId()),
-            sanitizeForLog(issuerForLog(clientRegistration)),
+            sanitizeForLog(clientRegistration.getClientId()),
+            UrlRedaction.redact(issuerForLog(clientRegistration)),
             e.getMessage());
         throw e;
       }

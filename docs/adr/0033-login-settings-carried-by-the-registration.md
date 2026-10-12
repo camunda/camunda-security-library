@@ -43,8 +43,9 @@ converter?
   the validator uses the providers map, as before.
 - **The decoder cache key holds all settings of the decoder:** registration id, issuer, JWK Set URI,
   audiences and additional JWK Set URIs.
-- **Logs.** The WARN for a decode failure names the registration id and its issuer. The WARN for the
-  fallback names the registration id.
+- **Logs.** The WARN for a decode failure names the registration id, the client id and the issuer.
+  The log removes credentials and query values from the issuer. The WARN for the fallback names the
+  registration id.
 
 ### Why these particular boundaries
 
@@ -75,8 +76,9 @@ converter?
   the issuer of the providers map. Scopes do not get their own settings for it.
 - A scope with explicit endpoints and no `issuer-uri` gets no issuer check. This is the same as for
   a provider without scopes. The signature check against the JWK Set of the scope still applies.
-- The WARNs name the issuer, not the scope. The issuer is what makes two scopes with the same
-  registration id different.
+- The WARNs name the client id and the issuer, not the scope. The converter does not know the scope.
+  Two scopes with the same registration id usually have a different client id or issuer. If both
+  are the same, the WARN cannot show the scope.
 
 ## Alternatives Considered
 
