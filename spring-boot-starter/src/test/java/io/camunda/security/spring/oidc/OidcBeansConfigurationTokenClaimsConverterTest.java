@@ -136,6 +136,65 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
   }
 
   @Test
+  void additionalProviderWithoutOwnClaimsUsesTheGlobalClaims() throws Exception {
+    // the multi-IdP setup: the claims are set only globally, the named provider sets none
+    try (final var server = OidcTestServer.startRsa("entra-kid")) {
+      final var decoder = NimbusJwtDecoder.withJwkSetUri(server.jwksUri()).build();
+      final var userToken =
+          decoder.decode(
+              server.sign(
+                  server.issuerUri(),
+                  Map.of("sub", "4f2a", "preferred_username", "alice", "azp", "camunda-web")));
+      final var clientToken =
+          decoder.decode(server.sign(server.issuerUri(), Map.of("sub", "9c1b", "azp", "my-app")));
+
+      runner
+          .withPropertyValues(
+              "camunda.security.authentication.oidc.username-claim=preferred_username",
+              "camunda.security.authentication.oidc.client-id-claim=azp",
+              "camunda.security.authentication.oidc.prefer-username-claim=true",
+              "camunda.security.authentication.providers.oidc.entra.client-id=entra-client",
+              "camunda.security.authentication.providers.oidc.entra.issuer-uri="
+                  + server.issuerUri())
+          .run(
+              ctx -> {
+                final var entraConverter = byIssuer(ctx).get(server.issuerUri());
+                assertThat(entraConverter.convert(userToken.getClaims()).authenticatedUsername())
+                    .isEqualTo("alice");
+                assertThat(entraConverter.convert(clientToken.getClaims()).authenticatedClientId())
+                    .isEqualTo("my-app");
+              });
+    }
+  }
+
+  @Test
+  void additionalProviderClaimWinsAlsoWhenItIsTheDefaultValue() throws Exception {
+    // the provider sets username-claim to sub on purpose, while the global value differs
+    try (final var server = OidcTestServer.startRsa("entra-kid")) {
+      final var decoder = NimbusJwtDecoder.withJwkSetUri(server.jwksUri()).build();
+      final var jwt =
+          decoder.decode(
+              server.sign(server.issuerUri(), Map.of("sub", "7d3e", "preferred_username", "bob")));
+
+      runner
+          .withPropertyValues(
+              "camunda.security.authentication.oidc.username-claim=preferred_username",
+              "camunda.security.authentication.providers.oidc.entra.client-id=entra-client",
+              "camunda.security.authentication.providers.oidc.entra.issuer-uri="
+                  + server.issuerUri(),
+              "camunda.security.authentication.providers.oidc.entra.username-claim=sub")
+          .run(
+              ctx ->
+                  assertThat(
+                          byIssuer(ctx)
+                              .get(server.issuerUri())
+                              .convert(jwt.getClaims())
+                              .authenticatedUsername())
+                      .isEqualTo("7d3e"));
+    }
+  }
+
+  @Test
   void reusesDefaultBeanInstanceWhenFlatBlockUsesACustomRegistrationId() {
     runner
         .withPropertyValues(
