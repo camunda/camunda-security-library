@@ -21,6 +21,7 @@ import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory;
 import io.camunda.security.spring.oidc.TokenValidatorFactory;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -182,8 +183,67 @@ class OidcUserAuthenticationConverterTest {
         .createAccessTokenDecoder(registrationASecondLogin, null);
   }
 
+  @Test
+  void shouldBuildOneDecoderPerAudienceSetForAnOtherwiseEqualRegistration() {
+    final var converter = converterWith(Map.of());
+    final var withAudience =
+        registration(
+            "oidc",
+            "https://idp/jwks",
+            "https://idp",
+            Map.of(TokenValidatorFactory.AUDIENCES_METADATA_KEY, List.of("audience-x")));
+    final var withoutAudience =
+        registration(
+            "oidc",
+            "https://idp/jwks",
+            "https://idp",
+            Map.of(TokenValidatorFactory.AUDIENCES_METADATA_KEY, List.of()));
+
+    converter.getJwtDecoder(withAudience);
+    converter.getJwtDecoder(withoutAudience);
+
+    verify(oidcAccessTokenDecoderFactory).createAccessTokenDecoder(withAudience, null);
+    verify(oidcAccessTokenDecoderFactory).createAccessTokenDecoder(withoutAudience, null);
+  }
+
+  @Test
+  void shouldBuildOneDecoderPerAdditionalJwkSetForAnOtherwiseEqualRegistration() {
+    final var converter = converterWith(Map.of());
+    final var extraUris = List.of("https://idp/extra-jwks");
+    final var withExtra =
+        registration(
+            "oidc",
+            "https://idp/jwks",
+            "https://idp",
+            Map.of(
+                OidcUserAuthenticationConverter.ADDITIONAL_JWK_SET_URIS_METADATA_KEY, extraUris));
+    final var withoutExtra =
+        registration(
+            "oidc",
+            "https://idp/jwks",
+            "https://idp",
+            Map.of(
+                OidcUserAuthenticationConverter.ADDITIONAL_JWK_SET_URIS_METADATA_KEY, List.of()));
+
+    converter.getJwtDecoder(withExtra);
+    converter.getJwtDecoder(withoutExtra);
+
+    verify(oidcAccessTokenDecoderFactory).createAccessTokenDecoder(withExtra, extraUris);
+    verify(oidcAccessTokenDecoderFactory).createAccessTokenDecoder(withoutExtra, null);
+  }
+
   private static ClientRegistration registration(
       final String id, final String jwkSetUri, final String issuer) {
+    return registration(id, jwkSetUri, issuer, Map.of());
+  }
+
+  private static ClientRegistration registration(
+      final String id,
+      final String jwkSetUri,
+      final String issuer,
+      final Map<String, Object> extraMetadata) {
+    final Map<String, Object> metadata = new HashMap<>(extraMetadata);
+    metadata.put(TokenValidatorFactory.ISSUER_METADATA_KEY, issuer);
     return ClientRegistration.withRegistrationId(id)
         .clientId("client")
         .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
@@ -191,7 +251,7 @@ class OidcUserAuthenticationConverterTest {
         .authorizationUri(issuer + "/auth")
         .tokenUri(issuer + "/token")
         .jwkSetUri(jwkSetUri)
-        .providerConfigurationMetadata(Map.of(TokenValidatorFactory.ISSUER_METADATA_KEY, issuer))
+        .providerConfigurationMetadata(metadata)
         .build();
   }
 
