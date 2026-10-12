@@ -86,8 +86,9 @@ public class TokenValidatorFactory {
 
     validators.add(new JwtTimestampValidator(clockSkew));
 
-    if (providerConfig != null && StringUtils.hasText(providerConfig.getIssuerUri())) {
-      validators.add(new JwtIssuerValidator(providerConfig.getIssuerUri()));
+    final var issuerUri = resolveIssuerUri(clientRegistration, providerConfig);
+    if (StringUtils.hasText(issuerUri)) {
+      validators.add(new JwtIssuerValidator(issuerUri));
     }
 
     final var audiences = resolveAudiences(clientRegistration, providerConfig);
@@ -98,6 +99,21 @@ public class TokenValidatorFactory {
     validators.addAll(extraValidators);
 
     return new DelegatingOAuth2TokenValidator<>(validators);
+  }
+
+  /**
+   * Resolves the issuer a registration's tokens must carry: the issuer of the registration itself
+   * when it has one, otherwise the {@code providers}-map issuer. Scoped registrations that share a
+   * registration ID can sit on different issuers, so the registration of the login at hand wins
+   * over the entry the map holds for that ID.
+   */
+  private static String resolveIssuerUri(
+      final ClientRegistration clientRegistration, final OidcConfiguration providerConfig) {
+    final var details = clientRegistration.getProviderDetails();
+    if (details != null && StringUtils.hasText(details.getIssuerUri())) {
+      return details.getIssuerUri();
+    }
+    return providerConfig != null ? providerConfig.getIssuerUri() : null;
   }
 
   /**
