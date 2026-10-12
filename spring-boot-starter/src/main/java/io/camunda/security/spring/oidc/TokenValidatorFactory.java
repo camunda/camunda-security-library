@@ -32,10 +32,10 @@ import org.springframework.util.StringUtils;
  *
  * <ul>
  *   <li>A {@link JwtTimestampValidator} using the configured clock skew
- *   <li>A {@link JwtIssuerValidator} for the issuer in the registration's {@link
- *       #ISSUER_METADATA_KEY} entry, which takes precedence; otherwise when the matched {@link
- *       OidcConfiguration} declares an issuer URI. The entry adds the check even when the providers
- *       map is empty, and an empty entry switches it off
+ *   <li>A {@link JwtIssuerValidator} for the issuer in the {@link #ISSUER_METADATA_KEY} entry of
+ *       the registration. If there is no entry, it uses the issuer URI of the matched {@link
+ *       OidcConfiguration}. The entry adds the check also when the providers map is empty. An empty
+ *       entry turns the check off
  *   <li>An {@link AudienceValidator} when the matched {@link OidcConfiguration} declares audiences
  *   <li>Any extra validators supplied by the host (e.g. SaaS organization/cluster validators)
  * </ul>
@@ -54,10 +54,10 @@ public class TokenValidatorFactory {
   public static final String AUDIENCES_METADATA_KEY = "camunda.security.oidc.audiences";
 
   /**
-   * Key under which a {@link ClientRegistration} carries the issuer its own scope configures, empty
-   * when the scope configures none (explicit endpoints only). Authoritative by presence, like the
-   * audiences: an empty value switches issuer validation off for that registration instead of
-   * borrowing the issuer another scope configures under the same registration ID.
+   * Metadata key for the issuer of the scope of a {@link ClientRegistration}. The value is empty
+   * when the scope sets no issuer. If the entry exists, it wins, like the audiences. An empty value
+   * turns off the issuer check for the registration. It does not use the issuer of another scope
+   * with the same registration ID.
    */
   public static final String ISSUER_METADATA_KEY = "camunda.security.oidc.issuer";
 
@@ -113,11 +113,10 @@ public class TokenValidatorFactory {
   }
 
   /**
-   * Resolves the issuer a registration's tokens must carry: the issuer the registration declares
-   * for itself (see {@link #registrationIssuer}) when it declares one, otherwise the {@code
-   * providers}-map issuer. Scoped registrations that share a registration ID can sit on different
-   * issuers, so the registration of the login at hand wins over the entry the map holds for that
-   * ID.
+   * Returns the issuer that the tokens of a registration must have. This is the issuer of the
+   * registration (see {@link #registrationIssuer}) if it has one, else the issuer of the {@code
+   * providers} map. Scopes with the same registration ID can have different issuers, so the
+   * registration wins over the map.
    */
   private static String resolveIssuerUri(
       final ClientRegistration clientRegistration, final OidcConfiguration providerConfig) {
@@ -130,10 +129,10 @@ public class TokenValidatorFactory {
   }
 
   /**
-   * What a registration declares about its own issuer: the {@link #ISSUER_METADATA_KEY} metadata
-   * entry when present (authoritative, so an empty entry declares {@linkplain
-   * RegistrationIssuer#none() no issuer}). Only {@link ScopedClientRegistrationFactory} writes this
-   * entry. A registration without it declares nothing, and the caller decides what to fall back to.
+   * Returns the issuer from the {@link #ISSUER_METADATA_KEY} entry of a registration. An empty
+   * entry gives {@linkplain RegistrationIssuer#none() no issuer}. Only {@link
+   * ScopedClientRegistrationFactory} writes this entry. If the entry does not exist, the result is
+   * empty and the caller selects the fallback.
    *
    * @throws IllegalStateException if the metadata entry is not a {@code String}
    */
@@ -186,14 +185,14 @@ public class TokenValidatorFactory {
   }
 
   /**
-   * An issuer a registration declares for itself.
+   * The issuer from the metadata of a registration.
    *
-   * @param uri the issuer, or {@code null} when the registration explicitly declares none, which
-   *     switches issuer validation off for it
+   * @param uri the issuer, or {@code null} when the entry is empty. Then the registration gets no
+   *     issuer check
    */
   public record RegistrationIssuer(String uri) {
 
-    /** A registration that explicitly declares no issuer. */
+    /** The value for an empty issuer entry. */
     public static RegistrationIssuer none() {
       return new RegistrationIssuer(null);
     }

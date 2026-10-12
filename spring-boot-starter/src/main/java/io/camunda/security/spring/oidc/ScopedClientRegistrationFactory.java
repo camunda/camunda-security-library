@@ -1211,9 +1211,9 @@ public final class ScopedClientRegistrationFactory {
   /**
    * Adds this registration's own entries to the discovered metadata by build-then-rebuild, since
    * {@code providerConfigurationMetadata} replaces the map and would drop a discovered {@code
-   * end_session_endpoint}. The audiences, issuer, user-info-required, additional-JWK-Set-URIs and
-   * prefer-id-token-claims keys are always set, even when false/empty, because they are
-   * authoritative by presence; an explicit end-session endpoint wins.
+   * end_session_endpoint}. It always sets the audiences, issuer, user-info-required, additional JWK
+   * Set URIs and prefer-id-token-claims keys, also when empty or false, because an entry that
+   * exists always wins. An explicit end-session endpoint wins.
    *
    * <p>The map is fresh per registration — the only reason registrations sharing an issuer cannot
    * see each other's audiences or user-info-required flag.

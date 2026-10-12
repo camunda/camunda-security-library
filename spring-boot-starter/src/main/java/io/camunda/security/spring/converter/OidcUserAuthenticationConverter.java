@@ -40,17 +40,17 @@ public class OidcUserAuthenticationConverter
     implements CamundaAuthenticationConverter<Authentication> {
 
   /**
-   * Key under which a {@link ClientRegistration} carries its own additional JWK Set URIs. When
-   * present, it wins over the {@link AdditionalJwkSetUrisByRegistrationId} lookup, because several
-   * scopes can share a registration ID with different settings. See <a
+   * Metadata key for the additional JWK Set URIs of a {@link ClientRegistration}. If the entry
+   * exists, it wins over the {@link AdditionalJwkSetUrisByRegistrationId} lookup. Scopes can use
+   * the same registration ID with different settings. See <a
    * href="https://github.com/camunda/camunda-security-library/blob/main/docs/adr/0033-login-settings-carried-by-the-registration.md">ADR-0033</a>.
    */
   public static final String ADDITIONAL_JWK_SET_URIS_METADATA_KEY =
       "camunda.security.oidc.additional-jwk-set-uris";
 
   /**
-   * Key under which a {@link ClientRegistration} carries its own {@code prefer-id-token-claims}
-   * flag. When present, it wins over the map passed to the constructor, for the same reason.
+   * Metadata key for the {@code prefer-id-token-claims} flag of a {@link ClientRegistration}. If
+   * the entry exists, it wins over the map from the constructor.
    */
   public static final String PREFER_ID_TOKEN_CLAIMS_METADATA_KEY =
       "camunda.security.oidc.prefer-id-token-claims";
@@ -214,9 +214,9 @@ public class OidcUserAuthenticationConverter
   }
 
   /**
-   * Logs a decode failure at WARN with the registration and its issuer, which the {@link
-   * #decodeAccessToken} hook does not receive. A host that overrides the hook still gets this
-   * wrapper as its decoder.
+   * Logs a decode failure at WARN with the registration and its issuer. The {@link
+   * #decodeAccessToken} hook does not get these values. A host that overrides the hook also gets
+   * this decoder.
    */
   private static JwtDecoder loggingFailures(
       final JwtDecoder jwtDecoder, final ClientRegistration clientRegistration) {
@@ -235,8 +235,9 @@ public class OidcUserAuthenticationConverter
   }
 
   /**
-   * Returns one decoder per distinct provider setting. Scopes can share a registration ID with a
-   * different issuer, key set or audience, so the key holds all settings the decoder is built from.
+   * Returns one decoder for each different provider setting. Scopes can use the same registration
+   * ID with a different issuer, key set or audience. Thus the key holds all settings of the
+   * decoder.
    */
   protected JwtDecoder getJwtDecoder(final ClientRegistration clientRegistration) {
     final var additionalUris = additionalJwkSetUris(clientRegistration);
