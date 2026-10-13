@@ -277,7 +277,7 @@ public class OidcConfiguration {
   }
 
   /**
-   * @return {@code true} when the configuration sets {@code client-id-claim}
+   * @return {@code true} when the configuration sets {@code client-id-claim}, also to {@code null}
    */
   public boolean isClientIdClaimSet() {
     return clientIdClaimSet;
