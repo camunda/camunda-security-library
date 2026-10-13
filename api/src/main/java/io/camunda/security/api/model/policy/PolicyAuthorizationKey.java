@@ -37,6 +37,9 @@ public record PolicyAuthorizationKey(
     if (ownerType == AuthorizationOwnerType.UNSPECIFIED) {
       throw new IllegalArgumentException("ownerType must not be UNSPECIFIED");
     }
+    if (resourceType == AuthorizationResourceType.UNSPECIFIED) {
+      throw new IllegalArgumentException("resourceType must not be UNSPECIFIED");
+    }
     requireId(ownerId, "ownerId");
     resourceId = nullToEmpty(resourceId);
     resourcePropertyName = nullToEmpty(resourcePropertyName);

@@ -22,6 +22,11 @@ final class PolicyValidation {
     return value;
   }
 
+  static List<String> requireIds(final List<String> ids, final String field) {
+    ids.forEach(id -> requireId(id, field));
+    return ids;
+  }
+
   static <T> List<T> listOrEmpty(final List<T> list) {
     return list == null ? List.of() : List.copyOf(list);
   }

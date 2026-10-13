@@ -27,12 +27,17 @@ import java.util.function.Function;
  *
  * <p>Apply order: upsert tenants, roles, groups and mapping rules; upsert memberships; upsert
  * authorizations; delete authorizations; delete memberships; delete mapping rules, groups, roles
- * and tenants. Applying the same {@code policyVersion} again must be harmless. Deleting a tenant,
- * role, group or mapping rule cascades to its memberships and owned authorizations, so listing
- * those is optional.
+ * and tenants. Applying the same {@code policyVersion} again must be harmless.
  *
- * <p>An ID or key may not appear in both upserts and deletions, and the upserts hold at most one
- * authorization per {@link PolicyAuthorizationKey}.
+ * <p>Deletes cascade only partly. Deleting a role or group removes the memberships where it is the
+ * target (its own members) and its owned authorizations, but not the memberships where it is itself
+ * the member (group to role, group to tenant, role to tenant). The sender must list those as
+ * membership deletions, otherwise they survive and keep resolving. Deleting a mapping rule removes
+ * its memberships in tenants, roles and groups plus its owned authorizations; deleting a tenant
+ * removes its members.
+ *
+ * <p>An ID or key may not appear in both upserts and deletions, and no list may contain the same
+ * ID, membership or authorization key twice. {@code policyVersion} starts at 1.
  */
 public record PolicyChangeSet(
     long policyVersion,
@@ -40,18 +45,22 @@ public record PolicyChangeSet(
     PolicyUpserts upserts,
     PolicyDeletions deletions) {
 
+  private static final PolicyUpserts NO_UPSERTS =
+      new PolicyUpserts(null, null, null, null, null, null);
+  private static final PolicyDeletions NO_DELETIONS =
+      new PolicyDeletions(null, null, null, null, null, null);
+
   public PolicyChangeSet {
-    if (policyVersion < 0) {
-      throw new IllegalArgumentException("policyVersion must not be negative: " + policyVersion);
+    if (policyVersion < 1) {
+      throw new IllegalArgumentException("policyVersion must be at least 1: " + policyVersion);
     }
     Objects.requireNonNull(kind, "kind must not be null");
-    upserts = upserts == null ? new PolicyUpserts(null, null, null, null, null, null) : upserts;
-    deletions =
-        deletions == null ? new PolicyDeletions(null, null, null, null, null, null) : deletions;
+    upserts = upserts == null ? NO_UPSERTS : upserts;
+    deletions = deletions == null ? NO_DELETIONS : deletions;
     if (kind == PolicyChangeSetKind.SNAPSHOT && !isEmpty(deletions)) {
       throw new IllegalArgumentException("A SNAPSHOT must not carry deletions");
     }
-    requireNoDuplicateAuthorizationKeys(upserts);
+    requireNoDuplicates(upserts, deletions);
     requireNoOverlap(upserts, deletions);
   }
 
@@ -64,12 +73,27 @@ public record PolicyChangeSet(
         && deletions.authorizations().isEmpty();
   }
 
-  private static void requireNoDuplicateAuthorizationKeys(final PolicyUpserts upserts) {
-    final Set<PolicyAuthorizationKey> seen = new HashSet<>();
-    for (final PolicyAuthorization authorization : upserts.authorizations()) {
-      if (!seen.add(authorization.key())) {
-        throw new IllegalArgumentException(
-            "Duplicate authorization key in upserts: " + authorization.key());
+  private static void requireNoDuplicates(final PolicyUpserts up, final PolicyDeletions del) {
+    requireUnique("upserted tenant", ids(up.tenants(), PolicyTenant::tenantId));
+    requireUnique("upserted role", ids(up.roles(), PolicyRole::roleId));
+    requireUnique("upserted group", ids(up.groups(), PolicyGroup::groupId));
+    requireUnique(
+        "upserted mapping rule", ids(up.mappingRules(), PolicyMappingRule::mappingRuleId));
+    requireUnique("upserted membership", up.memberships());
+    requireUnique("upserted authorization", ids(up.authorizations(), PolicyAuthorization::key));
+    requireUnique("deleted tenant", del.tenantIds());
+    requireUnique("deleted role", del.roleIds());
+    requireUnique("deleted group", del.groupIds());
+    requireUnique("deleted mapping rule", del.mappingRuleIds());
+    requireUnique("deleted membership", del.memberships());
+    requireUnique("deleted authorization", del.authorizations());
+  }
+
+  private static void requireUnique(final String what, final Collection<?> keys) {
+    final Set<Object> seen = new HashSet<>();
+    for (final Object key : keys) {
+      if (!seen.add(key)) {
+        throw new IllegalArgumentException("Duplicate " + what + ": " + key);
       }
     }
   }

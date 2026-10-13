@@ -22,5 +22,15 @@ public record PolicyAuthorization(PolicyAuthorizationKey key, Set<PermissionType
   public PolicyAuthorization {
     Objects.requireNonNull(key, "key must not be null");
     permissions = setOrEmpty(permissions);
+    if (permissions.isEmpty()) {
+      throw new IllegalArgumentException("permissions must not be empty");
+    }
+    final Set<PermissionType> supported = key.resourceType().getSupportedPermissionTypes();
+    for (final PermissionType permission : permissions) {
+      if (!supported.contains(permission)) {
+        throw new IllegalArgumentException(
+            "Permission " + permission + " is not supported by " + key.resourceType());
+      }
+    }
   }
 }

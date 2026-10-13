@@ -159,6 +159,18 @@ class PolicyChangeSetJsonRoundTripTest {
   }
 
   @Test
+  void shouldRejectMissingVersionOnRead() {
+    final var json =
+        """
+        {"kind":"DELTA"}
+        """;
+
+    assertThatThrownBy(() -> mapper.readValue(json, PolicyChangeSet.class))
+        .isInstanceOf(JsonMappingException.class)
+        .hasRootCauseInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
   void shouldRejectReverseMembershipOnRead() {
     final var json =
         """

@@ -8,6 +8,7 @@
 package io.camunda.security.api.model.policy;
 
 import static io.camunda.security.api.model.policy.PolicyValidation.listOrEmpty;
+import static io.camunda.security.api.model.policy.PolicyValidation.requireIds;
 
 import java.util.List;
 
@@ -24,10 +25,10 @@ public record PolicyDeletions(
     List<PolicyAuthorizationKey> authorizations) {
 
   public PolicyDeletions {
-    tenantIds = listOrEmpty(tenantIds);
-    roleIds = listOrEmpty(roleIds);
-    groupIds = listOrEmpty(groupIds);
-    mappingRuleIds = listOrEmpty(mappingRuleIds);
+    tenantIds = requireIds(listOrEmpty(tenantIds), "tenantIds");
+    roleIds = requireIds(listOrEmpty(roleIds), "roleIds");
+    groupIds = requireIds(listOrEmpty(groupIds), "groupIds");
+    mappingRuleIds = requireIds(listOrEmpty(mappingRuleIds), "mappingRuleIds");
     memberships = listOrEmpty(memberships);
     authorizations = listOrEmpty(authorizations);
   }

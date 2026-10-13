@@ -19,6 +19,8 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 class PolicyAuthorizationKeyTest {
 
+  private static final AuthorizationResourceType RESOURCE = AuthorizationResourceType.RESOURCE;
+
   private static PolicyAuthorizationKey key(
       final AuthorizationResourceMatcher matcher, final String id, final String property) {
     return new PolicyAuthorizationKey(
@@ -66,36 +68,35 @@ class PolicyAuthorizationKeyTest {
   }
 
   @Test
-  void shouldRejectInvalidOwner() {
-    assertThatThrownBy(
-            () ->
-                new PolicyAuthorizationKey(
-                    AuthorizationOwnerType.UNSPECIFIED,
-                    "o",
-                    AuthorizationResourceType.RESOURCE,
-                    AuthorizationResourceMatcher.ANY,
-                    "*",
-                    null))
+  void shouldRejectUnspecifiedOwnerType() {
+    assertThatThrownBy(() -> create(AuthorizationOwnerType.UNSPECIFIED, "o", RESOURCE))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(
-            () ->
-                new PolicyAuthorizationKey(
-                    AuthorizationOwnerType.ROLE,
-                    " ",
-                    AuthorizationResourceType.RESOURCE,
-                    AuthorizationResourceMatcher.ANY,
-                    "*",
-                    null))
+  }
+
+  @Test
+  void shouldRejectBlankOwnerId() {
+    assertThatThrownBy(() -> create(AuthorizationOwnerType.ROLE, " ", RESOURCE))
         .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void shouldRejectNullOwnerType() {
+    assertThatThrownBy(() -> create(null, "o", RESOURCE)).isInstanceOf(NullPointerException.class);
+  }
+
+  @Test
+  void shouldRejectUnspecifiedResourceType() {
     assertThatThrownBy(
-            () ->
-                new PolicyAuthorizationKey(
-                    null,
-                    "o",
-                    AuthorizationResourceType.RESOURCE,
-                    AuthorizationResourceMatcher.ANY,
-                    "*",
-                    null))
-        .isInstanceOf(NullPointerException.class);
+            () -> create(AuthorizationOwnerType.ROLE, "o", AuthorizationResourceType.UNSPECIFIED))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("resourceType");
+  }
+
+  private static PolicyAuthorizationKey create(
+      final AuthorizationOwnerType ownerType,
+      final String ownerId,
+      final AuthorizationResourceType resourceType) {
+    return new PolicyAuthorizationKey(
+        ownerType, ownerId, resourceType, AuthorizationResourceMatcher.ANY, "*", null);
   }
 }
