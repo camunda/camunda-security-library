@@ -9,13 +9,11 @@ package io.camunda.security.spring.oidc;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.time.Duration;
-import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
@@ -121,22 +119,11 @@ public class TokenValidatorFactory {
    */
   private Set<String> resolveAudiences(
       final ClientRegistration clientRegistration, final OidcConfiguration providerConfig) {
-    final var metadata = clientRegistration.getProviderDetails().getConfigurationMetadata();
-    if (metadata.containsKey(AUDIENCES_METADATA_KEY)) {
-      final var metadataAudiences = metadata.get(AUDIENCES_METADATA_KEY);
-      if (!(metadataAudiences instanceof final Collection<?> collection)) {
-        throw new IllegalStateException(
-            "Metadata key '"
-                + AUDIENCES_METADATA_KEY
-                + "' must hold a Collection of audiences but was: "
-                + (metadataAudiences == null ? "null" : metadataAudiences.getClass().getName()));
-      }
-      // String.class::cast fails fast (ClassCastException) on any non-String element.
-      return collection.stream().map(String.class::cast).collect(Collectors.toSet());
-    }
-    if (providerConfig != null && providerConfig.getAudiences() != null) {
-      return providerConfig.getAudiences();
-    }
-    return Set.of();
+    return ClientRegistrationMetadata.audiences(clientRegistration)
+        .orElseGet(
+            () ->
+                providerConfig != null && providerConfig.getAudiences() != null
+                    ? providerConfig.getAudiences()
+                    : Set.of());
   }
 }

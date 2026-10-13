@@ -14,17 +14,14 @@ import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.spring.oidc.ClientRegistrationMetadata;
 import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory;
-import io.camunda.security.spring.oidc.TokenValidatorFactory;
 import io.camunda.security.spring.oidc.UrlRedaction;
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -213,7 +210,7 @@ public class OidcUserAuthenticationConverter
     } catch (final JwtException e) {
       // DEBUG only: the decoder from getAccessTokenClaims already logs the failure at WARN, with
       // the registration that this hook does not get.
-      LOGGER.debug("Failed to decode Access Token: '{}', returning null", e.getMessage());
+      LOGGER.debug("Failed to decode Access Token: {}, returning null", reasonForLog(e));
       return null;
     }
   }
@@ -237,7 +234,6 @@ public class OidcUserAuthenticationConverter
             sanitizeForLog(clientRegistration.getClientId()),
             UrlRedaction.redact(issuerForLog(clientRegistration)),
             reasonForLog(e));
-        LOGGER.debug("Access Token decode failure", e);
         throw e;
       }
     };
@@ -267,7 +263,7 @@ public class OidcUserAuthenticationConverter
             details != null ? details.getIssuerUri() : null,
             ClientRegistrationMetadata.issuer(clientRegistration).orElse(null),
             details != null ? details.getJwkSetUri() : null,
-            audiences(clientRegistration),
+            ClientRegistrationMetadata.audiences(clientRegistration).orElse(null),
             additionalUris);
     return jwtDecoders.computeIfAbsent(
         key,
@@ -282,17 +278,6 @@ public class OidcUserAuthenticationConverter
     }
     // An empty list is the scope's own answer and must not fall back to the lookup.
     return own.get().isEmpty() ? null : own.get();
-  }
-
-  private static Set<String> audiences(final ClientRegistration clientRegistration) {
-    final var details = clientRegistration.getProviderDetails();
-    final var metadata = details != null ? details.getConfigurationMetadata() : null;
-    if (metadata != null
-        && metadata.get(TokenValidatorFactory.AUDIENCES_METADATA_KEY)
-            instanceof final Collection<?> audiences) {
-      return audiences.stream().map(String::valueOf).collect(Collectors.toUnmodifiableSet());
-    }
-    return null;
   }
 
   private static String issuerForLog(final ClientRegistration clientRegistration) {
