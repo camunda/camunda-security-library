@@ -35,7 +35,7 @@ converter?
 - **The registration holds the settings.** `ScopedClientRegistrationFactory` writes the issuer, the
   additional JWK Set URIs and `prefer-id-token-claims` of the scope into the registration metadata.
   It always writes each entry, also when the value is empty or false. An entry that exists always
-  wins.
+  wins. `ClientRegistrationMetadata` owns the keys, the type checks, and the read and write.
 - **The converter reads the settings from the registration of the login.** If the registration has
   no entry, the converter uses the lookup from the host, as before. This applies to a registration
   that a host builds itself.
@@ -44,13 +44,23 @@ converter?
 - **The decoder cache key holds all settings of the decoder:** registration id, issuer, JWK Set URI,
   audiences and additional JWK Set URIs.
 - **Logs.** The WARN for a decode failure names the registration id, the client id and the issuer.
-  The log removes credentials and query values from the issuer. The WARN for the fallback names the
-  registration id.
+  The log removes credentials and query values from the issuer. For a failed claim check it gives
+  the message, which names the claim. For other failures it gives only the exception type, because
+  a key-source message can contain the JWK Set URL. The `decodeAccessToken` hook logs at DEBUG, so
+  one failure gives one WARN. The WARN for the fallback names the registration id.
+- **The converter loads the authorized client once per login.** `getClaims` reads the
+  `prefer-id-token-claims` entry from it and passes it to the access-token decode.
 
 ### Why these particular boundaries
 
 - **No new host contract.** The registration already belongs to the scope. The converter does not
   need to know the scope. A host gets the fix when it updates the library.
+- **The registration entry wins, also when it is empty or false.** The host lookups and the
+  providers map are keyed by registration id, so they can hold the value of another scope. A
+  fallback to them for an empty entry gives the cross-scope sharing of #720 again. In the library
+  wiring, and in the current hosts, the lookups, the providers map and the registrations come from
+  the same `OidcConfiguration` objects, so a host sees no other value than before. Only a host that
+  builds a lookup or the providers map from other data sees the change.
 - **Same pattern as the audiences.** The audiences and `user-info-required` use the same type of
   metadata entry.
 - **The cache key uses the settings, not the object.** A persistent session gives a new registration
