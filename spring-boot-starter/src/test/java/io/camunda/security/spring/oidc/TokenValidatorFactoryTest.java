@@ -360,7 +360,8 @@ class TokenValidatorFactoryTest {
 
     // when / then the coercion is refused rather than silently turning 123 into an audience
     assertThatThrownBy(() -> factory.createTokenValidator(reg))
-        .isInstanceOf(ClassCastException.class)
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(TokenValidatorFactory.AUDIENCES_METADATA_KEY)
         .hasMessageContaining(Integer.class.getName());
   }
 

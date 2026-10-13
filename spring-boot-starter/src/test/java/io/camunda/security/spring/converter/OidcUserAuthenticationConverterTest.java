@@ -262,6 +262,24 @@ class OidcUserAuthenticationConverterTest {
   }
 
   @Test
+  void shouldFailBeforeTheCacheLookupOnMalformedAudienceMetadata() {
+    // given a decoder is cached for a registration without audiences
+    final var converter = converterWith(Map.of());
+    converter.getJwtDecoder(registration("oidc", "https://idp/jwks", "https://idp"));
+    final var malformed =
+        registration(
+            "oidc",
+            "https://idp/jwks",
+            "https://idp",
+            Map.of(TokenValidatorFactory.AUDIENCES_METADATA_KEY, "audience-x"));
+
+    // when / then the malformed entry fails closed instead of reusing that decoder
+    assertThatThrownBy(() -> converter.getJwtDecoder(malformed))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(TokenValidatorFactory.AUDIENCES_METADATA_KEY);
+  }
+
+  @Test
   void shouldShareTheDecoderForAudiencesThatOnlyDifferInTheirCollectionType() {
     final var converter = converterWith(Map.of());
     final var asList =

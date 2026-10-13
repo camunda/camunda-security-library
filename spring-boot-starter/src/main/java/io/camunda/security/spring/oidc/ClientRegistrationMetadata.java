@@ -12,6 +12,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.util.StringUtils;
 
@@ -65,7 +66,22 @@ public final class ClientRegistrationMetadata {
    */
   public static Optional<List<String>> additionalJwkSetUris(final ClientRegistration registration) {
     return read(registration, ADDITIONAL_JWK_SET_URIS, Collection.class, "a collection of String")
-        .map(ClientRegistrationMetadata::toStrings);
+        .map(values -> toStrings(ADDITIONAL_JWK_SET_URIS, values));
+  }
+
+  /**
+   * @return the audiences of the registration's {@link
+   *     TokenValidatorFactory#AUDIENCES_METADATA_KEY} entry, possibly empty, or empty when the
+   *     registration has no entry
+   * @throws IllegalStateException if the entry is not a collection of {@code String}
+   */
+  public static Optional<Set<String>> audiences(final ClientRegistration registration) {
+    return read(
+            registration,
+            TokenValidatorFactory.AUDIENCES_METADATA_KEY,
+            Collection.class,
+            "a collection of String")
+        .map(values -> Set.copyOf(toStrings(TokenValidatorFactory.AUDIENCES_METADATA_KEY, values)));
   }
 
   /**
@@ -89,19 +105,28 @@ public final class ClientRegistrationMetadata {
     }
     final var value = metadata.get(key);
     if (!type.isInstance(value)) {
-      throw invalid(key, expected);
+      throw invalid(key, expected, value);
     }
     return Optional.of(type.cast(value));
   }
 
-  private static List<String> toStrings(final Collection<?> values) {
-    if (values.stream().anyMatch(value -> !(value instanceof String))) {
-      throw invalid(ADDITIONAL_JWK_SET_URIS, "a collection of String");
+  private static List<String> toStrings(final String key, final Collection<?> values) {
+    for (final var value : values) {
+      if (!(value instanceof String)) {
+        throw invalid(key, "a collection of String", value);
+      }
     }
     return values.stream().map(String.class::cast).toList();
   }
 
-  private static IllegalStateException invalid(final String key, final String expected) {
-    return new IllegalStateException("Metadata key '" + key + "' must hold " + expected);
+  private static IllegalStateException invalid(
+      final String key, final String expected, final Object actual) {
+    return new IllegalStateException(
+        "Metadata key '"
+            + key
+            + "' must hold "
+            + expected
+            + " but had: "
+            + (actual == null ? "null" : actual.getClass().getName()));
   }
 }
