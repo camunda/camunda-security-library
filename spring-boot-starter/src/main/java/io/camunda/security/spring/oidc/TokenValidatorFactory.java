@@ -14,7 +14,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -32,10 +31,9 @@ import org.springframework.util.StringUtils;
  *
  * <ul>
  *   <li>A {@link JwtTimestampValidator} using the configured clock skew
- *   <li>A {@link JwtIssuerValidator} for the issuer in the {@link #ISSUER_METADATA_KEY} entry of
- *       the registration. If there is no entry, it uses the issuer URI of the matched {@link
- *       OidcConfiguration}. The entry adds the check also when the providers map is empty. An empty
- *       entry turns the check off
+ *   <li>A {@link JwtIssuerValidator} for the issuer that the registration carries (see {@link
+ *       ClientRegistrationMetadata#issuer}). If it carries none, it uses the issuer URI of the
+ *       matched {@link OidcConfiguration}. An empty issuer entry turns the check off
  *   <li>An {@link AudienceValidator} when the matched {@link OidcConfiguration} declares audiences
  *   <li>Any extra validators supplied by the host (e.g. SaaS organization/cluster validators)
  * </ul>
@@ -52,14 +50,6 @@ public class TokenValidatorFactory {
    * a registration ID still validate their own audiences.
    */
   public static final String AUDIENCES_METADATA_KEY = "camunda.security.oidc.audiences";
-
-  /**
-   * Metadata key for the issuer of the scope of a {@link ClientRegistration}. The value is empty
-   * when the scope sets no issuer. If the entry exists, it wins, like the audiences. An empty value
-   * turns off the issuer check for the registration. It does not use the issuer of another scope
-   * with the same registration ID.
-   */
-  public static final String ISSUER_METADATA_KEY = "camunda.security.oidc.issuer";
 
   private final Map<String, OidcConfiguration> providers;
   private final Duration clockSkew;
@@ -113,49 +103,15 @@ public class TokenValidatorFactory {
   }
 
   /**
-   * Returns the issuer that the tokens of a registration must have. This is the issuer of the
-   * registration (see {@link #registrationIssuer}) if it has one, else the issuer of the {@code
-   * providers} map. Scopes with the same registration ID can have different issuers, so the
-   * registration wins over the map.
+   * Returns the issuer that the tokens of a registration must have. The issuer that the
+   * registration carries wins over the {@code providers} map, because scopes with the same
+   * registration ID can have different issuers. An empty issuer entry does not fall back to the
+   * map, so a scope without an issuer never uses the issuer of another scope.
    */
   private static String resolveIssuerUri(
       final ClientRegistration clientRegistration, final OidcConfiguration providerConfig) {
-    final var own = registrationIssuer(clientRegistration);
-    if (own.isPresent()) {
-      // uri() is null for an explicitly empty declaration, which must not fall back to the map
-      return own.get().uri();
-    }
-    return providerConfig != null ? providerConfig.getIssuerUri() : null;
-  }
-
-  /**
-   * Returns the issuer from the {@link #ISSUER_METADATA_KEY} entry of a registration. An empty
-   * entry gives {@linkplain RegistrationIssuer#none() no issuer}. Only {@link
-   * ScopedClientRegistrationFactory} writes this entry. If the entry does not exist, the result is
-   * empty and the caller selects the fallback.
-   *
-   * @throws IllegalStateException if the metadata entry is not a {@code String}
-   */
-  public static Optional<RegistrationIssuer> registrationIssuer(
-      final ClientRegistration clientRegistration) {
-    final var details = clientRegistration.getProviderDetails();
-    if (details == null) {
-      return Optional.empty();
-    }
-    final var metadata = details.getConfigurationMetadata();
-    if (metadata != null && metadata.containsKey(ISSUER_METADATA_KEY)) {
-      final var issuer = metadata.get(ISSUER_METADATA_KEY);
-      if (!(issuer instanceof final String value)) {
-        throw new IllegalStateException(
-            "Metadata key '"
-                + ISSUER_METADATA_KEY
-                + "' must hold a String issuer but was: "
-                + (issuer == null ? "null" : issuer.getClass().getName()));
-      }
-      return Optional.of(
-          StringUtils.hasText(value) ? new RegistrationIssuer(value) : RegistrationIssuer.none());
-    }
-    return Optional.empty();
+    return ClientRegistrationMetadata.issuer(clientRegistration)
+        .orElse(providerConfig != null ? providerConfig.getIssuerUri() : null);
   }
 
   /**
@@ -182,19 +138,5 @@ public class TokenValidatorFactory {
       return providerConfig.getAudiences();
     }
     return Set.of();
-  }
-
-  /**
-   * The issuer from the metadata of a registration.
-   *
-   * @param uri the issuer, or {@code null} when the entry is empty. Then the registration gets no
-   *     issuer check
-   */
-  public record RegistrationIssuer(String uri) {
-
-    /** The value for an empty issuer entry. */
-    public static RegistrationIssuer none() {
-      return new RegistrationIssuer(null);
-    }
   }
 }

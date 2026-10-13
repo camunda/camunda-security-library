@@ -18,19 +18,21 @@ import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
+import io.camunda.security.spring.oidc.ClientRegistrationMetadata;
 import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory;
 import io.camunda.security.spring.oidc.TokenValidatorFactory;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -100,37 +102,51 @@ class OidcUserAuthenticationConverterTest {
 
   @Test
   void shouldLoadTheAuthorizedClientOnlyOncePerLogin() {
-    // a custom repository can read the client from a remote store
-    final var realRequest = new MockHttpServletRequest();
-    final var converter =
-        new OidcUserAuthenticationConverter(
-            authorizedClientRepository,
-            oidcAccessTokenDecoderFactory,
-            tokenClaimsConverter,
-            realRequest);
+    // given a custom repository can read the client from a remote store
     final var token = mockAuthToken("oidc");
-    final var accessToken = mock(OAuth2AccessToken.class);
-    when(accessToken.getTokenValue()).thenReturn("at");
-    final var client = mock(OAuth2AuthorizedClient.class);
-    when(client.getAccessToken()).thenReturn(accessToken);
-    when(client.getClientRegistration())
-        .thenReturn(
-            registration(
-                "oidc",
-                "https://idp/jwks",
-                "https://idp",
-                Map.of(
-                    OidcUserAuthenticationConverter.PREFER_ID_TOKEN_CLAIMS_METADATA_KEY, false)));
-    when(authorizedClientRepository.loadAuthorizedClient("oidc", token, realRequest))
+    final var registration =
+        registration(
+            "oidc",
+            "https://idp/jwks",
+            "https://idp",
+            Map.of(ClientRegistrationMetadata.PREFER_ID_TOKEN_CLAIMS, false));
+    final var now = Instant.now();
+    final var client =
+        new OAuth2AuthorizedClient(
+            registration,
+            "alice",
+            new OAuth2AccessToken(
+                OAuth2AccessToken.TokenType.BEARER, "at", now, now.plusSeconds(60)));
+    when(authorizedClientRepository.loadAuthorizedClient("oidc", token, request))
         .thenReturn(client);
     final var jwt = Jwt.withTokenValue("at").header("alg", "RS256").claim("sub", "alice").build();
     when(jwtDecoder.decode("at")).thenReturn(jwt);
     when(tokenClaimsConverter.convert(jwt.getClaims()))
         .thenReturn(CamundaAuthentication.of(b -> b.user("alice")));
 
+    // when
     converter.convert(token);
 
-    verify(authorizedClientRepository).loadAuthorizedClient("oidc", token, realRequest);
+    // then
+    verify(authorizedClientRepository).loadAuthorizedClient("oidc", token, request);
+  }
+
+  @Test
+  void shouldNotPreferIdTokenClaimsForATokenWithoutRegistrationId() {
+    // given
+    final var converter = converterWith(Map.of(), Map.of("oidc", true));
+    final var token = mockAuthToken(null);
+    final var principal = mock(OidcUser.class);
+    when(token.getPrincipal()).thenReturn(principal);
+    when(principal.getAttributes()).thenReturn(Map.of("sub", "alice"));
+    when(tokenClaimsConverter.convert(Map.of("sub", "alice")))
+        .thenReturn(CamundaAuthentication.of(b -> b.user("alice")));
+
+    // when
+    converter.convert(token);
+
+    // then the access-token path ran, and found no client
+    verify(authorizedClientRepository).loadAuthorizedClient(null, token, request);
   }
 
   @Test
@@ -220,6 +236,55 @@ class OidcUserAuthenticationConverterTest {
   }
 
   @Test
+  void shouldBuildOneDecoderPerIssuerForAnOtherwiseEqualRegistration() {
+    final var converter = converterWith(Map.of());
+    final var issuerA = registration("oidc", "https://idp/jwks", "https://idp-a");
+    final var issuerB = registration("oidc", "https://idp/jwks", "https://idp-b");
+
+    converter.getJwtDecoder(issuerA);
+    converter.getJwtDecoder(issuerB);
+
+    verify(oidcAccessTokenDecoderFactory).createAccessTokenDecoder(issuerA, null);
+    verify(oidcAccessTokenDecoderFactory).createAccessTokenDecoder(issuerB, null);
+  }
+
+  @Test
+  void shouldBuildOneDecoderPerJwkSetUriForAnOtherwiseEqualRegistration() {
+    final var converter = converterWith(Map.of());
+    final var jwksA = registration("oidc", "https://idp/jwks-a", "https://idp");
+    final var jwksB = registration("oidc", "https://idp/jwks-b", "https://idp");
+
+    converter.getJwtDecoder(jwksA);
+    converter.getJwtDecoder(jwksB);
+
+    verify(oidcAccessTokenDecoderFactory).createAccessTokenDecoder(jwksA, null);
+    verify(oidcAccessTokenDecoderFactory).createAccessTokenDecoder(jwksB, null);
+  }
+
+  @Test
+  void shouldShareTheDecoderForAudiencesThatOnlyDifferInTheirCollectionType() {
+    final var converter = converterWith(Map.of());
+    final var asList =
+        registration(
+            "oidc",
+            "https://idp/jwks",
+            "https://idp",
+            Map.of(TokenValidatorFactory.AUDIENCES_METADATA_KEY, List.of("x", "y")));
+    final var asSet =
+        registration(
+            "oidc",
+            "https://idp/jwks",
+            "https://idp",
+            Map.of(TokenValidatorFactory.AUDIENCES_METADATA_KEY, Set.of("y", "x")));
+
+    converter.getJwtDecoder(asList);
+    converter.getJwtDecoder(asSet);
+
+    verify(oidcAccessTokenDecoderFactory).createAccessTokenDecoder(asList, null);
+    verify(oidcAccessTokenDecoderFactory, never()).createAccessTokenDecoder(asSet, null);
+  }
+
+  @Test
   void shouldBuildOneDecoderPerAudienceSetForAnOtherwiseEqualRegistration() {
     final var converter = converterWith(Map.of());
     final var withAudience =
@@ -251,15 +316,13 @@ class OidcUserAuthenticationConverterTest {
             "oidc",
             "https://idp/jwks",
             "https://idp",
-            Map.of(
-                OidcUserAuthenticationConverter.ADDITIONAL_JWK_SET_URIS_METADATA_KEY, extraUris));
+            Map.of(ClientRegistrationMetadata.ADDITIONAL_JWK_SET_URIS, extraUris));
     final var withoutExtra =
         registration(
             "oidc",
             "https://idp/jwks",
             "https://idp",
-            Map.of(
-                OidcUserAuthenticationConverter.ADDITIONAL_JWK_SET_URIS_METADATA_KEY, List.of()));
+            Map.of(ClientRegistrationMetadata.ADDITIONAL_JWK_SET_URIS, List.of()));
 
     converter.getJwtDecoder(withExtra);
     converter.getJwtDecoder(withoutExtra);
@@ -279,7 +342,7 @@ class OidcUserAuthenticationConverterTest {
       final String issuer,
       final Map<String, Object> extraMetadata) {
     final Map<String, Object> metadata = new HashMap<>(extraMetadata);
-    metadata.put(TokenValidatorFactory.ISSUER_METADATA_KEY, issuer);
+    metadata.put(ClientRegistrationMetadata.ISSUER, issuer);
     return ClientRegistration.withRegistrationId(id)
         .clientId("client")
         .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
@@ -289,6 +352,18 @@ class OidcUserAuthenticationConverterTest {
         .jwkSetUri(jwkSetUri)
         .providerConfigurationMetadata(metadata)
         .build();
+  }
+
+  private OidcUserAuthenticationConverter converterWith(
+      final Map<String, List<String>> additionalJwkSetUrisByRegistrationId,
+      final Map<String, Boolean> preferIdTokenClaimsByRegistrationId) {
+    return new OidcUserAuthenticationConverter(
+        authorizedClientRepository,
+        oidcAccessTokenDecoderFactory,
+        tokenClaimsConverter,
+        request,
+        new AdditionalJwkSetUrisByRegistrationId(additionalJwkSetUrisByRegistrationId),
+        preferIdTokenClaimsByRegistrationId);
   }
 
   private OidcUserAuthenticationConverter converterWith(

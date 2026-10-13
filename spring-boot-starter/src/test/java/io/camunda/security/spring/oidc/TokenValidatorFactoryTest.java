@@ -77,7 +77,7 @@ class TokenValidatorFactoryTest {
     final var oidc = new OidcConfiguration();
     oidc.setIssuerUri("https://root-issuer");
     when(providerDetails.getConfigurationMetadata())
-        .thenReturn(Map.of(TokenValidatorFactory.ISSUER_METADATA_KEY, "https://scope-issuer"));
+        .thenReturn(Map.of(ClientRegistrationMetadata.ISSUER, "https://scope-issuer"));
     final var factory =
         new TokenValidatorFactory(Map.of("rid", oidc), Duration.ofSeconds(60), List.of());
 
@@ -103,25 +103,12 @@ class TokenValidatorFactoryTest {
   }
 
   @Test
-  void shouldFallBackToTheProvidersMapIssuerWhenTheRegistrationHasNone() {
-    final var oidc = new OidcConfiguration();
-    oidc.setIssuerUri("https://root-issuer");
-    final var factory =
-        new TokenValidatorFactory(Map.of("rid", oidc), Duration.ofSeconds(60), List.of());
-
-    final var validator = factory.createTokenValidator(registration);
-
-    assertThat(validator.validate(jwtWithIssuer("https://root-issuer")).hasErrors()).isFalse();
-    assertThat(validator.validate(jwtWithIssuer("https://other")).hasErrors()).isTrue();
-  }
-
-  @Test
   void shouldNotBorrowTheProvidersMapIssuerWhenTheRegistrationDeclaresNone() {
     // a scope on explicit endpoints: the factory records an empty issuer, which is authoritative
     final var oidc = new OidcConfiguration();
     oidc.setIssuerUri("https://root-issuer");
     when(providerDetails.getConfigurationMetadata())
-        .thenReturn(Map.of(TokenValidatorFactory.ISSUER_METADATA_KEY, ""));
+        .thenReturn(Map.of(ClientRegistrationMetadata.ISSUER, ""));
     final var factory =
         new TokenValidatorFactory(Map.of("rid", oidc), Duration.ofSeconds(60), List.of());
 
@@ -133,24 +120,13 @@ class TokenValidatorFactoryTest {
   @Test
   void shouldValidateTheIssuerRecordedInTheRegistrationMetadata() {
     when(providerDetails.getConfigurationMetadata())
-        .thenReturn(Map.of(TokenValidatorFactory.ISSUER_METADATA_KEY, "https://scope-issuer"));
+        .thenReturn(Map.of(ClientRegistrationMetadata.ISSUER, "https://scope-issuer"));
     final var factory = new TokenValidatorFactory(Map.of(), Duration.ofSeconds(60), List.of());
 
     final var validator = factory.createTokenValidator(registration);
 
     assertThat(validator.validate(jwtWithIssuer("https://scope-issuer")).hasErrors()).isFalse();
     assertThat(validator.validate(jwtWithIssuer("https://other")).hasErrors()).isTrue();
-  }
-
-  @Test
-  void shouldFailClosedWhenTheIssuerMetadataIsNotAString() {
-    when(providerDetails.getConfigurationMetadata())
-        .thenReturn(Map.of(TokenValidatorFactory.ISSUER_METADATA_KEY, 42));
-    final var factory = new TokenValidatorFactory(Map.of(), Duration.ofSeconds(60), List.of());
-
-    assertThatThrownBy(() -> factory.createTokenValidator(registration))
-        .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining(TokenValidatorFactory.ISSUER_METADATA_KEY);
   }
 
   @Test

@@ -12,6 +12,7 @@ import static io.camunda.security.spring.oidc.ScopedClientRegistrationFactory.sa
 import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
+import io.camunda.security.spring.oidc.ClientRegistrationMetadata;
 import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory;
 import io.camunda.security.spring.oidc.TokenValidatorFactory;
 import io.camunda.security.spring.oidc.UrlRedaction;
@@ -21,7 +22,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -36,31 +39,13 @@ import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
+import org.springframework.security.oauth2.jwt.JwtValidationException;
 
 public class OidcUserAuthenticationConverter
     implements CamundaAuthenticationConverter<Authentication> {
 
-  /**
-   * Metadata key for the additional JWK Set URIs of a {@link ClientRegistration}. If the entry
-   * exists, it wins over the {@link AdditionalJwkSetUrisByRegistrationId} lookup. Scopes can use
-   * the same registration ID with different settings. See <a
-   * href="https://github.com/camunda/camunda-security-library/blob/main/docs/adr/0033-login-settings-carried-by-the-registration.md">ADR-0033</a>.
-   */
-  public static final String ADDITIONAL_JWK_SET_URIS_METADATA_KEY =
-      "camunda.security.oidc.additional-jwk-set-uris";
-
-  /**
-   * Metadata key for the {@code prefer-id-token-claims} flag of a {@link ClientRegistration}. If
-   * the entry exists, it wins over the map from the constructor.
-   */
-  public static final String PREFER_ID_TOKEN_CLAIMS_METADATA_KEY =
-      "camunda.security.oidc.prefer-id-token-claims";
-
   private static final Logger LOGGER =
       LoggerFactory.getLogger(OidcUserAuthenticationConverter.class);
-
-  private static final String AUTHORIZED_CLIENT_ATTRIBUTE =
-      OidcUserAuthenticationConverter.class.getName() + ".AUTHORIZED_CLIENT";
 
   private final OAuth2AuthorizedClientRepository authorizedClientRepository;
   private final OidcAccessTokenDecoderFactory accessTokenDecoderFactory;
@@ -146,15 +131,18 @@ public class OidcUserAuthenticationConverter
   }
 
   protected Map<String, Object> getClaims(final OAuth2AuthenticationToken authenticationToken) {
+    // Load the authorized client once: its registration holds the login settings of the scope, and
+    // a custom OAuth2AuthorizedClientRepository can read it from a remote store.
+    final var authorizedClient = getAuthorizedClient(authenticationToken, request);
     // When prefer-id-token-claims is enabled for the current registration we short-circuit the
     // access-token decode path entirely and use the OidcUser principal attributes (which Spring
     // populates with the ID-token and userInfo merged claims). This lets operators opt in to
     // sourcing authorisation-relevant claims from userInfo in setups where the access token is
     // signed by a key set that Camunda cannot reach, or lacks claims Camunda needs.
-    if (shouldPreferIdTokenClaims(authenticationToken)) {
+    if (shouldPreferIdTokenClaims(authenticationToken, authorizedClient)) {
       return getIdTokenClaims(authenticationToken);
     }
-    return Optional.ofNullable(getAccessTokenClaims(authenticationToken))
+    return Optional.ofNullable(getAccessTokenClaims(authenticationToken, authorizedClient))
         .orElseGet(
             () -> {
               LOGGER.warn(
@@ -164,30 +152,33 @@ public class OidcUserAuthenticationConverter
             });
   }
 
-  private boolean shouldPreferIdTokenClaims(final OAuth2AuthenticationToken authenticationToken) {
+  private boolean shouldPreferIdTokenClaims(
+      final OAuth2AuthenticationToken authenticationToken,
+      final OAuth2AuthorizedClient authorizedClient) {
     final var registrationId = authenticationToken.getAuthorizedClientRegistrationId();
     if (registrationId == null) {
       return false;
     }
-    final var metadata =
-        Optional.ofNullable(authorizedClientOnce(authenticationToken))
-            .map(OAuth2AuthorizedClient::getClientRegistration)
-            .map(OidcUserAuthenticationConverter::metadata)
-            .orElse(Map.of());
-    if (metadata.containsKey(PREFER_ID_TOKEN_CLAIMS_METADATA_KEY)) {
-      final var value = metadata.get(PREFER_ID_TOKEN_CLAIMS_METADATA_KEY);
-      if (!(value instanceof final Boolean prefer)) {
-        throw new IllegalStateException(
-            "Metadata key '" + PREFER_ID_TOKEN_CLAIMS_METADATA_KEY + "' must hold a Boolean");
-      }
-      return prefer;
-    }
-    return Boolean.TRUE.equals(preferIdTokenClaimsByRegistrationId.get(registrationId));
+    return Optional.ofNullable(authorizedClient)
+        .map(OAuth2AuthorizedClient::getClientRegistration)
+        .flatMap(ClientRegistrationMetadata::preferIdTokenClaims)
+        .orElseGet(
+            () -> Boolean.TRUE.equals(preferIdTokenClaimsByRegistrationId.get(registrationId)));
   }
 
   protected Map<String, Object> getAccessTokenClaims(
       final OAuth2AuthenticationToken authenticationToken) {
-    final var authorizedClient = authorizedClientOnce(authenticationToken);
+    return getAccessTokenClaims(
+        authenticationToken, getAuthorizedClient(authenticationToken, request));
+  }
+
+  /**
+   * Decodes the access token of {@code authorizedClient}, or returns {@code null} when there is
+   * none or it does not decode.
+   */
+  protected Map<String, Object> getAccessTokenClaims(
+      final OAuth2AuthenticationToken authenticationToken,
+      final OAuth2AuthorizedClient authorizedClient) {
     return Optional.ofNullable(authorizedClient)
         .map(OAuth2AuthorizedClient::getAccessToken)
         .map(OAuth2AccessToken::getTokenValue)
@@ -201,23 +192,6 @@ public class OidcUserAuthenticationConverter
         .orElse(null);
   }
 
-  /**
-   * Loads the authorized client of the login only once per request. Both the {@code
-   * prefer-id-token-claims} check and the access-token decode need it, and a custom {@link
-   * OAuth2AuthorizedClientRepository} can read it from a remote store.
-   */
-  private OAuth2AuthorizedClient authorizedClientOnce(
-      final OAuth2AuthenticationToken authenticationToken) {
-    if (request.getAttribute(AUTHORIZED_CLIENT_ATTRIBUTE) instanceof final LoadedClient loaded
-        && loaded.authenticationToken() == authenticationToken) {
-      return loaded.authorizedClient();
-    }
-    final var authorizedClient = getAuthorizedClient(authenticationToken, request);
-    request.setAttribute(
-        AUTHORIZED_CLIENT_ATTRIBUTE, new LoadedClient(authenticationToken, authorizedClient));
-    return authorizedClient;
-  }
-
   protected OAuth2AuthorizedClient getAuthorizedClient(
       final OAuth2AuthenticationToken authenticationToken, final HttpServletRequest request) {
     final var clientRegistrationId = authenticationToken.getAuthorizedClientRegistrationId();
@@ -229,6 +203,8 @@ public class OidcUserAuthenticationConverter
     try {
       return jwtDecoder.decode(accessTokenValue);
     } catch (final JwtException e) {
+      // DEBUG only: the decoder from getAccessTokenClaims already logs the failure at WARN, with
+      // the registration that this hook does not get.
       LOGGER.debug("Failed to decode Access Token: '{}', returning null", e.getMessage());
       return null;
     }
@@ -248,14 +224,25 @@ public class OidcUserAuthenticationConverter
       } catch (final JwtException e) {
         LOGGER.warn(
             "Failed to decode Access Token for registration '{}' with client '{}' and issuer '{}':"
-                + " '{}'",
+                + " {}",
             sanitizeForLog(clientRegistration.getRegistrationId()),
             sanitizeForLog(clientRegistration.getClientId()),
             UrlRedaction.redact(issuerForLog(clientRegistration)),
-            e.getMessage());
+            reasonForLog(e));
+        LOGGER.debug("Access Token decode failure", e);
         throw e;
       }
     };
+  }
+
+  /**
+   * The message of a failed claim check names only the claim. Other failures, for example of the
+   * key source, can name the JWK Set URL with credentials in it, so only their type is logged.
+   */
+  private static String reasonForLog(final JwtException e) {
+    return e instanceof JwtValidationException
+        ? sanitizeForLog(e.getMessage())
+        : e.getClass().getSimpleName();
   }
 
   /**
@@ -267,15 +254,13 @@ public class OidcUserAuthenticationConverter
     final var additionalUris = additionalJwkSetUris(clientRegistration);
     final var details = clientRegistration.getProviderDetails();
     final var key =
-        details == null
-            ? new DecoderKey(clientRegistration.getRegistrationId(), null, null, null, null, null)
-            : new DecoderKey(
-                clientRegistration.getRegistrationId(),
-                details.getIssuerUri(),
-                TokenValidatorFactory.registrationIssuer(clientRegistration).orElse(null),
-                details.getJwkSetUri(),
-                metadata(clientRegistration).get(TokenValidatorFactory.AUDIENCES_METADATA_KEY),
-                additionalUris);
+        new DecoderKey(
+            clientRegistration.getRegistrationId(),
+            details != null ? details.getIssuerUri() : null,
+            ClientRegistrationMetadata.issuer(clientRegistration).orElse(null),
+            details != null ? details.getJwkSetUri() : null,
+            audiences(clientRegistration),
+            additionalUris);
     return jwtDecoders.computeIfAbsent(
         key,
         k ->
@@ -283,34 +268,29 @@ public class OidcUserAuthenticationConverter
   }
 
   private List<String> additionalJwkSetUris(final ClientRegistration clientRegistration) {
-    final var metadata = metadata(clientRegistration);
-    if (!metadata.containsKey(ADDITIONAL_JWK_SET_URIS_METADATA_KEY)) {
+    final var own = ClientRegistrationMetadata.additionalJwkSetUris(clientRegistration);
+    if (own.isEmpty()) {
       return additionalJwkSetUris.get(clientRegistration.getRegistrationId());
     }
-    final var value = metadata.get(ADDITIONAL_JWK_SET_URIS_METADATA_KEY);
-    if (!(value instanceof final Collection<?> uris)
-        || uris.stream().anyMatch(uri -> !(uri instanceof String))) {
-      throw new IllegalStateException(
-          "Metadata key '"
-              + ADDITIONAL_JWK_SET_URIS_METADATA_KEY
-              + "' must hold a collection of String URIs");
-    }
-    return uris.isEmpty() ? null : uris.stream().map(String.class::cast).toList();
+    // An empty list is the scope's own answer and must not fall back to the lookup.
+    return own.get().isEmpty() ? null : own.get();
   }
 
-  private static Map<String, Object> metadata(final ClientRegistration clientRegistration) {
+  private static Set<String> audiences(final ClientRegistration clientRegistration) {
     final var details = clientRegistration.getProviderDetails();
-    if (details == null || details.getConfigurationMetadata() == null) {
-      return Map.of();
+    final var metadata = details != null ? details.getConfigurationMetadata() : null;
+    if (metadata != null
+        && metadata.get(TokenValidatorFactory.AUDIENCES_METADATA_KEY)
+            instanceof final Collection<?> audiences) {
+      return audiences.stream().map(String::valueOf).collect(Collectors.toUnmodifiableSet());
     }
-    return details.getConfigurationMetadata();
+    return null;
   }
 
   private static String issuerForLog(final ClientRegistration clientRegistration) {
     final var details = clientRegistration.getProviderDetails();
-    return TokenValidatorFactory.registrationIssuer(clientRegistration)
-        .map(TokenValidatorFactory.RegistrationIssuer::uri)
-        .orElse(details == null ? null : details.getIssuerUri());
+    return ClientRegistrationMetadata.issuer(clientRegistration)
+        .orElse(details != null ? details.getIssuerUri() : null);
   }
 
   protected Map<String, Object> getIdTokenClaims(
@@ -321,11 +301,8 @@ public class OidcUserAuthenticationConverter
   private record DecoderKey(
       String registrationId,
       String issuerUri,
-      TokenValidatorFactory.RegistrationIssuer issuerMetadata,
+      String issuerMetadata,
       String jwkSetUri,
-      Object audiences,
+      Set<String> audiences,
       List<String> additionalJwkSetUris) {}
-
-  private record LoadedClient(
-      OAuth2AuthenticationToken authenticationToken, OAuth2AuthorizedClient authorizedClient) {}
 }
