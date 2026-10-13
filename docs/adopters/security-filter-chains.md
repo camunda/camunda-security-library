@@ -551,7 +551,12 @@ public CamundaAuthenticationConverter<Authentication> oidcUserAuthenticationConv
 }
 ```
 
-CSL supplies `AdditionalJwkSetUrisByRegistrationId` as a bean (`OidcBeansConfiguration`), built from every configured provider that declares `additional-jwk-set-uris`, with or without an `issuer-uri`, since the lookup is keyed by registration id. The lookup applies only to a registration without its own entry. A registration that `ScopedClientRegistrationFactory` builds holds its own additional JWK Set URIs and `prefer-id-token-claims` in its metadata, and these win over the lookup and the map. This lets scopes use the same registration id with different settings. For such registrations, the four-argument constructor also uses the additional JWK Set URIs. For a registration that a host builds itself, the four-argument constructor, or an empty lookup, decodes against the primary `jwk-set-uri` only. A host that registers its own lookup must key it by registration id. A map with other keys finds nothing, and the converter falls back to ID-token claims without an error. See [ADR-0030](../adr/0030-additional-jwk-set-uris-by-registration-id.md) and [ADR-0033](../adr/0033-login-settings-carried-by-the-registration.md).
+CSL supplies `AdditionalJwkSetUrisByRegistrationId` as a bean (`OidcBeansConfiguration`), built from every configured provider that declares `additional-jwk-set-uris`, with or without an `issuer-uri`, since the lookup is keyed by registration id. The converter finds the additional JWK Set URIs and `prefer-id-token-claims` of a login in this order:
+
+1. The entry in the metadata of the login's registration (`ClientRegistrationMetadata`). `ScopedClientRegistrationFactory` writes it for every registration, also when it is empty or false, so scopes with the same registration id keep their own settings.
+2. For a registration without the entry, for example one that a host builds itself: the lookup or the map from the constructor, by registration id. The four-argument constructor, or an empty lookup, decodes against the primary `jwk-set-uri` only.
+
+A host that registers its own lookup must key it by registration id. A map with other keys finds nothing, and the converter falls back to ID-token claims without an error. See [ADR-0030](../adr/0030-additional-jwk-set-uris-by-registration-id.md) and [ADR-0033](../adr/0033-login-settings-carried-by-the-registration.md).
 
 There is also a six-argument constructor taking `Map<String, Boolean> preferIdTokenClaimsByRegistrationId`, which short-circuits the access-token decode for the named registrations and uses the merged ID-token/UserInfo claims instead. For setups where the access token is signed by a key set Camunda cannot reach, or lacks claims Camunda needs.
 
