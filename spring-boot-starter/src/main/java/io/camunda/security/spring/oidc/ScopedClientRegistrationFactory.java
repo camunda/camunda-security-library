@@ -9,7 +9,6 @@ package io.camunda.security.spring.oidc;
 
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
-import io.camunda.security.spring.converter.OidcUserAuthenticationConverter;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Arrays;
@@ -1225,18 +1224,8 @@ public final class ScopedClientRegistrationFactory {
     merged.put(
         TokenValidatorFactory.AUDIENCES_METADATA_KEY,
         oidc.getAudiences() != null ? List.copyOf(oidc.getAudiences()) : List.of());
-    merged.put(
-        TokenValidatorFactory.ISSUER_METADATA_KEY,
-        StringUtils.hasText(oidc.getIssuerUri()) ? oidc.getIssuerUri() : "");
     merged.put(FailSoftOidcUserService.USER_INFO_REQUIRED_METADATA_KEY, oidc.isUserInfoRequired());
-    merged.put(
-        OidcUserAuthenticationConverter.ADDITIONAL_JWK_SET_URIS_METADATA_KEY,
-        oidc.getAdditionalJwkSetUris() != null
-            ? oidc.getAdditionalJwkSetUris().stream().filter(StringUtils::hasText).toList()
-            : List.of());
-    merged.put(
-        OidcUserAuthenticationConverter.PREFER_ID_TOKEN_CLAIMS_METADATA_KEY,
-        oidc.isPreferIdTokenClaims());
+    ClientRegistrationMetadata.write(merged, oidc);
     if (StringUtils.hasText(oidc.getEndSessionEndpointUri())) {
       merged.put("end_session_endpoint", oidc.getEndSessionEndpointUri());
     }

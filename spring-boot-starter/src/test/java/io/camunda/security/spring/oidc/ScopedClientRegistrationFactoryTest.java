@@ -19,7 +19,6 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
-import io.camunda.security.spring.converter.OidcUserAuthenticationConverter;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.time.Instant;
@@ -299,7 +298,7 @@ class ScopedClientRegistrationFactoryTest {
 
     // then the issuer key is present (authoritative by presence) but empty
     assertThat(registration.getProviderDetails().getConfigurationMetadata())
-        .containsEntry(TokenValidatorFactory.ISSUER_METADATA_KEY, "");
+        .containsEntry(ClientRegistrationMetadata.ISSUER, "");
     // and a validator built over a conflicting providers-map issuer for the same id ignores it
     final var rootConfig = new OidcConfiguration();
     rootConfig.setIssuerUri("https://root-issuer");
@@ -332,13 +331,12 @@ class ScopedClientRegistrationFactoryTest {
     // then each registration carries its own values, and the empty ones are still present
     assertThat(a.getProviderDetails().getConfigurationMetadata())
         .containsEntry(
-            OidcUserAuthenticationConverter.ADDITIONAL_JWK_SET_URIS_METADATA_KEY,
+            ClientRegistrationMetadata.ADDITIONAL_JWK_SET_URIS,
             List.of("https://idp-a.example.com/extra-jwks"))
-        .containsEntry(OidcUserAuthenticationConverter.PREFER_ID_TOKEN_CLAIMS_METADATA_KEY, true);
+        .containsEntry(ClientRegistrationMetadata.PREFER_ID_TOKEN_CLAIMS, true);
     assertThat(b.getProviderDetails().getConfigurationMetadata())
-        .containsEntry(
-            OidcUserAuthenticationConverter.ADDITIONAL_JWK_SET_URIS_METADATA_KEY, List.of())
-        .containsEntry(OidcUserAuthenticationConverter.PREFER_ID_TOKEN_CLAIMS_METADATA_KEY, false);
+        .containsEntry(ClientRegistrationMetadata.ADDITIONAL_JWK_SET_URIS, List.of())
+        .containsEntry(ClientRegistrationMetadata.PREFER_ID_TOKEN_CLAIMS, false);
   }
 
   @Test

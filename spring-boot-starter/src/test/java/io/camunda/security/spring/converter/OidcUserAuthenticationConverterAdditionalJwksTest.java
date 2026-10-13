@@ -19,6 +19,7 @@ import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
+import io.camunda.security.spring.oidc.ClientRegistrationMetadata;
 import io.camunda.security.spring.oidc.JWSKeySelectorFactory;
 import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory;
 import io.camunda.security.spring.oidc.OidcTestServer;
@@ -125,7 +126,7 @@ final class OidcUserAuthenticationConverterAdditionalJwksTest {
     // an issuer URL can hold credentials or tokens, which must not reach the log
     startJwksServers();
     registrationMetadata =
-        Map.of(TokenValidatorFactory.ISSUER_METADATA_KEY, "https://user:secret@idp.example/?k=v");
+        Map.of(ClientRegistrationMetadata.ISSUER, "https://user:secret@idp.example/?k=v");
     final var converter = converter(null, AdditionalJwkSetUrisByRegistrationId.empty());
 
     convert(converter, additional.sign(null, accessTokenClaims()));
@@ -159,9 +160,7 @@ final class OidcUserAuthenticationConverterAdditionalJwksTest {
     // a registration built per scope carries its own URIs; the host passes no lookup at all
     startJwksServers();
     registrationMetadata =
-        Map.of(
-            OidcUserAuthenticationConverter.ADDITIONAL_JWK_SET_URIS_METADATA_KEY,
-            List.of(additional.jwksUri()));
+        Map.of(ClientRegistrationMetadata.ADDITIONAL_JWK_SET_URIS, List.of(additional.jwksUri()));
     final var converter = converter(null, AdditionalJwkSetUrisByRegistrationId.empty());
 
     final var claims = convert(converter, additional.sign(null, accessTokenClaims()));
@@ -173,8 +172,7 @@ final class OidcUserAuthenticationConverterAdditionalJwksTest {
   void shouldNotBorrowTheLookupUrisWhenTheRegistrationCarriesNone() throws Exception {
     // the lookup holds the URIs of another scope under the same registration id
     startJwksServers();
-    registrationMetadata =
-        Map.of(OidcUserAuthenticationConverter.ADDITIONAL_JWK_SET_URIS_METADATA_KEY, List.of());
+    registrationMetadata = Map.of(ClientRegistrationMetadata.ADDITIONAL_JWK_SET_URIS, List.of());
     final var converter =
         converter(null, new AdditionalJwkSetUrisByRegistrationId(additionalUrisByRegistrationId()));
 
