@@ -166,6 +166,14 @@ public class OidcUserAuthenticationConverter
             () -> Boolean.TRUE.equals(preferIdTokenClaimsByRegistrationId.get(registrationId)));
   }
 
+  /**
+   * Loads the authorized client and decodes its access token.
+   *
+   * @deprecated {@link #getClaims} no longer calls this method, because it loads the authorized
+   *     client once and passes it on. To change the decode, override {@link
+   *     #getAccessTokenClaims(OAuth2AuthenticationToken, OAuth2AuthorizedClient)}.
+   */
+  @Deprecated(since = "1.1.0")
   protected Map<String, Object> getAccessTokenClaims(
       final OAuth2AuthenticationToken authenticationToken) {
     return getAccessTokenClaims(
