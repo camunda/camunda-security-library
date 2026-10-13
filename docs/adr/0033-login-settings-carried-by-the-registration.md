@@ -81,8 +81,11 @@ converter?
 **Negative / accepted trade-offs**
 
 - To read `prefer-id-token-claims`, the converter loads the authorized client before it decides
-  which claims to use. It keeps the client in a request attribute, so it loads it only once per
-  request.
+  which claims to use. `getClaims` keeps it in a local variable and passes it to
+  `getAccessTokenClaims(token, client)`, so it loads it only once per login.
+- `getClaims` no longer calls the one-argument `getAccessTokenClaims(token)`, so a subclass that
+  overrides only that method no longer changes the conversion. The method is deprecated and points
+  to the two-argument form. No known host overrides it.
 - A registration that a host builds itself has no metadata entries. It keeps the ADR-0030 lookup and
   the issuer of the providers map. Scopes do not get their own settings for it.
 - A scope with explicit endpoints and no `issuer-uri` gets no issuer check. This is the same as for
