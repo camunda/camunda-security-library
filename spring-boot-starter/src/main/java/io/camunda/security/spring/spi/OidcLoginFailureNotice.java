@@ -8,6 +8,7 @@
 package io.camunda.security.spring.spi;
 
 import java.net.URI;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -21,8 +22,16 @@ import java.util.Optional;
  * @param title a short heading
  * @param message the explanation, one or two sentences
  * @param link an optional link offering the user a way forward, such as switching account
+ * @param language the language the text is written in, rendered as the page's {@code lang} so
+ *     assistive technology pronounces it correctly; {@code null} means {@link #DEFAULT_LANGUAGE}
+ * @param retryText the label of the page's retry control, in {@code language}; {@code null} means
+ *     {@link #DEFAULT_RETRY_TEXT}
  */
-public record OidcLoginFailureNotice(int status, String title, String message, Link link) {
+public record OidcLoginFailureNotice(
+    int status, String title, String message, Link link, Locale language, String retryText) {
+
+  public static final Locale DEFAULT_LANGUAGE = Locale.ENGLISH;
+  public static final String DEFAULT_RETRY_TEXT = "Try again";
 
   public OidcLoginFailureNotice {
     if (status != 401 && status != 403) {
@@ -30,11 +39,33 @@ public record OidcLoginFailureNotice(int status, String title, String message, L
     }
     requireText(title, "title");
     requireText(message, "message");
+    language = language == null ? DEFAULT_LANGUAGE : language;
+    if (language.getLanguage().isEmpty()) {
+      throw new IllegalArgumentException("language must name a language, was " + language);
+    }
+    retryText = retryText == null ? DEFAULT_RETRY_TEXT : retryText;
+    requireText(retryText, "retryText");
   }
 
-  /** A notice without a link. */
+  /** An English notice without a link. */
   public OidcLoginFailureNotice(final int status, final String title, final String message) {
     this(status, title, message, null);
+  }
+
+  /** An English notice with an optional link. */
+  public OidcLoginFailureNotice(
+      final int status, final String title, final String message, final Link link) {
+    this(status, title, message, link, null, null);
+  }
+
+  /**
+   * This notice, declared as written in {@code language} with the retry control labelled {@code
+   * retryText}. Both are set together so a translated notice never sits next to an English control.
+   */
+  public OidcLoginFailureNotice withLanguage(final Locale language, final String retryText) {
+    Objects.requireNonNull(language, "language");
+    Objects.requireNonNull(retryText, "retryText");
+    return new OidcLoginFailureNotice(status, title, message, link, language, retryText);
   }
 
   public Optional<Link> optionalLink() {

@@ -71,13 +71,12 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
   static final String GENERIC_MESSAGE =
       "We could not sign you in to this application. Your account may not have access to it."
           + " Try again, or contact your administrator if the problem continues.";
-  static final String TRY_AGAIN = "Try again";
 
   private static final Logger LOG =
       LoggerFactory.getLogger(OAuth2AuthenticationExceptionHandler.class);
   private static final String PAGE_TEMPLATE = loadPageTemplate();
   private static final Pattern PLACEHOLDER =
-      Pattern.compile("\\{\\{(title|message|retryHref|retryText|forwardLink)}}");
+      Pattern.compile("\\{\\{(language|title|message|retryHref|retryText|forwardLink)}}");
 
   private final AuthenticationFailureHandler delegate;
   private final OidcLoginFailurePort loginFailurePort;
@@ -156,10 +155,11 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
         notice.optionalLink().map(link -> anchor(link.target().toString(), link.text())).orElse("");
     final Map<String, String> values =
         Map.of(
+            "language", HtmlUtils.htmlEscape(notice.language().toLanguageTag()),
             "title", HtmlUtils.htmlEscape(notice.title()),
             "message", HtmlUtils.htmlEscape(notice.message()),
             "retryHref", HtmlUtils.htmlEscape(request.getContextPath() + applicationRoot),
-            "retryText", HtmlUtils.htmlEscape(TRY_AGAIN),
+            "retryText", HtmlUtils.htmlEscape(notice.retryText()),
             "forwardLink", forwardLink);
     // One pass, so a value that happens to contain a placeholder is never substituted again.
     final String page =

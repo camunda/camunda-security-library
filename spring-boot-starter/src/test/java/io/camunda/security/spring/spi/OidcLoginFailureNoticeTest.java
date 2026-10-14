@@ -13,6 +13,7 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 
 import io.camunda.security.spring.spi.OidcLoginFailureNotice.Link;
 import java.net.URI;
+import java.util.Locale;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -65,5 +66,44 @@ class OidcLoginFailureNoticeTest {
   @Test
   void shouldExposeAnAbsentLinkAsEmpty() {
     assertThat(new OidcLoginFailureNotice(401, "title", "message").optionalLink()).isEmpty();
+  }
+
+  @Test
+  void shouldDefaultToEnglish() {
+    final var notice = new OidcLoginFailureNotice(401, "title", "message");
+
+    assertThat(notice.language()).isEqualTo(Locale.ENGLISH);
+    assertThat(notice.retryText()).isEqualTo(OidcLoginFailureNotice.DEFAULT_RETRY_TEXT);
+  }
+
+  @Test
+  void shouldCarryTheLanguageAndRetryTextTogether() {
+    final var link = new Link("Zur Console", URI.create("https://console.example.com/"));
+    final var notice =
+        new OidcLoginFailureNotice(403, "Kein Zugriff", "Nachricht", link)
+            .withLanguage(Locale.GERMAN, "Erneut versuchen");
+
+    assertThat(notice.language()).isEqualTo(Locale.GERMAN);
+    assertThat(notice.retryText()).isEqualTo("Erneut versuchen");
+    assertThat(notice.status()).isEqualTo(403);
+    assertThat(notice.optionalLink()).contains(link);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"", "  "})
+  void shouldRejectABlankRetryText(final String blank) {
+    final var notice = new OidcLoginFailureNotice(401, "title", "message");
+
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> notice.withLanguage(Locale.GERMAN, blank));
+  }
+
+  @Test
+  void shouldRejectALocaleWithoutALanguage() {
+    // Locale.ROOT renders as lang="und", which declares nothing a screen reader can use.
+    final var notice = new OidcLoginFailureNotice(401, "title", "message");
+
+    assertThatIllegalArgumentException()
+        .isThrownBy(() -> notice.withLanguage(Locale.ROOT, "Try again"));
   }
 }

@@ -99,8 +99,10 @@ port.
   `<style>` block, because the user has no session and cannot load the webapps' assets. Camunda's
   default content security policies allow inline styles; under a policy that does not, the page
   still renders, just unstyled. The styling is a copy, so it can drift from the webapps' design.
-- Only English text: CSL has no localization, and a host that needs other languages must word the
-  notice itself.
+- CSL has no localization: its generic text is English. A host that needs another language words
+  the notice itself and declares that language with the retry control's label
+  (`OidcLoginFailureNotice#withLanguage`), so the page's `lang` matches the text assistive
+  technology reads out. The "Camunda" header stays as it is in every language.
 - One `WARN` per failed login. A user who retries repeatedly logs once per attempt.
 - The "Try again" link can fail the same way again if nothing about the user's account has changed.
   The host's notice is where to offer a real way forward.

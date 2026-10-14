@@ -23,6 +23,7 @@ import io.camunda.security.spring.spi.OidcLoginFailureNotice;
 import io.camunda.security.spring.spi.OidcLoginFailurePort;
 import java.net.URI;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -154,6 +155,7 @@ class OAuth2AuthenticationExceptionHandlerTest {
     assertThat(response.getContentAsString())
         .contains("<h1>" + GENERIC_TITLE + "</h1>")
         .contains("We could not sign you in to this application.")
+        .contains("<html lang=\"en\">")
         .contains("<a class=\"button\" href=\"/cluster-1/\">Try again</a>")
         .doesNotContain("http-equiv")
         .doesNotContain("<script");
@@ -193,6 +195,22 @@ class OAuth2AuthenticationExceptionHandlerTest {
         .contains("<a href=\"https://console.example.com/\">Open Console</a>")
         .contains("<a class=\"button\" href=\"/cluster-1/\">Try again</a>")
         .doesNotContain(GENERIC_TITLE);
+  }
+
+  @Test
+  void shouldRenderTheHostsNoticeInItsLanguage() throws Exception {
+    when(loginFailurePort.explain(any(), any()))
+        .thenReturn(
+            Optional.of(
+                new OidcLoginFailureNotice(403, "Kein Zugriff auf diesen Cluster", "Nachricht")
+                    .withLanguage(Locale.forLanguageTag("de-CH"), "Erneut <versuchen>")));
+
+    handler().onAuthenticationFailure(browserRequest("/cluster-1"), response, invalidIdToken());
+
+    assertThat(response.getContentAsString())
+        .contains("<html lang=\"de-CH\">")
+        .contains("<a class=\"button\" href=\"/cluster-1/\">Erneut &lt;versuchen&gt;</a>")
+        .doesNotContain("Try again");
   }
 
   @Test
