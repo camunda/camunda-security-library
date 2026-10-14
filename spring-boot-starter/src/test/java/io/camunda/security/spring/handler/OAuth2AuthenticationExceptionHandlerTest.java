@@ -28,6 +28,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
@@ -110,6 +112,33 @@ class OAuth2AuthenticationExceptionHandlerTest {
     handler().onAuthenticationFailure(request, response, exception);
 
     verify(delegate).onAuthenticationFailure(request, response, exception);
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "application/json, text/html;q=0",
+        "application/json, text/html;q=0.5",
+        "text/*, text/html;q=0",
+        "text/html;q=not-a-number"
+      })
+  void shouldDelegateWhenHtmlIsNotPreferred(final String accept) throws Exception {
+    final MockHttpServletRequest request = request("/cluster-1", accept);
+    final AuthenticationException exception = invalidIdToken();
+
+    handler().onAuthenticationFailure(request, response, exception);
+
+    verify(delegate).onAuthenticationFailure(request, response, exception);
+    assertThat(response.getContentAsString()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {BROWSER_ACCEPT, "text/html", "text/*", "text/html;q=0.8, */*"})
+  void shouldRenderThePageWhenHtmlIsPreferred(final String accept) throws Exception {
+    handler().onAuthenticationFailure(request("/cluster-1", accept), response, invalidIdToken());
+
+    assertThat(response.getContentType()).startsWith("text/html");
+    verifyNoInteractions(delegate);
   }
 
   @Test

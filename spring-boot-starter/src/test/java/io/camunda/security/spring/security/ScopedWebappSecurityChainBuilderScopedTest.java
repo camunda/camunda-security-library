@@ -718,13 +718,8 @@ class ScopedWebappSecurityChainBuilderScopedTest {
   }
 
   /**
-   * A host may (wrongly) override {@link SecurityPathPort#postLogoutRedirectPath()} to return a
-   * bare {@code null} despite the {@code Optional} return type. The builder must fail fast with a
-   * clear message and migration hint, not NPE deep inside the redirect-URI template.
-   */
-  /**
    * Both OIDC chains must render the host's {@link OidcLoginFailurePort} notice when a browser
-   * login fails (ADR-0036). Read off each chain's own login filter, so a chain that kept
+   * login fails (ADR-0035). Read off each chain's own login filter, so a chain that kept
    * constructing its failure handler without the port fails here.
    */
   @Test
@@ -790,6 +785,11 @@ class ScopedWebappSecurityChainBuilderScopedTest {
     return response.getContentAsString();
   }
 
+  /**
+   * A host may (wrongly) override {@link SecurityPathPort#postLogoutRedirectPath()} to return a
+   * bare {@code null} despite the {@code Optional} return type. The builder must fail fast with a
+   * clear message and migration hint, not NPE deep inside the redirect-URI template.
+   */
   @Test
   void scopedOidcChainFailsFastWhenPostLogoutRedirectPathReturnsNull() {
     new WebApplicationContextRunner()

@@ -175,7 +175,7 @@ public final class ScopedWebappSecurityChainBuilder {
 
   /**
    * @param oidcLoginFailurePortProvider the host's explanations for failed browser logins; may be
-   *     {@code null} or empty, in which case the page shows generic text (ADR-0036)
+   *     {@code null} or empty, in which case the page shows generic text (ADR-0035)
    */
   public ScopedWebappSecurityChainBuilder(
       final AuthFailureHandler authFailureHandler,
@@ -555,7 +555,7 @@ public final class ScopedWebappSecurityChainBuilder {
   /**
    * The OAuth2 login failure handler of one OIDC chain. Failed browser logins render a page that
    * links back to {@code applicationRoot} and carries the host's {@link OidcLoginFailurePort}
-   * explanation when one is registered (ADR-0036).
+   * explanation when one is registered (ADR-0035).
    */
   private OAuth2AuthenticationExceptionHandler loginFailureHandler(final String applicationRoot) {
     final OidcLoginFailurePort port =

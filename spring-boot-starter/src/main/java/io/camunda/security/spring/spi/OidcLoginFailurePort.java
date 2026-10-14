@@ -23,7 +23,7 @@ import org.springframework.security.core.AuthenticationException;
  * OAuth2Error} the host's validator returned.
  *
  * <p>Return {@link Optional#empty()} for failures the host has nothing to say about. The method
- * must not throw; if it does, the chain logs the failure and shows the generic page. See ADR-0036.
+ * must not throw; if it does, the chain logs the failure and shows the generic page. See ADR-0035.
  */
 @FunctionalInterface
 public interface OidcLoginFailurePort {

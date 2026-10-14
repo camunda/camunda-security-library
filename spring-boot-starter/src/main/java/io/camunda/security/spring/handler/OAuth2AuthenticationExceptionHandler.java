@@ -18,9 +18,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -33,7 +35,6 @@ import org.springframework.security.web.DefaultRedirectStrategy;
 import org.springframework.security.web.RedirectStrategy;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler;
-import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.web.util.HtmlUtils;
 
 /**
@@ -58,7 +59,7 @@ import org.springframework.web.util.HtmlUtils;
  * <p>The redirect goes through {@link DefaultRedirectStrategy} rather than {@link
  * HttpServletResponse#sendRedirect(String)}, because the latter would send the user to the host
  * root: it does not prepend the servlet context path, so a webapp served under one (for example
- * {@code /<clusterId>} on CCSaaS) would recover to a location outside the application. See ADR-0036
+ * {@code /<clusterId>} on CCSaaS) would recover to a location outside the application. See ADR-0035
  * for the failed-login page.
  */
 public final class OAuth2AuthenticationExceptionHandler implements AuthenticationFailureHandler {
@@ -74,7 +75,6 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
 
   private static final Logger LOG =
       LoggerFactory.getLogger(OAuth2AuthenticationExceptionHandler.class);
-  private static final MediaTypeRequestMatcher BROWSER_REQUEST = browserRequestMatcher();
   private static final String PAGE_TEMPLATE = loadPageTemplate();
   private static final Pattern PLACEHOLDER =
       Pattern.compile("\\{\\{(title|message|retryHref|retryText|forwardLink)}}");
@@ -120,7 +120,7 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
     }
 
     logFailure(request, exception);
-    if (!BROWSER_REQUEST.matches(request) || response.isCommitted()) {
+    if (!prefersHtml(request) || response.isCommitted()) {
       delegate.onAuthenticationFailure(request, response, exception);
       return;
     }
@@ -219,10 +219,37 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
     }
   }
 
-  /** Matches a request whose Accept header prefers HTML; a bare {@code *}{@code /*} does not. */
-  private static MediaTypeRequestMatcher browserRequestMatcher() {
-    final MediaTypeRequestMatcher matcher = new MediaTypeRequestMatcher(MediaType.TEXT_HTML);
-    matcher.setIgnoredMediaTypes(Set.of(MediaType.ALL));
-    return matcher;
+  /**
+   * Whether the request's Accept header prefers HTML: HTML is acceptable ({@code q > 0}) and no
+   * other type is accepted at a higher quality. A bare {@code *}{@code /*} does not count as asking
+   * for HTML, and an exact {@code text/html} entry overrides {@code text/*}. An unparseable header
+   * is treated as not preferring HTML, so the request keeps the plain error response.
+   */
+  static boolean prefersHtml(final HttpServletRequest request) {
+    final Enumeration<String> headers = request.getHeaders(HttpHeaders.ACCEPT);
+    final List<MediaType> accepted;
+    try {
+      accepted = MediaType.parseMediaTypes(headers == null ? List.of() : Collections.list(headers));
+    } catch (final IllegalArgumentException e) {
+      return false;
+    }
+    double exactHtml = -1;
+    double textWildcard = -1;
+    double other = 0;
+    for (final MediaType type : accepted) {
+      final double quality = type.getQualityValue();
+      if (type.isWildcardType()) {
+        continue;
+      }
+      if (type.equalsTypeAndSubtype(MediaType.TEXT_HTML)) {
+        exactHtml = Math.max(exactHtml, quality);
+      } else if (type.includes(MediaType.TEXT_HTML)) {
+        textWildcard = Math.max(textWildcard, quality);
+      } else {
+        other = Math.max(other, quality);
+      }
+    }
+    final double html = exactHtml >= 0 ? exactHtml : textWildcard;
+    return html > 0 && html >= other;
   }
 }

@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0036: Explain failed OIDC browser logins on a page the host can word
+# ADR-0035: Explain failed OIDC browser logins on a page the host can word
 
 **Deciders**: Timothy Cline
 
