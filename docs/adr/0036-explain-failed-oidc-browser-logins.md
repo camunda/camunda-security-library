@@ -95,8 +95,10 @@ port.
 
 **Negative / accepted trade-offs**
 
-- The page is plain, unstyled HTML. Strict content security policies make inline styles unreliable,
-  and a styled page would have to be served as separate assets.
+- The page is styled after the webapps' own forbidden page (Carbon g10 values) with an inline
+  `<style>` block, because the user has no session and cannot load the webapps' assets. Camunda's
+  default content security policies allow inline styles; under a policy that does not, the page
+  still renders, just unstyled. The styling is a copy, so it can drift from the webapps' design.
 - Only English text: CSL has no localization, and a host that needs other languages must word the
   notice itself.
 - One `WARN` per failed login. A user who retries repeatedly logs once per attempt.

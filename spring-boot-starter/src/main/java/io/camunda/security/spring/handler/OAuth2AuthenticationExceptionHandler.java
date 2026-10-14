@@ -15,9 +15,14 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -70,6 +75,9 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
   private static final Logger LOG =
       LoggerFactory.getLogger(OAuth2AuthenticationExceptionHandler.class);
   private static final MediaTypeRequestMatcher BROWSER_REQUEST = browserRequestMatcher();
+  private static final String PAGE_TEMPLATE = loadPageTemplate();
+  private static final Pattern PLACEHOLDER =
+      Pattern.compile("\\{\\{(title|message|retryHref|retryText|forwardLink)}}");
 
   private final AuthenticationFailureHandler delegate;
   private final OidcLoginFailurePort loginFailurePort;
@@ -144,35 +152,20 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
       final HttpServletResponse response,
       final OidcLoginFailureNotice notice)
       throws IOException {
-    final String retryTarget = request.getContextPath() + applicationRoot;
     final String forwardLink =
-        notice
-            .optionalLink()
-            .map(link -> anchor(link.target().toString(), link.text()) + " ")
-            .orElse("");
+        notice.optionalLink().map(link -> anchor(link.target().toString(), link.text())).orElse("");
+    final Map<String, String> values =
+        Map.of(
+            "title", HtmlUtils.htmlEscape(notice.title()),
+            "message", HtmlUtils.htmlEscape(notice.message()),
+            "retryHref", HtmlUtils.htmlEscape(request.getContextPath() + applicationRoot),
+            "retryText", HtmlUtils.htmlEscape(TRY_AGAIN),
+            "forwardLink", forwardLink);
+    // One pass, so a value that happens to contain a placeholder is never substituted again.
     final String page =
-        """
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>%1$s</title>
-        </head>
-        <body>
-        <main>
-        <h1>%1$s</h1>
-        <p>%2$s</p>
-        <p>%3$s%4$s</p>
-        </main>
-        </body>
-        </html>
-        """
-            .formatted(
-                HtmlUtils.htmlEscape(notice.title()),
-                HtmlUtils.htmlEscape(notice.message()),
-                forwardLink,
-                anchor(retryTarget, TRY_AGAIN));
+        PLACEHOLDER
+            .matcher(PAGE_TEMPLATE)
+            .replaceAll(placeholder -> Matcher.quoteReplacement(values.get(placeholder.group(1))));
 
     response.setStatus(notice.status());
     response.setCharacterEncoding(StandardCharsets.UTF_8.name());
@@ -206,6 +199,24 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
     return exception instanceof final OAuth2AuthenticationException e
         && e.getError() != null
         && AUTHORIZATION_REQUEST_NOT_FOUND_ERROR_CODE.equals(e.getError().getErrorCode());
+  }
+
+  /**
+   * The page's markup and styling, kept as a resource so it can be read and edited as HTML. It is
+   * styled after the webapps' own forbidden page, and is self-contained: the user has no session,
+   * so it cannot load the webapps' assets.
+   */
+  private static String loadPageTemplate() {
+    try (final InputStream template =
+        OAuth2AuthenticationExceptionHandler.class.getResourceAsStream(
+            "oidc-login-failure-page.html")) {
+      if (template == null) {
+        throw new IllegalStateException("Missing resource oidc-login-failure-page.html");
+      }
+      return new String(template.readAllBytes(), StandardCharsets.UTF_8);
+    } catch (final IOException e) {
+      throw new UncheckedIOException("Failed to read oidc-login-failure-page.html", e);
+    }
   }
 
   /** Matches a request whose Accept header prefers HTML; a bare {@code *}{@code /*} does not. */

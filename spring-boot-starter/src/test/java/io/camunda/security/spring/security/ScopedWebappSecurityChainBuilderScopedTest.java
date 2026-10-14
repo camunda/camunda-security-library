@@ -735,7 +735,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
             ctx ->
                 assertThat(renderFailedBrowserLogin(ctx, "scopedOidcTestChain"))
                     .contains(HostLoginFailurePortConfig.TITLE)
-                    .contains("<a href=\"" + BASE_PATH + "/\">Try again</a>"));
+                    .contains("<a class=\"button\" href=\"" + BASE_PATH + "/\">Try again</a>"));
   }
 
   @Test
@@ -758,7 +758,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
             ctx ->
                 assertThat(renderFailedBrowserLogin(ctx, "primaryOidcTestChain"))
                     .contains(HostLoginFailurePortConfig.TITLE)
-                    .contains("<a href=\"/\">Try again</a>"));
+                    .contains("<a class=\"button\" href=\"/\">Try again</a>"));
   }
 
   @Test

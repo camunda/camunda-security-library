@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{title}}</title>
+<style>
+  /* Carbon g10 values, matching the webapps' own forbidden page. Inline so the page needs no other
+     request; without 'unsafe-inline' in style-src it still renders, just unstyled. */
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: #f4f4f4;
+    color: #161616;
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+      Arial, sans-serif;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    letter-spacing: 0.16px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    height: 3rem;
+    padding: 0 1rem;
+    background: #ffffff;
+    border-bottom: 1px solid #e0e0e0;
+    font-weight: 600;
+  }
+  main {
+    display: grid;
+    align-content: center;
+    min-height: calc(100vh - 3rem - 4rem);
+    margin: 1.5rem 2rem 2.5rem;
+    padding: 5rem;
+    background: #ffffff;
+  }
+  .content { display: flex; flex-direction: column; gap: 1.5rem; max-width: 23.5rem; }
+  .icon { width: 5.3125rem; height: 5rem; }
+  h1 { margin: 0 0 0.5rem; font-size: 1.25rem; font-weight: 400; line-height: 1.75rem; letter-spacing: 0; }
+  p { margin: 0; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1.5rem; }
+  a { color: #0f62fe; text-decoration: none; }
+  a:hover { color: #0043ce; text-decoration: underline; }
+  a:focus-visible { outline: 2px solid #0f62fe; outline-offset: 1px; }
+  a.button {
+    display: inline-flex;
+    align-items: center;
+    min-height: 3rem;
+    padding: 0.875rem 4rem 0.875rem 1rem;
+    background: #0f62fe;
+    color: #ffffff;
+  }
+  a.button:hover { background: #0050e6; color: #ffffff; text-decoration: none; }
+  a.button:focus-visible { outline: 2px solid #0f62fe; outline-offset: 0; box-shadow: inset 0 0 0 1px #ffffff, inset 0 0 0 2px #0f62fe; }
+  @media (max-width: 42rem) {
+    main { margin: 1rem; padding: 2rem; }
+  }
+</style>
+</head>
+<body>
+<header>Camunda</header>
+<main>
+  <div class="content">
+    <svg class="icon" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="85" height="80" fill="none"><g fill-rule="evenodd" clip-rule="evenodd"><path fill="#BBBCBC" d="m57.524 16.04.428.04.891.154.852.19.814.309.777.382.737.423.696.536.62.576.582.612.504.69.465.691.35.806.309.805.232.842.118.846.037.459.04.46-.04.459-.037.422-.118.882-.232.845-.31.806-.35.766-.464.728-.504.69-.582.615-.62.573-.696.499-.737.46-.777.385-.814.267-.852.23-.891.155h-.428l-.464.037-.465-.037h-.467l-.892-.156-.85-.23-.815-.266-.774-.386-.737-.46-.66-.498-.659-.573-.582-.616-.505-.689-.424-.728-.39-.766-.31-.806-.191-.845-.158-.882-.037-.422v-.92l.037-.458.158-.846.192-.842.31-.805.39-.806.423-.692.505-.689.582-.612.66-.576.659-.536.737-.423.774-.382.814-.31.852-.19.891-.153.468-.04h.928Zm-8.489 21.934-2.715 3.644v25.5h21.477v-25.5l-2.712-3.644h-16.05Z"/><path fill="#FC5D0D" d="M37.507 23.741v-10.86H19.872v10.86h-3.6v18.477h24.835V23.741h-3.6Zm-6.358 6.93v.293l-.051.296-.1.27-.098.245-.15.246-.172.22-.2.197-.198.198v3.438l-.026.148v.148l-.099.27-.124.27-.198.196-.2.198-.272.123-.274.098-.15.025h-.296l-.15-.025-.274-.098-.248-.123-.224-.198-.173-.196-.15-.27-.073-.27-.025-.148-.026-.148v-3.438l-.197-.198-.199-.196-.174-.221-.125-.246-.124-.246-.074-.269-.05-.296-.026-.293v-.246l.051-.246.05-.221.1-.221.099-.221.124-.198.15-.196.147-.173.175-.146.198-.148.198-.123.225-.098.224-.075.223-.073.249-.024.248-.026.247.026.248.024.249.073.223.075.2.098.224.123.172.148.175.146.173.173.124.196.124.198.125.22.076.222.048.22.05.247v.246Zm3.402-12.825v5.895H22.83v-7.936h11.72v2.04Z"/></g></svg>
+    <div>
+      <h1>{{title}}</h1>
+      <p>{{message}}</p>
+    </div>
+    <div class="actions">
+      <a class="button" href="{{retryHref}}">{{retryText}}</a>
+      {{forwardLink}}
+    </div>
+  </div>
+</main>
+</body>
+</html>

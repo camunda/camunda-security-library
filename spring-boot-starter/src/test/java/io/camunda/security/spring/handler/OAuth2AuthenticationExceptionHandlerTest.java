@@ -125,7 +125,7 @@ class OAuth2AuthenticationExceptionHandlerTest {
     assertThat(response.getContentAsString())
         .contains("<h1>" + GENERIC_TITLE + "</h1>")
         .contains("We could not sign you in to this application.")
-        .contains("<a href=\"/cluster-1/\">Try again</a>")
+        .contains("<a class=\"button\" href=\"/cluster-1/\">Try again</a>")
         .doesNotContain("http-equiv")
         .doesNotContain("<script");
     verifyNoInteractions(delegate);
@@ -162,7 +162,7 @@ class OAuth2AuthenticationExceptionHandlerTest {
         .contains("<title>No access to this cluster</title>")
         .contains("<p>This cluster belongs to another organization.</p>")
         .contains("<a href=\"https://console.example.com/\">Open Console</a>")
-        .contains("<a href=\"/cluster-1/\">Try again</a>")
+        .contains("<a class=\"button\" href=\"/cluster-1/\">Try again</a>")
         .doesNotContain(GENERIC_TITLE);
   }
 
@@ -172,7 +172,7 @@ class OAuth2AuthenticationExceptionHandlerTest {
         .onAuthenticationFailure(browserRequest("/cluster-1"), response, invalidIdToken());
 
     assertThat(response.getContentAsString())
-        .contains("<a href=\"/cluster-1/physical-tenants/t1/\">Try again</a>");
+        .contains("<a class=\"button\" href=\"/cluster-1/physical-tenants/t1/\">Try again</a>");
   }
 
   @Test
