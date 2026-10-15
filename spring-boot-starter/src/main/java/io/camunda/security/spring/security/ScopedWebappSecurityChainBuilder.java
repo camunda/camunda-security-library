@@ -135,6 +135,7 @@ public final class ScopedWebappSecurityChainBuilder {
   private final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers;
   private final ObjectProvider<OidcProviderConfigurationPort> oidcProviderConfigurationPortProvider;
   private final ObjectProvider<OidcLoginFailurePort> oidcLoginFailurePortProvider;
+  private final ObjectProvider<AssertionJwkProvider> assertionJwkProviderProvider;
 
   /**
    * @param oidcLoginFailurePortProvider the host's explanations for failed browser logins. It is
@@ -158,7 +159,8 @@ public final class ScopedWebappSecurityChainBuilder {
       final ObjectProvider<OidcAuthenticationEntryPoint> oidcAuthenticationEntryPointProvider,
       final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers,
       final ObjectProvider<OidcProviderConfigurationPort> oidcProviderConfigurationPortProvider,
-      final ObjectProvider<OidcLoginFailurePort> oidcLoginFailurePortProvider) {
+      final ObjectProvider<OidcLoginFailurePort> oidcLoginFailurePortProvider,
+      final ObjectProvider<AssertionJwkProvider> assertionJwkProviderProvider) {
     this.authFailureHandler = authFailureHandler;
     this.properties = properties;
     this.pathPort = pathPort;
@@ -176,6 +178,7 @@ public final class ScopedWebappSecurityChainBuilder {
     this.securityHeadersCustomizers = securityHeadersCustomizers;
     this.oidcProviderConfigurationPortProvider = oidcProviderConfigurationPortProvider;
     this.oidcLoginFailurePortProvider = oidcLoginFailurePortProvider;
+    this.assertionJwkProviderProvider = assertionJwkProviderProvider;
   }
 
   /**
@@ -290,7 +293,7 @@ public final class ScopedWebappSecurityChainBuilder {
                           refreshTokenRevocationLogoutHandler(
                               clientRegistrationRepository,
                               authorizedClientRepository,
-                              primaryOidcSources()));
+                              primaryAssertionJwkResolver()));
                   logout.logoutSuccessHandler(
                       oidcLogoutSuccessHandler(
                           clientRegistrationRepository, "", primaryOidcSources()));
@@ -736,9 +739,24 @@ public final class ScopedWebappSecurityChainBuilder {
   private LogoutHandler refreshTokenRevocationLogoutHandler(
       final ClientRegistrationRepository repo,
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
-      final Map<String, OidcConfiguration> sources) {
-    return new RefreshTokenRevocationLogoutHandler(
-        repo, authorizedClientRepository, assertionJwkResolver(sources));
+      final Function<ClientRegistration, JWK> jwkResolver) {
+    return new RefreshTokenRevocationLogoutHandler(repo, authorizedClientRepository, jwkResolver);
+  }
+
+  /**
+   * The primary chain's assertion key source: the application's own {@link AssertionJwkProvider}
+   * bean, which is {@code @ConditionalOnMissingBean} and therefore the one a host replaces when it
+   * sources keys differently. Falling back to a provider built from this chain's own sources keeps
+   * a caller that imports the chain builder without the OIDC infrastructure configuration working.
+   *
+   * <p>Only the primary chain can use the bean. A scoped chain's registrationIds are not in the
+   * cluster-wide port the bean reads, so it resolves those from its own scope instead.
+   */
+  private Function<ClientRegistration, JWK> primaryAssertionJwkResolver() {
+    final var bean = assertionJwkProviderProvider.getIfAvailable();
+    return bean != null
+        ? registration -> bean.createJwk(registration.getRegistrationId())
+        : assertionJwkResolver(primaryOidcSources());
   }
 
   /**
@@ -1050,7 +1068,8 @@ public final class ScopedWebappSecurityChainBuilder {
                           refreshTokenRevocationLogoutHandler(
                               clientRegistrationRepository,
                               authorizedClientRepository,
-                              scopedClientRegistrationFactory.flatten(authentication)));
+                              assertionJwkResolver(
+                                  scopedClientRegistrationFactory.flatten(authentication))));
                   logout.logoutSuccessHandler(
                       oidcLogoutSuccessHandler(
                           clientRegistrationRepository,
