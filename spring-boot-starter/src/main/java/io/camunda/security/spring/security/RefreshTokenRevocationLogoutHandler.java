@@ -7,7 +7,10 @@
  */
 package io.camunda.security.spring.security;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.jwk.JWK;
+import io.camunda.security.spring.oidc.AssertionJwkProvider;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
 import io.camunda.security.spring.oidc.UrlRedaction;
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,11 +21,12 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatusCode;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.StreamingHttpOutputMessage;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.security.core.Authentication;
@@ -35,6 +39,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
+import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.web.authentication.logout.LogoutHandler;
@@ -75,6 +80,14 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
   private static final String REVOCATION_ENDPOINT_METADATA_KEY = "revocation_endpoint";
 
   private static final String REFRESH_TOKEN_TYPE_HINT = "refresh_token";
+
+  /** Guards against an IdP echoing request parameters back through the {@code error} field. */
+  private static final Pattern ERROR_CODE = Pattern.compile("[A-Za-z_]{1,64}");
+
+  /** Enough of the chain to name a root cause without turning a WARN into a stack trace. */
+  private static final int MAX_CAUSE_DEPTH = 4;
+
+  private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
   /**
    * The user waits on this request, so both timeouts are deliberately tighter than the defaults.
@@ -163,18 +176,21 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
       final HttpServletRequest request,
       final HttpServletResponse response,
       final Authentication authentication) {
+    final var safeId =
+        authentication instanceof final OAuth2AuthenticationToken oauth
+            ? ScopedClientRegistrationFactory.sanitizeForLog(
+                oauth.getAuthorizedClientRegistrationId())
+            : "<none>";
     try {
       revokeRefreshToken(request, authentication);
     } catch (final RuntimeException e) {
       // Deliberately swallowed: see the class Javadoc on why logout must not depend on the IdP.
-      // The type, not the throwable: a ResourceAccessException message carries the request URI,
-      // and Spring strips its query string but not its user-info, so an endpoint configured as
-      // https://user:secret@idp/... would write the secret here.
       LOG.warn(
-          "Failed to revoke the refresh token on OIDC logout ({}). The local session is still"
-              + " terminated, but the refresh token may remain valid at the identity provider"
+          "Failed to revoke the refresh token for OIDC registration '{}' [{}]. The local session is"
+              + " still terminated, but the refresh token may remain valid at the identity provider"
               + " until it expires.",
-          e.getClass().getName());
+          safeId,
+          describe(e));
     }
   }
 
@@ -240,7 +256,7 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
     // Inside the try: signing a client assertion can fail on a missing or unreadable keystore,
     // and that failure has to keep the registration id rather than falling through to the net in
     // logout(), which has none.
-    final HttpStatusCode status;
+    final ResponseEntity<String> response;
     try {
       form.addAll(clientAuthenticationParameters(grantRequest));
       // Encoded here and written through the streaming overload rather than handed to
@@ -249,7 +265,7 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
       // the client secret, the client assertion — into the log. The streaming path never reaches
       // that call.
       final var encodedForm = formUrlEncode(form);
-      status =
+      response =
           restClient
               .post()
               .uri(revocationEndpoint)
@@ -268,31 +284,31 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
               // handler would put the response body — which can echo request parameters — into an
               // exception message, and the refresh token is one of those parameters.
               .onStatus(anyStatus -> true, (req, res) -> {})
-              .toBodilessEntity()
-              .getStatusCode();
+              .toEntity(String.class);
     } catch (final RuntimeException e) {
       // Type only, same reasoning as the net in logout(), but with the identifiers that make the
       // line actionable in a multi-provider deployment.
       LOG.warn(
-          "Failed to revoke the refresh token for OIDC registration '{}' at {} ({}). The local"
+          "Failed to revoke the refresh token for OIDC registration '{}' at {} [{}]. The local"
               + " session is still terminated, but the refresh token may remain valid until it"
               + " expires.",
           safeId,
           UrlRedaction.redact(revocationEndpoint),
-          e.getClass().getName());
+          describe(e));
       return;
     }
 
     // RFC 7009 §2.2 answers a successful revocation with 200, so anything outside 2xx failed.
     // Testing isError() instead would treat a 3xx as success: this client does not follow a
     // redirect on POST, so nothing would have been revoked.
-    if (!status.is2xxSuccessful()) {
+    if (!response.getStatusCode().is2xxSuccessful()) {
       LOG.warn(
           "The identity provider did not confirm the refresh-token revocation for OIDC"
-              + " registration '{}' (status {}). The local session is still terminated, but the"
+              + " registration '{}' (status {}{}). The local session is still terminated, but the"
               + " refresh token may remain valid until it expires.",
           safeId,
-          status.value());
+          response.getStatusCode().value(),
+          errorCodeSuffix(response.getBody()));
       return;
     }
     LOG.debug("Revoked the refresh token for OIDC registration '{}'.", safeId);
@@ -415,6 +431,72 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
    * being quietly followed — which is what makes the non-2xx check in {@link #revokeRefreshToken}
    * meaningful rather than theoretical.
    */
+  /**
+   * A safe, specific description of a failure: the exception chain's simple names, plus the OAuth2
+   * error code or CSL's own message where those are known not to carry secrets.
+   *
+   * <p>Specificity is the point. A timeout, a refused connection, a TLS failure and a rejected
+   * client assertion all surface here as the same {@code ResourceAccessException} or {@code
+   * IllegalStateException}, and an operator cannot act on that. What stays out is the exception
+   * <em>message</em> of anything the HTTP stack raised: {@code ResourceAccessException} embeds the
+   * request URI, and Spring strips its query string but not its user-info.
+   */
+  private static String describe(final Throwable throwable) {
+    final var description = new StringBuilder();
+    var current = throwable;
+    var seen = 0;
+    while (current != null && seen < MAX_CAUSE_DEPTH) {
+      if (seen > 0) {
+        description.append(" <- ");
+      }
+      description.append(current.getClass().getSimpleName());
+      if (current instanceof final OAuth2AuthorizationException oauth
+          && StringUtils.hasText(oauth.getError().getErrorCode())) {
+        description.append(": ").append(oauth.getError().getErrorCode());
+      } else if (isThrownByCamunda(current) && StringUtils.hasText(current.getMessage())) {
+        // CSL's own messages name a registration, a keystore path or a configuration property.
+        description.append(": ").append(current.getMessage());
+      }
+      current = current.getCause() == current ? null : current.getCause();
+      seen++;
+    }
+    return description.toString();
+  }
+
+  /**
+   * Whether {@link AssertionJwkProvider} raised this, judged by the frame that threw.
+   *
+   * <p>Deliberately one class rather than the {@code io.camunda.security} package. This decides
+   * what reaches a log, so it is an allowlist of messages someone has actually read: that class
+   * names a registrationId, a configuration property or a keystore path, and nothing else. Widen it
+   * only by reading the candidate's messages first.
+   */
+  private static boolean isThrownByCamunda(final Throwable throwable) {
+    final var frames = throwable.getStackTrace();
+    return frames.length > 0
+        && frames[0].getClassName().startsWith(AssertionJwkProvider.class.getName());
+  }
+
+  /**
+   * The RFC 7009 {@code error} code from a failed response, as {@code ", error=invalid_client"}, or
+   * an empty string.
+   *
+   * <p>Only the code, and only when it looks like one. A revocation error body is small, but it is
+   * attacker-adjacent input and {@code error_description} is free text an IdP may echo request
+   * parameters into, so nothing but a short token-shaped {@code error} is allowed through.
+   */
+  private static String errorCodeSuffix(final String body) {
+    if (!StringUtils.hasText(body)) {
+      return "";
+    }
+    try {
+      final var error = OBJECT_MAPPER.readTree(body).path("error").asText("");
+      return ERROR_CODE.matcher(error).matches() ? ", error=" + error : "";
+    } catch (final JsonProcessingException notJson) {
+      return "";
+    }
+  }
+
   private static RestClient defaultRestClient() {
     final var httpClient = HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build();
     final var requestFactory = new JdkClientHttpRequestFactory(httpClient);
