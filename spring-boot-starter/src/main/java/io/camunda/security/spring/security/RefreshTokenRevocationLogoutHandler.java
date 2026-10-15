@@ -217,18 +217,14 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
       return;
     }
 
-    // CSL's CLIENT_AUTHENTICATION_METHODS permits only client_secret_basic and private_key_jwt,
-    // so it has no client-secret-derived octet key to MAC an assertion with. A registration on
-    // client_secret_jwt could only arrive from a host-supplied ClientRegistrationRepository, and
-    // signing its assertion with the RSA key from AssertionJwkProvider would produce one the
-    // provider rejects. Saying so beats sending it.
-    if (ClientAuthenticationMethod.CLIENT_SECRET_JWT.equals(
-        clientRegistration.getClientAuthenticationMethod())) {
+    final var unsupported = unsupportedClientAuthentication(clientRegistration);
+    if (unsupported != null) {
       LOG.warn(
-          "OIDC registration '{}' authenticates with 'client_secret_jwt', which is not supported"
-              + " for refresh-token revocation. The local session is still terminated, but the"
-              + " refresh token remains valid until it expires.",
-          safeId);
+          "Cannot authenticate the revocation request for OIDC registration '{}': {}. The local"
+              + " session is still terminated, but the refresh token remains valid until it"
+              + " expires.",
+          safeId,
+          unsupported);
       return;
     }
 
@@ -246,7 +242,7 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
     // logout(), which has none.
     final HttpStatusCode status;
     try {
-      form.addAll(clientAuthenticationParameters(grantRequest, safeId));
+      form.addAll(clientAuthenticationParameters(grantRequest));
       // Encoded here and written through the streaming overload rather than handed to
       // body(Object): DefaultRestClient#logBody appends the body object to a DEBUG line before
       // invoking a message converter, and a MultiValueMap renders every entry — the refresh token,
@@ -257,7 +253,15 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
           restClient
               .post()
               .uri(revocationEndpoint)
-              .headers(headers -> headers.addAll(HEADERS_CONVERTER.convert(grantRequest)))
+              .headers(
+                  headers -> {
+                    headers.addAll(HEADERS_CONVERTER.convert(grantRequest));
+                    // Without this the streaming body has no known length and the JDK client
+                    // sends Transfer-Encoding: chunked, which some IdP front-ends, WAFs and older
+                    // reverse proxies reject with 400 or 411. Revocation would then fail where
+                    // login succeeds, visible only as a WARN on every logout.
+                    headers.setContentLength(encodedForm.length);
+                  })
               .body((StreamingHttpOutputMessage.Body) out -> out.write(encodedForm))
               .retrieve()
               // Inspect the status rather than letting RestClient raise on 4xx/5xx: the default
@@ -317,8 +321,31 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
    * {@code grant_type} and {@code refresh_token} of a token request, which have no place in a
    * revocation request.
    */
+  /**
+   * Why this client's revocation request cannot be authenticated, or {@code null} when it can.
+   *
+   * <p>One check for both cases, deliberately. Sending a request that is known to be unauthorized
+   * means putting a live refresh token on the wire for nothing, and the two situations differ only
+   * in why the key is missing. Answering the question once also keeps the policy somewhere a reader
+   * can find it, rather than split between here and the parameter builder.
+   */
+  private String unsupportedClientAuthentication(final ClientRegistration clientRegistration) {
+    final var method = clientRegistration.getClientAuthenticationMethod();
+    if (ClientAuthenticationMethod.CLIENT_SECRET_JWT.equals(method)) {
+      // CSL's CLIENT_AUTHENTICATION_METHODS permits only client_secret_basic and private_key_jwt,
+      // so it has no client-secret-derived octet key to MAC an assertion with. Such a registration
+      // can only come from a host-supplied ClientRegistrationRepository.
+      return "'client_secret_jwt' is not supported for refresh-token revocation";
+    }
+    if (ClientAuthenticationMethod.PRIVATE_KEY_JWT.equals(method)
+        && clientAssertionConverter == null) {
+      return "'private_key_jwt' is configured but no assertion signing key is available";
+    }
+    return null;
+  }
+
   private MultiValueMap<String, String> clientAuthenticationParameters(
-      final OAuth2RefreshTokenGrantRequest grantRequest, final String safeId) {
+      final OAuth2RefreshTokenGrantRequest grantRequest) {
     final ClientRegistration clientRegistration = grantRequest.getClientRegistration();
     final ClientAuthenticationMethod method = clientRegistration.getClientAuthenticationMethod();
     final MultiValueMap<String, String> parameters = new LinkedMultiValueMap<>();
@@ -330,13 +357,6 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
         parameters.addAll(assertion);
         return parameters;
       }
-    } else if (ClientAuthenticationMethod.PRIVATE_KEY_JWT.equals(method)) {
-      LOG.warn(
-          "OIDC registration '{}' authenticates with '{}' but no assertion signing key is"
-              + " available, so the revocation request will be sent unauthenticated and is"
-              + " expected to be rejected.",
-          safeId,
-          method.getValue());
     }
 
     if (!ClientAuthenticationMethod.CLIENT_SECRET_BASIC.equals(method)) {

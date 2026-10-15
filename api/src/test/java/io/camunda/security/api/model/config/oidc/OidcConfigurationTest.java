@@ -72,6 +72,10 @@ public class OidcConfigurationTest {
             "revocationEndpointUri is set",
             OidcConfiguration.builder().revocationEndpointUri("revocation-endpoint-uri").build(),
             true),
+        Arguments.of(
+            "revocationEnabled is disabled",
+            OidcConfiguration.builder().revocationEnabled(false).build(),
+            true),
         Arguments.of("clientId is set", OidcConfiguration.builder().clientId("cid").build(), true),
         Arguments.of(
             "clientName is set",

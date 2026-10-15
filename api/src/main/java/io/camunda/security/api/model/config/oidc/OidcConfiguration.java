@@ -38,6 +38,7 @@ public class OidcConfiguration {
   public static final boolean DEFAULT_IDP_LOGOUT_ENABLED = true;
   public static final boolean DEFAULT_POST_LOGOUT_REDIRECT_ENABLED = true;
   public static final boolean DEFAULT_USER_INFO_ENABLED = true;
+  public static final boolean DEFAULT_REVOCATION_ENABLED = true;
   public static final boolean DEFAULT_USER_INFO_REQUIRED = false;
 
   private String issuerUri;
@@ -54,6 +55,7 @@ public class OidcConfiguration {
   private String authorizationUri;
   private String endSessionEndpointUri;
   private String revocationEndpointUri;
+  private boolean revocationEnabled = DEFAULT_REVOCATION_ENABLED;
   private String tokenUri;
   private String userInfoUri;
   private AuthorizeRequestConfiguration authorizeRequestConfiguration =
@@ -231,6 +233,23 @@ public class OidcConfiguration {
 
   public void setRevocationEndpointUri(final String revocationEndpointUri) {
     this.revocationEndpointUri = revocationEndpointUri;
+  }
+
+  /**
+   * Whether to revoke this provider's refresh token at logout (ADR-0036). Enabled by default.
+   *
+   * <p>The opt-out exists because the endpoint is usually discovered rather than configured: an IdP
+   * that publishes {@code revocation_endpoint} turns revocation on for a deployment that never
+   * asked for it, so the presence of an endpoint cannot stand in for operator intent. Disabling
+   * wins over a configured {@code revocation-endpoint-uri} and suppresses a discovered endpoint
+   * too.
+   */
+  public boolean isRevocationEnabled() {
+    return revocationEnabled;
+  }
+
+  public void setRevocationEnabled(final boolean revocationEnabled) {
+    this.revocationEnabled = revocationEnabled;
   }
 
   public String getTokenUri() {
@@ -511,6 +530,7 @@ public class OidcConfiguration {
         || authorizationUri != null
         || endSessionEndpointUri != null
         || revocationEndpointUri != null
+        || revocationEnabled != DEFAULT_REVOCATION_ENABLED
         || tokenUri != null
         || userInfoUri != null
         || authorizeRequestConfiguration == null
@@ -560,6 +580,7 @@ public class OidcConfiguration {
     private String authorizationUri;
     private String endSessionEndpointUri;
     private String revocationEndpointUri;
+    private boolean revocationEnabled = DEFAULT_REVOCATION_ENABLED;
     private String tokenUri;
     private String userInfoUri;
     private AuthorizeRequestConfiguration authorizeRequestConfiguration =
@@ -653,6 +674,11 @@ public class OidcConfiguration {
 
     public Builder revocationEndpointUri(final String revocationEndpointUri) {
       this.revocationEndpointUri = revocationEndpointUri;
+      return this;
+    }
+
+    public Builder revocationEnabled(final boolean revocationEnabled) {
+      this.revocationEnabled = revocationEnabled;
       return this;
     }
 
@@ -769,6 +795,7 @@ public class OidcConfiguration {
       config.setRedirectUri(redirectUri);
       config.setEndSessionEndpointUri(endSessionEndpointUri);
       config.setRevocationEndpointUri(revocationEndpointUri);
+      config.setRevocationEnabled(revocationEnabled);
       config.setScope(scope);
       config.setJwkSetUri(jwkSetUri);
       config.setAdditionalJwkSetUris(additionalJwkSetUris);
