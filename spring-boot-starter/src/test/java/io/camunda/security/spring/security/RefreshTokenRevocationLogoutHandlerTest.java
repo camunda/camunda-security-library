@@ -499,6 +499,93 @@ class RefreshTokenRevocationLogoutHandlerTest {
     }
   }
 
+  /**
+   * A rejected revocation has to be distinguishable from a timeout or a TLS failure, or the
+   * operator has nothing to act on. The RFC 7009 {@code error} code is the one field worth
+   * surfacing from the body.
+   */
+  @Test
+  void shouldReportTheProviderErrorCodeOnARejectedRevocation() {
+    // given a provider rejecting the request the way an IdP does
+    final var appender = attachHandlerDebugAppender();
+    try {
+      final var registration = registration(ClientAuthenticationMethod.CLIENT_SECRET_BASIC).build();
+      givenAuthorizedSession(registration);
+      server
+          .expect(requestTo(REVOCATION_ENDPOINT))
+          .andRespond(
+              withBadRequest()
+                  .body("{\"error\":\"invalid_client\",\"error_description\":\"token=abc\"}")
+                  .contentType(MediaType.APPLICATION_JSON));
+
+      // when the user logs out
+      handler(null).logout(request, response, authentication(registration));
+
+      // then the code is named, and the free-text description, which an IdP may echo request
+      // parameters into, is not
+      assertThat(appender.list)
+          .extracting(ILoggingEvent::getFormattedMessage)
+          .anyMatch(line -> line.contains("error=invalid_client"))
+          .noneMatch(line -> line.contains("token=abc"));
+    } finally {
+      detachHandlerDebugAppender(appender);
+    }
+  }
+
+  @Test
+  void shouldNotReportAnErrorFieldThatIsNotAShortCode() {
+    // given a provider whose error field is free text rather than an RFC 7009 code
+    final var appender = attachHandlerDebugAppender();
+    try {
+      final var registration = registration(ClientAuthenticationMethod.CLIENT_SECRET_BASIC).build();
+      givenAuthorizedSession(registration);
+      server
+          .expect(requestTo(REVOCATION_ENDPOINT))
+          .andRespond(
+              withBadRequest()
+                  .body("{\"error\":\"rejected: refresh_token=abc for user demo\"}")
+                  .contentType(MediaType.APPLICATION_JSON));
+
+      // when the user logs out
+      handler(null).logout(request, response, authentication(registration));
+
+      // then nothing from the body is logged: the status alone is better than echoing it
+      assertThat(appender.list)
+          .extracting(ILoggingEvent::getFormattedMessage)
+          .noneMatch(line -> line.contains("refresh_token=abc"))
+          .noneMatch(line -> line.contains("error="));
+    } finally {
+      detachHandlerDebugAppender(appender);
+    }
+  }
+
+  @Test
+  void shouldNameTheRootCauseOfATransportFailure() {
+    // given an endpoint that times out rather than answering
+    final var appender = attachHandlerDebugAppender();
+    try {
+      final var registration = registration(ClientAuthenticationMethod.CLIENT_SECRET_BASIC).build();
+      givenAuthorizedSession(registration);
+      server
+          .expect(requestTo(REVOCATION_ENDPOINT))
+          .andRespond(
+              req -> {
+                throw new SocketTimeoutException("connect timed out");
+              });
+
+      // when the user logs out
+      handler(null).logout(request, response, authentication(registration));
+
+      // then the cause is named, so a timeout is not indistinguishable from a refused connection
+      // or a TLS failure, all of which arrive as the same ResourceAccessException
+      assertThat(appender.list)
+          .extracting(ILoggingEvent::getFormattedMessage)
+          .anyMatch(line -> line.contains("SocketTimeoutException"));
+    } finally {
+      detachHandlerDebugAppender(appender);
+    }
+  }
+
   private static ListAppender<ILoggingEvent> attachHandlerDebugAppender() {
     final Logger logger =
         (Logger) LoggerFactory.getLogger(RefreshTokenRevocationLogoutHandler.class);
