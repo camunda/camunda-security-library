@@ -16,6 +16,10 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+        </dependency>
+        <dependency>
             <groupId>io.camunda</groupId>
             <artifactId>camunda-security-library-api</artifactId>
             <version>${project.version}</version>
