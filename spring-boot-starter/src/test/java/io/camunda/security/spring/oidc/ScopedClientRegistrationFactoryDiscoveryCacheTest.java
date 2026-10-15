@@ -495,6 +495,28 @@ class ScopedClientRegistrationFactoryDiscoveryCacheTest {
   }
 
   @Test
+  void shouldSuppressDiscoveredRevocationEndpointWhenRevocationDisabled() throws Exception {
+    // given an IdP advertising a revocation_endpoint and an operator who opts out. This is the
+    // case the flag exists for: the endpoint arrives from discovery, so without it a deployment
+    // that never asked for revocation would get it on upgrade with no way to decline (ADR-0036).
+    oidcServer = OidcTestServer.startDiscovery(DISCOVERY_TEMPLATE_WITH_REVOCATION);
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("my-client")
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .issuerUri(oidcServer.issuerUri())
+            .revocationEnabled(false)
+            .build();
+
+    // when
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    // then the discovered endpoint is stripped, so the handler finds none and does nothing
+    final var metadata = registrations.get(0).getProviderDetails().getConfigurationMetadata();
+    assertThat(metadata).doesNotContainKey("revocation_endpoint");
+  }
+
+  @Test
   void shouldOverrideDiscoveredRevocationEndpointWithExplicitConfig() throws Exception {
     // given an IdP advertising a revocation_endpoint, and an explicitly-configured override
     oidcServer = OidcTestServer.startDiscovery(DISCOVERY_TEMPLATE_WITH_REVOCATION);

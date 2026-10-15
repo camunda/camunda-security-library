@@ -1233,12 +1233,42 @@ public final class ScopedClientRegistrationFactory {
     if (StringUtils.hasText(oidc.getEndSessionEndpointUri())) {
       merged.put("end_session_endpoint", oidc.getEndSessionEndpointUri());
     }
-    if (StringUtils.hasText(oidc.getRevocationEndpointUri())) {
-      merged.put("revocation_endpoint", oidc.getRevocationEndpointUri());
-    }
+    applyRevocationEndpoint(merged, oidc, built.getRegistrationId());
     return ClientRegistration.withClientRegistration(built)
         .providerConfigurationMetadata(merged)
         .build();
+  }
+
+  /**
+   * Writes, or removes, the registration's {@code revocation_endpoint}.
+   *
+   * <p>Removal is the point of the flag. The endpoint is normally discovered rather than
+   * configured, so an IdP that publishes one would otherwise switch revocation on for a deployment
+   * that never asked for it, and there would be no way to decline. Stripping the key here rather
+   * than testing the flag at logout keeps {@code RefreshTokenRevocationLogoutHandler} reading one
+   * thing (does this registration have an endpoint?), and reuses the no-op path it already has.
+   *
+   * <p>Disabling wins over a configured URI, as it does for {@code post-logout-redirect-enabled}:
+   * an operator who sets both is saying "not against this IdP", which is the more specific
+   * statement. It is logged, because silently ignoring a value someone configured on purpose is
+   * otherwise an afternoon lost.
+   */
+  private static void applyRevocationEndpoint(
+      final Map<String, Object> merged, final OidcConfiguration oidc, final String registrationId) {
+    if (oidc.isRevocationEnabled()) {
+      if (StringUtils.hasText(oidc.getRevocationEndpointUri())) {
+        merged.put("revocation_endpoint", oidc.getRevocationEndpointUri());
+      }
+      return;
+    }
+    if (StringUtils.hasText(oidc.getRevocationEndpointUri())) {
+      LOG.warn(
+          "OIDC registration '{}' sets both revocation-endpoint-uri and revocation-enabled=false;"
+              + " the configured URI is ignored and no refresh token will be revoked. Remove one of"
+              + " the two to make the intent explicit.",
+          sanitizeForLog(registrationId));
+    }
+    merged.remove("revocation_endpoint");
   }
 
   /**

@@ -105,9 +105,16 @@ a formality: a 3xx arrives as a 3xx rather than being followed into a request th
   token is the single call that covers both. The access token is also about to be discarded with
   the session and is short-lived by construction.
 - **Synchronous, on the logout request thread, with fixed short timeouts.** See the trade-off below.
-- **No new toggle.** Revocation runs whenever an endpoint resolves. It is strictly more defensive,
-  invisible to users, and a deployment that does not want it can decline to publish or configure
-  the endpoint.
+- **An opt-out, because endpoint presence is not operator intent.** `revocation-enabled` defaults
+  to `true` and, when false, strips the key from the provider metadata, so the handler takes the
+  no-op path it already has for a provider that publishes none. The flag is needed because the
+  endpoint normally arrives from discovery: Keycloak, Okta and Auth0 all publish
+  `revocation_endpoint`, so without it an existing deployment would gain revocation on upgrade
+  with no way to decline. Disabling wins over a configured URI, matching
+  `post-logout-redirect-enabled`, and is logged when both are set.
+- **A client whose request cannot be authenticated sends nothing.** `client_secret_jwt`, and
+  `private_key_jwt` with no resolvable signing key, both stop before the request. Sending anyway
+  would put a live refresh token on the wire in a request already known to be unauthorized.
 
 ## Consequences
 
@@ -152,6 +159,16 @@ a formality: a 3xx arrives as a 3xx rather than being followed into a request th
   `OAuth2RefreshTokenFilter` force-logs-out because the refresh token already failed, revokes
   nothing. Neither path has a usable refresh token to revoke.
 
+### Provider behaviour
+
+Revocation on Keycloak 26.3.3 is scoped to the session the token belongs to. With two sessions for
+one user, revoking one refresh token leaves the other's refresh and access tokens working and
+removes exactly one session, so logging out in one browser does not disturb another device. The
+access token issued alongside the revoked refresh token is invalidated, which is the cascade this
+ADR relies on. Keycloak also advertises the same client-authentication methods for revocation as
+for the token endpoint. Measured against the realm in `identity/docker-compose.oidc.yml`, using the
+password grant rather than a browser login, and with `consentRequired` unset.
+
 ## Alternatives Considered
 
 - **Extend `CamundaOidcLogoutSuccessHandler`.** Rejected: it runs after session invalidation, so the
@@ -171,6 +188,9 @@ a formality: a 3xx arrives as a 3xx rather than being followed into a request th
 - **Revoke asynchronously after logout completes.** Rejected: the refresh token is only readable
   before session invalidation, so an async handoff would have to copy the token out of the session
   and keep it alive past the logout it is meant to end.
-- **Gate revocation behind a new property.** Rejected: the presence of a resolvable
-  `revocation_endpoint` is already the operator's opt-in, and a second switch would let a
-  deployment publish an endpoint and still not use it, which nobody wants.
+- **Treat a resolvable `revocation_endpoint` as the operator's opt-in, with no flag.** Rejected on
+  review: the IdP publishes that endpoint, not the operator, so it says nothing about intent. An
+  upgrade would silently change behaviour for every discovery-based deployment.
+- **Let a blank `revocation-endpoint-uri` mean "disabled".** Rejected in favour of an explicit
+  flag. ADR-0026 uses that convention for `post_logout_redirect_uri`, but it is easy to produce by
+  accident from templated configuration, and "" reads as unset rather than as a decision.
