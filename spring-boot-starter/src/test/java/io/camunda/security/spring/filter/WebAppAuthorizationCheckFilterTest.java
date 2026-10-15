@@ -17,6 +17,7 @@ import io.camunda.security.api.model.authz.PermissionType;
 import io.camunda.security.core.auth.RequiredAuthorization;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.spring.spi.WebAppAccessDeniedHandlerPort;
+import io.camunda.security.spring.spi.WebAppAuthorizationEnabledPort;
 import io.camunda.security.spring.spi.WebAppProviderPort;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -141,6 +142,25 @@ class WebAppAuthorizationCheckFilterTest {
   }
 
   @Test
+  void authorizationEnablementIsResolvedForEachRequest() throws Exception {
+    final var checkPort = new RecordingCheckPort(false);
+    final var deniedHandler = new RecordingDeniedHandler();
+    final var filter =
+        filterEnabledOnlyUnder(
+            "/scope-on/", new RecordingWebAppProvider("operate"), checkPort, deniedHandler);
+
+    final var offChain = new MockFilterChain();
+    filter.doFilter(
+        request("/scope-off/operate/processes"), new MockHttpServletResponse(), offChain);
+    final var onChain = new MockFilterChain();
+    filter.doFilter(request("/scope-on/operate/processes"), new MockHttpServletResponse(), onChain);
+
+    assertThat(offChain.getRequest()).isNotNull();
+    assertThat(onChain.getRequest()).isNull();
+    assertThat(deniedHandler.callCount).isOne();
+  }
+
+  @Test
   void allowedAccessPassesThrough() throws Exception {
     final var webAppProvider = new RecordingWebAppProvider("operate");
     final var checkPort = new RecordingCheckPort(true);
@@ -222,6 +242,22 @@ class WebAppAuthorizationCheckFilterTest {
         checkPort,
         deniedHandler,
         () -> authentication,
+        DEFAULT_STATIC_RESOURCE_SUFFIXES);
+  }
+
+  private static WebAppAuthorizationCheckFilter filterEnabledOnlyUnder(
+      final String enabledPathPrefix,
+      final WebAppProviderPort webAppProvider,
+      final AuthorizationCheckPort checkPort,
+      final WebAppAccessDeniedHandlerPort deniedHandler) {
+    final WebAppAuthorizationEnabledPort enabledPort =
+        request -> request.getRequestURI().startsWith(enabledPathPrefix);
+    return new WebAppAuthorizationCheckFilter(
+        enabledPort,
+        webAppProvider,
+        checkPort,
+        deniedHandler,
+        () -> alice(),
         DEFAULT_STATIC_RESOURCE_SUFFIXES);
   }
 
