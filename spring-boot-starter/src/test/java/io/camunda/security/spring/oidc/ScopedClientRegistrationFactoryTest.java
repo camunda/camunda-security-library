@@ -295,6 +295,28 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
+  void shouldSuppressConfiguredRevocationEndpointWhenRevocationDisabled() {
+    // given a provider that configures a revocation endpoint and then opts out
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("my-client")
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .authorizationUri("https://idp.example.com/auth")
+            .tokenUri("https://idp.example.com/token")
+            .jwkSetUri("https://idp.example.com/jwks")
+            .revocationEndpointUri("https://idp.example.com/revoke")
+            .revocationEnabled(false)
+            .build();
+
+    // when
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    // then the opt-out wins over the configured URI, as it does for post-logout-redirect-enabled
+    final var metadata = registrations.get(0).getProviderDetails().getConfigurationMetadata();
+    assertThat(metadata).doesNotContainKey("revocation_endpoint");
+  }
+
+  @Test
   void shouldOmitRevocationEndpointFromMetadataWhenUnset() {
     // given a provider that configures no revocation endpoint, as MS Entra deployments cannot
     final var oidc = explicitEndpoints("my-client", "https://idp.example.com");

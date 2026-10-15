@@ -447,18 +447,20 @@ class RefreshTokenRevocationLogoutHandlerTest {
   }
 
   @Test
-  void shouldCompleteLogoutWhenAssertionSigningKeyIsUnavailable() {
+  void shouldSkipRevocationWhenTheAssertionSigningKeyIsUnavailable() {
     // given a private_key_jwt registration but no resolver to sign an assertion with
     final var registration = registration(ClientAuthenticationMethod.PRIVATE_KEY_JWT).build();
     givenAuthorizedSession(registration);
-    server.expect(requestTo(REVOCATION_ENDPOINT)).andRespond(withBadRequest());
     final var logoutHandler = handler(null);
     final var authentication = authentication(registration);
 
     // when the user logs out
-    // then logout completes rather than failing on the missing key
     assertThatCode(() -> logoutHandler.logout(request, response, authentication))
         .doesNotThrowAnyException();
+
+    // then nothing is sent. Sending it would put a live refresh token on the wire in a request
+    // already known to be unauthorized, which is what the client_secret_jwt branch avoids and
+    // this one used to do.
     server.verify();
   }
 
@@ -527,6 +529,52 @@ class RefreshTokenRevocationLogoutHandlerTest {
     final Logger logger = (Logger) LoggerFactory.getLogger(REST_CLIENT_LOGGER);
     logger.detachAppender(appender);
     logger.setLevel(null);
+  }
+
+  /**
+   * Runs the production client, not {@link MockRestServiceServer}. Framing is decided by the
+   * request factory, so a mock transport cannot show it: with no {@code Content-Length} the JDK
+   * client sends {@code Transfer-Encoding: chunked}, which some IdP front-ends, WAFs and older
+   * reverse proxies answer with 400 or 411. Revocation would then fail wherever login works, and
+   * only ever show up as a WARN.
+   */
+  @Test
+  void shouldSendAFixedLengthBodyRatherThanAChunkedOne() throws Exception {
+    // given a real HTTP endpoint standing in for the IdP
+    final var received = new java.util.concurrent.atomic.AtomicReference<HttpHeaders>();
+    final var httpServer =
+        com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    httpServer.createContext(
+        "/revoke",
+        exchange -> {
+          final var seen = new HttpHeaders();
+          exchange.getRequestHeaders().forEach(seen::addAll);
+          received.set(seen);
+          exchange.sendResponseHeaders(200, -1);
+          exchange.close();
+        });
+    httpServer.start();
+    try {
+      final var endpoint = "http://127.0.0.1:" + httpServer.getAddress().getPort() + "/revoke";
+      final var registration =
+          registration(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+              .providerConfigurationMetadata(Map.of("revocation_endpoint", endpoint))
+              .build();
+      givenAuthorizedSession(registration);
+
+      // when the user logs out, through the handler's own production client
+      new RefreshTokenRevocationLogoutHandler(
+              clientRegistrationRepository, authorizedClientRepository, null)
+          .logout(request, response, authentication(registration));
+
+      // then the IdP saw a fixed-length body
+      assertThat(received.get()).as("the revocation request never arrived").isNotNull();
+      assertThat(received.get().getContentLength()).isPositive();
+      assertThat(received.get().headerNames())
+          .noneSatisfy(name -> assertThat(name).isEqualToIgnoringCase("Transfer-Encoding"));
+    } finally {
+      httpServer.stop(0);
+    }
   }
 
   private RefreshTokenRevocationLogoutHandler handler(
