@@ -13,7 +13,9 @@ import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.spi.WebAppAccessDeniedHandlerPort;
+import io.camunda.security.spring.spi.WebAppAuthorizationEnabledPort;
 import io.camunda.security.spring.spi.WebAppProviderPort;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -34,7 +36,8 @@ import org.springframework.context.annotation.Configuration;
  * camunda.security.authorizations.enabled}: when it is off, the filter passes every request through
  * without consulting the port. The flag is read from {@link CamundaSecurityLibraryProperties} (not
  * a {@code @ConditionalOnProperty}) so it works regardless of whether the host sets it via a
- * property or by mutating the bound properties bean.
+ * property or by mutating the bound properties bean. A host with per-scope values supplies a {@link
+ * WebAppAuthorizationEnabledPort} bean, which replaces the global flag for every request.
  */
 @Configuration
 @EnableConfigurationProperties(CamundaSecurityLibraryProperties.class)
@@ -74,9 +77,11 @@ public class WebAppAuthorizationFilterConfiguration {
       final WebAppAccessDeniedHandlerPort webAppAccessDeniedHandler,
       final CamundaAuthenticationProvider authenticationProvider,
       final SecurityPathPort securityPathPort,
-      final CamundaSecurityLibraryProperties properties) {
+      final CamundaSecurityLibraryProperties properties,
+      final ObjectProvider<WebAppAuthorizationEnabledPort> authorizationEnabled) {
     return new WebAppAuthorizationCheckFilter(
-        properties.getAuthorizations().isEnabled(),
+        authorizationEnabled.getIfAvailable(
+            () -> request -> properties.getAuthorizations().isEnabled()),
         webAppProvider,
         authorizationCheckPort,
         webAppAccessDeniedHandler,

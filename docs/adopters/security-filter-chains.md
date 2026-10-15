@@ -855,6 +855,19 @@ public WebAppAccessDeniedHandlerPort jsonProblemDetailDeniedHandler(final Object
 
 Registering any `WebAppAccessDeniedHandlerPort` bean disables the library default. The handler is invoked exactly once per denied request; the filter does not call `filterChain.doFilter(...)` afterwards.
 
+### Per-scope authorization flag: `WebAppAuthorizationEnabledPort` (optional)
+
+By default the filter skips the check for every request when `camunda.security.authorizations.enabled` is `false`. A host that serves several scopes with their own value of this flag (for example one per physical tenant) registers a `WebAppAuthorizationEnabledPort`. The filter then asks it on each request instead of reading the global flag:
+
+```java
+@Bean
+public WebAppAuthorizationEnabledPort webAppAuthorizationEnabledPort(final MyScopeResolver scopes) {
+  return request -> scopes.scopeOf(request).authorizationsEnabled();
+}
+```
+
+Return `true` when the scope can't be resolved, so the request still reaches the `AuthorizationCheckPort` and fails closed there.
+
 ### Required and supplied beans for web app authorization
 
 | Bean | Default | When |
@@ -866,6 +879,7 @@ Registering any `WebAppAccessDeniedHandlerPort` bean disables the library defaul
 | `AuthorizationScopeRepositoryPort` | None — host must register | Required when relying on the default `AuthorizationService`. Not needed if the host supplies its own `AuthorizationCheckPort` |
 | `MembershipPort` | None — host must register | Required for the default `AuthorizationService` — the claims converter resolves principal owners through it |
 | `WebAppAccessDeniedHandlerPort` | `RedirectingWebAppAccessDeniedAdapter` (gated on `WebAppProviderPort` + `@ConditionalOnMissingBean`) | Override for JSON 403, forwards, etc. |
+| `WebAppAuthorizationEnabledPort` | None — the filter reads `camunda.security.authorizations.enabled` | Register when the flag differs per scope |
 
 If any of the required beans is missing (and `AuthorizationCheckPort` not satisfied either way), the filter bean isn't created. The webapp chain still works — it just doesn't enforce the per-web-app `ACCESS` check. Adopt incrementally by registering the SPIs as you build out the host's authorization data layer.
 
