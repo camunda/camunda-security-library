@@ -88,12 +88,15 @@ a formality: a 3xx arrives as a 3xx rather than being followed into a request th
   everything added through `addLogoutHandler`, so a handler registered that way still sees a live
   session, a populated `SecurityContext`, and the authorized client.
 - **A synthetic grant request rather than assertion code of our own.** The converter reads only
-  `getClientRegistration()` off the request, and produces the same assertion CSL's own default
-  token-endpoint wiring produces: same `aud` (the token URI), same `kid` resolution through
-  `AssertionJwkProvider`, same per-registration encoder cache. Hand-rolling the JWT would mean a
-  second, independently drifting definition of how this deployment authenticates to its IdP, and
-  the first symptom of drift would be a silent revocation failure. This matches the default, not
-  whatever a host's `OidcTokenEndpointCustomizer` does — see the trade-off below.
+  `getClientRegistration()` off the request, so Spring's own machinery decides the `aud` (the token
+  URI), the `kid` and the signing algorithm, rather than this class restating them. Hand-rolling
+  the JWT would mean a third definition of how a deployment authenticates to its IdP.
+
+  It is still a second one. There is no default token-endpoint wiring in CSL to share:
+  `OidcTokenEndpointCustomizer` is an SPI with no default implementation, and the Orchestration
+  Cluster supplies the converter, the `AssertionJwkProvider` and the RS256 choice from its own
+  configuration. This handler reproduces those rules rather than reusing them. See the trade-off
+  below.
 - **Its `null` return is the branch, not a re-read of the configured method.** The converter already
   owns the decision of which client-authentication methods produce an assertion. Branching on
   `oidc.getClientAuthenticationMethod()` instead would duplicate that decision in a second place
@@ -146,15 +149,17 @@ a formality: a 3xx arrives as a 3xx rather than being followed into a request th
   `CustomDefaultClientRequestObservationConvention`; the handler builds its own client, so these
   requests do not appear under the same metrics. Threading a host-supplied client through would mean
   a new SPI for one call.
-- **A host that customizes the token endpoint's client authentication is not followed.**
-  `OidcTokenEndpointCustomizer` is a host extension point: a host may swap the key source, the
-  signing algorithm, the audience, or add assertion claims. This handler builds its own converter
-  from CSL's `AssertionJwkProvider` and RS256, so it matches the Orchestration Cluster's
-  customizer today but only by construction of both, not by sharing one definition. A host that
-  diverges would log in successfully and have every revocation rejected, and fail-soft would hide
-  it as a `WARN`. Making the assertion converter a single host-overridable bean that both the
-  token endpoint and revocation consume is the real fix; it reshapes an existing SPI and is left
-  to follow-up.
+- **The signing rules are duplicated, not shared.** `OidcTokenEndpointCustomizer` is a host
+  extension point with no default behind it, so a host owns its key source, signing algorithm,
+  audience and any assertion claims. This handler builds its own converter and asks for RS256,
+  which matches what the Orchestration Cluster's customizer does today, but by both sides
+  independently arriving at the same answer rather than by sharing one. A host that diverges would
+  log in successfully and have every revocation rejected, and fail-soft would show it only as a
+  `WARN`. The primary chain at least takes its key from the application's own
+  `AssertionJwkProvider` bean, so a host that replaces that bean is followed; the rest is not.
+  Making the client-authentication converter a single host-overridable bean that both the token
+  endpoint and revocation consume is the real fix, and it reshapes an SPI hosts already implement,
+  so it is left to follow-up rather than folded into a security fix.
 - **Revocation only happens on an explicit logout.** A session that simply expires, or one that
   `OAuth2RefreshTokenFilter` force-logs-out because the refresh token already failed, revokes
   nothing. Neither path has a usable refresh token to revoke.
