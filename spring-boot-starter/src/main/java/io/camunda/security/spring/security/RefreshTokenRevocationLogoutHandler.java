@@ -20,8 +20,8 @@ import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
-import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.convert.converter.Converter;
@@ -81,8 +81,29 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
 
   private static final String REFRESH_TOKEN_TYPE_HINT = "refresh_token";
 
-  /** Guards against an IdP echoing request parameters back through the {@code error} field. */
-  private static final Pattern ERROR_CODE = Pattern.compile("[A-Za-z_]{1,64}");
+  /**
+   * The error codes this handler will repeat into a log, from RFC 6749 §5.2, RFC 6750 §3.1 and RFC
+   * 7009 §2.2.1.
+   *
+   * <p>An allowlist rather than a shape check. A pattern like {@code [A-Za-z_]+} accepts anything
+   * token-shaped, so a provider or proxy echoing an opaque alphabetic secret into {@code error}
+   * would have it written out verbatim at WARN. Matching against codes that actually exist means an
+   * unrecognised value is dropped rather than guessed at, and the status alone is still enough to
+   * act on.
+   */
+  private static final Set<String> KNOWN_ERROR_CODES =
+      Set.of(
+          "invalid_request",
+          "invalid_client",
+          "invalid_grant",
+          "unauthorized_client",
+          "unsupported_grant_type",
+          "invalid_scope",
+          "unsupported_token_type",
+          "invalid_token",
+          "insufficient_scope",
+          "server_error",
+          "temporarily_unavailable");
 
   /** Enough of the chain to name a root cause without turning a WARN into a stack trace. */
   private static final int MAX_CAUSE_DEPTH = 4;
@@ -481,9 +502,9 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
    * The RFC 7009 {@code error} code from a failed response, as {@code ", error=invalid_client"}, or
    * an empty string.
    *
-   * <p>Only the code, and only when it looks like one. A revocation error body is small, but it is
-   * attacker-adjacent input and {@code error_description} is free text an IdP may echo request
-   * parameters into, so nothing but a short token-shaped {@code error} is allowed through.
+   * <p>Only the code, and only one this handler recognises. A revocation error body is small, but
+   * it is attacker-adjacent input, and both {@code error_description} and an unrecognised {@code
+   * error} are places an IdP or a proxy may echo a request parameter into.
    */
   private static String errorCodeSuffix(final String body) {
     if (!StringUtils.hasText(body)) {
@@ -491,7 +512,7 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
     }
     try {
       final var error = OBJECT_MAPPER.readTree(body).path("error").asText("");
-      return ERROR_CODE.matcher(error).matches() ? ", error=" + error : "";
+      return KNOWN_ERROR_CODES.contains(error) ? ", error=" + error : "";
     } catch (final JsonProcessingException notJson) {
       return "";
     }

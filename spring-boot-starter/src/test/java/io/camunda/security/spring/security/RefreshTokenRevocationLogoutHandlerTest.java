@@ -198,6 +198,46 @@ class RefreshTokenRevocationLogoutHandlerTest {
     server.verify();
   }
 
+  /**
+   * Backs the ADR's claim that Spring's converter decides the assertion's shape. Asserting only
+   * that {@code client_assertion} is non-blank would pass for a JWT signed with the wrong key, the
+   * wrong algorithm, or addressed to the wrong audience, all of which a provider rejects and
+   * fail-soft hides.
+   */
+  @Test
+  void shouldSignTheClientAssertionTheWayTheTokenEndpointDoes() throws Exception {
+    // given a private_key_jwt registration and a known signing key
+    final var jwk = rsaJwk();
+    final var registration = registration(ClientAuthenticationMethod.PRIVATE_KEY_JWT).build();
+    givenAuthorizedSession(registration);
+    final var assertion = new java.util.concurrent.atomic.AtomicReference<String>();
+    server
+        .expect(requestTo(REVOCATION_ENDPOINT))
+        .andExpect(formBody(fields -> assertion.set(fields.get("client_assertion"))))
+        .andRespond(withSuccess());
+
+    // when the user logs out
+    handler(jwkResolver(jwk)).logout(request, response, authentication(registration));
+
+    // then the assertion is addressed and signed as the token endpoint's would be
+    server.verify();
+    final var jwt = com.nimbusds.jwt.SignedJWT.parse(assertion.get());
+    assertThat(jwt.getHeader().getAlgorithm()).isEqualTo(JWSAlgorithm.RS256);
+    assertThat(jwt.getHeader().getKeyID()).isEqualTo(jwk.getKeyID());
+    final var claims = jwt.getJWTClaimsSet();
+    assertThat(claims.getIssuer()).isEqualTo(CLIENT_ID);
+    assertThat(claims.getSubject()).isEqualTo(CLIENT_ID);
+    // RFC 7523 §3: the audience is the token endpoint, which is what Spring's converter uses and
+    // what a provider checks the assertion against.
+    assertThat(claims.getAudience())
+        .containsExactly(registration.getProviderDetails().getTokenUri());
+    assertThat(claims.getJWTID()).isNotBlank();
+    assertThat(claims.getExpirationTime()).isAfter(new java.util.Date());
+    assertThat(jwt.verify(new com.nimbusds.jose.crypto.RSASSAVerifier(jwk.toRSAKey())))
+        .as("assertion must verify against the configured key")
+        .isTrue();
+  }
+
   @Test
   void shouldSkipRevocationWhenProviderPublishesNoRevocationEndpoint() {
     // given a provider whose metadata carries no revocation endpoint, as MS Entra's does not
@@ -533,7 +573,7 @@ class RefreshTokenRevocationLogoutHandlerTest {
   }
 
   @Test
-  void shouldNotReportAnErrorFieldThatIsNotAShortCode() {
+  void shouldNotReportAnErrorFieldThatIsNotARecognisedCode() {
     // given a provider whose error field is free text rather than an RFC 7009 code
     final var appender = attachHandlerDebugAppender();
     try {
@@ -553,6 +593,38 @@ class RefreshTokenRevocationLogoutHandlerTest {
       assertThat(appender.list)
           .extracting(ILoggingEvent::getFormattedMessage)
           .noneMatch(line -> line.contains("refresh_token=abc"))
+          .noneMatch(line -> line.contains("error="));
+    } finally {
+      detachHandlerDebugAppender(appender);
+    }
+  }
+
+  /**
+   * Regression for the credential-shaped echo. A shape check on {@code error} accepts any run of
+   * letters, so an opaque secret echoed there would be written out verbatim. Only codes that
+   * actually exist are repeated.
+   */
+  @Test
+  void shouldNotReportAnErrorFieldThatLooksLikeACredential() {
+    // given a provider echoing something secret-shaped into the error field
+    final var appender = attachHandlerDebugAppender();
+    try {
+      final var registration = registration(ClientAuthenticationMethod.CLIENT_SECRET_BASIC).build();
+      givenAuthorizedSession(registration);
+      server
+          .expect(requestTo(REVOCATION_ENDPOINT))
+          .andRespond(
+              withBadRequest()
+                  .body("{\"error\":\"OpaqueRefreshTokenSecret\"}")
+                  .contentType(MediaType.APPLICATION_JSON));
+
+      // when the user logs out
+      handler(null).logout(request, response, authentication(registration));
+
+      // then it is dropped: it is token-shaped, but it is not an error code
+      assertThat(appender.list)
+          .extracting(ILoggingEvent::getFormattedMessage)
+          .noneMatch(line -> line.contains("OpaqueRefreshTokenSecret"))
           .noneMatch(line -> line.contains("error="));
     } finally {
       detachHandlerDebugAppender(appender);
