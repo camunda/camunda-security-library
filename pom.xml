@@ -58,6 +58,7 @@
         <module>api</module>
         <module>validation</module>
         <module>spring-boot-starter</module>
+        <module>scim-poc-cli</module>
     </modules>
 
     <distributionManagement>

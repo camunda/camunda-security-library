@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.camunda</groupId>
+        <artifactId>camunda-security-library</artifactId>
+        <version>1.1.3-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>camunda-security-library-scim-poc-cli</artifactId>
+    <name>Camunda Security Library — SCIM POC CLI</name>
+    <description>Proof-of-concept command line SCIM service provider that prints received entities.</description>
+
+    <properties>
+        <!-- A CLI prints to stdout by design; the library-wide System.out ban does not apply. -->
+        <checkstyle.skip>true</checkstyle.skip>
+        <exec.mainClass>io.camunda.security.scim.poc.ScimPocCli</exec.mainClass>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.camunda</groupId>
+            <artifactId>camunda-security-library-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>${plugin.version.exec}</version>
+                <configuration>
+                    <mainClass>${exec.mainClass}</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
