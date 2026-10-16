@@ -38,6 +38,8 @@
         <maven.compiler.release>21</maven.compiler.release>
         <spring-boot.version>4.1.1</spring-boot.version>
         <archunit.version>1.5.1</archunit.version>
+        <errorprone.version>2.50.0</errorprone.version>
+        <nullaway.version>0.13.7</nullaway.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <nimbus-jose-jwt.version>10.10</nimbus-jose-jwt.version>
         <plugin.version.enforcer>3.6.3</plugin.version.enforcer>
@@ -144,6 +146,39 @@
                     <configuration combine.self="override">
                         <release>${maven.compiler.release}</release>
                     </configuration>
+                    <executions>
+                        <!--
+                          NullAway (via Error Prone) runs on production code only, at WARN
+                          severity (ADR-0035). the -XepDisableAllChecks flag keeps every other Error Prone
+                          check off: its default ERROR-level checks would otherwise fail the
+                          build. NullAway only checks @NullMarked code (OnlyNullMarked). The
+                          add-exports/add-opens flags Error Prone needs on JDK 16+ live in
+                          .mvn/jvm.config because the compiler runs inside the Maven JVM.
+                        -->
+                        <execution>
+                            <id>default-compile</id>
+                            <configuration>
+                                <annotationProcessorPaths>
+                                    <path>
+                                        <groupId>com.google.errorprone</groupId>
+                                        <artifactId>error_prone_core</artifactId>
+                                        <version>${errorprone.version}</version>
+                                    </path>
+                                    <path>
+                                        <groupId>com.uber.nullaway</groupId>
+                                        <artifactId>nullaway</artifactId>
+                                        <version>${nullaway.version}</version>
+                                    </path>
+                                </annotationProcessorPaths>
+                                <compilerArgs>
+                                    <arg>-XDcompilePolicy=simple</arg>
+                                    <arg>--should-stop=ifError=FLOW</arg>
+                                    <arg>-XDaddTypeAnnotationsToSymbol=true</arg>
+                                    <arg>-Xplugin:ErrorProne -XepDisableAllChecks -Xep:NullAway:WARN -XepOpt:NullAway:OnlyNullMarked=true</arg>
+                                </compilerArgs>
+                            </configuration>
+                        </execution>
+                    </executions>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
