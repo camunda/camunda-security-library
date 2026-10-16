@@ -441,6 +441,31 @@ class ScopedWebappSecurityChainBuilderScopedTest {
     assertThat(jwk.isPrivate()).isTrue();
   }
 
+  /**
+   * The failure the Javadoc on the resolver describes: two scopes using the same registrationId
+   * with different keys. Asserting only the key's type would pass while handing one scope the
+   * other's key, which a provider would reject and fail-soft would hide.
+   */
+  @Test
+  void assertionJwkResolverGivesEachScopeItsOwnKeyWhenTheyShareARegistrationId() throws Exception {
+    // given two scopes that both configure "oidc", backed by different keystores
+    final var scopeA =
+        ScopedWebappSecurityChainBuilder.assertionJwkResolver(
+            Map.of("oidc", oidcWithAssertionKeystore("keystore.p12", "camunda-standalone")));
+    final var scopeB =
+        ScopedWebappSecurityChainBuilder.assertionJwkResolver(
+            Map.of("oidc", oidcWithAssertionKeystore("keystore-second.p12", "camunda-second")));
+
+    // when each resolves the key for that shared registrationId
+    final var keyA = scopeA.apply(registrationWithId("oidc"));
+    final var keyB = scopeB.apply(registrationWithId("oidc"));
+
+    // then each got its own, rather than whichever the cluster-wide lookup happened to hold
+    assertThat(keyA.getKeyID()).isNotBlank();
+    assertThat(keyB.getKeyID()).isNotBlank();
+    assertThat(keyA.getKeyID()).isNotEqualTo(keyB.getKeyID());
+  }
+
   @Test
   void assertionJwkResolverFailsLoudlyForARegistrationTheScopeDoesNotConfigure() {
     // given a scope that knows nothing about the registration being logged out of, which is
@@ -489,12 +514,17 @@ class ScopedWebappSecurityChainBuilderScopedTest {
   }
 
   private static OidcConfiguration oidcWithAssertionKeystore() throws Exception {
+    return oidcWithAssertionKeystore("keystore.p12", "camunda-standalone");
+  }
+
+  private static OidcConfiguration oidcWithAssertionKeystore(
+      final String resource, final String alias) throws Exception {
     final var keystorePath =
         Paths.get(
                 Objects.requireNonNull(
                         ScopedWebappSecurityChainBuilderScopedTest.class
                             .getClassLoader()
-                            .getResource("keystore.p12"))
+                            .getResource(resource))
                     .toURI())
             .toString();
     return OidcConfiguration.builder()
@@ -504,7 +534,7 @@ class ScopedWebappSecurityChainBuilderScopedTest {
                     KeystoreConfiguration.builder()
                         .path(keystorePath)
                         .password("password")
-                        .keyAlias("camunda-standalone")
+                        .keyAlias(alias)
                         .keyPassword("password")
                         .build())
                 .build())
