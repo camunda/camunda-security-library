@@ -24,6 +24,7 @@ How does CSL declare and check nullness without a big-bang change to the code?
 - **Every production package is `@NullMarked`.** Each package under `src/main/java` has a `package-info.java` with `@NullMarked`. Types, parameters, return values and fields are non-null unless a `@Nullable` says otherwise. `NullMarkedArchTest` in `core`, `validation` and `spring-boot-starter` (`core` also covers `api`) fails the build when a package has none.
 - **NullAway checks production code.** NullAway runs as an Error Prone plugin in the `default-compile` execution of `maven-compiler-plugin`. It runs with `-XepDisableAllChecks -Xep:NullAway:WARN -XepOpt:NullAway:OnlyNullMarked=true`. Test code is not checked.
 - **The rollout has two steps.** This ADR's change surfaces the violations as warnings and does not fail the build. A follow-up change fixes them and raises NullAway to `ERROR`. A new ADR is not needed for that step, but this ADR's text for the severity must then be read as superseded by the follow-up PR.
+- **`-XDaddTypeAnnotationsToSymbol=true` is set.** Error Prone refuses to compile on JDK 21 without it, and the build targets and runs on JDK 21. JDK 25 accepts the flag too.
 - **The Error Prone flags go in `.mvn/jvm.config`.** The compiler runs inside the Maven JVM, and Error Prone needs `--add-exports`/`--add-opens` flags on JDK 16+.
 
 ### Why these particular boundaries
