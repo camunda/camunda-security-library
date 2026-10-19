@@ -36,6 +36,7 @@ import io.camunda.security.spring.oidc.UrlRedaction;
 import io.camunda.security.spring.scope.BasePaths;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import io.camunda.security.spring.spi.OidcAuthenticationEntryPoint;
+import io.camunda.security.spring.spi.OidcLoginFailurePort;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -65,6 +66,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.DelegatingAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler;
 import org.springframework.security.web.authentication.logout.CompositeLogoutHandler;
 import org.springframework.security.web.authentication.logout.CookieClearingLogoutHandler;
 import org.springframework.security.web.authentication.logout.LogoutHandler;
@@ -128,7 +130,13 @@ public final class ScopedWebappSecurityChainBuilder {
   private final ObjectProvider<OidcAuthenticationEntryPoint> oidcAuthenticationEntryPointProvider;
   private final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers;
   private final ObjectProvider<OidcProviderConfigurationPort> oidcProviderConfigurationPortProvider;
+  private final ObjectProvider<OidcLoginFailurePort> oidcLoginFailurePortProvider;
 
+  /**
+   * @param oidcLoginFailurePortProvider the host's explanations for failed browser logins. It is
+   *     resolved on each failed login, not while the chains are built; when it holds no bean, or
+   *     more than one, the page shows generic text (ADR-0035).
+   */
   public ScopedWebappSecurityChainBuilder(
       final AuthFailureHandler authFailureHandler,
       final CamundaSecurityLibraryProperties properties,
@@ -145,7 +153,8 @@ public final class ScopedWebappSecurityChainBuilder {
       final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
       final ObjectProvider<OidcAuthenticationEntryPoint> oidcAuthenticationEntryPointProvider,
       final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers,
-      final ObjectProvider<OidcProviderConfigurationPort> oidcProviderConfigurationPortProvider) {
+      final ObjectProvider<OidcProviderConfigurationPort> oidcProviderConfigurationPortProvider,
+      final ObjectProvider<OidcLoginFailurePort> oidcLoginFailurePortProvider) {
     this.authFailureHandler = authFailureHandler;
     this.properties = properties;
     this.pathPort = pathPort;
@@ -162,6 +171,7 @@ public final class ScopedWebappSecurityChainBuilder {
     this.oidcAuthenticationEntryPointProvider = oidcAuthenticationEntryPointProvider;
     this.securityHeadersCustomizers = securityHeadersCustomizers;
     this.oidcProviderConfigurationPortProvider = oidcProviderConfigurationPortProvider;
+    this.oidcLoginFailurePortProvider = oidcLoginFailurePortProvider;
   }
 
   /**
@@ -252,7 +262,7 @@ public final class ScopedWebappSecurityChainBuilder {
                       .authorizedClientRepository(authorizedClientRepository)
                       .redirectionEndpoint(
                           redirectionEndpoint -> redirectionEndpoint.baseUri(redirectUri))
-                      .failureHandler(new OAuth2AuthenticationExceptionHandler());
+                      .failureHandler(loginFailureHandler("/"));
                   tokenEndpointCustomizerProvider.ifAvailable(oauthLogin::tokenEndpoint);
                   oidcUserServiceProvider.ifAvailable(
                       service -> oauthLogin.userInfoEndpoint(c -> c.oidcUserService(service)));
@@ -500,6 +510,18 @@ public final class ScopedWebappSecurityChainBuilder {
     return context != null
         ? context.getEnvironment().getProperty("server.servlet.context-path", "")
         : "";
+  }
+
+  /**
+   * The OAuth2 login failure handler of one OIDC chain. A stale callback redirects to {@code
+   * applicationRoot}; other failed browser logins render a page that links back to it and carries
+   * the host's {@link OidcLoginFailurePort} explanation when exactly one is registered (ADR-0035).
+   */
+  private OAuth2AuthenticationExceptionHandler loginFailureHandler(final String applicationRoot) {
+    return new OAuth2AuthenticationExceptionHandler(
+        new SimpleUrlAuthenticationFailureHandler(),
+        oidcLoginFailurePortProvider::getIfUnique,
+        applicationRoot);
   }
 
   /**
@@ -924,7 +946,7 @@ public final class ScopedWebappSecurityChainBuilder {
                       .authorizedClientRepository(authorizedClientRepository)
                       .redirectionEndpoint(
                           redirectionEndpoint -> redirectionEndpoint.baseUri(redirectUri))
-                      .failureHandler(new OAuth2AuthenticationExceptionHandler());
+                      .failureHandler(loginFailureHandler(prefix + "/"));
                   tokenEndpointCustomizerProvider.ifAvailable(oauthLogin::tokenEndpoint);
                   oidcUserServiceProvider.ifAvailable(
                       service -> oauthLogin.userInfoEndpoint(c -> c.oidcUserService(service)));
