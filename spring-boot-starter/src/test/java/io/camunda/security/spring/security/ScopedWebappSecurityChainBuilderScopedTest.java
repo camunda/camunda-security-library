@@ -765,8 +765,40 @@ class ScopedWebappSecurityChainBuilderScopedTest {
                 .doesNotContain(HostLoginFailurePortConfig.TITLE));
   }
 
+  @Test
+  void scopedOidcChainStartsAndShowsTheGenericPageWithTwoPorts() {
+    // two port beans must not fail startup; the page falls back to generic text
+    runner
+        .withUserConfiguration(TwoLoginFailurePortsConfig.class)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              assertThat(renderFailedBrowserLogin(ctx, "scopedOidcTestChain"))
+                  .contains("Sign-in failed")
+                  .doesNotContain(HostLoginFailurePortConfig.TITLE);
+            });
+  }
+
+  @Test
+  void scopedOidcChainRecoversAStaleCallbackUnderItsBasePath() {
+    runner.run(
+        ctx ->
+            assertThat(
+                    failBrowserLogin(ctx, "scopedOidcTestChain", "authorization_request_not_found")
+                        .getRedirectedUrl())
+                .isEqualTo(BASE_PATH + "/"));
+  }
+
   private static String renderFailedBrowserLogin(
       final org.springframework.context.ApplicationContext ctx, final String chainName)
+      throws Exception {
+    return failBrowserLogin(ctx, chainName, "invalid_id_token").getContentAsString();
+  }
+
+  private static MockHttpServletResponse failBrowserLogin(
+      final org.springframework.context.ApplicationContext ctx,
+      final String chainName,
+      final String errorCode)
       throws Exception {
     final var chain =
         (DefaultSecurityFilterChain) ctx.getBean(chainName, SecurityFilterChain.class);
@@ -781,8 +813,8 @@ class ScopedWebappSecurityChainBuilderScopedTest {
     request.addHeader(HttpHeaders.ACCEPT, "text/html");
     final var response = new MockHttpServletResponse();
     failureHandler.onAuthenticationFailure(
-        request, response, new OAuth2AuthenticationException(new OAuth2Error("invalid_id_token")));
-    return response.getContentAsString();
+        request, response, new OAuth2AuthenticationException(new OAuth2Error(errorCode)));
+    return response;
   }
 
   /**
@@ -1667,6 +1699,22 @@ class ScopedWebappSecurityChainBuilderScopedTest {
     OidcLoginFailurePort hostLoginFailurePort() {
       return (request, exception) ->
           Optional.of(new OidcLoginFailureNotice(403, TITLE, "The host knows why."));
+    }
+  }
+
+  @Configuration
+  static class TwoLoginFailurePortsConfig {
+
+    @Bean
+    OidcLoginFailurePort firstLoginFailurePort() {
+      return (request, exception) ->
+          Optional.of(new OidcLoginFailureNotice(403, HostLoginFailurePortConfig.TITLE, "first"));
+    }
+
+    @Bean
+    OidcLoginFailurePort secondLoginFailurePort() {
+      return (request, exception) ->
+          Optional.of(new OidcLoginFailureNotice(403, HostLoginFailurePortConfig.TITLE, "second"));
     }
   }
 }

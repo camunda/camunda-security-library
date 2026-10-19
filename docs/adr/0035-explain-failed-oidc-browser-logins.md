@@ -36,30 +36,41 @@ understands without CSL learning the host's vocabulary?
 ## Decision
 
 A failed OIDC login of a browser request renders a small, self-contained HTML page instead of the
-bare `401`. Non-browser requests keep the `401`, and the `authorization_request_not_found` redirect
-is unchanged.
+bare `401`. Non-browser requests keep the `401`. The `authorization_request_not_found` redirect still
+restarts the login, but goes to the chain's application root instead of always `/`, so a stale
+callback on a scoped chain stays under its base path.
 
 - **Page.** `OAuth2AuthenticationExceptionHandler` renders a title, a message and a "Try again" link
   to the chain's application root (`/` on the primary chain, `<basePath>/` on a scoped one), plus an
   optional host-supplied link. It never redirects or refreshes on its own, and it sends
   `Cache-Control: no-store`. A request counts as a browser request when its `Accept` header prefers
-  `text/html`; a bare `*/*` does not.
+  `text/html`; a bare `*/*` does not. The page's template is a resource loaded on the first failed
+  login. If it is missing, an ERROR is logged and failed logins keep the plain `401`; it never
+  fails startup.
 - **Host SPI.** `io.camunda.security.spring.spi.OidcLoginFailurePort` has one method,
-  `Optional<OidcLoginFailureNotice> explain(HttpServletRequest, AuthenticationException)`. When a bean
-  is present, both OIDC chains ask it first; an empty result, or an exception from the port, falls
-  back to generic text.
-- **Notice.** `OidcLoginFailureNotice(int status, String title, String message, Link link)`, with
-  `Link(String text, URI target)` optional. The status is `401` or `403`, the text must not be blank,
-  and a link target must be an absolute `http`/`https` URI or a host-relative path.
+  `Optional<OidcLoginFailureNotice> explain(HttpServletRequest, AuthenticationException)`. When
+  exactly one bean is registered, both OIDC chains ask it first; with none or several, an empty
+  result, or an exception from the port, the page falls back to generic text. The bean is looked up
+  on each failed login, not while the chains are built, so it is never created early and a second
+  bean cannot fail startup.
+- **Notice.** `OidcLoginFailureNotice(int status, String title, String message, Link link, Locale
+  language, String retryText)`, with `Link(String text, URI target)` optional. Convenience
+  constructors take `(status, title, message)` and `(status, title, message, link)` and default the
+  language to English and the retry label to "Try again"; `withLanguage(Locale, String)` sets both
+  together. The status is `401` or `403`, the text must not be blank, the language must name one
+  (not `Locale.ROOT`), and a link target must be an absolute `http`/`https` URI or a host-relative
+  path.
 - **No failure details on the page.** The page renders only CSL's generic text or the host's notice,
   all of it HTML-escaped. It never renders the exception message or the OAuth2 error description.
 - **Logging.** Every failure other than the recovered redirect is logged once at `WARN` with the
   request path and the OAuth2 error code, or the exception type for a non-OAuth2 failure, never the
-  description.
+  description. A failing port is logged at `WARN` with its exception type and the request path, and
+  its stack trace at `DEBUG` without the exception's message.
 
-`ScopedWebappSecurityChainBuilder` takes an `ObjectProvider<OidcLoginFailurePort>` through a new
-constructor and builds one handler per chain. The previous constructor stays and builds without a
-port.
+`ScopedWebappSecurityChainBuilder` takes an `ObjectProvider<OidcLoginFailurePort>` as a constructor
+argument and builds one handler per chain. It keeps a single constructor: hosts get the builder from
+`ScopedWebappSecurityChainBuilderConfiguration`, whose `@Bean` method gains the matching optional
+parameter.
 
 ### Why these particular boundaries
 
@@ -81,8 +92,8 @@ port.
 
 | Type | Default | Host override |
 |---|---|---|
-| `OidcLoginFailurePort` | none: generic page | register a bean |
-| `OidcLoginFailureNotice` | generic `401` text | returned by the port |
+| `OidcLoginFailurePort` | none: generic page | register one bean |
+| `OidcLoginFailureNotice` | generic `401` text, English, "Try again" | returned by the port, optionally with `withLanguage` |
 
 ## Consequences
 

@@ -133,49 +133,9 @@ public final class ScopedWebappSecurityChainBuilder {
   private final ObjectProvider<OidcLoginFailurePort> oidcLoginFailurePortProvider;
 
   /**
-   * Builds without an {@link OidcLoginFailurePort}: failed browser logins get the generic page.
-   * Kept for hosts that construct the builder themselves.
-   */
-  public ScopedWebappSecurityChainBuilder(
-      final AuthFailureHandler authFailureHandler,
-      final CamundaSecurityLibraryProperties properties,
-      final SecurityPathPort pathPort,
-      final ObjectProvider<OidcTokenEndpointCustomizer> tokenEndpointCustomizerProvider,
-      final ObjectProvider<OAuth2UserService<OidcUserRequest, OidcUser>> oidcUserServiceProvider,
-      final ObjectProvider<OAuth2AuthorizationRequestResolver> authorizationRequestResolverProvider,
-      final ObjectProvider<WebAppAuthorizationCheckFilter> webAppAuthorizationFilterProvider,
-      final ObjectProvider<CamundaLoginPickerFilter> oidcLoginPickerProvider,
-      final ObjectProvider<AdminUserCheckFilter> adminUserCheckFilterProvider,
-      final OAuth2AuthorizedClientManagerFactory authorizedClientManagerFactory,
-      final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
-      final CorsConfigurationSource corsSource,
-      final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
-      final ObjectProvider<OidcAuthenticationEntryPoint> oidcAuthenticationEntryPointProvider,
-      final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers,
-      final ObjectProvider<OidcProviderConfigurationPort> oidcProviderConfigurationPortProvider) {
-    this(
-        authFailureHandler,
-        properties,
-        pathPort,
-        tokenEndpointCustomizerProvider,
-        oidcUserServiceProvider,
-        authorizationRequestResolverProvider,
-        webAppAuthorizationFilterProvider,
-        oidcLoginPickerProvider,
-        adminUserCheckFilterProvider,
-        authorizedClientManagerFactory,
-        scopedClientRegistrationFactory,
-        corsSource,
-        httpsRedirectCustomizers,
-        oidcAuthenticationEntryPointProvider,
-        securityHeadersCustomizers,
-        oidcProviderConfigurationPortProvider,
-        null);
-  }
-
-  /**
-   * @param oidcLoginFailurePortProvider the host's explanations for failed browser logins; may be
-   *     {@code null} or empty, in which case the page shows generic text (ADR-0035)
+   * @param oidcLoginFailurePortProvider the host's explanations for failed browser logins. It is
+   *     resolved on each failed login, not while the chains are built; when it holds no bean, or
+   *     more than one, the page shows generic text (ADR-0035).
    */
   public ScopedWebappSecurityChainBuilder(
       final AuthFailureHandler authFailureHandler,
@@ -553,15 +513,15 @@ public final class ScopedWebappSecurityChainBuilder {
   }
 
   /**
-   * The OAuth2 login failure handler of one OIDC chain. Failed browser logins render a page that
-   * links back to {@code applicationRoot} and carries the host's {@link OidcLoginFailurePort}
-   * explanation when one is registered (ADR-0035).
+   * The OAuth2 login failure handler of one OIDC chain. A stale callback redirects to {@code
+   * applicationRoot}; other failed browser logins render a page that links back to it and carries
+   * the host's {@link OidcLoginFailurePort} explanation when exactly one is registered (ADR-0035).
    */
   private OAuth2AuthenticationExceptionHandler loginFailureHandler(final String applicationRoot) {
-    final OidcLoginFailurePort port =
-        oidcLoginFailurePortProvider == null ? null : oidcLoginFailurePortProvider.getIfAvailable();
     return new OAuth2AuthenticationExceptionHandler(
-        new SimpleUrlAuthenticationFailureHandler(), port, applicationRoot);
+        new SimpleUrlAuthenticationFailureHandler(),
+        oidcLoginFailurePortProvider::getIfUnique,
+        applicationRoot);
   }
 
   /**

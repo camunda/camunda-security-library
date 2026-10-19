@@ -10,6 +10,8 @@ package io.camunda.security.spring.handler;
 import static io.camunda.security.spring.handler.OAuth2AuthenticationExceptionHandler.AUTHORIZATION_REQUEST_NOT_FOUND_ERROR_CODE;
 import static io.camunda.security.spring.handler.OAuth2AuthenticationExceptionHandler.GENERIC_TITLE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -25,6 +27,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -94,6 +97,65 @@ class OAuth2AuthenticationExceptionHandlerTest {
   }
 
   @Test
+  void shouldRecoverToTheScopedApplicationRoot() throws Exception {
+    // a stale callback on a scoped chain restarts that chain's login, under its base path
+    new OAuth2AuthenticationExceptionHandler(delegate, () -> null, "/physical-tenants/t1/")
+        .onAuthenticationFailure(
+            browserRequest("/cluster-1"), response, authorizationRequestNotFound());
+
+    assertThat(response.getRedirectedUrl()).isEqualTo("/cluster-1/physical-tenants/t1/");
+  }
+
+  @Test
+  void shouldRejectAMissingApplicationRoot() {
+    assertThatNullPointerException()
+        .isThrownBy(() -> new OAuth2AuthenticationExceptionHandler(delegate, () -> null, null));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"", "sub/", "null"})
+  void shouldRejectAnApplicationRootWithoutALeadingSlash(final String applicationRoot) {
+    assertThatIllegalArgumentException()
+        .isThrownBy(
+            () -> new OAuth2AuthenticationExceptionHandler(delegate, () -> null, applicationRoot))
+        .withMessageContaining("must start with '/'");
+  }
+
+  @Test
+  void shouldNotResolveThePortUntilALoginFails() throws Exception {
+    // given a port that is only resolved on demand
+    final AtomicInteger lookups = new AtomicInteger();
+    final OAuth2AuthenticationExceptionHandler handler =
+        new OAuth2AuthenticationExceptionHandler(
+            delegate,
+            () -> {
+              lookups.incrementAndGet();
+              return null;
+            },
+            "/");
+
+    // when / then: building the handler does not look the port up, a failed login does
+    assertThat(lookups).hasValue(0);
+    handler.onAuthenticationFailure(browserRequest(""), response, invalidIdToken());
+    assertThat(lookups).hasValue(1);
+  }
+
+  @Test
+  void shouldRenderTheGenericPageWhenThePortLookupFails() throws Exception {
+    // a lookup that throws, for example while the port bean is being created, is not fatal
+    new OAuth2AuthenticationExceptionHandler(
+            delegate,
+            () -> {
+              throw new IllegalStateException("port bean is in creation");
+            },
+            "/")
+        .onAuthenticationFailure(browserRequest(""), response, invalidIdToken());
+
+    assertThat(response.getStatus()).isEqualTo(401);
+    assertThat(response.getContentAsString()).contains("<h1>" + GENERIC_TITLE + "</h1>");
+  }
+
+  @Test
   void shouldDelegateOtherOauth2ErrorsOfNonBrowserRequests() throws Exception {
     final MockHttpServletRequest request = request("/cluster-1", "application/json");
     final AuthenticationException exception = invalidIdToken();
@@ -146,7 +208,7 @@ class OAuth2AuthenticationExceptionHandlerTest {
   void shouldRenderTheGenericPageForABrowserWithoutAPort() throws Exception {
     final MockHttpServletRequest request = browserRequest("/cluster-1");
 
-    new OAuth2AuthenticationExceptionHandler(delegate, null, "/")
+    new OAuth2AuthenticationExceptionHandler(delegate, () -> null, "/")
         .onAuthenticationFailure(request, response, invalidIdToken());
 
     assertThat(response.getStatus()).isEqualTo(401);
@@ -215,7 +277,7 @@ class OAuth2AuthenticationExceptionHandlerTest {
 
   @Test
   void shouldLinkTryAgainToTheScopedApplicationRoot() throws Exception {
-    new OAuth2AuthenticationExceptionHandler(delegate, null, "/physical-tenants/t1/")
+    new OAuth2AuthenticationExceptionHandler(delegate, () -> null, "/physical-tenants/t1/")
         .onAuthenticationFailure(browserRequest("/cluster-1"), response, invalidIdToken());
 
     assertThat(response.getContentAsString())
@@ -285,20 +347,61 @@ class OAuth2AuthenticationExceptionHandlerTest {
 
   @Test
   void shouldFallBackToTheGenericPageWhenThePortThrows() throws Exception {
-    when(loginFailurePort.explain(any(), any()))
-        .thenThrow(new IllegalStateException(CLAIMS_IN_DESCRIPTION));
-
-    handler().onAuthenticationFailure(browserRequest(""), response, invalidIdToken());
+    final IllegalStateException failure = new IllegalStateException(CLAIMS_IN_DESCRIPTION);
+    when(loginFailurePort.explain(any(), any())).thenThrow(failure);
+    final Level previous = handlerLogger().getLevel();
+    handlerLogger().setLevel(Level.DEBUG);
+    try {
+      handler().onAuthenticationFailure(browserRequest(""), response, invalidIdToken());
+    } finally {
+      handlerLogger().setLevel(previous);
+    }
 
     assertThat(response.getStatus()).isEqualTo(401);
     assertThat(response.getContentAsString()).contains("<h1>" + GENERIC_TITLE + "</h1>");
+    // WARN names the exception type and the request path, never the exception's message
     assertThat(logs.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
         .extracting(ILoggingEvent::getFormattedMessage)
         .anySatisfy(
             message ->
                 assertThat(message)
                     .contains(IllegalStateException.class.getName())
+                    .contains("'/sso-callback'")
                     .doesNotContain("org-of-the-user"));
+    // DEBUG carries the port's stack trace, without the message
+    assertThat(logs.list)
+        .filteredOn(event -> event.getLevel() == Level.DEBUG && event.getThrowableProxy() != null)
+        .singleElement()
+        .satisfies(
+            event -> {
+              assertThat(event.getThrowableProxy().getMessage())
+                  .isEqualTo(IllegalStateException.class.getName())
+                  .doesNotContain("org-of-the-user");
+              assertThat(event.getThrowableProxy().getStackTraceElementProxyArray())
+                  .hasSameSizeAs(failure.getStackTrace());
+            });
+  }
+
+  @Test
+  void shouldReportAMissingPageTemplateWithoutThrowing() {
+    // a template filtered out of a shaded jar must not fail startup or the failed login
+    assertThat(OAuth2AuthenticationExceptionHandler.loadPageTemplate("no-such-template.html"))
+        .isEmpty();
+    assertThat(logs.list)
+        .filteredOn(event -> event.getLevel() == Level.ERROR)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .singleElement()
+        .asString()
+        .contains("no-such-template.html");
+  }
+
+  @Test
+  void shouldLoadTheShippedPageTemplate() {
+    assertThat(
+            OAuth2AuthenticationExceptionHandler.loadPageTemplate(
+                OAuth2AuthenticationExceptionHandler.PAGE_TEMPLATE_RESOURCE))
+        .hasValueSatisfying(template -> assertThat(template).contains("{{retryHref}}"));
   }
 
   @Test
@@ -314,7 +417,7 @@ class OAuth2AuthenticationExceptionHandlerTest {
   }
 
   private OAuth2AuthenticationExceptionHandler handler() {
-    return new OAuth2AuthenticationExceptionHandler(delegate, loginFailurePort, "/");
+    return new OAuth2AuthenticationExceptionHandler(delegate, () -> loginFailurePort, "/");
   }
 
   private static MockHttpServletRequest browserRequest(final String contextPath) {

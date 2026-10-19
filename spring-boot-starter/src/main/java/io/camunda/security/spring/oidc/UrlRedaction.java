@@ -120,10 +120,11 @@ public final class UrlRedaction {
    * Character#isISOControl} does not cover (U+2028, U+2029), to its 4-digit unicode escape form —
    * the one place this logic lives, so a value forging a log line this way cannot be fixed in one
    * caller and missed in another, the way U+2028 was across two review rounds. Used both for a URL
-   * value here and for {@code ScopedClientRegistrationFactory#sanitizeForLog}'s registrationId,
-   * which is never a URL and so does not otherwise go through this class.
+   * value here, for {@code ScopedClientRegistrationFactory#sanitizeForLog}'s registrationId, which
+   * is never a URL and so does not otherwise go through this class, and for the request path and
+   * error code {@code OAuth2AuthenticationExceptionHandler} logs.
    */
-  static String escapeControlCharacters(final String value) {
+  public static String escapeControlCharacters(final String value) {
     if (value == null || value.chars().noneMatch(UrlRedaction::mustBeEscaped)) {
       return value;
     }

@@ -7,7 +7,7 @@
  */
 package io.camunda.security.spring.handler;
 
-import static io.camunda.security.spring.oidc.ScopedClientRegistrationFactory.sanitizeForLog;
+import static io.camunda.security.spring.oidc.UrlRedaction.escapeControlCharacters;
 
 import io.camunda.security.spring.spi.OidcLoginFailureNotice;
 import io.camunda.security.spring.spi.OidcLoginFailurePort;
@@ -22,7 +22,9 @@ import java.util.Collections;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -71,15 +73,15 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
   static final String GENERIC_MESSAGE =
       "We could not sign you in to this application. Your account may not have access to it."
           + " Try again, or contact your administrator if the problem continues.";
+  static final String PAGE_TEMPLATE_RESOURCE = "oidc-login-failure-page.html";
 
   private static final Logger LOG =
       LoggerFactory.getLogger(OAuth2AuthenticationExceptionHandler.class);
-  private static final String PAGE_TEMPLATE = loadPageTemplate();
   private static final Pattern PLACEHOLDER =
       Pattern.compile("\\{\\{(language|title|message|retryHref|retryText|forwardLink)}}");
 
   private final AuthenticationFailureHandler delegate;
-  private final OidcLoginFailurePort loginFailurePort;
+  private final Supplier<OidcLoginFailurePort> loginFailurePort;
   private final String applicationRoot;
   private final RedirectStrategy redirectStrategy = new DefaultRedirectStrategy();
 
@@ -88,21 +90,31 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
   }
 
   public OAuth2AuthenticationExceptionHandler(final AuthenticationFailureHandler delegate) {
-    this(delegate, null, "/");
+    this(delegate, () -> null, "/");
   }
 
   /**
    * @param delegate handles failures of non-browser requests
-   * @param loginFailurePort the host's explanations, or {@code null} for the generic page only
-   * @param applicationRoot the path the page links back to, relative to the servlet context, such
-   *     as {@code /} or a scoped chain's {@code /<basePath>/}
+   * @param loginFailurePort resolves the host's explanations, or returns {@code null} for the
+   *     generic page only. It is called on each failed login, not here, so a port bean is neither
+   *     created nor required while the security chain is built.
+   * @param applicationRoot the path, relative to the servlet context, that a stale callback
+   *     redirects to and the page links back to: {@code /}, or a scoped chain's {@code
+   *     /<basePath>/}
+   * @throws IllegalArgumentException if {@code applicationRoot} does not start with {@code /}
    */
   public OAuth2AuthenticationExceptionHandler(
       final AuthenticationFailureHandler delegate,
-      final OidcLoginFailurePort loginFailurePort,
+      final Supplier<OidcLoginFailurePort> loginFailurePort,
       final String applicationRoot) {
-    this.delegate = delegate;
-    this.loginFailurePort = loginFailurePort;
+    this.delegate = Objects.requireNonNull(delegate, "delegate");
+    this.loginFailurePort = Objects.requireNonNull(loginFailurePort, "loginFailurePort");
+    Objects.requireNonNull(applicationRoot, "applicationRoot");
+    if (!applicationRoot.startsWith("/")) {
+      throw new IllegalArgumentException(
+          "applicationRoot must start with '/', but was '%s'"
+              .formatted(escapeControlCharacters(applicationRoot)));
+    }
     this.applicationRoot = applicationRoot;
   }
 
@@ -114,41 +126,58 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
       throws IOException, ServletException {
 
     if (isAuthorizationRequestNotFound(exception)) {
-      redirectStrategy.sendRedirect(request, response, "/");
+      redirectStrategy.sendRedirect(request, response, applicationRoot);
       return;
     }
 
     logFailure(request, exception);
-    if (!prefersHtml(request) || response.isCommitted()) {
+    final Optional<String> pageTemplate = PageTemplate.HTML;
+    if (!prefersHtml(request) || response.isCommitted() || pageTemplate.isEmpty()) {
       delegate.onAuthenticationFailure(request, response, exception);
       return;
     }
-    renderPage(request, response, noticeFor(request, exception));
+    renderPage(request, response, pageTemplate.get(), noticeFor(request, exception));
   }
 
   private OidcLoginFailureNotice noticeFor(
       final HttpServletRequest request, final AuthenticationException exception) {
-    if (loginFailurePort != null) {
-      try {
-        final Optional<OidcLoginFailureNotice> notice =
-            loginFailurePort.explain(request, exception);
+    try {
+      final OidcLoginFailurePort port = loginFailurePort.get();
+      if (port != null) {
+        final Optional<OidcLoginFailureNotice> notice = port.explain(request, exception);
         if (notice != null && notice.isPresent()) {
           return notice.get();
         }
-      } catch (final RuntimeException e) {
-        // Type only: the port inspects the same exception whose message quotes token claims.
-        LOG.warn(
-            "OidcLoginFailurePort failed with {} while explaining a failed OIDC login; showing the"
-                + " generic failed-login page instead.",
-            e.getClass().getName());
       }
+    } catch (final RuntimeException e) {
+      logPortFailure(request, e);
     }
     return new OidcLoginFailureNotice(401, GENERIC_TITLE, GENERIC_MESSAGE);
+  }
+
+  /**
+   * Logs where a host's port failed, without the exception's message: the port inspects the same
+   * exception whose description quotes token claims, so its own message may repeat them. The stack
+   * trace, which shows where in the port it failed, is logged at DEBUG on a copy that carries only
+   * the exception type.
+   */
+  private static void logPortFailure(final HttpServletRequest request, final RuntimeException e) {
+    LOG.warn(
+        "OidcLoginFailurePort failed with {} while explaining a failed OIDC login at '{}'; showing"
+            + " the generic failed-login page instead.",
+        e.getClass().getName(),
+        escapeControlCharacters(request.getRequestURI()));
+    if (LOG.isDebugEnabled()) {
+      final RuntimeException withoutMessage = new RuntimeException(e.getClass().getName());
+      withoutMessage.setStackTrace(e.getStackTrace());
+      LOG.debug("Stack trace of the OidcLoginFailurePort failure", withoutMessage);
+    }
   }
 
   private void renderPage(
       final HttpServletRequest request,
       final HttpServletResponse response,
+      final String pageTemplate,
       final OidcLoginFailureNotice notice)
       throws IOException {
     final String forwardLink =
@@ -164,7 +193,7 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
     // One pass, so a value that happens to contain a placeholder is never substituted again.
     final String page =
         PLACEHOLDER
-            .matcher(PAGE_TEMPLATE)
+            .matcher(pageTemplate)
             .replaceAll(placeholder -> Matcher.quoteReplacement(values.get(placeholder.group(1))));
 
     response.setStatus(notice.status());
@@ -191,8 +220,8 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
             : exception.getClass().getName();
     LOG.warn(
         "OIDC login failed at '{}' ({}).",
-        sanitizeForLog(request.getRequestURI()),
-        sanitizeForLog(reason));
+        escapeControlCharacters(request.getRequestURI()),
+        escapeControlCharacters(reason));
   }
 
   private static boolean isAuthorizationRequestNotFound(final AuthenticationException exception) {
@@ -202,20 +231,29 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
   }
 
   /**
-   * The page's markup and styling, kept as a resource so it can be read and edited as HTML. It is
-   * styled after the webapps' own forbidden page, and is self-contained: the user has no session,
-   * so it cannot load the webapps' assets.
+   * Reads a page template from this class's package, or returns empty and logs an ERROR when it is
+   * missing or unreadable. Never throws: the page only appears on a failed login, so a missing
+   * resource (for example one filtered out of a shaded jar) must not fail the application at
+   * startup. Failed logins then get the delegate's plain response instead of the page.
    */
-  private static String loadPageTemplate() {
+  static Optional<String> loadPageTemplate(final String resource) {
     try (final InputStream template =
-        OAuth2AuthenticationExceptionHandler.class.getResourceAsStream(
-            "oidc-login-failure-page.html")) {
+        OAuth2AuthenticationExceptionHandler.class.getResourceAsStream(resource)) {
       if (template == null) {
-        throw new IllegalStateException("Missing resource oidc-login-failure-page.html");
+        LOG.error(
+            "Missing resource {}; failed OIDC logins get a plain error response instead of the"
+                + " failed-login page.",
+            resource);
+        return Optional.empty();
       }
-      return new String(template.readAllBytes(), StandardCharsets.UTF_8);
-    } catch (final IOException e) {
-      throw new UncheckedIOException("Failed to read oidc-login-failure-page.html", e);
+      return Optional.of(new String(template.readAllBytes(), StandardCharsets.UTF_8));
+    } catch (final IOException | UncheckedIOException e) {
+      LOG.error(
+          "Failed to read resource {}; failed OIDC logins get a plain error response instead of"
+              + " the failed-login page.",
+          resource,
+          e);
+      return Optional.empty();
     }
   }
 
@@ -251,5 +289,15 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
     }
     final double html = exactHtml >= 0 ? exactHtml : textWildcard;
     return html > 0 && html >= other;
+  }
+
+  /**
+   * The page's markup and styling, kept as a resource so it can be read and edited as HTML. It is
+   * styled after the webapps' own forbidden page, and is self-contained: the user has no session,
+   * so it cannot load the webapps' assets. Loaded on the first failed login rather than with the
+   * handler, by the holder idiom.
+   */
+  private static final class PageTemplate {
+    private static final Optional<String> HTML = loadPageTemplate(PAGE_TEMPLATE_RESOURCE);
   }
 }
