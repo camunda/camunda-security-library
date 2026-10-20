@@ -37,3 +37,11 @@ The SPI lives in the starter because its signature uses `HttpServletRequest`, wh
 
 - Two places read the flag, the SPI and the check port, and CSL cannot check that they agree. A host that registers only the SPI, with the global flag off, gets a check port that approves every request.
 - The SPI runs for most requests, so it must be cheap and must not throw.
+
+## Alternatives Considered
+
+- **Put the flag on `ScopedSecurityDescriptor` and build one filter per chain.** Each scope's descriptor would carry its own `authorizations.enabled`, and the chain builder would create a filter with that value for each chain. Rejected for two reasons:
+  - `ScopedSecurityDescriptor` is a public record that hosts build themselves. A new component changes its constructor for every host.
+  - The primary chain has no descriptor, so it would still need a second way to get its flag.
+
+  The per-request SPI covers the primary chain and every scoped chain in one way, and changes no existing type.
