@@ -866,7 +866,7 @@ public WebAppAuthorizationEnabledPort webAppAuthorizationEnabledPort(final MySco
 }
 ```
 
-The SPI only decides whether the filter asks the check port. The default `AuthorizationCheckPort` approves every request while the global flag is off, so a host with per-scope flags must also supply an `AuthorizationCheckPort` that applies each scope's flag and rejects unknown scopes. Return `true` for an unresolvable scope so that port decides. Static resources, `/forbidden` and unauthenticated requests are never checked.
+The SPI only decides whether the filter asks the check port. The default `AuthorizationCheckPort` approves every request while the global flag is off, so a host with per-scope flags must also supply an `AuthorizationCheckPort` that applies each scope's flag and rejects unknown scopes. Return `true` for an unresolvable scope so that port decides. The filter does not ask the SPI for static resources or `/forbidden`, and never checks unauthenticated requests.
 
 ### Required and supplied beans for web app authorization
 
