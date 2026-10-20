@@ -14,6 +14,9 @@ import jakarta.servlet.http.HttpServletRequest;
  * with their own {@code authorizations.enabled} value (OC: one per physical tenant) plug in the
  * lookup here. Without a host bean, the global {@code camunda.security.authorizations.enabled}
  * applies to every request.
+ *
+ * <p>Only decides whether the filter asks the {@code AuthorizationCheckPort}, which must apply the
+ * same per-scope flag. See {@code docs/adr/0037-resolve-web-app-authorization-flag-per-request.md}.
  */
 @FunctionalInterface
 public interface WebAppAuthorizationEnabledPort {
