@@ -862,7 +862,7 @@ By default the filter skips the check for every request when `camunda.security.a
 ```java
 @Bean
 public WebAppAuthorizationEnabledPort webAppAuthorizationEnabledPort(final MyScopeResolver scopes) {
-  return request -> scopes.scopeOf(request).authorizationsEnabled();
+  return request -> scopes.find(request).map(Scope::authorizationsEnabled).orElse(true);
 }
 ```
 

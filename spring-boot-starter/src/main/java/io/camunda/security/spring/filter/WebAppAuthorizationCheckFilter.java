@@ -56,7 +56,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * only in the {@link AuthorizationCheckPort}, because hosts may supply their own {@code
  * AuthorizationCheckPort} that is unaware of the flag. Gating the filter keeps the webapp plane off
  * for every host when authorization is disabled, matching the data-plane {@code
- * AuthorizationService}.
+ * AuthorizationService}. With a {@link WebAppAuthorizationEnabledPort}, the host's check port must
+ * apply the same per-scope flag (ADR-0037).
  */
 public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
 

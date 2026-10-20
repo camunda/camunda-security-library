@@ -36,8 +36,9 @@ import org.springframework.context.annotation.Configuration;
  * camunda.security.authorizations.enabled}: when it is off, the filter passes every request through
  * without consulting the port. The flag is read from {@link CamundaSecurityLibraryProperties} (not
  * a {@code @ConditionalOnProperty}) so it works regardless of whether the host sets it via a
- * property or by mutating the bound properties bean. A host with per-scope values supplies a {@link
- * WebAppAuthorizationEnabledPort} bean, which replaces the global flag for every request.
+ * property or by mutating the bound properties bean before the filter is created. A host with
+ * per-scope values supplies a {@link WebAppAuthorizationEnabledPort} bean, which replaces the
+ * global flag for every request.
  */
 @Configuration
 @EnableConfigurationProperties(CamundaSecurityLibraryProperties.class)
