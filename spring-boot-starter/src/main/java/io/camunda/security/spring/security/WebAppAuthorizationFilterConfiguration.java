@@ -79,9 +79,9 @@ public class WebAppAuthorizationFilterConfiguration {
       final SecurityPathPort securityPathPort,
       final CamundaSecurityLibraryProperties properties,
       final ObjectProvider<WebAppAuthorizationEnabledPort> authorizationEnabled) {
+    final boolean globalEnabled = properties.getAuthorizations().isEnabled();
     return new WebAppAuthorizationCheckFilter(
-        authorizationEnabled.getIfAvailable(
-            () -> request -> properties.getAuthorizations().isEnabled()),
+        authorizationEnabled.getIfAvailable(() -> request -> globalEnabled),
         webAppProvider,
         authorizationCheckPort,
         webAppAccessDeniedHandler,

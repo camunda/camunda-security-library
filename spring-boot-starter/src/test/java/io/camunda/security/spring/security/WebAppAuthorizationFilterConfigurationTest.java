@@ -25,6 +25,7 @@ import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
+import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.authz.AuthorizationCheckerConfiguration;
 import io.camunda.security.spring.authz.AuthorizationConfiguration;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
@@ -186,6 +187,24 @@ class WebAppAuthorizationFilterConfigurationTest {
         .withPropertyValues("camunda.security.authorizations.enabled=false")
         .run(
             ctx -> {
+              final var response = new MockHttpServletResponse();
+              final var chain = filterOperateRequest(ctx, response);
+
+              assertThat(chain.getRequest()).isNotNull();
+              assertThat(response.getRedirectedUrl()).isNull();
+            });
+  }
+
+  @Test
+  void globalFlagIsReadOnceWhenFilterIsCreated() {
+    filterRunner
+        .withPropertyValues("camunda.security.authorizations.enabled=false")
+        .run(
+            ctx -> {
+              ctx.getBean(CamundaSecurityLibraryProperties.class)
+                  .getAuthorizations()
+                  .setEnabled(true);
+
               final var response = new MockHttpServletResponse();
               final var chain = filterOperateRequest(ctx, response);
 

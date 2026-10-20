@@ -161,6 +161,30 @@ class WebAppAuthorizationCheckFilterTest {
   }
 
   @Test
+  void staticResourceAndForbiddenPagePassWithoutAskingAuthorizationEnabledPort() throws Exception {
+    final WebAppAuthorizationEnabledPort failingPort =
+        request -> {
+          throw new IllegalStateException("must not be asked");
+        };
+    final var filter =
+        new WebAppAuthorizationCheckFilter(
+            failingPort,
+            new RecordingWebAppProvider("operate"),
+            new RecordingCheckPort(false),
+            new RecordingDeniedHandler(),
+            () -> alice(),
+            DEFAULT_STATIC_RESOURCE_SUFFIXES);
+
+    final var staticChain = new MockFilterChain();
+    filter.doFilter(request("/operate/assets/main.js"), new MockHttpServletResponse(), staticChain);
+    final var forbiddenChain = new MockFilterChain();
+    filter.doFilter(request("/operate/forbidden"), new MockHttpServletResponse(), forbiddenChain);
+
+    assertThat(staticChain.getRequest()).isNotNull();
+    assertThat(forbiddenChain.getRequest()).isNotNull();
+  }
+
+  @Test
   void allowedAccessPassesThrough() throws Exception {
     final var webAppProvider = new RecordingWebAppProvider("operate");
     final var checkPort = new RecordingCheckPort(true);

@@ -52,8 +52,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * principal is unauthenticated (null or anonymous), or {@link
  * WebAppProviderPort#webAppFor(HttpServletRequest)} returns empty.
  *
- * <p>The global-disable gate is applied here — at the enforcement choke point — rather than only in
- * the {@link AuthorizationCheckPort}, because hosts may supply their own {@code
+ * <p>The authorization-disabled gate is applied here — at the enforcement choke point — rather than
+ * only in the {@link AuthorizationCheckPort}, because hosts may supply their own {@code
  * AuthorizationCheckPort} that is unaware of the flag. Gating the filter keeps the webapp plane off
  * for every host when authorization is disabled, matching the data-plane {@code
  * AuthorizationService}.
@@ -116,12 +116,12 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
       final FilterChain filterChain)
       throws ServletException, IOException {
 
-    if (!authorizationEnabled.isAuthorizationEnabled(request)) {
+    if (isForbiddenPage(request) || isStaticResource(request)) {
       filterChain.doFilter(request, response);
       return;
     }
 
-    if (isForbiddenPage(request) || isStaticResource(request)) {
+    if (!authorizationEnabled.isAuthorizationEnabled(request)) {
       filterChain.doFilter(request, response);
       return;
     }
