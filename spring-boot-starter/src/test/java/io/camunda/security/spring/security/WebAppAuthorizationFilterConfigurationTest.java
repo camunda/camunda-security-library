@@ -196,6 +196,23 @@ class WebAppAuthorizationFilterConfigurationTest {
   }
 
   @Test
+  void globalFlagOffSkipsAuthenticationWithoutHostAuthorizationEnabledPort() {
+    runner
+        .withUserConfiguration(DenyingAuthorizationCheckPort.class, StubWebAppProvider.class)
+        .withBean(
+            CamundaAuthenticationProvider.class,
+            () ->
+                () -> {
+                  throw new IllegalStateException("must not resolve the authentication");
+                })
+        .withPropertyValues("camunda.security.authorizations.enabled=false")
+        .run(
+            ctx ->
+                assertThat(filterOperateRequest(ctx, new MockHttpServletResponse()).getRequest())
+                    .isNotNull());
+  }
+
+  @Test
   void globalFlagIsReadOnceWhenFilterIsCreated() {
     filterRunner
         .withPropertyValues("camunda.security.authorizations.enabled=false")

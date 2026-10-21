@@ -73,6 +73,7 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
                   .permissionType(PermissionType.ACCESS));
 
   private final WebAppAuthorizationEnabledPort authorizationEnabled;
+  private final boolean disabledForAllRequests;
   private final WebAppProviderPort webAppProvider;
   private final AuthorizationCheckPort authorizationCheckPort;
   private final WebAppAccessDeniedHandlerPort accessDeniedHandler;
@@ -88,6 +89,7 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
       final Set<String> staticResourceSuffixes) {
     this(
         request -> authorizationEnabled,
+        !authorizationEnabled,
         webAppProvider,
         authorizationCheckPort,
         accessDeniedHandler,
@@ -102,7 +104,26 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
       final WebAppAccessDeniedHandlerPort accessDeniedHandler,
       final CamundaAuthenticationProvider authenticationProvider,
       final Set<String> staticResourceSuffixes) {
+    this(
+        authorizationEnabled,
+        false,
+        webAppProvider,
+        authorizationCheckPort,
+        accessDeniedHandler,
+        authenticationProvider,
+        staticResourceSuffixes);
+  }
+
+  private WebAppAuthorizationCheckFilter(
+      final WebAppAuthorizationEnabledPort authorizationEnabled,
+      final boolean disabledForAllRequests,
+      final WebAppProviderPort webAppProvider,
+      final AuthorizationCheckPort authorizationCheckPort,
+      final WebAppAccessDeniedHandlerPort accessDeniedHandler,
+      final CamundaAuthenticationProvider authenticationProvider,
+      final Set<String> staticResourceSuffixes) {
     this.authorizationEnabled = authorizationEnabled;
+    this.disabledForAllRequests = disabledForAllRequests;
     this.webAppProvider = webAppProvider;
     this.authorizationCheckPort = authorizationCheckPort;
     this.accessDeniedHandler = accessDeniedHandler;
@@ -117,7 +138,7 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
       final FilterChain filterChain)
       throws ServletException, IOException {
 
-    if (isForbiddenPage(request) || isStaticResource(request)) {
+    if (disabledForAllRequests || isForbiddenPage(request) || isStaticResource(request)) {
       filterChain.doFilter(request, response);
       return;
     }

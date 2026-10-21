@@ -24,6 +24,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -118,7 +119,9 @@ class WebAppAuthorizationCheckFilterTest {
   @Test
   void authorizationDisabledPassesThroughWithoutCheck() throws Exception {
     // With authorization globally disabled, an authenticated principal on a resolved web app whose
-    // check port would deny access must still pass through — no port call, no denial.
+    // check port would deny access must still pass through — no authentication or web-app
+    // resolution, no port call, no denial.
+    final var authenticationCalls = new AtomicInteger();
     final var webAppProvider = new RecordingWebAppProvider("operate");
     final var checkPort = new RecordingCheckPort(false);
     final var deniedHandler = new RecordingDeniedHandler();
@@ -128,13 +131,18 @@ class WebAppAuthorizationCheckFilterTest {
             webAppProvider,
             checkPort,
             deniedHandler,
-            () -> alice(),
+            () -> {
+              authenticationCalls.incrementAndGet();
+              return alice();
+            },
             DEFAULT_STATIC_RESOURCE_SUFFIXES);
 
     final var chain = new MockFilterChain();
     filter.doFilter(request("/operate/processes"), new MockHttpServletResponse(), chain);
 
     assertThat(chain.getRequest()).isNotNull();
+    assertThat(authenticationCalls).hasValue(0);
+    assertThat(webAppProvider.callCount).isZero();
     assertThat(checkPort.callCount).isZero();
     assertThat(deniedHandler.callCount).isZero();
   }

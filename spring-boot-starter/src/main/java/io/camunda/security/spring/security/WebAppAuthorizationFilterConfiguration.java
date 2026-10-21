@@ -80,9 +80,18 @@ public class WebAppAuthorizationFilterConfiguration {
       final SecurityPathPort securityPathPort,
       final CamundaSecurityLibraryProperties properties,
       final ObjectProvider<WebAppAuthorizationEnabledPort> authorizationEnabled) {
-    final boolean globalEnabled = properties.getAuthorizations().isEnabled();
+    final var hostAuthorizationEnabled = authorizationEnabled.getIfAvailable();
+    if (hostAuthorizationEnabled == null) {
+      return new WebAppAuthorizationCheckFilter(
+          properties.getAuthorizations().isEnabled(),
+          webAppProvider,
+          authorizationCheckPort,
+          webAppAccessDeniedHandler,
+          authenticationProvider,
+          securityPathPort.staticResourceSuffixes());
+    }
     return new WebAppAuthorizationCheckFilter(
-        authorizationEnabled.getIfAvailable(() -> request -> globalEnabled),
+        hostAuthorizationEnabled,
         webAppProvider,
         authorizationCheckPort,
         webAppAccessDeniedHandler,
