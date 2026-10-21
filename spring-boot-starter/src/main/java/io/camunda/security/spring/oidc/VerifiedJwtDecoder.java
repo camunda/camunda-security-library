@@ -9,10 +9,10 @@ package io.camunda.security.spring.oidc;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcPrincipalClaims;
-import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory.OwnedDecoder;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -20,48 +20,99 @@ import org.springframework.security.oauth2.jwt.JwtException;
 
 /**
  * Decodes as its delegate, and returns each token as a {@link VerifiedJwt} with the principal
- * claims of the provider whose registration verified it. The owner comes from the decoder's own
- * routing, and the claims from the providers of the decoder's own scope, so the claim settings of a
- * token never come from a provider that did not verify it.
+ * claims of the provider whose registration verified it. The owner follows the routing of the
+ * decoder, and the claims come from the providers of the decoder's own scope, so the claim settings
+ * of a token never come from a provider that did not verify it.
+ *
+ * <p>The delegate is the decoder the public {@code OidcAccessTokenDecoderFactory} selection gives,
+ * so a host that overrides that selection keeps its decoder; the owner is computed from the same
+ * configuration by {@link OidcAccessTokenDecoderFactory#registrationIdByIssuer}.
  */
 final class VerifiedJwtDecoder implements JwtDecoder {
 
   private final JwtDecoder delegate;
   private final Function<String, String> registrationIdByIssuer;
-  private final Function<String, OidcPrincipalClaims> principalClaimsByRegistrationId;
+  private final Function<String, VerifiedJwtTag> tagByRegistrationId;
 
   private VerifiedJwtDecoder(
-      final OwnedDecoder owned,
-      final Function<String, OidcPrincipalClaims> principalClaimsByRegistrationId) {
-    delegate = owned.decoder();
-    registrationIdByIssuer = owned.registrationIdByIssuer();
-    this.principalClaimsByRegistrationId = principalClaimsByRegistrationId;
+      final JwtDecoder delegate,
+      final Function<String, String> registrationIdByIssuer,
+      final Function<String, VerifiedJwtTag> tagByRegistrationId) {
+    this.delegate = delegate;
+    this.registrationIdByIssuer = registrationIdByIssuer;
+    this.tagByRegistrationId = tagByRegistrationId;
   }
 
   /**
-   * @param owned the decoder, and the owner of each token as it routes them
-   * @param providers the providers of the decoder's scope, keyed by registrationId
-   * @param defaultSlot the default slot ({@code oidc.*}) of the scope, whose claims a named
-   *     provider inherits
-   * @param defaultConverterSlot the provider whose tokens use the default claim converter as they
-   *     are, the default slot of the global configuration; {@code null} for none
+   * For the library's default decoder: the claims only. Its UserInfo use is decided by the global
+   * claims provider, which routes as this decoder does.
+   *
+   * @param delegate the selected decoder
+   * @param registrationIdByIssuer the registrationId the decoder routes the tokens of an issuer to
+   * @param providers the providers of the decoder, keyed by registrationId
+   * @param defaultSlot the default slot ({@code oidc.*}), whose claims a named provider inherits,
+   *     and whose own tokens use the default claim converter
    */
-  static JwtDecoder of(
-      final OwnedDecoder owned,
+  static JwtDecoder withClaims(
+      final JwtDecoder delegate,
+      final Function<String, String> registrationIdByIssuer,
       final Map<String, OidcConfiguration> providers,
-      final OidcConfiguration defaultSlot,
-      final OidcConfiguration defaultConverterSlot) {
+      final OidcConfiguration defaultSlot) {
     final var inherited = defaultSlot != null ? defaultSlot : new OidcConfiguration();
     return new VerifiedJwtDecoder(
-        owned,
+        delegate,
+        registrationIdByIssuer,
         registrationId -> {
           final var provider = providers.get(registrationId);
           // A registration that no provider describes, such as one a host repository adds, and
-          // the default slot of the global configuration use the default converter.
-          if (provider == null || provider == defaultConverterSlot) {
-            return null;
+          // the default slot itself use the default converter.
+          return new VerifiedJwtTag(
+              provider == null || provider == defaultSlot
+                  ? null
+                  : OidcPrincipalClaims.resolve(provider, inherited),
+              null);
+        });
+  }
+
+  /**
+   * For the decoder of one scope: the claims, and the UserInfo use, of the scope's own provider.
+   * The claims converter and the claims provider are shared by all scopes, and would otherwise pick
+   * a provider of another scope by issuer.
+   *
+   * @param delegate the selected decoder
+   * @param registrationIdByIssuer the registrationId the decoder routes the tokens of an issuer to
+   * @param providers the providers of the scope, keyed by registrationId
+   * @param defaultSlot the default slot ({@code oidc.*}) of the scope, whose claims a named
+   *     provider inherits
+   * @param registrationById the registration of a registrationId, as the decoder resolved it
+   */
+  static JwtDecoder withClaimsAndUserInfo(
+      final JwtDecoder delegate,
+      final Function<String, String> registrationIdByIssuer,
+      final Map<String, OidcConfiguration> providers,
+      final OidcConfiguration defaultSlot,
+      final Function<String, ClientRegistration> registrationById) {
+    final var inherited = defaultSlot != null ? defaultSlot : new OidcConfiguration();
+    return new VerifiedJwtDecoder(
+        delegate,
+        registrationIdByIssuer,
+        registrationId -> {
+          final var provider = providers.get(registrationId);
+          if (provider == null) {
+            return new VerifiedJwtTag(null, new UserInfoUse(false, null));
           }
-          return OidcPrincipalClaims.resolve(provider, inherited);
+          final var claims = OidcPrincipalClaims.resolve(provider, inherited);
+          if (!provider.isUserInfoEnabled()) {
+            return new VerifiedJwtTag(claims, new UserInfoUse(false, null));
+          }
+          final var registration = registrationById.apply(registrationId);
+          return new VerifiedJwtTag(
+              claims,
+              new UserInfoUse(
+                  true,
+                  registration != null
+                      ? registration.getProviderDetails().getUserInfoEndpoint().getUri()
+                      : null));
         });
   }
 
@@ -71,7 +122,18 @@ final class VerifiedJwtDecoder implements JwtDecoder {
     final var registrationId =
         registrationIdByIssuer.apply(
             Objects.toString(jwt.getClaims().get(JwtClaimNames.ISS), null));
-    return new VerifiedJwt(
-        jwt, registrationId != null ? principalClaimsByRegistrationId.apply(registrationId) : null);
+    if (registrationId == null) {
+      return new VerifiedJwt(jwt, null);
+    }
+    final var tag = tagByRegistrationId.apply(registrationId);
+    return tag.userInfo() == null
+        ? new VerifiedJwt(jwt, tag.claims())
+        : new VerifiedJwt(jwt, tag.claims(), tag.userInfo().enabled(), tag.userInfo().uri());
   }
+
+  /** What a token carries: its claims, and its UserInfo use if the decoder decides it. */
+  private record VerifiedJwtTag(OidcPrincipalClaims claims, UserInfoUse userInfo) {}
+
+  /** Whether the verifying provider uses UserInfo, and the endpoint of its registration. */
+  private record UserInfoUse(boolean enabled, String uri) {}
 }

@@ -233,13 +233,7 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
     }
     final var userInfoUri = registration.getProviderDetails().getUserInfoEndpoint().getUri();
     if (!StringUtils.hasText(userInfoUri)) {
-      throw new AuthenticationServiceException(
-          ("UserInfo augmentation is enabled for issuer '%s' but the provider exposes no"
-                  + " userInfoUri, so its claims cannot be augmented. Ensure the discovery"
-                  + " document of the issuer includes a userinfo_endpoint, or configure"
-                  + " user-info-uri explicitly, or turn UserInfo off for the provider"
-                  + " (user-info-enabled=false).")
-              .formatted(issuer));
+      throw noUserInfoEndpoint(issuer);
     }
     return userInfoUri;
   }
@@ -299,7 +293,52 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
           "No UserInfo URI configured for issuer '{}'; returning JWT claims unchanged", issuer);
       return jwtClaims;
     }
+    return augment(jwtClaims, tokenValue, issuer, userInfoUri);
+  }
 
+  /**
+   * Takes the UserInfo use from the provider that verified the token, and not from the issuer: a
+   * decoder of one scope records it, and the provider this class finds by issuer can belong to
+   * another scope.
+   */
+  @Override
+  public Map<String, Object> claimsFor(
+      final Map<String, Object> jwtClaims,
+      final String tokenValue,
+      final boolean userInfoEnabled,
+      final String userInfoUri) {
+    if (!canAugment(jwtClaims, tokenValue)) {
+      return jwtClaims;
+    }
+    final String issuer = (String) jwtClaims.get("iss");
+    if (!userInfoEnabled) {
+      LOG.debug(
+          "The provider that verified the token of issuer '{}' does not use UserInfo; returning"
+              + " JWT claims unchanged",
+          issuer);
+      return jwtClaims;
+    }
+    if (!StringUtils.hasText(userInfoUri)) {
+      throw noUserInfoEndpoint(issuer);
+    }
+    return augment(jwtClaims, tokenValue, issuer, userInfoUri);
+  }
+
+  private static AuthenticationServiceException noUserInfoEndpoint(final String issuer) {
+    return new AuthenticationServiceException(
+        ("UserInfo augmentation is enabled for issuer '%s' but the provider exposes no"
+                + " userInfoUri, so its claims cannot be augmented. Ensure the discovery"
+                + " document of the issuer includes a userinfo_endpoint, or configure"
+                + " user-info-uri explicitly, or turn UserInfo off for the provider"
+                + " (user-info-enabled=false).")
+            .formatted(issuer));
+  }
+
+  private Map<String, Object> augment(
+      final Map<String, Object> jwtClaims,
+      final String tokenValue,
+      final String issuer,
+      final String userInfoUri) {
     final String key = cacheKey(jwtClaims);
     if (key == null) {
       // JWT has no jti and lacks sub+iat+exp — no stable key available; bypass cache and

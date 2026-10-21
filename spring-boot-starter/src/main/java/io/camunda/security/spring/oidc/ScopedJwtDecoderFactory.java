@@ -11,6 +11,8 @@ import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.util.StringUtils;
@@ -96,16 +98,21 @@ public final class ScopedJwtDecoderFactory {
                   final var validatorFactory =
                       new TokenValidatorFactory(
                           providers, OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of());
-                  // The claims come from this scope's providers: a provider of another scope
-                  // can declare the same issuer with other claim settings.
-                  return VerifiedJwtDecoder.of(
-                      decoderFactory.selectOwnedAccessTokenDecoder(
-                          providers,
-                          registrationId -> resolve(providers, registrationId, scopeDescription),
-                          validatorFactory),
+                  // Resolved once per registration and shared with the tagging below, which reads
+                  // the UserInfo endpoint of the registration that verified a token.
+                  final Map<String, ClientRegistration> resolved = new ConcurrentHashMap<>();
+                  final Function<String, ClientRegistration> resolveByRegistrationId =
+                      registrationId ->
+                          resolveOnce(resolved, providers, registrationId, scopeDescription);
+                  // The claims and UserInfo use come from this scope's providers: a provider of
+                  // another scope can declare the same issuer with other settings.
+                  return VerifiedJwtDecoder.withClaimsAndUserInfo(
+                      decoderFactory.selectAccessTokenDecoder(
+                          providers, resolveByRegistrationId, validatorFactory),
+                      OidcAccessTokenDecoderFactory.registrationIdByIssuer(providers),
                       providers,
                       authentication.getOidc(),
-                      null);
+                      resolveByRegistrationId);
                 }));
   }
 
@@ -114,6 +121,28 @@ public final class ScopedJwtDecoderFactory {
    * the issuer a token carries, so a provider that does not answer fails the tokens of its own
    * issuer, and the report names that provider and the scope.
    */
+  /**
+   * Resolves a registration at most once when it succeeds. Not under a lock, as {@code
+   * LazyClientRegistrationRepository} does it: a lock would hold another caller for the whole
+   * discovery timeout of an unreachable provider. The first result wins.
+   */
+  private ClientRegistration resolveOnce(
+      final Map<String, ClientRegistration> resolved,
+      final Map<String, OidcConfiguration> providers,
+      final String registrationId,
+      final String scopeDescription) {
+    final var cached = resolved.get(registrationId);
+    if (cached != null) {
+      return cached;
+    }
+    final var registration = resolve(providers, registrationId, scopeDescription);
+    if (registration == null) {
+      return null;
+    }
+    final var winner = resolved.putIfAbsent(registrationId, registration);
+    return winner != null ? winner : registration;
+  }
+
   private ClientRegistration resolve(
       final Map<String, OidcConfiguration> providers,
       final String registrationId,

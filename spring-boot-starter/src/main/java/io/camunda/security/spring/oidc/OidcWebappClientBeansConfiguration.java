@@ -107,11 +107,11 @@ public class OidcWebappClientBeansConfiguration {
               DeferredOidcResolution.resolve(
                   decoderSubject(lazy),
                   () ->
-                      VerifiedJwtDecoder.of(
-                          oidcAccessTokenDecoderFactory.selectOwnedAccessTokenDecoder(
+                      VerifiedJwtDecoder.withClaims(
+                          oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
                               providers, lazy::findByRegistrationId),
+                          OidcAccessTokenDecoderFactory.registrationIdByIssuer(providers),
                           providers,
-                          defaultSlot,
                           defaultSlot)));
     }
     final var providers = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
@@ -119,13 +119,15 @@ public class OidcWebappClientBeansConfiguration {
         () ->
             DeferredOidcResolution.resolve(
                 decoderSubject(clientRegistrationRepository),
-                () ->
-                    VerifiedJwtDecoder.of(
-                        oidcAccessTokenDecoderFactory.selectOwnedAccessTokenDecoder(
-                            iterableRegistrations(clientRegistrationRepository), providers),
-                        providers,
-                        defaultSlot,
-                        defaultSlot)));
+                () -> {
+                  final var registrations = iterableRegistrations(clientRegistrationRepository);
+                  return VerifiedJwtDecoder.withClaims(
+                      oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
+                          registrations, providers),
+                      OidcAccessTokenDecoderFactory.registrationIdByIssuer(registrations),
+                      providers,
+                      defaultSlot);
+                }));
   }
 
   /**

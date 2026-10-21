@@ -12,13 +12,16 @@ import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcPrincipalClaims;
-import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory.OwnedDecoder;
 import java.time.Instant;
 import java.util.Map;
+import java.util.function.Function;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 
@@ -26,35 +29,41 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 class VerifiedJwtDecoderTest {
 
   private static final String ISSUER = "https://idp.example.com";
+  private static final String USER_INFO_URI = ISSUER + "/userinfo";
 
   @Mock private JwtDecoder delegate;
+
+  @BeforeEach
+  void setUp() {
+    when(delegate.decode("token")).thenReturn(jwt());
+  }
 
   @Test
   void shouldTagTheTokenWithTheClaimsOfTheProviderThatVerifiedIt() {
     // given
     final var named = OidcConfiguration.builder().usernameClaim("upn").build();
     final var defaultSlot = OidcConfiguration.builder().clientIdClaim("azp").build();
-    final var decoder = decoder(Map.of("entra", named), "entra", defaultSlot, null);
+    final var decoder =
+        VerifiedJwtDecoder.withClaims(
+            delegate, owner("entra"), Map.of("entra", named), defaultSlot);
 
     // when
-    final var jwt = decoder.decode("token");
+    final var jwt = (VerifiedJwt) decoder.decode("token");
 
     // then - the provider's own claim, and the client-id claim it inherits from the default slot
-    assertThat(jwt)
-        .isInstanceOfSatisfying(
-            VerifiedJwt.class,
-            verified ->
-                assertThat(verified.principalClaims())
-                    .contains(OidcPrincipalClaims.resolve(named, defaultSlot)));
-    assertThat(((VerifiedJwt) jwt).principalClaims().orElseThrow().clientIdClaim())
-        .isEqualTo("azp");
+    assertThat(jwt.principalClaims()).contains(OidcPrincipalClaims.resolve(named, defaultSlot));
+    assertThat(jwt.principalClaims().orElseThrow().clientIdClaim()).isEqualTo("azp");
+    // the default decoder leaves the UserInfo use to the claims provider
+    assertThat(jwt.decidesUserInfo()).isFalse();
   }
 
   @Test
-  void shouldTagTheTokenOfTheDefaultConverterSlotWithoutClaims() {
+  void shouldTagTheTokenOfTheDefaultSlotWithoutClaims() {
     // given
     final var defaultSlot = OidcConfiguration.builder().usernameClaim("email").build();
-    final var decoder = decoder(Map.of("oidc", defaultSlot), "oidc", defaultSlot, defaultSlot);
+    final var decoder =
+        VerifiedJwtDecoder.withClaims(
+            delegate, owner("oidc"), Map.of("oidc", defaultSlot), defaultSlot);
 
     // when / then
     assertThat(((VerifiedJwt) decoder.decode("token")).principalClaims()).isEmpty();
@@ -64,23 +73,76 @@ class VerifiedJwtDecoderTest {
   @Test
   void shouldTagTheTokenOfAnUnconfiguredRegistrationWithoutClaims() {
     // given
-    final var decoder = decoder(Map.of(), "host-only", new OidcConfiguration(), null);
+    final var decoder =
+        VerifiedJwtDecoder.withClaims(
+            delegate, owner("host-only"), Map.of(), new OidcConfiguration());
 
     // when / then
     assertThat(((VerifiedJwt) decoder.decode("token")).principalClaims()).isEmpty();
   }
 
-  private JwtDecoder decoder(
-      final Map<String, OidcConfiguration> providers,
-      final String owner,
-      final OidcConfiguration defaultSlot,
-      final OidcConfiguration defaultConverterSlot) {
-    when(delegate.decode("token")).thenReturn(jwt());
-    return VerifiedJwtDecoder.of(
-        new OwnedDecoder(delegate, issuer -> ISSUER.equals(issuer) ? owner : null),
-        providers,
-        defaultSlot,
-        defaultConverterSlot);
+  @Test
+  void shouldTagTheTokenOfAScopeWithTheUserInfoEndpointOfItsProvider() {
+    // given
+    final var provider = OidcConfiguration.builder().userInfoEnabled(true).build();
+    final var decoder =
+        VerifiedJwtDecoder.withClaimsAndUserInfo(
+            delegate,
+            owner("b"),
+            Map.of("b", provider),
+            new OidcConfiguration(),
+            registrations("b", USER_INFO_URI));
+
+    // when
+    final var jwt = (VerifiedJwt) decoder.decode("token");
+
+    // then
+    assertThat(jwt.decidesUserInfo()).isTrue();
+    assertThat(jwt.userInfoEnabled()).isTrue();
+    assertThat(jwt.userInfoUri()).isEqualTo(USER_INFO_URI);
+  }
+
+  /** The scope's provider disables UserInfo: the token says so, and needs no registration. */
+  @Test
+  void shouldTagTheTokenOfAScopeWhoseProviderDisablesUserInfo() {
+    // given
+    final var provider = OidcConfiguration.builder().userInfoEnabled(false).build();
+    final var decoder =
+        VerifiedJwtDecoder.withClaimsAndUserInfo(
+            delegate,
+            owner("b"),
+            Map.of("b", provider),
+            new OidcConfiguration(),
+            registrationId -> {
+              throw new AssertionError("no registration needed");
+            });
+
+    // when
+    final var jwt = (VerifiedJwt) decoder.decode("token");
+
+    // then
+    assertThat(jwt.decidesUserInfo()).isTrue();
+    assertThat(jwt.userInfoEnabled()).isFalse();
+  }
+
+  private static Function<String, String> owner(final String registrationId) {
+    return issuer -> ISSUER.equals(issuer) ? registrationId : null;
+  }
+
+  private static Function<String, ClientRegistration> registrations(
+      final String registrationId, final String userInfoUri) {
+    final var registration =
+        ClientRegistration.withRegistrationId(registrationId)
+            .clientId("client")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("{baseUrl}/cb")
+            .authorizationUri(ISSUER + "/auth")
+            .tokenUri(ISSUER + "/token")
+            .jwkSetUri(ISSUER + "/jwks")
+            .userInfoUri(userInfoUri)
+            .issuerUri(ISSUER)
+            .build();
+    return id -> registrationId.equals(id) ? registration : null;
   }
 
   private static Jwt jwt() {

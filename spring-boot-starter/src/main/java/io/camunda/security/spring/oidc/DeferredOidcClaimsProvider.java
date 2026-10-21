@@ -51,6 +51,19 @@ public final class DeferredOidcClaimsProvider implements OidcClaimsProvider {
     return DeferredOidcResolution.resolve(subject, delegate).claimsFor(jwtClaims, tokenValue);
   }
 
+  @Override
+  public Map<String, Object> claimsFor(
+      final Map<String, Object> jwtClaims,
+      final String tokenValue,
+      final boolean userInfoEnabled,
+      final String userInfoUri) {
+    if (!CachingOidcClaimsProvider.canAugment(jwtClaims, tokenValue)) {
+      return jwtClaims;
+    }
+    return DeferredOidcResolution.resolve(subject, delegate)
+        .claimsFor(jwtClaims, tokenValue, userInfoEnabled, userInfoUri);
+  }
+
   /**
    * Reports a failed build as a failure of the server, and not as a refused credential, because the
    * token is not the reason. An unreachable issuer would otherwise reach the caller as {@code
