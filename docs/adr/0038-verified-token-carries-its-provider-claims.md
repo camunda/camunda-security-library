@@ -20,7 +20,22 @@ The decoders do not route tokens by one global rule:
 - Each scoped API chain builds its own decoder from the providers of its scope (`ScopedJwtDecoderFactory`), and a scope can declare other providers, or other claim settings, than the global configuration.
 - Since [#61896](https://github.com/camunda/camunda/issues/61896), a decoder also accepts a token whose issuer differs from a configured issuer-uri only by a trailing slash.
 
-A map keyed by issuer alone cannot know which of these decoders verified a token. For example, the global configuration declares A at `https://idp` (`username-claim=a_user`) and B at `https://idp/` (`username-claim=b_user`), and a scope holds only A. The scope's decoder verifies a token of `https://idp/` with A's registration, and the map selects B by issuer. A token with `a_user=alice` and `b_user=bob` then authenticates as Bob, under settings of a provider that never verified it. Every rule for the shared map, merging or separating issuers that differ only by a slash, leaves a scope whose decoder disagrees with it.
+A map keyed by issuer alone cannot know which of these decoders verified a token. An example:
+
+| | Provider A | Provider B |
+|---|---|---|
+| Configured `issuer-uri` | `https://idp` | `https://idp/` |
+| `username-claim` | `a_user` | `b_user` |
+| In the global configuration | yes | yes |
+| In scope S | yes | no |
+
+The identity provider signs its tokens with `iss: https://idp/`, and one such token holds `a_user: alice` and `b_user: bob`.
+
+1. The token reaches the API chain of scope S. S's decoder knows only A, and it accepts `https://idp/` for A, because the two issuers differ only by the trailing slash (#61896). A verifies the token, so the user is Alice.
+2. `OidcTokenAuthenticationConverter` then looks the claim settings up in the global map, by the token's issuer `https://idp/`. That key belongs to B, so the map returns B's settings.
+3. With B's `username-claim=b_user`, the token authenticates as **Bob**, under the settings of a provider that never verified it.
+
+Changing how the global map treats the two slash forms does not help. If it keeps them apart, it gives this token to B, as above. If it merges them, the first declared provider owns both forms, and a scope that holds only the other provider gets the same mismatch the other way round. The map has one answer per issuer, while each scope can need another.
 
 How can the claim settings of a token always come from the provider that verified it?
 
