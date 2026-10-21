@@ -160,6 +160,60 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
   }
 
   /**
+   * Bearer-only, with a decoder of the host and no login repository: the decoder's routing is
+   * unknown, so providers whose issuer-uris differ only by a trailing slash keep their own claim
+   * settings, and B's token is not mapped with the settings of A, declared first.
+   */
+  @Test
+  void keepsTwinIssuersApartForADecoderOfTheHostWithoutARepository() {
+    baseRunner()
+        .withBean(
+            JwtDecoder.class,
+            () ->
+                token -> {
+                  throw new UnsupportedOperationException("host decoder");
+                })
+        .withPropertyValues(
+            "camunda.security.authentication.webapp-enabled=false",
+            "camunda.security.authentication.providers.oidc.a.client-id=a-client",
+            "camunda.security.authentication.providers.oidc.a.issuer-uri=https://idp.example.com/realm",
+            "camunda.security.authentication.providers.oidc.a.username-claim=a_user",
+            "camunda.security.authentication.providers.oidc.b.client-id=b-client",
+            "camunda.security.authentication.providers.oidc.b.issuer-uri=https://idp.example.com/realm/",
+            "camunda.security.authentication.providers.oidc.b.username-claim=b_user")
+        .run(
+            ctx -> {
+              assertThat(ctx).doesNotHaveBean(ClientRegistrationRepository.class);
+              assertThat(usernameOf(ctx, "https://idp.example.com/realm")).isEqualTo("alice");
+              assertThat(usernameOf(ctx, "https://idp.example.com/realm/")).isEqualTo("bob");
+            });
+  }
+
+  /**
+   * Neither a repository nor a decoder bean: the scoped decoders route by the configuration, where
+   * twin issuers are one issuer, owned by the provider declared first.
+   */
+  @Test
+  void mergesTwinIssuersWithoutARepositoryOrADecoder() {
+    baseRunner()
+        .withPropertyValues(
+            "camunda.security.authentication.webapp-enabled=false",
+            "camunda.security.authentication.providers.oidc.a.client-id=a-client",
+            "camunda.security.authentication.providers.oidc.a.issuer-uri=https://idp.example.com/realm",
+            "camunda.security.authentication.providers.oidc.a.username-claim=a_user",
+            "camunda.security.authentication.providers.oidc.b.client-id=b-client",
+            "camunda.security.authentication.providers.oidc.b.issuer-uri=https://idp.example.com/realm/",
+            "camunda.security.authentication.providers.oidc.b.username-claim=b_user")
+        .run(
+            ctx -> {
+              assertThat(ctx).doesNotHaveBean(ClientRegistrationRepository.class);
+              assertThat(ctx).doesNotHaveBean(JwtDecoder.class);
+              assertThat(usernameOf(ctx, "https://idp.example.com/realm")).isEqualTo("alice");
+              assertThat(usernameOf(ctx, "https://idp.example.com/realm/")).isEqualTo("alice");
+            });
+  }
+
+  /**
    * A host's own decoder need not use the login registrations, so the converters keep the lookup by
    * configured issuer-uri: provider X keeps its claim settings although the enumerable login
    * repository holds only Y.

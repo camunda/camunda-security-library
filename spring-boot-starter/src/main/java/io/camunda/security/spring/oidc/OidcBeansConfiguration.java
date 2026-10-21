@@ -140,7 +140,8 @@ public class OidcBeansConfiguration {
    *       issuer. Two providers that share an issuer resolve by the order of those providers.
    *   <li>The library's default decoder over a repository of the host routes by the issuers its
    *       registrations carry, see {@link RegisteredIssuerClaimsConverters}.
-   *   <li>Without a repository, the scoped decoders route by the configuration, slash-tolerant.
+   *   <li>Without a repository or a decoder bean, the scoped decoders route by the configuration,
+   *       slash-tolerant.
    *   <li>A decoder the host builds itself keeps the exact lookup by configured issuer-uri, since
    *       nothing here knows how it routes.
    * </ul>
@@ -192,7 +193,11 @@ public class OidcBeansConfiguration {
       return new TokenClaimsConvertersByIssuer(
           byIssuer(lazy.providers(), true, byRegistrationId), true);
     }
-    final var routesByConfiguration = repository == null;
+    // Neither a repository nor a decoder bean: the scoped decoders, which route by the
+    // configuration. A decoder bean without a repository is the host's own, as in a bearer-only
+    // setup, so it gets the exact lookup.
+    final var routesByConfiguration =
+        repository == null && jwtDecoderProvider.stream().findAny().isEmpty();
     return new TokenClaimsConvertersByIssuer(
         byIssuer(configured, routesByConfiguration, byRegistrationId), routesByConfiguration);
   }
