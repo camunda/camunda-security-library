@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.filter;
 
+import io.camunda.security.spring.oidc.UrlRedaction;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -15,6 +16,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +31,7 @@ import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.web.authentication.logout.LogoutHandler;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -36,14 +39,23 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * Filter that transparently refreshes an expired OAuth2 access token using the stored refresh
  * token.
  *
- * <p>If the token cannot be refreshed (no refresh token available, refresh fails, etc.) the user is
- * forcibly logged out and an {@link OAuth2AuthenticationException} is thrown so the authentication
- * failure handler can take over.
+ * <p>If the token cannot be refreshed (no refresh token available, the IdP rejects the refresh
+ * token, etc.) the user is forcibly logged out and an {@link OAuth2AuthenticationException} is
+ * thrown so the authentication failure handler can take over. A refresh that fails because the IdP
+ * is unreachable or erroring keeps the session and answers 503, so the client can retry.
  */
 public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
 
   private static final Logger LOG = LoggerFactory.getLogger(OAuth2RefreshTokenFilter.class);
-  private static final int MAX_LOGGED_ERROR_MESSAGE_LENGTH = 200;
+  private static final int MAX_LOGGED_VALUE_LENGTH = 200;
+  private static final String SUBJECT_CLAIM = "sub";
+
+  /** Refresh failures after which the refresh token can never succeed; see isSessionEnding. */
+  private static final Set<String> SESSION_ENDING_ERROR_CODES =
+      Set.of(
+          OAuth2ErrorCodes.INVALID_GRANT,
+          OAuth2ErrorCodes.INVALID_TOKEN,
+          OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
 
   private final Duration clockSkew = Duration.ofSeconds(60L);
   private final Duration doubleClockSkew = clockSkew.multipliedBy(2);
@@ -114,34 +126,54 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
           "Access token expired, refresh token does not exist");
     }
 
-    OAuth2AuthorizedClient refreshedAuthorizedClient = null;
+    final OAuth2AuthorizedClient refreshedAuthorizedClient;
     try {
       refreshedAuthorizedClient =
           refreshAccessToken(authenticationToken, authorizedClient, request, response);
-
-      if (refreshedAuthorizedClient == null) {
-        throw new OAuth2AuthenticationException("Failed to refresh access token");
-      }
-
-      // Same instance returned means the manager declined to refresh — treat as failure since the
-      // token is already known-expired.
-      if (refreshedAuthorizedClient == authorizedClient) {
-        throw new OAuth2AuthenticationException(
-            "Re-authorization is not supported or not required for the client");
-      }
-
-    } catch (final OAuth2AuthenticationException | OAuth2AuthorizationException e) {
-      // A failed refresh (e.g. invalid_grant) surfaces as OAuth2AuthorizationException, not
-      // OAuth2AuthenticationException; uncaught, it escapes to the container and logs as ERROR.
-      LOG.warn(
-          "Failed to refresh access token for principal '{}': {}",
-          sanitizeForLog(authenticationToken.getName()),
-          sanitizeForLog(e.getMessage()));
+    } catch (final OAuth2AuthenticationException e) {
+      logRefreshFailure("logging the user out", authenticationToken, e.getError(), e);
       logoutAndThrowAuthenticationException(
           request, response, authenticationToken, "refresh_token_failed", e);
+      return;
+    } catch (final OAuth2AuthorizationException e) {
+      // A failed refresh surfaces as OAuth2AuthorizationException, not
+      // OAuth2AuthenticationException; uncaught, it escapes to the container and logs as ERROR.
+      if (!isSessionEnding(e.getError())) {
+        // The IdP is unreachable or failing (server_error, temporarily_unavailable, an I/O error
+        // wrapped as invalid_token_response, ...). The refresh token may still be good, so keep
+        // the session and let the client retry, rather than log out every user whose access
+        // token expires during an outage.
+        logRefreshFailure("keeping the session", authenticationToken, e.getError(), e);
+        response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+        return;
+      }
+      logRefreshFailure("logging the user out", authenticationToken, e.getError(), e);
+      logoutAndThrowAuthenticationException(
+          request, response, authenticationToken, "refresh_token_failed", e);
+      return;
     }
 
-    if (refreshedAuthorizedClient == null || hasTokenExpired(refreshedAuthorizedClient)) {
+    if (refreshedAuthorizedClient == null) {
+      logoutAndThrowAuthenticationException(
+          request,
+          response,
+          authenticationToken,
+          "refresh_token_failed",
+          "Failed to refresh access token");
+    }
+
+    // Same instance returned means the manager declined to refresh — treat as failure since the
+    // token is already known-expired.
+    if (refreshedAuthorizedClient == authorizedClient) {
+      logoutAndThrowAuthenticationException(
+          request,
+          response,
+          authenticationToken,
+          "refresh_token_failed",
+          "Re-authorization is not supported or not required for the client");
+    }
+
+    if (hasTokenExpired(refreshedAuthorizedClient)) {
       logoutAndThrowAuthenticationException(
           request, response, authenticationToken, "access_token_expired", "Access token expired");
     }
@@ -223,6 +255,48 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
     return authorizedClientManager.authorize(authorizeRequest);
   }
 
+  /**
+   * Whether a refresh failure means the refresh token can never work again, so the session has to
+   * end: the IdP rejected the grant itself (expired, revoked or already rotated) or no longer lets
+   * this client refresh. Anything else is treated as transient.
+   */
+  private static boolean isSessionEnding(final OAuth2Error error) {
+    return error != null && SESSION_ENDING_ERROR_CODES.contains(error.getErrorCode());
+  }
+
+  /**
+   * Logs the error code (stable and diagnostic) at WARN and keeps the IdP's free-text description
+   * at DEBUG. Both are IdP-controlled, so both are escaped and bounded. The principal is identified
+   * by its {@code sub} claim rather than {@link OAuth2AuthenticationToken#getName()}, which follows
+   * {@code user-name-attribute} and is often an email address.
+   */
+  private static void logRefreshFailure(
+      final String outcome,
+      final OAuth2AuthenticationToken authenticationToken,
+      final OAuth2Error error,
+      final RuntimeException e) {
+    final var subject = forLog(authenticationToken.getPrincipal().getAttribute(SUBJECT_CLAIM));
+    final var registrationId = forLog(authenticationToken.getAuthorizedClientRegistrationId());
+    final var errorCode = forLog(error == null ? null : error.getErrorCode());
+    LOG.warn(
+        "Refresh token exchange failed for subject '{}' on registration '{}', {}: code={}",
+        subject,
+        registrationId,
+        outcome,
+        errorCode);
+    LOG.debug(
+        "Refresh token exchange failure for subject '{}' on registration '{}': {}",
+        subject,
+        registrationId,
+        forLog(e.getMessage()));
+  }
+
+  private static String forLog(final Object value) {
+    return value == null
+        ? "n/a"
+        : UrlRedaction.escapeControlCharacters(value.toString(), MAX_LOGGED_VALUE_LENGTH);
+  }
+
   private void logoutAndThrowAuthenticationException(
       final HttpServletRequest request,
       final HttpServletResponse response,
@@ -241,22 +315,6 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
       final Throwable e) {
     forceLogout(authenticationToken, request, response);
     throw new OAuth2AuthenticationException(new OAuth2Error(reasonCode), e);
-  }
-
-  /**
-   * Both the IdP's OAuth2 error message and the OAuth2 principal name are provider/IdP-controlled
-   * and are otherwise logged verbatim; strip newlines to prevent log forging and bound the length
-   * so a misbehaving IdP can't flood the log.
-   */
-  private static String sanitizeForLog(final String value) {
-    if (value == null) {
-      return "n/a";
-    }
-
-    final String singleLine = value.replaceAll("[\\r\\n]+", " ").strip();
-    return singleLine.length() > MAX_LOGGED_ERROR_MESSAGE_LENGTH
-        ? singleLine.substring(0, MAX_LOGGED_ERROR_MESSAGE_LENGTH) + "...(truncated)"
-        : singleLine;
   }
 
   private void forceLogout(

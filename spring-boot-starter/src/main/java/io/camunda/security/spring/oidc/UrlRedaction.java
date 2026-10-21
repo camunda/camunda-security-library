@@ -121,8 +121,9 @@ public final class UrlRedaction {
    * the one place this logic lives, so a value forging a log line this way cannot be fixed in one
    * caller and missed in another, the way U+2028 was across two review rounds. Used both for a URL
    * value here, for {@code ScopedClientRegistrationFactory#sanitizeForLog}'s registrationId, which
-   * is never a URL and so does not otherwise go through this class, and for the request path and
-   * error code {@code OAuth2AuthenticationExceptionHandler} logs.
+   * is never a URL and so does not otherwise go through this class, for the request path and error
+   * code {@code OAuth2AuthenticationExceptionHandler} logs, and for the values {@code
+   * OAuth2RefreshTokenFilter} logs.
    */
   public static String escapeControlCharacters(final String value) {
     if (value == null || value.chars().noneMatch(UrlRedaction::mustBeEscaped)) {
@@ -133,6 +134,23 @@ public final class UrlRedaction {
         .chars()
         .forEach(c -> escaped.append(mustBeEscaped(c) ? String.format("\\u%04x", c) : (char) c));
     return escaped.toString();
+  }
+
+  /**
+   * {@link #escapeControlCharacters(String)}, then cut to at most {@code maxLength} characters and
+   * marked with an ellipsis, for a value whose size the library does not control — for example an
+   * IdP's free-text {@code error_description}, which {@code OAuth2RefreshTokenFilter} logs on a
+   * failed refresh. The bound applies to the escaped value, so it bounds what reaches the log.
+   *
+   * @param value the value to log, possibly null
+   * @param maxLength the most characters to keep before the ellipsis
+   * @return the escaped, bounded value, or null for null
+   */
+  public static String escapeControlCharacters(final String value, final int maxLength) {
+    final var escaped = escapeControlCharacters(value);
+    return escaped == null || escaped.length() <= maxLength
+        ? escaped
+        : escaped.substring(0, maxLength) + ELLIPSIS;
   }
 
   private static boolean mustBeEscaped(final int c) {

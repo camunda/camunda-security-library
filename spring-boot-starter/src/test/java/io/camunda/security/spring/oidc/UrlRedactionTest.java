@@ -137,4 +137,21 @@ class UrlRedactionTest {
   void shouldTolerateNull() {
     assertThat(UrlRedaction.redact(null)).isNull();
   }
+
+  @Test
+  void shouldTruncateAnEscapedValueLongerThanTheBound() {
+    assertThat(UrlRedaction.escapeControlCharacters("abcdef", 4)).isEqualTo("abcd…");
+  }
+
+  /** The bound applies after escaping, so escapes cannot inflate the logged value past it. */
+  @Test
+  void shouldApplyTheBoundToTheEscapedValue() {
+    assertThat(UrlRedaction.escapeControlCharacters("\n\n", 8)).isEqualTo("\\u000a\\u…");
+  }
+
+  @Test
+  void shouldLeaveAValueWithinTheBoundUntruncated() {
+    assertThat(UrlRedaction.escapeControlCharacters("abcd", 4)).isEqualTo("abcd");
+    assertThat(UrlRedaction.escapeControlCharacters(null, 4)).isNull();
+  }
 }

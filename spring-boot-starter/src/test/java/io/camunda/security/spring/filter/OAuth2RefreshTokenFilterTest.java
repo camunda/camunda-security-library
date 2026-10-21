@@ -20,11 +20,16 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import jakarta.servlet.FilterChain;
+import jakarta.servlet.http.HttpServletResponse;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
@@ -42,11 +47,13 @@ import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepo
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2RefreshToken;
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.logout.LogoutHandler;
+import org.springframework.web.client.ResourceAccessException;
 
 @ExtendWith(MockitoExtension.class)
 class OAuth2RefreshTokenFilterTest {
@@ -58,12 +65,34 @@ class OAuth2RefreshTokenFilterTest {
   @Mock private LogoutHandler logoutHandler;
   @Mock private FilterChain chain;
 
+  private MockHttpServletRequest request;
+  private MockHttpServletResponse response;
+  private ListAppender<ILoggingEvent> appender;
+  private Level originalLevel;
+
+  @BeforeEach
+  void setUp() {
+    request = new MockHttpServletRequest();
+    response = new MockHttpServletResponse();
+    final Logger logger = filterLogger();
+    originalLevel = logger.getLevel();
+    logger.setLevel(Level.DEBUG);
+    appender = new ListAppender<>();
+    appender.start();
+    logger.addAppender(appender);
+  }
+
+  @AfterEach
+  void tearDown() {
+    final Logger logger = filterLogger();
+    logger.detachAppender(appender);
+    logger.setLevel(originalLevel);
+  }
+
   @Test
   void shouldPassThroughWhenNoOAuth2AuthenticationPresent() throws Exception {
     // given - an unauthenticated request (empty security context)
     final var filter = filter(new SecurityContextImpl());
-    final var request = new MockHttpServletRequest();
-    final var response = new MockHttpServletResponse();
 
     // when
     filter.doFilter(request, response, chain);
@@ -77,21 +106,14 @@ class OAuth2RefreshTokenFilterTest {
   void shouldLogoutWhenNoAuthorizedClientCanBeLoaded() throws Exception {
     // given - the repository has nothing stored for this principal/registration
     final OAuth2AuthenticationToken authenticationToken = authenticationToken();
-    when(authorizedClientRepository.loadAuthorizedClient(
-            eq(REGISTRATION_ID), eq(authenticationToken), any()))
-        .thenReturn(null);
-    final var filter = filter(authenticationToken);
-    final var request = new MockHttpServletRequest();
-    final var response = new MockHttpServletResponse();
+    givenStoredClient(authenticationToken, null);
 
     // when
-    final OAuth2AuthenticationException thrown =
-        catchThrowableOfType(
-            () -> filter.doFilter(request, response, chain), OAuth2AuthenticationException.class);
+    final OAuth2AuthenticationException thrown = runFilterExpectingLogout(authenticationToken);
 
     // then
     assertThat(thrown.getError().getErrorCode()).isEqualTo("unauthorized_client");
-    verify(logoutHandler).logout(eq(request), eq(response), eq(authenticationToken));
+    verify(logoutHandler).logout(request, response, authenticationToken);
     verify(chain, never()).doFilter(any(), any());
   }
 
@@ -99,16 +121,10 @@ class OAuth2RefreshTokenFilterTest {
   void shouldPassThroughWhenAccessTokenNotExpired() throws Exception {
     // given - a still-valid access token
     final OAuth2AuthenticationToken authenticationToken = authenticationToken();
-    final OAuth2AuthorizedClient authorizedClient = authorizedClient(false, true);
-    when(authorizedClientRepository.loadAuthorizedClient(
-            eq(REGISTRATION_ID), eq(authenticationToken), any()))
-        .thenReturn(authorizedClient);
-    final var filter = filter(authenticationToken);
-    final var request = new MockHttpServletRequest();
-    final var response = new MockHttpServletResponse();
+    givenStoredClient(authenticationToken, authorizedClient(false, true));
 
     // when
-    filter.doFilter(request, response, chain);
+    filter(authenticationToken).doFilter(request, response, chain);
 
     // then - no refresh is attempted
     verify(chain).doFilter(request, response);
@@ -119,107 +135,226 @@ class OAuth2RefreshTokenFilterTest {
   void shouldLogoutWhenAccessTokenExpiredAndNoRefreshTokenExists() throws Exception {
     // given - an expired access token with no refresh token to fall back on
     final OAuth2AuthenticationToken authenticationToken = authenticationToken();
-    final OAuth2AuthorizedClient authorizedClient = authorizedClient(true, false);
-    when(authorizedClientRepository.loadAuthorizedClient(
-            eq(REGISTRATION_ID), eq(authenticationToken), any()))
-        .thenReturn(authorizedClient);
-    final var filter = filter(authenticationToken);
-    final var request = new MockHttpServletRequest();
-    final var response = new MockHttpServletResponse();
+    givenStoredClient(authenticationToken, authorizedClient(true, false));
 
     // when
-    final OAuth2AuthenticationException thrown =
-        catchThrowableOfType(
-            () -> filter.doFilter(request, response, chain), OAuth2AuthenticationException.class);
+    final OAuth2AuthenticationException thrown = runFilterExpectingLogout(authenticationToken);
 
     // then
     assertThat(thrown.getError().getErrorCode()).isEqualTo("access_token_expired");
-    verify(logoutHandler).logout(eq(request), eq(response), eq(authenticationToken));
+    verify(logoutHandler).logout(request, response, authenticationToken);
     verify(authorizedClientManager, never()).authorize(any());
   }
 
-  @Test
-  void shouldLogWarnAndConvertToControlledLogoutWhenRefreshFailsWithInvalidGrant()
-      throws Exception {
-    // given - an expired access token with a refresh token, whose refresh attempt fails because
-    // the refresh token itself is no longer valid (invalid_grant), as reported by the IdP
-    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
-    final OAuth2AuthorizedClient authorizedClient = authorizedClient(true, true);
-    when(authorizedClientRepository.loadAuthorizedClient(
-            eq(REGISTRATION_ID), eq(authenticationToken), any()))
-        .thenReturn(authorizedClient);
-    // DefaultOAuth2AuthorizedClientManager#authorize rethrows the provider's
+  /**
+   * The IdP says the refresh token itself is no longer valid, so no retry can succeed: the session
+   * ends.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {"invalid_grant", "invalid_token", "unauthorized_client"})
+  void shouldLogoutWhenIdpRejectsTheRefreshToken(final String errorCode) throws Exception {
+    // given - DefaultOAuth2AuthorizedClientManager#authorize rethrows the provider's
     // OAuth2AuthorizationException as-is on a failed refresh
+    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    givenStoredClient(authenticationToken, authorizedClient(true, true));
     when(authorizedClientManager.authorize(any()))
         .thenThrow(
             new ClientAuthorizationException(
-                new OAuth2Error("invalid_grant"), REGISTRATION_ID, "Token is not active"));
-    final var filter = filter(authenticationToken);
-    final var request = new MockHttpServletRequest();
-    final var response = new MockHttpServletResponse();
+                new OAuth2Error(errorCode), REGISTRATION_ID, "Token is not active"));
 
-    final ListAppender<ILoggingEvent> appender = attachAppender();
-    final OAuth2AuthenticationException thrown;
-    try {
-      // when / then - the raw ClientAuthorizationException must not escape the filter: it is
-      // caught and converted to the controlled OAuth2AuthenticationException + logout flow
-      thrown =
-          catchThrowableOfType(
-              () -> filter.doFilter(request, response, chain), OAuth2AuthenticationException.class);
-    } finally {
-      detachAppender(appender);
-    }
+    // when - the raw ClientAuthorizationException must not escape the filter: it is converted to
+    // the controlled OAuth2AuthenticationException + logout flow
+    final OAuth2AuthenticationException thrown = runFilterExpectingLogout(authenticationToken);
 
-    assertThat(thrown).isNotInstanceOf(ClientAuthorizationException.class);
+    // then - the failure handler relies on the cause
     assertThat(thrown.getError().getErrorCode()).isEqualTo("refresh_token_failed");
-    verify(logoutHandler).logout(eq(request), eq(response), eq(authenticationToken));
+    assertThat(thrown).hasCauseInstanceOf(ClientAuthorizationException.class);
+    assertThat(authenticationToken.isAuthenticated()).isFalse();
+    verify(logoutHandler).logout(request, response, authenticationToken);
     verify(chain, never()).doFilter(any(), any());
-    assertThat(appender.list)
-        .anySatisfy(
-            event -> {
-              assertThat(event.getLevel()).isEqualTo(Level.WARN);
-              assertThat(event.getFormattedMessage()).contains("Token is not active");
-            });
+    assertThat(warnings())
+        .singleElement()
+        .satisfies(
+            message ->
+                assertThat(message)
+                    .contains("subject 'user-1'")
+                    .contains("registration '" + REGISTRATION_ID + "'")
+                    .contains("logging the user out")
+                    .contains("code=" + errorCode));
+  }
+
+  /**
+   * An IdP outage must not log out every user whose access token expires during it: the refresh
+   * token may still be good, so the session survives for a retry.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {"server_error", "temporarily_unavailable", "invalid_token_response"})
+  void shouldKeepTheSessionWhenTheRefreshFailsTransiently(final String errorCode) throws Exception {
+    // given
+    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    givenStoredClient(authenticationToken, authorizedClient(true, true));
+    when(authorizedClientManager.authorize(any()))
+        .thenThrow(
+            new ClientAuthorizationException(
+                new OAuth2Error(errorCode), REGISTRATION_ID, "IdP is unhappy"));
+
+    // when
+    filter(authenticationToken).doFilter(request, response, chain);
+
+    // then
+    assertSessionKeptWithServiceUnavailable(authenticationToken);
+    assertThat(warnings())
+        .singleElement()
+        .satisfies(
+            message ->
+                assertThat(message).contains("keeping the session").contains("code=" + errorCode));
+  }
+
+  /** How Spring's token response client reports an I/O failure (timeout, connection refused). */
+  @Test
+  void shouldKeepTheSessionWhenTheTokenEndpointIsUnreachable() throws Exception {
+    // given
+    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    givenStoredClient(authenticationToken, authorizedClient(true, true));
+    when(authorizedClientManager.authorize(any()))
+        .thenThrow(
+            new OAuth2AuthorizationException(
+                new OAuth2Error("invalid_token_response"),
+                new ResourceAccessException("Connection refused")));
+
+    // when
+    filter(authenticationToken).doFilter(request, response, chain);
+
+    // then
+    assertSessionKeptWithServiceUnavailable(authenticationToken);
   }
 
   @Test
-  void shouldSanitizeAndTruncateOverlongMultilineErrorMessageBeforeLogging() throws Exception {
-    // given - a refresh failure whose message AND principal name (both provider-controlled)
-    // contain injected newlines (a log-forging attempt); the message also far exceeds any
-    // reasonable log line length
+  void shouldLogoutWhenAuthorizedClientManagerThrowsAuthenticationException() throws Exception {
+    // given
+    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    givenStoredClient(authenticationToken, authorizedClient(true, true));
+    when(authorizedClientManager.authorize(any()))
+        .thenThrow(new OAuth2AuthenticationException(new OAuth2Error("invalid_request")));
+
+    // when
+    final OAuth2AuthenticationException thrown = runFilterExpectingLogout(authenticationToken);
+
+    // then
+    assertThat(thrown.getError().getErrorCode()).isEqualTo("refresh_token_failed");
+    assertThat(thrown).hasCauseInstanceOf(OAuth2AuthenticationException.class);
+    verify(logoutHandler).logout(request, response, authenticationToken);
+    assertThat(warnings())
+        .singleElement()
+        .satisfies(message -> assertThat(message).contains("code=invalid_request"));
+  }
+
+  /** The WARN line carries no free text from the IdP; the description goes to DEBUG only. */
+  @Test
+  void shouldLogTheIdpDescriptionOnlyAtDebug() throws Exception {
+    // given
+    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    givenRefreshFailingWith(authenticationToken, "Token is not active");
+
+    // when
+    runFilterExpectingLogout(authenticationToken);
+
+    // then
+    assertThat(warnings())
+        .singleElement()
+        .satisfies(message -> assertThat(message).doesNotContain("Token is not active"));
+    assertThat(loggedDescription()).contains("Token is not active");
+  }
+
+  @Test
+  void shouldEscapeAndBoundTheIdpDescription() throws Exception {
+    // given - a log-forging attempt that also far exceeds any reasonable log line length
+    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    givenRefreshFailingWith(
+        authenticationToken,
+        "invalid_grant\nWARN some.other.Logger -- forged" + (char) 0x2028 + "x".repeat(400));
+
+    // when
+    runFilterExpectingLogout(authenticationToken);
+
+    // then
+    final String description = loggedDescription();
+    assertThat(description).doesNotContain("\n").doesNotContain(" ").contains("\\u000a");
+    assertThat(description).hasSize(200 + "…".length()).endsWith("…");
+  }
+
+  @Test
+  void shouldEscapeThePrincipalSubject() throws Exception {
+    // given - a provider-controlled subject that tries to forge a log line
     final OAuth2AuthenticationToken authenticationToken =
-        authenticationToken("user-1\nWARN some.other.Logger -- fabricated principal name");
-    final OAuth2AuthorizedClient authorizedClient = authorizedClient(true, true);
-    when(authorizedClientRepository.loadAuthorizedClient(
-            eq(REGISTRATION_ID), eq(authenticationToken), any()))
-        .thenReturn(authorizedClient);
-    final String maliciousMessage =
-        "invalid_grant\nWARN some.other.Logger -- fabricated log line\r\n" + "x".repeat(400);
+        authenticationToken(Map.of("sub", "user-1\nWARN some.other.Logger -- forged"), "sub");
+    givenRefreshFailingWith(authenticationToken, "Token is not active");
+
+    // when
+    runFilterExpectingLogout(authenticationToken);
+
+    // then
+    assertThat(warnings())
+        .singleElement()
+        .satisfies(
+            message ->
+                assertThat(message)
+                    .doesNotContain("\n")
+                    .contains("subject 'user-1\\u000aWARN some.other.Logger -- forged'"));
+  }
+
+  /** getName() follows user-name-attribute, which is often an email address: PII in the log. */
+  @Test
+  void shouldIdentifyThePrincipalBySubjectRatherThanUserName() throws Exception {
+    // given
+    final OAuth2AuthenticationToken authenticationToken =
+        authenticationToken(Map.of("sub", "user-1", "email", "jane@example.com"), "email");
+    givenRefreshFailingWith(authenticationToken, "Token is not active");
+
+    // when
+    runFilterExpectingLogout(authenticationToken);
+
+    // then
+    assertThat(warnings())
+        .singleElement()
+        .satisfies(
+            message ->
+                assertThat(message)
+                    .contains("subject 'user-1'")
+                    .doesNotContain("jane@example.com"));
+  }
+
+  @Test
+  void shouldLogPlaceholderWhenTheIdpSendsNoDescription() throws Exception {
+    // given
+    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    givenStoredClient(authenticationToken, authorizedClient(true, true));
     when(authorizedClientManager.authorize(any()))
         .thenThrow(
-            new ClientAuthorizationException(
-                new OAuth2Error("invalid_grant"), REGISTRATION_ID, maliciousMessage));
-    final var filter = filter(authenticationToken);
-    final var request = new MockHttpServletRequest();
-    final var response = new MockHttpServletResponse();
+            new OAuth2AuthorizationException(new OAuth2Error("invalid_grant"), (String) null));
 
-    final ListAppender<ILoggingEvent> appender = attachAppender();
-    try {
-      catchThrowableOfType(
-          () -> filter.doFilter(request, response, chain), OAuth2AuthenticationException.class);
-    } finally {
-      detachAppender(appender);
-    }
+    // when
+    runFilterExpectingLogout(authenticationToken);
 
-    // then - the logged line is single-line and bounded, regardless of what the IdP sent
-    assertThat(appender.list)
-        .anySatisfy(
-            event -> {
-              assertThat(event.getLevel()).isEqualTo(Level.WARN);
-              final String formatted = event.getFormattedMessage();
-              assertThat(formatted).doesNotContain("\n").doesNotContain("\r");
-              assertThat(formatted).contains("...(truncated)");
-            });
+    // then
+    assertThat(loggedDescription()).isEqualTo("n/a");
+  }
+
+  @Test
+  void shouldLogoutWhenAuthorizedClientManagerReturnsNull() throws Exception {
+    // given
+    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    givenStoredClient(authenticationToken, authorizedClient(true, true));
+    when(authorizedClientManager.authorize(any())).thenReturn(null);
+
+    // when
+    final OAuth2AuthenticationException thrown = runFilterExpectingLogout(authenticationToken);
+
+    // then
+    assertThat(thrown.getError().getErrorCode()).isEqualTo("refresh_token_failed");
+    assertThat(thrown).hasMessage("Failed to refresh access token");
+    verify(logoutHandler).logout(request, response, authenticationToken);
+    verify(chain, never()).doFilter(any(), any());
   }
 
   @Test
@@ -228,22 +363,15 @@ class OAuth2RefreshTokenFilterTest {
     // is not supported for this client
     final OAuth2AuthenticationToken authenticationToken = authenticationToken();
     final OAuth2AuthorizedClient authorizedClient = authorizedClient(true, true);
-    when(authorizedClientRepository.loadAuthorizedClient(
-            eq(REGISTRATION_ID), eq(authenticationToken), any()))
-        .thenReturn(authorizedClient);
+    givenStoredClient(authenticationToken, authorizedClient);
     when(authorizedClientManager.authorize(any())).thenReturn(authorizedClient);
-    final var filter = filter(authenticationToken);
-    final var request = new MockHttpServletRequest();
-    final var response = new MockHttpServletResponse();
 
     // when
-    final OAuth2AuthenticationException thrown =
-        catchThrowableOfType(
-            () -> filter.doFilter(request, response, chain), OAuth2AuthenticationException.class);
+    final OAuth2AuthenticationException thrown = runFilterExpectingLogout(authenticationToken);
 
     // then
     assertThat(thrown.getError().getErrorCode()).isEqualTo("refresh_token_failed");
-    verify(logoutHandler).logout(eq(request), eq(response), eq(authenticationToken));
+    verify(logoutHandler).logout(request, response, authenticationToken);
     verify(chain, never()).doFilter(any(), any());
   }
 
@@ -252,24 +380,15 @@ class OAuth2RefreshTokenFilterTest {
     // given - the manager hands back a genuinely new client, but its access token is already
     // expired too (e.g. a clock-skewed IdP)
     final OAuth2AuthenticationToken authenticationToken = authenticationToken();
-    final OAuth2AuthorizedClient authorizedClient = authorizedClient(true, true);
-    final OAuth2AuthorizedClient stillExpiredRefreshedClient = authorizedClient(true, true);
-    when(authorizedClientRepository.loadAuthorizedClient(
-            eq(REGISTRATION_ID), eq(authenticationToken), any()))
-        .thenReturn(authorizedClient);
-    when(authorizedClientManager.authorize(any())).thenReturn(stillExpiredRefreshedClient);
-    final var filter = filter(authenticationToken);
-    final var request = new MockHttpServletRequest();
-    final var response = new MockHttpServletResponse();
+    givenStoredClient(authenticationToken, authorizedClient(true, true));
+    when(authorizedClientManager.authorize(any())).thenReturn(authorizedClient(true, true));
 
     // when
-    final OAuth2AuthenticationException thrown =
-        catchThrowableOfType(
-            () -> filter.doFilter(request, response, chain), OAuth2AuthenticationException.class);
+    final OAuth2AuthenticationException thrown = runFilterExpectingLogout(authenticationToken);
 
     // then
     assertThat(thrown.getError().getErrorCode()).isEqualTo("access_token_expired");
-    verify(logoutHandler).logout(eq(request), eq(response), eq(authenticationToken));
+    verify(logoutHandler).logout(request, response, authenticationToken);
     verify(chain, never()).doFilter(any(), any());
   }
 
@@ -277,22 +396,64 @@ class OAuth2RefreshTokenFilterTest {
   void shouldContinueFilterChainWhenRefreshSucceeds() throws Exception {
     // given - the manager successfully refreshes into a new, unexpired client
     final OAuth2AuthenticationToken authenticationToken = authenticationToken();
-    final OAuth2AuthorizedClient authorizedClient = authorizedClient(true, true);
-    final OAuth2AuthorizedClient refreshedClient = authorizedClient(false, true);
-    when(authorizedClientRepository.loadAuthorizedClient(
-            eq(REGISTRATION_ID), eq(authenticationToken), any()))
-        .thenReturn(authorizedClient);
-    when(authorizedClientManager.authorize(any())).thenReturn(refreshedClient);
-    final var filter = filter(authenticationToken);
-    final var request = new MockHttpServletRequest();
-    final var response = new MockHttpServletResponse();
+    givenStoredClient(authenticationToken, authorizedClient(true, true));
+    when(authorizedClientManager.authorize(any())).thenReturn(authorizedClient(false, true));
 
     // when
-    filter.doFilter(request, response, chain);
+    filter(authenticationToken).doFilter(request, response, chain);
 
     // then
     verify(chain).doFilter(request, response);
     verify(logoutHandler, never()).logout(any(), any(), any());
+  }
+
+  private void givenStoredClient(
+      final OAuth2AuthenticationToken authenticationToken,
+      final OAuth2AuthorizedClient authorizedClient) {
+    when(authorizedClientRepository.loadAuthorizedClient(
+            eq(REGISTRATION_ID), eq(authenticationToken), any()))
+        .thenReturn(authorizedClient);
+  }
+
+  private void givenRefreshFailingWith(
+      final OAuth2AuthenticationToken authenticationToken, final String description) {
+    givenStoredClient(authenticationToken, authorizedClient(true, true));
+    when(authorizedClientManager.authorize(any()))
+        .thenThrow(
+            new ClientAuthorizationException(
+                new OAuth2Error("invalid_grant"), REGISTRATION_ID, description));
+  }
+
+  private OAuth2AuthenticationException runFilterExpectingLogout(
+      final OAuth2AuthenticationToken authenticationToken) {
+    final var filter = filter(authenticationToken);
+    return catchThrowableOfType(
+        () -> filter.doFilter(request, response, chain), OAuth2AuthenticationException.class);
+  }
+
+  private void assertSessionKeptWithServiceUnavailable(
+      final OAuth2AuthenticationToken authenticationToken) throws Exception {
+    assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+    assertThat(authenticationToken.isAuthenticated()).isTrue();
+    verify(logoutHandler, never()).logout(any(), any(), any());
+    verify(chain, never()).doFilter(any(), any());
+  }
+
+  private List<String> warnings() {
+    return appender.list.stream()
+        .filter(event -> event.getLevel() == Level.WARN)
+        .map(ILoggingEvent::getFormattedMessage)
+        .toList();
+  }
+
+  /** The IdP description is the last argument of the DEBUG failure line. */
+  private String loggedDescription() {
+    return appender.list.stream()
+        .filter(event -> event.getLevel() == Level.DEBUG)
+        .filter(event -> event.getMessage().startsWith("Refresh token exchange failure"))
+        .map(event -> String.valueOf(event.getArgumentArray()[2]))
+        .findFirst()
+        .orElseThrow();
   }
 
   private OAuth2RefreshTokenFilter filter(final SecurityContext securityContext) {
@@ -304,14 +465,19 @@ class OAuth2RefreshTokenFilterTest {
     return filter(new SecurityContextImpl(authenticationToken));
   }
 
-  private static OAuth2AuthenticationToken authenticationToken() {
-    return authenticationToken("user-1");
+  private static Logger filterLogger() {
+    return (Logger) LoggerFactory.getLogger(OAuth2RefreshTokenFilter.class);
   }
 
-  private static OAuth2AuthenticationToken authenticationToken(final String principalName) {
+  private static OAuth2AuthenticationToken authenticationToken() {
+    return authenticationToken(Map.of("sub", "user-1"), "sub");
+  }
+
+  private static OAuth2AuthenticationToken authenticationToken(
+      final Map<String, Object> attributes, final String nameAttributeKey) {
     final OAuth2User principal =
         new DefaultOAuth2User(
-            List.of(new SimpleGrantedAuthority("ROLE_USER")), Map.of("sub", principalName), "sub");
+            List.of(new SimpleGrantedAuthority("ROLE_USER")), attributes, nameAttributeKey);
     return new OAuth2AuthenticationToken(principal, principal.getAuthorities(), REGISTRATION_ID);
   }
 
@@ -344,18 +510,5 @@ class OAuth2RefreshTokenFilterTest {
     final OAuth2RefreshToken refreshToken =
         new OAuth2RefreshToken("refresh-token", Instant.now().minusSeconds(120));
     return new OAuth2AuthorizedClient(clientRegistration, "user-1", accessToken, refreshToken);
-  }
-
-  private static ListAppender<ILoggingEvent> attachAppender() {
-    final Logger logger = (Logger) LoggerFactory.getLogger(OAuth2RefreshTokenFilter.class);
-    final ListAppender<ILoggingEvent> appender = new ListAppender<>();
-    appender.start();
-    logger.addAppender(appender);
-    return appender;
-  }
-
-  private static void detachAppender(final ListAppender<ILoggingEvent> appender) {
-    final Logger logger = (Logger) LoggerFactory.getLogger(OAuth2RefreshTokenFilter.class);
-    logger.detachAppender(appender);
   }
 }
