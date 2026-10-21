@@ -36,7 +36,7 @@ The SPI lives in the starter because its signature uses `HttpServletRequest`, wh
 **Negative / accepted trade-offs**
 
 - Two places read the flag, the SPI and the check port, and CSL cannot check that they agree. A host that registers only the SPI, with the global flag off, gets a check port that approves every request.
-- The SPI runs for every checked request, so it must be cheap and must not throw.
+- The SPI runs for every checked request, so it must be cheap. If it throws, the filter logs a warning and treats authorization as enabled.
 
 ## Alternatives Considered
 

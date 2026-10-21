@@ -16,7 +16,8 @@ import jakarta.servlet.http.HttpServletRequest;
  * applies to every request.
  *
  * <p>Only decides whether the filter asks the {@code AuthorizationCheckPort}, which must apply the
- * same per-scope flag. See {@code docs/adr/0037-resolve-web-app-authorization-flag-per-request.md}.
+ * same per-scope flag. If the lookup throws, the filter logs a warning and treats authorization as
+ * enabled. See {@code docs/adr/0037-resolve-web-app-authorization-flag-per-request.md}.
  */
 @FunctionalInterface
 public interface WebAppAuthorizationEnabledPort {
