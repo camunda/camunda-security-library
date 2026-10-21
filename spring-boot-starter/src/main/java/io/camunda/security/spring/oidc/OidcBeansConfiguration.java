@@ -153,12 +153,16 @@ public class OidcBeansConfiguration {
     // here. Filtered first: a blank/null registrationId must not win ownership over a valid
     // provider sharing its issuer, or the claims converter is built from the wrong configuration
     // while the decoder verifies the token with the valid one.
+    final var providers =
+        ScopedClientRegistrationFactory.withoutBlankRegistrationIds(configurations);
+    final var routesByConfiguration =
+        routesByConfiguration(clientRegistrationRepositoryProvider.getIfAvailable());
+    if (!routesByConfiguration) {
+      requireNoTrailingSlashTwins(providers);
+    }
     final var winningRegistrationIdByIssuer =
         IssuerOwnership.registrationIdByIssuer(
-            ScopedClientRegistrationFactory.withoutBlankRegistrationIds(configurations),
-            LOG,
-            "the claim configuration",
-            routesByConfiguration(clientRegistrationRepositoryProvider.getIfAvailable()));
+            providers, LOG, "the claim configuration", routesByConfiguration);
     final Map<String, LazyTokenClaimsConverter> byIssuer = new LinkedHashMap<>();
     winningRegistrationIdByIssuer.forEach(
         (issuerUri, registrationId) -> {
@@ -178,7 +182,43 @@ public class OidcBeansConfiguration {
                   contextPropagator);
           byIssuer.put(issuerUri, converter);
         });
-    return new TokenClaimsConvertersByIssuer(byIssuer);
+    return new TokenClaimsConvertersByIssuer(byIssuer, routesByConfiguration);
+  }
+
+  /**
+   * With a host's own repository, the decoder routes the host's resolved registrations exactly,
+   * while this map is keyed by the configured issuer-uris. Two providers whose issuer-uris differ
+   * only by a trailing slash can both resolve to the provider's issuer (see {@code
+   * ScopedClientRegistrationFactory}), and then the decoder and this map could pick different
+   * providers for the same token, so a token would be mapped with another provider's claim
+   * settings. Such a configuration is ambiguous, and before discovery tolerated the slash it failed
+   * anyway, so it is rejected at the start rather than guessed.
+   */
+  private static void requireNoTrailingSlashTwins(final Map<String, OidcConfiguration> providers) {
+    final Map<String, String> registrationIdByIssuer = new LinkedHashMap<>();
+    providers.forEach(
+        (registrationId, configuration) -> {
+          final var issuerUri = configuration.getIssuerUri();
+          if (issuerUri == null || issuerUri.isBlank()) {
+            return;
+          }
+          final var twin = IssuerUris.withToggledTrailingSlash(issuerUri);
+          final var twinRegistrationId = twin != null ? registrationIdByIssuer.get(twin) : null;
+          if (twinRegistrationId != null) {
+            throw new IllegalStateException(
+                ("OIDC providers '%s' and '%s' declare issuer-uris that differ only by a trailing"
+                        + " slash ('%s' and '%s'). With the ClientRegistrationRepository of the host"
+                        + " application, their tokens cannot be told apart, so one provider's claim"
+                        + " settings could be applied to the other's tokens. Remove one of them, or"
+                        + " give both the issuer the identity provider declares.")
+                    .formatted(
+                        UrlRedaction.escapeControlCharacters(twinRegistrationId),
+                        UrlRedaction.escapeControlCharacters(registrationId),
+                        UrlRedaction.redact(twin),
+                        UrlRedaction.redact(issuerUri)));
+          }
+          registrationIdByIssuer.putIfAbsent(issuerUri, registrationId);
+        });
   }
 
   /**

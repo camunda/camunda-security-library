@@ -72,12 +72,12 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
 
   /**
    * The test context supplies a host ClientRegistrationRepository, which the access-token decoder
-   * routes exactly (IssuerRegistrations.ofResolved). Providers whose issuers differ only by a
-   * trailing slash then each verify their own tokens, so each must keep its own claim settings:
-   * otherwise a token verified for "b" would be mapped with "a"'s username claim.
+   * routes exactly by its resolved registrations. Providers whose issuer-uris differ only by a
+   * trailing slash can both resolve to the provider's issuer, so the decoder and the converter map
+   * could pick different providers for one token. The configuration is rejected at the start.
    */
   @Test
-  void keepsTheClaimSettingsOfTwinIssuersApartForAHostRepository() {
+  void rejectsTwinIssuersForAHostRepository() {
     runner
         .withPropertyValues(
             "camunda.security.authentication.oidc.client-id=default-client",
@@ -89,20 +89,36 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
             "camunda.security.authentication.providers.oidc.b.issuer-uri=https://idp.example.com/realm/",
             "camunda.security.authentication.providers.oidc.b.username-claim=b_user")
         .run(
+            ctx ->
+                assertThat(ctx)
+                    .hasFailed()
+                    .getFailure()
+                    .rootCause()
+                    .hasMessageContaining("differ only by a trailing slash")
+                    .hasMessageContaining("'a'")
+                    .hasMessageContaining("'b'"));
+  }
+
+  /**
+   * For a host repository the lookup is exact. A token of a host registration that has no entry
+   * here, at the slash twin of a configured issuer, gets the default converter, not the twin's.
+   */
+  @Test
+  void usesTheDefaultConverterForAHostRegistrationWithoutAnEntry() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=default-client",
+            "camunda.security.authentication.oidc.issuer-uri=" + DEFAULT_ISSUER,
+            "camunda.security.authentication.providers.oidc.a.client-id=a-client",
+            "camunda.security.authentication.providers.oidc.a.issuer-uri=https://idp.example.com/realm",
+            "camunda.security.authentication.providers.oidc.a.username-claim=a_user")
+        .run(
             ctx -> {
-              final var claims = Map.<String, Object>of("a_user", "alice", "b_user", "bob");
+              final var defaultConverter = ctx.getBean(LazyTokenClaimsConverter.class);
               assertThat(
-                      byIssuer(ctx)
-                          .get("https://idp.example.com/realm")
-                          .convert(claims)
-                          .authenticatedUsername())
-                  .isEqualTo("alice");
-              assertThat(
-                      byIssuer(ctx)
-                          .get("https://idp.example.com/realm/")
-                          .convert(claims)
-                          .authenticatedUsername())
-                  .isEqualTo("bob");
+                      ctx.getBean(TokenClaimsConvertersByIssuer.class)
+                          .getOrDefault("https://idp.example.com/realm/", defaultConverter))
+                  .isSameAs(defaultConverter);
             });
   }
 

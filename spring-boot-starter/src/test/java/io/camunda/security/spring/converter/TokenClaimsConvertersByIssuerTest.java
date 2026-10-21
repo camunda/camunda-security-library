@@ -48,12 +48,26 @@ class TokenClaimsConvertersByIssuerTest {
   void returnsConverterForAnIssuerThatDiffersOnlyByATrailingSlash() {
     final var converters =
         new TokenClaimsConvertersByIssuer(
-            Map.of("https://login.microsoftonline.com/tenant/v2.0/", entraConverter));
+            Map.of("https://login.microsoftonline.com/tenant/v2.0/", entraConverter), true);
 
     assertThat(
             converters.getOrDefault(
                 "https://login.microsoftonline.com/tenant/v2.0", defaultConverter))
         .isSameAs(entraConverter);
+  }
+
+  /** Without the tolerance, the default lookup stays exact, as hosts relied on before. */
+  @Test
+  void looksUpExactlyByDefault() {
+    final var converters =
+        new TokenClaimsConvertersByIssuer(
+            Map.of("https://login.microsoftonline.com/tenant/v2.0/", entraConverter));
+
+    assertThat(
+            converters.getOrDefault(
+                "https://login.microsoftonline.com/tenant/v2.0", defaultConverter))
+        .isSameAs(defaultConverter);
+    assertThat(converters.toleratesTrailingSlash()).isFalse();
   }
 
   @Test

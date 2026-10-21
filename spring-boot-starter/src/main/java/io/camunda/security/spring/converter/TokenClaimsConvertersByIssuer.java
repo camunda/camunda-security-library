@@ -24,20 +24,33 @@ import java.util.Map;
  * exists (the default), a bare-{@code Map} injection point would silently receive {@code
  * {"lazyTokenClaimsConverter": <default instance>}} instead of this issuer-keyed map.
  */
-public record TokenClaimsConvertersByIssuer(Map<String, LazyTokenClaimsConverter> byIssuer) {
+public record TokenClaimsConvertersByIssuer(
+    Map<String, LazyTokenClaimsConverter> byIssuer, boolean toleratesTrailingSlash) {
 
   public TokenClaimsConvertersByIssuer {
     byIssuer = byIssuer != null ? Map.copyOf(byIssuer) : Map.of();
   }
 
+  /** Exact lookup by issuer, for a map whose keys are the issuers tokens carry. */
+  public TokenClaimsConvertersByIssuer(final Map<String, LazyTokenClaimsConverter> byIssuer) {
+    this(byIssuer, false);
+  }
+
   /**
    * @param issuer the bearer token's issuer, or {@code null} if absent
-   * @param defaultConverter returned when {@code issuer} is {@code null} or has no entry here, in
-   *     either trailing-slash form (see {@link IssuerUris})
+   * @param defaultConverter returned when {@code issuer} is {@code null} or has no entry here. With
+   *     {@link #toleratesTrailingSlash}, an entry for the issuer's other trailing-slash form counts
+   *     too (see {@link IssuerUris}): set only where the access-token decoder routes by the
+   *     provider configuration too. A decoder that routes a host's resolved registrations exactly
+   *     needs an exact lookup here, or a token of a registration without an entry would get its
+   *     slash twin's converter instead of the default.
    */
   public LazyTokenClaimsConverter getOrDefault(
       final String issuer, final LazyTokenClaimsConverter defaultConverter) {
-    final var converter = IssuerUris.lookup(byIssuer, issuer);
+    final var converter =
+        toleratesTrailingSlash
+            ? IssuerUris.lookup(byIssuer, issuer)
+            : issuer != null ? byIssuer.get(issuer) : null;
     return converter != null ? converter : defaultConverter;
   }
 }
