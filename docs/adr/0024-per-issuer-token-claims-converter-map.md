@@ -8,7 +8,7 @@ status: Accepted
 
 ## Status
 
-Accepted. Partly superseded by [ADR-0034](0034-named-providers-inherit-principal-claims.md): a named provider now uses the claims of the default slot that it does not set.
+Accepted. Partly superseded by [ADR-0034](0034-named-providers-inherit-principal-claims.md): a named provider now uses the claims of the default slot that it does not set. Also partly superseded by [ADR-0038](0038-verified-token-carries-its-provider-claims.md): library-built decoders carry the verifying provider's principal-claim settings on the token; issuer-map selection remains for host-built decoders.
 
 ## Context
 
