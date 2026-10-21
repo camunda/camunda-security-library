@@ -14,7 +14,6 @@ import io.camunda.security.spring.security.ProtectedOidcWebappCondition;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
@@ -87,14 +86,19 @@ public class OidcWebappClientBeansConfiguration {
    *
    * <p>The issuer requirement needs no network access, so the method checks it here, on the
    * providers the decoder routes by, and a configuration error still stops the start.
+   *
+   * <p>Each token comes back as a {@link VerifiedJwt} with the principal claims of the provider
+   * that verified it, see {@link VerifiedJwtDecoder}.
    */
   @Bean
   @ConditionalOnMissingBean
   public JwtDecoder jwtDecoder(
       final ClientRegistrationRepository clientRegistrationRepository,
       final OidcProviderConfigurationPort oidcProviderConfigurationPort,
-      final OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory) {
+      final OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory,
+      final CamundaSecurityLibraryProperties properties) {
     requireIterable(clientRegistrationRepository);
+    final var defaultSlot = properties.getAuthentication().getOidc();
     if (clientRegistrationRepository instanceof final LazyClientRegistrationRepository lazy) {
       final var providers = lazy.providers();
       oidcAccessTokenDecoderFactory.validateProvidersHaveIssuer(providers);
@@ -103,44 +107,25 @@ public class OidcWebappClientBeansConfiguration {
               DeferredOidcResolution.resolve(
                   decoderSubject(lazy),
                   () ->
-                      oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
-                          providers, lazy::findByRegistrationId)),
-          DecoderRouting.byProviders(lazy));
+                      VerifiedJwtDecoder.of(
+                          oidcAccessTokenDecoderFactory.selectOwnedAccessTokenDecoder(
+                              providers, lazy::findByRegistrationId),
+                          providers,
+                          defaultSlot,
+                          defaultSlot)));
     }
     final var providers = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
-    // Each attempt to build the decoder reads the repository again, so a repository that the host
-    // fixes after a failed attempt recovers. The registrations of the attempt that succeeds are
-    // published to the claim converters: a dynamic host repository can change between two reads,
-    // and both must decide the owner of an issuer from the same registrations.
-    final var published = new AtomicReference<List<ClientRegistration>>();
     return new DeferredJwtDecoder(
         () ->
             DeferredOidcResolution.resolve(
                 decoderSubject(clientRegistrationRepository),
-                () -> {
-                  final var registrations =
-                      List.copyOf(iterableRegistrations(clientRegistrationRepository));
-                  final var decoder =
-                      oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
-                          registrations, providers);
-                  published.set(registrations);
-                  return decoder;
-                }),
-        DecoderRouting.byRegistrations(() -> publishedRegistrations(published)));
-  }
-
-  /**
-   * The registrations the decoder was built from. The claim converters read them only for a token
-   * the decoder verified, so the decoder is built by then.
-   */
-  private static List<ClientRegistration> publishedRegistrations(
-      final AtomicReference<List<ClientRegistration>> published) {
-    final var registrations = published.get();
-    if (registrations == null) {
-      throw new IllegalStateException(
-          "The OIDC access-token decoder has not been built yet, so its registrations are unknown.");
-    }
-    return registrations;
+                () ->
+                    VerifiedJwtDecoder.of(
+                        oidcAccessTokenDecoderFactory.selectOwnedAccessTokenDecoder(
+                            iterableRegistrations(clientRegistrationRepository), providers),
+                        providers,
+                        defaultSlot,
+                        defaultSlot)));
   }
 
   /**

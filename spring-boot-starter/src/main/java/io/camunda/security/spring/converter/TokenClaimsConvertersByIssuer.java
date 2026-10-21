@@ -7,10 +7,14 @@
  */
 package io.camunda.security.spring.converter;
 
+import io.camunda.security.api.model.config.oidc.OidcPrincipalClaims;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
-import io.camunda.security.spring.oidc.IssuerUris;
+import io.camunda.security.spring.oidc.VerifiedJwt;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtClaimNames;
 
 /**
  * Per-issuer {@link LazyTokenClaimsConverter} lookup for {@link OidcTokenAuthenticationConverter}.
@@ -25,53 +29,50 @@ import java.util.function.Function;
  * exists (the default), a bare-{@code Map} injection point would silently receive {@code
  * {"lazyTokenClaimsConverter": <default instance>}} instead of this issuer-keyed map.
  *
- * @param byIssuer the converters by configured issuer-uri
- * @param toleratesTrailingSlash see {@link #getOrDefault}
- * @param byRegisteredIssuer when not {@code null}, decides instead of {@code byIssuer}: the
- *     converter of the registration a token's issuer is routed to, or {@code null} for the default
- *     one. For a host's own {@code ClientRegistrationRepository}, whose registrations can carry an
- *     issuer other than the configured issuer-uri, as discovery resolves {@code https://idp/realm/}
- *     to the {@code https://idp/realm} the provider declares.
+ * <p>A token that a decoder of the library verified is a {@link VerifiedJwt}, which carries the
+ * principal claims of the provider that verified it. {@link #forToken} maps such a token with those
+ * claims, so a token is never mapped with the claim settings of a provider of another scope that
+ * declares the same issuer. See <a
+ * href="https://github.com/camunda/camunda-security-library/blob/main/docs/adr/0038-verified-token-carries-its-provider-claims.md">ADR-0038</a>.
+ *
+ * @param byIssuer the converters by configured issuer-uri, for a token that a decoder of the host
+ *     verified
+ * @param byPrincipalClaims the converter for the principal claims a {@link VerifiedJwt} carries;
+ *     {@code null} to look a verified token up by issuer as well
  */
 public record TokenClaimsConvertersByIssuer(
     Map<String, LazyTokenClaimsConverter> byIssuer,
-    boolean toleratesTrailingSlash,
-    Function<String, LazyTokenClaimsConverter> byRegisteredIssuer) {
+    Function<OidcPrincipalClaims, LazyTokenClaimsConverter> byPrincipalClaims) {
 
   public TokenClaimsConvertersByIssuer {
     byIssuer = byIssuer != null ? Map.copyOf(byIssuer) : Map.of();
   }
 
-  /** Exact lookup by issuer, for a map whose keys are the issuers tokens carry. */
+  /** Looks every token up by issuer. */
   public TokenClaimsConvertersByIssuer(final Map<String, LazyTokenClaimsConverter> byIssuer) {
-    this(byIssuer, false);
+    this(byIssuer, null);
   }
 
-  /** Lookup in {@code byIssuer} only. */
-  public TokenClaimsConvertersByIssuer(
-      final Map<String, LazyTokenClaimsConverter> byIssuer, final boolean toleratesTrailingSlash) {
-    this(byIssuer, toleratesTrailingSlash, null);
+  /**
+   * @param jwt the bearer token
+   * @param defaultConverter returned for a verified token whose provider uses the default
+   *     converter, and for a token of another decoder whose issuer has no entry here
+   */
+  public LazyTokenClaimsConverter forToken(
+      final Jwt jwt, final LazyTokenClaimsConverter defaultConverter) {
+    if (byPrincipalClaims != null && jwt instanceof final VerifiedJwt verified) {
+      return verified.principalClaims().map(byPrincipalClaims).orElse(defaultConverter);
+    }
+    return getOrDefault(
+        Objects.toString(jwt.getClaims().get(JwtClaimNames.ISS), null), defaultConverter);
   }
 
   /**
    * @param issuer the bearer token's issuer, or {@code null} if absent
-   * @param defaultConverter returned when {@code issuer} is {@code null} or has no entry here. With
-   *     {@link #toleratesTrailingSlash}, an entry for the issuer's other trailing-slash form counts
-   *     too (see {@link IssuerUris}): set only where the access-token decoder routes by the
-   *     provider configuration too. A decoder that routes a host's resolved registrations exactly
-   *     needs an exact lookup here, or a token of a registration without an entry would get its
-   *     slash twin's converter instead of the default.
+   * @param defaultConverter returned when {@code issuer} is {@code null} or has no entry here
    */
   public LazyTokenClaimsConverter getOrDefault(
       final String issuer, final LazyTokenClaimsConverter defaultConverter) {
-    final var converter = issuer != null ? lookup(issuer) : null;
-    return converter != null ? converter : defaultConverter;
-  }
-
-  private LazyTokenClaimsConverter lookup(final String issuer) {
-    if (byRegisteredIssuer != null) {
-      return byRegisteredIssuer.apply(issuer);
-    }
-    return toleratesTrailingSlash ? IssuerUris.lookup(byIssuer, issuer) : byIssuer.get(issuer);
+    return issuer == null ? defaultConverter : byIssuer.getOrDefault(issuer, defaultConverter);
   }
 }

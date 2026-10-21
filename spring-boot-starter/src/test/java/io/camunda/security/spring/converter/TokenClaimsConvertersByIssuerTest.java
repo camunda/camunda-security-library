@@ -9,87 +9,53 @@ package io.camunda.security.spring.converter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.camunda.security.api.model.config.oidc.OidcPrincipalClaims;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
+import io.camunda.security.spring.oidc.VerifiedJwts;
+import java.time.Instant;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 @ExtendWith(MockitoExtension.class)
 class TokenClaimsConvertersByIssuerTest {
 
+  private static final String ISSUER = "https://entra.example.com";
+  private static final OidcPrincipalClaims UPN = new OidcPrincipalClaims("upn", null, false);
+
   @Mock private LazyTokenClaimsConverter entraConverter;
+  @Mock private LazyTokenClaimsConverter claimsConverter;
   @Mock private LazyTokenClaimsConverter defaultConverter;
 
   @Test
   void returnsConverterForMatchingIssuer() {
-    final var converters =
-        new TokenClaimsConvertersByIssuer(Map.of("https://entra.example.com", entraConverter));
+    final var converters = new TokenClaimsConvertersByIssuer(Map.of(ISSUER, entraConverter));
 
-    assertThat(converters.getOrDefault("https://entra.example.com", defaultConverter))
-        .isSameAs(entraConverter);
+    assertThat(converters.getOrDefault(ISSUER, defaultConverter)).isSameAs(entraConverter);
   }
 
   @Test
   void returnsDefaultConverterWhenIssuerDoesNotMatchAnyEntry() {
-    final var converters =
-        new TokenClaimsConvertersByIssuer(Map.of("https://entra.example.com", entraConverter));
+    final var converters = new TokenClaimsConvertersByIssuer(Map.of(ISSUER, entraConverter));
 
     assertThat(converters.getOrDefault("https://auth0.example.com", defaultConverter))
         .isSameAs(defaultConverter);
   }
 
-  /**
-   * The configured issuer-uri can carry a trailing slash the provider's tokens don't, see
-   * camunda/camunda#61896. Its converter must still apply, not the default one.
-   */
+  /** The issuer map serves decoders a host builds itself, whose routing is unknown: exact. */
   @Test
-  void returnsConverterForAnIssuerThatDiffersOnlyByATrailingSlash() {
-    final var converters =
-        new TokenClaimsConvertersByIssuer(
-            Map.of("https://login.microsoftonline.com/tenant/v2.0/", entraConverter), true);
+  void looksTheIssuerUpExactly() {
+    final var converters = new TokenClaimsConvertersByIssuer(Map.of(ISSUER + "/", entraConverter));
 
-    assertThat(
-            converters.getOrDefault(
-                "https://login.microsoftonline.com/tenant/v2.0", defaultConverter))
-        .isSameAs(entraConverter);
-  }
-
-  /** Without the tolerance, the default lookup stays exact, as hosts relied on before. */
-  @Test
-  void looksUpExactlyByDefault() {
-    final var converters =
-        new TokenClaimsConvertersByIssuer(
-            Map.of("https://login.microsoftonline.com/tenant/v2.0/", entraConverter));
-
-    assertThat(
-            converters.getOrDefault(
-                "https://login.microsoftonline.com/tenant/v2.0", defaultConverter))
-        .isSameAs(defaultConverter);
-    assertThat(converters.toleratesTrailingSlash()).isFalse();
-  }
-
-  /** Routing by registered issuer decides on its own, also where the map has an entry. */
-  @Test
-  void routesByRegisteredIssuerInsteadOfTheConfiguredIssuers() {
-    final var converters =
-        new TokenClaimsConvertersByIssuer(
-            Map.of("https://entra.example.com/", defaultConverter),
-            false,
-            issuer -> "https://entra.example.com".equals(issuer) ? entraConverter : null);
-
-    assertThat(converters.getOrDefault("https://entra.example.com", defaultConverter))
-        .isSameAs(entraConverter);
-    assertThat(converters.getOrDefault("https://entra.example.com/", entraConverter))
-        .isSameAs(entraConverter);
-    assertThat(converters.getOrDefault(null, defaultConverter)).isSameAs(defaultConverter);
+    assertThat(converters.getOrDefault(ISSUER, defaultConverter)).isSameAs(defaultConverter);
   }
 
   @Test
   void returnsDefaultConverterWhenIssuerIsNull() {
-    final var converters =
-        new TokenClaimsConvertersByIssuer(Map.of("https://entra.example.com", entraConverter));
+    final var converters = new TokenClaimsConvertersByIssuer(Map.of(ISSUER, entraConverter));
 
     assertThat(converters.getOrDefault(null, defaultConverter)).isSameAs(defaultConverter);
   }
@@ -98,8 +64,62 @@ class TokenClaimsConvertersByIssuerTest {
   void treatsNullMapAsEmpty() {
     final var converters = new TokenClaimsConvertersByIssuer(null);
 
-    assertThat(converters.getOrDefault("https://entra.example.com", defaultConverter))
-        .isSameAs(defaultConverter);
+    assertThat(converters.getOrDefault(ISSUER, defaultConverter)).isSameAs(defaultConverter);
     assertThat(converters.byIssuer()).isEmpty();
+  }
+
+  /**
+   * A token a decoder of the library verified carries the claims of its provider, and is mapped
+   * with them, even where the issuer map holds another provider of the same issuer.
+   */
+  @Test
+  void mapsAVerifiedTokenWithTheConverterOfTheClaimsItCarries() {
+    final var converters =
+        new TokenClaimsConvertersByIssuer(
+            Map.of(ISSUER, entraConverter), claims -> UPN.equals(claims) ? claimsConverter : null);
+
+    assertThat(converters.forToken(VerifiedJwts.of(jwt(), UPN), defaultConverter))
+        .isSameAs(claimsConverter);
+  }
+
+  /**
+   * The provider that verified the token uses the default converter: the issuer map is not read.
+   */
+  @Test
+  void mapsAVerifiedTokenWithoutClaimsWithTheDefaultConverter() {
+    final var converters =
+        new TokenClaimsConvertersByIssuer(
+            Map.of(ISSUER, entraConverter), claims -> claimsConverter);
+
+    assertThat(converters.forToken(VerifiedJwts.of(jwt(), null), defaultConverter))
+        .isSameAs(defaultConverter);
+  }
+
+  @Test
+  void looksATokenOfAnotherDecoderUpByIssuer() {
+    final var converters =
+        new TokenClaimsConvertersByIssuer(
+            Map.of(ISSUER, entraConverter), claims -> claimsConverter);
+
+    assertThat(converters.forToken(jwt(), defaultConverter)).isSameAs(entraConverter);
+  }
+
+  /** A map a host builds without the claims lookup reads the issuer for every token. */
+  @Test
+  void looksAVerifiedTokenUpByIssuerWithoutAClaimsLookup() {
+    final var converters = new TokenClaimsConvertersByIssuer(Map.of(ISSUER, entraConverter));
+
+    assertThat(converters.forToken(VerifiedJwts.of(jwt(), UPN), defaultConverter))
+        .isSameAs(entraConverter);
+  }
+
+  private static Jwt jwt() {
+    return Jwt.withTokenValue("token")
+        .header("alg", "RS256")
+        .claim("iss", ISSUER)
+        .claim("sub", "alice")
+        .issuedAt(Instant.parse("2026-01-01T00:00:00Z"))
+        .expiresAt(Instant.parse("2026-01-01T01:00:00Z"))
+        .build();
   }
 }

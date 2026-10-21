@@ -214,124 +214,6 @@ class OidcBeansConfigurationJwtDecoderTest {
             });
   }
 
-  /**
-   * The claim converters route as the default decoder does, from the same registrations. A dynamic
-   * host repository can change between two reads, so the decoder shares the registrations it was
-   * built from: after the repository reorders, they keep their order.
-   */
-  @Test
-  void shouldShareOneSnapshotOfAHostRepositoryWithTheClaimConverters() {
-    final var repository =
-        new ReorderableRegistrationRepository(
-            testRegistration("first", "https://kc.example.com/jwks", "https://kc.example.com"),
-            testRegistration("second", "https://kc.example.com/jwks", "https://kc.example.com"));
-    runner
-        .withBean(ClientRegistrationRepository.class, () -> repository)
-        .withPropertyValues(TWO_PROVIDERS_ONE_WITHOUT_ISSUER_URI)
-        .run(
-            ctx -> {
-              final var decoder = ctx.getBean(JwtDecoder.class);
-              // the decoder builds at the first decode, and fails on the token itself
-              assertThatThrownBy(() -> decoder.decode("any-token"))
-                  .isInstanceOf(BadJwtException.class);
-              final var routing = routingOf(decoder);
-              assertThat(routing.lazyRepository()).isNull();
-              assertThat(routing.registrations().get())
-                  .extracting(ClientRegistration::getRegistrationId)
-                  .containsExactly("first", "second");
-
-              repository.reverse();
-
-              assertThat(routing.registrations().get())
-                  .extracting(ClientRegistration::getRegistrationId)
-                  .containsExactly("first", "second");
-            });
-  }
-
-  /**
-   * A host repository that is empty at the first decode and filled afterwards: the empty read is
-   * not kept as the shared snapshot, so the next decode reads the repository again and builds its
-   * decoder.
-   */
-  @Test
-  void shouldReadAHostRepositoryAgainAfterAnEmptyRead() {
-    final var repository = new ReorderableRegistrationRepository();
-    runner
-        .withBean(ClientRegistrationRepository.class, () -> repository)
-        .withPropertyValues(TWO_PROVIDERS_ONE_WITHOUT_ISSUER_URI)
-        .run(
-            ctx -> {
-              final var decoder = ctx.getBean(JwtDecoder.class);
-              assertThatThrownBy(() -> decoder.decode("any-token"))
-                  .rootCause()
-                  .hasMessageContaining("ClientRegistrationRepository is empty");
-
-              repository.add(
-                  testRegistration(
-                      "keycloak", "https://kc.example.com/jwks", "https://kc.example.com"));
-
-              // the decoder builds now, and fails on the token itself
-              assertThatThrownBy(() -> decoder.decode("any-token"))
-                  .isInstanceOf(BadJwtException.class);
-              assertThat(routingOf(decoder).registrations().get())
-                  .extracting(ClientRegistration::getRegistrationId)
-                  .containsExactly("keycloak");
-            });
-  }
-
-  /**
-   * A host repository holds an invalid registration at the first decode, and the host fixes it
-   * afterwards. The failed attempt publishes nothing, so the next decode reads the repository
-   * again, builds its decoder, and shares the fixed registrations.
-   */
-  @Test
-  void shouldReadAHostRepositoryAgainAfterAFailedBuild() {
-    final var repository =
-        new ReorderableRegistrationRepository(
-            testRegistration("keycloak", "https://kc.example.com/jwks", "https://kc.example.com"),
-            testRegistration("azure", "https://azure.example.com/jwks", null));
-    runner
-        .withBean(ClientRegistrationRepository.class, () -> repository)
-        .withPropertyValues(TWO_PROVIDERS_ONE_WITHOUT_ISSUER_URI)
-        .run(
-            ctx -> {
-              final var decoder = ctx.getBean(JwtDecoder.class);
-              assertThatThrownBy(() -> decoder.decode("any-token"))
-                  .rootCause()
-                  .hasMessageContaining("missing 'issuerUri'");
-              assertThatThrownBy(() -> routingOf(decoder).registrations().get())
-                  .isInstanceOf(IllegalStateException.class);
-
-              repository.replaceAll(
-                  testRegistration(
-                      "keycloak", "https://kc.example.com/jwks", "https://kc.example.com"),
-                  testRegistration(
-                      "azure", "https://azure.example.com/jwks", "https://azure.example.com"));
-
-              assertThatThrownBy(() -> decoder.decode("any-token"))
-                  .isInstanceOf(BadJwtException.class);
-              assertThat(routingOf(decoder).registrations().get())
-                  .extracting(r -> r.getProviderDetails().getIssuerUri())
-                  .containsExactly("https://kc.example.com", "https://azure.example.com");
-            });
-  }
-
-  @Test
-  void shouldRouteByTheProvidersOfTheLibrarysLazyRepository() {
-    runner
-        .withUserConfiguration(HostLazyRegistrationRepository.class)
-        .run(
-            ctx ->
-                assertThat(routingOf(ctx.getBean(JwtDecoder.class)).lazyRepository())
-                    .isSameAs(ctx.getBean(ClientRegistrationRepository.class)));
-    assertThat(new DeferredJwtDecoder(() -> null).routing()).isNull();
-  }
-
-  private static DecoderRouting routingOf(final JwtDecoder decoder) {
-    assertThat(decoder).isInstanceOf(DeferredJwtDecoder.class);
-    return ((DeferredJwtDecoder) decoder).routing();
-  }
-
   @Test
   void shouldWarnRatherThanFailWhenOnlyAdditionalJwkSetUrisConfigured() {
     runner
@@ -461,6 +343,43 @@ class OidcBeansConfigurationJwtDecoderTest {
                     .isEqualTo("alice");
                 assertThat(decoder.decode(beta.sign(beta.issuerUri())).getSubject())
                     .isEqualTo("alice");
+              });
+    }
+  }
+
+  /**
+   * The default decoder tags each token with the claims of the provider that verified it: a named
+   * provider's own, and none for the default slot, whose tokens use the default converter.
+   */
+  @Test
+  void shouldTagEachTokenWithTheClaimsOfTheProviderThatVerifiedIt() throws Exception {
+    try (final var flat = OidcTestServer.startRsa("flat");
+        final var entra = OidcTestServer.startRsa("entra")) {
+      runner
+          .withPropertyValues(
+              "camunda.security.authentication.oidc.client-id=flat-client",
+              "camunda.security.authentication.oidc.issuer-uri=" + flat.issuerUri(),
+              "camunda.security.authentication.oidc.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+              "camunda.security.authentication.oidc.username-claim=email",
+              "camunda.security.authentication.providers.oidc.entra.client-id=entra-client",
+              "camunda.security.authentication.providers.oidc.entra.issuer-uri="
+                  + entra.issuerUri(),
+              "camunda.security.authentication.providers.oidc.entra.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+              "camunda.security.authentication.providers.oidc.entra.username-claim=upn")
+          .run(
+              ctx -> {
+                final var decoder = ctx.getBean(JwtDecoder.class);
+
+                assertThat(decoder.decode(entra.sign(entra.issuerUri())))
+                    .isInstanceOfSatisfying(
+                        VerifiedJwt.class,
+                        jwt ->
+                            assertThat(jwt.principalClaims())
+                                .hasValueSatisfying(
+                                    claims -> assertThat(claims.usernameClaim()).isEqualTo("upn")));
+                assertThat(decoder.decode(flat.sign(flat.issuerUri())))
+                    .isInstanceOfSatisfying(
+                        VerifiedJwt.class, jwt -> assertThat(jwt.principalClaims()).isEmpty());
               });
     }
   }

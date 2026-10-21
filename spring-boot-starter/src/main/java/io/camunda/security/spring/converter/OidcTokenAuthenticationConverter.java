@@ -131,8 +131,7 @@ public final class OidcTokenAuthenticationConverter
    */
   private LazyTokenClaimsConverter resolveTokenClaimsConverter(final Jwt jwt) {
     final var issuer = Objects.toString(jwt.getClaims().get(JwtClaimNames.ISS), null);
-    final var converter =
-        tokenClaimsConvertersByIssuer.getOrDefault(issuer, defaultTokenClaimsConverter);
+    final var converter = tokenClaimsConvertersByIssuer.forToken(jwt, defaultTokenClaimsConverter);
     LOG.debug(
         "Resolved token claims converter for issuer '{}': {}",
         issuer,

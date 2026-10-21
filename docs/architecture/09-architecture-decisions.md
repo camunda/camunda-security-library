@@ -49,6 +49,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0034: Named providers inherit the principal claims of the default slot](../adr/0034-named-providers-inherit-principal-claims.md)
 - [ADR-0035: Explain failed OIDC browser logins on a page the host can word](../adr/0035-explain-failed-oidc-browser-logins.md)
 - [ADR-0036: Revoke the session refresh token on OIDC logout](../adr/0036-revoke-refresh-token-on-oidc-logout.md)
+- [ADR-0038: A verified token carries the principal claims of the provider that verified it](../adr/0038-verified-token-carries-its-provider-claims.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 

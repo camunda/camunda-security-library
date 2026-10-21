@@ -19,6 +19,7 @@ import io.camunda.security.spring.converter.TokenClaimsConvertersByIssuer;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -28,8 +29,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
-import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.util.StringUtils;
 
 /**
@@ -130,23 +129,12 @@ public class OidcBeansConfiguration {
    * MembershipResolutionContextPropagator} live; backing off avoids a fatal wiring failure when
    * they're absent.
    *
-   * <p>A token is mapped with the claim settings of the provider whose registration the decoder
-   * verified it for, so the converters are routed as the decoder routes the tokens:
-   *
-   * <ul>
-   *   <li>The library's default decoder over a {@link LazyClientRegistrationRepository} routes by
-   *       that repository's providers, and issuers that differ only by a trailing slash are one
-   *       issuer. Two providers that share an issuer resolve by the order of those providers.
-   *   <li>The library's default decoder over a repository of the host routes by the issuers its
-   *       registrations carry, see {@link RegisteredIssuerClaimsConverters}.
-   *   <li>Without a repository or a decoder bean, the scoped decoders route by the configuration,
-   *       slash-tolerant.
-   *   <li>A decoder the host builds itself keeps the exact lookup by configured issuer-uri, since
-   *       nothing here knows how it routes.
-   * </ul>
-   *
-   * In each case, the converter of the owning registration is taken by registrationId, and an owner
-   * that no provider configures gets the default converter.
+   * <p>A token that a decoder of the library verified carries the principal claims of the provider
+   * that verified it ({@link VerifiedJwt}), and is mapped with a converter for those claims, one
+   * per distinct set of claims. The issuer map serves the tokens of a decoder the host builds
+   * itself: it looks the configured issuer-uri up exactly, and two registrations that share an
+   * issuer resolve by the order of {@code getOidcAuthenticationConfigurations()}, which is the
+   * order of the configuration with the flat block first.
    */
   @Bean
   @ConditionalOnBean({MembershipPort.class, LazyTokenClaimsConverter.class})
@@ -156,95 +144,56 @@ public class OidcBeansConfiguration {
       final OidcProviderConfigurationPort oidcProviderConfigurationPort,
       final LazyTokenClaimsConverter lazyTokenClaimsConverter,
       final MembershipPort membershipPort,
-      final ObjectProvider<MembershipResolutionContextPropagator> contextPropagatorProvider,
-      final ObjectProvider<ClientRegistrationRepository> clientRegistrationRepositoryProvider,
-      final ObjectProvider<JwtDecoder> jwtDecoderProvider) {
+      final ObjectProvider<MembershipResolutionContextPropagator> contextPropagatorProvider) {
     final var contextPropagator =
         contextPropagatorProvider.getIfAvailable(MembershipResolutionContextPropagator::identity);
     final var flatOidcConfiguration = properties.getAuthentication().getOidc();
-    // Filtered first: a blank/null registrationId must not win ownership over a valid provider
-    // sharing its issuer, or the claims converter is built from the wrong configuration while the
-    // decoder verifies the token with the valid one.
-    final var configured =
-        ScopedClientRegistrationFactory.withoutBlankRegistrationIds(
-            oidcProviderConfigurationPort.getOidcAuthenticationConfigurations());
-    final Map<String, LazyTokenClaimsConverter> byRegistrationId = new LinkedHashMap<>();
-    configured.forEach(
-        (registrationId, config) ->
-            byRegistrationId.put(
-                registrationId,
-                config == flatOidcConfiguration
-                    ? lazyTokenClaimsConverter
-                    : namedProviderConverter(
-                        config, flatOidcConfiguration, membershipPort, contextPropagator)));
-
-    final var routing = routing(jwtDecoderProvider.getIfUnique());
-    if (routing != null && routing.registrations() != null) {
-      return new TokenClaimsConvertersByIssuer(
-          byIssuer(configured, false, byRegistrationId),
-          false,
-          new RegisteredIssuerClaimsConverters(routing.registrations(), byRegistrationId));
-    }
-    if (routing != null) {
-      return new TokenClaimsConvertersByIssuer(
-          byIssuer(routing.lazyRepository().providers(), true, byRegistrationId), true);
-    }
-    // Neither a repository nor a decoder bean: the scoped decoders, which route by the
-    // configuration. A decoder bean without a repository is the host's own, as in a bearer-only
-    // setup, so it gets the exact lookup. Presence only, so a host may define several of each.
-    final var routesByConfiguration =
-        clientRegistrationRepositoryProvider.stream().findAny().isEmpty()
-            && jwtDecoderProvider.stream().findAny().isEmpty();
-    return new TokenClaimsConvertersByIssuer(
-        byIssuer(configured, routesByConfiguration, byRegistrationId), routesByConfiguration);
-  }
-
-  /**
-   * The converter of each issuer's owner among {@code providers}. IssuerOwnership decides the owner
-   * and logs the duplicate-issuer warning, the one place that warning is built, redacted and
-   * sanitized. An owner without a converter has no entry, so its tokens get the default one.
-   */
-  private static Map<String, LazyTokenClaimsConverter> byIssuer(
-      final Map<String, OidcConfiguration> providers,
-      final boolean trailingSlashTwinsAreOneIssuer,
-      final Map<String, LazyTokenClaimsConverter> byRegistrationId) {
-    final Map<String, LazyTokenClaimsConverter> byIssuer = new LinkedHashMap<>();
-    IssuerOwnership.registrationIdByIssuer(
-            ScopedClientRegistrationFactory.withoutBlankRegistrationIds(providers),
+    final var configurations = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
+    // IssuerOwnership decides the winner per issuer and logs the duplicate-issuer warning — the
+    // one place that warning is built, redacted and sanitized, rather than a second copy of it
+    // here. Filtered first: a blank/null registrationId must not win ownership over a valid
+    // provider sharing its issuer, or the claims converter is built from the wrong configuration
+    // while the decoder verifies the token with the valid one.
+    // Exact: the map serves only tokens of a decoder the host builds itself, whose routing is
+    // unknown. The library's own decoders tag each token with its provider's claims instead.
+    final var winningRegistrationIdByIssuer =
+        IssuerOwnership.registrationIdByIssuer(
+            ScopedClientRegistrationFactory.withoutBlankRegistrationIds(configurations),
             LOG,
             "the claim configuration",
-            trailingSlashTwinsAreOneIssuer)
-        .forEach(
-            (issuerUri, registrationId) -> {
-              final var converter = byRegistrationId.get(registrationId);
-              if (converter != null) {
-                byIssuer.put(issuerUri, converter);
-              }
-            });
-    return byIssuer;
-  }
-
-  /** A named provider uses the global claims for each claim that it does not set. */
-  private static LazyTokenClaimsConverter namedProviderConverter(
-      final OidcConfiguration config,
-      final OidcConfiguration flatOidcConfiguration,
-      final MembershipPort membershipPort,
-      final MembershipResolutionContextPropagator contextPropagator) {
-    final var claims = OidcPrincipalClaims.resolve(config, flatOidcConfiguration);
-    return new LazyTokenClaimsConverter(
-        claims.usernameClaim(),
-        claims.clientIdClaim(),
-        claims.preferUsernameClaim(),
-        membershipPort,
-        contextPropagator);
-  }
-
-  /**
-   * How the library's default decoder ({@code OidcWebappClientBeansConfiguration#jwtDecoder})
-   * routes tokens, or {@code null} when the decoder is one the host builds itself, or there is none
-   * or more than one.
-   */
-  private static DecoderRouting routing(final JwtDecoder jwtDecoder) {
-    return jwtDecoder instanceof final DeferredJwtDecoder deferred ? deferred.routing() : null;
+            false);
+    final Map<String, LazyTokenClaimsConverter> byIssuer = new LinkedHashMap<>();
+    winningRegistrationIdByIssuer.forEach(
+        (issuerUri, registrationId) -> {
+          final var config = configurations.get(registrationId);
+          if (config == flatOidcConfiguration) {
+            byIssuer.put(issuerUri, lazyTokenClaimsConverter);
+            return;
+          }
+          // A named provider uses the global claims for each claim that it does not set.
+          final var claims = OidcPrincipalClaims.resolve(config, flatOidcConfiguration);
+          final var converter =
+              new LazyTokenClaimsConverter(
+                  claims.usernameClaim(),
+                  claims.clientIdClaim(),
+                  claims.preferUsernameClaim(),
+                  membershipPort,
+                  contextPropagator);
+          byIssuer.put(issuerUri, converter);
+        });
+    final Map<OidcPrincipalClaims, LazyTokenClaimsConverter> byPrincipalClaims =
+        new ConcurrentHashMap<>();
+    return new TokenClaimsConvertersByIssuer(
+        byIssuer,
+        claims ->
+            byPrincipalClaims.computeIfAbsent(
+                claims,
+                c ->
+                    new LazyTokenClaimsConverter(
+                        c.usernameClaim(),
+                        c.clientIdClaim(),
+                        c.preferUsernameClaim(),
+                        membershipPort,
+                        contextPropagator)));
   }
 }

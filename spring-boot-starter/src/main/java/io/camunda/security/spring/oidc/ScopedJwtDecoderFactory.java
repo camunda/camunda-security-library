@@ -96,10 +96,16 @@ public final class ScopedJwtDecoderFactory {
                   final var validatorFactory =
                       new TokenValidatorFactory(
                           providers, OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of());
-                  return decoderFactory.selectAccessTokenDecoder(
+                  // The claims come from this scope's providers: a provider of another scope
+                  // can declare the same issuer with other claim settings.
+                  return VerifiedJwtDecoder.of(
+                      decoderFactory.selectOwnedAccessTokenDecoder(
+                          providers,
+                          registrationId -> resolve(providers, registrationId, scopeDescription),
+                          validatorFactory),
                       providers,
-                      registrationId -> resolve(providers, registrationId, scopeDescription),
-                      validatorFactory);
+                      authentication.getOidc(),
+                      null);
                 }));
   }
 

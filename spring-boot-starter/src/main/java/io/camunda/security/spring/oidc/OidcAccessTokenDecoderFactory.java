@@ -185,6 +185,26 @@ public class OidcAccessTokenDecoderFactory {
       final Map<String, OidcConfiguration> providersById,
       final Function<String, ClientRegistration> resolveByRegistrationId,
       final TokenValidatorFactory validatorFactory) {
+    return selectOwnedAccessTokenDecoder(providersById, resolveByRegistrationId, validatorFactory)
+        .decoder();
+  }
+
+  /** As {@link #selectAccessTokenDecoder(Map, Function)}, with the owner of each token. */
+  OwnedDecoder selectOwnedAccessTokenDecoder(
+      final Map<String, OidcConfiguration> providersById,
+      final Function<String, ClientRegistration> resolveByRegistrationId) {
+    return selectOwnedAccessTokenDecoder(
+        providersById, resolveByRegistrationId, tokenValidatorFactory);
+  }
+
+  /**
+   * As {@link #selectAccessTokenDecoder(Map, Function, TokenValidatorFactory)}, with the owner of
+   * each token.
+   */
+  OwnedDecoder selectOwnedAccessTokenDecoder(
+      final Map<String, OidcConfiguration> providersById,
+      final Function<String, ClientRegistration> resolveByRegistrationId,
+      final TokenValidatorFactory validatorFactory) {
     // Filtered once, at the top: every decision below — whether any provider remains, whether to
     // take the single- or multi-provider path, the issuer requirement, and the decoder itself —
     // must agree on the same view. Deciding size()/isEmpty() on the raw map let an entry already
@@ -201,13 +221,17 @@ public class OidcAccessTokenDecoderFactory {
       final var config = providers.get(registrationId);
       final var registration =
           requireRegistration(registrationId, resolveByRegistrationId.apply(registrationId));
-      return createAccessTokenDecoder(
-          registration, config.getAdditionalJwkSetUris(), validatorFactory);
+      return new OwnedDecoder(
+          createAccessTokenDecoder(
+              registration, config.getAdditionalJwkSetUris(), validatorFactory),
+          issuer -> registrationId);
     }
-    return createIssuerAwareAccessTokenDecoder(
-        IssuerRegistrations.ofConfiguration(providers, resolveByRegistrationId),
-        buildAdditionalJwkSetUrisByIssuer(providers),
-        validatorFactory);
+    final var issuerRegistrations =
+        IssuerRegistrations.ofConfiguration(providers, resolveByRegistrationId);
+    return new OwnedDecoder(
+        createIssuerAwareAccessTokenDecoder(
+            issuerRegistrations, buildAdditionalJwkSetUrisByIssuer(providers), validatorFactory),
+        issuer -> registrationIdOf(issuerRegistrations.forIssuer(issuer)));
   }
 
   /**
@@ -361,6 +385,24 @@ public class OidcAccessTokenDecoderFactory {
       final List<ClientRegistration> registrations,
       final Map<String, OidcConfiguration> providersById,
       final TokenValidatorFactory validatorFactory) {
+    return selectOwnedAccessTokenDecoder(registrations, providersById, validatorFactory).decoder();
+  }
+
+  /** As {@link #selectAccessTokenDecoder(List, Map)}, with the owner of each token. */
+  OwnedDecoder selectOwnedAccessTokenDecoder(
+      final List<ClientRegistration> registrations,
+      final Map<String, OidcConfiguration> providersById) {
+    return selectOwnedAccessTokenDecoder(registrations, providersById, tokenValidatorFactory);
+  }
+
+  /**
+   * As {@link #selectAccessTokenDecoder(List, Map, TokenValidatorFactory)}, with the owner of each
+   * token: the first registration of its issuer, as the issuer-aware decoder routes it.
+   */
+  OwnedDecoder selectOwnedAccessTokenDecoder(
+      final List<ClientRegistration> registrations,
+      final Map<String, OidcConfiguration> providersById,
+      final TokenValidatorFactory validatorFactory) {
     if (registrations.isEmpty()) {
       throw new IllegalStateException(ERROR_NO_PROVIDER);
     }
@@ -368,12 +410,17 @@ public class OidcAccessTokenDecoderFactory {
       final var reg = registrations.get(0);
       final var config = providersById.get(reg.getRegistrationId());
       final var additional = config != null ? config.getAdditionalJwkSetUris() : null;
-      return createAccessTokenDecoder(reg, additional, validatorFactory);
+      final var registrationId = reg.getRegistrationId();
+      return new OwnedDecoder(
+          createAccessTokenDecoder(reg, additional, validatorFactory), issuer -> registrationId);
     }
-    return createIssuerAwareAccessTokenDecoder(
-        registrations,
-        buildAdditionalJwkSetUrisByIssuer(registrations, providersById),
-        validatorFactory);
+    final var decoder =
+        createIssuerAwareAccessTokenDecoder(
+            registrations,
+            buildAdditionalJwkSetUrisByIssuer(registrations, providersById),
+            validatorFactory);
+    final var ownerByIssuer = firstRegistrationIdByIssuer(registrations);
+    return new OwnedDecoder(decoder, issuer -> issuer != null ? ownerByIssuer.get(issuer) : null);
   }
 
   /**
@@ -670,4 +717,36 @@ public class OidcAccessTokenDecoderFactory {
             });
     return urisByIssuer;
   }
+
+  private static String registrationIdOf(final ClientRegistration registration) {
+    return registration != null ? registration.getRegistrationId() : null;
+  }
+
+  /**
+   * The first registration of each issuer, as {@link IssuerRegistrations#ofResolved} routes it.
+   * Computed apart from that routing so the duplicate-issuer warning is not logged once more.
+   */
+  private static Map<String, String> firstRegistrationIdByIssuer(
+      final List<ClientRegistration> registrations) {
+    final Map<String, String> owners = new LinkedHashMap<>();
+    registrations.forEach(
+        registration -> {
+          final var issuerUri = registration.getProviderDetails().getIssuerUri();
+          if (StringUtils.hasText(issuerUri)) {
+            owners.putIfAbsent(issuerUri, registration.getRegistrationId());
+          }
+        });
+    return owners;
+  }
+
+  /**
+   * A decoder, with the registrationId of the registration that verifies a token of each issuer, as
+   * the decoder routes it.
+   *
+   * @param decoder the decoder
+   * @param registrationIdByIssuer the registrationId that verifies the tokens of an issuer, or
+   *     {@code null} for an issuer the decoder does not accept. For a token the decoder verified,
+   *     it gives the registration that verified it.
+   */
+  record OwnedDecoder(JwtDecoder decoder, Function<String, String> registrationIdByIssuer) {}
 }

@@ -24,28 +24,10 @@ import org.springframework.security.oauth2.jwt.JwtException;
 public final class DeferredJwtDecoder implements JwtDecoder {
 
   private final Supplier<JwtDecoder> delegate;
-  private final DecoderRouting routing;
 
   public DeferredJwtDecoder(final Supplier<JwtDecoder> delegateSupplier) {
-    this(delegateSupplier, null);
-  }
-
-  /**
-   * @param routing how the delegate routes tokens, for {@code
-   *     OidcWebappClientBeansConfiguration#jwtDecoder}; {@code null} when not known
-   */
-  DeferredJwtDecoder(final Supplier<JwtDecoder> delegateSupplier, final DecoderRouting routing) {
     Objects.requireNonNull(delegateSupplier, "delegateSupplier must not be null");
     delegate = DeferredOidcResolution.memoizeOnSuccess(() -> build(delegateSupplier));
-    this.routing = routing;
-  }
-
-  /**
-   * How this decoder routes tokens, so the claim converters can route the same way; {@code null}
-   * for a decoder a host builds itself.
-   */
-  DecoderRouting routing() {
-    return routing;
   }
 
   @Override
