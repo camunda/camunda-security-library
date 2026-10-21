@@ -8,11 +8,11 @@
 package io.camunda.security.spring.oidc;
 
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -29,19 +29,20 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
  * configuration where the registration carries none. Every token that decoder accepts is that
  * registration's, so its converter applies whatever the issuer.
  *
- * <p>The registrations are read on the first lookup, as the decoder reads them, so building the
- * bean starts no discovery.
+ * <p>The registrations are the decoder's own snapshot, read at the first use of either, so both
+ * decide the owner of an issuer from the same registrations, and building the bean starts no
+ * discovery.
  */
 final class RegisteredIssuerClaimsConverters implements Function<String, LazyTokenClaimsConverter> {
 
   private static final Logger LOG = LoggerFactory.getLogger(RegisteredIssuerClaimsConverters.class);
 
-  private final Iterable<ClientRegistration> registrations;
+  private final Supplier<List<ClientRegistration>> registrations;
   private final Map<String, LazyTokenClaimsConverter> byRegistrationId;
   private volatile Function<String, LazyTokenClaimsConverter> byIssuer;
 
   RegisteredIssuerClaimsConverters(
-      final Iterable<ClientRegistration> registrations,
+      final Supplier<List<ClientRegistration>> registrations,
       final Map<String, LazyTokenClaimsConverter> byRegistrationId) {
     this.registrations = registrations;
     this.byRegistrationId = Map.copyOf(byRegistrationId);
@@ -71,8 +72,7 @@ final class RegisteredIssuerClaimsConverters implements Function<String, LazyTok
   }
 
   private Function<String, LazyTokenClaimsConverter> resolve() {
-    final List<ClientRegistration> all = new ArrayList<>();
-    registrations.forEach(all::add);
+    final var all = registrations.get();
     if (all.size() == 1) {
       final var converter = byRegistrationId.get(all.get(0).getRegistrationId());
       return issuer -> converter;

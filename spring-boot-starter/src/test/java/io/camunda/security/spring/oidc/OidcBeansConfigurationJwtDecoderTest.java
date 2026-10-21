@@ -215,23 +215,49 @@ class OidcBeansConfigurationJwtDecoderTest {
   }
 
   /**
-   * The claim converters route as the default decoder does, so the decoder names the repository it
-   * routes by. A decoder a host builds itself names none.
+   * The claim converters route as the default decoder does, from the same registrations. A dynamic
+   * host repository can change between two reads, so the decoder reads it once, at the first use,
+   * and shares that snapshot: after the repository reorders, the snapshot keeps its order.
    */
   @Test
-  void shouldNameTheRepositoryTheDefaultDecoderRoutesBy() {
+  void shouldShareOneSnapshotOfAHostRepositoryWithTheClaimConverters() {
+    final var repository =
+        new ReorderableRegistrationRepository(
+            testRegistration("first", "https://kc.example.com/jwks", "https://kc.example.com"),
+            testRegistration("second", "https://kc.example.com/jwks", "https://kc.example.com"));
     runner
-        .withUserConfiguration(SingleRegistrationRepository.class)
+        .withBean(ClientRegistrationRepository.class, () -> repository)
         .withPropertyValues(TWO_PROVIDERS_ONE_WITHOUT_ISSUER_URI)
         .run(
+            ctx -> {
+              final var routing = routingOf(ctx.getBean(JwtDecoder.class));
+              assertThat(routing.lazyRepository()).isNull();
+              assertThat(routing.registrations().get())
+                  .extracting(ClientRegistration::getRegistrationId)
+                  .containsExactly("first", "second");
+
+              repository.reverse();
+
+              assertThat(routing.registrations().get())
+                  .extracting(ClientRegistration::getRegistrationId)
+                  .containsExactly("first", "second");
+            });
+  }
+
+  @Test
+  void shouldRouteByTheProvidersOfTheLibrarysLazyRepository() {
+    runner
+        .withUserConfiguration(HostLazyRegistrationRepository.class)
+        .run(
             ctx ->
-                assertThat(ctx.getBean(JwtDecoder.class))
-                    .isInstanceOfSatisfying(
-                        DeferredJwtDecoder.class,
-                        decoder ->
-                            assertThat(decoder.routedRepository())
-                                .isSameAs(ctx.getBean(ClientRegistrationRepository.class))));
-    assertThat(new DeferredJwtDecoder(() -> null).routedRepository()).isNull();
+                assertThat(routingOf(ctx.getBean(JwtDecoder.class)).lazyRepository())
+                    .isSameAs(ctx.getBean(ClientRegistrationRepository.class)));
+    assertThat(new DeferredJwtDecoder(() -> null).routing()).isNull();
+  }
+
+  private static DecoderRouting routingOf(final JwtDecoder decoder) {
+    assertThat(decoder).isInstanceOf(DeferredJwtDecoder.class);
+    return ((DeferredJwtDecoder) decoder).routing();
   }
 
   @Test

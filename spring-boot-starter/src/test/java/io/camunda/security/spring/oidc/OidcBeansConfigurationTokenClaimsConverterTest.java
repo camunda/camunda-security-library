@@ -20,6 +20,8 @@ import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.converter.TokenClaimsConvertersByIssuer;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -210,6 +212,65 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
               assertThat(ctx).doesNotHaveBean(JwtDecoder.class);
               assertThat(usernameOf(ctx, "https://idp.example.com/realm")).isEqualTo("alice");
               assertThat(usernameOf(ctx, "https://idp.example.com/realm/")).isEqualTo("alice");
+            });
+  }
+
+  /**
+   * Two registrations share an issuer, and the host repository reorders between the decoder's first
+   * read and the first claims lookup. The converters read the decoder's snapshot, so the token
+   * keeps the claim settings of the registration the decoder routed it to.
+   */
+  @Test
+  void usesTheRegistrationsTheDecoderReadForADynamicHostRepository() {
+    final var repository =
+        new ReorderableRegistrationRepository(
+            registration("a", "https://idp.example.com"),
+            registration("b", "https://idp.example.com"));
+    runnerWithDecoderRouting(repository)
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.a.client-id=a-client",
+            "camunda.security.authentication.providers.oidc.a.issuer-uri=https://idp.example.com",
+            "camunda.security.authentication.providers.oidc.a.username-claim=a_user",
+            "camunda.security.authentication.providers.oidc.b.client-id=b-client",
+            "camunda.security.authentication.providers.oidc.b.issuer-uri=https://idp.example.com/",
+            "camunda.security.authentication.providers.oidc.b.username-claim=b_user")
+        .run(
+            ctx -> {
+              // the decoder initializes first and routes the issuer to "a"
+              ((DeferredJwtDecoder) ctx.getBean(JwtDecoder.class)).routing().registrations().get();
+              repository.reverse();
+
+              assertThat(usernameOf(ctx, "https://idp.example.com")).isEqualTo("alice");
+            });
+  }
+
+  /**
+   * Bearer-only with a decoder of the host and several repository beans, none of them primary: the
+   * converters only ask whether a repository exists, so the context starts, with the exact lookup.
+   */
+  @Test
+  void startsWithSeveralRepositoriesAndADecoderOfTheHost() {
+    baseRunner()
+        .withBean("first", ClientRegistrationRepository.class, () -> registrationId -> null)
+        .withBean("second", ClientRegistrationRepository.class, () -> registrationId -> null)
+        .withBean(
+            JwtDecoder.class,
+            () ->
+                token -> {
+                  throw new UnsupportedOperationException("host decoder");
+                })
+        .withPropertyValues(
+            "camunda.security.authentication.webapp-enabled=false",
+            "camunda.security.authentication.providers.oidc.a.client-id=a-client",
+            "camunda.security.authentication.providers.oidc.a.issuer-uri=https://idp.example.com/realm",
+            "camunda.security.authentication.providers.oidc.a.username-claim=a_user",
+            "camunda.security.authentication.providers.oidc.b.client-id=b-client",
+            "camunda.security.authentication.providers.oidc.b.issuer-uri=https://idp.example.com/realm/",
+            "camunda.security.authentication.providers.oidc.b.username-claim=b_user")
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              assertThat(usernameOf(ctx, "https://idp.example.com/realm/")).isEqualTo("bob");
             });
   }
 
@@ -677,7 +738,23 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
                     () -> {
                       throw new UnsupportedOperationException("stub");
                     },
-                    repository));
+                    routingOf(repository)));
+  }
+
+  /** The routing the library's default decoder gives {@code repository}. */
+  @SuppressWarnings("unchecked")
+  private static DecoderRouting routingOf(final ClientRegistrationRepository repository) {
+    if (repository instanceof final LazyClientRegistrationRepository lazy) {
+      return DecoderRouting.byProviders(lazy);
+    }
+    final var iterable = (Iterable<ClientRegistration>) repository;
+    return DecoderRouting.byRegistrations(
+        DeferredOidcResolution.memoizeOnSuccess(
+            () -> {
+              final List<ClientRegistration> registrations = new ArrayList<>();
+              iterable.forEach(registrations::add);
+              return List.copyOf(registrations);
+            }));
   }
 
   /** The username that the converter of {@code issuer} reads from a token of alice and bob. */

@@ -28,7 +28,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
-import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.util.StringUtils;
@@ -179,25 +178,23 @@ public class OidcBeansConfiguration {
                     : namedProviderConverter(
                         config, flatOidcConfiguration, membershipPort, contextPropagator)));
 
-    final var repository = clientRegistrationRepositoryProvider.getIfAvailable();
-    final var routedRepository = routedRepository(jwtDecoderProvider.getIfUnique());
-    if (routedRepository != null
-        && !(routedRepository instanceof LazyClientRegistrationRepository)) {
+    final var routing = routing(jwtDecoderProvider.getIfUnique());
+    if (routing != null && routing.registrations() != null) {
       return new TokenClaimsConvertersByIssuer(
           byIssuer(configured, false, byRegistrationId),
           false,
-          new RegisteredIssuerClaimsConverters(
-              iterableRegistrations(routedRepository), byRegistrationId));
+          new RegisteredIssuerClaimsConverters(routing.registrations(), byRegistrationId));
     }
-    if (routedRepository instanceof final LazyClientRegistrationRepository lazy) {
+    if (routing != null) {
       return new TokenClaimsConvertersByIssuer(
-          byIssuer(lazy.providers(), true, byRegistrationId), true);
+          byIssuer(routing.lazyRepository().providers(), true, byRegistrationId), true);
     }
     // Neither a repository nor a decoder bean: the scoped decoders, which route by the
     // configuration. A decoder bean without a repository is the host's own, as in a bearer-only
-    // setup, so it gets the exact lookup.
+    // setup, so it gets the exact lookup. Presence only, so a host may define several of each.
     final var routesByConfiguration =
-        repository == null && jwtDecoderProvider.stream().findAny().isEmpty();
+        clientRegistrationRepositoryProvider.stream().findAny().isEmpty()
+            && jwtDecoderProvider.stream().findAny().isEmpty();
     return new TokenClaimsConvertersByIssuer(
         byIssuer(configured, routesByConfiguration, byRegistrationId), routesByConfiguration);
   }
@@ -243,20 +240,11 @@ public class OidcBeansConfiguration {
   }
 
   /**
-   * The repository that the library's default decoder ({@code
-   * OidcWebappClientBeansConfiguration#jwtDecoder}) routes tokens by, or {@code null} when the
-   * decoder is one the host builds itself, or there is none or more than one.
+   * How the library's default decoder ({@code OidcWebappClientBeansConfiguration#jwtDecoder})
+   * routes tokens, or {@code null} when the decoder is one the host builds itself, or there is none
+   * or more than one.
    */
-  private static ClientRegistrationRepository routedRepository(final JwtDecoder jwtDecoder) {
-    return jwtDecoder instanceof final DeferredJwtDecoder deferred
-        ? deferred.routedRepository()
-        : null;
-  }
-
-  /** The default decoder accepts only an enumerable repository, so this one is. */
-  @SuppressWarnings("unchecked")
-  private static Iterable<ClientRegistration> iterableRegistrations(
-      final ClientRegistrationRepository repository) {
-    return (Iterable<ClientRegistration>) repository;
+  private static DecoderRouting routing(final JwtDecoder jwtDecoder) {
+    return jwtDecoder instanceof final DeferredJwtDecoder deferred ? deferred.routing() : null;
   }
 }

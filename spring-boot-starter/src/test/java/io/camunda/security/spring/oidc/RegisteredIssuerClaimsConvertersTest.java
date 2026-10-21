@@ -13,6 +13,7 @@ import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -33,7 +34,8 @@ class RegisteredIssuerClaimsConvertersTest {
     // given - "a" configured as ISSUER + "/", resolved to ISSUER
     final var converters =
         new RegisteredIssuerClaimsConverters(
-            List.of(registration("a", ISSUER), registration("b", "https://other.example.com")),
+            () ->
+                List.of(registration("a", ISSUER), registration("b", "https://other.example.com")),
             Map.of("a", firstConverter, "b", secondConverter));
 
     // when / then
@@ -52,7 +54,7 @@ class RegisteredIssuerClaimsConvertersTest {
     // given
     final var converters =
         new RegisteredIssuerClaimsConverters(
-            List.of(registration("a", null)), Map.of("a", firstConverter));
+            () -> List.of(registration("a", null)), Map.of("a", firstConverter));
 
     // when / then
     assertThat(converters.apply(ISSUER)).isSameAs(firstConverter);
@@ -64,7 +66,7 @@ class RegisteredIssuerClaimsConvertersTest {
     // given
     final var converters =
         new RegisteredIssuerClaimsConverters(
-            List.of(registration("first", ISSUER), registration("second", ISSUER)),
+            () -> List.of(registration("first", ISSUER), registration("second", ISSUER)),
             Map.of("first", firstConverter, "second", secondConverter));
 
     // when / then
@@ -80,7 +82,7 @@ class RegisteredIssuerClaimsConvertersTest {
     // given
     final var converters =
         new RegisteredIssuerClaimsConverters(
-            List.of(registration("host-only", ISSUER), registration("second", ISSUER)),
+            () -> List.of(registration("host-only", ISSUER), registration("second", ISSUER)),
             Map.of("second", secondConverter));
 
     // when / then
@@ -91,10 +93,10 @@ class RegisteredIssuerClaimsConvertersTest {
   void shouldReadTheRegistrationsOnTheFirstLookupOnly() {
     // given
     final var iterations = new AtomicInteger();
-    final Iterable<ClientRegistration> registrations =
+    final Supplier<List<ClientRegistration>> registrations =
         () -> {
           iterations.incrementAndGet();
-          return List.of(registration("a", ISSUER)).iterator();
+          return List.of(registration("a", ISSUER));
         };
 
     // when

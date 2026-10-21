@@ -104,17 +104,22 @@ public class OidcWebappClientBeansConfiguration {
                   () ->
                       oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
                           providers, lazy::findByRegistrationId)),
-          lazy);
+          DecoderRouting.byProviders(lazy));
     }
     final var providers = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
+    // Read once, at the first use, and shared with the claim converters: a dynamic host repository
+    // can change between two reads, and both must decide the owner of an issuer alike.
+    final var registrations =
+        DeferredOidcResolution.memoizeOnSuccess(
+            () -> List.copyOf(iterableRegistrations(clientRegistrationRepository)));
     return new DeferredJwtDecoder(
         () ->
             DeferredOidcResolution.resolve(
                 decoderSubject(clientRegistrationRepository),
                 () ->
                     oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
-                        iterableRegistrations(clientRegistrationRepository), providers)),
-        clientRegistrationRepository);
+                        registrations.get(), providers)),
+        DecoderRouting.byRegistrations(registrations));
   }
 
   /**
