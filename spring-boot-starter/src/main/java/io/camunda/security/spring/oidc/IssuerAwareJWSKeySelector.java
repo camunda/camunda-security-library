@@ -140,7 +140,13 @@ public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelecto
     final var clientRegistration = getClientRegistrationByIssuer(issuer);
     final var providerDetails = clientRegistration.getProviderDetails();
     final var jwkSetUri = providerDetails.getJwkSetUri();
-    final var additionalUris = IssuerUris.lookup(additionalJwkSetUrisByIssuer, issuer);
+    // The routed registration's own URIs, never a lookup by issuer: the map below holds only the
+    // providers that set additional URIs, so a miss there says nothing about who owns the issuer,
+    // and its trailing-slash twin could belong to another provider. The map, matched exactly, is
+    // for host-built registrations that carry no CSL metadata.
+    final var additionalUris =
+        ClientRegistrationMetadata.additionalJwkSetUris(clientRegistration)
+            .orElseGet(() -> additionalJwkSetUrisByIssuer.get(issuer));
     try {
       return jwsKeySelectorFactory.createJWSKeySelector(jwkSetUri, additionalUris);
     } catch (final IllegalArgumentException invalidJwkSetUri) {

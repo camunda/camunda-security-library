@@ -182,8 +182,8 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
    */
   static Function<String, String> userInfoUriByIssuer(
       final IssuerRegistrations registrations, final Map<String, OidcConfiguration> providers) {
-    final var issuersWithUserInfo = issuersWithUserInfo(registrations, providers);
-    if (issuersWithUserInfo.isEmpty()) {
+    final var ownersWithUserInfo = ownersWithUserInfo(registrations, providers);
+    if (ownersWithUserInfo.isEmpty()) {
       throw new IllegalStateException(
           "UserInfo augmentation is enabled but no OIDC provider can yield an issuer→userInfoUri"
               + " mapping, so no claims can be augmented — the setup would silently run without"
@@ -194,7 +194,7 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
               + " flag in multi-provider setups). Give each provider an issuer-uri, or disable"
               + " userinfo augmentation.");
     }
-    return issuer -> userInfoUriOf(issuer, registrations, issuersWithUserInfo);
+    return issuer -> userInfoUriOf(issuer, registrations, ownersWithUserInfo);
   }
 
   /**
@@ -206,8 +206,12 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
   private static String userInfoUriOf(
       final String issuer,
       final IssuerRegistrations registrations,
-      final Set<String> issuersWithUserInfo) {
-    if (IssuerUris.match(issuersWithUserInfo, issuer) == null) {
+      final Set<String> ownersWithUserInfo) {
+    // The owner first, from every configured issuer, then that owner's flag. Matching the issuer
+    // against the enabled subset instead would let a provider with UserInfo disabled match its
+    // trailing-slash twin that has it enabled.
+    final var owner = registrations.resolutionKeyOf(issuer);
+    if (owner == null || !ownersWithUserInfo.contains(owner)) {
       // An unknown issuer, and an issuer whose owner disables UserInfo, need no endpoint. To
       // answer them here keeps their tokens up while their provider is unreachable, because the
       // resolution below makes OIDC discovery.
@@ -241,18 +245,20 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
   }
 
   /**
-   * The issuers whose owning provider must expose a UserInfo endpoint. The owner answers for its
-   * issuer, because {@code registrations} resolves the registration of that provider alone, and a
-   * request reads no UserInfo flag of an ignored duplicate. The configuration gives the answer, so
-   * the method needs no network access.
+   * The resolution keys of the issuer owners that must expose a UserInfo endpoint. The owner
+   * answers for its issuer, because {@code registrations} resolves the registration of that
+   * provider alone, and a request reads no UserInfo flag of an ignored duplicate. Keyed by owner
+   * rather than issuer, so a token is judged by the provider it is routed to. The configuration
+   * gives the answer, so the method needs no network access.
    */
-  private static Set<String> issuersWithUserInfo(
+  private static Set<String> ownersWithUserInfo(
       final IssuerRegistrations registrations, final Map<String, OidcConfiguration> providers) {
     return registrations.issuers().stream()
+        .map(registrations::resolutionKeyOf)
         .filter(
-            issuer -> {
-              final var owner = providers.get(registrations.resolutionKeyOf(issuer));
-              return owner != null && owner.isUserInfoEnabled();
+            owner -> {
+              final var configuration = providers.get(owner);
+              return configuration != null && configuration.isUserInfoEnabled();
             })
         .collect(Collectors.toSet());
   }

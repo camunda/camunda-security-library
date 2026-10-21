@@ -15,6 +15,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -114,6 +115,34 @@ class IssuerAwareTokenValidatorTest {
     } finally {
       detachAppender(appender);
     }
+  }
+
+  /**
+   * Providers configured as https://idp/ and https://idp both resolve to https://idp, yet route
+   * different tokens and may require different audiences. A token routed to the first must not
+   * leave the first's rules cached for the second.
+   */
+  @Test
+  void shouldNotReuseTheValidatorOfAnotherRegistrationThatResolvedToTheSameIssuer() {
+    // given - both registrations resolved to the provider's issuer
+    final var lenient = registration("lenient", "https://idp");
+    final var strict = registration("strict", "https://idp");
+    final var registrations =
+        IssuerRegistrations.ofConfiguration(
+            Map.of(
+                "lenient", OidcConfiguration.builder().issuerUri("https://idp/").build(),
+                "strict", OidcConfiguration.builder().issuerUri("https://idp").build()),
+            id -> "lenient".equals(id) ? lenient : strict);
+    final var validator =
+        new IssuerAwareTokenValidator(
+            registrations, new RegistrationScopedTokenValidatorFactory("lenient"));
+
+    // when - a token routed to the lenient registration comes first
+    validator.validate(createJwtWithIssuer("https://idp/"));
+    final var result = validator.validate(createJwtWithIssuer("https://idp"));
+
+    // then - the strict registration applies its own rules
+    assertThat(result.hasErrors()).isTrue();
   }
 
   private static ClientRegistration registration(

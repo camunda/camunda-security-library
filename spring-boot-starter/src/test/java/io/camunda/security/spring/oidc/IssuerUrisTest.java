@@ -10,7 +10,6 @@ package io.camunda.security.spring.oidc;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Map;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -44,16 +43,6 @@ class IssuerUrisTest {
 
     assertThat(IssuerUris.lookup(byIssuer, "https://other.example.com")).isNull();
     assertThat(IssuerUris.lookup(byIssuer, null)).isNull();
-  }
-
-  @Test
-  void shouldMatchTheMemberOfASetInEitherForm() {
-    final var issuers = Set.of("https://dev-1234.okta.com/");
-
-    assertThat(IssuerUris.match(issuers, "https://dev-1234.okta.com"))
-        .isEqualTo("https://dev-1234.okta.com/");
-    assertThat(IssuerUris.match(issuers, "https://other.okta.com")).isNull();
-    assertThat(IssuerUris.match(issuers, null)).isNull();
   }
 
   @ParameterizedTest

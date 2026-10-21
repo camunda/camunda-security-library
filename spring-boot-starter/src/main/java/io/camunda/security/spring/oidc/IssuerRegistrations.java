@@ -54,11 +54,22 @@ public final class IssuerRegistrations {
   private final Function<String, ClientRegistration> resolve;
   private final Map<String, ClientRegistration> resolved = new ConcurrentHashMap<>();
 
+  /**
+   * Whether a token's issuer may reach a registration through its other trailing-slash form, see
+   * {@link IssuerUris}. Only for {@link #ofConfiguration}: there the keys are configured
+   * issuer-uris, and discovery gives each registration the issuer its tokens carry, which its
+   * validator then requires exactly. {@link #ofResolved} keys are already resolved issuers, and a
+   * host-built registration may carry no issuer the validator could enforce, so it routes exactly.
+   */
+  private final boolean toleratesTrailingSlash;
+
   private IssuerRegistrations(
       final Map<String, String> resolutionKeyByIssuer,
-      final Function<String, ClientRegistration> resolve) {
+      final Function<String, ClientRegistration> resolve,
+      final boolean toleratesTrailingSlash) {
     this.resolutionKeyByIssuer = Map.copyOf(resolutionKeyByIssuer);
     this.resolve = Objects.requireNonNull(resolve, "resolve must not be null");
+    this.toleratesTrailingSlash = toleratesTrailingSlash;
   }
 
   /**
@@ -91,7 +102,8 @@ public final class IssuerRegistrations {
       final String ignoredConfiguration) {
     return new IssuerRegistrations(
         IssuerOwnership.registrationIdByIssuer(providers, LOG, ignoredConfiguration),
-        resolveByRegistrationId);
+        resolveByRegistrationId,
+        true);
   }
 
   /** Takes the accepted issuers and the registrations from resolved registrations. */
@@ -100,13 +112,14 @@ public final class IssuerRegistrations {
         IssuerOwnership.byIssuer(registrations, LOG, IGNORED_CONFIGURATION);
     final var keyByIssuer = new LinkedHashMap<String, String>();
     registrationByIssuer.keySet().forEach(issuer -> keyByIssuer.put(issuer, issuer));
-    return new IssuerRegistrations(keyByIssuer, registrationByIssuer::get);
+    return new IssuerRegistrations(keyByIssuer, registrationByIssuer::get, false);
   }
 
   /**
    * The registration of {@code issuer}, or {@code null} when no configured provider declares that
-   * issuer. Such a token is a refused credential, and not a server error. A trailing slash the
-   * token's issuer and the configured one don't share is tolerated, see {@link IssuerUris}.
+   * issuer. Such a token is a refused credential, and not a server error. For a configuration-based
+   * instance, a trailing slash the token's issuer and the configured one don't share is tolerated,
+   * see {@link #toleratesTrailingSlash}.
    *
    * @throws IllegalStateException if a provider declares the issuer, and its resolution gives no
    *     registration. The repository is then the reason, so a caller must not read the token as the
@@ -115,7 +128,7 @@ public final class IssuerRegistrations {
    *     IllegalArgumentException} that OIDC discovery of an unreachable issuer gives
    */
   public ClientRegistration forIssuer(final String issuer) {
-    final var resolutionKey = IssuerUris.lookup(resolutionKeyByIssuer, issuer);
+    final var resolutionKey = resolutionKeyOf(issuer);
     if (resolutionKey == null) {
       return null;
     }
@@ -143,6 +156,8 @@ public final class IssuerRegistrations {
    * configuration of an ignored duplicate.
    */
   String resolutionKeyOf(final String issuer) {
-    return IssuerUris.lookup(resolutionKeyByIssuer, issuer);
+    return toleratesTrailingSlash
+        ? IssuerUris.lookup(resolutionKeyByIssuer, issuer)
+        : resolutionKeyByIssuer.get(issuer);
   }
 }

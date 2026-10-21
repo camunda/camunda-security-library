@@ -8,7 +8,6 @@
 package io.camunda.security.spring.oidc;
 
 import java.util.Map;
-import java.util.Set;
 import org.springframework.util.StringUtils;
 
 /**
@@ -43,21 +42,6 @@ public final class IssuerUris {
     }
     final var alternative = withToggledTrailingSlash(issuer);
     return alternative != null ? byIssuer.get(alternative) : null;
-  }
-
-  /**
-   * @return the member of {@code issuers} that {@code issuer} matches, exactly or in its other
-   *     form, or {@code null}
-   */
-  public static String match(final Set<String> issuers, final String issuer) {
-    if (issuer == null) {
-      return null;
-    }
-    if (issuers.contains(issuer)) {
-      return issuer;
-    }
-    final var alternative = withToggledTrailingSlash(issuer);
-    return alternative != null && issuers.contains(alternative) ? alternative : null;
   }
 
   /**

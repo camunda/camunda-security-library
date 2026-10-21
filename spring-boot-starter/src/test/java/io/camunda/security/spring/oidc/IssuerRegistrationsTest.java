@@ -202,6 +202,20 @@ final class IssuerRegistrationsTest {
     assertThat(registrations.issuers()).containsExactly("https://issuer-a.example/");
   }
 
+  /**
+   * Resolved registrations may be host-built and carry no issuer a validator could enforce, so the
+   * trailing-slash tolerance of configuration-based routing does not apply to them.
+   */
+  @Test
+  void shouldRouteResolvedRegistrationsByTheirExactIssuer() {
+    final var registration = registration("provider-a", "https://issuer-a.example");
+
+    final var registrations = IssuerRegistrations.ofResolved(List.of(registration));
+
+    assertThat(registrations.forIssuer("https://issuer-a.example")).isSameAs(registration);
+    assertThat(registrations.forIssuer("https://issuer-a.example/")).isNull();
+  }
+
   @Test
   void shouldTakeTheIssuersFromResolvedRegistrations() {
     final var registration = registration("provider-a", "https://issuer-a.example");

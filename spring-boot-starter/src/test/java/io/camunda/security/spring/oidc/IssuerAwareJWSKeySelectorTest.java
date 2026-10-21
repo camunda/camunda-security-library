@@ -153,6 +153,59 @@ class IssuerAwareJWSKeySelectorTest {
         .hasMessageContaining("https://known-issuer");
   }
 
+  /**
+   * Two providers whose issuers differ only by a trailing slash, and only one sets additional keys.
+   * A token routed to the other must not be verified with them: their holder could sign a token
+   * that claims the other provider's issuer and passes its exact issuer check.
+   */
+  @Test
+  void shouldNotGiveATokenTheAdditionalKeysOfALookAlikeIssuer() throws Exception {
+    // given
+    final var withoutKeys =
+        registrationWithAdditionalKeys("without-keys", "https://idp", List.of());
+    final var withKeys =
+        registrationWithAdditionalKeys(
+            "with-keys", "https://idp/", List.of("https://keys.example/jwks"));
+    final var registrations =
+        IssuerRegistrations.ofConfiguration(
+            Map.of(
+                "without-keys", providerWithIssuer("https://idp"),
+                "with-keys", providerWithIssuer("https://idp/")),
+            id -> "with-keys".equals(id) ? withKeys : withoutKeys);
+    // as OidcAccessTokenDecoderFactory builds it: only providers that set additional keys
+    final var selector =
+        new IssuerAwareJWSKeySelector(
+            registrations,
+            jwsKeySelectorFactory,
+            Map.of("https://idp/", List.of("https://keys.example/jwks")));
+    when(jwsKeySelectorFactory.createJWSKeySelector("https://idp/without-keys/jwks", List.of()))
+        .thenReturn(keySelector);
+
+    // when
+    selector.selectKeys(
+        new JWSHeader(JWSAlgorithm.RS256),
+        new JWTClaimsSet.Builder().issuer("https://idp").build(),
+        null);
+
+    // then - the routed provider's own (empty) set, not its twin's keys
+    verify(jwsKeySelectorFactory).createJWSKeySelector("https://idp/without-keys/jwks", List.of());
+  }
+
+  private static ClientRegistration registrationWithAdditionalKeys(
+      final String registrationId, final String issuer, final List<String> additionalUris) {
+    return ClientRegistration.withRegistrationId(registrationId)
+        .clientId("client")
+        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+        .redirectUri("{baseUrl}/cb")
+        .authorizationUri("https://idp/" + registrationId + "/auth")
+        .tokenUri("https://idp/" + registrationId + "/token")
+        .jwkSetUri("https://idp/" + registrationId + "/jwks")
+        .issuerUri(issuer)
+        .providerConfigurationMetadata(
+            Map.of(ClientRegistrationMetadata.ADDITIONAL_JWK_SET_URIS, additionalUris))
+        .build();
+  }
+
   private static OidcConfiguration providerWithIssuer(final String issuerUri) {
     return OidcConfiguration.builder()
         .clientId("client")
