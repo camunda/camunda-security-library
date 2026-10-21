@@ -27,7 +27,7 @@ class IssuerUrisTest {
         .isEqualTo("entra");
   }
 
-  /** Two providers whose issuers differ only by the slash each keep their own tokens. */
+  /** A map that holds both forms answers each exactly; the fallback is for a missing form only. */
   @Test
   void shouldPreferTheExactIssuer() {
     final var byIssuer =

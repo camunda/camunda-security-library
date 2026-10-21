@@ -10,8 +10,12 @@ package io.camunda.security.spring.oidc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.sun.net.httpserver.HttpServer;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -104,6 +108,62 @@ class ScopedClientRegistrationFactoryIssuerTrailingSlashTest {
     assertThatThrownBy(() -> register(base))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("did not match the requested issuer \"" + base + "\"");
+  }
+
+  /**
+   * The first document declares an unrelated issuer, and a second fetch, for the slash variant,
+   * returns a document that declares the variant. The retry must not paper over the first, real
+   * mismatch: only a document that declared the slash variant itself justifies retrying.
+   */
+  @Test
+  void shouldNotRetryWhenTheFirstDocumentDeclaredAnUnrelatedIssuer() throws Exception {
+    // given - the first request answers ".../other", every later one the slash variant
+    final var requests = new AtomicInteger();
+    final var http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    final var base = "http://127.0.0.1:" + http.getAddress().getPort();
+    http.createContext(
+        "/.well-known/openid-configuration",
+        exchange -> {
+          final var issuer = requests.getAndIncrement() == 0 ? base + "/other" : base + "/";
+          final var body =
+              DISCOVERY_TEMPLATE
+                  .replace("%2$s", "")
+                  .formatted(base)
+                  .replace("\"issuer\": \"" + base + "\"", "\"issuer\": \"" + issuer + "\"");
+          final var bytes = body.getBytes(StandardCharsets.UTF_8);
+          exchange.getResponseHeaders().add("Content-Type", "application/json");
+          exchange.sendResponseHeaders(200, bytes.length);
+          try (var out = exchange.getResponseBody()) {
+            out.write(bytes);
+          }
+        });
+    http.start();
+    try {
+      // when / then - the original mismatch, against the unrelated issuer
+      assertThatThrownBy(() -> register(base))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("The Issuer \"" + base + "/other\"");
+    } finally {
+      http.stop(0);
+    }
+  }
+
+  /**
+   * Spring's message is the only source of the declared issuer; a change to its form must make the
+   * retry fall back to failing, never to accepting.
+   */
+  @Test
+  void shouldReadTheDeclaredIssuerFromSpringsMismatchMessage() {
+    assertThat(
+            ScopedClientRegistrationFactory.declaredIssuer(
+                new IllegalStateException(
+                    "The Issuer \"https://idp/v2.0\" provided in the configuration metadata did"
+                        + " not match the requested issuer \"https://idp/v2.0/\"")))
+        .isEqualTo("https://idp/v2.0");
+    assertThat(ScopedClientRegistrationFactory.declaredIssuer(new IllegalStateException("other")))
+        .isNull();
+    assertThat(ScopedClientRegistrationFactory.declaredIssuer(new IllegalStateException()))
+        .isNull();
   }
 
   private OidcTestServer startDiscoveryWithIssuerSuffix(final String suffix) throws Exception {

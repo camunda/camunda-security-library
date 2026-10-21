@@ -20,9 +20,10 @@ import org.springframework.util.StringUtils;
  * ScopedClientRegistrationFactory}), and the provider's tokens carry it in {@code iss}, so a lookup
  * by {@code iss} in a map keyed by the configured form would miss. See camunda/camunda#61896.
  *
- * <p>The exact issuer always wins, so two providers configured as {@code https://idp} and {@code
- * https://idp/} each keep their own tokens. Only routing is tolerant: the registration a token
- * reaches still validates {@code iss} against its own issuer exactly.
+ * <p>The exact issuer is looked up first. Two providers configured as {@code https://idp} and
+ * {@code https://idp/} are one issuer, though, and {@link IssuerOwnership} gives both forms to the
+ * provider declared first. Only routing is tolerant: the registration a token reaches still
+ * validates {@code iss} against its own issuer exactly.
  */
 public final class IssuerUris {
 
