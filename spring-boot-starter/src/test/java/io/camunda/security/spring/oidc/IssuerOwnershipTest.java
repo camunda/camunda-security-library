@@ -70,6 +70,26 @@ class IssuerOwnershipTest {
             });
   }
 
+  /**
+   * A step that must agree with a decoder routing a host's own registrations exactly keeps twin
+   * issuers apart, so each provider keeps its own settings.
+   */
+  @Test
+  void shouldKeepTwinIssuersApartWhenRoutingIsExact() {
+    // given
+    final var providers = providers("first", "https://idp", "second", "https://idp/");
+
+    // when
+    final var owners =
+        IssuerOwnership.registrationIdByIssuer(providers, log, "the test settings", false);
+
+    // then
+    assertThat(owners)
+        .containsExactlyInAnyOrderEntriesOf(
+            Map.of("https://idp", "first", "https://idp/", "second"));
+    assertThat(appender.list).isEmpty();
+  }
+
   @Test
   void shouldKeepUnrelatedIssuersApart() {
     // given

@@ -8,18 +8,22 @@
 package io.camunda.security.spring.converter;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
 
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
+@ExtendWith(MockitoExtension.class)
 class TokenClaimsConvertersByIssuerTest {
+
+  @Mock private LazyTokenClaimsConverter entraConverter;
+  @Mock private LazyTokenClaimsConverter defaultConverter;
 
   @Test
   void returnsConverterForMatchingIssuer() {
-    final var entraConverter = mock(LazyTokenClaimsConverter.class);
-    final var defaultConverter = mock(LazyTokenClaimsConverter.class);
     final var converters =
         new TokenClaimsConvertersByIssuer(Map.of("https://entra.example.com", entraConverter));
 
@@ -29,8 +33,6 @@ class TokenClaimsConvertersByIssuerTest {
 
   @Test
   void returnsDefaultConverterWhenIssuerDoesNotMatchAnyEntry() {
-    final var entraConverter = mock(LazyTokenClaimsConverter.class);
-    final var defaultConverter = mock(LazyTokenClaimsConverter.class);
     final var converters =
         new TokenClaimsConvertersByIssuer(Map.of("https://entra.example.com", entraConverter));
 
@@ -44,8 +46,6 @@ class TokenClaimsConvertersByIssuerTest {
    */
   @Test
   void returnsConverterForAnIssuerThatDiffersOnlyByATrailingSlash() {
-    final var entraConverter = mock(LazyTokenClaimsConverter.class);
-    final var defaultConverter = mock(LazyTokenClaimsConverter.class);
     final var converters =
         new TokenClaimsConvertersByIssuer(
             Map.of("https://login.microsoftonline.com/tenant/v2.0/", entraConverter));
@@ -58,8 +58,6 @@ class TokenClaimsConvertersByIssuerTest {
 
   @Test
   void returnsDefaultConverterWhenIssuerIsNull() {
-    final var entraConverter = mock(LazyTokenClaimsConverter.class);
-    final var defaultConverter = mock(LazyTokenClaimsConverter.class);
     final var converters =
         new TokenClaimsConvertersByIssuer(Map.of("https://entra.example.com", entraConverter));
 
@@ -68,7 +66,6 @@ class TokenClaimsConvertersByIssuerTest {
 
   @Test
   void treatsNullMapAsEmpty() {
-    final var defaultConverter = mock(LazyTokenClaimsConverter.class);
     final var converters = new TokenClaimsConvertersByIssuer(null);
 
     assertThat(converters.getOrDefault("https://entra.example.com", defaultConverter))

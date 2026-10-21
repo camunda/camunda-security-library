@@ -70,6 +70,42 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
                   OidcBeansConfiguration.class,
                   OidcWebappClientBeansConfiguration.class));
 
+  /**
+   * The test context supplies a host ClientRegistrationRepository, which the access-token decoder
+   * routes exactly (IssuerRegistrations.ofResolved). Providers whose issuers differ only by a
+   * trailing slash then each verify their own tokens, so each must keep its own claim settings:
+   * otherwise a token verified for "b" would be mapped with "a"'s username claim.
+   */
+  @Test
+  void keepsTheClaimSettingsOfTwinIssuersApartForAHostRepository() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=default-client",
+            "camunda.security.authentication.oidc.issuer-uri=" + DEFAULT_ISSUER,
+            "camunda.security.authentication.providers.oidc.a.client-id=a-client",
+            "camunda.security.authentication.providers.oidc.a.issuer-uri=https://idp.example.com/realm",
+            "camunda.security.authentication.providers.oidc.a.username-claim=a_user",
+            "camunda.security.authentication.providers.oidc.b.client-id=b-client",
+            "camunda.security.authentication.providers.oidc.b.issuer-uri=https://idp.example.com/realm/",
+            "camunda.security.authentication.providers.oidc.b.username-claim=b_user")
+        .run(
+            ctx -> {
+              final var claims = Map.<String, Object>of("a_user", "alice", "b_user", "bob");
+              assertThat(
+                      byIssuer(ctx)
+                          .get("https://idp.example.com/realm")
+                          .convert(claims)
+                          .authenticatedUsername())
+                  .isEqualTo("alice");
+              assertThat(
+                      byIssuer(ctx)
+                          .get("https://idp.example.com/realm/")
+                          .convert(claims)
+                          .authenticatedUsername())
+                  .isEqualTo("bob");
+            });
+  }
+
   @Test
   void reusesDefaultBeanInstanceForDefaultRegistrationEntry() {
     runner

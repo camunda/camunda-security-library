@@ -28,6 +28,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.util.StringUtils;
 
 /**
@@ -141,7 +142,8 @@ public class OidcBeansConfiguration {
       final OidcProviderConfigurationPort oidcProviderConfigurationPort,
       final LazyTokenClaimsConverter lazyTokenClaimsConverter,
       final MembershipPort membershipPort,
-      final ObjectProvider<MembershipResolutionContextPropagator> contextPropagatorProvider) {
+      final ObjectProvider<MembershipResolutionContextPropagator> contextPropagatorProvider,
+      final ObjectProvider<ClientRegistrationRepository> clientRegistrationRepositoryProvider) {
     final var contextPropagator =
         contextPropagatorProvider.getIfAvailable(MembershipResolutionContextPropagator::identity);
     final var flatOidcConfiguration = properties.getAuthentication().getOidc();
@@ -155,7 +157,8 @@ public class OidcBeansConfiguration {
         IssuerOwnership.registrationIdByIssuer(
             ScopedClientRegistrationFactory.withoutBlankRegistrationIds(configurations),
             LOG,
-            "the claim configuration");
+            "the claim configuration",
+            routesByConfiguration(clientRegistrationRepositoryProvider.getIfAvailable()));
     final Map<String, LazyTokenClaimsConverter> byIssuer = new LinkedHashMap<>();
     winningRegistrationIdByIssuer.forEach(
         (issuerUri, registrationId) -> {
@@ -176,5 +179,17 @@ public class OidcBeansConfiguration {
           byIssuer.put(issuerUri, converter);
         });
     return new TokenClaimsConvertersByIssuer(byIssuer);
+  }
+
+  /**
+   * Whether the access-token decoder routes tokens by the provider configuration, as {@code
+   * OidcWebappClientBeansConfiguration#jwtDecoder} does for CSL's own {@link
+   * LazyClientRegistrationRepository}, and the scoped decoders always do. Issuers that differ only
+   * by a trailing slash are then one issuer. A host's own repository is routed exactly, by its
+   * resolved registrations, so the claim converters must keep those issuers apart too, or a token
+   * verified for one provider would be mapped with the other's claim settings.
+   */
+  private static boolean routesByConfiguration(final ClientRegistrationRepository repository) {
+    return repository == null || repository instanceof LazyClientRegistrationRepository;
   }
 }
