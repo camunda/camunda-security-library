@@ -103,7 +103,8 @@ public class OidcWebappClientBeansConfiguration {
                   decoderSubject(lazy),
                   () ->
                       oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
-                          providers, lazy::findByRegistrationId)));
+                          providers, lazy::findByRegistrationId)),
+          lazy);
     }
     final var providers = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
     return new DeferredJwtDecoder(
@@ -112,7 +113,8 @@ public class OidcWebappClientBeansConfiguration {
                 decoderSubject(clientRegistrationRepository),
                 () ->
                     oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
-                        iterableRegistrations(clientRegistrationRepository), providers)));
+                        iterableRegistrations(clientRegistrationRepository), providers)),
+        clientRegistrationRepository);
   }
 
   /**

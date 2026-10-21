@@ -9,6 +9,7 @@ package io.camunda.security.spring.oidc;
 
 import java.util.Objects;
 import java.util.function.Supplier;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtDecoderInitializationException;
@@ -24,10 +25,30 @@ import org.springframework.security.oauth2.jwt.JwtException;
 public final class DeferredJwtDecoder implements JwtDecoder {
 
   private final Supplier<JwtDecoder> delegate;
+  private final ClientRegistrationRepository routedRepository;
 
   public DeferredJwtDecoder(final Supplier<JwtDecoder> delegateSupplier) {
+    this(delegateSupplier, null);
+  }
+
+  /**
+   * @param routedRepository the repository whose registrations the delegate routes tokens by, for
+   *     {@code OidcWebappClientBeansConfiguration#jwtDecoder}; {@code null} when not known
+   */
+  DeferredJwtDecoder(
+      final Supplier<JwtDecoder> delegateSupplier,
+      final ClientRegistrationRepository routedRepository) {
     Objects.requireNonNull(delegateSupplier, "delegateSupplier must not be null");
     delegate = DeferredOidcResolution.memoizeOnSuccess(() -> build(delegateSupplier));
+    this.routedRepository = routedRepository;
+  }
+
+  /**
+   * The repository whose registrations this decoder routes tokens by, so the claim converters can
+   * route by the same registrations; {@code null} for a decoder a host builds itself.
+   */
+  ClientRegistrationRepository routedRepository() {
+    return routedRepository;
   }
 
   @Override

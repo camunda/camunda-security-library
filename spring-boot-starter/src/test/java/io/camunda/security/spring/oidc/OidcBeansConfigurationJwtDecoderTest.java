@@ -214,6 +214,26 @@ class OidcBeansConfigurationJwtDecoderTest {
             });
   }
 
+  /**
+   * The claim converters route as the default decoder does, so the decoder names the repository it
+   * routes by. A decoder a host builds itself names none.
+   */
+  @Test
+  void shouldNameTheRepositoryTheDefaultDecoderRoutesBy() {
+    runner
+        .withUserConfiguration(SingleRegistrationRepository.class)
+        .withPropertyValues(TWO_PROVIDERS_ONE_WITHOUT_ISSUER_URI)
+        .run(
+            ctx ->
+                assertThat(ctx.getBean(JwtDecoder.class))
+                    .isInstanceOfSatisfying(
+                        DeferredJwtDecoder.class,
+                        decoder ->
+                            assertThat(decoder.routedRepository())
+                                .isSameAs(ctx.getBean(ClientRegistrationRepository.class))));
+    assertThat(new DeferredJwtDecoder(() -> null).routedRepository()).isNull();
+  }
+
   @Test
   void shouldWarnRatherThanFailWhenOnlyAdditionalJwkSetUrisConfigured() {
     runner

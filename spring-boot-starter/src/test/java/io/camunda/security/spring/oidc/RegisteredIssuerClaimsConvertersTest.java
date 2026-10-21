@@ -30,14 +30,32 @@ class RegisteredIssuerClaimsConvertersTest {
 
   @Test
   void shouldRouteByTheIssuerTheRegistrationCarries() {
-    // given - configured as ISSUER + "/", resolved to ISSUER
+    // given - "a" configured as ISSUER + "/", resolved to ISSUER
     final var converters =
         new RegisteredIssuerClaimsConverters(
-            List.of(registration("a", ISSUER)), Map.of("a", firstConverter));
+            List.of(registration("a", ISSUER), registration("b", "https://other.example.com")),
+            Map.of("a", firstConverter, "b", secondConverter));
 
     // when / then
     assertThat(converters.apply(ISSUER)).isSameAs(firstConverter);
+    assertThat(converters.apply("https://other.example.com")).isSameAs(secondConverter);
     assertThat(converters.apply(ISSUER + "/")).isNull();
+  }
+
+  /**
+   * A single registration gets a decoder of its own, which validates the issuer from the provider
+   * configuration where the registration carries none: every token it accepts is that
+   * registration's.
+   */
+  @Test
+  void shouldGiveEveryTokenTheConverterOfASingleRegistration() {
+    // given
+    final var converters =
+        new RegisteredIssuerClaimsConverters(
+            List.of(registration("a", null)), Map.of("a", firstConverter));
+
+    // when / then
+    assertThat(converters.apply(ISSUER)).isSameAs(firstConverter);
   }
 
   /** The decoder routes a shared issuer to the first registration, so the converters do too. */
@@ -95,9 +113,9 @@ class RegisteredIssuerClaimsConvertersTest {
         .clientId("client")
         .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
         .redirectUri("{baseUrl}/sso-callback")
-        .authorizationUri(issuer + "/auth")
-        .tokenUri(issuer + "/token")
-        .jwkSetUri(issuer + "/" + registrationId + "/jwks")
+        .authorizationUri("https://idp.example.com/" + registrationId + "/auth")
+        .tokenUri("https://idp.example.com/" + registrationId + "/token")
+        .jwkSetUri("https://idp.example.com/" + registrationId + "/jwks")
         .issuerUri(issuer)
         .build();
   }

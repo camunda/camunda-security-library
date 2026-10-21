@@ -30,6 +30,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.util.StringUtils;
 
 /**
@@ -130,14 +131,22 @@ public class OidcBeansConfiguration {
    * MembershipResolutionContextPropagator} live; backing off avoids a fatal wiring failure when
    * they're absent.
    *
-   * <p>Two registrations that share an issuer resolve by the order of {@code
-   * getOidcAuthenticationConfigurations()}, which is the order of the configuration with the flat
-   * block first. The decoder of the same deployment reads that order as well, so the converter of a
-   * token comes from the provider that verified it.
+   * <p>A token is mapped with the claim settings of the provider whose registration the decoder
+   * verified it for, so the converters are routed as the decoder routes the tokens:
    *
-   * <p>With an enumerable {@link ClientRegistrationRepository} of the host, the converters follow
-   * the issuers its registrations carry instead, as its decoder does; see {@link
-   * RegisteredIssuerClaimsConverters}.
+   * <ul>
+   *   <li>The library's default decoder over a {@link LazyClientRegistrationRepository} routes by
+   *       that repository's providers, and issuers that differ only by a trailing slash are one
+   *       issuer. Two providers that share an issuer resolve by the order of those providers.
+   *   <li>The library's default decoder over a repository of the host routes by the issuers its
+   *       registrations carry, see {@link RegisteredIssuerClaimsConverters}.
+   *   <li>Without a repository, the scoped decoders route by the configuration, slash-tolerant.
+   *   <li>A decoder the host builds itself keeps the exact lookup by configured issuer-uri, since
+   *       nothing here knows how it routes.
+   * </ul>
+   *
+   * In each case, the converter of the owning registration is taken by registrationId, and an owner
+   * that no provider configures gets the default converter.
    */
   @Bean
   @ConditionalOnBean({MembershipPort.class, LazyTokenClaimsConverter.class})
@@ -148,25 +157,19 @@ public class OidcBeansConfiguration {
       final LazyTokenClaimsConverter lazyTokenClaimsConverter,
       final MembershipPort membershipPort,
       final ObjectProvider<MembershipResolutionContextPropagator> contextPropagatorProvider,
-      final ObjectProvider<ClientRegistrationRepository> clientRegistrationRepositoryProvider) {
+      final ObjectProvider<ClientRegistrationRepository> clientRegistrationRepositoryProvider,
+      final ObjectProvider<JwtDecoder> jwtDecoderProvider) {
     final var contextPropagator =
         contextPropagatorProvider.getIfAvailable(MembershipResolutionContextPropagator::identity);
     final var flatOidcConfiguration = properties.getAuthentication().getOidc();
-    final var configurations = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
-    // IssuerOwnership decides the winner per issuer and logs the duplicate-issuer warning — the
-    // one place that warning is built, redacted and sanitized, rather than a second copy of it
-    // here. Filtered first: a blank/null registrationId must not win ownership over a valid
-    // provider sharing its issuer, or the claims converter is built from the wrong configuration
-    // while the decoder verifies the token with the valid one.
-    final var providers =
-        ScopedClientRegistrationFactory.withoutBlankRegistrationIds(configurations);
-    final var repository = clientRegistrationRepositoryProvider.getIfAvailable();
-    final var routesByConfiguration = routesByConfiguration(repository);
-    if (!routesByConfiguration) {
-      requireNoTrailingSlashTwins(providers);
-    }
+    // Filtered first: a blank/null registrationId must not win ownership over a valid provider
+    // sharing its issuer, or the claims converter is built from the wrong configuration while the
+    // decoder verifies the token with the valid one.
+    final var configured =
+        ScopedClientRegistrationFactory.withoutBlankRegistrationIds(
+            oidcProviderConfigurationPort.getOidcAuthenticationConfigurations());
     final Map<String, LazyTokenClaimsConverter> byRegistrationId = new LinkedHashMap<>();
-    providers.forEach(
+    configured.forEach(
         (registrationId, config) ->
             byRegistrationId.put(
                 registrationId,
@@ -174,17 +177,49 @@ public class OidcBeansConfiguration {
                     ? lazyTokenClaimsConverter
                     : namedProviderConverter(
                         config, flatOidcConfiguration, membershipPort, contextPropagator)));
-    final var winningRegistrationIdByIssuer =
-        IssuerOwnership.registrationIdByIssuer(
-            providers, LOG, "the claim configuration", routesByConfiguration);
-    final Map<String, LazyTokenClaimsConverter> byIssuer = new LinkedHashMap<>();
-    winningRegistrationIdByIssuer.forEach(
-        (issuerUri, registrationId) ->
-            byIssuer.put(issuerUri, byRegistrationId.get(registrationId)));
+
+    final var repository = clientRegistrationRepositoryProvider.getIfAvailable();
+    final var routedRepository = routedRepository(jwtDecoderProvider.getIfUnique());
+    if (routedRepository != null
+        && !(routedRepository instanceof LazyClientRegistrationRepository)) {
+      return new TokenClaimsConvertersByIssuer(
+          byIssuer(configured, false, byRegistrationId),
+          false,
+          new RegisteredIssuerClaimsConverters(
+              iterableRegistrations(routedRepository), byRegistrationId));
+    }
+    if (routedRepository instanceof final LazyClientRegistrationRepository lazy) {
+      return new TokenClaimsConvertersByIssuer(
+          byIssuer(lazy.providers(), true, byRegistrationId), true);
+    }
+    final var routesByConfiguration = repository == null;
     return new TokenClaimsConvertersByIssuer(
-        byIssuer,
-        routesByConfiguration,
-        byRegisteredIssuer(routesByConfiguration, repository, byRegistrationId));
+        byIssuer(configured, routesByConfiguration, byRegistrationId), routesByConfiguration);
+  }
+
+  /**
+   * The converter of each issuer's owner among {@code providers}. IssuerOwnership decides the owner
+   * and logs the duplicate-issuer warning, the one place that warning is built, redacted and
+   * sanitized. An owner without a converter has no entry, so its tokens get the default one.
+   */
+  private static Map<String, LazyTokenClaimsConverter> byIssuer(
+      final Map<String, OidcConfiguration> providers,
+      final boolean trailingSlashTwinsAreOneIssuer,
+      final Map<String, LazyTokenClaimsConverter> byRegistrationId) {
+    final Map<String, LazyTokenClaimsConverter> byIssuer = new LinkedHashMap<>();
+    IssuerOwnership.registrationIdByIssuer(
+            ScopedClientRegistrationFactory.withoutBlankRegistrationIds(providers),
+            LOG,
+            "the claim configuration",
+            trailingSlashTwinsAreOneIssuer)
+        .forEach(
+            (issuerUri, registrationId) -> {
+              final var converter = byRegistrationId.get(registrationId);
+              if (converter != null) {
+                byIssuer.put(issuerUri, converter);
+              }
+            });
+    return byIssuer;
   }
 
   /** A named provider uses the global claims for each claim that it does not set. */
@@ -203,70 +238,20 @@ public class OidcBeansConfiguration {
   }
 
   /**
-   * For a host's own repository, the converters are routed by the issuers its registrations carry,
-   * as its decoder routes the tokens, rather than by the configured issuer-uris: discovery can
-   * resolve a registration to the issuer the provider declares, such as {@code https://idp/realm}
-   * for a configured {@code https://idp/realm/}, and its tokens would otherwise miss the claim
-   * settings of their provider. A repository that cannot be enumerated keeps the lookup by the
-   * configured issuer-uris.
+   * The repository that the library's default decoder ({@code
+   * OidcWebappClientBeansConfiguration#jwtDecoder}) routes tokens by, or {@code null} when the
+   * decoder is one the host builds itself, or there is none or more than one.
    */
+  private static ClientRegistrationRepository routedRepository(final JwtDecoder jwtDecoder) {
+    return jwtDecoder instanceof final DeferredJwtDecoder deferred
+        ? deferred.routedRepository()
+        : null;
+  }
+
+  /** The default decoder accepts only an enumerable repository, so this one is. */
   @SuppressWarnings("unchecked")
-  private static RegisteredIssuerClaimsConverters byRegisteredIssuer(
-      final boolean routesByConfiguration,
-      final ClientRegistrationRepository repository,
-      final Map<String, LazyTokenClaimsConverter> byRegistrationId) {
-    if (routesByConfiguration || !(repository instanceof Iterable)) {
-      return null;
-    }
-    return new RegisteredIssuerClaimsConverters(
-        (Iterable<ClientRegistration>) repository, byRegistrationId);
-  }
-
-  /**
-   * With a host's own repository, the decoder routes the host's resolved registrations exactly,
-   * while this map is keyed by the configured issuer-uris. Two providers whose issuer-uris differ
-   * only by a trailing slash can both resolve to the provider's issuer (see {@code
-   * ScopedClientRegistrationFactory}), and then the decoder and this map could pick different
-   * providers for the same token, so a token would be mapped with another provider's claim
-   * settings. Such a configuration is ambiguous, and before discovery tolerated the slash it failed
-   * anyway, so it is rejected at the start rather than guessed.
-   */
-  private static void requireNoTrailingSlashTwins(final Map<String, OidcConfiguration> providers) {
-    final Map<String, String> registrationIdByIssuer = new LinkedHashMap<>();
-    providers.forEach(
-        (registrationId, configuration) -> {
-          final var issuerUri = configuration.getIssuerUri();
-          if (issuerUri == null || issuerUri.isBlank()) {
-            return;
-          }
-          final var twin = IssuerUris.withToggledTrailingSlash(issuerUri);
-          final var twinRegistrationId = twin != null ? registrationIdByIssuer.get(twin) : null;
-          if (twinRegistrationId != null) {
-            throw new IllegalStateException(
-                ("OIDC providers '%s' and '%s' declare issuer-uris that differ only by a trailing"
-                        + " slash ('%s' and '%s'). With the ClientRegistrationRepository of the host"
-                        + " application, their tokens cannot be told apart, so one provider's claim"
-                        + " settings could be applied to the other's tokens. Remove one of them, or"
-                        + " give both the issuer the identity provider declares.")
-                    .formatted(
-                        UrlRedaction.escapeControlCharacters(twinRegistrationId),
-                        UrlRedaction.escapeControlCharacters(registrationId),
-                        UrlRedaction.redact(twin),
-                        UrlRedaction.redact(issuerUri)));
-          }
-          registrationIdByIssuer.putIfAbsent(issuerUri, registrationId);
-        });
-  }
-
-  /**
-   * Whether the access-token decoder routes tokens by the provider configuration, as {@code
-   * OidcWebappClientBeansConfiguration#jwtDecoder} does for CSL's own {@link
-   * LazyClientRegistrationRepository}, and the scoped decoders always do. Issuers that differ only
-   * by a trailing slash are then one issuer. A host's own repository is routed exactly, by its
-   * resolved registrations, so the claim converters must keep those issuers apart too, or a token
-   * verified for one provider would be mapped with the other's claim settings.
-   */
-  private static boolean routesByConfiguration(final ClientRegistrationRepository repository) {
-    return repository == null || repository instanceof LazyClientRegistrationRepository;
+  private static Iterable<ClientRegistration> iterableRegistrations(
+      final ClientRegistrationRepository repository) {
+    return (Iterable<ClientRegistration>) repository;
   }
 }

@@ -8,7 +8,9 @@
 package io.camunda.security.spring.oidc;
 
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import org.slf4j.Logger;
@@ -23,6 +25,10 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
  * {@code https://idp/realm/}, keeps the claim settings of its provider, and a registration that no
  * provider configures gets none.
  *
+ * <p>A single registration gets a decoder of its own, which validates the issuer from the provider
+ * configuration where the registration carries none. Every token that decoder accepts is that
+ * registration's, so its converter applies whatever the issuer.
+ *
  * <p>The registrations are read on the first lookup, as the decoder reads them, so building the
  * bean starts no discovery.
  */
@@ -32,7 +38,7 @@ final class RegisteredIssuerClaimsConverters implements Function<String, LazyTok
 
   private final Iterable<ClientRegistration> registrations;
   private final Map<String, LazyTokenClaimsConverter> byRegistrationId;
-  private volatile Map<String, LazyTokenClaimsConverter> byIssuer;
+  private volatile Function<String, LazyTokenClaimsConverter> byIssuer;
 
   RegisteredIssuerClaimsConverters(
       final Iterable<ClientRegistration> registrations,
@@ -47,10 +53,10 @@ final class RegisteredIssuerClaimsConverters implements Function<String, LazyTok
    */
   @Override
   public LazyTokenClaimsConverter apply(final String issuer) {
-    return byIssuer().get(issuer);
+    return byIssuer().apply(issuer);
   }
 
-  private Map<String, LazyTokenClaimsConverter> byIssuer() {
+  private Function<String, LazyTokenClaimsConverter> byIssuer() {
     var result = byIssuer;
     if (result == null) {
       synchronized (this) {
@@ -64,9 +70,15 @@ final class RegisteredIssuerClaimsConverters implements Function<String, LazyTok
     return result;
   }
 
-  private Map<String, LazyTokenClaimsConverter> resolve() {
+  private Function<String, LazyTokenClaimsConverter> resolve() {
+    final List<ClientRegistration> all = new ArrayList<>();
+    registrations.forEach(all::add);
+    if (all.size() == 1) {
+      final var converter = byRegistrationId.get(all.get(0).getRegistrationId());
+      return issuer -> converter;
+    }
     final Map<String, LazyTokenClaimsConverter> result = new HashMap<>();
-    IssuerOwnership.byIssuer(registrations, LOG, "the claim configuration")
+    IssuerOwnership.byIssuer(all, LOG, "the claim configuration")
         .forEach(
             (issuer, registration) -> {
               final var converter = byRegistrationId.get(registration.getRegistrationId());
@@ -74,6 +86,6 @@ final class RegisteredIssuerClaimsConverters implements Function<String, LazyTok
                 result.put(issuer, converter);
               }
             });
-    return Map.copyOf(result);
+    return Map.copyOf(result)::get;
   }
 }

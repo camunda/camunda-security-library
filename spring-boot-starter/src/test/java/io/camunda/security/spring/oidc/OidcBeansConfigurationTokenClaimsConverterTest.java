@@ -15,6 +15,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.context.MembershipResolutionContextPropagator;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
@@ -109,17 +110,16 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
   }
 
   /**
-   * The test context supplies a host ClientRegistrationRepository, which the access-token decoder
-   * routes exactly by its resolved registrations. Providers whose issuer-uris differ only by a
-   * trailing slash can both resolve to the provider's issuer, so the decoder and the converter map
-   * could pick different providers for one token. The configuration is rejected at the start.
+   * Providers whose issuer-uris differ only by a trailing slash, behind the default decoder over a
+   * host repository: each token keeps the claim settings of the registration that carries its
+   * issuer, as the decoder routes it.
    */
   @Test
-  void rejectsTwinIssuersForAHostRepository() {
-    runner
+  void keepsTwinIssuersApartForAHostRepository() {
+    hostRunner(
+            registration("a", "https://idp.example.com/realm"),
+            registration("b", "https://idp.example.com/realm/"))
         .withPropertyValues(
-            "camunda.security.authentication.oidc.client-id=default-client",
-            "camunda.security.authentication.oidc.issuer-uri=" + DEFAULT_ISSUER,
             "camunda.security.authentication.providers.oidc.a.client-id=a-client",
             "camunda.security.authentication.providers.oidc.a.issuer-uri=https://idp.example.com/realm",
             "camunda.security.authentication.providers.oidc.a.username-claim=a_user",
@@ -127,14 +127,75 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
             "camunda.security.authentication.providers.oidc.b.issuer-uri=https://idp.example.com/realm/",
             "camunda.security.authentication.providers.oidc.b.username-claim=b_user")
         .run(
-            ctx ->
-                assertThat(ctx)
-                    .hasFailed()
-                    .getFailure()
-                    .rootCause()
-                    .hasMessageContaining("differ only by a trailing slash")
-                    .hasMessageContaining("'a'")
-                    .hasMessageContaining("'b'"));
+            ctx -> {
+              assertThat(usernameOf(ctx, "https://idp.example.com/realm")).isEqualTo("alice");
+              assertThat(usernameOf(ctx, "https://idp.example.com/realm/")).isEqualTo("bob");
+            });
+  }
+
+  /**
+   * The default decoder over a lazy repository of the host routes by that repository's providers,
+   * which can differ from the configuration: here it holds only B. A token of B's slash form gets
+   * B's claim settings, and not those of A, which the configuration declares at the twin issuer.
+   */
+  @Test
+  void routesByTheProvidersOfALazyRepositoryOfTheHost() {
+    final var onlyB =
+        new LazyClientRegistrationRepository(
+            new ScopedClientRegistrationFactory(),
+            Map.of("b", provider("https://idp.example.com/realm/")));
+    runnerWithDecoderRouting(onlyB)
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.a.client-id=a-client",
+            "camunda.security.authentication.providers.oidc.a.issuer-uri=https://idp.example.com/realm",
+            "camunda.security.authentication.providers.oidc.a.username-claim=a_user",
+            "camunda.security.authentication.providers.oidc.b.client-id=b-client",
+            "camunda.security.authentication.providers.oidc.b.issuer-uri=https://idp.example.com/realm/",
+            "camunda.security.authentication.providers.oidc.b.username-claim=b_user")
+        .run(
+            ctx -> {
+              assertThat(usernameOf(ctx, "https://idp.example.com/realm/")).isEqualTo("bob");
+              assertThat(usernameOf(ctx, "https://idp.example.com/realm")).isEqualTo("bob");
+            });
+  }
+
+  /**
+   * A host's own decoder need not use the login registrations, so the converters keep the lookup by
+   * configured issuer-uri: provider X keeps its claim settings although the enumerable login
+   * repository holds only Y.
+   */
+  @Test
+  void keepsTheConfiguredLookupForADecoderOfTheHost() {
+    baseRunner()
+        .withUserConfiguration(StubOidcClients.class)
+        .withBean(
+            ClientRegistrationRepository.class,
+            () -> new InMemoryClientRegistrationRepository(registration("y", "https://y")))
+        .withBean(
+            JwtDecoder.class,
+            () ->
+                token -> {
+                  throw new UnsupportedOperationException("host decoder");
+                })
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.x.client-id=x-client",
+            "camunda.security.authentication.providers.oidc.x.issuer-uri=https://x",
+            "camunda.security.authentication.providers.oidc.x.username-claim=a_user")
+        .run(ctx -> assertThat(usernameOf(ctx, "https://x")).isEqualTo("alice"));
+  }
+
+  /**
+   * A single host registration without issuer metadata gets a decoder of its own, which validates
+   * the issuer from the provider configuration. Its tokens keep the claim settings of its provider.
+   */
+  @Test
+  void appliesTheProviderClaimsToASingleHostRegistrationWithoutAnIssuer() {
+    hostRunner(registration("a", null))
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.a.client-id=a-client",
+            "camunda.security.authentication.providers.oidc.a.issuer-uri=https://idp.example.com",
+            "camunda.security.authentication.providers.oidc.a.username-claim=a_user")
+        .run(ctx -> assertThat(usernameOf(ctx, "https://idp.example.com")).isEqualTo("alice"));
   }
 
   /**
@@ -541,13 +602,44 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
                 OidcWebappClientBeansConfiguration.class));
   }
 
-  /** With an enumerable host repository holding {@code registrations}. */
+  /**
+   * With an enumerable host repository holding {@code registrations}, behind the library's default
+   * decoder.
+   */
   private ApplicationContextRunner hostRunner(final ClientRegistration... registrations) {
+    return runnerWithDecoderRouting(new InMemoryClientRegistrationRepository(registrations));
+  }
+
+  /** With {@code repository}, and a decoder routed by it as the library's default decoder is. */
+  private ApplicationContextRunner runnerWithDecoderRouting(
+      final ClientRegistrationRepository repository) {
     return baseRunner()
         .withUserConfiguration(StubOidcClients.class)
+        .withBean(ClientRegistrationRepository.class, () -> repository)
         .withBean(
-            ClientRegistrationRepository.class,
-            () -> new InMemoryClientRegistrationRepository(registrations));
+            JwtDecoder.class,
+            () ->
+                new DeferredJwtDecoder(
+                    () -> {
+                      throw new UnsupportedOperationException("stub");
+                    },
+                    repository));
+  }
+
+  /** The username that the converter of {@code issuer} reads from a token of alice and bob. */
+  private String usernameOf(final ApplicationContext ctx, final String issuer) {
+    return ctx.getBean(TokenClaimsConvertersByIssuer.class)
+        .getOrDefault(issuer, mockDefaultConverter)
+        .convert(Map.of("sub", "carol", "a_user", "alice", "b_user", "bob"))
+        .authenticatedUsername();
+  }
+
+  private static OidcConfiguration provider(final String issuerUri) {
+    final var provider = new OidcConfiguration();
+    provider.setClientId("host-client");
+    provider.setIssuerUri(issuerUri);
+    provider.setRedirectUri("{baseUrl}/login/oauth2/code/{registrationId}");
+    return provider;
   }
 
   private static ClientRegistration registration(final String registrationId, final String issuer) {
@@ -555,9 +647,9 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
         .clientId(registrationId + "-client")
         .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
         .redirectUri("{baseUrl}/sso-callback")
-        .authorizationUri(issuer + "/auth")
-        .tokenUri(issuer + "/token")
-        .jwkSetUri(issuer + "/jwks")
+        .authorizationUri("https://idp.example.com/" + registrationId + "/auth")
+        .tokenUri("https://idp.example.com/" + registrationId + "/token")
+        .jwkSetUri("https://idp.example.com/" + registrationId + "/jwks")
         .issuerUri(issuer)
         .build();
   }
@@ -588,23 +680,23 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
   @Import(StubOidcClients.class)
   static class StubOidcInfrastructure {
 
-    /** Not enumerable, so the claim converters are looked up by the configured issuer-uris. */
     @Bean
     ClientRegistrationRepository clientRegistrationRepository() {
       return registrationId -> null;
     }
-  }
 
-  /** The stubs besides the repository, for a test that supplies its own. */
-  @Configuration
-  static class StubOidcClients {
-
+    /** A decoder of the host, so the claim converters are looked up by configured issuer-uri. */
     @Bean
     JwtDecoder jwtDecoder() {
       return token -> {
         throw new UnsupportedOperationException("stub");
       };
     }
+  }
+
+  /** The stubs besides the repository and the decoder, for a test that supplies its own. */
+  @Configuration
+  static class StubOidcClients {
 
     @Bean
     OAuth2AuthorizedClientRepository authorizedClientRepository() {
