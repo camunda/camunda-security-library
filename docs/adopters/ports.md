@@ -55,6 +55,7 @@ There are three categories:
 |---|---|---|
 | [`AdminUserMissingHandlerPort`](#adminusermissinghandlerport) | `RedirectingAdminUserMissingAdapter` | _(none — CSL default used)_ |
 | [`WebAppAccessDeniedHandlerPort`](#webappaccessdeniedhandlerport) | `RedirectingWebAppAccessDeniedAdapter` | _(none — CSL default used)_ |
+| [`WebAppAuthorizationEnabledPort`](#webappauthorizationenabledport) | _(none — the filter reads `camunda.security.authorizations.enabled`)_ | `webAppAuthorizationEnabledPort` bean in `WebAppAuthorizationCheckPortConfiguration` |
 | [`WebAppProviderPort`](#webappproviderport) | _(none — host must provide)_ | `WebAppProviderAdapter` |
 
 ---
@@ -530,6 +531,36 @@ void handle(
 to `/webapp/forbidden` (with the `webApp` name appended as a query parameter).
 
 **OC:** no override — the CSL default is used directly.
+
+---
+
+### `WebAppAuthorizationEnabledPort`
+
+```java
+package io.camunda.security.spring.spi;
+```
+
+Decides per request whether the web app authorization filter checks access. Hosts that serve several
+scopes, each with its own `authorizations.enabled` value, plug in the lookup here. The filter asks
+only for authenticated requests to a resolved web app. If the lookup throws, the filter logs a
+warning and treats authorization as enabled.
+
+The SPI only decides whether the filter asks the `AuthorizationCheckPort`, so the host's check port
+must apply the same per-scope flag. See
+[ADR-0037](../adr/0037-resolve-web-app-authorization-flag-per-request.md).
+
+**Method**
+
+```java
+boolean isAuthorizationEnabled(HttpServletRequest request);
+```
+
+**CSL default:** none — without a host bean, the filter reads
+`camunda.security.authorizations.enabled` once, when it is created.
+
+**OC example:** the `webAppAuthorizationEnabledPort` bean in
+`WebAppAuthorizationCheckPortConfiguration` (`dist/`) — returns the flag of the request's physical
+tenant, and `true` for an unknown tenant.
 
 ---
 
