@@ -118,8 +118,7 @@ class WebAppAuthorizationCheckFilterTest {
   @Test
   void authorizationDisabledPassesThroughWithoutCheck() throws Exception {
     // With authorization globally disabled, an authenticated principal on a resolved web app whose
-    // check port would deny access must still pass through — no web-app resolution, no port call,
-    // no denial.
+    // check port would deny access must still pass through — no port call, no denial.
     final var webAppProvider = new RecordingWebAppProvider("operate");
     final var checkPort = new RecordingCheckPort(false);
     final var deniedHandler = new RecordingDeniedHandler();
@@ -136,7 +135,6 @@ class WebAppAuthorizationCheckFilterTest {
     filter.doFilter(request("/operate/processes"), new MockHttpServletResponse(), chain);
 
     assertThat(chain.getRequest()).isNotNull();
-    assertThat(webAppProvider.callCount).isZero();
     assertThat(checkPort.callCount).isZero();
     assertThat(deniedHandler.callCount).isZero();
   }
@@ -161,27 +159,27 @@ class WebAppAuthorizationCheckFilterTest {
   }
 
   @Test
-  void staticResourceAndForbiddenPagePassWithoutAskingAuthorizationEnabledPort() throws Exception {
-    final WebAppAuthorizationEnabledPort failingPort =
-        request -> {
-          throw new IllegalStateException("must not be asked");
-        };
-    final var filter =
-        new WebAppAuthorizationCheckFilter(
-            failingPort,
-            new RecordingWebAppProvider("operate"),
-            new RecordingCheckPort(false),
-            new RecordingDeniedHandler(),
-            () -> alice(),
-            DEFAULT_STATIC_RESOURCE_SUFFIXES);
+  void requestsSkippingTheCheckPassWithoutAskingAuthorizationEnabledPort() throws Exception {
+    final var filter = filterWithFailingEnabledPort("operate", alice());
+    final var anonymousFilter =
+        filterWithFailingEnabledPort("operate", CamundaAuthentication.anonymous());
+    final var noWebAppFilter = filterWithFailingEnabledPort(null, alice());
 
     final var staticChain = new MockFilterChain();
     filter.doFilter(request("/operate/assets/main.js"), new MockHttpServletResponse(), staticChain);
     final var forbiddenChain = new MockFilterChain();
     filter.doFilter(request("/operate/forbidden"), new MockHttpServletResponse(), forbiddenChain);
+    final var anonymousChain = new MockFilterChain();
+    anonymousFilter.doFilter(
+        request("/operate/processes"), new MockHttpServletResponse(), anonymousChain);
+    final var noWebAppChain = new MockFilterChain();
+    noWebAppFilter.doFilter(
+        request("/some/random/path"), new MockHttpServletResponse(), noWebAppChain);
 
     assertThat(staticChain.getRequest()).isNotNull();
     assertThat(forbiddenChain.getRequest()).isNotNull();
+    assertThat(anonymousChain.getRequest()).isNotNull();
+    assertThat(noWebAppChain.getRequest()).isNotNull();
   }
 
   @Test
@@ -282,6 +280,21 @@ class WebAppAuthorizationCheckFilterTest {
         checkPort,
         deniedHandler,
         () -> alice(),
+        DEFAULT_STATIC_RESOURCE_SUFFIXES);
+  }
+
+  private static WebAppAuthorizationCheckFilter filterWithFailingEnabledPort(
+      final String webApp, final CamundaAuthentication authentication) {
+    final WebAppAuthorizationEnabledPort failingPort =
+        request -> {
+          throw new IllegalStateException("must not be asked");
+        };
+    return new WebAppAuthorizationCheckFilter(
+        failingPort,
+        new RecordingWebAppProvider(webApp),
+        new RecordingCheckPort(false),
+        new RecordingDeniedHandler(),
+        () -> authentication,
         DEFAULT_STATIC_RESOURCE_SUFFIXES);
   }
 

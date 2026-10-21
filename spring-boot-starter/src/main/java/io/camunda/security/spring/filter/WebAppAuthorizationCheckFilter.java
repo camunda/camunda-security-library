@@ -122,11 +122,6 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
       return;
     }
 
-    if (!authorizationEnabled.isAuthorizationEnabled(request)) {
-      filterChain.doFilter(request, response);
-      return;
-    }
-
     final CamundaAuthentication authentication = authenticationProvider.getCamundaAuthentication();
     if (authentication == null || authentication.isAnonymous()) {
       filterChain.doFilter(request, response);
@@ -134,7 +129,7 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
     }
 
     final var webApp = webAppProvider.webAppFor(request);
-    if (webApp.isEmpty()) {
+    if (webApp.isEmpty() || !authorizationEnabled.isAuthorizationEnabled(request)) {
       filterChain.doFilter(request, response);
       return;
     }

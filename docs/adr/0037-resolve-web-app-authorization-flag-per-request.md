@@ -21,7 +21,7 @@ How can a host give the filter a flag that depends on the request, without the f
 ## Decision
 
 - A new SPI, `WebAppAuthorizationEnabledPort`, in `io.camunda.security.spring.spi`: `boolean isAuthorizationEnabled(HttpServletRequest)`.
-- The filter asks it for each request, after the `/forbidden` and static-resource checks. If it returns `false`, the request passes without a check.
+- The filter asks it only for authenticated requests to a resolved web app, just before the check. If it returns `false`, the request passes without a check.
 - Without a host bean, the filter uses the global flag, read once when it is created. The existing `boolean` constructor stays.
 - The host must also supply a scope-aware `AuthorizationCheckPort`: the default one approves every request while the global flag is off. `ScopedAuthorizationCheckPortFactory` ([ADR-0019](0019-authorization-check-latency-metric.md)) takes one flag for all its scopes, so call it once per scope.
 
@@ -36,7 +36,7 @@ The SPI lives in the starter because its signature uses `HttpServletRequest`, wh
 **Negative / accepted trade-offs**
 
 - Two places read the flag, the SPI and the check port, and CSL cannot check that they agree. A host that registers only the SPI, with the global flag off, gets a check port that approves every request.
-- The SPI runs for most requests, so it must be cheap and must not throw.
+- The SPI runs for every checked request, so it must be cheap and must not throw.
 
 ## Alternatives Considered
 
