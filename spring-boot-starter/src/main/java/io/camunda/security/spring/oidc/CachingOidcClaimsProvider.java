@@ -339,7 +339,11 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
       final String tokenValue,
       final String issuer,
       final String userInfoUri) {
-    final String key = cacheKey(jwtClaims);
+    final String tokenKey = cacheKey(jwtClaims);
+    // Keyed by endpoint as well: two scopes can accept the same token with different UserInfo
+    // endpoints, and one scope's claims, or its failed fetch, must not answer for the other. A URI
+    // holds no literal null byte, so the separator keeps the parts apart.
+    final String key = tokenKey != null ? userInfoUri + "\0" + tokenKey : null;
     if (key == null) {
       // JWT has no jti and lacks sub+iat+exp — no stable key available; bypass cache and
       // fetch once for this request. Rare in practice; every mainstream IdP includes at

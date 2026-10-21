@@ -136,6 +136,32 @@ class DeferredOidcClaimsProviderTest {
     assertThat(builds).hasValue(0);
   }
 
+  /**
+   * The provider that verified the token disables UserInfo: the request needs no augmentation, so
+   * it does not build the delegate, whose build can fail on unrelated providers.
+   */
+  @Test
+  void shouldPassATokenWhoseProviderDisablesUserInfoWithoutBuildingTheDelegate() {
+    // given
+    final var builds = new AtomicInteger();
+    final var provider =
+        new DeferredOidcClaimsProvider(
+            "the mapping",
+            () -> {
+              builds.incrementAndGet();
+              throw new IllegalStateException("unreachable");
+            });
+    final Map<String, Object> jwt =
+        Map.of("iss", "https://idp.example", "sub", "alice", "scope", "openid");
+
+    // when
+    final var claims = provider.claimsFor(jwt, "token", false, null);
+
+    // then
+    assertThat(claims).isEqualTo(jwt);
+    assertThat(builds).hasValue(0);
+  }
+
   private static OidcClaimsProvider augmentingProvider() {
     return (jwtClaims, tokenValue) -> AUGMENTED_CLAIMS;
   }

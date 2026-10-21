@@ -57,7 +57,9 @@ public final class DeferredOidcClaimsProvider implements OidcClaimsProvider {
       final String tokenValue,
       final boolean userInfoEnabled,
       final String userInfoUri) {
-    if (!CachingOidcClaimsProvider.canAugment(jwtClaims, tokenValue)) {
+    // A provider that disables UserInfo needs no delegate: building it reads the global
+    // configuration, which can fail on providers that have nothing to do with this token.
+    if (!userInfoEnabled || !CachingOidcClaimsProvider.canAugment(jwtClaims, tokenValue)) {
       return jwtClaims;
     }
     return DeferredOidcResolution.resolve(subject, delegate)
