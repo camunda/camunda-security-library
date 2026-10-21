@@ -21,6 +21,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletResponse;
+import java.net.ConnectException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -249,9 +250,12 @@ class OAuth2RefreshTokenFilterTest {
         .satisfies(message -> assertThat(message).contains("code=invalid_request"));
   }
 
-  /** The WARN line carries no free text from the IdP; the description goes to DEBUG only. */
+  /**
+   * The IdP's free text never reaches the log at any level: an IdP may echo request data into
+   * error_description. DEBUG carries the exception chain instead.
+   */
   @Test
-  void shouldLogTheIdpDescriptionOnlyAtDebug() throws Exception {
+  void shouldNeverLogTheIdpDescription() throws Exception {
     // given
     final OAuth2AuthenticationToken authenticationToken = authenticationToken();
     givenRefreshFailingWith(authenticationToken, "Token is not active");
@@ -260,27 +264,74 @@ class OAuth2RefreshTokenFilterTest {
     runFilterExpectingLogout(authenticationToken);
 
     // then
-    assertThat(warnings())
-        .singleElement()
-        .satisfies(message -> assertThat(message).doesNotContain("Token is not active"));
-    assertThat(loggedDescription()).contains("Token is not active");
+    assertThat(allLogged()).noneSatisfy(m -> assertThat(m).contains("Token is not active"));
+    assertThat(loggedDescription()).isEqualTo("ClientAuthorizationException: invalid_grant");
   }
 
+  /**
+   * Spring's token response client reports an I/O failure with a message built from the
+   * RestClientException, which embeds the token endpoint URI — user-info included.
+   */
   @Test
-  void shouldEscapeAndBoundTheIdpDescription() throws Exception {
-    // given - a log-forging attempt that also far exceeds any reasonable log line length
+  void shouldNotLogTheTokenEndpointUriOfAnIoFailure() throws Exception {
+    // given
     final OAuth2AuthenticationToken authenticationToken = authenticationToken();
-    givenRefreshFailingWith(
-        authenticationToken,
-        "invalid_grant\nWARN some.other.Logger -- forged" + (char) 0x2028 + "x".repeat(400));
+    givenStoredClient(authenticationToken, authorizedClient(true, true));
+    final var uri = "https://client:s3cret@idp.example.com/token";
+    when(authorizedClientManager.authorize(any()))
+        .thenThrow(
+            new OAuth2AuthorizationException(
+                new OAuth2Error("invalid_token_response"),
+                "An error occurred while attempting to retrieve the OAuth 2.0 Access Token"
+                    + " Response: I/O error on POST request for \""
+                    + uri
+                    + "\"",
+                new ResourceAccessException(
+                    "I/O error on POST request for \"" + uri + "\": Connection refused",
+                    new ConnectException("Connection refused"))));
 
     // when
-    runFilterExpectingLogout(authenticationToken);
+    filter(authenticationToken).doFilter(request, response, chain);
 
     // then
-    final String description = loggedDescription();
-    assertThat(description).doesNotContain("\n").doesNotContain(" ").contains("\\u000a");
-    assertThat(description).hasSize(200 + "…".length()).endsWith("…");
+    assertThat(allLogged()).noneSatisfy(m -> assertThat(m).contains("s3cret"));
+    assertThat(loggedDescription())
+        .isEqualTo(
+            "OAuth2AuthorizationException: invalid_token_response <- ResourceAccessException"
+                + " <- ConnectException");
+  }
+
+  /** The error code is IdP-controlled too, and it is the one IdP value on the WARN line. */
+  @Test
+  void shouldEscapeAndBoundTheErrorCode() throws Exception {
+    // given - a log-forging attempt that also far exceeds any reasonable log line length
+    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    givenStoredClient(authenticationToken, authorizedClient(true, true));
+    when(authorizedClientManager.authorize(any()))
+        .thenThrow(
+            new ClientAuthorizationException(
+                new OAuth2Error(
+                    "server_error\nWARN some.other.Logger -- forged"
+                        + (char) 0x2028
+                        + "x".repeat(400)),
+                REGISTRATION_ID));
+
+    // when
+    filter(authenticationToken).doFilter(request, response, chain);
+
+    // then
+    assertThat(warnings())
+        .singleElement()
+        .satisfies(
+            message -> {
+              assertThat(message)
+                  .doesNotContain("\n")
+                  .doesNotContain("\u2028")
+                  .contains("code=server_error\\u000aWARN")
+                  .endsWith("…");
+              final var code = message.substring(message.indexOf("code=") + "code=".length());
+              assertThat(code).hasSize(200 + "…".length());
+            });
   }
 
   @Test
@@ -322,22 +373,6 @@ class OAuth2RefreshTokenFilterTest {
                 assertThat(message)
                     .contains("subject 'user-1'")
                     .doesNotContain("jane@example.com"));
-  }
-
-  @Test
-  void shouldLogPlaceholderWhenTheIdpSendsNoDescription() throws Exception {
-    // given
-    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
-    givenStoredClient(authenticationToken, authorizedClient(true, true));
-    when(authorizedClientManager.authorize(any()))
-        .thenThrow(
-            new OAuth2AuthorizationException(new OAuth2Error("invalid_grant"), (String) null));
-
-    // when
-    runFilterExpectingLogout(authenticationToken);
-
-    // then
-    assertThat(loggedDescription()).isEqualTo("n/a");
   }
 
   @Test
@@ -446,7 +481,11 @@ class OAuth2RefreshTokenFilterTest {
         .toList();
   }
 
-  /** The IdP description is the last argument of the DEBUG failure line. */
+  private List<String> allLogged() {
+    return appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+  }
+
+  /** The failure description is the last argument of the DEBUG failure line. */
   private String loggedDescription() {
     return appender.list.stream()
         .filter(event -> event.getLevel() == Level.DEBUG)

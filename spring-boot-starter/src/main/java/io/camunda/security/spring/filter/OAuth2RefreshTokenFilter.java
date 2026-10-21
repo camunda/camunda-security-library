@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.filter;
 
+import io.camunda.security.spring.oidc.FailureDescription;
 import io.camunda.security.spring.oidc.UrlRedaction;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -265,10 +266,13 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
   }
 
   /**
-   * Logs the error code (stable and diagnostic) at WARN and keeps the IdP's free-text description
-   * at DEBUG. Both are IdP-controlled, so both are escaped and bounded. The principal is identified
-   * by its {@code sub} claim rather than {@link OAuth2AuthenticationToken#getName()}, which follows
-   * {@code user-name-attribute} and is often an email address.
+   * Logs the error code (stable and diagnostic) at WARN, and the exception chain at DEBUG through
+   * {@link FailureDescription}. Never the exception message: Spring builds it from the IdP's {@code
+   * error_description} or from a {@code RestClientException} that embeds the token endpoint URI,
+   * user-info included, so it can carry credentials or echoed request data. Every logged value is
+   * IdP-controlled, so each is escaped and bounded. The principal is identified by its {@code sub}
+   * claim rather than {@link OAuth2AuthenticationToken#getName()}, which follows {@code
+   * user-name-attribute} and is often an email address.
    */
   private static void logRefreshFailure(
       final String outcome,
@@ -288,7 +292,7 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
         "Refresh token exchange failure for subject '{}' on registration '{}': {}",
         subject,
         registrationId,
-        forLog(e.getMessage()));
+        forLog(FailureDescription.describe(e)));
   }
 
   private static String forLog(final Object value) {
