@@ -108,10 +108,12 @@ public class OidcWebappClientBeansConfiguration {
     }
     final var providers = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
     // Read once, at the first use, and shared with the claim converters: a dynamic host repository
-    // can change between two reads, and both must decide the owner of an issuer alike.
+    // can change between two reads, and both must decide the owner of an issuer alike. An empty
+    // read throws rather than being kept, so a repository that fills later is read again at the
+    // next decode.
     final var registrations =
         DeferredOidcResolution.memoizeOnSuccess(
-            () -> List.copyOf(iterableRegistrations(clientRegistrationRepository)));
+            () -> nonEmptySnapshot(clientRegistrationRepository));
     return new DeferredJwtDecoder(
         () ->
             DeferredOidcResolution.resolve(
@@ -146,6 +148,15 @@ public class OidcWebappClientBeansConfiguration {
               + " Iterable<ClientRegistration> so it can enumerate all providers. Register a"
               + " custom @Bean JwtDecoder if you are using a non-iterable repository.");
     }
+  }
+
+  private static List<ClientRegistration> nonEmptySnapshot(
+      final ClientRegistrationRepository repository) {
+    final var snapshot = List.copyOf(iterableRegistrations(repository));
+    if (snapshot.isEmpty()) {
+      throw new IllegalStateException(OidcAccessTokenDecoderFactory.ERROR_NO_PROVIDER);
+    }
+    return snapshot;
   }
 
   @SuppressWarnings("unchecked")

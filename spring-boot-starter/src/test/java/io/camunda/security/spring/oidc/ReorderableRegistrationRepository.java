@@ -14,7 +14,7 @@ import java.util.List;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 
-/** A host repository whose registrations change order, as a dynamic repository can. */
+/** A host repository whose registrations change, as those of a dynamic repository can. */
 final class ReorderableRegistrationRepository
     implements ClientRegistrationRepository, Iterable<ClientRegistration> {
 
@@ -26,6 +26,10 @@ final class ReorderableRegistrationRepository
 
   void reverse() {
     Collections.reverse(registrations);
+  }
+
+  void add(final ClientRegistration registration) {
+    registrations.add(registration);
   }
 
   @Override

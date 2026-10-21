@@ -244,6 +244,37 @@ class OidcBeansConfigurationJwtDecoderTest {
             });
   }
 
+  /**
+   * A host repository that is empty at the first decode and filled afterwards: the empty read is
+   * not kept as the shared snapshot, so the next decode reads the repository again and builds its
+   * decoder.
+   */
+  @Test
+  void shouldReadAHostRepositoryAgainAfterAnEmptyRead() {
+    final var repository = new ReorderableRegistrationRepository();
+    runner
+        .withBean(ClientRegistrationRepository.class, () -> repository)
+        .withPropertyValues(TWO_PROVIDERS_ONE_WITHOUT_ISSUER_URI)
+        .run(
+            ctx -> {
+              final var decoder = ctx.getBean(JwtDecoder.class);
+              assertThatThrownBy(() -> decoder.decode("any-token"))
+                  .rootCause()
+                  .hasMessageContaining("ClientRegistrationRepository is empty");
+
+              repository.add(
+                  testRegistration(
+                      "keycloak", "https://kc.example.com/jwks", "https://kc.example.com"));
+
+              // the decoder builds now, and fails on the token itself
+              assertThatThrownBy(() -> decoder.decode("any-token"))
+                  .isInstanceOf(BadJwtException.class);
+              assertThat(routingOf(decoder).registrations().get())
+                  .extracting(ClientRegistration::getRegistrationId)
+                  .containsExactly("keycloak");
+            });
+  }
+
   @Test
   void shouldRouteByTheProvidersOfTheLibrarysLazyRepository() {
     runner
