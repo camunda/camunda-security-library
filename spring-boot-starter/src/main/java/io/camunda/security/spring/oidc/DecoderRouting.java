@@ -16,9 +16,9 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
  * tokens, so the claim converters route them the same way. Exactly one component is set.
  *
  * @param lazyRepository the library's repository, whose providers the decoder routes by
- * @param registrations the registrations of a host repository, read once and shared by the decoder
- *     and the claim converters. A dynamic repository can change between two reads, and both must
- *     decide the owner of an issuer from the same registrations.
+ * @param registrations the registrations of a host repository that the decoder was built from,
+ *     shared with the claim converters. A dynamic repository can change between two reads, and both
+ *     must decide the owner of an issuer from the same registrations.
  */
 record DecoderRouting(
     LazyClientRegistrationRepository lazyRepository,

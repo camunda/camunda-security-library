@@ -216,8 +216,8 @@ class OidcBeansConfigurationJwtDecoderTest {
 
   /**
    * The claim converters route as the default decoder does, from the same registrations. A dynamic
-   * host repository can change between two reads, so the decoder reads it once, at the first use,
-   * and shares that snapshot: after the repository reorders, the snapshot keeps its order.
+   * host repository can change between two reads, so the decoder shares the registrations it was
+   * built from: after the repository reorders, they keep their order.
    */
   @Test
   void shouldShareOneSnapshotOfAHostRepositoryWithTheClaimConverters() {
@@ -230,7 +230,11 @@ class OidcBeansConfigurationJwtDecoderTest {
         .withPropertyValues(TWO_PROVIDERS_ONE_WITHOUT_ISSUER_URI)
         .run(
             ctx -> {
-              final var routing = routingOf(ctx.getBean(JwtDecoder.class));
+              final var decoder = ctx.getBean(JwtDecoder.class);
+              // the decoder builds at the first decode, and fails on the token itself
+              assertThatThrownBy(() -> decoder.decode("any-token"))
+                  .isInstanceOf(BadJwtException.class);
+              final var routing = routingOf(decoder);
               assertThat(routing.lazyRepository()).isNull();
               assertThat(routing.registrations().get())
                   .extracting(ClientRegistration::getRegistrationId)
@@ -272,6 +276,43 @@ class OidcBeansConfigurationJwtDecoderTest {
               assertThat(routingOf(decoder).registrations().get())
                   .extracting(ClientRegistration::getRegistrationId)
                   .containsExactly("keycloak");
+            });
+  }
+
+  /**
+   * A host repository holds an invalid registration at the first decode, and the host fixes it
+   * afterwards. The failed attempt publishes nothing, so the next decode reads the repository
+   * again, builds its decoder, and shares the fixed registrations.
+   */
+  @Test
+  void shouldReadAHostRepositoryAgainAfterAFailedBuild() {
+    final var repository =
+        new ReorderableRegistrationRepository(
+            testRegistration("keycloak", "https://kc.example.com/jwks", "https://kc.example.com"),
+            testRegistration("azure", "https://azure.example.com/jwks", null));
+    runner
+        .withBean(ClientRegistrationRepository.class, () -> repository)
+        .withPropertyValues(TWO_PROVIDERS_ONE_WITHOUT_ISSUER_URI)
+        .run(
+            ctx -> {
+              final var decoder = ctx.getBean(JwtDecoder.class);
+              assertThatThrownBy(() -> decoder.decode("any-token"))
+                  .rootCause()
+                  .hasMessageContaining("missing 'issuerUri'");
+              assertThatThrownBy(() -> routingOf(decoder).registrations().get())
+                  .isInstanceOf(IllegalStateException.class);
+
+              repository.replaceAll(
+                  testRegistration(
+                      "keycloak", "https://kc.example.com/jwks", "https://kc.example.com"),
+                  testRegistration(
+                      "azure", "https://azure.example.com/jwks", "https://azure.example.com"));
+
+              assertThatThrownBy(() -> decoder.decode("any-token"))
+                  .isInstanceOf(BadJwtException.class);
+              assertThat(routingOf(decoder).registrations().get())
+                  .extracting(r -> r.getProviderDetails().getIssuerUri())
+                  .containsExactly("https://kc.example.com", "https://azure.example.com");
             });
   }
 

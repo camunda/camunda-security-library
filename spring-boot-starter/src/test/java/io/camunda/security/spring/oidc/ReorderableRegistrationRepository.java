@@ -32,6 +32,11 @@ final class ReorderableRegistrationRepository
     registrations.add(registration);
   }
 
+  void replaceAll(final ClientRegistration... replacements) {
+    registrations.clear();
+    registrations.addAll(List.of(replacements));
+  }
+
   @Override
   public ClientRegistration findByRegistrationId(final String registrationId) {
     return registrations.stream()

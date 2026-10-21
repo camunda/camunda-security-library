@@ -14,6 +14,7 @@ import io.camunda.security.spring.security.ProtectedOidcWebappCondition;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
@@ -107,21 +108,39 @@ public class OidcWebappClientBeansConfiguration {
           DecoderRouting.byProviders(lazy));
     }
     final var providers = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
-    // Read once, at the first use, and shared with the claim converters: a dynamic host repository
-    // can change between two reads, and both must decide the owner of an issuer alike. An empty
-    // read throws rather than being kept, so a repository that fills later is read again at the
-    // next decode.
-    final var registrations =
-        DeferredOidcResolution.memoizeOnSuccess(
-            () -> nonEmptySnapshot(clientRegistrationRepository));
+    // Each attempt to build the decoder reads the repository again, so a repository that the host
+    // fixes after a failed attempt recovers. The registrations of the attempt that succeeds are
+    // published to the claim converters: a dynamic host repository can change between two reads,
+    // and both must decide the owner of an issuer from the same registrations.
+    final var published = new AtomicReference<List<ClientRegistration>>();
     return new DeferredJwtDecoder(
         () ->
             DeferredOidcResolution.resolve(
                 decoderSubject(clientRegistrationRepository),
-                () ->
-                    oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
-                        registrations.get(), providers)),
-        DecoderRouting.byRegistrations(registrations));
+                () -> {
+                  final var registrations =
+                      List.copyOf(iterableRegistrations(clientRegistrationRepository));
+                  final var decoder =
+                      oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
+                          registrations, providers);
+                  published.set(registrations);
+                  return decoder;
+                }),
+        DecoderRouting.byRegistrations(() -> publishedRegistrations(published)));
+  }
+
+  /**
+   * The registrations the decoder was built from. The claim converters read them only for a token
+   * the decoder verified, so the decoder is built by then.
+   */
+  private static List<ClientRegistration> publishedRegistrations(
+      final AtomicReference<List<ClientRegistration>> published) {
+    final var registrations = published.get();
+    if (registrations == null) {
+      throw new IllegalStateException(
+          "The OIDC access-token decoder has not been built yet, so its registrations are unknown.");
+    }
+    return registrations;
   }
 
   /**
@@ -148,15 +167,6 @@ public class OidcWebappClientBeansConfiguration {
               + " Iterable<ClientRegistration> so it can enumerate all providers. Register a"
               + " custom @Bean JwtDecoder if you are using a non-iterable repository.");
     }
-  }
-
-  private static List<ClientRegistration> nonEmptySnapshot(
-      final ClientRegistrationRepository repository) {
-    final var snapshot = List.copyOf(iterableRegistrations(repository));
-    if (snapshot.isEmpty()) {
-      throw new IllegalStateException(OidcAccessTokenDecoderFactory.ERROR_NO_PROVIDER);
-    }
-    return snapshot;
   }
 
   @SuppressWarnings("unchecked")
