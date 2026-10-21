@@ -150,7 +150,7 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
     }
 
     final var webApp = webAppProvider.webAppFor(request);
-    if (webApp.isEmpty() || !isAuthorizationEnabled(request)) {
+    if (webApp.isEmpty() || !isAuthorizationEnabled(request, authentication)) {
       filterChain.doFilter(request, response);
       return;
     }
@@ -174,13 +174,15 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
   }
 
   /** Treats a failing lookup as enabled, so the check port decides instead of letting it pass. */
-  private boolean isAuthorizationEnabled(final HttpServletRequest request) {
+  private boolean isAuthorizationEnabled(
+      final HttpServletRequest request, final CamundaAuthentication authentication) {
     try {
       return authorizationEnabled.isAuthorizationEnabled(request);
     } catch (final RuntimeException e) {
       LOG.warn(
-          "Could not resolve whether authorization is enabled for {}; checking access",
+          "Could not resolve the authorization flag for {} (principal: {}); checking access",
           request.getRequestURI(),
+          principalId(authentication),
           e);
       return true;
     }
