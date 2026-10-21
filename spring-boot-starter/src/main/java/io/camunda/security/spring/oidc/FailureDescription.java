@@ -7,13 +7,15 @@
  */
 package io.camunda.security.spring.oidc;
 
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.util.StringUtils;
 
 /**
  * A safe, specific description of a failure in an exchange with an identity provider, for a log
- * line: the exception chain's simple names, plus the OAuth2 error code or CSL's own message where
- * those are known not to carry secrets.
+ * line: the exception chain's simple names, plus the OAuth2 error code (from either OAuth2
+ * exception type) or CSL's own message where those are known not to carry secrets.
  *
  * <p>Specificity is the point. A timeout, a refused connection, a TLS failure and a rejected client
  * assertion all surface as the same {@code ResourceAccessException} or {@code
@@ -50,9 +52,9 @@ public final class FailureDescription {
         description.append(" <- ");
       }
       description.append(current.getClass().getSimpleName());
-      if (current instanceof final OAuth2AuthorizationException oauth
-          && StringUtils.hasText(oauth.getError().getErrorCode())) {
-        description.append(": ").append(oauth.getError().getErrorCode());
+      final var errorCode = errorCodeOf(current);
+      if (StringUtils.hasText(errorCode)) {
+        description.append(": ").append(errorCode);
       } else if (isThrownByCamunda(current) && StringUtils.hasText(current.getMessage())) {
         // CSL's own messages name a registration, a keystore path or a configuration property.
         description.append(": ").append(current.getMessage());
@@ -61,6 +63,23 @@ public final class FailureDescription {
       seen++;
     }
     return description.toString();
+  }
+
+  /**
+   * The OAuth2 error code, from either OAuth2 exception type. They are siblings, not subtypes:
+   * {@link OAuth2AuthorizationException} is what a failed token exchange throws, and {@link
+   * OAuth2AuthenticationException} is what a custom client manager or a login flow may throw.
+   */
+  private static String errorCodeOf(final Throwable throwable) {
+    final OAuth2Error error;
+    if (throwable instanceof final OAuth2AuthorizationException authorization) {
+      error = authorization.getError();
+    } else if (throwable instanceof final OAuth2AuthenticationException authentication) {
+      error = authentication.getError();
+    } else {
+      return null;
+    }
+    return error == null ? null : error.getErrorCode();
   }
 
   /**

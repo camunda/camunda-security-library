@@ -248,6 +248,7 @@ class OAuth2RefreshTokenFilterTest {
     assertThat(warnings())
         .singleElement()
         .satisfies(message -> assertThat(message).contains("code=invalid_request"));
+    assertThat(loggedDescription()).isEqualTo("OAuth2AuthenticationException: invalid_request");
   }
 
   /**

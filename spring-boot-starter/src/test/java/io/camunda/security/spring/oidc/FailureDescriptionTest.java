@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.ConnectException;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.web.client.ResourceAccessException;
@@ -31,6 +32,18 @@ class FailureDescriptionTest {
         .isEqualTo(
             "OAuth2AuthorizationException: invalid_token_response <- ResourceAccessException"
                 + " <- ConnectException");
+  }
+
+  /** A sibling of OAuth2AuthorizationException, not a subtype, so it needs its own extraction. */
+  @Test
+  void shouldNameTheErrorCodeOfAnOAuth2AuthenticationException() {
+    final var failure =
+        new OAuth2AuthenticationException(
+            new OAuth2Error("invalid_request", "echoed request data", null),
+            "message that must not be logged");
+
+    assertThat(FailureDescription.describe(failure))
+        .isEqualTo("OAuth2AuthenticationException: invalid_request");
   }
 
   /** AssertionJwkProvider's messages have been read and name only configuration, so they stay. */
