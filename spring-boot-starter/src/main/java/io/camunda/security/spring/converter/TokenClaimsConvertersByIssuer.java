@@ -10,6 +10,7 @@ package io.camunda.security.spring.converter;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.spring.oidc.IssuerUris;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * Per-issuer {@link LazyTokenClaimsConverter} lookup for {@link OidcTokenAuthenticationConverter}.
@@ -23,9 +24,19 @@ import java.util.Map;
  * bean of that {@code Map} type itself. Since a {@link LazyTokenClaimsConverter} bean already
  * exists (the default), a bare-{@code Map} injection point would silently receive {@code
  * {"lazyTokenClaimsConverter": <default instance>}} instead of this issuer-keyed map.
+ *
+ * @param byIssuer the converters by configured issuer-uri
+ * @param toleratesTrailingSlash see {@link #getOrDefault}
+ * @param byRegisteredIssuer when not {@code null}, decides instead of {@code byIssuer}: the
+ *     converter of the registration a token's issuer is routed to, or {@code null} for the default
+ *     one. For a host's own {@code ClientRegistrationRepository}, whose registrations can carry an
+ *     issuer other than the configured issuer-uri, as discovery resolves {@code https://idp/realm/}
+ *     to the {@code https://idp/realm} the provider declares.
  */
 public record TokenClaimsConvertersByIssuer(
-    Map<String, LazyTokenClaimsConverter> byIssuer, boolean toleratesTrailingSlash) {
+    Map<String, LazyTokenClaimsConverter> byIssuer,
+    boolean toleratesTrailingSlash,
+    Function<String, LazyTokenClaimsConverter> byRegisteredIssuer) {
 
   public TokenClaimsConvertersByIssuer {
     byIssuer = byIssuer != null ? Map.copyOf(byIssuer) : Map.of();
@@ -34,6 +45,12 @@ public record TokenClaimsConvertersByIssuer(
   /** Exact lookup by issuer, for a map whose keys are the issuers tokens carry. */
   public TokenClaimsConvertersByIssuer(final Map<String, LazyTokenClaimsConverter> byIssuer) {
     this(byIssuer, false);
+  }
+
+  /** Lookup in {@code byIssuer} only. */
+  public TokenClaimsConvertersByIssuer(
+      final Map<String, LazyTokenClaimsConverter> byIssuer, final boolean toleratesTrailingSlash) {
+    this(byIssuer, toleratesTrailingSlash, null);
   }
 
   /**
@@ -47,10 +64,14 @@ public record TokenClaimsConvertersByIssuer(
    */
   public LazyTokenClaimsConverter getOrDefault(
       final String issuer, final LazyTokenClaimsConverter defaultConverter) {
-    final var converter =
-        toleratesTrailingSlash
-            ? IssuerUris.lookup(byIssuer, issuer)
-            : issuer != null ? byIssuer.get(issuer) : null;
+    final var converter = issuer != null ? lookup(issuer) : null;
     return converter != null ? converter : defaultConverter;
+  }
+
+  private LazyTokenClaimsConverter lookup(final String issuer) {
+    if (byRegisteredIssuer != null) {
+      return byRegisteredIssuer.apply(issuer);
+    }
+    return toleratesTrailingSlash ? IssuerUris.lookup(byIssuer, issuer) : byIssuer.get(issuer);
   }
 }

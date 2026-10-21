@@ -28,6 +28,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.util.StringUtils;
 
@@ -133,6 +134,10 @@ public class OidcBeansConfiguration {
    * getOidcAuthenticationConfigurations()}, which is the order of the configuration with the flat
    * block first. The decoder of the same deployment reads that order as well, so the converter of a
    * token comes from the provider that verified it.
+   *
+   * <p>With an enumerable {@link ClientRegistrationRepository} of the host, the converters follow
+   * the issuers its registrations carry instead, as its decoder does; see {@link
+   * RegisteredIssuerClaimsConverters}.
    */
   @Bean
   @ConditionalOnBean({MembershipPort.class, LazyTokenClaimsConverter.class})
@@ -155,34 +160,66 @@ public class OidcBeansConfiguration {
     // while the decoder verifies the token with the valid one.
     final var providers =
         ScopedClientRegistrationFactory.withoutBlankRegistrationIds(configurations);
-    final var routesByConfiguration =
-        routesByConfiguration(clientRegistrationRepositoryProvider.getIfAvailable());
+    final var repository = clientRegistrationRepositoryProvider.getIfAvailable();
+    final var routesByConfiguration = routesByConfiguration(repository);
     if (!routesByConfiguration) {
       requireNoTrailingSlashTwins(providers);
     }
+    final Map<String, LazyTokenClaimsConverter> byRegistrationId = new LinkedHashMap<>();
+    providers.forEach(
+        (registrationId, config) ->
+            byRegistrationId.put(
+                registrationId,
+                config == flatOidcConfiguration
+                    ? lazyTokenClaimsConverter
+                    : namedProviderConverter(
+                        config, flatOidcConfiguration, membershipPort, contextPropagator)));
     final var winningRegistrationIdByIssuer =
         IssuerOwnership.registrationIdByIssuer(
             providers, LOG, "the claim configuration", routesByConfiguration);
     final Map<String, LazyTokenClaimsConverter> byIssuer = new LinkedHashMap<>();
     winningRegistrationIdByIssuer.forEach(
-        (issuerUri, registrationId) -> {
-          final var config = configurations.get(registrationId);
-          if (config == flatOidcConfiguration) {
-            byIssuer.put(issuerUri, lazyTokenClaimsConverter);
-            return;
-          }
-          // A named provider uses the global claims for each claim that it does not set.
-          final var claims = OidcPrincipalClaims.resolve(config, flatOidcConfiguration);
-          final var converter =
-              new LazyTokenClaimsConverter(
-                  claims.usernameClaim(),
-                  claims.clientIdClaim(),
-                  claims.preferUsernameClaim(),
-                  membershipPort,
-                  contextPropagator);
-          byIssuer.put(issuerUri, converter);
-        });
-    return new TokenClaimsConvertersByIssuer(byIssuer, routesByConfiguration);
+        (issuerUri, registrationId) ->
+            byIssuer.put(issuerUri, byRegistrationId.get(registrationId)));
+    return new TokenClaimsConvertersByIssuer(
+        byIssuer,
+        routesByConfiguration,
+        byRegisteredIssuer(routesByConfiguration, repository, byRegistrationId));
+  }
+
+  /** A named provider uses the global claims for each claim that it does not set. */
+  private static LazyTokenClaimsConverter namedProviderConverter(
+      final OidcConfiguration config,
+      final OidcConfiguration flatOidcConfiguration,
+      final MembershipPort membershipPort,
+      final MembershipResolutionContextPropagator contextPropagator) {
+    final var claims = OidcPrincipalClaims.resolve(config, flatOidcConfiguration);
+    return new LazyTokenClaimsConverter(
+        claims.usernameClaim(),
+        claims.clientIdClaim(),
+        claims.preferUsernameClaim(),
+        membershipPort,
+        contextPropagator);
+  }
+
+  /**
+   * For a host's own repository, the converters are routed by the issuers its registrations carry,
+   * as its decoder routes the tokens, rather than by the configured issuer-uris: discovery can
+   * resolve a registration to the issuer the provider declares, such as {@code https://idp/realm}
+   * for a configured {@code https://idp/realm/}, and its tokens would otherwise miss the claim
+   * settings of their provider. A repository that cannot be enumerated keeps the lookup by the
+   * configured issuer-uris.
+   */
+  @SuppressWarnings("unchecked")
+  private static RegisteredIssuerClaimsConverters byRegisteredIssuer(
+      final boolean routesByConfiguration,
+      final ClientRegistrationRepository repository,
+      final Map<String, LazyTokenClaimsConverter> byRegistrationId) {
+    if (routesByConfiguration || !(repository instanceof Iterable)) {
+      return null;
+    }
+    return new RegisteredIssuerClaimsConverters(
+        (Iterable<ClientRegistration>) repository, byRegistrationId);
   }
 
   /**

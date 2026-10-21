@@ -32,9 +32,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
@@ -56,19 +59,54 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
   @Mock LazyTokenClaimsConverter mockDefaultConverter;
 
   private final ApplicationContextRunner runner =
-      new ApplicationContextRunner()
-          .withPropertyValues("camunda.security.authentication.method=oidc")
-          .withUserConfiguration(StubOidcInfrastructure.class)
-          .withBean(MembershipPort.class, () -> mockMembershipPort)
-          .withBean(LazyTokenClaimsConverter.class, () -> mockDefaultConverter)
-          .withBean(
-              MembershipResolutionContextPropagator.class,
-              MembershipResolutionContextPropagator::identity)
-          .withConfiguration(
-              AutoConfigurations.of(
-                  CamundaSecurityConfiguration.class,
-                  OidcBeansConfiguration.class,
-                  OidcWebappClientBeansConfiguration.class));
+      baseRunner().withUserConfiguration(StubOidcInfrastructure.class);
+
+  /**
+   * camunda/camunda#61896, with a host repository: provider {@code a} is configured with a trailing
+   * slash, and its registration resolved to the issuer the provider declares. Its tokens keep the
+   * claim settings of {@code a}, rather than the default ones.
+   */
+  @Test
+  void appliesTheProviderClaimsToAHostRegistrationResolvedToAnotherIssuer() {
+    hostRunner(registration("a", "https://idp.example.com/realm"))
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.a.client-id=a-client",
+            "camunda.security.authentication.providers.oidc.a.issuer-uri=https://idp.example.com/realm/",
+            "camunda.security.authentication.providers.oidc.a.username-claim=upn")
+        .run(
+            ctx -> {
+              final var converter =
+                  ctx.getBean(TokenClaimsConvertersByIssuer.class)
+                      .getOrDefault("https://idp.example.com/realm", mockDefaultConverter);
+              assertThat(converter).isNotSameAs(mockDefaultConverter);
+              assertThat(
+                      converter
+                          .convert(Map.of("sub", "bob", "upn", "alice"))
+                          .authenticatedUsername())
+                  .isEqualTo("alice");
+            });
+  }
+
+  /**
+   * A host registration that no provider configures gets the default converter, also where its
+   * issuer is the slash twin of a configured one.
+   */
+  @Test
+  void usesTheDefaultConverterForAnUnconfiguredRegistrationOfAHostRepository() {
+    hostRunner(
+            registration("a", "https://idp.example.com/realm"),
+            registration("host-only", "https://idp.example.com/realm/"))
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.a.client-id=a-client",
+            "camunda.security.authentication.providers.oidc.a.issuer-uri=https://idp.example.com/realm/",
+            "camunda.security.authentication.providers.oidc.a.username-claim=upn")
+        .run(
+            ctx ->
+                assertThat(
+                        ctx.getBean(TokenClaimsConvertersByIssuer.class)
+                            .getOrDefault("https://idp.example.com/realm/", mockDefaultConverter))
+                    .isSameAs(mockDefaultConverter));
+  }
 
   /**
    * The test context supplies a host ClientRegistrationRepository, which the access-token decoder
@@ -488,6 +526,42 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
                     .containsKey(DEFAULT_ISSUER));
   }
 
+  private ApplicationContextRunner baseRunner() {
+    return new ApplicationContextRunner()
+        .withPropertyValues("camunda.security.authentication.method=oidc")
+        .withBean(MembershipPort.class, () -> mockMembershipPort)
+        .withBean(LazyTokenClaimsConverter.class, () -> mockDefaultConverter)
+        .withBean(
+            MembershipResolutionContextPropagator.class,
+            MembershipResolutionContextPropagator::identity)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                OidcBeansConfiguration.class,
+                OidcWebappClientBeansConfiguration.class));
+  }
+
+  /** With an enumerable host repository holding {@code registrations}. */
+  private ApplicationContextRunner hostRunner(final ClientRegistration... registrations) {
+    return baseRunner()
+        .withUserConfiguration(StubOidcClients.class)
+        .withBean(
+            ClientRegistrationRepository.class,
+            () -> new InMemoryClientRegistrationRepository(registrations));
+  }
+
+  private static ClientRegistration registration(final String registrationId, final String issuer) {
+    return ClientRegistration.withRegistrationId(registrationId)
+        .clientId(registrationId + "-client")
+        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+        .redirectUri("{baseUrl}/sso-callback")
+        .authorizationUri(issuer + "/auth")
+        .tokenUri(issuer + "/token")
+        .jwkSetUri(issuer + "/jwks")
+        .issuerUri(issuer)
+        .build();
+  }
+
   private static Map<String, LazyTokenClaimsConverter> byIssuer(final ApplicationContext ctx) {
     return ctx.getBean(TokenClaimsConvertersByIssuer.class).byIssuer();
   }
@@ -511,12 +585,19 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
    * discovery).
    */
   @Configuration
+  @Import(StubOidcClients.class)
   static class StubOidcInfrastructure {
 
+    /** Not enumerable, so the claim converters are looked up by the configured issuer-uris. */
     @Bean
     ClientRegistrationRepository clientRegistrationRepository() {
       return registrationId -> null;
     }
+  }
+
+  /** The stubs besides the repository, for a test that supplies its own. */
+  @Configuration
+  static class StubOidcClients {
 
     @Bean
     JwtDecoder jwtDecoder() {

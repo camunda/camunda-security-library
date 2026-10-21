@@ -70,6 +70,22 @@ class TokenClaimsConvertersByIssuerTest {
     assertThat(converters.toleratesTrailingSlash()).isFalse();
   }
 
+  /** Routing by registered issuer decides on its own, also where the map has an entry. */
+  @Test
+  void routesByRegisteredIssuerInsteadOfTheConfiguredIssuers() {
+    final var converters =
+        new TokenClaimsConvertersByIssuer(
+            Map.of("https://entra.example.com/", defaultConverter),
+            false,
+            issuer -> "https://entra.example.com".equals(issuer) ? entraConverter : null);
+
+    assertThat(converters.getOrDefault("https://entra.example.com", defaultConverter))
+        .isSameAs(entraConverter);
+    assertThat(converters.getOrDefault("https://entra.example.com/", entraConverter))
+        .isSameAs(entraConverter);
+    assertThat(converters.getOrDefault(null, defaultConverter)).isSameAs(defaultConverter);
+  }
+
   @Test
   void returnsDefaultConverterWhenIssuerIsNull() {
     final var converters =
