@@ -105,7 +105,8 @@ public final class IssuerRegistrations {
 
   /**
    * The registration of {@code issuer}, or {@code null} when no configured provider declares that
-   * issuer. Such a token is a refused credential, and not a server error.
+   * issuer. Such a token is a refused credential, and not a server error. A trailing slash the
+   * token's issuer and the configured one don't share is tolerated, see {@link IssuerUris}.
    *
    * @throws IllegalStateException if a provider declares the issuer, and its resolution gives no
    *     registration. The repository is then the reason, so a caller must not read the token as the
@@ -114,7 +115,7 @@ public final class IssuerRegistrations {
    *     IllegalArgumentException} that OIDC discovery of an unreachable issuer gives
    */
   public ClientRegistration forIssuer(final String issuer) {
-    final var resolutionKey = resolutionKeyByIssuer.get(issuer);
+    final var resolutionKey = IssuerUris.lookup(resolutionKeyByIssuer, issuer);
     if (resolutionKey == null) {
       return null;
     }
@@ -142,6 +143,6 @@ public final class IssuerRegistrations {
    * configuration of an ignored duplicate.
    */
   String resolutionKeyOf(final String issuer) {
-    return resolutionKeyByIssuer.get(issuer);
+    return IssuerUris.lookup(resolutionKeyByIssuer, issuer);
   }
 }

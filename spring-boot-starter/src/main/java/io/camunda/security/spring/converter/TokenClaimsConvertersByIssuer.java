@@ -8,6 +8,7 @@
 package io.camunda.security.spring.converter;
 
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
+import io.camunda.security.spring.oidc.IssuerUris;
 import java.util.Map;
 
 /**
@@ -31,10 +32,12 @@ public record TokenClaimsConvertersByIssuer(Map<String, LazyTokenClaimsConverter
 
   /**
    * @param issuer the bearer token's issuer, or {@code null} if absent
-   * @param defaultConverter returned when {@code issuer} is {@code null} or has no entry here
+   * @param defaultConverter returned when {@code issuer} is {@code null} or has no entry here, in
+   *     either trailing-slash form (see {@link IssuerUris})
    */
   public LazyTokenClaimsConverter getOrDefault(
       final String issuer, final LazyTokenClaimsConverter defaultConverter) {
-    return issuer == null ? defaultConverter : byIssuer.getOrDefault(issuer, defaultConverter);
+    final var converter = IssuerUris.lookup(byIssuer, issuer);
+    return converter != null ? converter : defaultConverter;
   }
 }

@@ -140,7 +140,7 @@ public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelecto
     final var clientRegistration = getClientRegistrationByIssuer(issuer);
     final var providerDetails = clientRegistration.getProviderDetails();
     final var jwkSetUri = providerDetails.getJwkSetUri();
-    final var additionalUris = additionalJwkSetUrisByIssuer.get(issuer);
+    final var additionalUris = IssuerUris.lookup(additionalJwkSetUrisByIssuer, issuer);
     try {
       return jwsKeySelectorFactory.createJWSKeySelector(jwkSetUri, additionalUris);
     } catch (final IllegalArgumentException invalidJwkSetUri) {

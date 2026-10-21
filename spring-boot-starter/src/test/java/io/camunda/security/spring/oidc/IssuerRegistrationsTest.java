@@ -184,6 +184,24 @@ final class IssuerRegistrationsTest {
     assertThat(registrations.issuers()).containsExactly("https://issuer-a.example");
   }
 
+  /**
+   * A token's iss can be the provider's form of a configured issuer that has an extra trailing
+   * slash, see camunda/camunda#61896. It reaches that provider's registration, whose validators
+   * then compare iss with the registration's issuer exactly.
+   */
+  @Test
+  void shouldResolveATokenWhoseIssuerDiffersFromTheConfiguredOneByATrailingSlash() {
+    final var registration = registration("provider-a", "https://issuer-a.example");
+    final var registrations =
+        IssuerRegistrations.ofConfiguration(
+            Map.of("provider-a", provider("https://issuer-a.example/")),
+            registrationId -> registration);
+
+    assertThat(registrations.forIssuer("https://issuer-a.example")).isSameAs(registration);
+    assertThat(registrations.forIssuer("https://issuer-a.example/")).isSameAs(registration);
+    assertThat(registrations.issuers()).containsExactly("https://issuer-a.example/");
+  }
+
   @Test
   void shouldTakeTheIssuersFromResolvedRegistrations() {
     final var registration = registration("provider-a", "https://issuer-a.example");

@@ -1230,6 +1230,12 @@ public final class ScopedClientRegistrationFactory {
         oidc.getAudiences() != null ? List.copyOf(oidc.getAudiences()) : List.of());
     merged.put(FailSoftOidcUserService.USER_INFO_REQUIRED_METADATA_KEY, oidc.isUserInfoRequired());
     ClientRegistrationMetadata.write(merged, oidc);
+    // The token validators expect this issuer. Discovery can settle on the provider's form of the
+    // configured issuer-uri (see discover), so record the one the registration resolved to.
+    final var resolvedIssuer = built.getProviderDetails().getIssuerUri();
+    if (StringUtils.hasText(resolvedIssuer)) {
+      merged.put(ClientRegistrationMetadata.ISSUER, resolvedIssuer);
+    }
     if (StringUtils.hasText(oidc.getEndSessionEndpointUri())) {
       merged.put("end_session_endpoint", oidc.getEndSessionEndpointUri());
     }
@@ -1489,9 +1495,47 @@ public final class ScopedClientRegistrationFactory {
    */
   private ClientRegistration.Builder discoveredBuilder(final String issuerUri) {
     final var cached = discoveryByIssuer.get(issuerUri);
-    return cached != null
-        ? ClientRegistrations.fromOidcConfiguration(cached)
-        : ClientRegistrations.fromIssuerLocation(issuerUri);
+    return cached != null ? ClientRegistrations.fromOidcConfiguration(cached) : discover(issuerUri);
+  }
+
+  /**
+   * Discovery from {@code issuer-uri}, tolerating a trailing slash the identity provider's document
+   * doesn't have (or has where the configuration doesn't).
+   *
+   * <p>{@code fromIssuerLocation} requires the document's {@code issuer} to equal the configured
+   * string exactly, and throws {@link IllegalStateException} when it doesn't — the one failure it
+   * reports with that type; an unreachable or unparseable document is an {@link
+   * IllegalArgumentException}. Entra ID ({@code .../v2.0} in the document) and Okta (no trailing
+   * slash) are commonly configured with a trailing slash, which failed startup and login. When the
+   * two differ only by that slash, discovery is retried with the other form, and the registration
+   * takes the provider's issuer: it is what the provider's tokens carry in {@code iss}, so the
+   * token validators, which compare against the registration's issuer exactly, accept them. Any
+   * other mismatch, or a retry that fails too, rethrows the original exception.
+   */
+  private static ClientRegistration.Builder discover(final String issuerUri) {
+    try {
+      return ClientRegistrations.fromIssuerLocation(issuerUri);
+    } catch (final IllegalStateException issuerMismatch) {
+      final var alternative = IssuerUris.withToggledTrailingSlash(issuerUri);
+      if (alternative == null) {
+        throw issuerMismatch;
+      }
+      final ClientRegistration.Builder builder;
+      try {
+        builder = ClientRegistrations.fromIssuerLocation(alternative);
+      } catch (final RuntimeException retryFailure) {
+        issuerMismatch.addSuppressed(retryFailure);
+        throw issuerMismatch;
+      }
+      LOG.warn(
+          "The configured issuer-uri '{}' differs from the issuer '{}' that the identity provider's"
+              + " discovery document declares only by a trailing slash. Using '{}', which is what"
+              + " its tokens carry; set issuer-uri to it to remove this warning.",
+          UrlRedaction.redact(issuerUri),
+          UrlRedaction.redact(alternative),
+          UrlRedaction.redact(alternative));
+      return builder;
+    }
   }
 
   /**

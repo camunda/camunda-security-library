@@ -277,6 +277,69 @@ final class ScopedJwtDecoderFactoryTest {
   }
 
   // ---------------------------------------------------------------------------
+  // Configured issuer and the provider's issuer differ by a trailing slash (#61896)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Entra ID's discovery document declares {@code .../v2.0}, and Okta's has no trailing slash, but
+   * operators often configure {@code issuer-uri} with one. Discovery used to fail on the mismatch,
+   * which stopped the gateway from starting. The registration now takes the provider's form, which
+   * is also what its tokens carry.
+   */
+  @Test
+  void shouldDecodeATokenWhenTheConfiguredIssuerHasATrailingSlashTheProviderDoesNot()
+      throws Exception {
+    // given
+    serverA = OidcTestServer.startRsa("key-a");
+    final var providers =
+        Map.of("provider-a", discoveredProvider("client-a", serverA.issuerUri() + "/"));
+    final var decoder = factoryFor(providers).buildIssuerAwareDecoder(auth(providers));
+
+    // when the provider's token carries its own form of the issuer
+    final var jwt = decoder.decode(serverA.sign(serverA.issuerUri()));
+
+    // then
+    assertThat(jwt.getSubject()).isEqualTo("alice");
+    assertThat(jwt.getIssuer().toString()).isEqualTo(serverA.issuerUri());
+  }
+
+  /** With several providers, the token reaches its provider through its iss claim. */
+  @Test
+  void shouldRouteATokenToTheProviderWhoseConfiguredIssuerHasAnExtraTrailingSlash()
+      throws Exception {
+    // given
+    serverA = OidcTestServer.startRsa("key-a");
+    serverB = OidcTestServer.startRsa("key-b");
+    final var providers =
+        Map.of(
+            "provider-a", discoveredProvider("client-a", serverA.issuerUri() + "/"),
+            "provider-b", discoveredProvider(serverB, "client-b"));
+    final var decoder = factoryFor(providers).buildIssuerAwareDecoder(auth(providers));
+
+    // when / then
+    assertThat(decoder.decode(serverA.sign(serverA.issuerUri())).getSubject()).isEqualTo("alice");
+    assertThat(decoder.decode(serverB.sign(serverB.issuerUri())).getSubject()).isEqualTo("alice");
+  }
+
+  /**
+   * Tolerating the slash in discovery doesn't loosen token validation: the registration's issuer is
+   * the provider's form, and a token claiming the configured form is still rejected.
+   */
+  @Test
+  void shouldStillRejectATokenWhoseIssuerIsTheConfiguredFormRatherThanTheProvidersForm()
+      throws Exception {
+    // given
+    serverA = OidcTestServer.startRsa("key-a");
+    final var providers =
+        Map.of("provider-a", discoveredProvider("client-a", serverA.issuerUri() + "/"));
+    final var decoder = factoryFor(providers).buildIssuerAwareDecoder(auth(providers));
+
+    // when / then
+    final var token = serverA.sign(serverA.issuerUri() + "/");
+    assertThatThrownBy(() -> decoder.decode(token)).isInstanceOf(BadJwtException.class);
+  }
+
+  // ---------------------------------------------------------------------------
   // One provider that does not answer
   // ---------------------------------------------------------------------------
 
@@ -355,10 +418,16 @@ final class ScopedJwtDecoderFactoryTest {
    */
   private static OidcConfiguration discoveredProvider(
       final OidcTestServer server, final String clientId) {
+    return discoveredProvider(clientId, server.issuerUri());
+  }
+
+  /** As {@link #discoveredProvider(OidcTestServer, String)}, with the issuer-uri as configured. */
+  private static OidcConfiguration discoveredProvider(
+      final String clientId, final String configuredIssuerUri) {
     return OidcConfiguration.builder()
         .clientId(clientId)
         .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
-        .issuerUri(server.issuerUri())
+        .issuerUri(configuredIssuerUri)
         .build();
   }
 

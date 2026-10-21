@@ -38,6 +38,24 @@ class TokenClaimsConvertersByIssuerTest {
         .isSameAs(defaultConverter);
   }
 
+  /**
+   * The configured issuer-uri can carry a trailing slash the provider's tokens don't, see
+   * camunda/camunda#61896. Its converter must still apply, not the default one.
+   */
+  @Test
+  void returnsConverterForAnIssuerThatDiffersOnlyByATrailingSlash() {
+    final var entraConverter = mock(LazyTokenClaimsConverter.class);
+    final var defaultConverter = mock(LazyTokenClaimsConverter.class);
+    final var converters =
+        new TokenClaimsConvertersByIssuer(
+            Map.of("https://login.microsoftonline.com/tenant/v2.0/", entraConverter));
+
+    assertThat(
+            converters.getOrDefault(
+                "https://login.microsoftonline.com/tenant/v2.0", defaultConverter))
+        .isSameAs(entraConverter);
+  }
+
   @Test
   void returnsDefaultConverterWhenIssuerIsNull() {
     final var entraConverter = mock(LazyTokenClaimsConverter.class);

@@ -207,7 +207,7 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
       final String issuer,
       final IssuerRegistrations registrations,
       final Set<String> issuersWithUserInfo) {
-    if (!issuersWithUserInfo.contains(issuer)) {
+    if (IssuerUris.match(issuersWithUserInfo, issuer) == null) {
       // An unknown issuer, and an issuer whose owner disables UserInfo, need no endpoint. To
       // answer them here keeps their tokens up while their provider is unreachable, because the
       // resolution below makes OIDC discovery.
