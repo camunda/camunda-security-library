@@ -21,6 +21,8 @@ import java.util.Set;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest;
@@ -34,6 +36,7 @@ import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.web.authentication.logout.LogoutHandler;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
@@ -43,13 +46,18 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * <p>If the token cannot be refreshed (no refresh token available, the IdP rejects the refresh
  * token, etc.) the user is forcibly logged out and an {@link OAuth2AuthenticationException} is
  * thrown so the authentication failure handler can take over. A refresh that fails because the IdP
- * is unreachable or erroring keeps the session and answers 503, so the client can retry.
+ * is unreachable or erroring keeps the session and answers 503 with a {@code Retry-After} header,
+ * so the client can retry.
  */
 public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
 
   private static final Logger LOG = LoggerFactory.getLogger(OAuth2RefreshTokenFilter.class);
   private static final int MAX_LOGGED_VALUE_LENGTH = 200;
   private static final String SUBJECT_CLAIM = "sub";
+  private static final String RETRY_AFTER_SECONDS = "5";
+
+  /** Spring's error code for a token endpoint response it could not read or did not accept. */
+  private static final String INVALID_TOKEN_RESPONSE = "invalid_token_response";
 
   /** Refresh failures after which the refresh token can never succeed; see isSessionEnding. */
   private static final Set<String> SESSION_ENDING_ERROR_CODES =
@@ -139,12 +147,13 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
     } catch (final OAuth2AuthorizationException e) {
       // A failed refresh surfaces as OAuth2AuthorizationException, not
       // OAuth2AuthenticationException; uncaught, it escapes to the container and logs as ERROR.
-      if (!isSessionEnding(e.getError())) {
+      if (!isSessionEnding(e)) {
         // The IdP is unreachable or failing (server_error, temporarily_unavailable, an I/O error
         // wrapped as invalid_token_response, ...). The refresh token may still be good, so keep
         // the session and let the client retry, rather than log out every user whose access
         // token expires during an outage.
         logRefreshFailure("keeping the session", authenticationToken, e.getError(), e);
+        response.setHeader(HttpHeaders.RETRY_AFTER, RETRY_AFTER_SECONDS);
         response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
         return;
       }
@@ -260,9 +269,36 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
    * Whether a refresh failure means the refresh token can never work again, so the session has to
    * end: the IdP rejected the grant itself (expired, revoked or already rotated) or no longer lets
    * this client refresh. Anything else is treated as transient.
+   *
+   * <p>Spring reports a token endpoint answer it can't read as {@code invalid_token_response}, the
+   * same code it uses for an I/O failure. When that answer was an HTTP 4xx other than 408 or 429,
+   * the IdP or a proxy in front of it rejected the request, so the session ends too. Spring keeps
+   * the status only for a status other than 400. A 400 with a body that isn't an OAuth2 error, such
+   * as an HTML page, loses it and is treated as transient: the user gets 503 until the session
+   * expires. A compliant IdP answers a dead refresh token with {@code invalid_grant} instead.
    */
-  private static boolean isSessionEnding(final OAuth2Error error) {
-    return error != null && SESSION_ENDING_ERROR_CODES.contains(error.getErrorCode());
+  private static boolean isSessionEnding(final OAuth2AuthorizationException e) {
+    final var error = e.getError();
+    if (error == null) {
+      return false;
+    }
+    if (SESSION_ENDING_ERROR_CODES.contains(error.getErrorCode())) {
+      return true;
+    }
+    return INVALID_TOKEN_RESPONSE.equals(error.getErrorCode()) && isRejectedByTokenEndpoint(e);
+  }
+
+  /** Whether the token endpoint answered with a 4xx that a retry can't fix (not 408 or 429). */
+  private static boolean isRejectedByTokenEndpoint(final Throwable e) {
+    for (Throwable cause = e.getCause(); cause != null; cause = cause.getCause()) {
+      if (cause instanceof final RestClientResponseException response) {
+        final var status = response.getStatusCode();
+        return status.is4xxClientError()
+            && status.value() != HttpStatus.REQUEST_TIMEOUT.value()
+            && status.value() != HttpStatus.TOO_MANY_REQUESTS.value();
+      }
+    }
+    return false;
   }
 
   /**

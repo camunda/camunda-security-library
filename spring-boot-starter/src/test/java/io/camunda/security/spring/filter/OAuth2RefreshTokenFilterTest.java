@@ -34,6 +34,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -55,6 +57,7 @@ import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.logout.LogoutHandler;
 import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClientResponseException;
 
 @ExtendWith(MockitoExtension.class)
 class OAuth2RefreshTokenFilterTest {
@@ -222,6 +225,45 @@ class OAuth2RefreshTokenFilterTest {
             new OAuth2AuthorizationException(
                 new OAuth2Error("invalid_token_response"),
                 new ResourceAccessException("Connection refused")));
+
+    // when
+    filter(authenticationToken).doFilter(request, response, chain);
+
+    // then
+    assertSessionKeptWithServiceUnavailable(authenticationToken);
+  }
+
+  /**
+   * An IdP or proxy that rejects a dead refresh token with a non-standard 4xx: Spring reports it as
+   * {@code invalid_token_response}, like an outage, but a retry can't succeed.
+   */
+  @ParameterizedTest
+  @ValueSource(ints = {401, 403, 404})
+  void shouldLogoutWhenTheTokenEndpointRejectsTheRequest(final int status) throws Exception {
+    // given
+    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    givenStoredClient(authenticationToken, authorizedClient(true, true));
+    givenTokenEndpointAnswering(status);
+
+    // when
+    final OAuth2AuthenticationException thrown = runFilterExpectingLogout(authenticationToken);
+
+    // then
+    assertThat(thrown.getError().getErrorCode()).isEqualTo("refresh_token_failed");
+    assertThat(authenticationToken.isAuthenticated()).isFalse();
+    verify(logoutHandler).logout(request, response, authenticationToken);
+    verify(chain, never()).doFilter(any(), any());
+  }
+
+  /** A timeout, throttling or a server error at the token endpoint can pass on a retry. */
+  @ParameterizedTest
+  @ValueSource(ints = {408, 429, 500, 502})
+  void shouldKeepTheSessionWhenTheTokenEndpointAnswersARetryableStatus(final int status)
+      throws Exception {
+    // given
+    final OAuth2AuthenticationToken authenticationToken = authenticationToken();
+    givenStoredClient(authenticationToken, authorizedClient(true, true));
+    givenTokenEndpointAnswering(status);
 
     // when
     filter(authenticationToken).doFilter(request, response, chain);
@@ -460,6 +502,21 @@ class OAuth2RefreshTokenFilterTest {
                 new OAuth2Error("invalid_grant"), REGISTRATION_ID, description));
   }
 
+  /** How Spring's token response client reports a status other than 400 from the endpoint. */
+  private void givenTokenEndpointAnswering(final int status) {
+    when(authorizedClientManager.authorize(any()))
+        .thenThrow(
+            new OAuth2AuthorizationException(
+                new OAuth2Error("invalid_token_response"),
+                new RestClientResponseException(
+                    status + " on POST request",
+                    HttpStatusCode.valueOf(status),
+                    "",
+                    null,
+                    null,
+                    null)));
+  }
+
   private OAuth2AuthenticationException runFilterExpectingLogout(
       final OAuth2AuthenticationToken authenticationToken) {
     final var filter = filter(authenticationToken);
@@ -470,6 +527,7 @@ class OAuth2RefreshTokenFilterTest {
   private void assertSessionKeptWithServiceUnavailable(
       final OAuth2AuthenticationToken authenticationToken) throws Exception {
     assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+    assertThat(response.getHeader(HttpHeaders.RETRY_AFTER)).isEqualTo("5");
     assertThat(authenticationToken.isAuthenticated()).isTrue();
     verify(logoutHandler, never()).logout(any(), any(), any());
     verify(chain, never()).doFilter(any(), any());
