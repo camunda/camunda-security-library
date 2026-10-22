@@ -117,11 +117,6 @@ public final class ScopedJwtDecoderFactory {
   }
 
   /**
-   * Resolves the registration of one provider of the scope. The decoder asks for the provider of
-   * the issuer a token carries, so a provider that does not answer fails the tokens of its own
-   * issuer, and the report names that provider and the scope.
-   */
-  /**
    * Resolves a registration at most once when it succeeds. Not under a lock, as {@code
    * LazyClientRegistrationRepository} does it: a lock would hold another caller for the whole
    * discovery timeout of an unreachable provider. The first result wins.
@@ -143,6 +138,11 @@ public final class ScopedJwtDecoderFactory {
     return winner != null ? winner : registration;
   }
 
+  /**
+   * Resolves the registration of one provider of the scope. The decoder asks for the provider of
+   * the issuer a token carries, so a provider that does not answer fails the tokens of its own
+   * issuer, and the report names that provider and the scope.
+   */
   private ClientRegistration resolve(
       final Map<String, OidcConfiguration> providers,
       final String registrationId,
