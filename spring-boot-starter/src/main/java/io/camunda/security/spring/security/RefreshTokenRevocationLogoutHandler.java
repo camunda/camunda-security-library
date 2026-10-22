@@ -10,7 +10,7 @@ package io.camunda.security.spring.security;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.jwk.JWK;
-import io.camunda.security.spring.oidc.AssertionJwkProvider;
+import io.camunda.security.spring.oidc.FailureDescription;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
 import io.camunda.security.spring.oidc.UrlRedaction;
 import jakarta.servlet.http.HttpServletRequest;
@@ -39,7 +39,6 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
-import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.web.authentication.logout.LogoutHandler;
@@ -104,9 +103,6 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
           "insufficient_scope",
           "server_error",
           "temporarily_unavailable");
-
-  /** Enough of the chain to name a root cause without turning a WARN into a stack trace. */
-  private static final int MAX_CAUSE_DEPTH = 4;
 
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -211,7 +207,7 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
               + " still terminated, but the refresh token may remain valid at the identity provider"
               + " until it expires.",
           safeId,
-          describe(e));
+          FailureDescription.describe(e));
     }
   }
 
@@ -315,7 +311,7 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
               + " expires.",
           safeId,
           UrlRedaction.redact(revocationEndpoint),
-          describe(e));
+          FailureDescription.describe(e));
       return;
     }
 
@@ -452,52 +448,6 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
    * being quietly followed — which is what makes the non-2xx check in {@link #revokeRefreshToken}
    * meaningful rather than theoretical.
    */
-  /**
-   * A safe, specific description of a failure: the exception chain's simple names, plus the OAuth2
-   * error code or CSL's own message where those are known not to carry secrets.
-   *
-   * <p>Specificity is the point. A timeout, a refused connection, a TLS failure and a rejected
-   * client assertion all surface here as the same {@code ResourceAccessException} or {@code
-   * IllegalStateException}, and an operator cannot act on that. What stays out is the exception
-   * <em>message</em> of anything the HTTP stack raised: {@code ResourceAccessException} embeds the
-   * request URI, and Spring strips its query string but not its user-info.
-   */
-  private static String describe(final Throwable throwable) {
-    final var description = new StringBuilder();
-    var current = throwable;
-    var seen = 0;
-    while (current != null && seen < MAX_CAUSE_DEPTH) {
-      if (seen > 0) {
-        description.append(" <- ");
-      }
-      description.append(current.getClass().getSimpleName());
-      if (current instanceof final OAuth2AuthorizationException oauth
-          && StringUtils.hasText(oauth.getError().getErrorCode())) {
-        description.append(": ").append(oauth.getError().getErrorCode());
-      } else if (isThrownByCamunda(current) && StringUtils.hasText(current.getMessage())) {
-        // CSL's own messages name a registration, a keystore path or a configuration property.
-        description.append(": ").append(current.getMessage());
-      }
-      current = current.getCause() == current ? null : current.getCause();
-      seen++;
-    }
-    return description.toString();
-  }
-
-  /**
-   * Whether {@link AssertionJwkProvider} raised this, judged by the frame that threw.
-   *
-   * <p>Deliberately one class rather than the {@code io.camunda.security} package. This decides
-   * what reaches a log, so it is an allowlist of messages someone has actually read: that class
-   * names a registrationId, a configuration property or a keystore path, and nothing else. Widen it
-   * only by reading the candidate's messages first.
-   */
-  private static boolean isThrownByCamunda(final Throwable throwable) {
-    final var frames = throwable.getStackTrace();
-    return frames.length > 0
-        && frames[0].getClassName().startsWith(AssertionJwkProvider.class.getName());
-  }
-
   /**
    * The RFC 7009 {@code error} code from a failed response, as {@code ", error=invalid_client"}, or
    * an empty string.
