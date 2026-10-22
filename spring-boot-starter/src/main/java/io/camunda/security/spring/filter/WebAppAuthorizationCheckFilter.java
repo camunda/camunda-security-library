@@ -15,6 +15,7 @@ import io.camunda.security.api.model.authz.PermissionType;
 import io.camunda.security.core.auth.RequiredAuthorization;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.spring.spi.WebAppAccessDeniedHandlerPort;
+import io.camunda.security.spring.spi.WebAppAuthorizationEnabledPort;
 import io.camunda.security.spring.spi.WebAppProviderPort;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -37,22 +38,26 @@ import org.springframework.web.filter.OncePerRequestFilter;
  *   <li>{@link WebAppAccessDeniedHandlerPort} — invoked when access is denied. Hosts decide the
  *       response shape (redirect to a forbidden page, 403 JSON, RequestDispatcher.forward, etc.).
  *   <li>{@link CamundaAuthenticationProvider} — supplies the current {@link CamundaAuthentication}.
+ *   <li>{@link WebAppAuthorizationEnabledPort} — decides per request whether authorization is
+ *       enabled. Hosts that pass a plain {@code boolean} get the same answer for every request.
  *   <li>The set of static-resource URI suffixes the filter passes through without invoking the
  *       check (typically sourced from {@link
  *       io.camunda.security.core.port.out.SecurityPathPort#staticResourceSuffixes()}).
  * </ul>
  *
  * <p>The filter passes through without invoking the access decision when any of the following hold:
- * authorization is globally disabled ({@code camunda.security.authorizations.enabled=false}), the
- * request is for {@code /forbidden} (the redirect target), the request URI ends in one of the
- * configured static-resource suffixes, the principal is unauthenticated (null or anonymous), or
- * {@link WebAppProviderPort#webAppFor(HttpServletRequest)} returns empty.
+ * authorization is disabled for the request (by default {@code
+ * camunda.security.authorizations.enabled=false}), the request is for {@code /forbidden} (the
+ * redirect target), the request URI ends in one of the configured static-resource suffixes, the
+ * principal is unauthenticated (null or anonymous), or {@link
+ * WebAppProviderPort#webAppFor(HttpServletRequest)} returns empty.
  *
- * <p>The global-disable gate is applied here — at the enforcement choke point — rather than only in
- * the {@link AuthorizationCheckPort}, because hosts may supply their own {@code
+ * <p>The authorization-disabled gate is applied here — at the enforcement choke point — rather than
+ * only in the {@link AuthorizationCheckPort}, because hosts may supply their own {@code
  * AuthorizationCheckPort} that is unaware of the flag. Gating the filter keeps the webapp plane off
  * for every host when authorization is disabled, matching the data-plane {@code
- * AuthorizationService}.
+ * AuthorizationService}. With a {@link WebAppAuthorizationEnabledPort}, the host's check port must
+ * apply the same per-scope flag (ADR-0037).
  */
 public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
 
@@ -67,7 +72,8 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
                   .resourceType(AuthorizationResourceType.COMPONENT)
                   .permissionType(PermissionType.ACCESS));
 
-  private final boolean authorizationEnabled;
+  private final WebAppAuthorizationEnabledPort authorizationEnabled;
+  private final boolean disabledForAllRequests;
   private final WebAppProviderPort webAppProvider;
   private final AuthorizationCheckPort authorizationCheckPort;
   private final WebAppAccessDeniedHandlerPort accessDeniedHandler;
@@ -81,7 +87,43 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
       final WebAppAccessDeniedHandlerPort accessDeniedHandler,
       final CamundaAuthenticationProvider authenticationProvider,
       final Set<String> staticResourceSuffixes) {
+    this(
+        request -> authorizationEnabled,
+        !authorizationEnabled,
+        webAppProvider,
+        authorizationCheckPort,
+        accessDeniedHandler,
+        authenticationProvider,
+        staticResourceSuffixes);
+  }
+
+  public WebAppAuthorizationCheckFilter(
+      final WebAppAuthorizationEnabledPort authorizationEnabled,
+      final WebAppProviderPort webAppProvider,
+      final AuthorizationCheckPort authorizationCheckPort,
+      final WebAppAccessDeniedHandlerPort accessDeniedHandler,
+      final CamundaAuthenticationProvider authenticationProvider,
+      final Set<String> staticResourceSuffixes) {
+    this(
+        authorizationEnabled,
+        false,
+        webAppProvider,
+        authorizationCheckPort,
+        accessDeniedHandler,
+        authenticationProvider,
+        staticResourceSuffixes);
+  }
+
+  private WebAppAuthorizationCheckFilter(
+      final WebAppAuthorizationEnabledPort authorizationEnabled,
+      final boolean disabledForAllRequests,
+      final WebAppProviderPort webAppProvider,
+      final AuthorizationCheckPort authorizationCheckPort,
+      final WebAppAccessDeniedHandlerPort accessDeniedHandler,
+      final CamundaAuthenticationProvider authenticationProvider,
+      final Set<String> staticResourceSuffixes) {
     this.authorizationEnabled = authorizationEnabled;
+    this.disabledForAllRequests = disabledForAllRequests;
     this.webAppProvider = webAppProvider;
     this.authorizationCheckPort = authorizationCheckPort;
     this.accessDeniedHandler = accessDeniedHandler;
@@ -96,12 +138,7 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
       final FilterChain filterChain)
       throws ServletException, IOException {
 
-    if (!authorizationEnabled) {
-      filterChain.doFilter(request, response);
-      return;
-    }
-
-    if (isForbiddenPage(request) || isStaticResource(request)) {
+    if (disabledForAllRequests || isForbiddenPage(request) || isStaticResource(request)) {
       filterChain.doFilter(request, response);
       return;
     }
@@ -113,7 +150,7 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
     }
 
     final var webApp = webAppProvider.webAppFor(request);
-    if (webApp.isEmpty()) {
+    if (webApp.isEmpty() || !isAuthorizationEnabled(request)) {
       filterChain.doFilter(request, response);
       return;
     }
@@ -134,6 +171,19 @@ public final class WebAppAuthorizationCheckFilter extends OncePerRequestFilter {
         principalId(authentication),
         rejection);
     accessDeniedHandler.handle(request, response, resolved, authentication);
+  }
+
+  /** Treats a failing lookup as enabled, so the check port decides instead of letting it pass. */
+  private boolean isAuthorizationEnabled(final HttpServletRequest request) {
+    try {
+      return authorizationEnabled.isAuthorizationEnabled(request);
+    } catch (final RuntimeException e) {
+      LOG.warn(
+          "Could not resolve whether authorization is enabled for {}; checking access",
+          request.getRequestURI(),
+          e);
+      return true;
+    }
   }
 
   private static String principalId(final CamundaAuthentication authentication) {
