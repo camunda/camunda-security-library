@@ -79,11 +79,18 @@ final class VerifiedJwtDecoder implements JwtDecoder {
    * The claims converter and the claims provider are shared by all scopes, and would otherwise pick
    * a provider of another scope by issuer.
    *
+   * <p>A token uses UserInfo only if its scope enables augmentation ({@code
+   * oidc.user-info-augmentation.enabled} of the default slot, off by default) and its provider
+   * enables UserInfo ({@code user-info-enabled}, on by default), as {@link
+   * ScopedOidcClaimsProviderFactory} decides for the scope's own claims provider. Otherwise a
+   * shared claims provider with augmentation enabled would augment the tokens of a scope that
+   * disabled it.
+   *
    * @param delegate the selected decoder
    * @param registrationIdByIssuer the registrationId the decoder routes the tokens of an issuer to
    * @param providers the providers of the scope, keyed by registrationId
    * @param defaultSlot the default slot ({@code oidc.*}) of the scope, whose claims a named
-   *     provider inherits
+   *     provider inherits, and whose {@code user-info-augmentation} decides for the whole scope
    * @param registrationById the registration of a registrationId, as the decoder resolved it
    */
   static JwtDecoder withClaimsAndUserInfo(
@@ -93,6 +100,8 @@ final class VerifiedJwtDecoder implements JwtDecoder {
       final OidcConfiguration defaultSlot,
       final Function<String, ClientRegistration> registrationById) {
     final var inherited = defaultSlot != null ? defaultSlot : new OidcConfiguration();
+    final var augmentation = inherited.getUserInfoAugmentation();
+    final var scopeAugments = augmentation != null && augmentation.isEnabled();
     return new VerifiedJwtDecoder(
         delegate,
         registrationIdByIssuer,
@@ -102,7 +111,7 @@ final class VerifiedJwtDecoder implements JwtDecoder {
             return new VerifiedJwtTag(null, new UserInfoUse(false, null));
           }
           final var claims = OidcPrincipalClaims.resolve(provider, inherited);
-          if (!provider.isUserInfoEnabled()) {
+          if (!scopeAugments || !provider.isUserInfoEnabled()) {
             return new VerifiedJwtTag(claims, new UserInfoUse(false, null));
           }
           final var registration = registrationById.apply(registrationId);

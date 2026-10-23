@@ -96,6 +96,43 @@ class ScopedUserInfoOwnershipTest {
   }
 
   /**
+   * The global claims provider augments, but the scope leaves {@code
+   * user-info-augmentation.enabled} off. B enables UserInfo and has an endpoint, yet its scope's
+   * token is not augmented: the scope decides, as it does for its own claims provider.
+   */
+  @Test
+  void shouldNotAugmentTheTokenOfAScopeThatDisablesAugmentation() throws Exception {
+    // given
+    final var providerA = server.oidcConfiguration("client-a");
+    providerA.setIssuerUri(server.issuerUri() + "/");
+    providerA.setUserInfoEnabled(true);
+    final var providerB = server.oidcConfiguration("client-b");
+    providerB.setUserInfoEnabled(true);
+    providerB.setUserInfoUri(server.issuerUri() + "/userinfo");
+    final var converter = sharedConverter(providerA, providerB);
+
+    final var scope = new AuthenticationConfiguration();
+    scope.getProviders().getOidc().put("b", providerB);
+    final var scopedDecoder =
+        new ScopedJwtDecoderFactory(
+                new ScopedClientRegistrationFactory(),
+                new OidcAccessTokenDecoderFactory(
+                    new JWSKeySelectorFactory(),
+                    new TokenValidatorFactory(
+                        Map.of("b", providerB), OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of())))
+            .buildIssuerAwareDecoder(scope);
+
+    // when
+    final var jwt =
+        scopedDecoder.decode(server.sign(server.issuerUri(), Map.of("scope", "openid")));
+    final var authentication = converter.convert(new JwtAuthenticationToken(jwt));
+
+    // then
+    assertThat(authentication.authenticatedUsername()).isEqualTo("alice");
+    verifyNoInteractions(fetcher);
+  }
+
+  /**
    * The same token from a decoder of the host carries no decision, so the global claims provider
    * decides by issuer, and gives it A's UserInfo, as before.
    */

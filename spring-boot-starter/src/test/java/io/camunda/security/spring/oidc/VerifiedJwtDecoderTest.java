@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcPrincipalClaims;
+import io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfiguration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.function.Function;
@@ -90,7 +91,7 @@ class VerifiedJwtDecoderTest {
             delegate,
             owner("b"),
             Map.of("b", provider),
-            new OidcConfiguration(),
+            augmentingScope(),
             registrations("b", USER_INFO_URI));
 
     // when
@@ -112,6 +113,32 @@ class VerifiedJwtDecoderTest {
             delegate,
             owner("b"),
             Map.of("b", provider),
+            augmentingScope(),
+            registrationId -> {
+              throw new AssertionError("no registration needed");
+            });
+
+    // when
+    final var jwt = (VerifiedJwt) decoder.decode("token");
+
+    // then
+    assertThat(jwt.decidesUserInfo()).isTrue();
+    assertThat(jwt.userInfoEnabled()).isFalse();
+  }
+
+  /**
+   * The scope leaves augmentation off, its default, while the provider enables UserInfo, also its
+   * default: the token does not use UserInfo, and needs no registration.
+   */
+  @Test
+  void shouldTagTheTokenOfAScopeThatDisablesAugmentation() {
+    // given
+    final var provider = OidcConfiguration.builder().userInfoEnabled(true).build();
+    final var decoder =
+        VerifiedJwtDecoder.withClaimsAndUserInfo(
+            delegate,
+            owner("b"),
+            Map.of("b", provider),
             new OidcConfiguration(),
             registrationId -> {
               throw new AssertionError("no registration needed");
@@ -123,6 +150,15 @@ class VerifiedJwtDecoderTest {
     // then
     assertThat(jwt.decidesUserInfo()).isTrue();
     assertThat(jwt.userInfoEnabled()).isFalse();
+  }
+
+  /** A default slot with {@code user-info-augmentation.enabled=true}. */
+  private static OidcConfiguration augmentingScope() {
+    final var augmentation = new OidcUserInfoAugmentationConfiguration();
+    augmentation.setEnabled(true);
+    final var defaultSlot = new OidcConfiguration();
+    defaultSlot.setUserInfoAugmentation(augmentation);
+    return defaultSlot;
   }
 
   private static Function<String, String> owner(final String registrationId) {
