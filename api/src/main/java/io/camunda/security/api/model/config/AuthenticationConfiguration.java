@@ -9,9 +9,9 @@ package io.camunda.security.api.model.config;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcProvidersConfiguration;
-import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Objects;
+import java.util.Map;
 
 /**
  * Authentication configuration bound to {@code camunda.security.authentication.*}.
@@ -160,9 +160,9 @@ public class AuthenticationConfiguration {
 
   /**
    * The groups claim to read the groups of a token of {@code issuer} from: the one of the first
-   * provider with that {@code issuer-uri}, the {@code oidc} block first, ignoring a trailing slash.
-   * A provider without its own {@code groups-claim}, and a token of no known issuer, use the one of
-   * the {@code oidc} block.
+   * provider with exactly that {@code issuer-uri}, the {@code oidc} block first. That is the
+   * provider that verifies the token. A provider without its own {@code groups-claim}, and a token
+   * of no known issuer, use the one of the {@code oidc} block.
    *
    * @param issuer the {@code iss} claim of the token, or {@code null}
    * @return the groups claim, or {@code null} when the groups of the token's user come from Camunda
@@ -171,12 +171,8 @@ public class AuthenticationConfiguration {
     if (getMethod() != AuthenticationMethod.OIDC) {
       return null;
     }
-    final var normalizedIssuer = withoutTrailingSlash(issuer);
     return oidcProviders().stream()
-        .filter(
-            provider ->
-                normalizedIssuer != null
-                    && normalizedIssuer.equals(withoutTrailingSlash(provider.getIssuerUri())))
+        .filter(provider -> hasText(issuer) && issuer.equals(provider.getIssuerUri()))
         .findFirst()
         .map(this::groupsClaimOf)
         .orElseGet(() -> groupsClaimOf(getOidc()));
@@ -184,16 +180,24 @@ public class AuthenticationConfiguration {
 
   /**
    * The OIDC providers, in the order of the configuration: the {@code oidc} block when it has a
-   * {@code client-id}, then the named providers. Without any, the {@code oidc} block alone, so its
-   * {@code groups-claim} still decides.
+   * {@code client-id}, then the named providers. A named provider with the registration ID of the
+   * {@code oidc} block replaces it, as the client registrations do. Without any provider, the
+   * {@code oidc} block alone, so its {@code groups-claim} still decides.
    */
   private List<OidcConfiguration> oidcProviders() {
-    final List<OidcConfiguration> providers = new ArrayList<>();
+    final Map<String, OidcConfiguration> byRegistrationId = new LinkedHashMap<>();
     if (hasText(getOidc().getClientId())) {
-      providers.add(getOidc());
+      byRegistrationId.put(getOidc().getRegistrationId(), getOidc());
     }
-    getProviders().getOidc().values().stream().filter(Objects::nonNull).forEach(providers::add);
-    return providers.isEmpty() ? List.of(getOidc()) : providers;
+    getProviders()
+        .getOidc()
+        .forEach(
+            (registrationId, provider) -> {
+              if (provider != null) {
+                byRegistrationId.put(registrationId, provider);
+              }
+            });
+    return byRegistrationId.isEmpty() ? List.of(getOidc()) : List.copyOf(byRegistrationId.values());
   }
 
   private String groupsClaimOf(final OidcConfiguration provider) {
@@ -201,13 +205,6 @@ public class AuthenticationConfiguration {
       return provider.getGroupsClaim();
     }
     return getOidc().isGroupsClaimConfigured() ? getOidc().getGroupsClaim() : null;
-  }
-
-  private static String withoutTrailingSlash(final String issuer) {
-    if (!hasText(issuer)) {
-      return null;
-    }
-    return issuer.endsWith("/") ? issuer.substring(0, issuer.length() - 1) : issuer;
   }
 
   private static boolean hasText(final String value) {

@@ -134,12 +134,44 @@ class AuthenticationConfigurationTest {
   }
 
   @Test
-  void shouldMatchAnIssuerThatDiffersFromTheIssuerUriByATrailingSlash() {
+  void shouldMatchTheIssuerExactlyWithTheSlashFormDeclaredFirst() {
+    // given - both forms of one issuer, each with its own groups claim
+    final var config = oidc();
+    config.getProviders().getOidc().put("slash", provider(KEYCLOAK + "/", "groups"));
+    config.getProviders().getOidc().put("plain", provider(KEYCLOAK, "roles"));
+
+    // expect - each form reads the claim of the provider that verifies its tokens
+    assertThat(config.getGroupsClaim(KEYCLOAK)).isEqualTo("roles");
+    assertThat(config.getGroupsClaim(KEYCLOAK + "/")).isEqualTo("groups");
+  }
+
+  @Test
+  void shouldMatchTheIssuerExactlyWithThePlainFormDeclaredFirst() {
     // given
     final var config = oidc();
-    config.getProviders().getOidc().put("keycloak", provider(KEYCLOAK + "/", "groups"));
+    config.getProviders().getOidc().put("plain", provider(KEYCLOAK, "roles"));
+    config.getProviders().getOidc().put("slash", provider(KEYCLOAK + "/", "groups"));
 
     // expect
+    assertThat(config.getGroupsClaim(KEYCLOAK)).isEqualTo("roles");
+    assertThat(config.getGroupsClaim(KEYCLOAK + "/")).isEqualTo("groups");
+  }
+
+  @Test
+  void shouldLetANamedProviderReplaceTheOidcBlockWithTheSameRegistrationId() {
+    // given - the oidc block, without a groups claim, and a named provider with its registration
+    // ID, which replaces it
+    final var config = oidc();
+    config.getOidc().setClientId("flat-client");
+    config.getOidc().setIssuerUri(KEYCLOAK);
+    config
+        .getProviders()
+        .getOidc()
+        .put(OidcConfiguration.DEFAULT_REGISTRATION_ID, provider(KEYCLOAK, "groups"));
+
+    // expect - only the named provider is active
+    assertThat(config.isCamundaGroupsEnabled()).isFalse();
+    assertThat(config.isExternalGroupsEnabled()).isTrue();
     assertThat(config.getGroupsClaim(KEYCLOAK)).isEqualTo("groups");
   }
 
