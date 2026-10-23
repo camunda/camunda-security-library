@@ -347,6 +347,43 @@ class OidcBeansConfigurationJwtDecoderTest {
     }
   }
 
+  /**
+   * The default decoder tags each token with the claims of the provider that verified it: a named
+   * provider's own, and none for the default slot, whose tokens use the default converter.
+   */
+  @Test
+  void shouldTagEachTokenWithTheClaimsOfTheProviderThatVerifiedIt() throws Exception {
+    try (final var flat = OidcTestServer.startRsa("flat");
+        final var entra = OidcTestServer.startRsa("entra")) {
+      runner
+          .withPropertyValues(
+              "camunda.security.authentication.oidc.client-id=flat-client",
+              "camunda.security.authentication.oidc.issuer-uri=" + flat.issuerUri(),
+              "camunda.security.authentication.oidc.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+              "camunda.security.authentication.oidc.username-claim=email",
+              "camunda.security.authentication.providers.oidc.entra.client-id=entra-client",
+              "camunda.security.authentication.providers.oidc.entra.issuer-uri="
+                  + entra.issuerUri(),
+              "camunda.security.authentication.providers.oidc.entra.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+              "camunda.security.authentication.providers.oidc.entra.username-claim=upn")
+          .run(
+              ctx -> {
+                final var decoder = ctx.getBean(JwtDecoder.class);
+
+                assertThat(decoder.decode(entra.sign(entra.issuerUri())))
+                    .isInstanceOfSatisfying(
+                        VerifiedJwt.class,
+                        jwt ->
+                            assertThat(jwt.principalClaims())
+                                .hasValueSatisfying(
+                                    claims -> assertThat(claims.usernameClaim()).isEqualTo("upn")));
+                assertThat(decoder.decode(flat.sign(flat.issuerUri())))
+                    .isInstanceOfSatisfying(
+                        VerifiedJwt.class, jwt -> assertThat(jwt.principalClaims()).isEmpty());
+              });
+    }
+  }
+
   private static OidcConfiguration hostProvider(final String issuerUri) {
     final var provider = new OidcConfiguration();
     provider.setClientId("host-client");

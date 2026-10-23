@@ -17,4 +17,23 @@ import java.util.Map;
 public interface OidcClaimsProvider {
 
   Map<String, Object> claimsFor(Map<String, Object> jwtClaims, String tokenValue);
+
+  /**
+   * As {@link #claimsFor(Map, String)}, for a token whose decoder recorded the UserInfo use of the
+   * provider that verified it. A decoder of one scope does this, because one claims provider serves
+   * all scopes, and would otherwise pick a provider of another scope by the token's issuer.
+   *
+   * <p>The default ignores the decision, so an implementation that predates it keeps its behavior.
+   *
+   * @param userInfoEnabled whether the provider that verified the token uses UserInfo
+   * @param userInfoUri the UserInfo endpoint of the registration that verified the token, or {@code
+   *     null} when it exposes none
+   */
+  default Map<String, Object> claimsFor(
+      final Map<String, Object> jwtClaims,
+      final String tokenValue,
+      final boolean userInfoEnabled,
+      final String userInfoUri) {
+    return claimsFor(jwtClaims, tokenValue);
+  }
 }

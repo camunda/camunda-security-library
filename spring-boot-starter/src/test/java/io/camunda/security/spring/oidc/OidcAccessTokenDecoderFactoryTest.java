@@ -274,6 +274,53 @@ class OidcAccessTokenDecoderFactoryTest {
     }
   }
 
+  /** The owner of a token is the registration the issuer-aware decoder routes it to. */
+  @Test
+  void shouldNameTheFirstRegistrationOfAnIssuerAsTheOwnerOfItsTokens() {
+    // given
+    final var owners =
+        OidcAccessTokenDecoderFactory.registrationIdByIssuer(
+            List.of(
+                registration("first", "https://idp.example.com", "https://idp.example.com/a"),
+                registration("second", "https://idp.example.com", "https://idp.example.com/b"),
+                registration("other", "https://other.example.com", "https://other/jwks")));
+
+    // when / then
+    assertThat(owners.apply("https://idp.example.com")).isEqualTo("first");
+    assertThat(owners.apply("https://other.example.com")).isEqualTo("other");
+    assertThat(owners.apply("https://unknown.example.com")).isNull();
+    assertThat(owners.apply(null)).isNull();
+  }
+
+  /** By configuration, the owner follows the routing, which tolerates the trailing slash. */
+  @Test
+  void shouldNameTheOwnerOfATokenAsTheConfigurationRoutesIt() {
+    // given
+    final Map<String, OidcConfiguration> providers = new LinkedHashMap<>();
+    providers.put(
+        "a", OidcConfiguration.builder().issuerUri("https://idp.example.com/realm/").build());
+    providers.put("b", OidcConfiguration.builder().issuerUri("https://other.example.com").build());
+
+    // when
+    final var owners = OidcAccessTokenDecoderFactory.registrationIdByIssuer(providers);
+
+    // then
+    assertThat(owners.apply("https://idp.example.com/realm")).isEqualTo("a");
+    assertThat(owners.apply("https://other.example.com")).isEqualTo("b");
+  }
+
+  /** A single registration has a decoder of its own: it owns every token that decoder accepts. */
+  @Test
+  void shouldNameTheSingleRegistrationAsTheOwnerOfEveryToken() {
+    // given
+    final var owners =
+        OidcAccessTokenDecoderFactory.registrationIdByIssuer(
+            List.of(registration("only", "https://idp.example.com", "https://idp/jwks")));
+
+    // when / then
+    assertThat(owners.apply("https://idp.example.com")).isEqualTo("only");
+  }
+
   private static ClientRegistration registration(
       final String registrationId, final String issuerUri, final String jwkSetUri) {
     return ClientRegistration.withRegistrationId(registrationId)

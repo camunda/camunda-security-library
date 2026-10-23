@@ -89,6 +89,58 @@ class OidcClaimsProviderConfigurationTest {
             });
   }
 
+  /**
+   * A scoped token carries the UserInfo endpoint of the provider that verified it. It is augmented
+   * from that endpoint although the host repository yields no mapping at all, which fails every
+   * lookup by issuer.
+   */
+  @Test
+  void shouldAugmentAScopedTokenFromItsOwnEndpointWithoutTheHostMapping() throws Exception {
+    try (final var server = OidcTestServer.startRsa("scoped-userinfo")) {
+      server.serveUserInfo("{\"sub\":\"user\",\"groups\":[\"eng\"]}");
+      runner
+          .withPropertyValues(
+              "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
+          .run(
+              ctx -> {
+                final var provider = ctx.getBean(OidcClaimsProvider.class);
+                final Map<String, Object> token =
+                    Map.of("iss", server.issuerUri(), "scope", "openid", "sub", "user");
+
+                assertThat(
+                        provider.claimsFor(token, "token", true, server.issuerUri() + "/userinfo"))
+                    .containsEntry("groups", List.of("eng"));
+              });
+    }
+  }
+
+  /**
+   * The host repository fails to enumerate. A scoped token whose provider disables UserInfo, or
+   * gives its own endpoint, never reads it.
+   */
+  @Test
+  void shouldNotReadAFailingHostRepositoryForAScopedTokenThatDecidesItsUserInfo() throws Exception {
+    try (final var server = OidcTestServer.startRsa("scoped-userinfo")) {
+      server.serveUserInfo("{\"sub\":\"user\",\"groups\":[\"eng\"]}");
+      runner
+          .withUserConfiguration(FailingClientRegistrationRepository.class)
+          .withAllowBeanDefinitionOverriding(true)
+          .withPropertyValues(
+              "camunda.security.authentication.oidc.user-info-augmentation.enabled=true")
+          .run(
+              ctx -> {
+                final var provider = ctx.getBean(OidcClaimsProvider.class);
+                final Map<String, Object> token =
+                    Map.of("iss", server.issuerUri(), "scope", "openid", "sub", "user");
+
+                assertThat(provider.claimsFor(token, "token", false, null)).isEqualTo(token);
+                assertThat(
+                        provider.claimsFor(token, "token", true, server.issuerUri() + "/userinfo"))
+                    .containsEntry("groups", List.of("eng"));
+              });
+    }
+  }
+
   @Test
   void cachingProviderFailsOnFirstLookupWhenNoUserInfoUriResolved() {
     // Augmentation enabled but no ClientRegistration exposes a userInfoUri — a config mismatch that
@@ -610,6 +662,27 @@ class OidcClaimsProviderConfigurationTest {
           .userInfoUri(userInfoUri)
           .issuerUri("https://shared.example")
           .build();
+    }
+  }
+
+  @Configuration
+  static class FailingClientRegistrationRepository {
+    @Bean
+    ClientRegistrationRepository clientRegistrationRepository() {
+      return new FailingIterableClientRegistrationRepository();
+    }
+
+    static final class FailingIterableClientRegistrationRepository
+        implements ClientRegistrationRepository, Iterable<ClientRegistration> {
+      @Override
+      public ClientRegistration findByRegistrationId(final String registrationId) {
+        return null;
+      }
+
+      @Override
+      public Iterator<ClientRegistration> iterator() {
+        throw new IllegalStateException("the host repository cannot be read");
+      }
     }
   }
 

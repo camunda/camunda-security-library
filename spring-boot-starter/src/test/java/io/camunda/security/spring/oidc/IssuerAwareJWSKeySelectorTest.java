@@ -23,10 +23,13 @@ import com.nimbusds.jose.proc.JWSKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.JWTClaimsSet;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
@@ -151,6 +154,60 @@ class IssuerAwareJWSKeySelectorTest {
         .isInstanceOf(KeySourceException.class)
         .isNotInstanceOf(BadJwtKeySourceException.class)
         .hasMessageContaining("https://known-issuer");
+  }
+
+  /**
+   * Two providers whose issuers differ only by a trailing slash, and only the second sets
+   * additional keys. They are one issuer, owned by the first declared provider: a token of either
+   * form is verified with the owner's keys, never with the other provider's.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {"https://idp", "https://idp/"})
+  void shouldVerifyEitherFormOfATwinIssuerWithTheOwnersKeysOnly(final String tokenIssuer)
+      throws Exception {
+    // given - "without-keys" is declared first, so it owns both forms
+    final var withoutKeys =
+        registrationWithAdditionalKeys("without-keys", "https://idp", List.of());
+    final var withKeys =
+        registrationWithAdditionalKeys(
+            "with-keys", "https://idp", List.of("https://keys.example/jwks"));
+    final Map<String, OidcConfiguration> providers = new LinkedHashMap<>();
+    providers.put("without-keys", providerWithIssuer("https://idp"));
+    providers.put("with-keys", providerWithIssuer("https://idp/"));
+    final var registrations =
+        IssuerRegistrations.ofConfiguration(
+            providers, id -> "with-keys".equals(id) ? withKeys : withoutKeys);
+    final var selector =
+        new IssuerAwareJWSKeySelector(
+            registrations,
+            jwsKeySelectorFactory,
+            Map.of("https://idp/", List.of("https://keys.example/jwks")));
+    when(jwsKeySelectorFactory.createJWSKeySelector("https://idp/without-keys/jwks", List.of()))
+        .thenReturn(keySelector);
+
+    // when
+    selector.selectKeys(
+        new JWSHeader(JWSAlgorithm.RS256),
+        new JWTClaimsSet.Builder().issuer(tokenIssuer).build(),
+        null);
+
+    // then
+    verify(jwsKeySelectorFactory).createJWSKeySelector("https://idp/without-keys/jwks", List.of());
+  }
+
+  private static ClientRegistration registrationWithAdditionalKeys(
+      final String registrationId, final String issuer, final List<String> additionalUris) {
+    return ClientRegistration.withRegistrationId(registrationId)
+        .clientId("client")
+        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+        .redirectUri("{baseUrl}/cb")
+        .authorizationUri("https://idp/" + registrationId + "/auth")
+        .tokenUri("https://idp/" + registrationId + "/token")
+        .jwkSetUri("https://idp/" + registrationId + "/jwks")
+        .issuerUri(issuer)
+        .providerConfigurationMetadata(
+            Map.of(ClientRegistrationMetadata.ADDITIONAL_JWK_SET_URIS, additionalUris))
+        .build();
   }
 
   private static OidcConfiguration providerWithIssuer(final String issuerUri) {

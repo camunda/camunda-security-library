@@ -15,10 +15,12 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.context.MembershipResolutionContextPropagator;
+import io.camunda.security.api.model.config.oidc.OidcPrincipalClaims;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.converter.TokenClaimsConvertersByIssuer;
+import java.time.Instant;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,6 +37,7 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
@@ -69,6 +72,40 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
                   CamundaSecurityConfiguration.class,
                   OidcBeansConfiguration.class,
                   OidcWebappClientBeansConfiguration.class));
+
+  /**
+   * camunda-security-library#738: the global configuration declares A at {@code https://idp} and B
+   * at {@code https://idp/}, while a scope holds only A, whose decoder verifies a token of {@code
+   * https://idp/} (the slash form B declares) and tags it with A's claims. The token is mapped with
+   * A's settings: the issuer map, keyed by issuer only, would select B.
+   */
+  @Test
+  void mapsAVerifiedTokenWithTheClaimsItCarriesRatherThanByIssuer() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.a.client-id=a-client",
+            "camunda.security.authentication.providers.oidc.a.issuer-uri=https://idp.example.com",
+            "camunda.security.authentication.providers.oidc.a.username-claim=a_user",
+            "camunda.security.authentication.providers.oidc.b.client-id=b-client",
+            "camunda.security.authentication.providers.oidc.b.issuer-uri=https://idp.example.com/",
+            "camunda.security.authentication.providers.oidc.b.username-claim=b_user")
+        .run(
+            ctx -> {
+              final var converters = ctx.getBean(TokenClaimsConvertersByIssuer.class);
+              final var claimsOfA = new OidcPrincipalClaims("a_user", null, false);
+              final var token = VerifiedJwts.of(jwt("https://idp.example.com/"), claimsOfA);
+
+              final var converter = converters.forToken(token, mockDefaultConverter);
+
+              assertThat(
+                      converter
+                          .convert(Map.of("sub", "carol", "a_user", "alice", "b_user", "bob"))
+                          .authenticatedUsername())
+                  .isEqualTo("alice");
+              // one converter per distinct set of claims
+              assertThat(converters.forToken(token, mockDefaultConverter)).isSameAs(converter);
+            });
+  }
 
   @Test
   void reusesDefaultBeanInstanceForDefaultRegistrationEntry() {
@@ -451,6 +488,16 @@ class OidcBeansConfigurationTokenClaimsConverterTest {
   private static void detachAppender(final ListAppender<ILoggingEvent> appender) {
     final Logger logger = (Logger) LoggerFactory.getLogger(OidcBeansConfiguration.class);
     logger.detachAppender(appender);
+  }
+
+  private static Jwt jwt(final String issuer) {
+    return Jwt.withTokenValue("token")
+        .header("alg", "RS256")
+        .claim("iss", issuer)
+        .claim("sub", "carol")
+        .issuedAt(Instant.parse("2026-01-01T00:00:00Z"))
+        .expiresAt(Instant.parse("2026-01-01T01:00:00Z"))
+        .build();
   }
 
   /**

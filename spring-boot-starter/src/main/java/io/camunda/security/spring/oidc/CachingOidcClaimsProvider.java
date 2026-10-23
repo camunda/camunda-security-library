@@ -182,8 +182,8 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
    */
   static Function<String, String> userInfoUriByIssuer(
       final IssuerRegistrations registrations, final Map<String, OidcConfiguration> providers) {
-    final var issuersWithUserInfo = issuersWithUserInfo(registrations, providers);
-    if (issuersWithUserInfo.isEmpty()) {
+    final var ownersWithUserInfo = ownersWithUserInfo(registrations, providers);
+    if (ownersWithUserInfo.isEmpty()) {
       throw new IllegalStateException(
           "UserInfo augmentation is enabled but no OIDC provider can yield an issuer→userInfoUri"
               + " mapping, so no claims can be augmented — the setup would silently run without"
@@ -194,7 +194,7 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
               + " flag in multi-provider setups). Give each provider an issuer-uri, or disable"
               + " userinfo augmentation.");
     }
-    return issuer -> userInfoUriOf(issuer, registrations, issuersWithUserInfo);
+    return issuer -> userInfoUriOf(issuer, registrations, ownersWithUserInfo);
   }
 
   /**
@@ -206,8 +206,12 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
   private static String userInfoUriOf(
       final String issuer,
       final IssuerRegistrations registrations,
-      final Set<String> issuersWithUserInfo) {
-    if (!issuersWithUserInfo.contains(issuer)) {
+      final Set<String> ownersWithUserInfo) {
+    // The owner first, from every configured issuer, then that owner's flag. Matching the issuer
+    // against the enabled subset instead would let a provider with UserInfo disabled match its
+    // trailing-slash twin that has it enabled.
+    final var owner = registrations.resolutionKeyOf(issuer);
+    if (owner == null || !ownersWithUserInfo.contains(owner)) {
       // An unknown issuer, and an issuer whose owner disables UserInfo, need no endpoint. To
       // answer them here keeps their tokens up while their provider is unreachable, because the
       // resolution below makes OIDC discovery.
@@ -229,30 +233,26 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
     }
     final var userInfoUri = registration.getProviderDetails().getUserInfoEndpoint().getUri();
     if (!StringUtils.hasText(userInfoUri)) {
-      throw new AuthenticationServiceException(
-          ("UserInfo augmentation is enabled for issuer '%s' but the provider exposes no"
-                  + " userInfoUri, so its claims cannot be augmented. Ensure the discovery"
-                  + " document of the issuer includes a userinfo_endpoint, or configure"
-                  + " user-info-uri explicitly, or turn UserInfo off for the provider"
-                  + " (user-info-enabled=false).")
-              .formatted(issuer));
+      throw noUserInfoEndpoint(issuer);
     }
     return userInfoUri;
   }
 
   /**
-   * The issuers whose owning provider must expose a UserInfo endpoint. The owner answers for its
-   * issuer, because {@code registrations} resolves the registration of that provider alone, and a
-   * request reads no UserInfo flag of an ignored duplicate. The configuration gives the answer, so
-   * the method needs no network access.
+   * The resolution keys of the issuer owners that must expose a UserInfo endpoint. The owner
+   * answers for its issuer, because {@code registrations} resolves the registration of that
+   * provider alone, and a request reads no UserInfo flag of an ignored duplicate. Keyed by owner
+   * rather than issuer, so a token is judged by the provider it is routed to. The configuration
+   * gives the answer, so the method needs no network access.
    */
-  private static Set<String> issuersWithUserInfo(
+  private static Set<String> ownersWithUserInfo(
       final IssuerRegistrations registrations, final Map<String, OidcConfiguration> providers) {
     return registrations.issuers().stream()
+        .map(registrations::resolutionKeyOf)
         .filter(
-            issuer -> {
-              final var owner = providers.get(registrations.resolutionKeyOf(issuer));
-              return owner != null && owner.isUserInfoEnabled();
+            owner -> {
+              final var configuration = providers.get(owner);
+              return configuration != null && configuration.isUserInfoEnabled();
             })
         .collect(Collectors.toSet());
   }
@@ -293,8 +293,57 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
           "No UserInfo URI configured for issuer '{}'; returning JWT claims unchanged", issuer);
       return jwtClaims;
     }
+    return augment(jwtClaims, tokenValue, issuer, userInfoUri);
+  }
 
-    final String key = cacheKey(jwtClaims);
+  /**
+   * Takes the UserInfo use from the provider that verified the token, and not from the issuer: a
+   * decoder of one scope records it, and the provider this class finds by issuer can belong to
+   * another scope.
+   */
+  @Override
+  public Map<String, Object> claimsFor(
+      final Map<String, Object> jwtClaims,
+      final String tokenValue,
+      final boolean userInfoEnabled,
+      final String userInfoUri) {
+    if (!canAugment(jwtClaims, tokenValue)) {
+      return jwtClaims;
+    }
+    final String issuer = (String) jwtClaims.get("iss");
+    if (!userInfoEnabled) {
+      LOG.debug(
+          "The provider that verified the token of issuer '{}' does not use UserInfo; returning"
+              + " JWT claims unchanged",
+          issuer);
+      return jwtClaims;
+    }
+    if (!StringUtils.hasText(userInfoUri)) {
+      throw noUserInfoEndpoint(issuer);
+    }
+    return augment(jwtClaims, tokenValue, issuer, userInfoUri);
+  }
+
+  private static AuthenticationServiceException noUserInfoEndpoint(final String issuer) {
+    return new AuthenticationServiceException(
+        ("UserInfo augmentation is enabled for issuer '%s' but the provider exposes no"
+                + " userInfoUri, so its claims cannot be augmented. Ensure the discovery"
+                + " document of the issuer includes a userinfo_endpoint, or configure"
+                + " user-info-uri explicitly, or turn UserInfo off for the provider"
+                + " (user-info-enabled=false).")
+            .formatted(issuer));
+  }
+
+  private Map<String, Object> augment(
+      final Map<String, Object> jwtClaims,
+      final String tokenValue,
+      final String issuer,
+      final String userInfoUri) {
+    final String tokenKey = cacheKey(jwtClaims);
+    // Keyed by endpoint as well: two scopes can accept the same token with different UserInfo
+    // endpoints, and one scope's claims, or its failed fetch, must not answer for the other. A URI
+    // holds no literal null byte, so the separator keeps the parts apart.
+    final String key = tokenKey != null ? userInfoUri + "\0" + tokenKey : null;
     if (key == null) {
       // JWT has no jti and lacks sub+iat+exp — no stable key available; bypass cache and
       // fetch once for this request. Rare in practice; every mainstream IdP includes at
