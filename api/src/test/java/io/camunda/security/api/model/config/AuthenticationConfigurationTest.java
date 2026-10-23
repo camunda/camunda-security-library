@@ -9,9 +9,13 @@ package io.camunda.security.api.model.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import org.junit.jupiter.api.Test;
 
 class AuthenticationConfigurationTest {
+
+  private static final String KEYCLOAK = "https://keycloak.example.com/realms/camunda";
+  private static final String PARTNER = "https://partner.example.com";
 
   @Test
   void shouldEnableCamundaGroupsAndUsersInBasicAuth() {
@@ -22,6 +26,7 @@ class AuthenticationConfigurationTest {
     // expect:
     assertThat(config.isCamundaUsersEnabled()).isTrue();
     assertThat(config.isCamundaGroupsEnabled()).isTrue();
+    assertThat(config.isExternalGroupsEnabled()).isFalse();
   }
 
   @Test
@@ -45,6 +50,7 @@ class AuthenticationConfigurationTest {
     // expect:
     assertThat(config.isCamundaUsersEnabled()).isFalse();
     assertThat(config.isCamundaGroupsEnabled()).isFalse();
+    assertThat(config.isExternalGroupsEnabled()).isTrue();
   }
 
   @Test
@@ -59,5 +65,122 @@ class AuthenticationConfigurationTest {
     assertThat(config.getOidc()).isNotNull();
     assertThat(config.isCamundaUsersEnabled()).isFalse();
     assertThat(config.isCamundaGroupsEnabled()).isTrue();
+  }
+
+  @Test
+  void shouldReadTheGroupsOfANamedProviderFromItsGroupsClaim() {
+    // given - only a named provider, which has a groups claim
+    final var config = oidc();
+    config.getProviders().getOidc().put("keycloak", provider(KEYCLOAK, "groups"));
+
+    // expect
+    assertThat(config.isCamundaGroupsEnabled()).isFalse();
+    assertThat(config.isExternalGroupsEnabled()).isTrue();
+    assertThat(config.getGroupsClaim(KEYCLOAK)).isEqualTo("groups");
+  }
+
+  @Test
+  void shouldUseBothKindsOfGroupsWhenOnlySomeProvidersHaveAGroupsClaim() {
+    // given - one provider with a groups claim and one without
+    final var config = oidc();
+    config.getProviders().getOidc().put("keycloak", provider(KEYCLOAK, "groups"));
+    config.getProviders().getOidc().put("partner", provider(PARTNER, null));
+
+    // expect
+    assertThat(config.isCamundaGroupsEnabled()).isTrue();
+    assertThat(config.isExternalGroupsEnabled()).isTrue();
+    assertThat(config.getGroupsClaim(KEYCLOAK)).isEqualTo("groups");
+    assertThat(config.getGroupsClaim(PARTNER)).isNull();
+  }
+
+  @Test
+  void shouldCountTheOidcBlockAsAProviderWhenItHasAClientId() {
+    // given - the oidc block is a provider without a groups claim, beside one with a groups claim
+    final var config = oidc();
+    config.getOidc().setClientId("partner-client");
+    config.getOidc().setIssuerUri(PARTNER);
+    config.getProviders().getOidc().put("keycloak", provider(KEYCLOAK, "groups"));
+
+    // expect
+    assertThat(config.isCamundaGroupsEnabled()).isTrue();
+    assertThat(config.isExternalGroupsEnabled()).isTrue();
+    assertThat(config.getGroupsClaim(PARTNER)).isNull();
+  }
+
+  @Test
+  void shouldUseTheGroupsClaimOfTheOidcBlockForAProviderWithoutOne() {
+    // given - the oidc block sets the groups claim for every provider
+    final var config = oidc();
+    config.getOidc().setGroupsClaim("roles");
+    config.getProviders().getOidc().put("keycloak", provider(KEYCLOAK, "groups"));
+    config.getProviders().getOidc().put("partner", provider(PARTNER, null));
+
+    // expect
+    assertThat(config.isCamundaGroupsEnabled()).isFalse();
+    assertThat(config.isExternalGroupsEnabled()).isTrue();
+    assertThat(config.getGroupsClaim(KEYCLOAK)).isEqualTo("groups");
+    assertThat(config.getGroupsClaim(PARTNER)).isEqualTo("roles");
+  }
+
+  @Test
+  void shouldReadTheGroupsClaimOfTheFirstProviderOfAnIssuer() {
+    // given - two providers declare the same issuer
+    final var config = oidc();
+    config.getProviders().getOidc().put("first", provider(KEYCLOAK, "groups"));
+    config.getProviders().getOidc().put("second", provider(KEYCLOAK, "roles"));
+
+    // expect
+    assertThat(config.getGroupsClaim(KEYCLOAK)).isEqualTo("groups");
+  }
+
+  @Test
+  void shouldMatchAnIssuerThatDiffersFromTheIssuerUriByATrailingSlash() {
+    // given
+    final var config = oidc();
+    config.getProviders().getOidc().put("keycloak", provider(KEYCLOAK + "/", "groups"));
+
+    // expect
+    assertThat(config.getGroupsClaim(KEYCLOAK)).isEqualTo("groups");
+  }
+
+  @Test
+  void shouldUseTheGroupsClaimOfTheOidcBlockForATokenOfNoKnownIssuer() {
+    // given
+    final var config = oidc();
+    config.getOidc().setGroupsClaim("roles");
+    config.getProviders().getOidc().put("keycloak", provider(KEYCLOAK, "groups"));
+
+    // expect
+    assertThat(config.getGroupsClaim("https://unknown.example.com")).isEqualTo("roles");
+    assertThat(config.getGroupsClaim(null)).isEqualTo("roles");
+  }
+
+  @Test
+  void shouldNotReadGroupsFromAClaimWithoutOidc() {
+    // given - a groups claim is configured, but the method is basic
+    final var config = new AuthenticationConfiguration();
+    config.setMethod(AuthenticationMethod.BASIC);
+    config.getOidc().setGroupsClaim("groups");
+
+    // expect
+    assertThat(config.isCamundaGroupsEnabled()).isTrue();
+    assertThat(config.isExternalGroupsEnabled()).isFalse();
+    assertThat(config.getGroupsClaim(null)).isNull();
+  }
+
+  private static AuthenticationConfiguration oidc() {
+    final var config = new AuthenticationConfiguration();
+    config.setMethod(AuthenticationMethod.OIDC);
+    return config;
+  }
+
+  private static OidcConfiguration provider(final String issuerUri, final String groupsClaim) {
+    final var provider = new OidcConfiguration();
+    provider.setClientId("client");
+    provider.setIssuerUri(issuerUri);
+    if (groupsClaim != null) {
+      provider.setGroupsClaim(groupsClaim);
+    }
+    return provider;
   }
 }

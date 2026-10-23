@@ -50,6 +50,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0035: Explain failed OIDC browser logins on a page the host can word](../adr/0035-explain-failed-oidc-browser-logins.md)
 - [ADR-0036: Revoke the session refresh token on OIDC logout](../adr/0036-revoke-refresh-token-on-oidc-logout.md)
 - [ADR-0037: Resolve the web app authorization flag per request](../adr/0037-resolve-web-app-authorization-flag-per-request.md)
+- [ADR-0039: Derive the groups modes from every OIDC provider](../adr/0039-derive-groups-modes-from-every-oidc-provider.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 
