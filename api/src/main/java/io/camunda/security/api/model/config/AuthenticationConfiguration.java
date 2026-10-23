@@ -9,6 +9,9 @@ package io.camunda.security.api.model.config;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcProvidersConfiguration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 /**
  * Authentication configuration bound to {@code camunda.security.authentication.*}.
@@ -130,12 +133,85 @@ public class AuthenticationConfiguration {
     this.providers = providers != null ? providers : new OidcProvidersConfiguration();
   }
 
-  /** Camunda-managed groups are disabled when OIDC is active and a groups claim is configured. */
+  /**
+   * Whether some users get their groups from Camunda: the method is not OIDC, or an OIDC provider
+   * has no groups claim. A host shows Camunda's group management when this is {@code true}.
+   *
+   * <p>A provider without its own {@code groups-claim} uses the one of the {@code oidc} block. With
+   * a single provider this is always the opposite of {@link #isExternalGroupsEnabled()}; with
+   * several, both can be {@code true}.
+   */
   public boolean isCamundaGroupsEnabled() {
-    final var oidcConfiguration = getOidc();
-    return !(getMethod() == AuthenticationMethod.OIDC
-        && oidcConfiguration != null
-        && oidcConfiguration.isGroupsClaimConfigured());
+    return getMethod() != AuthenticationMethod.OIDC
+        || oidcProviders().stream().anyMatch(provider -> groupsClaimOf(provider) == null);
+  }
+
+  /**
+   * Whether some users get their groups from a groups claim of their OIDC provider. Camunda does
+   * not know those groups, so a host must not require a group it is given to exist in Camunda when
+   * this is {@code true}.
+   *
+   * <p>A provider without its own {@code groups-claim} uses the one of the {@code oidc} block.
+   */
+  public boolean isExternalGroupsEnabled() {
+    return getMethod() == AuthenticationMethod.OIDC
+        && oidcProviders().stream().anyMatch(provider -> groupsClaimOf(provider) != null);
+  }
+
+  /**
+   * The groups claim to read the groups of a token of {@code issuer} from: the one of the first
+   * provider with that {@code issuer-uri}, the {@code oidc} block first, ignoring a trailing slash.
+   * A provider without its own {@code groups-claim}, and a token of no known issuer, use the one of
+   * the {@code oidc} block.
+   *
+   * @param issuer the {@code iss} claim of the token, or {@code null}
+   * @return the groups claim, or {@code null} when the groups of the token's user come from Camunda
+   */
+  public String getGroupsClaim(final String issuer) {
+    if (getMethod() != AuthenticationMethod.OIDC) {
+      return null;
+    }
+    final var normalizedIssuer = withoutTrailingSlash(issuer);
+    return oidcProviders().stream()
+        .filter(
+            provider ->
+                normalizedIssuer != null
+                    && normalizedIssuer.equals(withoutTrailingSlash(provider.getIssuerUri())))
+        .findFirst()
+        .map(this::groupsClaimOf)
+        .orElseGet(() -> groupsClaimOf(getOidc()));
+  }
+
+  /**
+   * The OIDC providers, in the order of the configuration: the {@code oidc} block when it has a
+   * {@code client-id}, then the named providers. Without any, the {@code oidc} block alone, so its
+   * {@code groups-claim} still decides.
+   */
+  private List<OidcConfiguration> oidcProviders() {
+    final List<OidcConfiguration> providers = new ArrayList<>();
+    if (hasText(getOidc().getClientId())) {
+      providers.add(getOidc());
+    }
+    getProviders().getOidc().values().stream().filter(Objects::nonNull).forEach(providers::add);
+    return providers.isEmpty() ? List.of(getOidc()) : providers;
+  }
+
+  private String groupsClaimOf(final OidcConfiguration provider) {
+    if (provider.isGroupsClaimConfigured()) {
+      return provider.getGroupsClaim();
+    }
+    return getOidc().isGroupsClaimConfigured() ? getOidc().getGroupsClaim() : null;
+  }
+
+  private static String withoutTrailingSlash(final String issuer) {
+    if (!hasText(issuer)) {
+      return null;
+    }
+    return issuer.endsWith("/") ? issuer.substring(0, issuer.length() - 1) : issuer;
+  }
+
+  private static boolean hasText(final String value) {
+    return value != null && !value.isBlank();
   }
 
   /** Camunda-managed users are disabled when OIDC authentication is active. */
