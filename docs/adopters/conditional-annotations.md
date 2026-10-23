@@ -20,7 +20,7 @@ security-related runtime conditions. All annotations are applicable to both
 | [`@ConditionalOnProtectedApi`](#conditionalonprotectedapi) | `camunda.security.authentication.unprotected-api` is `false` (the default) |
 | [`@ConditionalOnUnprotectedApi`](#conditionalonunprotectedapi) | `camunda.security.authentication.unprotected-api` is `true` |
 | [`@ConditionalOnInternalUserManagement`](#conditionaloninternalusermanagement) | The configured authentication method is **not** `OIDC` |
-| [`@ConditionalOnCamundaGroupsEnabled`](#conditionaloncamundagroupsenabled) | No OIDC groups claim is configured (Camunda-managed groups are active) |
+| [`@ConditionalOnCamundaGroupsEnabled`](#conditionaloncamundagroupsenabled) | Some users get their groups from Camunda: the method is not OIDC, or an OIDC provider has no groups claim |
 
 ---
 
@@ -138,15 +138,25 @@ public UserProvisioningService userProvisioningService(final UserRepository user
 import io.camunda.security.spring.annotation.ConditionalOnCamundaGroupsEnabled;
 ```
 
-Activates when Camunda-managed groups are enabled. Groups are managed by
-Camunda when either:
+Activates when some users get their groups from Camunda, i.e. when
+`AuthenticationConfiguration#isCamundaGroupsEnabled()` is `true`. That is the
+case when either:
 
 - The authentication method is not `OIDC`, **or**
-- OIDC is active but `camunda.security.authentication.oidc.groupsClaim` is
-  **not** set.
+- An OIDC provider has no groups claim. The providers are the
+  `camunda.security.authentication.oidc` block when it has a `client-id`, and
+  every provider under `providers.oidc.<name>`. A provider without its own
+  `groups-claim` uses the one of the `oidc` block.
 
-When a groups claim is configured, the IdP is the source of truth for group
-membership and CSL's internal group management beans should be suppressed.
+When every provider has a groups claim, the IdPs are the source of truth for
+group membership and CSL's internal group management beans should be
+suppressed.
+
+With several providers, some users can get their groups from a claim while
+others get them from Camunda. `isExternalGroupsEnabled()` tells whether any
+provider has a groups claim, and `getGroupsClaim(issuer)` gives the claim for
+the tokens of one issuer. See
+[ADR-0039](../adr/0039-derive-groups-modes-from-every-oidc-provider.md).
 
 No attributes.
 
