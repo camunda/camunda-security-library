@@ -35,7 +35,7 @@ No single value covers both. Neither decision can be made per provider either. A
 
 A third method, `getGroupsClaim(String issuer)`, gives the groups claim for a token of that issuer, so a host can resolve each login's groups with the claim of the provider that issued the token:
 
-- The issuer belongs to the first provider with exactly that `issuer-uri`, with the `oidc` block first. This is the rule `IssuerOwnership` applies, so the claim is the one of the provider that verifies the token.
+- The issuer belongs to the first provider with that `issuer-uri`, with the `oidc` block first. Issuer-uris that differ only by a trailing slash are one issuer (ADR-0038, #738). This is the rule `IssuerOwnership` applies when it routes by the configuration, so the claim is the one of the provider that verifies the token.
 - It returns `null` when that provider's users get their groups from Camunda.
 
 The OIDC providers are the `oidc` block when it has a `client-id`, then the named providers. A named provider with the registration ID of the `oidc` block replaces it, as `ScopedClientRegistrationFactory#flatten` does. With none, the `oidc` block alone, so a configuration without named providers keeps today's result. A provider without its own `groups-claim` uses the one of the `oidc` block, as hosts already do for the principal claims. A token of no known issuer also uses the claim of the `oidc` block.
