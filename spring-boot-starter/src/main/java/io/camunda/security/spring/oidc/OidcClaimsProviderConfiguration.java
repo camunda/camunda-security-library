@@ -114,6 +114,8 @@ public class OidcClaimsProviderConfiguration {
           augmentation,
           meterRegistry);
     }
+    // A token whose verifying provider recorded its UserInfo endpoint, as a scoped decoder does,
+    // needs no mapping: it is augmented without building it.
     return new DeferredOidcClaimsProvider(
         userInfoMappingSubject(),
         () ->
@@ -121,7 +123,8 @@ public class OidcClaimsProviderConfiguration {
                 fetcher,
                 buildUserInfoUriByIssuer(clientRegistrationRepository),
                 augmentation,
-                meterRegistry));
+                meterRegistry),
+        new CachingOidcClaimsProvider(fetcher, Map.of(), augmentation, meterRegistry));
   }
 
   @Bean

@@ -61,7 +61,8 @@ final class IssuerOwnership {
 
   /**
    * As {@link #byIssuer(Iterable, Logger, String)}, for a step that decides the owner before any
-   * registration is resolved.
+   * registration is resolved. Issuers that differ only by a trailing slash count as one issuer, see
+   * {@link IssuerUris}.
    *
    * @param providers the provider configuration of one scope, keyed by registrationId, in the order
    *     of the configuration
@@ -72,6 +73,21 @@ final class IssuerOwnership {
       final Map<String, OidcConfiguration> providers,
       final Logger log,
       final String ignoredConfiguration) {
+    return registrationIdByIssuer(providers, log, ignoredConfiguration, true);
+  }
+
+  /**
+   * @param trailingSlashTwinsAreOneIssuer whether issuer-uris that differ only by a trailing slash
+   *     count as one issuer. True for every step that routes by the configuration ({@link
+   *     IssuerRegistrations#ofConfiguration}), where discovery settles both on the provider's
+   *     issuer. False for a step that must agree with a decoder routing a host's own, already
+   *     resolved registrations ({@link IssuerRegistrations#ofResolved}), which routes exactly.
+   */
+  static Map<String, String> registrationIdByIssuer(
+      final Map<String, OidcConfiguration> providers,
+      final Logger log,
+      final String ignoredConfiguration,
+      final boolean trailingSlashTwinsAreOneIssuer) {
     final Map<String, String> owners = new LinkedHashMap<>();
     providers.forEach(
         (registrationId, configuration) -> {
@@ -82,9 +98,41 @@ final class IssuerOwnership {
           final var owner = owners.putIfAbsent(issuerUri, registrationId);
           if (owner != null) {
             warn(log, issuerUri, owner, ignoredConfiguration, registrationId);
+            return;
+          }
+          // Two issuer-uris that differ only by a trailing slash name one issuer: the provider
+          // declares one form, discovery settles both registrations on it, and their tokens carry
+          // it. So they are duplicates, and the first one owns both forms.
+          if (!trailingSlashTwinsAreOneIssuer) {
+            return;
+          }
+          final var twin = IssuerUris.withToggledTrailingSlash(issuerUri);
+          final var twinOwner = twin != null ? owners.get(twin) : null;
+          if (twinOwner != null && !twinOwner.equals(registrationId)) {
+            owners.put(issuerUri, twinOwner);
+            warnTwin(log, twin, issuerUri, twinOwner, ignoredConfiguration, registrationId);
           }
         });
     return owners;
+  }
+
+  /** As {@link #warn}, for issuers that are duplicates because they differ only by the slash. */
+  private static void warnTwin(
+      final Logger log,
+      final String ownerIssuerUri,
+      final String ignoredIssuerUri,
+      final String owner,
+      final String ignoredConfiguration,
+      final String ignored) {
+    log.warn(
+        "Issuers '{}' and '{}' differ only by a trailing slash, so they are one issuer claimed by"
+            + " multiple OIDC registrations: '{}' wins, and the tokens of that issuer ignore {} of"
+            + " '{}'.",
+        UrlRedaction.redact(ownerIssuerUri),
+        UrlRedaction.redact(ignoredIssuerUri),
+        UrlRedaction.escapeControlCharacters(owner),
+        ignoredConfiguration,
+        UrlRedaction.escapeControlCharacters(ignored));
   }
 
   /**

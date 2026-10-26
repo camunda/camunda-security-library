@@ -85,9 +85,16 @@ public class IssuerAwareTokenValidator implements OAuth2TokenValidator<Jwt> {
 
   protected OAuth2TokenValidator<Jwt> getOrCreateTokenValidator(
       final ClientRegistration clientRegistration) {
-    final var issuer = clientRegistration.getProviderDetails().getIssuerUri();
+    // Per registration, not per resolved issuer: two providers configured as https://idp/ and
+    // https://idp both resolve to the provider's issuer, yet each routes its own tokens and may
+    // require different audiences. The issuer stays in the key because scopes can share a
+    // registration id with different issuers.
+    final var key =
+        clientRegistration.getRegistrationId()
+            + '\0'
+            + clientRegistration.getProviderDetails().getIssuerUri();
     return validators.computeIfAbsent(
-        issuer, k -> tokenValidatorFactory.createTokenValidator(clientRegistration));
+        key, k -> tokenValidatorFactory.createTokenValidator(clientRegistration));
   }
 
   /**

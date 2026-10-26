@@ -26,6 +26,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.helpers.NOPLogger;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
@@ -669,5 +670,48 @@ public class OidcAccessTokenDecoderFactory {
               }
             });
     return urisByIssuer;
+  }
+
+  /**
+   * The registrationId that {@link #selectAccessTokenDecoder(Map, Function, TokenValidatorFactory)}
+   * routes the tokens of each issuer to: the only provider, or the owner of the issuer, with the
+   * trailing slash tolerated as {@link IssuerRegistrations#ofConfiguration} tolerates it. Needs no
+   * network access. Computed from the same configuration rather than read from the decoder, so a
+   * host that overrides the selection keeps its own decoder.
+   */
+  static Function<String, String> registrationIdByIssuer(
+      final Map<String, OidcConfiguration> providersById) {
+    final var providers =
+        ScopedClientRegistrationFactory.withoutBlankRegistrationIds(providersById);
+    if (providers.size() == 1) {
+      final var only = providers.keySet().iterator().next();
+      return issuer -> only;
+    }
+    // Quiet: the decoder's own routing already logs the duplicate-issuer warning.
+    final var owners =
+        IssuerOwnership.registrationIdByIssuer(providers, NOPLogger.NOP_LOGGER, "the claims");
+    return issuer -> IssuerUris.lookup(owners, issuer);
+  }
+
+  /**
+   * As {@link #registrationIdByIssuer(Map)}, for {@link #selectAccessTokenDecoder(List, Map,
+   * TokenValidatorFactory)}: the only registration, or the first registration of each issuer, as
+   * {@link IssuerRegistrations#ofResolved} routes it.
+   */
+  static Function<String, String> registrationIdByIssuer(
+      final List<ClientRegistration> registrations) {
+    if (registrations.size() == 1) {
+      final var only = registrations.getFirst().getRegistrationId();
+      return issuer -> only;
+    }
+    final Map<String, String> owners = new LinkedHashMap<>();
+    registrations.forEach(
+        registration -> {
+          final var issuerUri = registration.getProviderDetails().getIssuerUri();
+          if (StringUtils.hasText(issuerUri)) {
+            owners.putIfAbsent(issuerUri, registration.getRegistrationId());
+          }
+        });
+    return issuer -> issuer != null ? owners.get(issuer) : null;
   }
 }
