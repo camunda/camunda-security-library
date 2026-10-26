@@ -160,9 +160,10 @@ public class AuthenticationConfiguration {
 
   /**
    * The groups claim to read the groups of a token of {@code issuer} from: the one of the first
-   * provider with exactly that {@code issuer-uri}, the {@code oidc} block first. That is the
-   * provider that verifies the token. A provider without its own {@code groups-claim}, and a token
-   * of no known issuer, use the one of the {@code oidc} block.
+   * provider with that {@code issuer-uri}, the {@code oidc} block first. Issuer-uris that differ
+   * only by a trailing slash are one issuer, because discovery settles both on the provider's
+   * issuer. That is the provider that verifies the token. A provider without its own {@code
+   * groups-claim}, and a token of no known issuer, use the one of the {@code oidc} block.
    *
    * @param issuer the {@code iss} claim of the token, or {@code null}
    * @return the groups claim, or {@code null} when the groups of the token's user come from Camunda
@@ -172,7 +173,7 @@ public class AuthenticationConfiguration {
       return null;
     }
     return oidcProviders().stream()
-        .filter(provider -> hasText(issuer) && issuer.equals(provider.getIssuerUri()))
+        .filter(provider -> isSameIssuer(issuer, provider.getIssuerUri()))
         .findFirst()
         .map(this::groupsClaimOf)
         .orElseGet(() -> groupsClaimOf(getOidc()));
@@ -209,6 +210,16 @@ public class AuthenticationConfiguration {
 
   private static boolean hasText(final String value) {
     return value != null && !value.isBlank();
+  }
+
+  private static boolean isSameIssuer(final String issuer, final String issuerUri) {
+    return hasText(issuer)
+        && hasText(issuerUri)
+        && withoutTrailingSlash(issuer).equals(withoutTrailingSlash(issuerUri));
+  }
+
+  private static String withoutTrailingSlash(final String issuer) {
+    return issuer.endsWith("/") ? issuer.substring(0, issuer.length() - 1) : issuer;
   }
 
   /** Camunda-managed users are disabled when OIDC authentication is active. */

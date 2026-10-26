@@ -11,6 +11,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class AuthenticationConfigurationTest {
 
@@ -133,20 +135,32 @@ class AuthenticationConfigurationTest {
     assertThat(config.getGroupsClaim(KEYCLOAK)).isEqualTo("groups");
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {KEYCLOAK, KEYCLOAK + "/"})
+  void shouldReadTheGroupsClaimOfAProviderWhoseIssuerUriDiffersByATrailingSlash(
+      final String tokenIssuer) {
+    // given - the provider's issuer-uri has a trailing slash, its tokens may not (#61896)
+    final var config = oidc();
+    config.getProviders().getOidc().put("keycloak", provider(KEYCLOAK + "/", "groups"));
+
+    // expect
+    assertThat(config.getGroupsClaim(tokenIssuer)).isEqualTo("groups");
+  }
+
   @Test
-  void shouldMatchTheIssuerExactlyWithTheSlashFormDeclaredFirst() {
+  void shouldGiveBothFormsOfAnIssuerToTheSlashFormDeclaredFirst() {
     // given - both forms of one issuer, each with its own groups claim
     final var config = oidc();
     config.getProviders().getOidc().put("slash", provider(KEYCLOAK + "/", "groups"));
     config.getProviders().getOidc().put("plain", provider(KEYCLOAK, "roles"));
 
-    // expect - each form reads the claim of the provider that verifies its tokens
-    assertThat(config.getGroupsClaim(KEYCLOAK)).isEqualTo("roles");
+    // expect - one issuer, owned by the provider declared first, which verifies its tokens
+    assertThat(config.getGroupsClaim(KEYCLOAK)).isEqualTo("groups");
     assertThat(config.getGroupsClaim(KEYCLOAK + "/")).isEqualTo("groups");
   }
 
   @Test
-  void shouldMatchTheIssuerExactlyWithThePlainFormDeclaredFirst() {
+  void shouldGiveBothFormsOfAnIssuerToThePlainFormDeclaredFirst() {
     // given
     final var config = oidc();
     config.getProviders().getOidc().put("plain", provider(KEYCLOAK, "roles"));
@@ -154,7 +168,7 @@ class AuthenticationConfigurationTest {
 
     // expect
     assertThat(config.getGroupsClaim(KEYCLOAK)).isEqualTo("roles");
-    assertThat(config.getGroupsClaim(KEYCLOAK + "/")).isEqualTo("groups");
+    assertThat(config.getGroupsClaim(KEYCLOAK + "/")).isEqualTo("roles");
   }
 
   @Test
