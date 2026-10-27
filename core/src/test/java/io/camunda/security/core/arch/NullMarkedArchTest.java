@@ -22,6 +22,10 @@ import org.jspecify.annotations.NullMarked;
  * Enforces the nullness convention of ADR-0040: every production package of the {@code api} and
  * {@code core} modules carries {@code @NullMarked}. JSpecify's {@code @NullMarked} does not cascade
  * to subpackages, so each package needs its own {@code package-info.java}.
+ *
+ * <p>This test exists once per module (core, spring-boot-starter, validation); a change to the rule
+ * must be mirrored in the other two copies. The rule deliberately fails on an empty scan, so a
+ * wrong or renamed {@code packages} value is caught instead of passing vacuously.
  */
 @AnalyzeClasses(
     packages = {"io.camunda.security.api", "io.camunda.security.core"},
@@ -30,7 +34,7 @@ class NullMarkedArchTest {
 
   @ArchTest
   static final ArchRule PRODUCTION_PACKAGES_MUST_BE_NULL_MARKED =
-      ArchRuleDefinition.classes().should(resideInNullMarkedPackage()).allowEmptyShould(true);
+      ArchRuleDefinition.classes().should(resideInNullMarkedPackage());
 
   private static ArchCondition<JavaClass> resideInNullMarkedPackage() {
     return new ArchCondition<>("reside in a package annotated with @NullMarked") {
