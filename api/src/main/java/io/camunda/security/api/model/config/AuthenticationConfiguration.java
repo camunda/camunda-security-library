@@ -182,7 +182,8 @@ public class AuthenticationConfiguration {
   /**
    * The OIDC providers, in the order of the configuration: the {@code oidc} block when it has a
    * {@code client-id}, then the named providers. A named provider with the registration ID of the
-   * {@code oidc} block replaces it, as the client registrations do. Without any provider, the
+   * {@code oidc} block replaces it, as the client registrations do. A provider with a blank
+   * registration ID is left out, as the token decoders leave it out. Without any provider, the
    * {@code oidc} block alone, so its {@code groups-claim} still decides.
    */
   private List<OidcConfiguration> oidcProviders() {
@@ -198,6 +199,7 @@ public class AuthenticationConfiguration {
                 byRegistrationId.put(registrationId, provider);
               }
             });
+    byRegistrationId.keySet().removeIf(registrationId -> !hasText(registrationId));
     return byRegistrationId.isEmpty() ? List.of(getOidc()) : List.copyOf(byRegistrationId.values());
   }
 
