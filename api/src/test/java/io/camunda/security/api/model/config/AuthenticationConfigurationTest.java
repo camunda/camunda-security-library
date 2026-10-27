@@ -190,6 +190,34 @@ class AuthenticationConfigurationTest {
   }
 
   @Test
+  void shouldLeaveOutTheOidcBlockWhenItsRegistrationIdIsBlank() {
+    // given - the oidc block, without a groups claim, has a blank registration ID, which the token
+    // decoders leave out, and a named provider of the same issuer has a groups claim
+    final var config = oidc();
+    config.getOidc().setClientId("flat-client");
+    config.getOidc().setIssuerUri(KEYCLOAK);
+    config.getOidc().setRegistrationId("");
+    config.getProviders().getOidc().put("keycloak", provider(KEYCLOAK, "groups"));
+
+    // expect - only the named provider is active
+    assertThat(config.isCamundaGroupsEnabled()).isFalse();
+    assertThat(config.isExternalGroupsEnabled()).isTrue();
+    assertThat(config.getGroupsClaim(KEYCLOAK)).isEqualTo("groups");
+  }
+
+  @Test
+  void shouldLeaveOutANamedProviderWithABlankRegistrationId() {
+    // given - a named provider without a groups claim under a blank registration ID
+    final var config = oidc();
+    config.getProviders().getOidc().put(" ", provider(PARTNER, null));
+    config.getProviders().getOidc().put("keycloak", provider(KEYCLOAK, "groups"));
+
+    // expect
+    assertThat(config.isCamundaGroupsEnabled()).isFalse();
+    assertThat(config.isExternalGroupsEnabled()).isTrue();
+  }
+
+  @Test
   void shouldUseTheGroupsClaimOfTheOidcBlockForATokenOfNoKnownIssuer() {
     // given
     final var config = oidc();

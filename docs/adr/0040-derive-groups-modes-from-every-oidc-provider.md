@@ -38,7 +38,7 @@ A third method, `getGroupsClaim(String issuer)`, gives the groups claim for a to
 - The issuer belongs to the first provider with that `issuer-uri`, with the `oidc` block first. Issuer-uris that differ only by a trailing slash are one issuer (ADR-0038, #738). This is the rule `IssuerOwnership` applies when it routes by the configuration, so the claim is the one of the provider that verifies the token.
 - It returns `null` when that provider's users get their groups from Camunda.
 
-The OIDC providers are the `oidc` block when it has a `client-id`, then the named providers. A named provider with the registration ID of the `oidc` block replaces it, as `ScopedClientRegistrationFactory#flatten` does. With none, the `oidc` block alone, so a configuration without named providers keeps today's result. A provider without its own `groups-claim` uses the one of the `oidc` block, as hosts already do for the principal claims. A token of no known issuer also uses the claim of the `oidc` block.
+The OIDC providers are the `oidc` block when it has a `client-id`, then the named providers. A named provider with the registration ID of the `oidc` block replaces it, as `ScopedClientRegistrationFactory#flatten` does. A provider with a blank registration ID is left out, as the token decoders leave it out. With none, the `oidc` block alone, so a configuration without named providers keeps today's result. A provider without its own `groups-claim` uses the one of the `oidc` block, as hosts already do for the principal claims. A token of no known issuer also uses the claim of the `oidc` block.
 
 `@ConditionalOnCamundaGroupsEnabled` binds `camunda.security.authentication` and returns `isCamundaGroupsEnabled()`.
 
@@ -55,3 +55,10 @@ The OIDC providers are the `oidc` block when it has a `client-id`, then the name
 - A provider can't opt out of the `oidc` block's groups claim, so a mixed setup needs the `oidc` block to have none.
 - `getGroupsClaim` matches a provider by its `issuer-uri`. A provider configured without one is found only through the `oidc` block's fallback.
 - `@ConditionalOnCamundaGroupsEnabled` now also considers the method, as its documentation always said. With basic authentication and a groups claim set, it matches.
+- `getGroupsClaim` follows the routing by the configuration. A host that supplies its own client registration repository routes issuers exactly. If that host also configures two providers whose `issuer-uri`s differ only by a trailing slash, with different groups claims, a token of the second form gets the claim of the first.
+
+## Alternatives Considered
+
+- **Keep one flag.** Rejected: in a mixed setup decisions 1 and 2 need different answers, and no single value gives both.
+- **Decide per provider.** Rejected: a Camunda group can have members from any provider, and an assignment such as "group `engineering` gets role Developer" names no provider.
+- **Add a setting for the groups mode.** Rejected: the providers' `groups-claim`s already say where each provider's groups come from, and a separate setting could contradict them.
