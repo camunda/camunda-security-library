@@ -73,3 +73,6 @@ Desktop.ini
 
 # Python
 __pycache__/
+
+# Local AI-assistant planning artifacts
+docs/superpowers/
