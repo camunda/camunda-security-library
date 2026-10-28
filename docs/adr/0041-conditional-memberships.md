@@ -148,11 +148,12 @@ check doesn't read as role IDs. Changing the converter is follow-up work.
 Memberships accept both operands. A `Principal` operand lets a membership express a condition
 relative to the caller, for example a role that applies only to tasks where `ASSIGNEE ∈ Principal(USERNAME)`.
 
-A `Principal` operand may refer only to attributes backed by the identity store: `USERNAME` and
-`CLIENT_ID` always, and `GROUP_IDS` and `TENANT_IDS` only when the host reads them from its identity
-store. Raw token claims are never an operand. When a host takes group or tenant IDs from a token
-claim, a condition on that attribute fails closed, because a forged or misconfigured claim could
-otherwise satisfy it.
+A `Principal` operand may refer to the caller's identity, `USERNAME` or `CLIENT_ID`, wherever it
+comes from: it's the verified identity every authorization decision already relies on. It may refer
+to `GROUP_IDS` or `TENANT_IDS` only when the host resolves them from its identity store. When a host
+takes group or tenant IDs from a token claim, a condition on that attribute fails closed, because
+those claims depend on identity provider configuration that CSL doesn't control. No other token
+claim is ever an operand.
 
 ### Attribute catalogue
 
