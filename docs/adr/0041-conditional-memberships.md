@@ -112,9 +112,36 @@ Two existing allow paths are outside this rule:
 
 ### Conditional memberships never appear in the id lists
 
-`authenticatedRoleIds` and the other id lists hold global memberships only. A reader that doesn't
-know about conditions therefore never treats a conditional membership as global. `roleIds` carries
-role memberships only, never JWT authorities.
+Every reader of `authenticatedRoleIds` and the other id lists on `CamundaAuthentication` takes them
+to mean "the principal has these memberships everywhere". None of those readers knows about
+conditions. So the id lists hold global memberships only, and conditional memberships go in a
+separate component that only condition-aware code reads.
+
+For example, Alice is a global Viewer, and a Reviewer only in the Payments workspace:
+
+```
+authenticatedRoleIds   = [viewer]
+conditionalMemberships = [reviewer, WORKSPACE ∈ {payments}]
+```
+
+A check that doesn't know about conditions sees only `viewer`, so it can't give Alice Reviewer
+rights in the HR workspace. If `reviewer` were in `authenticatedRoleIds`, that check would allow it.
+A reader that misses the new component denies instead of over-granting.
+
+### Role ids come only from role memberships
+
+`authenticatedRoleIds` holds the IDs of role entities that own grants, resolved through
+`MembershipPort`. It never holds authorities taken from the token.
+
+Today `JwtGrantedAuthoritiesAuthenticationConverter` fills it with the token's Spring authorities.
+A token with `roles: ["admin"]` then gets every grant owned by the stored role `admin`, so whoever
+controls the token's content picks the role entities ([camunda-hub#30035](https://github.com/camunda/camunda-hub/issues/30035)).
+That's the same trust problem as a principal operand read from a claim, and it grows once Hub's
+roles carry workspace conditions.
+
+That converter therefore stops filling `authenticatedRoleIds`. A host that relies on roles from the
+token maps them to store roles itself, or carries them in a separate field that the authorization
+check doesn't read as role IDs. Changing the converter is follow-up work.
 
 ### Principal operands only for trusted attributes
 
@@ -187,6 +214,9 @@ conditions to that identity needs its own ADR and a `MembershipPort` change, as 
 - The closed attribute catalogue means a new kind of condition needs a CSL release.
 - A host that takes group or tenant IDs from a token claim, as OC can, can't use `GROUP_IDS` or
   `TENANT_IDS` as a principal operand: those conditions deny.
+- `JwtGrantedAuthoritiesAuthenticationConverter` can no longer feed token authorities into
+  `authenticatedRoleIds`. Hosts that use it, such as SaaS deployments that read roles from a claim,
+  need a migration.
 
 ## Alternatives Considered
 
