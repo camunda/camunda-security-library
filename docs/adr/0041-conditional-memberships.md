@@ -201,8 +201,8 @@ Authorization(owner = alice, resource = PROCESS_DEFINITION, id = *, permission =
 
 A reader written before that field existed, such as an older CSL version, an exporter or a
 serializer that drops unknown fields, doesn't see `conditions`. What's left reads as "Alice may
-update every process definition", so the restriction is lost and access widens. A separate type is
-one such a reader doesn't recognise, so it ignores the grant and Alice gets nothing from it: a deny.
+update every process definition", so the restriction is lost and access widens. The same reader doesn't
+recognise a separate type, so it ignores the grant and Alice gets nothing from it: a deny.
 The same rule applies to `AuthorizationScope`, which the live check reads.
 
 ### Membership resolution is decoupled from claim conversion
