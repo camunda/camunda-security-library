@@ -11,6 +11,7 @@ import io.camunda.security.api.context.CamundaAuthenticationHolder;
 import io.camunda.security.api.model.CamundaAuthentication;
 import java.util.List;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Delegating {@link CamundaAuthenticationHolder} responsible to delegate to a matching {@link
@@ -48,7 +49,7 @@ public class CamundaAuthenticationDelegatingHolder implements CamundaAuthenticat
    * <p>See {@link CamundaAuthenticationHolder#get()}
    */
   @Override
-  public CamundaAuthentication get() {
+  public @Nullable CamundaAuthentication get() {
     return getMatchingHolder().map(CamundaAuthenticationHolder::get).orElse(null);
   }
 

@@ -7,6 +7,8 @@
  */
 package io.camunda.security.spring.session;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Converts session attribute values to and from their serialized byte representation. Hosts may
  * provide their own implementation to control the (de)serialization strategy.
@@ -24,11 +26,11 @@ public interface WebSessionAttributeConverter {
    * Deserializes the given bytes back into an attribute value. Must not return {@code null} — throw
    * if the value cannot be restored.
    */
-  Object deserialize(final byte[] value);
+  @Nullable Object deserialize(final byte[] value);
 
   /**
    * Serializes the given attribute value to bytes. Must not return {@code null} — throw if the
    * value cannot be serialized.
    */
-  byte[] serialize(final Object value);
+  byte @Nullable [] serialize(final @Nullable Object value);
 }

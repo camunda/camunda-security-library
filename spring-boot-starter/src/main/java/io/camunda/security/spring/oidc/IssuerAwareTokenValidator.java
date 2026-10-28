@@ -10,6 +10,7 @@ package io.camunda.security.spring.oidc;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -104,7 +105,7 @@ public class IssuerAwareTokenValidator implements OAuth2TokenValidator<Jwt> {
    * @throws JwtException if the resolution fails for another reason. That is a configuration error
    *     that no retry removes, so this keeps the server error.
    */
-  protected ClientRegistration getClientRegistrationByIssuer(final String issuer) {
+  protected @Nullable ClientRegistration getClientRegistrationByIssuer(final String issuer) {
     final ClientRegistration registration;
     try {
       registration = issuerRegistrations.forIssuer(issuer);

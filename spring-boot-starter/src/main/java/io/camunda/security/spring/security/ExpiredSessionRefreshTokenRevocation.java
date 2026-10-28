@@ -34,6 +34,7 @@ import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.context.SecurityContext;
@@ -204,7 +205,8 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
     revoke(snapshot, Objects.requireNonNull(stillExpired, "stillExpired must not be null"));
   }
 
-  private void revoke(final Session expiredSession, final Supplier<Session> stillExpired) {
+  private void revoke(
+      final Session expiredSession, final @Nullable Supplier<Session> stillExpired) {
     try {
       scheduleRevocation(expiredSession, stillExpired);
     } catch (final RuntimeException e) {
@@ -236,7 +238,7 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
    *     for a request, which never waits and so revokes from {@code expiredSession}
    */
   private void scheduleRevocation(
-      final Session expiredSession, final Supplier<Session> stillExpired) {
+      final Session expiredSession, final @Nullable Supplier<Session> stillExpired) {
     if (chains.isEmpty()) {
       return;
     }
@@ -274,7 +276,9 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
       // The sweep may have waited for the permit, so it acts on the session as the store holds it
       // now. The permit is taken first, so nothing waits between this read and the deletion.
       final OAuth2AuthorizedClient authorizedClient =
-          mayWait ? refreshableClient(stillExpired.get(), registrationId) : snapshotClient;
+          stillExpired != null
+              ? refreshableClient(stillExpired.get(), registrationId)
+              : snapshotClient;
       if (authorizedClient == null) {
         LOG.debug(
             "A web session of OIDC registration '{}' is no longer expired, or holds no refresh"
@@ -486,11 +490,12 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
   }
 
   /** A value the configuration leaves unset matches anything; a set one must be equal. */
-  private static boolean matchesIfConfigured(final String configured, final String stored) {
+  private static boolean matchesIfConfigured(
+      final @Nullable String configured, final @Nullable String stored) {
     return !StringUtils.hasText(configured) || configured.equals(stored);
   }
 
-  private static String withoutTrailingSlash(final String uri) {
+  private static @Nullable String withoutTrailingSlash(final @Nullable String uri) {
     return uri != null && uri.endsWith("/") ? uri.substring(0, uri.length() - 1) : uri;
   }
 
@@ -506,7 +511,7 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
             stored.getProviderDetails().getTokenUri());
   }
 
-  private static OAuth2AuthenticationToken oauth2Authentication(final Session session) {
+  private static @Nullable OAuth2AuthenticationToken oauth2Authentication(final Session session) {
     return session.getAttribute(SPRING_SECURITY_CONTEXT_KEY)
                 instanceof final SecurityContext context
             && context.getAuthentication() instanceof final OAuth2AuthenticationToken token
@@ -515,8 +520,8 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
   }
 
   /** The session's authorized client of {@code registrationId}, if it holds a refresh token. */
-  private static OAuth2AuthorizedClient refreshableClient(
-      final Session session, final String registrationId) {
+  private static @Nullable OAuth2AuthorizedClient refreshableClient(
+      final @Nullable Session session, final String registrationId) {
     return session != null
             && session.getAttribute(AUTHORIZED_CLIENTS_ATTRIBUTE) instanceof final Map<?, ?> clients
             && clients.get(registrationId) instanceof final OAuth2AuthorizedClient client

@@ -8,6 +8,7 @@
 package io.camunda.security.core.authz;
 
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Describes whether tenant-level scoping should be applied to a query or operation, and if so,
@@ -20,13 +21,13 @@ import java.util.List;
  * <p>Used alongside {@link AuthorizationCheck} inside {@link ResourceAccessChecks} to assemble the
  * full access-control picture for a single query.
  */
-public record TenantCheck(boolean enabled, List<String> tenantIds) {
+public record TenantCheck(boolean enabled, @Nullable List<String> tenantIds) {
 
   /**
    * Creates an enabled check scoping access to the supplied tenant IDs. A {@code null} argument is
    * treated as an empty list, producing an enabled check with no accessible tenants.
    */
-  public static TenantCheck enabled(final List<String> tenantIds) {
+  public static TenantCheck enabled(final @Nullable List<String> tenantIds) {
     return new TenantCheck(true, tenantIds != null ? tenantIds : List.of());
   }
 

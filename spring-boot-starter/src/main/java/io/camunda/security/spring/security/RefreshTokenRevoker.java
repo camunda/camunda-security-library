@@ -21,6 +21,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.convert.converter.Converter;
@@ -141,24 +142,24 @@ public final class RefreshTokenRevoker {
    * <p>{@code null} when no JWK resolver was supplied, which leaves an assertion-authenticated
    * client unable to revoke; {@link #clientAuthenticationParameters} logs that case.
    */
-  private final Converter<OAuth2RefreshTokenGrantRequest, MultiValueMap<String, String>>
+  private final @Nullable Converter<OAuth2RefreshTokenGrantRequest, MultiValueMap<String, String>>
       clientAssertionConverter;
 
   /** The source of the assertion signing key, or {@code null}; see {@link #canAuthenticate}. */
-  private final Function<ClientRegistration, JWK> jwkResolver;
+  private final @Nullable Function<ClientRegistration, JWK> jwkResolver;
 
   /**
    * @param jwkResolver supplies the signing key for an assertion-authenticated client, or {@code
    *     null} when the deployment has no assertion configuration to resolve one from
    */
-  public RefreshTokenRevoker(final Function<ClientRegistration, JWK> jwkResolver) {
+  public RefreshTokenRevoker(final @Nullable Function<ClientRegistration, JWK> jwkResolver) {
     this(jwkResolver, SHARED_REST_CLIENT);
   }
 
   // Visible for testing: lets a test drive the revoker against a MockRestServiceServer-backed
   // client without reaching the network.
   RefreshTokenRevoker(
-      final Function<ClientRegistration, JWK> jwkResolver, final RestClient restClient) {
+      final @Nullable Function<ClientRegistration, JWK> jwkResolver, final RestClient restClient) {
     this.restClient = Objects.requireNonNull(restClient, "restClient must not be null");
     this.jwkResolver = jwkResolver;
     clientAssertionConverter = jwkResolver != null ? assertionConverter(jwkResolver) : null;
@@ -192,7 +193,7 @@ public final class RefreshTokenRevoker {
   private void revokeOrThrow(
       final ClientRegistration clientRegistration,
       final Supplier<OAuth2AuthorizedClient> authorizedClientSupplier,
-      final String safeId) {
+      final @Nullable String safeId) {
     final String revocationEndpoint = revocationEndpoint(clientRegistration);
     if (revocationEndpoint == null) {
       // The common case for a provider that publishes none, MS Entra among them. Not a warning:
@@ -297,7 +298,7 @@ public final class RefreshTokenRevoker {
    * provider metadata, which issuer discovery populates and {@code ScopedClientRegistrationFactory}
    * also fills from an explicitly configured {@code revocation-endpoint-uri}.
    */
-  static String revocationEndpoint(final ClientRegistration clientRegistration) {
+  static @Nullable String revocationEndpoint(final ClientRegistration clientRegistration) {
     final Object endpoint =
         clientRegistration
             .getProviderDetails()
@@ -320,8 +321,12 @@ public final class RefreshTokenRevoker {
         clientRegistration.getClientAuthenticationMethod())) {
       return true;
     }
+    final var resolver = jwkResolver;
+    if (resolver == null) {
+      return false;
+    }
     try {
-      return jwkResolver.apply(clientRegistration) != null;
+      return resolver.apply(clientRegistration) != null;
     } catch (final RuntimeException e) {
       // Type only, as for a failed revocation: a keystore error can name a path or an alias.
       LOG.debug(
@@ -341,7 +346,8 @@ public final class RefreshTokenRevoker {
    * in why the key is missing. Answering the question once also keeps the policy somewhere a reader
    * can find it, rather than split between here and the parameter builder.
    */
-  private String unsupportedClientAuthentication(final ClientRegistration clientRegistration) {
+  private @Nullable String unsupportedClientAuthentication(
+      final ClientRegistration clientRegistration) {
     final var method = clientRegistration.getClientAuthenticationMethod();
     if (ClientAuthenticationMethod.CLIENT_SECRET_JWT.equals(method)) {
       // CSL's CLIENT_AUTHENTICATION_METHODS does not permit client_secret_jwt, so it has no
@@ -437,7 +443,7 @@ public final class RefreshTokenRevoker {
    * it is attacker-adjacent input, and both {@code error_description} and an unrecognised {@code
    * error} are places an IdP or a proxy may echo a request parameter into.
    */
-  private static String errorCodeSuffix(final String body) {
+  private static String errorCodeSuffix(final @Nullable String body) {
     if (!StringUtils.hasText(body)) {
       return "";
     }

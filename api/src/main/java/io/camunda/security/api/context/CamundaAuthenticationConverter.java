@@ -8,6 +8,7 @@
 package io.camunda.security.api.context;
 
 import io.camunda.security.api.model.CamundaAuthentication;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Converts framework-specific authentication representations into {@link CamundaAuthentication}.
@@ -23,7 +24,7 @@ public interface CamundaAuthenticationConverter<T> {
    * @return {@code true} when this converter supports the given authentication, otherwise {@code
    *     false}
    */
-  boolean supports(final T authentication);
+  boolean supports(final @Nullable T authentication);
 
   /**
    * Converts the given authentication object into a {@link CamundaAuthentication}.
@@ -31,5 +32,5 @@ public interface CamundaAuthenticationConverter<T> {
    * @param authentication the authentication object to convert
    * @return the converted {@link CamundaAuthentication}
    */
-  CamundaAuthentication convert(final T authentication);
+  @Nullable CamundaAuthentication convert(final @Nullable T authentication);
 }

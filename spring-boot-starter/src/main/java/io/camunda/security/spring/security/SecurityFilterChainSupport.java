@@ -28,6 +28,7 @@ import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.server.PathContainer;
@@ -71,7 +72,7 @@ public final class SecurityFilterChainSupport {
   static Set<String> csrfAllowedPaths(
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort,
-      final String cookiePath) {
+      final @Nullable String cookiePath) {
     final var allowedPaths = new HashSet<String>();
     allowedPaths.addAll(pathPort.unprotectedPaths());
     allowedPaths.addAll(pathPort.unprotectedApiPaths());
@@ -87,7 +88,7 @@ public final class SecurityFilterChainSupport {
    *
    * <p>Package-private for unit testing.
    */
-  static Set<String> csrfLogoutPaths(final String cookiePath) {
+  static Set<String> csrfLogoutPaths(final @Nullable String cookiePath) {
     final var logoutPaths = new HashSet<String>();
     addScopedPath(logoutPaths, LOGOUT_URL, cookiePath);
     return logoutPaths;
@@ -100,7 +101,7 @@ public final class SecurityFilterChainSupport {
    * paths.
    */
   private static void addScopedPath(
-      final Set<String> target, final String suffix, final String cookiePath) {
+      final Set<String> target, final String suffix, final @Nullable String cookiePath) {
     target.add(suffix);
     if (cookiePath != null && !cookiePath.isBlank()) {
       final var base = BasePaths.normalize(cookiePath, "cookiePath");
@@ -126,7 +127,7 @@ public final class SecurityFilterChainSupport {
    *
    * <p>Package-private for unit testing.
    */
-  static Set<String> csrfEnforcedPaths(final String cookiePath) {
+  static Set<String> csrfEnforcedPaths(final @Nullable String cookiePath) {
     final var enforcedPaths = new HashSet<String>();
     addScopedPath(enforcedPaths, LOGIN_URL, cookiePath);
     return enforcedPaths;
@@ -177,7 +178,8 @@ public final class SecurityFilterChainSupport {
   }
 
   /** Returns the first pattern matching {@code enforcedPath}, or {@code null}. */
-  static String firstMatchingPattern(final Set<String> patterns, final String enforcedPath) {
+  static @Nullable String firstMatchingPattern(
+      final Set<String> patterns, final String enforcedPath) {
     final var pathContainer = PathContainer.parsePath(enforcedPath);
     return patterns.stream()
         .filter(pattern -> PathPatternParser.defaultInstance.parse(pattern).matches(pathContainer))
@@ -233,20 +235,20 @@ public final class SecurityFilterChainSupport {
   }
 
   public static CookieCsrfTokenRepository cookieCsrfTokenRepository(
-      final CamundaSecurityLibraryProperties properties, final String cookiePath) {
+      final CamundaSecurityLibraryProperties properties, final @Nullable String cookiePath) {
     return buildCookieCsrfTokenRepository(properties, resolveCookiePath(cookiePath), X_CSRF_TOKEN);
   }
 
   public static CookieCsrfTokenRepository cookieCsrfTokenRepository(
       final CamundaSecurityLibraryProperties properties,
-      final String cookiePath,
+      final @Nullable String cookiePath,
       final String cookieName) {
     return buildCookieCsrfTokenRepository(properties, resolveCookiePath(cookiePath), cookieName);
   }
 
   private static CookieCsrfTokenRepository buildCookieCsrfTokenRepository(
       final CamundaSecurityLibraryProperties properties,
-      final String resolvedCookiePath,
+      final @Nullable String resolvedCookiePath,
       final String cookieName) {
     Objects.requireNonNull(cookieName, "cookieName must not be null");
     if (cookieName.isBlank()) {
@@ -268,7 +270,7 @@ public final class SecurityFilterChainSupport {
    * input is null or blank. A root base path that normalizes to {@code ""} is mapped to {@code "/"}
    * because a cookie {@code Path} attribute cannot be the empty string.
    */
-  private static String resolveCookiePath(final String cookiePath) {
+  private static @Nullable String resolveCookiePath(final @Nullable String cookiePath) {
     if (cookiePath == null || cookiePath.isBlank()) {
       return null;
     }
@@ -301,7 +303,7 @@ public final class SecurityFilterChainSupport {
       final HttpSecurity http,
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort,
-      final String cookiePath)
+      final @Nullable String cookiePath)
       throws Exception {
     applyCsrfConfiguration(http, properties, pathPort, cookiePath, X_CSRF_TOKEN);
   }
@@ -310,7 +312,7 @@ public final class SecurityFilterChainSupport {
       final HttpSecurity http,
       final CamundaSecurityLibraryProperties properties,
       final SecurityPathPort pathPort,
-      final String cookiePath,
+      final @Nullable String cookiePath,
       final String csrfCookieName)
       throws Exception {
     if (!properties.getCsrf().isEnabled()) {
@@ -339,7 +341,7 @@ public final class SecurityFilterChainSupport {
   static void applyCsrfConfiguration(
       final HttpSecurity http,
       final CamundaSecurityLibraryProperties properties,
-      final String cookiePath,
+      final @Nullable String cookiePath,
       final String csrfCookieName,
       final RequestMatcher protectionMatcher,
       final OncePerRequestFilter tokenResponseFilter)
@@ -473,12 +475,13 @@ public final class SecurityFilterChainSupport {
     return csrfTokenResponseHeaderFilter(null);
   }
 
-  public static OncePerRequestFilter csrfTokenResponseHeaderFilter(final String cookiePath) {
+  public static OncePerRequestFilter csrfTokenResponseHeaderFilter(
+      final @Nullable String cookiePath) {
     return csrfTokenResponseHeaderFilter(PathPatternRequestMatcher.withDefaults(), cookiePath);
   }
 
   static OncePerRequestFilter csrfTokenResponseHeaderFilter(
-      final PathPatternRequestMatcher.Builder builder, final String cookiePath) {
+      final PathPatternRequestMatcher.Builder builder, final @Nullable String cookiePath) {
     final RequestMatcher loginMatcher =
         CsrfProtectionRequestMatcher.buildPathsMatcher(builder, csrfEnforcedPaths(cookiePath));
     final RequestMatcher logoutMatcher =

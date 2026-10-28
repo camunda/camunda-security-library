@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Authentication configuration bound to {@code camunda.security.authentication.*}.
@@ -177,7 +178,7 @@ public class AuthenticationConfiguration {
    * @param issuer the {@code iss} claim of the token, or {@code null}
    * @return the groups claim, or {@code null} when the groups of the token's user come from Camunda
    */
-  public String getGroupsClaim(final String issuer) {
+  public @Nullable String getGroupsClaim(final @Nullable String issuer) {
     if (getMethod() != AuthenticationMethod.OIDC) {
       return null;
     }
@@ -227,26 +228,32 @@ public class AuthenticationConfiguration {
     final Set<String> ownedIssuers = new HashSet<>();
     return oidcProviders().stream()
         .filter(
-            provider ->
-                !hasText(provider.getIssuerUri())
-                    || ownedIssuers.add(withoutTrailingSlash(provider.getIssuerUri())))
+            provider -> {
+              final var issuerUri = provider.getIssuerUri();
+              return issuerUri == null
+                  || issuerUri.isBlank()
+                  || ownedIssuers.add(withoutTrailingSlash(issuerUri));
+            })
         .toList();
   }
 
-  private String groupsClaimOf(final OidcConfiguration provider) {
+  private @Nullable String groupsClaimOf(final OidcConfiguration provider) {
     if (provider.isGroupsClaimConfigured()) {
       return provider.getGroupsClaim();
     }
     return getOidc().isGroupsClaimConfigured() ? getOidc().getGroupsClaim() : null;
   }
 
-  private static boolean hasText(final String value) {
+  private static boolean hasText(final @Nullable String value) {
     return value != null && !value.isBlank();
   }
 
-  private static boolean isSameIssuer(final String issuer, final String issuerUri) {
-    return hasText(issuer)
-        && hasText(issuerUri)
+  private static boolean isSameIssuer(
+      final @Nullable String issuer, final @Nullable String issuerUri) {
+    return issuer != null
+        && !issuer.isBlank()
+        && issuerUri != null
+        && !issuerUri.isBlank()
         && withoutTrailingSlash(issuer).equals(withoutTrailingSlash(issuerUri));
   }
 

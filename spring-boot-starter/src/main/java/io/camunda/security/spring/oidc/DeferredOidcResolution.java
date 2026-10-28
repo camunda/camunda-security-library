@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
@@ -188,6 +189,6 @@ public final class DeferredOidcResolution {
   /** The resolutions that run on one thread, and the failure the innermost one reported. */
   private static final class Nesting {
     private int depth;
-    private RuntimeException reported;
+    private @Nullable RuntimeException reported;
   }
 }

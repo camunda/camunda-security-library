@@ -14,6 +14,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Objects;
 import java.util.function.Function;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -60,7 +61,7 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
   public RefreshTokenRevocationLogoutHandler(
       final ClientRegistrationRepository clientRegistrationRepository,
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
-      final Function<ClientRegistration, JWK> jwkResolver) {
+      final @Nullable Function<ClientRegistration, JWK> jwkResolver) {
     this(
         clientRegistrationRepository,
         authorizedClientRepository,
@@ -72,7 +73,7 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
   RefreshTokenRevocationLogoutHandler(
       final ClientRegistrationRepository clientRegistrationRepository,
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
-      final Function<ClientRegistration, JWK> jwkResolver,
+      final @Nullable Function<ClientRegistration, JWK> jwkResolver,
       final RestClient restClient) {
     this(
         clientRegistrationRepository,
@@ -111,7 +112,7 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
   public void logout(
       final HttpServletRequest request,
       final HttpServletResponse response,
-      final Authentication authentication) {
+      final @Nullable Authentication authentication) {
     final var safeId =
         authentication instanceof final OAuth2AuthenticationToken oauth
             ? ScopedClientRegistrationFactory.sanitizeForLog(
@@ -131,7 +132,7 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
   }
 
   private void revokeRefreshToken(
-      final HttpServletRequest request, final Authentication authentication) {
+      final HttpServletRequest request, final @Nullable Authentication authentication) {
     if (!(authentication instanceof final OAuth2AuthenticationToken oauth)) {
       // The type, never the object: Authentication#toString renders the principal and the
       // authorities, and CSL must not log PII at any level.

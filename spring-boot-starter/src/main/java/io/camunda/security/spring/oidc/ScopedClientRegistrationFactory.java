@@ -20,6 +20,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.server.PathContainer;
@@ -225,7 +226,8 @@ public final class ScopedClientRegistrationFactory {
    *     '/'
    */
   public List<ClientRegistration> createFromProviderMap(
-      final Map<String, OidcConfiguration> providers, final String scopedRedirectUriPath) {
+      final Map<String, OidcConfiguration> providers,
+      final @Nullable String scopedRedirectUriPath) {
     return createFromProviderMap(providers, scopedRedirectUriPath, LoginRouteChecks.ENFORCED);
   }
 
@@ -256,7 +258,7 @@ public final class ScopedClientRegistrationFactory {
 
   private List<ClientRegistration> createFromProviderMap(
       final Map<String, OidcConfiguration> providers,
-      final String scopedRedirectUriPath,
+      final @Nullable String scopedRedirectUriPath,
       final LoginRouteChecks loginRouteChecks) {
     validateWithoutNetwork(providers, scopedRedirectUriPath, loginRouteChecks);
     // Validated first, so the WARN still names a rejected registration, then dropped, so an eager
@@ -278,7 +280,7 @@ public final class ScopedClientRegistrationFactory {
    */
   List<ClientRegistration> buildAll(
       final Map<String, OidcConfiguration> providers,
-      final String scopedRedirectUriPath,
+      final @Nullable String scopedRedirectUriPath,
       final LoginRouteChecks loginRouteChecks) {
     return providers.entrySet().stream()
         .map(
@@ -409,7 +411,8 @@ public final class ScopedClientRegistrationFactory {
    *     '/'
    */
   public void validateWithoutNetwork(
-      final Map<String, OidcConfiguration> providers, final String scopedRedirectUriPath) {
+      final Map<String, OidcConfiguration> providers,
+      final @Nullable String scopedRedirectUriPath) {
     validateWithoutNetwork(providers, scopedRedirectUriPath, LoginRouteChecks.ENFORCED);
   }
 
@@ -423,7 +426,7 @@ public final class ScopedClientRegistrationFactory {
 
   private void validateWithoutNetwork(
       final Map<String, OidcConfiguration> providers,
-      final String scopedRedirectUriPath,
+      final @Nullable String scopedRedirectUriPath,
       final LoginRouteChecks loginRouteChecks) {
     Objects.requireNonNull(providers, "providers must not be null");
     requireAbsoluteScopedRedirectUriPath(scopedRedirectUriPath);
@@ -488,7 +491,7 @@ public final class ScopedClientRegistrationFactory {
    *     has no id of its own, and the chain mounts the placeholder as a wildcard.
    */
   public void validateRedirectionEndpointSource(
-      final String configured, final String registrationId) {
+      final @Nullable String configured, final @Nullable String registrationId) {
     final var id =
         StringUtils.hasText(registrationId)
             ? registrationId
@@ -512,7 +515,7 @@ public final class ScopedClientRegistrationFactory {
    * form. Public because callers outside this package (for example {@code
    * ScopedWebappSecurityChainBuilder}) log a raw registrationId of their own too.
    */
-  public static String sanitizeForLog(final String value) {
+  public static @Nullable String sanitizeForLog(final @Nullable String value) {
     return UrlRedaction.escapeControlCharacters(value);
   }
 
@@ -645,7 +648,7 @@ public final class ScopedClientRegistrationFactory {
    * An unset value is {@link OidcConfiguration#DEFAULT_CLIENT_TYPE}, so every registration that
    * predates this property is a confidential client.
    */
-  static String clientType(final OidcConfiguration oidc) {
+  static @Nullable String clientType(final OidcConfiguration oidc) {
     final var configured = oidc.getType();
     if (!StringUtils.hasText(configured)) {
       return OidcConfiguration.DEFAULT_CLIENT_TYPE;
@@ -1255,7 +1258,7 @@ public final class ScopedClientRegistrationFactory {
   }
 
   private static void warnIfNotAbsoluteHttpUrl(
-      final String registrationId, final String property, final String value) {
+      final String registrationId, final String property, final @Nullable String value) {
     if (!StringUtils.hasText(value)) {
       return;
     }
@@ -1372,7 +1375,8 @@ public final class ScopedClientRegistrationFactory {
    * not a valid URI. The method rejects such a path immediately, so that the caller gets a clear
    * error. {@link #resolveRedirectUri} examines the expansion of the path for each registration.
    */
-  private static void requireAbsoluteScopedRedirectUriPath(final String scopedRedirectUriPath) {
+  private static void requireAbsoluteScopedRedirectUriPath(
+      final @Nullable String scopedRedirectUriPath) {
     if (StringUtils.hasText(scopedRedirectUriPath) && !scopedRedirectUriPath.startsWith("/")) {
       throw new IllegalArgumentException(
           "scopedRedirectUriPath must start with '/', but was: " + scopedRedirectUriPath);
@@ -1396,7 +1400,7 @@ public final class ScopedClientRegistrationFactory {
   private ClientRegistration buildClientRegistration(
       final String registrationId,
       final OidcConfiguration oidc,
-      final String scopedRedirectUriPath,
+      final @Nullable String scopedRedirectUriPath,
       final LoginRouteChecks loginRouteChecks) {
     // Every no-network check ran in validateWithoutNetwork, over the whole map, before the first
     // registration was built. Repeating the list here let the two copies drift; warnIfUnusable is
@@ -1406,7 +1410,7 @@ public final class ScopedClientRegistrationFactory {
     final ClientRegistration.Builder builder =
         clientRegistrationBuilder(registrationId, oidc)
             .registrationId(registrationId)
-            .clientId(oidc.getClientId())
+            .clientId(Objects.requireNonNullElse(oidc.getClientId(), ""))
             .clientSecret(oidc.getClientSecret())
             .clientAuthenticationMethod(
                 new ClientAuthenticationMethod(effectiveClientAuthenticationMethod(oidc)))
@@ -1574,7 +1578,7 @@ public final class ScopedClientRegistrationFactory {
   private String resolveRedirectUri(
       final String registrationId,
       final OidcConfiguration oidc,
-      final String scopedRedirectUriPath,
+      final @Nullable String scopedRedirectUriPath,
       final LoginRouteChecks loginRouteChecks) {
     return resolveRedirectUri(registrationId, oidc, scopedRedirectUriPath, loginRouteChecks, true);
   }
@@ -1595,7 +1599,7 @@ public final class ScopedClientRegistrationFactory {
   private String resolveRedirectUri(
       final String registrationId,
       final OidcConfiguration oidc,
-      final String scopedRedirectUriPath,
+      final @Nullable String scopedRedirectUriPath,
       final LoginRouteChecks loginRouteChecks,
       final boolean warnIfUnusable) {
     final var checkCallback = loginRouteChecks == LoginRouteChecks.ENFORCED;
@@ -1675,7 +1679,7 @@ public final class ScopedClientRegistrationFactory {
    * gives both answers.
    */
   private static boolean callbackMatchesTheRedirectionEndpoint(
-      final String configured, final URI expanded, final String contextPath) {
+      final String configured, final URI expanded, final @Nullable String contextPath) {
     // resolve no longer throws (it falls back to defaultPath with a WARN instead), so there is no
     // exception left to catch here.
     final var endpointPath =
@@ -1740,10 +1744,10 @@ public final class ScopedClientRegistrationFactory {
       final String registrationId, final OidcConfiguration oidc) {
     // warnIfEndpointConfigurationIncomplete already ran in validateWithoutNetwork, over the whole
     // map, before createFromProviderMap called this method — see buildClientRegistration.
-    final boolean hasIssuer = StringUtils.hasText(oidc.getIssuerUri());
+    final var issuerUri = oidc.getIssuerUri();
     final ClientRegistration.Builder builder =
-        hasIssuer
-            ? discoveredBuilder(oidc.getIssuerUri()).registrationId(registrationId)
+        issuerUri != null && StringUtils.hasText(issuerUri)
+            ? discoveredBuilder(issuerUri).registrationId(registrationId)
             : ClientRegistration.withRegistrationId(registrationId);
 
     return applyExplicitEndpointOverrides(builder, oidc);
@@ -1777,7 +1781,7 @@ public final class ScopedClientRegistrationFactory {
    * the message has another form, which makes {@link #discover} rethrow: a Spring upgrade that
    * changes the message fails safe, and the trailing-slash tests catch it.
    */
-  static String declaredIssuer(final IllegalStateException issuerMismatch) {
+  static @Nullable String declaredIssuer(final IllegalStateException issuerMismatch) {
     final var message = issuerMismatch.getMessage();
     if (message == null || !message.startsWith(ISSUER_MISMATCH_PREFIX)) {
       return null;

@@ -12,6 +12,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
@@ -91,5 +92,6 @@ public final class JsonProblemDetailAuthFailureHandler implements AuthFailureHan
   }
 
   /** RFC 7807 Problem Details representation. */
-  record ProblemDetail(String type, String title, int status, String detail, String instance) {}
+  record ProblemDetail(
+      String type, String title, int status, @Nullable String detail, String instance) {}
 }

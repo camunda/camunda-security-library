@@ -8,6 +8,7 @@
 package io.camunda.security.core.port.in;
 
 import io.camunda.security.api.model.user.CamundaUserDTO;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Inbound port returning the currently-authenticated user. Host applications call this from REST
@@ -21,11 +22,11 @@ import io.camunda.security.api.model.user.CamundaUserDTO;
 public interface CamundaUserPort {
 
   /** Returns the current user view, populated from the active authentication context. */
-  CamundaUserDTO getCurrentUser();
+  @Nullable CamundaUserDTO getCurrentUser();
 
   /**
    * Returns the bearer token (or token-equivalent credential) associated with the current
    * authentication, or {@code null} when no token applies (for example basic authentication).
    */
-  String getUserToken();
+  @Nullable String getUserToken();
 }

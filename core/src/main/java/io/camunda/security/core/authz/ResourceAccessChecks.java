@@ -76,17 +76,21 @@ public record ResourceAccessChecks(
     if (!authorizationCheck.enabled() || !authorizationCheck.hasAnyResourceAccess()) {
       return Collections.emptyMap();
     }
-    final var auths = authorizationCheck.authorizationCondition().authorizations();
+    final var condition = authorizationCheck.authorizationCondition();
+    if (condition == null) {
+      return Collections.emptyMap();
+    }
+    final var auths = condition.authorizations();
     return auths.stream()
         .filter(Objects::nonNull)
         .filter(auth -> auth.resourceType() != null)
         .filter(RequiredAuthorization::hasAnyResourceIds)
         .collect(
             Collectors.groupingBy(
-                auth -> auth.resourceType().name(),
+                auth -> Objects.requireNonNull(auth.resourceType()).name(),
                 Collectors.collectingAndThen(
                     Collectors.flatMapping(
-                        auth -> auth.resourceIds().stream(),
+                        auth -> Objects.requireNonNull(auth.resourceIds()).stream(),
                         Collectors.toCollection(LinkedHashSet::new)),
                     List::copyOf)));
   }
@@ -100,16 +104,21 @@ public record ResourceAccessChecks(
     if (!authorizationCheck.enabled() || !authorizationCheck.hasAnyResourceAccess()) {
       return Collections.emptyMap();
     }
-    final var auths = authorizationCheck.authorizationCondition().authorizations();
+    final var condition = authorizationCheck.authorizationCondition();
+    if (condition == null) {
+      return Collections.emptyMap();
+    }
+    final var auths = condition.authorizations();
     return auths.stream()
         .filter(Objects::nonNull)
         .filter(auth -> auth.resourceType() != null)
         .filter(RequiredAuthorization::hasAnyResourcePropertyNames)
         .collect(
             Collectors.groupingBy(
-                auth -> auth.resourceType().name(),
+                auth -> Objects.requireNonNull(auth.resourceType()).name(),
                 Collectors.flatMapping(
-                    auth -> auth.resourcePropertyNames().stream(), Collectors.toSet())));
+                    auth -> Objects.requireNonNull(auth.resourcePropertyNames()).stream(),
+                    Collectors.toSet())));
   }
 
   /**

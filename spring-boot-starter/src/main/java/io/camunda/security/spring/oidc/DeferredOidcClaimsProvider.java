@@ -11,6 +11,7 @@ import io.camunda.security.api.context.OidcClaimsProvider;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.core.AuthenticationException;
 
@@ -31,7 +32,7 @@ public final class DeferredOidcClaimsProvider implements OidcClaimsProvider {
 
   private final Supplier<OidcClaimsProvider> delegate;
   private final String subject;
-  private final OidcClaimsProvider explicitEndpoints;
+  private final @Nullable OidcClaimsProvider explicitEndpoints;
 
   /**
    * @param subject what the delegate resolves. A failure log names the subject.
@@ -51,7 +52,7 @@ public final class DeferredOidcClaimsProvider implements OidcClaimsProvider {
   public DeferredOidcClaimsProvider(
       final String subject,
       final Supplier<OidcClaimsProvider> delegate,
-      final OidcClaimsProvider explicitEndpoints) {
+      final @Nullable OidcClaimsProvider explicitEndpoints) {
     this.subject = Objects.requireNonNull(subject, "subject must not be null");
     Objects.requireNonNull(delegate, "delegate must not be null");
     this.delegate = DeferredOidcResolution.memoizeOnSuccess(() -> build(delegate));
@@ -72,7 +73,7 @@ public final class DeferredOidcClaimsProvider implements OidcClaimsProvider {
       final Map<String, Object> jwtClaims,
       final String tokenValue,
       final boolean userInfoEnabled,
-      final String userInfoUri) {
+      final @Nullable String userInfoUri) {
     // A provider that disables UserInfo needs no delegate: building it reads the global
     // configuration, which can fail on providers that have nothing to do with this token.
     if (!userInfoEnabled || !CachingOidcClaimsProvider.canAugment(jwtClaims, tokenValue)) {

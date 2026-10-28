@@ -15,6 +15,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.net.http.HttpClient;
 import java.util.Map;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.util.StringUtils;
 
@@ -86,7 +87,7 @@ public final class ScopedOidcClaimsProviderFactory {
    *     basePath=/physical-tenants/t1}), or {@code null} for the unscoped text
    */
   public OidcClaimsProvider buildClaimsProvider(
-      final AuthenticationConfiguration authentication, final String scopeDescription) {
+      final AuthenticationConfiguration authentication, final @Nullable String scopeDescription) {
     Objects.requireNonNull(authentication, "authentication must not be null");
     final var augmentation = authentication.getOidc().getUserInfoAugmentation();
     if (augmentation == null || !augmentation.isEnabled()) {
@@ -126,8 +127,8 @@ public final class ScopedOidcClaimsProviderFactory {
   private ClientRegistration resolve(
       final Map<String, OidcConfiguration> providers,
       final String registrationId,
-      final String scopeDescription) {
-    final var config = providers.get(registrationId);
+      final @Nullable String scopeDescription) {
+    final var config = Objects.requireNonNull(providers.get(registrationId));
     // buildAll, not createWithoutLoginRoutes: the whole map was already validated once above,
     // before this claims provider started resolving registrations. Repeating that validation on
     // every retry of a registration that keeps failing to build would re-log the same WARN on
@@ -144,7 +145,9 @@ public final class ScopedOidcClaimsProviderFactory {
   }
 
   private static String claimsSubject(
-      final String registrationId, final OidcConfiguration config, final String scopeDescription) {
+      final String registrationId,
+      final OidcConfiguration config,
+      final @Nullable String scopeDescription) {
     return "the UserInfo endpoint of provider "
         + DeferredOidcResolution.describeProvider(registrationId, config)
         + (StringUtils.hasText(scopeDescription) ? " for " + scopeDescription : "");

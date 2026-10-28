@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -73,7 +74,7 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
   private final OAuth2AuthorizedClientManager authorizedClientManager;
   private final LogoutHandler logoutHandler;
   private final Supplier<SecurityContext> securityContextSupplier;
-  private final RequestMatcher skipMatcher;
+  private final @Nullable RequestMatcher skipMatcher;
 
   public OAuth2RefreshTokenFilter(
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
@@ -104,7 +105,7 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
       final OAuth2AuthorizedClientManager authorizedClientManager,
       final LogoutHandler logoutHandler,
       final Supplier<SecurityContext> securityContextSupplier,
-      final RequestMatcher skipMatcher) {
+      final @Nullable RequestMatcher skipMatcher) {
     this.authorizedClientRepository = authorizedClientRepository;
     this.authorizedClientManager = authorizedClientManager;
     this.logoutHandler = logoutHandler;
@@ -152,6 +153,7 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
           authenticationToken,
           "unauthorized_client",
           "No client could be authorized");
+      return;
     }
 
     if (!hasTokenExpired(authorizedClient)) {
@@ -203,6 +205,7 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
           authenticationToken,
           "refresh_token_failed",
           "Failed to refresh access token");
+      return;
     }
 
     // Same instance returned means the manager declined to refresh — treat as failure since the
@@ -224,14 +227,14 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
     filterChain.doFilter(request, response);
   }
 
-  protected OAuth2AuthenticationToken getAuthenticationToken() {
+  protected @Nullable OAuth2AuthenticationToken getAuthenticationToken() {
     final var authentication = securityContextSupplier.get().getAuthentication();
     return authentication instanceof final OAuth2AuthenticationToken oauth2AuthenticationToken
         ? oauth2AuthenticationToken
         : null;
   }
 
-  protected OAuth2AuthorizedClient getAuthorizedClient(
+  protected @Nullable OAuth2AuthorizedClient getAuthorizedClient(
       final OAuth2AuthenticationToken authenticationToken, final HttpServletRequest request) {
     final String clientRegistrationId = authenticationToken.getAuthorizedClientRegistrationId();
     return authorizedClientRepository.loadAuthorizedClient(
@@ -280,7 +283,7 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
     return authorizedClient.getRefreshToken() != null;
   }
 
-  protected OAuth2AuthorizedClient refreshAccessToken(
+  protected @Nullable OAuth2AuthorizedClient refreshAccessToken(
       final OAuth2AuthenticationToken authenticationToken,
       final OAuth2AuthorizedClient authorizedClient,
       final HttpServletRequest request,
@@ -346,7 +349,7 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
   private static void logRefreshFailure(
       final String outcome,
       final OAuth2AuthenticationToken authenticationToken,
-      final OAuth2Error error,
+      final @Nullable OAuth2Error error,
       final RuntimeException e) {
     final var subject = forLog(authenticationToken.getPrincipal().getAttribute(SUBJECT_CLAIM));
     final var registrationId = forLog(authenticationToken.getAuthorizedClientRegistrationId());
@@ -364,7 +367,7 @@ public class OAuth2RefreshTokenFilter extends OncePerRequestFilter {
         forLog(FailureDescription.describe(e)));
   }
 
-  private static String forLog(final Object value) {
+  private static @Nullable String forLog(final @Nullable Object value) {
     return value == null
         ? "n/a"
         : UrlRedaction.escapeControlCharacters(value.toString(), MAX_LOGGED_VALUE_LENGTH);

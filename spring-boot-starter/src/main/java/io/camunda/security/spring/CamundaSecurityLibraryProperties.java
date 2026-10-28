@@ -19,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -70,7 +71,7 @@ public class CamundaSecurityLibraryProperties {
    */
   private String idValidationPattern = DEFAULT_ID_REGEX;
 
-  private Pattern compiledIdValidationPattern;
+  private @Nullable Pattern compiledIdValidationPattern;
 
   public AuthenticationConfiguration getAuthentication() {
     return authentication;
@@ -153,7 +154,7 @@ public class CamundaSecurityLibraryProperties {
    * The OIDC {@code max_age} to send on authorization requests: the session idle timeout when
    * running in SaaS, {@code null} (send none) otherwise. See ADR-0031.
    */
-  public Duration oidcAuthorizeMaxAge() {
+  public @Nullable Duration oidcAuthorizeMaxAge() {
     return saas.isConfigured() ? session.getMaxInactiveInterval() : null;
   }
 
@@ -171,10 +172,8 @@ public class CamundaSecurityLibraryProperties {
   }
 
   public Pattern getCompiledIdValidationPattern() {
-    if (compiledIdValidationPattern == null) {
-      validateIdValidationPattern();
-    }
-    return compiledIdValidationPattern;
+    final var compiled = compiledIdValidationPattern;
+    return compiled != null ? compiled : validateIdValidationPattern();
   }
 
   public Pattern getCompiledGroupIdValidationPattern() {
@@ -231,13 +230,15 @@ public class CamundaSecurityLibraryProperties {
     }
   }
 
-  private void validateIdValidationPattern() {
+  private Pattern validateIdValidationPattern() {
     if (idValidationPattern == null) {
       throw new IllegalStateException("camunda.security.id-validation-pattern must not be null");
     }
 
     try {
-      compiledIdValidationPattern = Pattern.compile(idValidationPattern);
+      final var compiled = Pattern.compile(idValidationPattern);
+      compiledIdValidationPattern = compiled;
+      return compiled;
     } catch (final PatternSyntaxException exception) {
       throw new IllegalStateException(
           "Invalid regex for camunda.security.id-validation-pattern: " + idValidationPattern,

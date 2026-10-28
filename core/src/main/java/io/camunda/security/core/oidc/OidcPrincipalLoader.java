@@ -14,6 +14,7 @@ import com.jayway.jsonpath.Option;
 import io.camunda.security.core.jsonpath.JsonPathClaimSanitizer;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,14 +30,15 @@ public final class OidcPrincipalLoader {
 
   private static final Logger LOG = LoggerFactory.getLogger(OidcPrincipalLoader.class);
 
-  private final JsonPath usernamePath;
-  private final JsonPath clientIdPath;
+  private final @Nullable JsonPath usernamePath;
+  private final @Nullable JsonPath clientIdPath;
 
   // Lock to prevent concurrent evaluation of compiled JSONPath expressions. Necessary due to
   // https://github.com/json-path/JsonPath/issues/975
   private final ReentrantLock evaluationLock = new ReentrantLock();
 
-  public OidcPrincipalLoader(final String usernameClaim, final String clientIdClaim) {
+  public OidcPrincipalLoader(
+      final @Nullable String usernameClaim, final @Nullable String clientIdClaim) {
     usernamePath =
         usernameClaim != null
             ? JsonPath.compile(JsonPathClaimSanitizer.sanitize(usernameClaim))
@@ -56,7 +58,8 @@ public final class OidcPrincipalLoader {
     }
   }
 
-  private static String tryRead(final Map<String, Object> claims, final JsonPath path) {
+  private static @Nullable String tryRead(
+      final Map<String, Object> claims, final @Nullable JsonPath path) {
     if (path == null) {
       return null;
     }
@@ -78,5 +81,5 @@ public final class OidcPrincipalLoader {
     }
   }
 
-  public record OidcPrincipals(String username, String clientId) {}
+  public record OidcPrincipals(@Nullable String username, @Nullable String clientId) {}
 }

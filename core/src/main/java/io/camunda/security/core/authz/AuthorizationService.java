@@ -26,6 +26,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -193,14 +194,15 @@ public final class AuthorizationService implements AuthorizationCheckPort {
         return Either.right(null);
       }
 
-      if (!authorization.hasAnyResourceIds()) {
+      final List<String> resourceIds = authorization.resourceIds();
+      if (resourceIds == null || resourceIds.isEmpty()) {
         return Either.right(null);
       }
 
       final boolean isTenantResource =
           AuthorizationResourceType.TENANT.equals(authorization.resourceType());
 
-      for (final String resourceId : authorization.resourceIds()) {
+      for (final String resourceId : resourceIds) {
         final AuthorizationScope scope = AuthorizationScope.of(resourceId);
         if (!authorizationChecker.isAuthorized(scope, authentication, authorization)) {
           LOG.debug(
@@ -214,7 +216,9 @@ public final class AuthorizationService implements AuthorizationCheckPort {
           }
           return Either.left(
               new AuthorizationRejection.Permission(
-                  authorization.resourceType(), authorization.permissionType(), resourceId));
+                  Objects.requireNonNull(authorization.resourceType()),
+                  Objects.requireNonNull(authorization.permissionType()),
+                  resourceId));
         }
       }
 
@@ -267,7 +271,8 @@ public final class AuthorizationService implements AuthorizationCheckPort {
         return Either.right(null);
       }
 
-      if (attributeExtractorRegistry.hasExtractorsFor(authorization.resourceType())) {
+      if (attributeExtractorRegistry.hasExtractorsFor(
+          Objects.requireNonNull(authorization.resourceType()))) {
         return checkConditionalRoles(authentication, authorization, resource);
       }
 
@@ -277,7 +282,9 @@ public final class AuthorizationService implements AuthorizationCheckPort {
 
       final List<AuthorizationScope> grantedPropertyScopes =
           authorizationChecker.retrieveAuthorizedPropertyScopes(
-              authentication, authorization, authorization.resourcePropertyNames());
+              authentication,
+              authorization,
+              Objects.requireNonNull(authorization.resourcePropertyNames()));
       if (isGrantedByProperty(authentication, resource, grantedPropertyScopes)) {
         return Either.right(null);
       }
@@ -293,8 +300,8 @@ public final class AuthorizationService implements AuthorizationCheckPort {
           authorization.resourceType());
       return Either.left(
           new AuthorizationRejection.Property(
-              authorization.resourceType(),
-              authorization.permissionType(),
+              Objects.requireNonNull(authorization.resourceType()),
+              Objects.requireNonNull(authorization.permissionType()),
               sortedDeclaredPropertyNames));
     } finally {
       recordLatencySafely(startNanos);
@@ -314,9 +321,9 @@ public final class AuthorizationService implements AuthorizationCheckPort {
                   + " a resourceIdSupplier or resource property names")
               .formatted(authorization.resourceType()));
     }
+    final var resourceType = Objects.requireNonNull(authorization.resourceType());
     final Set<String> conditionalRoleIds =
-        conditionalRoleEvaluator.applicableRoleIds(
-            authentication, authorization.resourceType(), resource);
+        conditionalRoleEvaluator.applicableRoleIds(authentication, resourceType, resource);
 
     // Empty when the resourceIdSupplier finds no ID; such a resource gets no grant by ID.
     final List<String> resourceIds = resourceIdsOf(authorization, resource);
@@ -324,7 +331,7 @@ public final class AuthorizationService implements AuthorizationCheckPort {
     // of a multi-ID check. There, only global roles count (ADR-0041 D4).
     final Set<String> idConditionalRoleIds =
         resourceIds.size() == 1 ? conditionalRoleIds : Set.of();
-    final String deniedResourceId =
+    final @Nullable String deniedResourceId =
         resourceIds.stream()
             .filter(
                 resourceId ->
@@ -345,7 +352,7 @@ public final class AuthorizationService implements AuthorizationCheckPort {
             authorizationChecker.retrieveAuthorizedPropertyScopes(
                 authentication,
                 authorization,
-                authorization.resourcePropertyNames(),
+                Objects.requireNonNull(authorization.resourcePropertyNames()),
                 conditionalRoleIds))) {
       return Either.right(null);
     }
@@ -356,31 +363,33 @@ public final class AuthorizationService implements AuthorizationCheckPort {
         authorization.resourceType(),
         authorization.permissionType(),
         conditionalRoleIds.size());
-    if (checksResourceIds
-        && AuthorizationResourceType.TENANT.equals(authorization.resourceType())) {
+    if (checksResourceIds && AuthorizationResourceType.TENANT.equals(resourceType)) {
       return Either.left(new AuthorizationRejection.Tenant(deniedResourceId));
     }
     if (checksResourceIds) {
       return Either.left(
           new AuthorizationRejection.Permission(
-              authorization.resourceType(), authorization.permissionType(), deniedResourceId));
+              resourceType,
+              Objects.requireNonNull(authorization.permissionType()),
+              deniedResourceId));
     }
     return Either.left(
         new AuthorizationRejection.Property(
-            authorization.resourceType(),
-            authorization.permissionType(),
-            new TreeSet<>(authorization.resourcePropertyNames())));
+            resourceType,
+            Objects.requireNonNull(authorization.permissionType()),
+            new TreeSet<>(Objects.requireNonNull(authorization.resourcePropertyNames()))));
   }
 
   private static <T> List<String> resourceIdsOf(
       final RequiredAuthorization<T> authorization, final T resource) {
     if (authorization.hasAnyResourceIds()) {
-      return authorization.resourceIds();
+      return Objects.requireNonNull(authorization.resourceIds());
     }
-    if (authorization.resourceIdSupplier() == null) {
+    final var resourceIdSupplier = authorization.resourceIdSupplier();
+    if (resourceIdSupplier == null) {
       return List.of();
     }
-    final String resourceId = authorization.resourceIdSupplier().apply(resource);
+    final String resourceId = resourceIdSupplier.apply(resource);
     return resourceId == null ? List.of() : List.of(resourceId);
   }
 
@@ -390,8 +399,12 @@ public final class AuthorizationService implements AuthorizationCheckPort {
       final T resource,
       final List<AuthorizationScope> grantedPropertyScopes) {
     for (final AuthorizationScope scope : grantedPropertyScopes) {
+      final String propertyName = scope.getResourcePropertyName();
+      if (propertyName == null) {
+        continue;
+      }
       final Optional<PropertyAuthorizationEvaluator<T>> maybeEvaluator =
-          propertyEvaluatorRegistry.findEvaluator(scope.getResourcePropertyName());
+          propertyEvaluatorRegistry.findEvaluator(propertyName);
       if (maybeEvaluator.isPresent()
           && maybeEvaluator.get().isAuthorized(authentication, resource)) {
         return true;
