@@ -65,4 +65,16 @@ final class OrderedSecurityFilterChainWrapperTest {
     assertThat(wrapper.getFilters()).isSameAs(filters);
     verify(delegate).getFilters();
   }
+
+  @Test
+  void swapReplacesTheWrappedChainAndReturnsThePreviousOne() {
+    final var replacement = org.mockito.Mockito.mock(SecurityFilterChain.class);
+    when(replacement.matches(request)).thenReturn(true);
+    final var wrapper = new OrderedSecurityFilterChainWrapper(delegate, 0);
+
+    final var previous = wrapper.swap(replacement);
+
+    assertThat(previous).isSameAs(delegate);
+    assertThat(wrapper.matches(request)).isTrue();
+  }
 }
