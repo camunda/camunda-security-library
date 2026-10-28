@@ -156,10 +156,20 @@ otherwise satisfy it.
 
 ### Attribute catalogue
 
-The catalogue is closed. Adding a `ResourceAttribute` is a CSL change, reviewed by the Identity
-team, in line with [ADR-0008](0008-authz-enum-ownership-and-layered-usage.md). An open, host-defined
-catalogue would let an attribute that one host doesn't map reach a check that can't evaluate it.
+The attributes a condition can use are a fixed list: the `ResourceAttribute` enum in CSL. A host
+can't add its own. Adding an attribute is a change to CSL, reviewed by the Identity team, as
+[ADR-0008](0008-authz-enum-ownership-and-layered-usage.md) does for the other authorization enums.
 This replaces the open catalogue in the PDP plan (task 5.1.3).
+
+A fixed list lets CSL check each host's mappings at startup. Each resource type declares the
+attributes it supports, and the extractor registry rejects an extractor that declares an attribute
+its resource type doesn't support.
+
+If hosts could define their own attributes, CSL couldn't check their mappings at all. Say Hub adds
+`PROJECT` and gives Alice the membership `editor, PROJECT ∈ {apollo}`. A check that runs where
+nothing maps `PROJECT` can't tell whether a resource belongs to `apollo`, so the fail-closed rule
+denies. Access isn't widened, but Alice's membership quietly grants nothing there, and nobody finds
+out until she reports it.
 
 Each host maps every attribute it supports twice: in a `ResourceAttributeExtractor` for single
 checks, and in its `ResourceAccessFilterTranslator` for list queries. A host that maps an attribute
@@ -234,7 +244,8 @@ conditions to that identity needs its own ADR and a `MembershipPort` change, as 
   tenant isolation in CSL.
 - **Conditions on direct authorizations in the first delivery.** Rejected for now — it needs its own
   compatibility design, and memberships are enough for Hub's first use case.
-- **An open, host-defined attribute catalogue.** Rejected — a host could define an attribute that
-  another host's checks can't evaluate, and ADR-0008 keeps authorization enums owned centrally.
+- **An open, host-defined attribute catalogue.** Rejected — nothing would check that a host maps
+  the attributes it uses, so a membership could silently grant nothing, and ADR-0008 keeps
+  authorization enums owned centrally.
 - **Resolve conditional memberships inside `LazyTokenClaimsConverter`.** Rejected — it couples
   authorization to claim conversion.
