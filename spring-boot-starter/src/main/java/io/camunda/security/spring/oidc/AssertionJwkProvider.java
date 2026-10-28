@@ -29,6 +29,7 @@ import java.security.cert.X509Certificate;
 import java.security.interfaces.RSAPublicKey;
 import java.util.HexFormat;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
@@ -154,7 +155,7 @@ public final class AssertionJwkProvider {
     }
   }
 
-  private HexFormat getHexFormatWithCase(final KidCase kidCase) {
+  private HexFormat getHexFormatWithCase(final @Nullable KidCase kidCase) {
     return switch (kidCase) {
       case UPPER -> HexFormat.of().withUpperCase();
       case LOWER -> HexFormat.of().withLowerCase();

@@ -7,7 +7,7 @@
  */
 package io.camunda.security.core.authz;
 
-import static io.camunda.security.api.model.authz.AuthorizationScope.WILDCARD;
+import static io.camunda.security.api.model.authz.AuthorizationScope.WILDCARD_CHAR;
 import static io.camunda.security.core.auth.RequiredAuthorization.withRequiredAuthorization;
 
 import io.camunda.security.api.model.CamundaAuthentication;
@@ -23,8 +23,7 @@ public final class DisabledResourceAccessProvider implements ResourceAccessProvi
   public <T> ResourceAccess resolveResourceAccess(
       final CamundaAuthentication authentication,
       final RequiredAuthorization<T> requiredAuthorization) {
-    return ResourceAccess.wildcard(
-        withRequiredAuthorization(requiredAuthorization, WILDCARD.getResourceId()));
+    return ResourceAccess.wildcard(withRequiredAuthorization(requiredAuthorization, WILDCARD_CHAR));
   }
 
   @Override
@@ -32,8 +31,7 @@ public final class DisabledResourceAccessProvider implements ResourceAccessProvi
       final CamundaAuthentication authentication,
       final RequiredAuthorization<T> requiredAuthorization,
       final T resource) {
-    return ResourceAccess.wildcard(
-        withRequiredAuthorization(requiredAuthorization, WILDCARD.getResourceId()));
+    return ResourceAccess.wildcard(withRequiredAuthorization(requiredAuthorization, WILDCARD_CHAR));
   }
 
   @Override
@@ -41,7 +39,6 @@ public final class DisabledResourceAccessProvider implements ResourceAccessProvi
       final CamundaAuthentication authentication,
       final RequiredAuthorization<T> requiredAuthorization,
       final String resourceId) {
-    return ResourceAccess.wildcard(
-        withRequiredAuthorization(requiredAuthorization, WILDCARD.getResourceId()));
+    return ResourceAccess.wildcard(withRequiredAuthorization(requiredAuthorization, WILDCARD_CHAR));
   }
 }

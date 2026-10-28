@@ -24,7 +24,7 @@ import static io.camunda.security.api.model.authz.AuthorizationResourceType.SYST
 import static io.camunda.security.api.model.authz.AuthorizationResourceType.TENANT;
 import static io.camunda.security.api.model.authz.AuthorizationResourceType.USER;
 import static io.camunda.security.api.model.authz.AuthorizationResourceType.USER_TASK;
-import static io.camunda.security.api.model.authz.AuthorizationScope.WILDCARD;
+import static io.camunda.security.api.model.authz.AuthorizationScope.WILDCARD_CHAR;
 import static io.camunda.security.api.model.authz.PermissionType.CREATE_PROCESS_INSTANCE;
 import static io.camunda.security.api.model.authz.PermissionType.DELETE_DECISION_INSTANCE;
 import static io.camunda.security.api.model.authz.PermissionType.DELETE_PROCESS_INSTANCE;
@@ -46,6 +46,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The authorization a caller is required to have for an operation to be allowed.
@@ -87,12 +88,12 @@ import java.util.function.Predicate;
  *     #resourceIdSupplier()} and {@link #condition()})
  */
 public record RequiredAuthorization<T>(
-    AuthorizationResourceType resourceType,
-    PermissionType permissionType,
-    List<String> resourceIds,
-    Function<T, String> resourceIdSupplier,
-    Set<String> resourcePropertyNames,
-    Predicate<T> condition,
+    @Nullable AuthorizationResourceType resourceType,
+    @Nullable PermissionType permissionType,
+    @Nullable List<String> resourceIds,
+    @Nullable Function<T, String> resourceIdSupplier,
+    @Nullable Set<String> resourcePropertyNames,
+    @Nullable Predicate<T> condition,
     boolean transitive) {
 
   // USER TASK property names
@@ -188,17 +189,16 @@ public record RequiredAuthorization<T>(
   }
 
   public boolean isWildcard() {
-    return resourceIds != null
-        && resourceIds.stream().anyMatch(id -> WILDCARD.getResourceId().equals(id));
+    return resourceIds != null && resourceIds.stream().anyMatch(WILDCARD_CHAR::equals);
   }
 
   public static final class Builder<T> {
-    private AuthorizationResourceType resourceType;
-    private PermissionType permissionType;
-    private List<String> resourceIds;
-    private Function<T, String> resourceIdSupplier;
-    private Set<String> resourcePropertyNames;
-    private Predicate<T> condition = null;
+    private @Nullable AuthorizationResourceType resourceType;
+    private @Nullable PermissionType permissionType;
+    private @Nullable List<String> resourceIds;
+    private @Nullable Function<T, String> resourceIdSupplier;
+    private @Nullable Set<String> resourcePropertyNames;
+    private @Nullable Predicate<T> condition = null;
     private boolean transitive = false;
 
     public Builder<T> resourceType(final AuthorizationResourceType resourceType) {

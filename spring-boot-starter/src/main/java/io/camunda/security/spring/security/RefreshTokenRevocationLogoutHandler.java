@@ -22,6 +22,7 @@ import java.time.Duration;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.convert.converter.Converter;
@@ -157,7 +158,7 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
    * <p>{@code null} when no JWK resolver was supplied, which leaves an assertion-authenticated
    * client unable to revoke; {@link #clientAuthenticationParameters} logs that case.
    */
-  private final Converter<OAuth2RefreshTokenGrantRequest, MultiValueMap<String, String>>
+  private final @Nullable Converter<OAuth2RefreshTokenGrantRequest, MultiValueMap<String, String>>
       clientAssertionConverter;
 
   /**
@@ -167,7 +168,7 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
   public RefreshTokenRevocationLogoutHandler(
       final ClientRegistrationRepository clientRegistrationRepository,
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
-      final Function<ClientRegistration, JWK> jwkResolver) {
+      final @Nullable Function<ClientRegistration, JWK> jwkResolver) {
     this(clientRegistrationRepository, authorizedClientRepository, jwkResolver, SHARED_REST_CLIENT);
   }
 
@@ -176,7 +177,7 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
   RefreshTokenRevocationLogoutHandler(
       final ClientRegistrationRepository clientRegistrationRepository,
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
-      final Function<ClientRegistration, JWK> jwkResolver,
+      final @Nullable Function<ClientRegistration, JWK> jwkResolver,
       final RestClient restClient) {
     this.clientRegistrationRepository =
         Objects.requireNonNull(
@@ -192,7 +193,7 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
   public void logout(
       final HttpServletRequest request,
       final HttpServletResponse response,
-      final Authentication authentication) {
+      final @Nullable Authentication authentication) {
     final var safeId =
         authentication instanceof final OAuth2AuthenticationToken oauth
             ? ScopedClientRegistrationFactory.sanitizeForLog(
@@ -212,7 +213,7 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
   }
 
   private void revokeRefreshToken(
-      final HttpServletRequest request, final Authentication authentication) {
+      final HttpServletRequest request, final @Nullable Authentication authentication) {
     if (!(authentication instanceof final OAuth2AuthenticationToken oauth)) {
       // The type, never the object: Authentication#toString renders the principal and the
       // authorities, and CSL must not log PII at any level.
@@ -336,7 +337,7 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
    * provider metadata, which issuer discovery populates and {@code ScopedClientRegistrationFactory}
    * also fills from an explicitly configured {@code revocation-endpoint-uri}.
    */
-  private static String revocationEndpoint(final ClientRegistration clientRegistration) {
+  private static @Nullable String revocationEndpoint(final ClientRegistration clientRegistration) {
     final Object endpoint =
         clientRegistration
             .getProviderDetails()
@@ -362,7 +363,8 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
    * in why the key is missing. Answering the question once also keeps the policy somewhere a reader
    * can find it, rather than split between here and the parameter builder.
    */
-  private String unsupportedClientAuthentication(final ClientRegistration clientRegistration) {
+  private @Nullable String unsupportedClientAuthentication(
+      final ClientRegistration clientRegistration) {
     final var method = clientRegistration.getClientAuthenticationMethod();
     if (ClientAuthenticationMethod.CLIENT_SECRET_JWT.equals(method)) {
       // CSL's CLIENT_AUTHENTICATION_METHODS permits only client_secret_basic and private_key_jwt,
@@ -456,7 +458,7 @@ public final class RefreshTokenRevocationLogoutHandler implements LogoutHandler 
    * it is attacker-adjacent input, and both {@code error_description} and an unrecognised {@code
    * error} are places an IdP or a proxy may echo a request parameter into.
    */
-  private static String errorCodeSuffix(final String body) {
+  private static String errorCodeSuffix(final @Nullable String body) {
     if (!StringUtils.hasText(body)) {
       return "";
     }

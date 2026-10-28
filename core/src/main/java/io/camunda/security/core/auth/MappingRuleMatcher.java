@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Stream;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -84,7 +85,7 @@ public final class MappingRuleMatcher {
       this.claims = claims;
     }
 
-    Object evaluate(final String expression) {
+    @Nullable Object evaluate(final String expression) {
       evaluationLock.lock();
       try {
         final Object cached = evaluations.get(expression);

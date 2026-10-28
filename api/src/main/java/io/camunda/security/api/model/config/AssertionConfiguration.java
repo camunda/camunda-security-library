@@ -11,6 +11,8 @@ import static io.camunda.security.api.model.config.AssertionConfiguration.KidDig
 import static io.camunda.security.api.model.config.AssertionConfiguration.KidEncoding.BASE64URL;
 import static io.camunda.security.api.model.config.AssertionConfiguration.KidSource.PUBLIC_KEY;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Configures OIDC client assertion key material and KID generation behavior.
  *
@@ -22,7 +24,7 @@ public final class AssertionConfiguration {
   private KidSource kidSource = PUBLIC_KEY;
   private KidDigestAlgorithm kidDigestAlgorithm = SHA256;
   private KidEncoding kidEncoding = BASE64URL;
-  private KidCase kidCase;
+  private @Nullable KidCase kidCase;
 
   public KeystoreConfiguration getKeystore() {
     return keystoreConfiguration;
@@ -56,11 +58,11 @@ public final class AssertionConfiguration {
     this.kidEncoding = kidEncoding;
   }
 
-  public KidCase getKidCase() {
+  public @Nullable KidCase getKidCase() {
     return kidCase;
   }
 
-  public void setKidCase(final KidCase kidCase) {
+  public void setKidCase(final @Nullable KidCase kidCase) {
     this.kidCase = kidCase;
   }
 
@@ -76,10 +78,10 @@ public final class AssertionConfiguration {
 
   public static class Builder {
     private KeystoreConfiguration keystoreConfiguration = new KeystoreConfiguration();
-    private KidSource kidSource;
-    private KidDigestAlgorithm kidDigestAlgorithm;
-    private KidEncoding kidEncoding;
-    private KidCase kidCase;
+    private @Nullable KidSource kidSource;
+    private @Nullable KidDigestAlgorithm kidDigestAlgorithm;
+    private @Nullable KidEncoding kidEncoding;
+    private @Nullable KidCase kidCase;
 
     public Builder keystoreConfiguration(final KeystoreConfiguration keystoreConfiguration) {
       this.keystoreConfiguration = keystoreConfiguration;
@@ -101,7 +103,7 @@ public final class AssertionConfiguration {
       return this;
     }
 
-    public Builder kidCase(final KidCase kidCase) {
+    public Builder kidCase(final @Nullable KidCase kidCase) {
       this.kidCase = kidCase;
       return this;
     }

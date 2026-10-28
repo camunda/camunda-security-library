@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 
 public class OidcConfiguration {
   public static final String GROUPS_CLAIM_PROPERTY =
@@ -41,29 +42,29 @@ public class OidcConfiguration {
   public static final boolean DEFAULT_REVOCATION_ENABLED = true;
   public static final boolean DEFAULT_USER_INFO_REQUIRED = false;
 
-  private String issuerUri;
-  private String clientName;
-  private String clientId;
+  private @Nullable String issuerUri;
+  private @Nullable String clientName;
+  private @Nullable String clientId;
   private String registrationId = DEFAULT_REGISTRATION_ID;
-  private String clientSecret;
+  private @Nullable String clientSecret;
   private String idTokenAlgorithm = DEFAULT_ID_TOKEN_ALGORITHM;
   private String grantType = DEFAULT_GRANT_TYPE;
-  private String redirectUri;
+  private @Nullable String redirectUri;
   private List<String> scope = DEFAULT_SCOPE;
-  private String jwkSetUri;
-  private List<String> additionalJwkSetUris;
-  private String authorizationUri;
-  private String endSessionEndpointUri;
-  private String revocationEndpointUri;
+  private @Nullable String jwkSetUri;
+  private @Nullable List<String> additionalJwkSetUris;
+  private @Nullable String authorizationUri;
+  private @Nullable String endSessionEndpointUri;
+  private @Nullable String revocationEndpointUri;
   private boolean revocationEnabled = DEFAULT_REVOCATION_ENABLED;
-  private String tokenUri;
-  private String userInfoUri;
+  private @Nullable String tokenUri;
+  private @Nullable String userInfoUri;
   private AuthorizeRequestConfiguration authorizeRequestConfiguration =
       new AuthorizeRequestConfiguration();
-  private Set<String> audiences;
+  private @Nullable Set<String> audiences;
   private String usernameClaim = DEFAULT_USERNAME_CLAIM;
-  private String clientIdClaim;
-  private String groupsClaim;
+  private @Nullable String clientIdClaim;
+  private @Nullable String groupsClaim;
   private boolean preferUsernameClaim;
   // Set by the setters only. Spring calls a setter only for a property that the configuration
   // has, so these flags tell an unset claim from one set to its default value.
@@ -71,14 +72,14 @@ public class OidcConfiguration {
   private boolean clientIdClaimSet;
   private boolean preferUsernameClaimSet;
   private boolean preferIdTokenClaims;
-  private String organizationId;
-  private List<String> resource;
+  private @Nullable String organizationId;
+  private @Nullable List<String> resource;
   private String clientAuthenticationMethod = CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC;
   private AssertionConfiguration assertionConfiguration = new AssertionConfiguration();
   private Duration clockSkew = DEFAULT_CLOCK_SKEW;
   private boolean idpLogoutEnabled = DEFAULT_IDP_LOGOUT_ENABLED;
   private boolean postLogoutRedirectEnabled = DEFAULT_POST_LOGOUT_REDIRECT_ENABLED;
-  private String postLogoutRedirectUri;
+  private @Nullable String postLogoutRedirectUri;
   private boolean userInfoEnabled = DEFAULT_USER_INFO_ENABLED;
   private boolean userInfoRequired = DEFAULT_USER_INFO_REQUIRED;
   private OidcUserInfoAugmentationConfiguration userInfoAugmentation =
@@ -91,7 +92,7 @@ public class OidcConfiguration {
     }
   }
 
-  public List<String> getResource() {
+  public @Nullable List<String> getResource() {
     return resource;
   }
 
@@ -99,11 +100,11 @@ public class OidcConfiguration {
     this.resource = resource;
   }
 
-  public String getIssuerUri() {
+  public @Nullable String getIssuerUri() {
     return issuerUri;
   }
 
-  public void setIssuerUri(final String issuerUri) {
+  public void setIssuerUri(final @Nullable String issuerUri) {
     this.issuerUri = issuerUri;
   }
 
@@ -115,19 +116,19 @@ public class OidcConfiguration {
     this.idTokenAlgorithm = idTokenAlgorithm;
   }
 
-  public String getClientName() {
+  public @Nullable String getClientName() {
     return clientName;
   }
 
-  public void setClientName(final String clientName) {
+  public void setClientName(final @Nullable String clientName) {
     this.clientName = clientName;
   }
 
-  public String getClientId() {
+  public @Nullable String getClientId() {
     return clientId;
   }
 
-  public void setClientId(final String clientId) {
+  public void setClientId(final @Nullable String clientId) {
     this.clientId = clientId;
   }
 
@@ -139,11 +140,11 @@ public class OidcConfiguration {
     this.registrationId = registrationId;
   }
 
-  public String getClientSecret() {
+  public @Nullable String getClientSecret() {
     return clientSecret;
   }
 
-  public void setClientSecret(final String clientSecret) {
+  public void setClientSecret(final @Nullable String clientSecret) {
     this.clientSecret = clientSecret;
   }
 
@@ -173,11 +174,11 @@ public class OidcConfiguration {
    * <p>The adopters' security-filter-chains document tells you which chain serves that callback,
    * which callers apply the rule, and which values look correct but fall back to the default.
    */
-  public String getRedirectUri() {
+  public @Nullable String getRedirectUri() {
     return redirectUri;
   }
 
-  public void setRedirectUri(final String redirectUri) {
+  public void setRedirectUri(final @Nullable String redirectUri) {
     this.redirectUri = redirectUri;
   }
 
@@ -189,35 +190,35 @@ public class OidcConfiguration {
     this.scope = scope;
   }
 
-  public String getJwkSetUri() {
+  public @Nullable String getJwkSetUri() {
     return jwkSetUri;
   }
 
-  public void setJwkSetUri(final String jwkSetUri) {
+  public void setJwkSetUri(final @Nullable String jwkSetUri) {
     this.jwkSetUri = jwkSetUri;
   }
 
-  public List<String> getAdditionalJwkSetUris() {
+  public @Nullable List<String> getAdditionalJwkSetUris() {
     return additionalJwkSetUris;
   }
 
-  public void setAdditionalJwkSetUris(final List<String> additionalJwkSetUris) {
+  public void setAdditionalJwkSetUris(final @Nullable List<String> additionalJwkSetUris) {
     this.additionalJwkSetUris = additionalJwkSetUris;
   }
 
-  public String getAuthorizationUri() {
+  public @Nullable String getAuthorizationUri() {
     return authorizationUri;
   }
 
-  public void setAuthorizationUri(final String authorizationUri) {
+  public void setAuthorizationUri(final @Nullable String authorizationUri) {
     this.authorizationUri = authorizationUri;
   }
 
-  public String getEndSessionEndpointUri() {
+  public @Nullable String getEndSessionEndpointUri() {
     return endSessionEndpointUri;
   }
 
-  public void setEndSessionEndpointUri(final String endSessionEndpointUri) {
+  public void setEndSessionEndpointUri(final @Nullable String endSessionEndpointUri) {
     this.endSessionEndpointUri = endSessionEndpointUri;
   }
 
@@ -227,11 +228,11 @@ public class OidcConfiguration {
    * revocation_endpoint}, so it only needs setting when endpoints are configured explicitly.
    * Leaving it unset on a provider that publishes none, as MS Entra does, skips revocation.
    */
-  public String getRevocationEndpointUri() {
+  public @Nullable String getRevocationEndpointUri() {
     return revocationEndpointUri;
   }
 
-  public void setRevocationEndpointUri(final String revocationEndpointUri) {
+  public void setRevocationEndpointUri(final @Nullable String revocationEndpointUri) {
     this.revocationEndpointUri = revocationEndpointUri;
   }
 
@@ -252,19 +253,19 @@ public class OidcConfiguration {
     this.revocationEnabled = revocationEnabled;
   }
 
-  public String getTokenUri() {
+  public @Nullable String getTokenUri() {
     return tokenUri;
   }
 
-  public void setTokenUri(final String tokenUri) {
+  public void setTokenUri(final @Nullable String tokenUri) {
     this.tokenUri = tokenUri;
   }
 
-  public String getUserInfoUri() {
+  public @Nullable String getUserInfoUri() {
     return userInfoUri;
   }
 
-  public void setUserInfoUri(final String userInfoUri) {
+  public void setUserInfoUri(final @Nullable String userInfoUri) {
     this.userInfoUri = userInfoUri;
   }
 
@@ -277,11 +278,11 @@ public class OidcConfiguration {
     this.authorizeRequestConfiguration = authorizeRequestConfiguration;
   }
 
-  public Set<String> getAudiences() {
+  public @Nullable Set<String> getAudiences() {
     return audiences;
   }
 
-  public void setAudiences(final Set<String> audiences) {
+  public void setAudiences(final @Nullable Set<String> audiences) {
     this.audiences = audiences;
   }
 
@@ -301,11 +302,11 @@ public class OidcConfiguration {
     return usernameClaimSet;
   }
 
-  public String getClientIdClaim() {
+  public @Nullable String getClientIdClaim() {
     return clientIdClaim;
   }
 
-  public void setClientIdClaim(final String clientIdClaim) {
+  public void setClientIdClaim(final @Nullable String clientIdClaim) {
     this.clientIdClaim = clientIdClaim;
     clientIdClaimSet = true;
   }
@@ -317,19 +318,19 @@ public class OidcConfiguration {
     return clientIdClaimSet;
   }
 
-  public String getOrganizationId() {
+  public @Nullable String getOrganizationId() {
     return organizationId;
   }
 
-  public void setOrganizationId(final String organizationId) {
+  public void setOrganizationId(final @Nullable String organizationId) {
     this.organizationId = organizationId;
   }
 
-  public String getGroupsClaim() {
+  public @Nullable String getGroupsClaim() {
     return groupsClaim;
   }
 
-  public void setGroupsClaim(final String groupsClaim) {
+  public void setGroupsClaim(final @Nullable String groupsClaim) {
     OidcGroupsClaimValidator.validate(groupsClaim);
     this.groupsClaim = groupsClaim;
   }
@@ -453,11 +454,11 @@ public class OidcConfiguration {
    * <p>Resolved per client registration, so each IdP in a multi-provider deployment can carry its
    * own value (or none). See ADR-0026.
    */
-  public String getPostLogoutRedirectUri() {
+  public @Nullable String getPostLogoutRedirectUri() {
     return postLogoutRedirectUri;
   }
 
-  public void setPostLogoutRedirectUri(final String postLogoutRedirectUri) {
+  public void setPostLogoutRedirectUri(final @Nullable String postLogoutRedirectUri) {
     this.postLogoutRedirectUri = postLogoutRedirectUri;
   }
 
@@ -566,41 +567,41 @@ public class OidcConfiguration {
   }
 
   public static class Builder {
-    private String issuerUri;
-    private String clientId;
-    private String clientName;
+    private @Nullable String issuerUri;
+    private @Nullable String clientId;
+    private @Nullable String clientName;
     private String registrationId = DEFAULT_REGISTRATION_ID;
-    private String clientSecret;
+    private @Nullable String clientSecret;
     private String idTokenAlgorithm = DEFAULT_ID_TOKEN_ALGORITHM;
     private String grantType = DEFAULT_GRANT_TYPE;
-    private String redirectUri;
+    private @Nullable String redirectUri;
     private List<String> scope = DEFAULT_SCOPE;
-    private String jwkSetUri;
-    private List<String> additionalJwkSetUris;
-    private String authorizationUri;
-    private String endSessionEndpointUri;
-    private String revocationEndpointUri;
+    private @Nullable String jwkSetUri;
+    private @Nullable List<String> additionalJwkSetUris;
+    private @Nullable String authorizationUri;
+    private @Nullable String endSessionEndpointUri;
+    private @Nullable String revocationEndpointUri;
     private boolean revocationEnabled = DEFAULT_REVOCATION_ENABLED;
-    private String tokenUri;
-    private String userInfoUri;
+    private @Nullable String tokenUri;
+    private @Nullable String userInfoUri;
     private AuthorizeRequestConfiguration authorizeRequestConfiguration =
         new AuthorizeRequestConfiguration();
-    private Set<String> audiences;
+    private @Nullable Set<String> audiences;
     private String usernameClaim = DEFAULT_USERNAME_CLAIM;
-    private String clientIdClaim;
-    private String groupsClaim;
+    private @Nullable String clientIdClaim;
+    private @Nullable String groupsClaim;
     private boolean preferUsernameClaim;
     private boolean usernameClaimSet;
     private boolean clientIdClaimSet;
     private boolean preferUsernameClaimSet;
     private boolean preferIdTokenClaims;
-    private String organizationId;
+    private @Nullable String organizationId;
     private String clientAuthenticationMethod = CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC;
     private AssertionConfiguration assertionConfiguration = new AssertionConfiguration();
     private Duration clockSkew = DEFAULT_CLOCK_SKEW;
     private boolean idpLogoutEnabled = DEFAULT_IDP_LOGOUT_ENABLED;
     private boolean postLogoutRedirectEnabled = DEFAULT_POST_LOGOUT_REDIRECT_ENABLED;
-    private String postLogoutRedirectUri;
+    private @Nullable String postLogoutRedirectUri;
     private boolean userInfoEnabled = DEFAULT_USER_INFO_ENABLED;
     private boolean userInfoRequired = DEFAULT_USER_INFO_REQUIRED;
     private OidcUserInfoAugmentationConfiguration userInfoAugmentation =

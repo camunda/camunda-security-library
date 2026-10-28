@@ -8,6 +8,7 @@
 package io.camunda.security.api.context;
 
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Resolves the final claims map used for authentication from a validated JWT's claims and raw token
@@ -33,7 +34,7 @@ public interface OidcClaimsProvider {
       final Map<String, Object> jwtClaims,
       final String tokenValue,
       final boolean userInfoEnabled,
-      final String userInfoUri) {
+      final @Nullable String userInfoUri) {
     return claimsFor(jwtClaims, tokenValue);
   }
 }

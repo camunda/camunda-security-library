@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 
@@ -39,15 +40,15 @@ public final class LazyUsernamePasswordAuthenticationTokenConverter
   }
 
   @Override
-  public boolean supports(final Authentication authentication) {
+  public boolean supports(final @Nullable Authentication authentication) {
     return Optional.ofNullable(authentication)
         .filter(UsernamePasswordAuthenticationToken.class::isInstance)
         .isPresent();
   }
 
   @Override
-  public CamundaAuthentication convert(final Authentication authentication) {
-    final var username = authentication.getName();
+  public CamundaAuthentication convert(final @Nullable Authentication authentication) {
+    final var username = Objects.requireNonNull(authentication).getName();
     // BASIC auth has no token claims and never produces CLIENT principals. Empty claims means
     // mappingRuleIds() would return an empty list (no rules can match), so mappingRulesSupplier
     // is deliberately not wired — authenticatedMappingRuleIds() returns the record default.

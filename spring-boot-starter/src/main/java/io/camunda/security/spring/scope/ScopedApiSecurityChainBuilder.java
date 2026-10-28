@@ -25,6 +25,7 @@ import java.util.Collection;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -72,7 +73,8 @@ public final class ScopedApiSecurityChainBuilder {
   private final CorsConfigurationSource corsSource;
   private final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers;
   private final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers;
-  private final ObjectProvider<OidcApiAuthenticationEntryPoint> apiAuthenticationEntryPointProvider;
+  private final @Nullable ObjectProvider<OidcApiAuthenticationEntryPoint>
+      apiAuthenticationEntryPointProvider;
 
   /**
    * Delegates to the full constructor with no {@link OidcApiAuthenticationEntryPoint} provider,
@@ -106,7 +108,8 @@ public final class ScopedApiSecurityChainBuilder {
       final CorsConfigurationSource corsSource,
       final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
       final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers,
-      final ObjectProvider<OidcApiAuthenticationEntryPoint> apiAuthenticationEntryPointProvider) {
+      final @Nullable ObjectProvider<OidcApiAuthenticationEntryPoint>
+          apiAuthenticationEntryPointProvider) {
     this.properties = properties;
     this.authFailureHandler = authFailureHandler;
     this.pathPort = pathPort;
@@ -129,7 +132,7 @@ public final class ScopedApiSecurityChainBuilder {
       final Collection<String> matchers,
       final Collection<String> unprotectedMatchers,
       final JwtDecoder jwtDecoder,
-      final SessionRepositoryFilter<?> sessionRepositoryFilter)
+      final @Nullable SessionRepositoryFilter<?> sessionRepositoryFilter)
       throws Exception {
     return buildOidcApiChainWith(
         http,
@@ -164,8 +167,8 @@ public final class ScopedApiSecurityChainBuilder {
       final Collection<String> matchers,
       final Collection<String> unprotectedMatchers,
       final JwtDecoder jwtDecoder,
-      final Converter<Jwt, Authentication> jwtAuthenticationConverter,
-      final SessionRepositoryFilter<?> sessionRepositoryFilter)
+      final @Nullable Converter<Jwt, Authentication> jwtAuthenticationConverter,
+      final @Nullable SessionRepositoryFilter<?> sessionRepositoryFilter)
       throws Exception {
     return buildOidcApiChainWith(
         http,
@@ -195,9 +198,9 @@ public final class ScopedApiSecurityChainBuilder {
       final Collection<String> matchers,
       final Collection<String> unprotectedMatchers,
       final JwtDecoder jwtDecoder,
-      final Converter<Jwt, Authentication> jwtAuthenticationConverter,
-      final SessionRepositoryFilter<?> sessionRepositoryFilter,
-      final ApiTokenRefreshSupport refreshSupport)
+      final @Nullable Converter<Jwt, Authentication> jwtAuthenticationConverter,
+      final @Nullable SessionRepositoryFilter<?> sessionRepositoryFilter,
+      final @Nullable ApiTokenRefreshSupport refreshSupport)
       throws Exception {
     return buildOidcApiChainWith(
         http,
@@ -216,10 +219,10 @@ public final class ScopedApiSecurityChainBuilder {
       final Collection<String> matchers,
       final Collection<String> unprotectedMatchers,
       final JwtDecoder jwtDecoder,
-      final Converter<Jwt, Authentication> jwtAuthenticationConverter,
-      final SessionRepositoryFilter<?> sessionRepositoryFilter,
-      final ApiTokenRefreshSupport refreshSupport,
-      final String csrfCookiePath,
+      final @Nullable Converter<Jwt, Authentication> jwtAuthenticationConverter,
+      final @Nullable SessionRepositoryFilter<?> sessionRepositoryFilter,
+      final @Nullable ApiTokenRefreshSupport refreshSupport,
+      final @Nullable String csrfCookiePath,
       final String csrfCookieName)
       throws Exception {
     Objects.requireNonNull(jwtDecoder, "jwtDecoder must not be null");
@@ -314,7 +317,7 @@ public final class ScopedApiSecurityChainBuilder {
       final HttpSecurity http,
       final Collection<String> matchers,
       final Collection<String> unprotectedMatchers,
-      final SessionRepositoryFilter<?> sessionRepositoryFilter)
+      final @Nullable SessionRepositoryFilter<?> sessionRepositoryFilter)
       throws Exception {
     return buildBasicApiChainWith(
         http, matchers, unprotectedMatchers, sessionRepositoryFilter, null, X_CSRF_TOKEN);
@@ -324,8 +327,8 @@ public final class ScopedApiSecurityChainBuilder {
       final HttpSecurity http,
       final Collection<String> matchers,
       final Collection<String> unprotectedMatchers,
-      final SessionRepositoryFilter<?> sessionRepositoryFilter,
-      final String csrfCookiePath,
+      final @Nullable SessionRepositoryFilter<?> sessionRepositoryFilter,
+      final @Nullable String csrfCookiePath,
       final String csrfCookieName)
       throws Exception {
     LOG.debug(
@@ -387,7 +390,7 @@ public final class ScopedApiSecurityChainBuilder {
       final String basePath,
       final AuthenticationConfiguration authentication,
       final Supplier<JwtDecoder> oidcDecoderSupplier,
-      final SessionRepositoryFilter<?> sessionRepositoryFilter)
+      final @Nullable SessionRepositoryFilter<?> sessionRepositoryFilter)
       throws Exception {
     return buildScopedApiChain(
         http, basePath, authentication, oidcDecoderSupplier, () -> null, sessionRepositoryFilter);
@@ -407,7 +410,7 @@ public final class ScopedApiSecurityChainBuilder {
       final AuthenticationConfiguration authentication,
       final Supplier<JwtDecoder> oidcDecoderSupplier,
       final Supplier<Converter<Jwt, Authentication>> oidcAuthenticationConverterSupplier,
-      final SessionRepositoryFilter<?> sessionRepositoryFilter)
+      final @Nullable SessionRepositoryFilter<?> sessionRepositoryFilter)
       throws Exception {
     return buildScopedApiChain(
         http,
@@ -432,8 +435,8 @@ public final class ScopedApiSecurityChainBuilder {
       final AuthenticationConfiguration authentication,
       final Supplier<JwtDecoder> oidcDecoderSupplier,
       final Supplier<Converter<Jwt, Authentication>> oidcAuthenticationConverterSupplier,
-      final SessionRepositoryFilter<?> sessionRepositoryFilter,
-      final ApiTokenRefreshSupport refreshSupport)
+      final @Nullable SessionRepositoryFilter<?> sessionRepositoryFilter,
+      final @Nullable ApiTokenRefreshSupport refreshSupport)
       throws Exception {
     Objects.requireNonNull(basePath, "basePath must not be null");
     Objects.requireNonNull(authentication, "authentication must not be null");
@@ -540,7 +543,7 @@ public final class ScopedApiSecurityChainBuilder {
   public SecurityFilterChain buildUnprotectedScopedApiChain(
       final HttpSecurity http,
       final String basePath,
-      final SessionRepositoryFilter<?> sessionRepositoryFilter)
+      final @Nullable SessionRepositoryFilter<?> sessionRepositoryFilter)
       throws Exception {
     Objects.requireNonNull(http, "http must not be null");
     Objects.requireNonNull(basePath, "basePath must not be null");

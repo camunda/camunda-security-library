@@ -14,6 +14,7 @@ import io.camunda.security.spring.security.CamundaSecurityFilterChainConstants;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Optional;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.session.SessionRepository;
@@ -70,7 +71,7 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
   }
 
   @Override
-  public WebSession findById(final String id) {
+  public @Nullable WebSession findById(final String id) {
     LOGGER.debug("Retrieve session {}", id);
     return Optional.ofNullable(id)
         .filter(this::isSessionIdNotEmpty)
@@ -119,7 +120,8 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
     return Optional.of(persistentSession).map(webSessionMapper::fromPersistentSession);
   }
 
-  private WebSession getWebSessionIfNotExpired(final PersistentSession persistentSession) {
+  private @Nullable WebSession getWebSessionIfNotExpired(
+      final PersistentSession persistentSession) {
     final var webSession = toWebSession(persistentSession).orElse(null);
     if (webSession != null && !webSession.shouldBeDeleted()) {
       webSession.suppressTouch(shouldSuppressTouch(request));

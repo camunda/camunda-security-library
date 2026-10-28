@@ -19,6 +19,7 @@ import java.net.URL;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
+import org.jspecify.annotations.Nullable;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
@@ -62,7 +63,7 @@ public class JWSKeySelectorFactory {
    * @return a {@link JWSVerificationKeySelector} configured with the allowed algorithms
    * @throws IllegalArgumentException if the URI is malformed
    */
-  public JWSKeySelector<SecurityContext> createJWSKeySelector(final String jwkSetUri) {
+  public JWSKeySelector<SecurityContext> createJWSKeySelector(final @Nullable String jwkSetUri) {
     if (!StringUtils.hasText(jwkSetUri)) {
       throw new IllegalArgumentException(ERROR_MISSING_JWK_SET_URI);
     }
@@ -84,7 +85,7 @@ public class JWSKeySelectorFactory {
    * @throws IllegalArgumentException if the primary URI is malformed
    */
   public JWSKeySelector<SecurityContext> createJWSKeySelector(
-      final String jwkSetUri, final List<String> additionalJwkSetUris) {
+      final @Nullable String jwkSetUri, final @Nullable List<String> additionalJwkSetUris) {
     if (CollectionUtils.isEmpty(additionalJwkSetUris)) {
       return createJWSKeySelector(jwkSetUri);
     }

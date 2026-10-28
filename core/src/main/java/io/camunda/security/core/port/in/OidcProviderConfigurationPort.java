@@ -9,6 +9,7 @@ package io.camunda.security.core.port.in;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 
 /** Inbound port for reading the merged OIDC provider configuration keyed by registration ID. */
 public interface OidcProviderConfigurationPort {
@@ -20,7 +21,7 @@ public interface OidcProviderConfigurationPort {
    * @return the matching {@link OidcConfiguration}, or {@code null} if no configuration exists for
    *     the given registration ID
    */
-  OidcConfiguration getOidcAuthenticationConfigurationById(String registrationId);
+  @Nullable OidcConfiguration getOidcAuthenticationConfigurationById(String registrationId);
 
   /**
    * Returns an immutable map of all OIDC authentication configurations keyed by registration ID.

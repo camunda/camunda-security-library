@@ -8,6 +8,7 @@
 package io.camunda.security.api.context;
 
 import io.camunda.security.api.model.CamundaAuthentication;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Provides the current {@link CamundaAuthentication} representing the authentication context for a
@@ -27,7 +28,7 @@ public interface CamundaAuthenticationProvider {
    *
    * @return the current {@link CamundaAuthentication}
    */
-  CamundaAuthentication getCamundaAuthentication();
+  @Nullable CamundaAuthentication getCamundaAuthentication();
 
   default CamundaAuthentication getAnonymousCamundaAuthentication() {
     return CamundaAuthentication.anonymous();

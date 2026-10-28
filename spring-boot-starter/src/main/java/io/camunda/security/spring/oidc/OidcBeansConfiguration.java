@@ -19,6 +19,7 @@ import io.camunda.security.spring.converter.TokenClaimsConvertersByIssuer;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -171,7 +172,8 @@ public class OidcBeansConfiguration {
             return;
           }
           // A named provider uses the global claims for each claim that it does not set.
-          final var claims = OidcPrincipalClaims.resolve(config, flatOidcConfiguration);
+          final var claims =
+              OidcPrincipalClaims.resolve(Objects.requireNonNull(config), flatOidcConfiguration);
           final var converter =
               new LazyTokenClaimsConverter(
                   claims.usernameClaim(),

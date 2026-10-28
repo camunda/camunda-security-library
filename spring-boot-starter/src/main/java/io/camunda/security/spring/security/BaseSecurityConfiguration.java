@@ -17,6 +17,7 @@ import io.camunda.security.spring.cors.NoOpCorsConfigurationSource;
 import io.camunda.security.spring.csrf.CsrfProtectionRequestMatcher;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -95,7 +96,7 @@ public class BaseSecurityConfiguration {
     return filterChainBuilder.build();
   }
 
-  private static void logLoginOverlap(final String overlappingPattern) {
+  private static void logLoginOverlap(final @Nullable String overlappingPattern) {
     LOG.info(
         "SecurityPathPort#unprotectedPaths() pattern '{}' overlaps the login endpoint '{}':"
             + " GET/HEAD/OPTIONS/TRACE requests to it are served unauthenticated, while"

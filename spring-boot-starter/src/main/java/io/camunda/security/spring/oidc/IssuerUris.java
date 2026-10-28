@@ -8,6 +8,7 @@
 package io.camunda.security.spring.oidc;
 
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 import org.springframework.util.StringUtils;
 
 /**
@@ -33,7 +34,7 @@ public final class IssuerUris {
    * @return the value for {@code issuer}, else for its {@linkplain #withToggledTrailingSlash other
    *     form}, else {@code null}
    */
-  public static <V> V lookup(final Map<String, V> byIssuer, final String issuer) {
+  public static <V> @Nullable V lookup(final Map<String, V> byIssuer, final String issuer) {
     if (issuer == null) {
       return null;
     }
@@ -52,7 +53,7 @@ public final class IssuerUris {
    * @return the other form, or {@code null} for a value that has no path to trim or is otherwise
    *     not a plain issuer URL
    */
-  public static String withToggledTrailingSlash(final String issuer) {
+  public static @Nullable String withToggledTrailingSlash(final String issuer) {
     if (!StringUtils.hasText(issuer) || issuer.contains("?") || issuer.contains("#")) {
       return null;
     }

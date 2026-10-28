@@ -7,10 +7,12 @@
  */
 package io.camunda.security.api.model.config;
 
+import org.jspecify.annotations.Nullable;
+
 public final class SaasConfiguration {
 
-  private String organizationId;
-  private String clusterId;
+  private @Nullable String organizationId;
+  private @Nullable String clusterId;
 
   public boolean isConfigured() {
     final boolean organizationConfigured = organizationId != null && !organizationId.isBlank();
@@ -25,7 +27,7 @@ public final class SaasConfiguration {
     throw new IllegalStateException("Must configure both organizationId and clusterId");
   }
 
-  public String getOrganizationId() {
+  public @Nullable String getOrganizationId() {
     return organizationId;
   }
 
@@ -33,7 +35,7 @@ public final class SaasConfiguration {
     this.organizationId = organizationId;
   }
 
-  public String getClusterId() {
+  public @Nullable String getClusterId() {
     return clusterId;
   }
 

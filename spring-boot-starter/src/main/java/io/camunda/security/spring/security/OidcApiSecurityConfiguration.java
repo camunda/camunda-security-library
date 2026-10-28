@@ -13,6 +13,7 @@ import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.scope.ApiTokenRefreshSupport;
 import io.camunda.security.spring.scope.ScopedApiSecurityChainBuilder;
 import io.camunda.security.spring.scope.ScopedApiSecurityChainBuilderConfiguration;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -78,7 +79,7 @@ public class OidcApiSecurityConfiguration {
    * session login exists and there is nothing to refresh — the chain is then built without the
    * filter, exactly as before.
    */
-  private static ApiTokenRefreshSupport resolveRefreshSupport(
+  private static @Nullable ApiTokenRefreshSupport resolveRefreshSupport(
       final ObjectProvider<OAuth2AuthorizedClientRepository> authorizedClientRepositoryProvider,
       final ObjectProvider<OAuth2AuthorizedClientManager> authorizedClientManagerProvider) {
     final var authorizedClientRepository = authorizedClientRepositoryProvider.getIfAvailable();

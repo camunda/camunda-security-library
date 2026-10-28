@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Objects;
 import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Package-private {@link List} decorator that defers materialisation of its backing list to a
@@ -42,8 +43,8 @@ final class LazyList<T> extends AbstractList<T> implements Serializable {
 
   @Serial private static final long serialVersionUID = 1L;
 
-  private transient volatile Supplier<List<T>> supplier;
-  private transient volatile List<T> materialised;
+  private transient volatile @Nullable Supplier<List<T>> supplier;
+  private transient volatile @Nullable List<T> materialised;
 
   LazyList(final Supplier<List<T>> supplier) {
     this.supplier = Objects.requireNonNull(supplier, "supplier must not be null");
@@ -55,7 +56,7 @@ final class LazyList<T> extends AbstractList<T> implements Serializable {
       synchronized (this) {
         local = materialised;
         if (local == null) {
-          final var produced = supplier.get();
+          final var produced = Objects.requireNonNull(supplier).get();
           local = produced == null ? List.of() : List.copyOf(produced);
           materialised = local;
           supplier = null;

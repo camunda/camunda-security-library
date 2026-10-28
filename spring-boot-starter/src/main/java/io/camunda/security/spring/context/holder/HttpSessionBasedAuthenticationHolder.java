@@ -19,6 +19,7 @@ import jakarta.servlet.http.HttpSession;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Associates a {@link CamundaAuthentication} to an existing {@link HttpSession}. As long as the
@@ -70,7 +71,7 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
   }
 
   @Override
-  public CamundaAuthentication get() {
+  public @Nullable CamundaAuthentication get() {
     return Optional.ofNullable(getHttpSession())
         .map(this::getCamundaAuthenticationFromSessionIfExists)
         .orElse(null);

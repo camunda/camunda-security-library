@@ -29,6 +29,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
@@ -262,7 +263,7 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
    * no refresh filter: a BASIC scope holds no OAuth2 token, and an OIDC scope with no provider is
    * reported by the decoder supplier with a better message. See ADR-0039.
    */
-  private ApiTokenRefreshSupport getOrBuildRefreshSupport(
+  private @Nullable ApiTokenRefreshSupport getOrBuildRefreshSupport(
       final ConfigurableListableBeanFactory beanFactory,
       final ScopedSecurityDescriptor descriptor) {
     if (descriptor.authentication() == null

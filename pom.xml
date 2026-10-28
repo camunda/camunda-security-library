@@ -148,7 +148,7 @@
                     </configuration>
                     <executions>
                         <!--
-                          NullAway (via Error Prone) runs on production code only, at WARN
+                          NullAway (via Error Prone) runs on production code only, at ERROR
                           severity (ADR-0040). the -XepDisableAllChecks flag keeps every other Error Prone
                           check off: its default ERROR-level checks would otherwise fail the
                           build. NullAway only checks @NullMarked code (OnlyNullMarked). The
@@ -174,7 +174,7 @@
                                     <arg>-XDcompilePolicy=simple</arg>
                                     <arg>--should-stop=ifError=FLOW</arg>
                                     <arg>-XDaddTypeAnnotationsToSymbol=true</arg>
-                                    <arg>-Xplugin:ErrorProne -XepDisableAllChecks -Xep:NullAway:WARN -XepOpt:NullAway:OnlyNullMarked=true</arg>
+                                    <arg>-Xplugin:ErrorProne -XepDisableAllChecks -Xep:NullAway:ERROR -XepOpt:NullAway:OnlyNullMarked=true</arg>
                                 </compilerArgs>
                             </configuration>
                         </execution>

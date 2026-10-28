@@ -19,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -186,7 +187,7 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
   public void onLogoutSuccess(
       final HttpServletRequest request,
       final HttpServletResponse response,
-      final Authentication authentication)
+      final @Nullable Authentication authentication)
       throws IOException, ServletException {
     if (!isFetchRequest(request)) {
       super.onLogoutSuccess(request, response, authentication);
@@ -230,7 +231,7 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
   protected String determineTargetUrl(
       final HttpServletRequest request,
       final HttpServletResponse response,
-      final Authentication authentication) {
+      final @Nullable Authentication authentication) {
 
     final String referer = request.getHeader(HttpHeaders.REFERER);
     if (isSameOriginRedirect(request, referer)) {
@@ -321,7 +322,7 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
   private String endSessionUrlForRegistration(
       final HttpServletRequest request,
       final HttpServletResponse response,
-      final Authentication authentication) {
+      final @Nullable Authentication authentication) {
     if (authentication instanceof final OAuth2AuthenticationToken oauth) {
       final var delegate = delegatesByRegistrationId.get(oauth.getAuthorizedClientRegistrationId());
       if (delegate != null) {
@@ -406,7 +407,7 @@ public final class CamundaOidcLogoutSuccessHandler extends OidcClientInitiatedLo
     }
 
     /** The IdP end-session URL, or {@code null} when Spring fell through to its default target. */
-    private String endSessionUrl(
+    private @Nullable String endSessionUrl(
         final HttpServletRequest request,
         final HttpServletResponse response,
         final Authentication authentication) {

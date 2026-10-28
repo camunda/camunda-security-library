@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Represents the authentication context for a user or client in Camunda, including (where
@@ -37,8 +38,8 @@ import java.util.function.Supplier;
  * list; the public accessor signature is unchanged in both cases.
  */
 public record CamundaAuthentication(
-    String authenticatedUsername,
-    String authenticatedClientId,
+    @Nullable String authenticatedUsername,
+    @Nullable String authenticatedClientId,
     boolean anonymousUser,
     List<String> authenticatedGroupIds,
     List<String> authenticatedRoleIds,
@@ -138,18 +139,18 @@ public record CamundaAuthentication(
 
   public static final class Builder {
 
-    private String username;
-    private String clientId;
+    private @Nullable String username;
+    private @Nullable String clientId;
     private boolean anonymous;
     private final List<String> groupIds = new ArrayList<>();
     private final List<String> roleIds = new ArrayList<>();
     private final List<String> tenants = new ArrayList<>();
     private final List<String> mappingRules = new ArrayList<>();
-    private Supplier<List<String>> groupIdsSupplier;
-    private Supplier<List<String>> roleIdsSupplier;
-    private Supplier<List<String>> tenantsSupplier;
-    private Supplier<List<String>> mappingRulesSupplier;
-    private Map<String, Object> claims;
+    private @Nullable Supplier<List<String>> groupIdsSupplier;
+    private @Nullable Supplier<List<String>> roleIdsSupplier;
+    private @Nullable Supplier<List<String>> tenantsSupplier;
+    private @Nullable Supplier<List<String>> mappingRulesSupplier;
+    private @Nullable Map<String, Object> claims;
 
     public Builder user(final String value) {
       username = value;
@@ -246,11 +247,13 @@ public record CamundaAuthentication(
           resolveMembershipField("roleIds", roleIds, roleIdsSupplier),
           resolveMembershipField("tenants", tenants, tenantsSupplier),
           resolveMembershipField("mappingRules", mappingRules, mappingRulesSupplier),
-          claims);
+          claims == null ? Map.of() : claims);
     }
 
     private static List<String> resolveMembershipField(
-        final String fieldName, final List<String> eager, final Supplier<List<String>> supplier) {
+        final String fieldName,
+        final List<String> eager,
+        final @Nullable Supplier<List<String>> supplier) {
       if (supplier != null) {
         if (!eager.isEmpty()) {
           throw new IllegalStateException(

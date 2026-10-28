@@ -14,6 +14,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.convert.TypeDescriptor;
@@ -40,7 +41,7 @@ public final class WebSessionMapper {
         attributes);
   }
 
-  public WebSession fromPersistentSession(final PersistentSession persistentSession) {
+  public @Nullable WebSession fromPersistentSession(final PersistentSession persistentSession) {
     try {
       final var sessionId = persistentSession.id();
       final var creationTime = persistentSession.creationTime();
@@ -49,9 +50,18 @@ public final class WebSessionMapper {
       final var attributes = deserializeSessionAttributes(persistentSession);
 
       final var webSession = new WebSession(sessionId);
-      webSession.setCreationTime(toInstant(creationTime));
-      webSession.setLastAccessedTime(toInstant(lastAccessedTime));
-      webSession.setMaxInactiveInterval(toDuration(maxInactiveIntervalInSeconds));
+      final var creationInstant = toInstant(creationTime);
+      if (creationInstant != null) {
+        webSession.setCreationTime(creationInstant);
+      }
+      final var lastAccessedInstant = toInstant(lastAccessedTime);
+      if (lastAccessedInstant != null) {
+        webSession.setLastAccessedTime(lastAccessedInstant);
+      }
+      final var maxInactiveInterval = toDuration(maxInactiveIntervalInSeconds);
+      if (maxInactiveInterval != null) {
+        webSession.setMaxInactiveInterval(maxInactiveInterval);
+      }
       attributes.forEach(webSession::setAttribute);
       webSession.clearChangeFlag();
       return webSession;
@@ -78,11 +88,11 @@ public final class WebSessionMapper {
         .collect(Collectors.toMap(Map.Entry::getKey, e -> converter.deserialize(e.getValue())));
   }
 
-  private Instant toInstant(final Long value) {
+  private @Nullable Instant toInstant(final @Nullable Long value) {
     return Optional.ofNullable(value).map(Instant::ofEpochMilli).orElse(null);
   }
 
-  private Duration toDuration(final Long value) {
+  private @Nullable Duration toDuration(final @Nullable Long value) {
     return Optional.ofNullable(value).map(Duration::ofSeconds).orElse(null);
   }
 
@@ -99,13 +109,13 @@ public final class WebSessionMapper {
     }
 
     @Override
-    public Object deserialize(final byte[] value) {
+    public @Nullable Object deserialize(final byte[] value) {
       return conversionService.convert(
           value, TypeDescriptor.valueOf(byte[].class), TypeDescriptor.valueOf(Object.class));
     }
 
     @Override
-    public byte[] serialize(final Object value) {
+    public byte @Nullable [] serialize(final @Nullable Object value) {
       return (byte[])
           conversionService.convert(
               value, TypeDescriptor.valueOf(Object.class), TypeDescriptor.valueOf(byte[].class));

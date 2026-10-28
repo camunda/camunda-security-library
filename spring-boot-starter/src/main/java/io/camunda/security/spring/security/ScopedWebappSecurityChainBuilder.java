@@ -47,6 +47,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -739,7 +740,7 @@ public final class ScopedWebappSecurityChainBuilder {
   private LogoutHandler refreshTokenRevocationLogoutHandler(
       final ClientRegistrationRepository repo,
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
-      final Function<ClientRegistration, JWK> jwkResolver) {
+      final @Nullable Function<ClientRegistration, JWK> jwkResolver) {
     return new RefreshTokenRevocationLogoutHandler(repo, authorizedClientRepository, jwkResolver);
   }
 
@@ -752,7 +753,7 @@ public final class ScopedWebappSecurityChainBuilder {
    * <p>Only the primary chain can use the bean. A scoped chain's registrationIds are not in the
    * cluster-wide port the bean reads, so it resolves those from its own scope instead.
    */
-  private Function<ClientRegistration, JWK> primaryAssertionJwkResolver() {
+  private @Nullable Function<ClientRegistration, JWK> primaryAssertionJwkResolver() {
     final var bean = assertionJwkProviderProvider.getIfAvailable();
     return bean != null
         ? registration -> bean.createJwk(registration.getRegistrationId())
@@ -769,7 +770,7 @@ public final class ScopedWebappSecurityChainBuilder {
    * <p>{@link AssertionJwkProvider} is built once per chain but {@code createJwk} runs per
    * revocation, so a rotated keystore is picked up without a restart.
    */
-  static Function<ClientRegistration, JWK> assertionJwkResolver(
+  static @Nullable Function<ClientRegistration, JWK> assertionJwkResolver(
       final Map<String, OidcConfiguration> sources) {
     if (sources == null || sources.isEmpty()) {
       return null;
@@ -795,7 +796,8 @@ public final class ScopedWebappSecurityChainBuilder {
         Collections.unmodifiableMap(new LinkedHashMap<>(sources));
     return new OidcProviderConfigurationPort() {
       @Override
-      public OidcConfiguration getOidcAuthenticationConfigurationById(final String registrationId) {
+      public @Nullable OidcConfiguration getOidcAuthenticationConfigurationById(
+          final String registrationId) {
         return byRegistrationId.get(registrationId);
       }
 

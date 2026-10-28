@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.oidc;
 
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,7 +51,9 @@ public final class OidcRedirectionEndpoint {
    * WARN}, the same as a value with no callback path at all.
    */
   public static String resolve(
-      final String configuredRedirectUri, final String contextPath, final String defaultPath) {
+      final @Nullable String configuredRedirectUri,
+      final @Nullable String contextPath,
+      final String defaultPath) {
     if (configuredRedirectUri == null || configuredRedirectUri.isBlank()) {
       return defaultPath;
     }
@@ -108,7 +111,8 @@ public final class OidcRedirectionEndpoint {
    * blank/leading-slash check that decides whether it is usable. Shared by {@link #resolve} and
    * {@link #fallsBackToDefault} so both apply the exact same derivation.
    */
-  private static String derivePath(final String configuredRedirectUri, final String contextPath) {
+  private static String derivePath(
+      final String configuredRedirectUri, final @Nullable String contextPath) {
     final var template = pathOfTheTemplate(configuredRedirectUri.trim());
     var path = withoutQueryAndFragment(template.path());
     if (!template.contextPathCarriedByAPlaceholder()) {
@@ -158,7 +162,7 @@ public final class OidcRedirectionEndpoint {
    * the method returns {@code ""}. The caller then decides what a value without a callback segment
    * means.
    */
-  public static String stripContextPath(final String path, final String contextPath) {
+  public static String stripContextPath(final String path, final @Nullable String contextPath) {
     if (contextPath == null || contextPath.isBlank() || "/".equals(contextPath)) {
       return path;
     }

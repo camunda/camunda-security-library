@@ -152,14 +152,15 @@ public final class AuthorizationService implements AuthorizationCheckPort {
         return Either.right(null);
       }
 
-      if (!authorization.hasAnyResourceIds()) {
+      final List<String> resourceIds = authorization.resourceIds();
+      if (resourceIds == null || resourceIds.isEmpty()) {
         return Either.right(null);
       }
 
       final boolean isTenantResource =
           AuthorizationResourceType.TENANT.equals(authorization.resourceType());
 
-      for (final String resourceId : authorization.resourceIds()) {
+      for (final String resourceId : resourceIds) {
         final AuthorizationScope scope = AuthorizationScope.of(resourceId);
         if (!authorizationChecker.isAuthorized(scope, authentication, authorization)) {
           LOG.debug(
@@ -173,7 +174,9 @@ public final class AuthorizationService implements AuthorizationCheckPort {
           }
           return Either.left(
               new AuthorizationRejection.Permission(
-                  authorization.resourceType(), authorization.permissionType(), resourceId));
+                  Objects.requireNonNull(authorization.resourceType()),
+                  Objects.requireNonNull(authorization.permissionType()),
+                  resourceId));
         }
       }
 
@@ -216,17 +219,19 @@ public final class AuthorizationService implements AuthorizationCheckPort {
         return Either.right(null);
       }
 
-      if (!authorization.hasAnyResourcePropertyNames()) {
+      final Set<String> declaredPropertyNames = authorization.resourcePropertyNames();
+      if (declaredPropertyNames == null || declaredPropertyNames.isEmpty()) {
         return Either.right(null);
       }
-
-      final Set<String> declaredPropertyNames = authorization.resourcePropertyNames();
       final List<AuthorizationScope> grantedPropertyScopes =
           authorizationChecker.retrieveAuthorizedPropertyScopes(
               authentication, authorization, declaredPropertyNames);
 
       for (final AuthorizationScope scope : grantedPropertyScopes) {
         final String propertyName = scope.getResourcePropertyName();
+        if (propertyName == null) {
+          continue;
+        }
         final Optional<PropertyAuthorizationEvaluator<T>> maybeEvaluator =
             propertyEvaluatorRegistry.findEvaluator(propertyName);
         if (maybeEvaluator.isPresent()
@@ -245,8 +250,8 @@ public final class AuthorizationService implements AuthorizationCheckPort {
           authorization.resourceType());
       return Either.left(
           new AuthorizationRejection.Property(
-              authorization.resourceType(),
-              authorization.permissionType(),
+              Objects.requireNonNull(authorization.resourceType()),
+              Objects.requireNonNull(authorization.permissionType()),
               sortedDeclaredPropertyNames));
     } finally {
       recordLatencySafely(startNanos);

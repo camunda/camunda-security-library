@@ -12,6 +12,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Micrometer-backed {@link AuthorizationCheckLatencyRecorder}. Builds its {@link Timer} from the
@@ -23,9 +24,9 @@ import java.util.concurrent.TimeUnit;
 final class MicrometerAuthorizationCheckLatencyRecorder
     implements AuthorizationCheckLatencyRecorder {
 
-  private final Timer timer; // nullable — metrics are optional
+  private final @Nullable Timer timer; // nullable — metrics are optional
 
-  MicrometerAuthorizationCheckLatencyRecorder(final MeterRegistry meterRegistry) {
+  MicrometerAuthorizationCheckLatencyRecorder(final @Nullable MeterRegistry meterRegistry) {
     timer =
         meterRegistry == null
             ? null

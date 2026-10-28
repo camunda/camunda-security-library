@@ -12,6 +12,7 @@ import static org.springframework.web.context.request.RequestAttributes.SCOPE_RE
 import io.camunda.security.api.context.CamundaAuthenticationHolder;
 import io.camunda.security.api.model.CamundaAuthentication;
 import jakarta.servlet.http.HttpServletRequest;
+import org.jspecify.annotations.Nullable;
 import org.springframework.web.context.request.RequestContextHolder;
 
 /**
@@ -49,7 +50,7 @@ public class RequestContextBasedAuthenticationHolder implements CamundaAuthentic
   }
 
   @Override
-  public CamundaAuthentication get() {
+  public @Nullable CamundaAuthentication get() {
     return (CamundaAuthentication)
         RequestContextHolder.currentRequestAttributes()
             .getAttribute(CAMUNDA_AUTHENTICATION_REQUEST_HOLDER_KEY, SCOPE_REQUEST);

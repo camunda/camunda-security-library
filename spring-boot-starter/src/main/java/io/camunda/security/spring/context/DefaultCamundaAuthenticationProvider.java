@@ -11,6 +11,7 @@ import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.context.CamundaAuthenticationHolder;
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.api.model.CamundaAuthentication;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -74,7 +75,7 @@ public class DefaultCamundaAuthenticationProvider implements CamundaAuthenticati
    *     the converter can produce one
    */
   @Override
-  public CamundaAuthentication getCamundaAuthentication() {
+  public @Nullable CamundaAuthentication getCamundaAuthentication() {
     final var springBasedAuthentication = SecurityContextHolder.getContext().getAuthentication();
 
     final var fromHolder = holder.get();

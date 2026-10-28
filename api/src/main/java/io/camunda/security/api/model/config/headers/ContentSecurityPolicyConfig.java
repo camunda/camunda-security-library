@@ -7,6 +7,8 @@
  */
 package io.camunda.security.api.model.config.headers;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Configures Content Security Policy (CSP) to prevent XSS and other content injection attacks.
  *
@@ -73,7 +75,7 @@ public class ContentSecurityPolicyConfig {
   private Mode mode = Mode.SELF_MANAGED;
 
   /** Used when {@link #getMode()} is {@link Mode#CUSTOM}. */
-  private String policyDirectives;
+  private @Nullable String policyDirectives;
 
   /** Default: false. When true, uses Content-Security-Policy-Report-Only. */
   private boolean reportOnly = false;
@@ -98,7 +100,7 @@ public class ContentSecurityPolicyConfig {
     this.mode = mode;
   }
 
-  public String getPolicyDirectives() {
+  public @Nullable String getPolicyDirectives() {
     return policyDirectives;
   }
 
@@ -119,7 +121,7 @@ public class ContentSecurityPolicyConfig {
    * #getPolicyDirectives()} always wins; otherwise the built-in default for {@link #getMode()} is
    * returned. When {@code mode == CUSTOM} and no directives are set the result is {@code null}.
    */
-  public String resolvePolicy() {
+  public @Nullable String resolvePolicy() {
     if (policyDirectives != null && !policyDirectives.isBlank()) {
       return policyDirectives;
     }

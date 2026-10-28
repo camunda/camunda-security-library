@@ -108,7 +108,7 @@ final class IssuerOwnership {
           }
           final var twin = IssuerUris.withToggledTrailingSlash(issuerUri);
           final var twinOwner = twin != null ? owners.get(twin) : null;
-          if (twinOwner != null && !twinOwner.equals(registrationId)) {
+          if (twin != null && twinOwner != null && !twinOwner.equals(registrationId)) {
             owners.put(issuerUri, twinOwner);
             warnTwin(log, twin, issuerUri, twinOwner, ignoredConfiguration, registrationId);
           }
