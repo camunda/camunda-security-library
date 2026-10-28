@@ -4,7 +4,7 @@ status: Accepted
 
 # ADR-0041: Limit a membership with conditions
 
-**Deciders**: Identity team
+**Deciders**: Ben Sheppard (Ben-Sheppard), Patrick Wunderlich (p-wunderlich), Timothy Cline (timcline), Ana Vinogradova (ana-vinogradova-camunda), Joaquín Felici (joaquinfelici)
 
 ## Status
 
