@@ -69,13 +69,26 @@ record MembershipCondition(ResourceAttribute attribute, Operand operand)
 sealed interface Operand permits Operand.Values, Operand.Principal
 ```
 
-- The conditions are combined with AND. A membership with no conditions is global, and stays in the
-  existing representation.
-- A condition is met when the values of `attribute` on the resource overlap the operand's values. A
-  resource that lacks the attribute doesn't meet it.
 - `MembershipCondition` rather than `Condition`, to stay clear of the existing
   `AuthorizationCondition`.
 - `ResourceAttribute` and `PrincipalAttribute` are closed enums in `api`, as in the prototype.
+- A membership with no conditions is global, and stays in the existing representation.
+- A membership with several conditions applies only when all of them are met (AND).
+- A condition is met when the resource and the operand have at least one value in common (OR within
+  the condition). Both sides are sets, because some attributes hold several values.
+- A resource that has no value for the attribute doesn't meet the condition. An empty value counts
+  as no value. Counting a missing attribute as a match would apply a membership limited to one
+  workspace to every resource outside a workspace.
+
+For example, Alice has a role membership with one condition, and is in the groups `{audit, dev}`:
+
+| Condition | Resource and its values | Met? |
+|---|---|---|
+| `WORKSPACE ∈ {payments, lending}` | Process application in Payments: `{payments}` | Yes, `payments` is shared |
+| `WORKSPACE ∈ {payments, lending}` | Process application in HR: `{hr}` | No |
+| `CANDIDATE_GROUPS ∈ Principal(GROUP_IDS)` | Task offered to `{finance, audit}` | Yes, `audit` is shared |
+| `CANDIDATE_GROUPS ∈ Principal(GROUP_IDS)` | Task offered to `{finance}` | No |
+| `WORKSPACE ∈ {payments}` | Decision definition in no workspace: no value | No, so the membership doesn't apply |
 
 ### First delivery: role memberships only
 
