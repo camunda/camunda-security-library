@@ -87,6 +87,14 @@ public final class ScopedWebSessionRepositoryFactory {
     return List.copyOf(repositoriesByBasePath.values());
   }
 
+  /**
+   * Drops the cached repository of a scope that is no longer served, so it stops being swept and
+   * the factory no longer references it. A later {@link #forBasePath} builds a fresh one.
+   */
+  public void evict(final String basePath) {
+    repositoriesByBasePath.remove(basePath);
+  }
+
   private WebSessionRepository buildRepository(final String basePath) {
     final SessionStorePort storePort =
         Objects.requireNonNull(
