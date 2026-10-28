@@ -177,9 +177,33 @@ in only one of the two denies it in the other, so a drift between the two can on
 
 ### Direct authorizations: out of the first delivery
 
-Only memberships carry conditions. Conditions on direct authorizations need their own compatibility
-design and get their own ADR. When they come, they must use a new type, not a new field on
-`Authorization`, so a reader that ignores conditions can't read a conditional grant as unconditional.
+A principal gets a permission in one of two ways:
+
+- Through a membership: Alice is a member of role `editor`, and the role owns the grants.
+- Through a direct authorization: the grant is attached to Alice herself, with no role in between,
+  for example `Authorization(owner = alice, resource = PROCESS_DEFINITION, id = *, permission = UPDATE)`.
+
+Only memberships carry conditions. "Alice is an editor, but only in workspace Payments" is
+supported. "Alice herself may update process definitions, but only in workspace Payments" is not,
+for now.
+
+Authorizations are stored, sent to the OC engine, exported to secondary storage, and read by search,
+UIs and older CSL versions. Changing their shape affects every one of those readers, so conditions
+on direct authorizations need their own compatibility design and get their own ADR.
+
+When they come, they must use a new type, not a new field on `Authorization`. Suppose a later change
+added a field instead:
+
+```
+Authorization(owner = alice, resource = PROCESS_DEFINITION, id = *, permission = UPDATE,
+              conditions = [WORKSPACE ∈ {payments}])
+```
+
+A reader written before that field existed, such as an older CSL version, an exporter or a
+serializer that drops unknown fields, doesn't see `conditions`. What's left reads as "Alice may
+update every process definition", so the restriction is lost and access widens. A separate type is
+one such a reader doesn't recognise, so it ignores the grant and Alice gets nothing from it: a deny.
+The same rule applies to `AuthorizationScope`, which the live check reads.
 
 ### Membership resolution is decoupled from claim conversion
 
