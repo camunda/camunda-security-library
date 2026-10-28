@@ -64,6 +64,23 @@ class ScopedWebSessionRepositoryFactoryTest {
     assertThat(repoA).isNotSameAs(repoB);
   }
 
+  @Test
+  void shouldDropAnEvictedScopeFromTheSweepAndRebuildItOnNextUse() {
+    final var factory =
+        new ScopedWebSessionRepositoryFactory(
+            basePath -> new NoopSessionStorePort(),
+            mapper(),
+            new MockHttpServletRequest(),
+            new SessionConfiguration());
+    final var first = factory.forBasePath("/physical-tenants/a");
+    factory.forBasePath("/physical-tenants/b");
+
+    factory.evict("/physical-tenants/a");
+
+    assertThat(factory.builtRepositories()).hasSize(1).doesNotContain(first);
+    assertThat(factory.forBasePath("/physical-tenants/a")).isNotSameAs(first);
+  }
+
   private static final class NoopSessionStorePort implements SessionStorePort {
     @Override
     public PersistentSession get(final String sessionId) {
