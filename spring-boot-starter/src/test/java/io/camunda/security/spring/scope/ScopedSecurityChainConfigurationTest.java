@@ -29,6 +29,7 @@ import io.camunda.security.spring.user.UserConfiguration;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -159,6 +160,53 @@ class ScopedSecurityChainConfigurationTest {
                   .as("unauthenticated request to scoped V2 path must be challenged with 401")
                   .isEqualTo(401);
             });
+  }
+
+  @Test
+  void reloadSwapsTheChainsOfARegisteredScope() {
+    ToggleableScopeProvider.CONTRIBUTE.set(true);
+    basicRunner()
+        .withUserConfiguration(ToggleableScopeProvider.class)
+        .run(
+            ctx -> {
+              final var contributed = contributedChain(ctx);
+              final var filtersBefore = contributed.getFilters();
+
+              ctx.getBean(ScopedSecurityChainReloader.class).reload();
+
+              assertThat(contributed.getFilters())
+                  .as("reload must swap a freshly built chain into the registered wrapper")
+                  .isNotSameAs(filtersBefore);
+              final var proxy = new FilterChainProxy(List.of(contributed));
+              final var response = new MockHttpServletResponse();
+              proxy.doFilter(
+                  new MockHttpServletRequest("GET", SCOPED_V2), response, new MockFilterChain());
+              assertThat(response.getStatus()).isEqualTo(401);
+            });
+  }
+
+  @Test
+  void reloadRejectsEveryRequestOfAScopeThatIsNoLongerContributed() {
+    ToggleableScopeProvider.CONTRIBUTE.set(true);
+    basicRunner()
+        .withUserConfiguration(ToggleableScopeProvider.class)
+        .run(
+            ctx -> {
+              final var contributed = contributedChain(ctx);
+              ToggleableScopeProvider.CONTRIBUTE.set(false);
+
+              ctx.getBean(ScopedSecurityChainReloader.class).reload();
+
+              final var proxy = new FilterChainProxy(List.of(contributed));
+              final var request = new MockHttpServletRequest("GET", SCOPED_V2);
+              request.addHeader("Authorization", basicHeader("alice", "s3cret"));
+              final var response = new MockHttpServletResponse();
+              final var next = new MockFilterChain();
+              proxy.doFilter(request, response, next);
+              assertThat(next.getRequest()).as("must not reach the application").isNull();
+              assertThat(response.getStatus()).isEqualTo(404);
+            });
+    ToggleableScopeProvider.CONTRIBUTE.set(true);
   }
 
   // 3. Disjoint scope dispatch
@@ -491,6 +539,20 @@ class ScopedSecurityChainConfigurationTest {
       final var auth = new AuthenticationConfiguration();
       auth.setMethod(AuthenticationMethod.BASIC);
       return () -> List.of(new ScopedSecurityDescriptor(SCOPED_BASE, auth));
+    }
+  }
+
+  @Configuration
+  static class ToggleableScopeProvider {
+
+    static final AtomicBoolean CONTRIBUTE = new AtomicBoolean(true);
+
+    @Bean
+    static CamundaSecurityScopeProvider toggleableScopeProvider() {
+      final var auth = new AuthenticationConfiguration();
+      auth.setMethod(AuthenticationMethod.BASIC);
+      return () ->
+          CONTRIBUTE.get() ? List.of(new ScopedSecurityDescriptor(SCOPED_BASE, auth)) : List.of();
     }
   }
 

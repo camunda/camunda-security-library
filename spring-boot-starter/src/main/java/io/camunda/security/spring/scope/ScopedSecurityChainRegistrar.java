@@ -19,11 +19,14 @@ import io.camunda.security.spring.security.ScopedWebappSecurityChainBuilder;
 import io.camunda.security.spring.session.ScopedWebSessionRepositoryFactory;
 import io.camunda.security.spring.session.WebSessionRepositories;
 import io.camunda.security.spring.session.WebSessionRepository;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,7 +37,9 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.DefaultSecurityFilterChain;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.session.MapSessionRepository;
 import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
@@ -48,7 +53,8 @@ import org.springframework.session.web.http.SessionRepositoryFilter;
  * static @Bean} method) so Spring does not need to instantiate the enclosing {@code @Configuration}
  * class before the post-processor runs.
  */
-final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostProcessor {
+final class ScopedSecurityChainRegistrar
+    implements BeanDefinitionRegistryPostProcessor, ScopedSecurityChainReloader {
 
   static final String SESSION_COOKIE_PREFIX = "camunda-session-";
   static final String CSRF_COOKIE_PREFIX = X_CSRF_TOKEN + "-";
@@ -72,6 +78,25 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
   private final Map<String, SessionRepositoryFilter<?>> sessionFiltersByBasePath =
       new ConcurrentHashMap<>();
 
+  /** The chain wrappers registered at startup, per normalized basePath; reload swaps them. */
+  private final Map<String, OrderedSecurityFilterChainWrapper> startupApiChains =
+      new ConcurrentHashMap<>();
+
+  private final Map<String, OrderedSecurityFilterChainWrapper> startupWebappChains =
+      new ConcurrentHashMap<>();
+
+  /**
+   * Front every scope that was not present at startup; see {@link
+   * DynamicScopedSecurityFilterChain}.
+   */
+  private final DynamicScopedSecurityFilterChain dynamicApiChain =
+      new DynamicScopedSecurityFilterChain(ORDER_API);
+
+  private final DynamicScopedSecurityFilterChain dynamicWebappChain =
+      new DynamicScopedSecurityFilterChain(ORDER_WEBAPP);
+
+  private volatile ConfigurableListableBeanFactory beanFactory;
+
   @Override
   public void postProcessBeanDefinitionRegistry(final BeanDefinitionRegistry registry)
       throws BeansException {
@@ -85,16 +110,18 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
       return;
     }
 
+    this.beanFactory = beanFactory;
     final var providerNames = beanFactory.getBeanNamesForType(CamundaSecurityScopeProvider.class);
     if (providerNames.length == 0) {
       LOG.debug("No CamundaSecurityScopeProvider beans found — no scoped chains registered");
       return;
     }
 
+    registerDynamicChains(registry);
     final var descriptors = collectDescriptors(beanFactory, providerNames);
 
     if (descriptors.isEmpty()) {
-      LOG.debug("CamundaSecurityScopeProvider(s) returned no descriptors — nothing to register");
+      LOG.debug("CamundaSecurityScopeProvider(s) returned no descriptors — no startup scopes");
       return;
     }
 
@@ -170,7 +197,12 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
       final var apiChainName = "scopedApiSecurityFilterChain-" + i + "-" + sanitized;
       final var apiChainBd =
           new RootBeanDefinition(
-              OrderedSecurityFilterChainWrapper.class, () -> buildChain(beanFactory, descriptor));
+              OrderedSecurityFilterChainWrapper.class,
+              () -> {
+                final var chain = buildChain(beanFactory, descriptor);
+                startupApiChains.put(BasePaths.normalize(descriptor.basePath(), "basePath"), chain);
+                return chain;
+              });
       registry.registerBeanDefinition(apiChainName, apiChainBd);
       LOG.debug(
           "Registered scoped API chain bean '{}' for basePath={}",
@@ -183,13 +215,132 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
       final var webappChainBd =
           new RootBeanDefinition(
               OrderedSecurityFilterChainWrapper.class,
-              () -> buildWebappChain(beanFactory, descriptor));
+              () -> {
+                final var chain = buildWebappChain(beanFactory, descriptor);
+                startupWebappChains.put(
+                    BasePaths.normalize(descriptor.basePath(), "basePath"), chain);
+                return chain;
+              });
       registry.registerBeanDefinition(webappChainName, webappChainBd);
       LOG.debug(
           "Registered scoped webapp chain bean '{}' for basePath={}",
           webappChainName,
           descriptor.basePath());
     }
+  }
+
+  private void registerDynamicChains(final BeanDefinitionRegistry registry) {
+    registry.registerBeanDefinition(
+        "scopedDynamicApiSecurityFilterChain",
+        new RootBeanDefinition(DynamicScopedSecurityFilterChain.class, () -> dynamicApiChain));
+    registry.registerBeanDefinition(
+        "scopedDynamicWebappSecurityFilterChain",
+        new RootBeanDefinition(DynamicScopedSecurityFilterChain.class, () -> dynamicWebappChain));
+  }
+
+  @Override
+  public synchronized void reload() {
+    final var factory = beanFactory;
+    if (factory == null) {
+      throw new IllegalStateException("Scoped security chains were not registered");
+    }
+    final var providerNames = factory.getBeanNamesForType(CamundaSecurityScopeProvider.class);
+    final var descriptors = collectDescriptors(factory, providerNames);
+    rejectDuplicateBasePaths(descriptors);
+    rejectCookieNameCollisions(descriptors);
+
+    final var releaser = new RetiredFilterReleaser(factory);
+    final var built = buildAll(factory, releaser, descriptors);
+
+    final Set<String> removed = new LinkedHashSet<>(startupApiChains.keySet());
+    removed.addAll(dynamicApiChain.chains().keySet());
+    removed.removeAll(built.keySet());
+
+    final List<SecurityFilterChain> retired = new ArrayList<>();
+    swapStartupChains(built, retired);
+    publishDynamicChains(built, retired);
+    removed.forEach(this::evictScope);
+    releaser.release(retired);
+  }
+
+  /**
+   * Builds every chain before anything is swapped, so a descriptor that fails to build leaves every
+   * live chain untouched. State created for chains that never went live is released again.
+   */
+  private Map<String, ScopeChains> buildAll(
+      final ConfigurableListableBeanFactory factory,
+      final RetiredFilterReleaser releaser,
+      final List<ScopedSecurityDescriptor> descriptors) {
+    final var sessionScopesBefore = Set.copyOf(sessionFiltersByBasePath.keySet());
+    final List<SecurityFilterChain> created = new ArrayList<>();
+    final Map<String, ScopeChains> built = new LinkedHashMap<>();
+    try {
+      for (final var descriptor : descriptors) {
+        final var api = buildChain(factory, descriptor);
+        created.add(api);
+        final var webapp = buildWebappChain(factory, descriptor);
+        created.add(webapp);
+        built.put(
+            BasePaths.normalize(descriptor.basePath(), "basePath"), new ScopeChains(api, webapp));
+      }
+    } catch (final RuntimeException ex) {
+      sessionFiltersByBasePath.keySet().stream()
+          .filter(basePath -> !sessionScopesBefore.contains(basePath))
+          .toList()
+          .forEach(this::evictScope);
+      releaser.release(created);
+      throw ex;
+    }
+    return built;
+  }
+
+  /** Startup scopes keep their wrappers; one that is no longer contributed answers 404. */
+  private void swapStartupChains(
+      final Map<String, ScopeChains> built, final List<SecurityFilterChain> retired) {
+    startupApiChains.forEach(
+        (basePath, wrapper) -> {
+          final var fresh = built.get(basePath);
+          retired.add(wrapper.swap(fresh == null ? denyAll(basePath) : fresh.api()));
+        });
+    startupWebappChains.forEach(
+        (basePath, wrapper) -> {
+          final var fresh = built.get(basePath);
+          retired.add(wrapper.swap(fresh == null ? denyAll(basePath) : fresh.webapp()));
+        });
+  }
+
+  private void publishDynamicChains(
+      final Map<String, ScopeChains> built, final List<SecurityFilterChain> retired) {
+    final Map<String, SecurityFilterChain> api = new LinkedHashMap<>();
+    final Map<String, SecurityFilterChain> webapp = new LinkedHashMap<>();
+    built.forEach(
+        (basePath, chains) -> {
+          if (!startupApiChains.containsKey(basePath)) {
+            api.put(basePath, chains.api());
+            webapp.put(basePath, chains.webapp());
+          }
+        });
+    retired.addAll(dynamicApiChain.chains().values());
+    retired.addAll(dynamicWebappChain.chains().values());
+    dynamicApiChain.replace(api);
+    dynamicWebappChain.replace(webapp);
+  }
+
+  /** Drops the session filter and store repository of a scope so nothing keeps them reachable. */
+  private void evictScope(final String basePath) {
+    if (sessionFiltersByBasePath.remove(basePath) != null) {
+      LOG.info("Scope {} is no longer contributed; its session state was released", basePath);
+    }
+    beanFactory
+        .getBeanProvider(ScopedWebSessionRepositoryFactory.class)
+        .ifAvailable(repositories -> repositories.evict(basePath));
+  }
+
+  /** Matches everything under the scope and answers 404, so a removed scope never fails open. */
+  private static SecurityFilterChain denyAll(final String basePath) {
+    return new DefaultSecurityFilterChain(
+        PathPatternRequestMatcher.withDefaults().matcher(basePath + "/**"),
+        (request, response, chain) -> ((HttpServletResponse) response).sendError(404));
   }
 
   private OrderedSecurityFilterChainWrapper buildChain(
@@ -250,10 +401,10 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
   private SessionRepositoryFilter<?> getOrBuildSessionFilter(
       final ConfigurableListableBeanFactory beanFactory, final String basePath) {
     return sessionFiltersByBasePath.computeIfAbsent(
-        basePath,
-        bp ->
+        BasePaths.normalize(basePath, "basePath"),
+        key ->
             ScopedWebSessionComponentsFactory.sessionRepositoryFilter(
-                bp, resolveSessionRepository(beanFactory, bp)));
+                basePath, resolveSessionRepository(beanFactory, basePath)));
   }
 
   /**
@@ -388,4 +539,7 @@ final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostPr
     s = s.replaceAll("^-+|-+$", "");
     return s;
   }
+
+  private record ScopeChains(
+      OrderedSecurityFilterChainWrapper api, OrderedSecurityFilterChainWrapper webapp) {}
 }
