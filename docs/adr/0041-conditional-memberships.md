@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0041: Limit a membership to a context with conditions
+# ADR-0041: Limit a membership with conditions
 
 **Deciders**: Identity team
 
@@ -14,7 +14,7 @@ Accepted
 
 A principal's memberships are global today. A user who is a member of a role has that role's
 permissions on every resource the role's authorizations cover. Hub needs a membership that applies
-only within a context, for example "editor, but only in workspace W"
+only to some resources, for example "editor, but only in workspace W"
 ([#743](https://github.com/camunda/camunda-security-library/issues/743), part of
 [#742](https://github.com/camunda/camunda-security-library/issues/742)).
 
@@ -44,17 +44,22 @@ Several constraints come from existing decisions:
   in `core/auth/condition`.
 - Authorization enums are owned centrally ([ADR-0008](0008-authz-enum-ownership-and-layered-usage.md)).
 
-What model limits a membership to a context, which memberships and grants may carry it, and which
-rules keep it from widening access?
+What model limits a membership to some resources, what is it called in the API, code and product,
+which memberships and grants may carry it, and which rules keep it from widening access?
 
 ## Decision
 
-### The concept is called a context
+### The concept is called a condition
 
-A membership is either **global** or **limited to a context**. "Context" is the user-facing name,
-already used in [#742](https://github.com/camunda/camunda-security-library/issues/742),
-[#743](https://github.com/camunda/camunda-security-library/issues/743) and the PDP plan. The model
-expresses a context as a list of conditions, so the types use "condition".
+A membership is either **global** or **conditional**: it carries conditions on the resource being
+accessed. "Condition" is the name in the CSL API, in the code, and in product-facing wording such as
+Hub's policy model, the REST API and the docs. One name everywhere means no mapping between what
+users read and what the API returns.
+
+A list of conditions reads as "all of these must hold", which is how they're evaluated. It covers
+both a condition on where a resource is (`WORKSPACE ∈ {payments}`) and one relative to the caller
+(`ASSIGNEE ∈ Principal(USERNAME)`). A UI shows the concrete condition, for example "Reviewer in
+workspace Payments", rather than the generic name.
 
 ### Model
 
@@ -94,8 +99,8 @@ role memberships only, never JWT authorities.
 
 ### Principal operands only for trusted attributes
 
-Memberships accept both operands. A `Principal` operand lets a membership express a context relative
-to the caller, for example a role that applies only to tasks where `ASSIGNEE ∈ Principal(USERNAME)`.
+Memberships accept both operands. A `Principal` operand lets a membership express a condition
+relative to the caller, for example a role that applies only to tasks where `ASSIGNEE ∈ Principal(USERNAME)`.
 
 A `Principal` operand may refer only to attributes backed by the identity store: `USERNAME` and
 `CLIENT_ID` always, and `GROUP_IDS` and `TENANT_IDS` only when the host reads them from its identity
@@ -150,25 +155,34 @@ conditions to that identity needs its own ADR and a `MembershipPort` change, as 
 
 **Positive**
 
-- One model covers any context Hub needs, such as workspace or process application, without a new
-  membership type per context.
+- One model covers any restriction Hub needs, such as workspace or process application, without a
+  new membership type per restriction.
 - Readers that don't know about conditions stay safe: they see only global memberships.
 - Each rule that could widen access fails closed.
 
 **Negative / accepted trade-offs**
 
 - Each host maps every attribute twice, in an extractor and a query translation.
-- Group and tenant memberships, and direct authorizations, can't be limited to a context yet.
+- Group and tenant memberships, and direct authorizations, can't carry conditions yet.
 - Conditional memberships don't reach OC until a later ADR adds them to the change-set.
-- The closed attribute catalogue means a new context needs a CSL release.
+- The closed attribute catalogue means a new kind of condition needs a CSL release.
 - A host that takes group or tenant IDs from a token claim, as OC can, can't use `GROUP_IDS` or
   `TENANT_IDS` as a principal operand: those conditions deny.
 
 ## Alternatives Considered
 
+- **Call the concept a "context".** Rejected — a context reads as a place, but a membership's
+  conditions can also be relative to the caller, such as "tasks assigned to me". A list of contexts
+  also reads as "any of these", while conditions are combined with AND.
+- **Call the concept a "scope".** Rejected — "scope" already means tenant isolation in CSL
+  ([ADR-0013](0013-camunda-security-scope-provider-spi.md)).
+- **Call the concept a "governance boundary".** Rejected — it names Hub's first use case, not the
+  model, and doesn't fit a condition relative to the caller.
+- **Use "condition" in the code and "context" in product wording.** Rejected — the API is part of
+  the product, so two names would need a mapping in every doc, answer and integration.
 - **Scoped role memberships, a `(scopeType, scopeId)` pair on the membership.** Rejected — it fits
-  one context per membership and one attribute per context, and "scope" already means tenant
-  isolation in CSL.
+  one restriction per membership and one attribute per restriction, and "scope" already means
+  tenant isolation in CSL.
 - **Conditions on direct authorizations in the first delivery.** Rejected for now — it needs its own
   compatibility design, and memberships are enough for Hub's first use case.
 - **An open, host-defined attribute catalogue.** Rejected — a host could define an attribute that
