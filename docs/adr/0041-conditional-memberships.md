@@ -100,9 +100,15 @@ tenant memberships can adopt the same type later without a new model.
 
 Anything the evaluator can't interpret denies: an unknown attribute, operand or condition type, a
 resource type with no registered extractor, and an extractor that throws or returns an undeclared
-attribute. The prototype's registry already rejects undeclared attributes at construction. The paths
-where the prototype still allows (no resource IDs, authorization disabled) are fixed separately in
-[#749](https://github.com/camunda/camunda-security-library/issues/749).
+attribute. The prototype's registry already rejects undeclared attributes at construction.
+
+Two existing allow paths are outside this rule:
+
+- With authorization disabled (`camunda.security.authorizations.enabled=false`), every check allows.
+  That is the explicit off switch and stays as it is.
+- With authorization enabled, a check with no resource IDs or no property names still allows. That is
+  a defect, fixed separately in
+  [#749](https://github.com/camunda/camunda-security-library/issues/749).
 
 ### Conditional memberships never appear in the id lists
 
