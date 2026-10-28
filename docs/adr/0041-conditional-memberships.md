@@ -1,0 +1,177 @@
+---
+status: Accepted
+---
+
+# ADR-0041: Limit a membership to a context with conditions
+
+**Deciders**: Identity team
+
+## Status
+
+Accepted
+
+## Context
+
+A principal's memberships are global today. A user who is a member of a role has that role's
+permissions on every resource the role's authorizations cover. Hub needs a membership that applies
+only within a context, for example "editor, but only in workspace W"
+([#743](https://github.com/camunda/camunda-security-library/issues/743), part of
+[#742](https://github.com/camunda/camunda-security-library/issues/742)).
+
+[camunda-hub#30035](https://github.com/camunda/camunda-hub/issues/30035) compared two approaches and
+prototyped both on the
+[`hub-authz-prototype`](https://github.com/camunda/camunda-security-library/tree/hub-authz-prototype)
+branch:
+
+1. **Scoped role memberships** ([f1cae97](https://github.com/camunda/camunda-security-library/commit/f1cae97)):
+   a membership carries a `(scopeType, scopeId)` pair.
+2. **Conditional memberships** ([09ea736](https://github.com/camunda/camunda-security-library/commit/09ea7368b63dcc907c64329a096bf48b29b2a5f0)):
+   a membership carries a list of conditions on attributes of the resource being accessed.
+
+Approach 2 was chosen in the identity-at-scale workshop. This ADR records that model and the rules
+around it that every later task depends on: the API change
+([#745](https://github.com/camunda/camunda-security-library/issues/745)), the list filter
+([#748](https://github.com/camunda/camunda-security-library/issues/748)) and the Hub resource types
+([#747](https://github.com/camunda/camunda-security-library/issues/747)).
+
+Several constraints come from existing decisions:
+
+- "Scope" already names tenant isolation in CSL ([ADR-0013](0013-camunda-security-scope-provider-spi.md)),
+  so the concept needs another name.
+- Memberships load lazily ([ADR-0005](0005-lazy-load-authentication-memberships.md)).
+- `AuthorizationCheckPort` is the single inbound authorization port
+  ([ADR-0014](0014-unified-authz-framework-in-core.md)), and `AuthorizationCondition` already exists
+  in `core/auth/condition`.
+- Authorization enums are owned centrally ([ADR-0008](0008-authz-enum-ownership-and-layered-usage.md)).
+
+What model limits a membership to a context, which memberships and grants may carry it, and which
+rules keep it from widening access?
+
+## Decision
+
+### The concept is called a context
+
+A membership is either **global** or **limited to a context**. "Context" is the user-facing name,
+already used in [#742](https://github.com/camunda/camunda-security-library/issues/742),
+[#743](https://github.com/camunda/camunda-security-library/issues/743) and the PDP plan. The model
+expresses a context as a list of conditions, so the types use "condition".
+
+### Model
+
+```java
+record ConditionalMembership(MembershipType type, String id, List<MembershipCondition> conditions)
+record MembershipCondition(ResourceAttribute attribute, Operand operand)
+sealed interface Operand permits Operand.Values, Operand.Principal
+```
+
+- The conditions are combined with AND. A membership with no conditions is global, and stays in the
+  existing representation.
+- A condition is met when the values of `attribute` on the resource overlap the operand's values. A
+  resource that lacks the attribute doesn't meet it.
+- `MembershipCondition` rather than `Condition`, to stay clear of the existing
+  `AuthorizationCondition`.
+- `ResourceAttribute` and `PrincipalAttribute` are closed enums in `api`, as in the prototype.
+
+### First delivery: role memberships only
+
+The type is general, but only role memberships carry conditions in the first delivery. Roles carry
+the permissions, so a conditional role membership is enough for Hub's workspace case. Group and
+tenant memberships can adopt the same type later without a new model.
+
+### Fail closed
+
+Anything the evaluator can't interpret denies: an unknown attribute, operand or condition type, a
+resource type with no registered extractor, and an extractor that throws or returns an undeclared
+attribute. The prototype's registry already rejects undeclared attributes at construction. The paths
+where the prototype still allows (no resource IDs, authorization disabled) are fixed separately in
+[#749](https://github.com/camunda/camunda-security-library/issues/749).
+
+### Conditional memberships never appear in the id lists
+
+`authenticatedRoleIds` and the other id lists hold global memberships only. A reader that doesn't
+know about conditions therefore never treats a conditional membership as global. `roleIds` carries
+role memberships only, never JWT authorities.
+
+### Principal operands only for trusted attributes
+
+Memberships accept both operands. A `Principal` operand lets a membership express a context relative
+to the caller, for example a role that applies only to tasks where `ASSIGNEE ∈ Principal(USERNAME)`.
+
+A `Principal` operand may refer only to attributes backed by the identity store: `USERNAME` and
+`CLIENT_ID` always, and `GROUP_IDS` and `TENANT_IDS` only when the host reads them from its identity
+store. Raw token claims are never an operand. When a host takes group or tenant IDs from a token
+claim, a condition on that attribute fails closed, because a forged or misconfigured claim could
+otherwise satisfy it.
+
+### Attribute catalogue
+
+The catalogue is closed. Adding a `ResourceAttribute` is a CSL change, reviewed by the Identity
+team, in line with [ADR-0008](0008-authz-enum-ownership-and-layered-usage.md). An open, host-defined
+catalogue would let an attribute that one host doesn't map reach a check that can't evaluate it.
+This replaces the open catalogue in the PDP plan (task 5.1.3).
+
+Each host maps every attribute it supports twice: in a `ResourceAttributeExtractor` for single
+checks, and in its `ResourceAccessFilterTranslator` for list queries. A host that maps an attribute
+in only one of the two denies it in the other, so a drift between the two can only narrow access.
+
+### Direct authorizations: out of the first delivery
+
+Only memberships carry conditions. Conditions on direct authorizations need their own compatibility
+design and get their own ADR. When they come, they must use a new type, not a new field on
+`Authorization`, so a reader that ignores conditions can't read a conditional grant as unconditional.
+
+### Membership resolution is decoupled from claim conversion
+
+Conditional memberships are resolved through `MembershipPort` and exposed on `CamundaAuthentication`
+as a lazy component, keeping ADR-0005's lazy loading. They aren't resolved inside
+`LazyTokenClaimsConverter`, as the prototype does, because authorization must not depend on how a
+token's claims are converted
+([camunda-hub#30035](https://github.com/camunda/camunda-hub/issues/30035)).
+
+### Relation to the policy change-set (#729)
+
+In the first delivery, conditional memberships are host-local: Hub stores and evaluates them, and
+they aren't fanned out to OC. The change-set's membership identity
+([#729](https://github.com/camunda/camunda-security-library/pull/729)) stays as it is. Adding
+conditions to that identity needs its own ADR and a `MembershipPort` change, as #729 itself notes.
+
+### Relation to other ADRs
+
+- [ADR-0008](0008-authz-enum-ownership-and-layered-usage.md): `ResourceAttribute` follows the same
+  ownership rule. Whether Hub-only resource types are added is decided in
+  [#747](https://github.com/camunda/camunda-security-library/issues/747).
+- [ADR-0014](0014-unified-authz-framework-in-core.md): single checks and the list filter
+  ([#748](https://github.com/camunda/camunda-security-library/issues/748)) both go through
+  `AuthorizationCheckPort`.
+- [ADR-0013](0013-camunda-security-scope-provider-spi.md): tenant isolation stays separate. This
+  doesn't rule out a tenant attribute later.
+
+## Consequences
+
+**Positive**
+
+- One model covers any context Hub needs, such as workspace or process application, without a new
+  membership type per context.
+- Readers that don't know about conditions stay safe: they see only global memberships.
+- Each rule that could widen access fails closed.
+
+**Negative / accepted trade-offs**
+
+- Each host maps every attribute twice, in an extractor and a query translation.
+- Group and tenant memberships, and direct authorizations, can't be limited to a context yet.
+- Conditional memberships don't reach OC until a later ADR adds them to the change-set.
+- The closed attribute catalogue means a new context needs a CSL release.
+- A host that takes group or tenant IDs from a token claim, as OC can, can't use `GROUP_IDS` or
+  `TENANT_IDS` as a principal operand: those conditions deny.
+
+## Alternatives Considered
+
+- **Scoped role memberships, a `(scopeType, scopeId)` pair on the membership.** Rejected — it fits
+  one context per membership and one attribute per context, and "scope" already means tenant
+  isolation in CSL.
+- **Conditions on direct authorizations in the first delivery.** Rejected for now — it needs its own
+  compatibility design, and memberships are enough for Hub's first use case.
+- **An open, host-defined attribute catalogue.** Rejected — a host could define an attribute that
+  another host's checks can't evaluate, and ADR-0008 keeps authorization enums owned centrally.
+- **Resolve conditional memberships inside `LazyTokenClaimsConverter`.** Rejected — it couples
+  authorization to claim conversion.
