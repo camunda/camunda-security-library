@@ -23,7 +23,7 @@ Common AI-assisted workflows are documented in `docs/workflows/` — these are a
 | Creating bug issues | `docs/workflows/bug-issues.md` | Produces a structured GitHub bug issue from a short description. Enriches it with code locations, reproduction steps, and verifiable acceptance criteria so a fresh session can fix it without further conversation. |
 | Creating feature issues | `docs/workflows/feature-issues.md` | Produces a structured GitHub feature issue from a short description. Includes motivation, scope boundaries, implementation location, and acceptance criteria so a fresh session can implement it cold. |
 | Creating task issues | `docs/workflows/tasks.md` | Produces a small, self-contained, independently mergeable task issue. A task can stand alone, or be one of several that together deliver a feature. |
-| Documenting code | `docs/workflows/documenting-code.md` | Creates or updates documentation — Javadoc, module READMEs, feature guides, or ADRs — and ensures related docs stay in sync. |
+| Documenting code | `docs/workflows/documenting-code.md` | Creates or updates Javadoc, the arc42 architecture docs, and adopter guides. It also keeps related docs current. |
 
 **Claude Code users:** these workflows are also available as slash commands via `.claude/skills/`:
 
