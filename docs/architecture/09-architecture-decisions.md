@@ -52,6 +52,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0037: Resolve the web app authorization flag per request](../adr/0037-resolve-web-app-authorization-flag-per-request.md)
 - [ADR-0038: A verified token carries the principal claims of the provider that verified it](../adr/0038-verified-token-carries-its-provider-claims.md)
 - [ADR-0039: API chains refresh the session access token, with their own authorized-client stack](../adr/0039-refresh-access-tokens-on-api-chains.md)
+- [ADR-0040: Declare nullness with JSpecify and check it with NullAway](../adr/0040-jspecify-nullness-and-nullaway.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 
