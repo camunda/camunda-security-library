@@ -10,6 +10,9 @@ package io.camunda.security.api.context;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
@@ -81,5 +84,49 @@ class MembershipResolutionContextPropagatorTest {
     // then the context is captured now, but the lookup is still deferred
     assertThat(decorateCalls.get()).isEqualTo(1);
     assertThat(lookups.get()).isZero();
+  }
+
+  @Test
+  void decorateListReturnsEachConcurrentCallItsOwnResult() throws Exception {
+    // given a host propagator whose first call pauses after its lookup, so that a second call can
+    // run in between
+    final var firstLookupDone = new CountDownLatch(1);
+    final var secondCallDone = new CountDownLatch(1);
+    final var decoratedCalls = new AtomicInteger();
+    final MembershipResolutionContextPropagator propagator =
+        supplier ->
+            () -> {
+              final var lookedUp = supplier.get();
+              if (decoratedCalls.incrementAndGet() == 1) {
+                firstLookupDone.countDown();
+                try {
+                  // returns once the second call is done, or after a timeout if it's blocked
+                  secondCallDone.await(500, TimeUnit.MILLISECONDS);
+                } catch (final InterruptedException e) {
+                  Thread.currentThread().interrupt();
+                }
+              }
+              return lookedUp;
+            };
+    final var lookups = new AtomicInteger();
+    final Supplier<List<Integer>> decorated =
+        propagator.decorateList(() -> List.of(lookups.incrementAndGet()));
+
+    // when two calls overlap
+    final var first = CompletableFuture.supplyAsync(decorated::get);
+    assertThat(firstLookupDone.await(5, TimeUnit.SECONDS)).isTrue();
+    final var second =
+        CompletableFuture.supplyAsync(
+            () -> {
+              try {
+                return decorated.get();
+              } finally {
+                secondCallDone.countDown();
+              }
+            });
+
+    // then each call gets the list from its own lookup
+    assertThat(first.get(5, TimeUnit.SECONDS)).containsExactly(1);
+    assertThat(second.get(5, TimeUnit.SECONDS)).containsExactly(2);
   }
 }

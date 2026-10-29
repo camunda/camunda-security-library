@@ -46,6 +46,9 @@ public interface MembershipResolutionContextPropagator {
    * As {@link #decorate(Supplier)}, for lists of any element type, such as conditional memberships.
    * It goes through {@link #decorate(Supplier)}, so a host's context binding applies to it without
    * the host implementing anything new. Like {@code decorate}, it captures the context when called.
+   *
+   * <p>The returned supplier is safe to call from several threads: each call returns the list its
+   * own lookup produced. Concurrent calls run one at a time.
    */
   default <T> Supplier<List<T>> decorateList(final Supplier<List<T>> supplier) {
     final var result = new AtomicReference<List<T>>();
@@ -55,9 +58,15 @@ public interface MembershipResolutionContextPropagator {
               result.set(supplier.get());
               return List.of();
             });
+    final var lock = new Object();
     return () -> {
-      decorated.get();
-      return result.get();
+      // The lookup and the read of its result go together, so a concurrent call can't overwrite
+      // the result in between and hand this call another call's list.
+      synchronized (lock) {
+        result.set(null);
+        decorated.get();
+        return result.get();
+      }
     };
   }
 
