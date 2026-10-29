@@ -9,6 +9,7 @@ package io.camunda.security.spring.session;
 
 import io.camunda.security.api.model.config.SessionConfiguration;
 import java.util.concurrent.ConcurrentHashMap;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.session.MapSessionRepository;
@@ -38,7 +39,7 @@ public final class WebSessionRepositories {
    *     diagnosable in a multi-scope deployment without a debugger.
    */
   public static SessionRepository<?> durableOrInMemory(
-      final WebSessionRepository durable,
+      final @Nullable WebSessionRepository durable,
       final SessionConfiguration sessionConfiguration,
       final String surface) {
     if (durable != null) {

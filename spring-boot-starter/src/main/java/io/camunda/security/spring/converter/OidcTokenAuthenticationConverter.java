@@ -15,6 +15,7 @@ import io.camunda.security.spring.oidc.VerifiedJwt;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -98,14 +99,14 @@ public final class OidcTokenAuthenticationConverter
   }
 
   @Override
-  public boolean supports(final Authentication authentication) {
+  public boolean supports(final @Nullable Authentication authentication) {
     return authentication instanceof JwtAuthenticationToken;
   }
 
   @Override
-  public CamundaAuthentication convert(final Authentication authentication) {
+  public CamundaAuthentication convert(final @Nullable Authentication authentication) {
     try {
-      return Optional.of(authentication)
+      return Optional.of(Objects.requireNonNull(authentication))
           .map(JwtAuthenticationToken.class::cast)
           .map(JwtAuthenticationToken::getToken)
           .map(jwt -> resolveTokenClaimsConverter(jwt).convert(claimsOf(jwt)))

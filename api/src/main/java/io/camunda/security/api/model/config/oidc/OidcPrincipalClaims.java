@@ -8,6 +8,7 @@
 package io.camunda.security.api.model.config.oidc;
 
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The claims that give the principal of a token from one provider. See <a
@@ -18,7 +19,7 @@ import java.util.Objects;
  * @param preferUsernameClaim whether the user name wins when a token has both claims
  */
 public record OidcPrincipalClaims(
-    String usernameClaim, String clientIdClaim, boolean preferUsernameClaim) {
+    String usernameClaim, @Nullable String clientIdClaim, boolean preferUsernameClaim) {
 
   /**
    * Returns the principal claims of a provider. For each claim, this uses the value of the provider

@@ -7,6 +7,8 @@
  */
 package io.camunda.security.spring.oidc;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Strips the parts of a configured URL that can carry a secret, for messages that report one.
  *
@@ -54,7 +56,7 @@ public final class UrlRedaction {
    * @param url the configured value, possibly blank, a template, or malformed
    * @return the redacted value, or the input unchanged when there is nothing to strip
    */
-  public static String redact(final String url) {
+  public static @Nullable String redact(final @Nullable String url) {
     if (url == null || url.isEmpty()) {
       return url;
     }
@@ -125,7 +127,7 @@ public final class UrlRedaction {
    * code {@code OAuth2AuthenticationExceptionHandler} logs, and for the values {@code
    * OAuth2RefreshTokenFilter} logs.
    */
-  public static String escapeControlCharacters(final String value) {
+  public static @Nullable String escapeControlCharacters(final @Nullable String value) {
     if (value == null || value.chars().noneMatch(UrlRedaction::mustBeEscaped)) {
       return value;
     }
@@ -146,7 +148,8 @@ public final class UrlRedaction {
    * @param maxLength the most characters to keep before the ellipsis
    * @return the escaped, bounded value, or null for null
    */
-  public static String escapeControlCharacters(final String value, final int maxLength) {
+  public static @Nullable String escapeControlCharacters(
+      final @Nullable String value, final int maxLength) {
     final var escaped = escapeControlCharacters(value);
     return escaped == null || escaped.length() <= maxLength
         ? escaped

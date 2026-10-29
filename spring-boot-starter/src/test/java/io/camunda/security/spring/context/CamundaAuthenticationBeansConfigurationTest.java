@@ -13,6 +13,7 @@ import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.context.CamundaAuthenticationHolder;
 import io.camunda.security.api.context.CamundaAuthenticationProvider;
 import io.camunda.security.api.context.MembershipResolutionContextPropagator;
+import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
@@ -21,6 +22,7 @@ import io.camunda.security.spring.context.holder.RequestContextBasedAuthenticati
 import io.camunda.security.spring.converter.UnprotectedCamundaAuthenticationConverter;
 import java.util.List;
 import java.util.function.Supplier;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -223,12 +225,12 @@ class CamundaAuthenticationBeansConfigurationTest {
       }
 
       @Override
-      public io.camunda.security.api.model.CamundaAuthentication get() {
+      public CamundaAuthentication get() {
         return null;
       }
 
       @Override
-      public void set(final io.camunda.security.api.model.CamundaAuthentication authentication) {}
+      public void set(final @NonNull CamundaAuthentication authentication) {}
 
       @Override
       public void clear() {}
@@ -250,12 +252,12 @@ class CamundaAuthenticationBeansConfigurationTest {
       }
 
       @Override
-      public io.camunda.security.api.model.CamundaAuthentication get() {
+      public CamundaAuthentication get() {
         return null;
       }
 
       @Override
-      public void set(final io.camunda.security.api.model.CamundaAuthentication authentication) {}
+      public void set(final @NonNull CamundaAuthentication authentication) {}
 
       @Override
       public void clear() {}
@@ -272,7 +274,7 @@ class CamundaAuthenticationBeansConfigurationTest {
 
     static final class StubProvider implements CamundaAuthenticationProvider {
       @Override
-      public io.camunda.security.api.model.CamundaAuthentication getCamundaAuthentication() {
+      public CamundaAuthentication getCamundaAuthentication() {
         return null;
       }
     }
@@ -288,7 +290,8 @@ class CamundaAuthenticationBeansConfigurationTest {
 
     static final class StubPropagator implements MembershipResolutionContextPropagator {
       @Override
-      public Supplier<List<String>> decorate(final Supplier<List<String>> supplier) {
+      public @NonNull Supplier<List<String>> decorate(
+          final @NonNull Supplier<List<String>> supplier) {
         return supplier;
       }
     }

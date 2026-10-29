@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Builds a per-scope {@link WebSessionRepository} backed by the scope's own {@link
@@ -37,7 +38,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class ScopedWebSessionRepositoryFactory {
 
-  private final ScopedSessionStorePortProvider storePortProvider;
+  private final @Nullable ScopedSessionStorePortProvider storePortProvider;
   private final WebSessionMapper webSessionMapper;
   private final HttpServletRequest request;
   private final SessionConfiguration sessionConfiguration;
@@ -45,7 +46,7 @@ public final class ScopedWebSessionRepositoryFactory {
       new ConcurrentHashMap<>();
 
   public ScopedWebSessionRepositoryFactory(
-      final ScopedSessionStorePortProvider storePortProvider,
+      final @Nullable ScopedSessionStorePortProvider storePortProvider,
       final WebSessionMapper webSessionMapper,
       final HttpServletRequest request,
       final SessionConfiguration sessionConfiguration) {
@@ -90,7 +91,7 @@ public final class ScopedWebSessionRepositoryFactory {
   private WebSessionRepository buildRepository(final String basePath) {
     final SessionStorePort storePort =
         Objects.requireNonNull(
-            storePortProvider.forBasePath(basePath),
+            Objects.requireNonNull(storePortProvider).forBasePath(basePath),
             () -> "ScopedSessionStorePortProvider returned null for basePath=" + basePath);
     return new WebSessionRepository(storePort, webSessionMapper, request, sessionConfiguration);
   }

@@ -13,61 +13,63 @@ import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
+import org.jspecify.annotations.Nullable;
 
 /** Configures PKCS12 keystore access for loading private keys used by security components. */
 public class KeystoreConfiguration {
-  private String path;
-  private String password;
-  private String keyAlias;
-  private String keyPassword;
+  private @Nullable String path;
+  private @Nullable String password;
+  private @Nullable String keyAlias;
+  private @Nullable String keyPassword;
 
-  public String getPath() {
+  public @Nullable String getPath() {
     return path;
   }
 
-  public void setPath(final String path) {
+  public void setPath(final @Nullable String path) {
     this.path = path;
   }
 
-  public String getPassword() {
+  public @Nullable String getPassword() {
     return password;
   }
 
-  public void setPassword(final String password) {
+  public void setPassword(final @Nullable String password) {
     this.password = password;
   }
 
-  public String getKeyAlias() {
+  public @Nullable String getKeyAlias() {
     return keyAlias;
   }
 
-  public void setKeyAlias(final String keyAlias) {
+  public void setKeyAlias(final @Nullable String keyAlias) {
     this.keyAlias = keyAlias;
   }
 
-  public String getKeyPassword() {
+  public @Nullable String getKeyPassword() {
     return keyPassword;
   }
 
-  public void setKeyPassword(final String keyPassword) {
+  public void setKeyPassword(final @Nullable String keyPassword) {
     this.keyPassword = keyPassword;
   }
 
   public KeyStore loadKeystore()
       throws KeyStoreException, IOException, NoSuchAlgorithmException, CertificateException {
-    validateRequiredField(path, "path");
-    validateRequiredField(password, "password");
+    final String keystorePath = requireConfigured(path, "path");
+    final String keystorePassword = requireConfigured(password, "password");
     final KeyStore keyStore = KeyStore.getInstance("PKCS12");
-    try (final FileInputStream fis = new FileInputStream(getPath())) {
-      keyStore.load(fis, getPassword().toCharArray());
+    try (final FileInputStream fis = new FileInputStream(keystorePath)) {
+      keyStore.load(fis, keystorePassword.toCharArray());
     }
     return keyStore;
   }
 
-  private static void validateRequiredField(final String value, final String fieldName) {
+  private static String requireConfigured(final @Nullable String value, final String fieldName) {
     if (value == null || value.isBlank()) {
       throw new IllegalStateException("Keystore " + fieldName + " must be configured");
     }
+    return value;
   }
 
   public static Builder builder() {
@@ -76,10 +78,10 @@ public class KeystoreConfiguration {
 
   public static class Builder {
 
-    private String path;
-    private String password;
-    private String keyAlias;
-    private String keyPassword;
+    private @Nullable String path;
+    private @Nullable String password;
+    private @Nullable String keyAlias;
+    private @Nullable String keyPassword;
 
     public Builder path(final String path) {
       this.path = path;

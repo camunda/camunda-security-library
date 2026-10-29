@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.oidc;
 
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
@@ -70,7 +71,7 @@ public final class FailureDescription {
    * {@link OAuth2AuthorizationException} is what a failed token exchange throws, and {@link
    * OAuth2AuthenticationException} is what a custom client manager or a login flow may throw.
    */
-  private static String errorCodeOf(final Throwable throwable) {
+  private static @Nullable String errorCodeOf(final Throwable throwable) {
     final OAuth2Error error;
     if (throwable instanceof final OAuth2AuthorizationException authorization) {
       error = authorization.getError();

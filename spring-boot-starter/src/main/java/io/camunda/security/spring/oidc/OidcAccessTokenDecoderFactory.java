@@ -22,8 +22,10 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.helpers.NOPLogger;
@@ -199,7 +201,7 @@ public class OidcAccessTokenDecoderFactory {
     validateProvidersHaveIssuer(providers);
     if (providers.size() == 1) {
       final var registrationId = providers.keySet().iterator().next();
-      final var config = providers.get(registrationId);
+      final var config = Objects.requireNonNull(providers.get(registrationId));
       final var registration =
           requireRegistration(registrationId, resolveByRegistrationId.apply(registrationId));
       return createAccessTokenDecoder(
@@ -290,7 +292,8 @@ public class OidcAccessTokenDecoderFactory {
    * @throws IllegalArgumentException if the registration is missing a JWK Set URI
    */
   public JwtDecoder createAccessTokenDecoder(
-      final ClientRegistration clientRegistration, final List<String> additionalJwkSetUris) {
+      final ClientRegistration clientRegistration,
+      final @Nullable List<String> additionalJwkSetUris) {
     return createAccessTokenDecoder(
         clientRegistration, additionalJwkSetUris, tokenValidatorFactory);
   }
@@ -308,7 +311,7 @@ public class OidcAccessTokenDecoderFactory {
    */
   public JwtDecoder createAccessTokenDecoder(
       final ClientRegistration clientRegistration,
-      final List<String> additionalJwkSetUris,
+      final @Nullable List<String> additionalJwkSetUris,
       final TokenValidatorFactory validatorFactory) {
     LOG.debug("Creating JwtDecoder for OIDC Provider {}", clientRegistration.getRegistrationId());
     LOG.debug("Additional JWK Set URIs: {}", additionalJwkSetUris);
@@ -409,7 +412,7 @@ public class OidcAccessTokenDecoderFactory {
         throw ex;
       } catch (final JwtException ex) {
         if (ex.getCause() instanceof BadJwtKeySourceException) {
-          throw new BadJwtException(ex.getMessage(), ex.getCause());
+          throw new BadJwtException(Objects.toString(ex.getMessage(), ""), ex.getCause());
         }
         throw ex;
       }
@@ -517,7 +520,8 @@ public class OidcAccessTokenDecoderFactory {
    * @return a configured JWT processor
    */
   protected ConfigurableJWTProcessor<SecurityContext> createJwtProcessor(
-      final ClientRegistration clientRegistration, final List<String> additionalJwkSetUris) {
+      final ClientRegistration clientRegistration,
+      final @Nullable List<String> additionalJwkSetUris) {
     final var jwkSetUri = getJWKSetUri(clientRegistration);
     final var jwsKeySelector =
         jwsKeySelectorFactory.createJWSKeySelector(jwkSetUri, additionalJwkSetUris);
@@ -621,7 +625,8 @@ public class OidcAccessTokenDecoderFactory {
     IssuerOwnership.registrationIdByIssuer(providers, LOG, "the additional JWK Set URIs")
         .forEach(
             (issuerUri, registrationId) -> {
-              final var additionalUris = providers.get(registrationId).getAdditionalJwkSetUris();
+              final var additionalUris =
+                  Objects.requireNonNull(providers.get(registrationId)).getAdditionalJwkSetUris();
               if (additionalUris != null
                   && additionalUris.stream().anyMatch(StringUtils::hasText)) {
                 urisByIssuer.put(issuerUri, additionalUris);
@@ -631,7 +636,7 @@ public class OidcAccessTokenDecoderFactory {
   }
 
   private static ClientRegistration requireRegistration(
-      final String registrationId, final ClientRegistration registration) {
+      final String registrationId, final @Nullable ClientRegistration registration) {
     if (registration == null) {
       throw new IllegalStateException(
           "No client registration for the configured OIDC provider '%s'."

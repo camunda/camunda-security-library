@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Represents the authentication context for a user or client in Camunda, including (where
@@ -37,8 +38,8 @@ import java.util.function.Supplier;
  * list; the public accessor signature is unchanged in both cases.
  */
 public record CamundaAuthentication(
-    String authenticatedUsername,
-    String authenticatedClientId,
+    @Nullable String authenticatedUsername,
+    @Nullable String authenticatedClientId,
     boolean anonymousUser,
     List<String> authenticatedGroupIds,
     List<String> authenticatedRoleIds,
@@ -87,7 +88,7 @@ public record CamundaAuthentication(
     return "unknown";
   }
 
-  private static <T> List<T> listOrEmpty(final List<T> values) {
+  private static <T> List<T> listOrEmpty(final @Nullable List<T> values) {
     if (values == null) {
       return List.of();
     }
@@ -98,13 +99,13 @@ public record CamundaAuthentication(
   }
 
   private static Map<String, Object> immutableClaimsWithoutNullValues(
-      final Map<String, Object> claims) {
+      final @Nullable Map<String, @Nullable Object> claims) {
     if (claims == null) {
       return Map.of();
     }
     // Claims originate from external IdPs, which may emit JSON null claim values. All consumers
     // treat a null-valued claim as absent, so drop such entries — Map.copyOf rejects null values.
-    final Map<String, Object> withoutNullValues = new LinkedHashMap<>(claims);
+    final Map<String, @Nullable Object> withoutNullValues = new LinkedHashMap<>(claims);
     withoutNullValues.values().removeIf(Objects::isNull);
     return Map.copyOf(withoutNullValues);
   }
@@ -138,18 +139,18 @@ public record CamundaAuthentication(
 
   public static final class Builder {
 
-    private String username;
-    private String clientId;
+    private @Nullable String username;
+    private @Nullable String clientId;
     private boolean anonymous;
     private final List<String> groupIds = new ArrayList<>();
     private final List<String> roleIds = new ArrayList<>();
     private final List<String> tenants = new ArrayList<>();
     private final List<String> mappingRules = new ArrayList<>();
-    private Supplier<List<String>> groupIdsSupplier;
-    private Supplier<List<String>> roleIdsSupplier;
-    private Supplier<List<String>> tenantsSupplier;
-    private Supplier<List<String>> mappingRulesSupplier;
-    private Map<String, Object> claims;
+    private @Nullable Supplier<List<String>> groupIdsSupplier;
+    private @Nullable Supplier<List<String>> roleIdsSupplier;
+    private @Nullable Supplier<List<String>> tenantsSupplier;
+    private @Nullable Supplier<List<String>> mappingRulesSupplier;
+    private @Nullable Map<String, Object> claims;
 
     public Builder user(final String value) {
       username = value;
@@ -170,7 +171,7 @@ public record CamundaAuthentication(
       return groupIds(Collections.singletonList(value));
     }
 
-    public Builder groupIds(final List<String> values) {
+    public Builder groupIds(final @Nullable List<String> values) {
       if (values != null) {
         groupIds.addAll(values);
       }
@@ -186,7 +187,7 @@ public record CamundaAuthentication(
       return roleIds(Collections.singletonList(value));
     }
 
-    public Builder roleIds(final List<String> values) {
+    public Builder roleIds(final @Nullable List<String> values) {
       if (values != null) {
         roleIds.addAll(values);
       }
@@ -202,7 +203,7 @@ public record CamundaAuthentication(
       return tenants(Collections.singletonList(tenant));
     }
 
-    public Builder tenants(final List<String> values) {
+    public Builder tenants(final @Nullable List<String> values) {
       if (values != null) {
         tenants.addAll(values);
       }
@@ -218,7 +219,7 @@ public record CamundaAuthentication(
       return mappingRules(Collections.singletonList(mappingRule));
     }
 
-    public Builder mappingRules(final List<String> values) {
+    public Builder mappingRules(final @Nullable List<String> values) {
       if (values != null) {
         mappingRules.addAll(values);
       }
@@ -231,7 +232,7 @@ public record CamundaAuthentication(
       return this;
     }
 
-    public Builder claims(final Map<String, Object> value) {
+    public Builder claims(final @Nullable Map<String, Object> value) {
       // Snapshot only — must tolerate null values; the canonical constructor normalizes.
       claims = value == null ? null : new LinkedHashMap<>(value);
       return this;
@@ -246,11 +247,13 @@ public record CamundaAuthentication(
           resolveMembershipField("roleIds", roleIds, roleIdsSupplier),
           resolveMembershipField("tenants", tenants, tenantsSupplier),
           resolveMembershipField("mappingRules", mappingRules, mappingRulesSupplier),
-          claims);
+          claims == null ? Map.of() : claims);
     }
 
     private static List<String> resolveMembershipField(
-        final String fieldName, final List<String> eager, final Supplier<List<String>> supplier) {
+        final String fieldName,
+        final List<String> eager,
+        final @Nullable Supplier<List<String>> supplier) {
       if (supplier != null) {
         if (!eager.isEmpty()) {
           throw new IllegalStateException(

@@ -8,6 +8,7 @@
 package io.camunda.security.api.model;
 
 import java.util.NoSuchElementException;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A discriminated union of a left value (typically failure) and a right value (typically success).
@@ -24,7 +25,7 @@ public sealed interface Either<L, R> permits Either.Left, Either.Right {
     return new Left<>(value);
   }
 
-  static <L, R> Either<L, R> right(final R value) {
+  static <L, R> Either<L, R> right(final @Nullable R value) {
     return new Right<>(value);
   }
 
@@ -40,7 +41,7 @@ public sealed interface Either<L, R> permits Either.Left, Either.Right {
   /**
    * Returns the right value, or throws {@link NoSuchElementException} if this is a {@link Left}.
    */
-  R rightValue();
+  @Nullable R rightValue();
 
   record Left<L, R>(L value) implements Either<L, R> {
     @Override
@@ -59,12 +60,12 @@ public sealed interface Either<L, R> permits Either.Left, Either.Right {
     }
 
     @Override
-    public R rightValue() {
+    public @Nullable R rightValue() {
       throw new NoSuchElementException("Cannot get right value from a Left Either");
     }
   }
 
-  record Right<L, R>(R value) implements Either<L, R> {
+  record Right<L, R>(@Nullable R value) implements Either<L, R> {
     @Override
     public boolean isLeft() {
       return false;
@@ -81,7 +82,7 @@ public sealed interface Either<L, R> permits Either.Left, Either.Right {
     }
 
     @Override
-    public R rightValue() {
+    public @Nullable R rightValue() {
       return value;
     }
   }

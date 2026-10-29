@@ -7,6 +7,8 @@
  */
 package io.camunda.security.core.port.out;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Outbound port the host application implements to resolve a user by username for HTTP Basic
  * authentication credential verification. The library owns the Spring Security plumbing (the {@code
@@ -30,7 +32,7 @@ public interface BasicAuthUserDetailsPort {
    * @param username the username to resolve; never blank when called by the library
    * @return the resolved user, or {@code null} when no such user exists
    */
-  CamundaUserDetails loadUser(String username);
+  @Nullable CamundaUserDetails loadUser(String username);
 
   /**
    * Framework-free user record: the username and the stored password hash the library uses to

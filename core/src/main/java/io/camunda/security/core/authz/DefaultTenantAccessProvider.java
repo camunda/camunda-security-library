@@ -9,6 +9,7 @@ package io.camunda.security.core.authz;
 
 import io.camunda.security.api.model.CamundaAuthentication;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The canonical {@link TenantAccessProvider}. It derives the verdict purely from the tenant ids
@@ -46,7 +47,7 @@ public final class DefaultTenantAccessProvider implements TenantAccessProvider {
 
   @Override
   public TenantAccess hasTenantAccessByTenantId(
-      final CamundaAuthentication authentication, final String tenantId) {
+      final CamundaAuthentication authentication, final @Nullable String tenantId) {
     if (tenantId == null) {
       return TenantAccess.denied(null);
     }

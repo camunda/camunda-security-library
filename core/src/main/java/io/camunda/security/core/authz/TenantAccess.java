@@ -9,6 +9,7 @@ package io.camunda.security.core.authz;
 
 import java.util.List;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * The result of evaluating whether a principal has access to a specific tenant.
@@ -20,7 +21,7 @@ import java.util.Objects;
  * <p>Produced by {@link TenantAccessProvider} implementations and consumed by search backends to
  * add tenant-scoping filters to queries.
  */
-public record TenantAccess(boolean allowed, boolean wildcard, List<String> tenantIds) {
+public record TenantAccess(boolean allowed, boolean wildcard, @Nullable List<String> tenantIds) {
 
   /** Returns {@code true} when the principal does not have access to the tenant. */
   public boolean denied() {
@@ -34,7 +35,7 @@ public record TenantAccess(boolean allowed, boolean wildcard, List<String> tenan
    * authorize (fail-closed on malformed input), even if {@code tenantId} appears among the listed
    * IDs.
    */
-  public boolean isAuthorizedForTenantId(final String tenantId) {
+  public boolean isAuthorizedForTenantId(final @Nullable String tenantId) {
     if (tenantId == null) {
       return false;
     }
@@ -48,7 +49,8 @@ public record TenantAccess(boolean allowed, boolean wildcard, List<String> tenan
    * allowed or wildcard grant; a {@code null} request, a request containing a {@code null} element,
    * and a {@link #denied()} verdict never authorize (fail-closed on malformed input).
    */
-  public boolean isAuthorizedForTenantIds(final List<String> requestedTenantIds) {
+  public boolean isAuthorizedForTenantIds(
+      final @Nullable List<@Nullable String> requestedTenantIds) {
     if (requestedTenantIds == null || requestedTenantIds.stream().anyMatch(Objects::isNull)) {
       return false;
     }
@@ -60,19 +62,19 @@ public record TenantAccess(boolean allowed, boolean wildcard, List<String> tenan
    * Creates an access result indicating the principal is permitted to access the given tenants
    * (non-wildcard grant).
    */
-  public static TenantAccess allowed(final List<String> tenantIds) {
+  public static TenantAccess allowed(final @Nullable List<String> tenantIds) {
     return new TenantAccess(true, false, tenantIds);
   }
 
   /** Creates an access result indicating the principal is not permitted to access the tenants. */
-  public static TenantAccess denied(final List<String> tenantIds) {
+  public static TenantAccess denied(final @Nullable List<String> tenantIds) {
     return new TenantAccess(false, false, tenantIds);
   }
 
   /**
    * Creates an access result indicating the principal holds a wildcard grant covering all tenants.
    */
-  public static TenantAccess wildcard(final List<String> tenantIds) {
+  public static TenantAccess wildcard(final @Nullable List<String> tenantIds) {
     return new TenantAccess(true, true, tenantIds);
   }
 }

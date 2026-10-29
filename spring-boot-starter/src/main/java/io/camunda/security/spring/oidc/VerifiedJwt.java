@@ -8,7 +8,9 @@
 package io.camunda.security.spring.oidc;
 
 import io.camunda.security.api.model.config.oidc.OidcPrincipalClaims;
+import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 /**
@@ -28,20 +30,20 @@ public final class VerifiedJwt extends Jwt {
 
   private static final long serialVersionUID = 1L;
 
-  private final String usernameClaim;
-  private final String clientIdClaim;
+  private final @Nullable String usernameClaim;
+  private final @Nullable String clientIdClaim;
   private final boolean preferUsernameClaim;
   private final boolean hasPrincipalClaims;
   private final boolean decidesUserInfo;
   private final boolean userInfoEnabled;
-  private final String userInfoUri;
+  private final @Nullable String userInfoUri;
 
   /**
    * @param jwt the verified token
    * @param principalClaims the principal claims of the provider that verified it, or {@code null}
    *     when that provider uses the default claim converter
    */
-  VerifiedJwt(final Jwt jwt, final OidcPrincipalClaims principalClaims) {
+  VerifiedJwt(final Jwt jwt, final @Nullable OidcPrincipalClaims principalClaims) {
     this(jwt, principalClaims, false, false, null);
   }
 
@@ -55,18 +57,18 @@ public final class VerifiedJwt extends Jwt {
    */
   VerifiedJwt(
       final Jwt jwt,
-      final OidcPrincipalClaims principalClaims,
+      final @Nullable OidcPrincipalClaims principalClaims,
       final boolean userInfoEnabled,
-      final String userInfoUri) {
+      final @Nullable String userInfoUri) {
     this(jwt, principalClaims, true, userInfoEnabled, userInfoUri);
   }
 
   private VerifiedJwt(
       final Jwt jwt,
-      final OidcPrincipalClaims principalClaims,
+      final @Nullable OidcPrincipalClaims principalClaims,
       final boolean decidesUserInfo,
       final boolean userInfoEnabled,
-      final String userInfoUri) {
+      final @Nullable String userInfoUri) {
     super(
         jwt.getTokenValue(),
         jwt.getIssuedAt(),
@@ -74,9 +76,9 @@ public final class VerifiedJwt extends Jwt {
         jwt.getHeaders(),
         jwt.getClaims());
     hasPrincipalClaims = principalClaims != null;
-    usernameClaim = hasPrincipalClaims ? principalClaims.usernameClaim() : null;
-    clientIdClaim = hasPrincipalClaims ? principalClaims.clientIdClaim() : null;
-    preferUsernameClaim = hasPrincipalClaims && principalClaims.preferUsernameClaim();
+    usernameClaim = principalClaims != null ? principalClaims.usernameClaim() : null;
+    clientIdClaim = principalClaims != null ? principalClaims.clientIdClaim() : null;
+    preferUsernameClaim = principalClaims != null && principalClaims.preferUsernameClaim();
     this.decidesUserInfo = decidesUserInfo;
     this.userInfoEnabled = userInfoEnabled;
     this.userInfoUri = userInfoUri;
@@ -89,7 +91,9 @@ public final class VerifiedJwt extends Jwt {
    */
   public Optional<OidcPrincipalClaims> principalClaims() {
     return hasPrincipalClaims
-        ? Optional.of(new OidcPrincipalClaims(usernameClaim, clientIdClaim, preferUsernameClaim))
+        ? Optional.of(
+            new OidcPrincipalClaims(
+                Objects.requireNonNull(usernameClaim), clientIdClaim, preferUsernameClaim))
         : Optional.empty();
   }
 
@@ -111,7 +115,7 @@ public final class VerifiedJwt extends Jwt {
    * The UserInfo endpoint of the registration that verified the token, or {@code null} when it
    * exposes none; see {@link #decidesUserInfo()}.
    */
-  public String userInfoUri() {
+  public @Nullable String userInfoUri() {
     return userInfoUri;
   }
 }

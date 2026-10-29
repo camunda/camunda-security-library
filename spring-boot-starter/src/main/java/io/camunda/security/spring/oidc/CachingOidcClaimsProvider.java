@@ -24,6 +24,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AuthenticationServiceException;
@@ -203,7 +204,7 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
    * @throws AuthenticationServiceException if the resolution fails, or the provider of the issuer
    *     exposes no endpoint. Both are server errors, because the token is not the reason.
    */
-  private static String userInfoUriOf(
+  private static @Nullable String userInfoUriOf(
       final String issuer,
       final IssuerRegistrations registrations,
       final Set<String> ownersWithUserInfo) {
@@ -284,7 +285,7 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
     if (!canAugment(jwtClaims, tokenValue)) {
       return jwtClaims;
     }
-    final String issuer = (String) jwtClaims.get("iss");
+    final String issuer = Objects.requireNonNull((String) jwtClaims.get("iss"));
 
     final String userInfoUri = userInfoUriByIssuer.apply(issuer);
 
@@ -306,11 +307,11 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
       final Map<String, Object> jwtClaims,
       final String tokenValue,
       final boolean userInfoEnabled,
-      final String userInfoUri) {
+      final @Nullable String userInfoUri) {
     if (!canAugment(jwtClaims, tokenValue)) {
       return jwtClaims;
     }
-    final String issuer = (String) jwtClaims.get("iss");
+    final String issuer = Objects.requireNonNull((String) jwtClaims.get("iss"));
     if (!userInfoEnabled) {
       LOG.debug(
           "The provider that verified the token of issuer '{}' does not use UserInfo; returning"
@@ -446,7 +447,7 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
    * when neither {@code jti} nor the {@code sub+iat+exp} fallback tuple are usable; callers should
    * bypass the cache for that request.
    */
-  private static String cacheKey(final Map<String, Object> jwtClaims) {
+  private static @Nullable String cacheKey(final Map<String, Object> jwtClaims) {
     final Object iss = jwtClaims.get("iss");
     if (!(iss instanceof final String issuer) || issuer.isBlank()) {
       return null;
@@ -470,7 +471,7 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
     return null;
   }
 
-  private static Long epochSecond(final Object value) {
+  private static @Nullable Long epochSecond(final @Nullable Object value) {
     if (value instanceof final Instant i) {
       return i.getEpochSecond();
     }

@@ -16,6 +16,7 @@ import io.camunda.security.core.port.out.AuthorizedComponentsPort;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
@@ -61,7 +62,7 @@ public class OidcCamundaUserService implements CamundaUserPort {
   }
 
   @Override
-  public CamundaUserDTO getCurrentUser() {
+  public @Nullable CamundaUserDTO getCurrentUser() {
     final var authentication = authenticationProvider.getCamundaAuthentication();
     return Optional.ofNullable(authentication)
         .filter(a -> !a.isAnonymous())
@@ -109,7 +110,7 @@ public class OidcCamundaUserService implements CamundaUserPort {
         true);
   }
 
-  protected StandardClaimAccessor getStandardClaimAccessor() {
+  protected @Nullable StandardClaimAccessor getStandardClaimAccessor() {
     final var authentication = SecurityContextHolder.getContext().getAuthentication();
     final var oidcUser = getOidcUser(authentication);
     if (oidcUser != null) {
@@ -118,7 +119,7 @@ public class OidcCamundaUserService implements CamundaUserPort {
     return getOidcTokenBasedUser(authentication);
   }
 
-  protected OidcUser getOidcUser(final Authentication authentication) {
+  protected @Nullable OidcUser getOidcUser(final @Nullable Authentication authentication) {
     return Optional.ofNullable(authentication)
         .map(Authentication::getPrincipal)
         .filter(OidcUser.class::isInstance)
@@ -126,7 +127,8 @@ public class OidcCamundaUserService implements CamundaUserPort {
         .orElse(null);
   }
 
-  protected StandardClaimAccessor getOidcTokenBasedUser(final Authentication authentication) {
+  protected @Nullable StandardClaimAccessor getOidcTokenBasedUser(
+      final @Nullable Authentication authentication) {
     return Optional.ofNullable(authentication)
         .filter(AbstractOAuth2TokenAuthenticationToken.class::isInstance)
         .map(AbstractOAuth2TokenAuthenticationToken.class::cast)
@@ -135,13 +137,14 @@ public class OidcCamundaUserService implements CamundaUserPort {
         .orElse(null);
   }
 
-  protected String getToken(final Authentication authentication, final OidcUser oidcUser) {
+  protected @Nullable String getToken(
+      final @Nullable Authentication authentication, final OidcUser oidcUser) {
     return Optional.ofNullable(getAccessToken(authentication))
         .orElseGet(() -> getIdToken(oidcUser));
   }
 
-  protected String getAccessToken(final Authentication authentication) {
-    return Optional.of(authentication)
+  protected @Nullable String getAccessToken(final @Nullable Authentication authentication) {
+    return Optional.ofNullable(authentication)
         .filter(OAuth2AuthenticationToken.class::isInstance)
         .map(OAuth2AuthenticationToken.class::cast)
         .map(this::getAuthorizedClient)
@@ -150,14 +153,15 @@ public class OidcCamundaUserService implements CamundaUserPort {
         .orElse(null);
   }
 
-  protected String getIdToken(final OidcUser oidcUser) {
+  protected @Nullable String getIdToken(final OidcUser oidcUser) {
     return Optional.of(oidcUser)
         .map(OidcUser::getIdToken)
         .map(OidcIdToken::getTokenValue)
         .orElse(null);
   }
 
-  protected OAuth2AuthorizedClient getAuthorizedClient(final OAuth2AuthenticationToken token) {
+  protected @Nullable OAuth2AuthorizedClient getAuthorizedClient(
+      final OAuth2AuthenticationToken token) {
     return authorizedClientRepository.loadAuthorizedClient(
         token.getAuthorizedClientRegistrationId(), token, request);
   }

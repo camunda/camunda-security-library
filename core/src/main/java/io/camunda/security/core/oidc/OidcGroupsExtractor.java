@@ -16,6 +16,7 @@ import io.camunda.security.api.model.config.oidc.validator.OidcGroupsClaimValida
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 
 /** Extracts group identifiers from OIDC claims using a configured claim path. */
 public final class OidcGroupsExtractor {
@@ -26,9 +27,9 @@ public final class OidcGroupsExtractor {
   private static final Configuration JSON_PATH_CONFIGURATION =
       Configuration.builder().options(Option.DEFAULT_PATH_LEAF_TO_NULL).build();
 
-  private final String groupsClaim;
+  private final @Nullable String groupsClaim;
 
-  public OidcGroupsExtractor(final String groupsClaim) {
+  public OidcGroupsExtractor(final @Nullable String groupsClaim) {
     this.groupsClaim = OidcGroupsClaimValidator.sanitizeClaimPath(groupsClaim);
 
     if (this.groupsClaim != null) {
@@ -40,7 +41,7 @@ public final class OidcGroupsExtractor {
     }
   }
 
-  public List<String> extract(final Map<String, Object> claims) {
+  public @Nullable List<String> extract(final Map<String, Object> claims) {
     if (groupsClaim == null) {
       return null;
     }
@@ -78,7 +79,7 @@ public final class OidcGroupsExtractor {
     }
   }
 
-  public String getGroupsClaim() {
+  public @Nullable String getGroupsClaim() {
     return groupsClaim;
   }
 }

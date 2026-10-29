@@ -8,6 +8,7 @@
 package io.camunda.security.api.model.config;
 
 import java.util.Arrays;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Authentication method selected by the host via {@code camunda.security.authentication.method}.
@@ -30,7 +31,7 @@ public enum AuthenticationMethod {
    * @throws IllegalArgumentException if {@code value} is non-null but does not match any known
    *     method
    */
-  public static AuthenticationMethod parse(final String value) {
+  public static @Nullable AuthenticationMethod parse(final @Nullable String value) {
     if (value == null) {
       return null;
     }

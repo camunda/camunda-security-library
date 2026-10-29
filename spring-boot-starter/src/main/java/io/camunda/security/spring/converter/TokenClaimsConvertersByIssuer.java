@@ -11,8 +11,8 @@ import io.camunda.security.api.model.config.oidc.OidcPrincipalClaims;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.spring.oidc.VerifiedJwt;
 import java.util.Map;
-import java.util.Objects;
 import java.util.function.Function;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimNames;
 
@@ -42,7 +42,7 @@ import org.springframework.security.oauth2.jwt.JwtClaimNames;
  */
 public record TokenClaimsConvertersByIssuer(
     Map<String, LazyTokenClaimsConverter> byIssuer,
-    Function<OidcPrincipalClaims, LazyTokenClaimsConverter> byPrincipalClaims) {
+    @Nullable Function<OidcPrincipalClaims, LazyTokenClaimsConverter> byPrincipalClaims) {
 
   public TokenClaimsConvertersByIssuer {
     byIssuer = byIssuer != null ? Map.copyOf(byIssuer) : Map.of();
@@ -63,8 +63,8 @@ public record TokenClaimsConvertersByIssuer(
     if (byPrincipalClaims != null && jwt instanceof final VerifiedJwt verified) {
       return verified.principalClaims().map(byPrincipalClaims).orElse(defaultConverter);
     }
-    return getOrDefault(
-        Objects.toString(jwt.getClaims().get(JwtClaimNames.ISS), null), defaultConverter);
+    final var issuer = jwt.getClaims().get(JwtClaimNames.ISS);
+    return getOrDefault(issuer == null ? null : issuer.toString(), defaultConverter);
   }
 
   /**
@@ -72,7 +72,7 @@ public record TokenClaimsConvertersByIssuer(
    * @param defaultConverter returned when {@code issuer} is {@code null} or has no entry here
    */
   public LazyTokenClaimsConverter getOrDefault(
-      final String issuer, final LazyTokenClaimsConverter defaultConverter) {
+      final @Nullable String issuer, final LazyTokenClaimsConverter defaultConverter) {
     return issuer == null ? defaultConverter : byIssuer.getOrDefault(issuer, defaultConverter);
   }
 }

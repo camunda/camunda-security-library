@@ -13,6 +13,7 @@ import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Default implementation of {@link OidcProviderConfigurationPort}. Merges the flat {@code
@@ -41,7 +42,8 @@ public class OidcAuthenticationConfigurationRepository implements OidcProviderCo
   }
 
   @Override
-  public OidcConfiguration getOidcAuthenticationConfigurationById(final String registrationId) {
+  public @Nullable OidcConfiguration getOidcAuthenticationConfigurationById(
+      final String registrationId) {
     return providers.get(registrationId);
   }
 

@@ -11,6 +11,7 @@ import java.net.URI;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * What the failed-login page tells the user, as supplied by an {@link OidcLoginFailurePort}. All
@@ -28,7 +29,12 @@ import java.util.Optional;
  *     {@link #DEFAULT_RETRY_TEXT}
  */
 public record OidcLoginFailureNotice(
-    int status, String title, String message, Link link, Locale language, String retryText) {
+    int status,
+    String title,
+    String message,
+    @Nullable Link link,
+    Locale language,
+    String retryText) {
 
   public static final Locale DEFAULT_LANGUAGE = Locale.ENGLISH;
   public static final String DEFAULT_RETRY_TEXT = "Try again";
@@ -54,8 +60,8 @@ public record OidcLoginFailureNotice(
 
   /** An English notice with an optional link. */
   public OidcLoginFailureNotice(
-      final int status, final String title, final String message, final Link link) {
-    this(status, title, message, link, null, null);
+      final int status, final String title, final String message, final @Nullable Link link) {
+    this(status, title, message, link, DEFAULT_LANGUAGE, DEFAULT_RETRY_TEXT);
   }
 
   /**

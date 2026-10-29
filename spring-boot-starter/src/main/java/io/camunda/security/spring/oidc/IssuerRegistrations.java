@@ -15,6 +15,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -127,7 +128,7 @@ public final class IssuerRegistrations {
    * @throws RuntimeException what the resolution throws, such as the {@link
    *     IllegalArgumentException} that OIDC discovery of an unreachable issuer gives
    */
-  public ClientRegistration forIssuer(final String issuer) {
+  public @Nullable ClientRegistration forIssuer(final String issuer) {
     final var resolutionKey = resolutionKeyOf(issuer);
     if (resolutionKey == null) {
       return null;
@@ -155,7 +156,7 @@ public final class IssuerRegistrations {
    * that reads more of the configuration of the owner asks here, and therefore skips the
    * configuration of an ignored duplicate.
    */
-  String resolutionKeyOf(final String issuer) {
+  @Nullable String resolutionKeyOf(final String issuer) {
     return toleratesTrailingSlash
         ? IssuerUris.lookup(resolutionKeyByIssuer, issuer)
         : resolutionKeyByIssuer.get(issuer);

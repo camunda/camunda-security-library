@@ -12,6 +12,8 @@ import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.oidc.OidcPrincipalLoader;
 import java.util.List;
+import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
@@ -52,7 +54,7 @@ public final class JwtGrantedAuthoritiesAuthenticationConverter
    *     not a string fails the token rather than silently falling back to {@code sub} — matching
    *     {@code LazyTokenClaimsConverter}'s behaviour for the same misconfiguration.
    */
-  public JwtGrantedAuthoritiesAuthenticationConverter(final String usernameClaim) {
+  public JwtGrantedAuthoritiesAuthenticationConverter(final @Nullable String usernameClaim) {
     this.usernameClaim =
         usernameClaim == null || usernameClaim.isBlank()
             ? OidcConfiguration.DEFAULT_USERNAME_CLAIM
@@ -61,13 +63,13 @@ public final class JwtGrantedAuthoritiesAuthenticationConverter
   }
 
   @Override
-  public boolean supports(final Authentication authentication) {
+  public boolean supports(final @Nullable Authentication authentication) {
     return authentication instanceof JwtAuthenticationToken;
   }
 
   @Override
-  public CamundaAuthentication convert(final Authentication authentication) {
-    final var token = (JwtAuthenticationToken) authentication;
+  public CamundaAuthentication convert(final @Nullable Authentication authentication) {
+    final var token = (JwtAuthenticationToken) Objects.requireNonNull(authentication);
     final var jwt = token.getToken();
     final String principal;
     try {

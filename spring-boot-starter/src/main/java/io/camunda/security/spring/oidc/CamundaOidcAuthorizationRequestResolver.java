@@ -18,6 +18,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
@@ -64,7 +65,7 @@ public final class CamundaOidcAuthorizationRequestResolver
   private final Map<String, OAuth2AuthorizationRequestResolver> resolvers;
   private final String authorizationRequestBaseUri;
   private final RequestMatcher authorizationRequestMatcher;
-  private final Long maxAgeSeconds;
+  private final @Nullable Long maxAgeSeconds;
 
   /** Uses the default unprefixed authorization base URI {@code /oauth2/authorization}. */
   public CamundaOidcAuthorizationRequestResolver(
@@ -93,7 +94,7 @@ public final class CamundaOidcAuthorizationRequestResolver
       final ClientRegistrationRepository clientRegistrationRepository,
       final Map<String, OidcConfiguration> sourcesByRegistrationId,
       final String authorizationRequestBaseUri,
-      final Duration maxAge) {
+      final @Nullable Duration maxAge) {
     Objects.requireNonNull(
         clientRegistrationRepository, "clientRegistrationRepository must not be null");
     Objects.requireNonNull(sourcesByRegistrationId, "sourcesByRegistrationId must not be null");
@@ -123,19 +124,19 @@ public final class CamundaOidcAuthorizationRequestResolver
   }
 
   @Override
-  public OAuth2AuthorizationRequest resolve(final HttpServletRequest request) {
+  public @Nullable OAuth2AuthorizationRequest resolve(final HttpServletRequest request) {
     final var registrationId = resolveRegistrationId(request);
     return resolveInternal(registrationId, r -> r.resolve(request));
   }
 
   @Override
-  public OAuth2AuthorizationRequest resolve(
+  public @Nullable OAuth2AuthorizationRequest resolve(
       final HttpServletRequest request, final String registrationId) {
     return resolveInternal(registrationId, r -> r.resolve(request, registrationId));
   }
 
-  private OAuth2AuthorizationRequest resolveInternal(
-      final String registrationId,
+  private @Nullable OAuth2AuthorizationRequest resolveInternal(
+      final @Nullable String registrationId,
       final Function<OAuth2AuthorizationRequestResolver, OAuth2AuthorizationRequest>
           requestSupplier) {
     if (registrationId == null || registrationId.isBlank()) {
@@ -178,7 +179,7 @@ public final class CamundaOidcAuthorizationRequestResolver
     return resolver;
   }
 
-  private Consumer<Builder> createCustomizer(final OidcConfiguration source) {
+  private Consumer<Builder> createCustomizer(final @Nullable OidcConfiguration source) {
     return builder -> {
       final AuthorizeRequestConfiguration authorize =
           source != null ? source.getAuthorizeRequest() : null;
@@ -199,7 +200,7 @@ public final class CamundaOidcAuthorizationRequestResolver
     };
   }
 
-  private String resolveRegistrationId(final HttpServletRequest request) {
+  private @Nullable String resolveRegistrationId(final HttpServletRequest request) {
     if (!authorizationRequestMatcher.matches(request)) {
       return null;
     }

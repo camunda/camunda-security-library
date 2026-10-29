@@ -8,6 +8,7 @@
 package io.camunda.security.api.model.authz;
 
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 public class AuthorizationScope {
 
@@ -15,20 +16,21 @@ public class AuthorizationScope {
   public static final AuthorizationScope WILDCARD =
       new AuthorizationScope(AuthorizationResourceMatcher.ANY, WILDCARD_CHAR);
 
-  private AuthorizationResourceMatcher matcher;
-  private String resourceId;
-  private String resourcePropertyName;
+  private @Nullable AuthorizationResourceMatcher matcher;
+  private @Nullable String resourceId;
+  private @Nullable String resourcePropertyName;
 
   public AuthorizationScope() {}
 
-  public AuthorizationScope(final AuthorizationResourceMatcher matcher, final String resourceId) {
+  public AuthorizationScope(
+      final AuthorizationResourceMatcher matcher, final @Nullable String resourceId) {
     this(matcher, resourceId, "");
   }
 
   public AuthorizationScope(
       final AuthorizationResourceMatcher matcher,
-      final String resourceId,
-      final String resourcePropertyName) {
+      final @Nullable String resourceId,
+      final @Nullable String resourcePropertyName) {
     this.matcher = matcher;
 
     // Since this class is used for comparisons, normalize null to empty string for these fields
@@ -39,29 +41,29 @@ public class AuthorizationScope {
     this.resourcePropertyName = resourcePropertyName != null ? resourcePropertyName : "";
   }
 
-  public AuthorizationResourceMatcher getMatcher() {
+  public @Nullable AuthorizationResourceMatcher getMatcher() {
     return matcher;
   }
 
-  public AuthorizationScope setMatcher(final AuthorizationResourceMatcher matcher) {
+  public AuthorizationScope setMatcher(final @Nullable AuthorizationResourceMatcher matcher) {
     this.matcher = matcher;
     return this;
   }
 
-  public String getResourceId() {
+  public @Nullable String getResourceId() {
     return resourceId;
   }
 
-  public AuthorizationScope setResourceId(final String resourceId) {
+  public AuthorizationScope setResourceId(final @Nullable String resourceId) {
     this.resourceId = resourceId;
     return this;
   }
 
-  public String getResourcePropertyName() {
+  public @Nullable String getResourcePropertyName() {
     return resourcePropertyName;
   }
 
-  public AuthorizationScope setResourcePropertyName(final String resourcePropertyName) {
+  public AuthorizationScope setResourcePropertyName(final @Nullable String resourcePropertyName) {
     this.resourcePropertyName = resourcePropertyName;
     return this;
   }
@@ -96,7 +98,8 @@ public class AuthorizationScope {
         + '}';
   }
 
-  public static AuthorizationScope id(final String resourceId) throws IllegalArgumentException {
+  public static AuthorizationScope id(final @Nullable String resourceId)
+      throws IllegalArgumentException {
     if (WILDCARD_CHAR.equals(resourceId)) {
       final String errorMsg =
           String.format(
@@ -107,7 +110,7 @@ public class AuthorizationScope {
     return new AuthorizationScope(AuthorizationResourceMatcher.ID, resourceId);
   }
 
-  public static AuthorizationScope property(final String resourcePropertyName)
+  public static AuthorizationScope property(final @Nullable String resourcePropertyName)
       throws IllegalArgumentException {
     if (resourcePropertyName == null || resourcePropertyName.isEmpty()) {
       throw new IllegalArgumentException("Resource property name cannot be null or empty");
@@ -115,7 +118,7 @@ public class AuthorizationScope {
     return new AuthorizationScope(AuthorizationResourceMatcher.PROPERTY, "", resourcePropertyName);
   }
 
-  public static AuthorizationScope of(final String resourceId) {
+  public static AuthorizationScope of(final @Nullable String resourceId) {
     if (WILDCARD_CHAR.equals(resourceId)) {
       return WILDCARD;
     }

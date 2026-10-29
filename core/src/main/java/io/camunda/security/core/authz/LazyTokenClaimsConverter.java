@@ -19,6 +19,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,13 +51,13 @@ public final class LazyTokenClaimsConverter implements TokenClaimsAuthentication
   private final OidcPrincipalLoader oidcPrincipalLoader;
   private final boolean preferUsernameClaim;
   private final String usernameClaim;
-  private final String clientIdClaim;
+  private final @Nullable String clientIdClaim;
   private final MembershipPort membershipPort;
   private final MembershipResolutionContextPropagator contextPropagator;
 
   public LazyTokenClaimsConverter(
       final String usernameClaim,
-      final String clientIdClaim,
+      final @Nullable String clientIdClaim,
       final boolean preferUsernameClaim,
       final MembershipPort membershipPort) {
     this(
@@ -69,7 +70,7 @@ public final class LazyTokenClaimsConverter implements TokenClaimsAuthentication
 
   public LazyTokenClaimsConverter(
       final String usernameClaim,
-      final String clientIdClaim,
+      final @Nullable String clientIdClaim,
       final boolean preferUsernameClaim,
       final MembershipPort membershipPort,
       final MembershipResolutionContextPropagator contextPropagator) {
@@ -106,7 +107,7 @@ public final class LazyTokenClaimsConverter implements TokenClaimsAuthentication
     final String principalName;
     final PrincipalType principalType;
     if ((preferUsernameClaim && username != null) || clientId == null) {
-      principalName = username;
+      principalName = Objects.requireNonNull(username);
       principalType = PrincipalType.USER;
     } else {
       principalName = clientId;

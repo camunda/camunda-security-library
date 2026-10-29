@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
@@ -82,7 +83,9 @@ public final class AuthorizationChecker {
         ownerIds -> {
           final var scopes =
               scopeRepository.findAuthorizedScopes(
-                  ownerIds, authorization.resourceType(), authorization.permissionType());
+                  ownerIds,
+                  Objects.requireNonNull(authorization.resourceType()),
+                  Objects.requireNonNull(authorization.permissionType()));
           LOG.debug(
               "Retrieved {} authorization scope(s) for resource type [{}], permission [{}]",
               scopes.size(),
@@ -116,8 +119,8 @@ public final class AuthorizationChecker {
           final var scopes =
               scopeRepository.findAuthorizedPropertyScopes(
                   ownerIds,
-                  authorization.resourceType(),
-                  authorization.permissionType(),
+                  Objects.requireNonNull(authorization.resourceType()),
+                  Objects.requireNonNull(authorization.permissionType()),
                   propertyNames);
           LOG.debug(
               "Retrieved {} property authorization scope(s) for resource type [{}], permission [{}]",
@@ -149,8 +152,8 @@ public final class AuthorizationChecker {
         ownerIds ->
             scopeRepository.hasAuthorizedScope(
                 ownerIds,
-                authorization.resourceType(),
-                authorization.permissionType(),
+                Objects.requireNonNull(authorization.resourceType()),
+                Objects.requireNonNull(authorization.permissionType()),
                 List.of(
                     AuthorizationScope.WILDCARD.getResourceId(),
                     authorizationScope.getResourceId())),

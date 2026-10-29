@@ -10,6 +10,7 @@ package io.camunda.security.spring.converter;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Per-registration {@code additional-jwk-set-uris} lookup for {@link
@@ -52,7 +53,7 @@ public record AdditionalJwkSetUrisByRegistrationId(Map<String, List<String>> byR
    * @return the additional JWK Set URIs of that registration, or {@code null} when it declares
    *     none. {@code null} and an empty list are equivalent to every caller downstream
    */
-  public List<String> get(final String registrationId) {
+  public @Nullable List<String> get(final String registrationId) {
     return registrationId == null ? null : byRegistrationId.get(registrationId);
   }
 }
