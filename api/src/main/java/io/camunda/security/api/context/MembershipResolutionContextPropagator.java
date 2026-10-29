@@ -9,6 +9,7 @@ package io.camunda.security.api.context;
 
 import io.camunda.security.api.model.CamundaAuthentication;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 /**
@@ -40,6 +41,25 @@ public interface MembershipResolutionContextPropagator {
    * afterwards rather than clearing it, so nested calls don't clobber the outer one.
    */
   Supplier<List<String>> decorate(Supplier<List<String>> supplier);
+
+  /**
+   * As {@link #decorate(Supplier)}, for lists of any element type, such as conditional memberships.
+   * It goes through {@link #decorate(Supplier)}, so a host's context binding applies to it without
+   * the host implementing anything new. Like {@code decorate}, it captures the context when called.
+   */
+  default <T> Supplier<List<T>> decorateList(final Supplier<List<T>> supplier) {
+    final var result = new AtomicReference<List<T>>();
+    final Supplier<List<String>> decorated =
+        decorate(
+            () -> {
+              result.set(supplier.get());
+              return List.of();
+            });
+    return () -> {
+      decorated.get();
+      return result.get();
+    };
+  }
 
   /** A propagator that returns each supplier unchanged. */
   static MembershipResolutionContextPropagator identity() {

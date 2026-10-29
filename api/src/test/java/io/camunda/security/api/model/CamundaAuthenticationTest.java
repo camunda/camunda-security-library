@@ -11,6 +11,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatExceptionOfType;
 
+import io.camunda.security.api.model.authz.ConditionalMembership;
+import io.camunda.security.api.model.authz.MembershipCondition;
+import io.camunda.security.api.model.authz.Operand;
+import io.camunda.security.api.model.authz.PrincipalAttribute;
+import io.camunda.security.api.model.authz.ResourceAttribute;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
@@ -19,10 +24,20 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class CamundaAuthenticationTest {
+
+  private static final ConditionalMembership REVIEWER_IN_PAYMENTS_ON_OWN_TASKS =
+      new ConditionalMembership(
+          "reviewer",
+          List.of(
+              new MembershipCondition(
+                  ResourceAttribute.WORKSPACE, new Operand.Values(Set.of("payments"))),
+              new MembershipCondition(
+                  ResourceAttribute.ASSIGNEE, new Operand.Principal(PrincipalAttribute.USERNAME))));
 
   @Test
   void shouldFailToConvertWithUsernameAndClientId() {
@@ -353,5 +368,99 @@ class CamundaAuthenticationTest {
     assertThat(restored.authenticatedRoleIds()).containsExactly("role-1");
     assertThat(restored.authenticatedTenantIds()).isEmpty();
     assertThat(restored.authenticatedMappingRuleIds()).isEmpty();
+  }
+
+  @Test
+  void shouldHaveNoConditionalMembershipsFromTheEightArgumentConstructor() {
+    // when
+    final var authentication =
+        new CamundaAuthentication(
+            "demo-user", null, false, List.of("g1"), List.of("r1"), null, null, Map.of());
+
+    // then
+    assertThat(authentication.conditionalRoleMemberships()).isEmpty();
+    assertThat(authentication.authenticatedRoleIds()).containsExactly("r1");
+  }
+
+  @Test
+  void shouldNotAddConditionalMembershipsToTheRoleIds() {
+    // when
+    final var authentication =
+        CamundaAuthentication.of(
+            b ->
+                b.user("demo-user")
+                    .role("viewer")
+                    .conditionalRoleMemberships(List.of(REVIEWER_IN_PAYMENTS_ON_OWN_TASKS)));
+
+    // then
+    assertThat(authentication.authenticatedRoleIds()).containsExactly("viewer");
+    assertThat(authentication.conditionalRoleMemberships())
+        .containsExactly(REVIEWER_IN_PAYMENTS_ON_OWN_TASKS);
+  }
+
+  @Test
+  void shouldResolveConditionalMembershipsLazilyOnce() {
+    // given
+    final var lookups = new AtomicInteger();
+    final var authentication =
+        CamundaAuthentication.of(
+            b ->
+                b.user("demo-user")
+                    .conditionalRoleMembershipsSupplier(
+                        () -> {
+                          lookups.incrementAndGet();
+                          return List.of(REVIEWER_IN_PAYMENTS_ON_OWN_TASKS);
+                        }));
+    assertThat(lookups.get()).isZero();
+
+    // when
+    authentication.conditionalRoleMemberships().size();
+    authentication.conditionalRoleMemberships().size();
+
+    // then
+    assertThat(authentication.conditionalRoleMemberships())
+        .containsExactly(REVIEWER_IN_PAYMENTS_ON_OWN_TASKS);
+    assertThat(lookups.get()).isEqualTo(1);
+  }
+
+  @Test
+  void shouldRejectEagerAndLazyConditionalMemberships() {
+    assertThatThrownBy(
+            () ->
+                CamundaAuthentication.of(
+                    b ->
+                        b.user("demo-user")
+                            .conditionalRoleMemberships(List.of(REVIEWER_IN_PAYMENTS_ON_OWN_TASKS))
+                            .conditionalRoleMembershipsSupplier(List::of)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("conditionalRoleMemberships");
+  }
+
+  @Test
+  void shouldRoundTripConditionalMembershipsThroughJavaSerialization() throws Exception {
+    // given both operand variants, supplied lazily
+    final var authentication =
+        CamundaAuthentication.of(
+            b ->
+                b.user("demo-user")
+                    .role("viewer")
+                    .conditionalRoleMembershipsSupplier(
+                        () -> List.of(REVIEWER_IN_PAYMENTS_ON_OWN_TASKS)));
+
+    // when
+    final var bytes = new ByteArrayOutputStream();
+    try (var out = new ObjectOutputStream(bytes)) {
+      out.writeObject(authentication);
+    }
+    final CamundaAuthentication restored;
+    try (var in = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+      restored = (CamundaAuthentication) in.readObject();
+    }
+
+    // then
+    assertThat(restored).isEqualTo(authentication);
+    assertThat(restored.authenticatedRoleIds()).containsExactly("viewer");
+    assertThat(restored.conditionalRoleMemberships())
+        .containsExactly(REVIEWER_IN_PAYMENTS_ON_OWN_TASKS);
   }
 }

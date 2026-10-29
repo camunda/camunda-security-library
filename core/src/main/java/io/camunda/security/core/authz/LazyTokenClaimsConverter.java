@@ -138,6 +138,12 @@ public final class LazyTokenClaimsConverter implements TokenClaimsAuthentication
                         base.withMappingRuleIds(lazyMappingRuleIds)
                             .withGroupIds(lazyGroupIds)
                             .withRoleIds(lazyRoleIds))));
+    final var lazyConditionalRoleMemberships =
+        CamundaAuthentication.lazyList(
+            contextPropagator.decorateList(
+                () ->
+                    membershipPort.conditionalRoleMemberships(
+                        base.withMappingRuleIds(lazyMappingRuleIds).withGroupIds(lazyGroupIds))));
 
     return CamundaAuthentication.of(
         a -> {
@@ -150,6 +156,7 @@ public final class LazyTokenClaimsConverter implements TokenClaimsAuthentication
               .groupIdsSupplier(() -> lazyGroupIds)
               .roleIdsSupplier(() -> lazyRoleIds)
               .tenantsSupplier(() -> lazyTenantIds)
+              .conditionalRoleMembershipsSupplier(() -> lazyConditionalRoleMemberships)
               .claims(snapshotClaims);
         });
   }
