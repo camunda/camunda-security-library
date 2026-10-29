@@ -28,7 +28,8 @@ public final class WebSessionTestAccess {
   private WebSessionTestAccess() {}
 
   /**
-   * The repository backing the given filter.
+   * The repository backing the given filter — for a scope, the one under the repository that binds
+   * its sessions to the scope's authentication configuration.
    *
    * @throws AssertionError if the filter was not built by one of CSL's session component factories,
    *     which means production code bypassed {@link CamundaSessionRepositoryFilter}
@@ -39,7 +40,10 @@ public final class WebSessionTestAccess {
           "Expected a CamundaSessionRepositoryFilter so the backing repository is observable, got: "
               + filter.getClass());
     }
-    return camundaFilter.sessionRepository();
+    final SessionRepository<?> repository = camundaFilter.sessionRepository();
+    return repository instanceof final ScopeAuthenticationBoundSessionRepository<?> bound
+        ? bound.delegate()
+        : repository;
   }
 
   /**
