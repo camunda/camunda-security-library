@@ -12,6 +12,7 @@ import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -141,6 +142,21 @@ public final class ScopedClientRegistrationFactory {
    */
   public ScopedClientRegistrationFactory(final String servletContextPath) {
     basePath = contextPathAsTheServletReportsIt(servletContextPath);
+  }
+
+  /**
+   * Forgets the discovery documents of the given issuers, so the next registration built for one of
+   * them fetches it again. A host that changes scopes at runtime calls it for the issuers no served
+   * scope configures any more, which keeps this cache bounded by the configuration it serves
+   * (ADR-0040).
+   */
+  public void evictDiscovery(final Collection<String> issuerUris) {
+    issuerUris.forEach(discoveryByIssuer::remove);
+  }
+
+  /** The issuers whose discovery document is cached. */
+  public Set<String> cachedDiscoveryIssuers() {
+    return Set.copyOf(discoveryByIssuer.keySet());
   }
 
   /**

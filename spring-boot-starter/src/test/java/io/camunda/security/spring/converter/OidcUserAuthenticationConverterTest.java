@@ -13,6 +13,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -233,6 +234,23 @@ class OidcUserAuthenticationConverterTest {
     verify(oidcAccessTokenDecoderFactory).createAccessTokenDecoder(registrationB, null);
     verify(oidcAccessTokenDecoderFactory, never())
         .createAccessTokenDecoder(registrationASecondLogin, null);
+  }
+
+  @Test
+  void shouldBuildTheDecoderOfAnEvictedRegistrationAgain() {
+    final var converter = converterWith(Map.of());
+    final var retired = registration("oidc", "https://idp-a/jwks", "https://idp-a");
+    final var kept = registration("oidc", "https://idp-b/jwks", "https://idp-b");
+    converter.getJwtDecoder(retired);
+    converter.getJwtDecoder(kept);
+
+    converter.evictDecoders(List.of(retired));
+    converter.getJwtDecoder(retired);
+    converter.getJwtDecoder(kept);
+
+    verify(oidcAccessTokenDecoderFactory, times(2)).createAccessTokenDecoder(retired, null);
+    verify(oidcAccessTokenDecoderFactory).createAccessTokenDecoder(kept, null);
+    assertThat(converter.decoderCount()).isEqualTo(2);
   }
 
   @Test

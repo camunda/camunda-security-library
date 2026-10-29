@@ -174,6 +174,37 @@ class ScopedClientRegistrationFactoryDiscoveryCacheTest {
   }
 
   @Test
+  void shouldFetchDiscoveryAgainOnceTheIssuerWasEvicted() throws Exception {
+    // given
+    oidcServer = OidcTestServer.startDiscovery(DISCOVERY_TEMPLATE);
+    final var issuer = oidcServer.issuerUri();
+    factory.createFromProviderMap(Map.of("idp1", issuerBased("client-1", issuer)));
+
+    // when
+    factory.evictDiscovery(List.of(issuer));
+    factory.createFromProviderMap(Map.of("idp2", issuerBased("client-2", issuer)));
+
+    // then
+    assertThat(oidcServer.discoveryRequestCount()).isEqualTo(2);
+  }
+
+  @Test
+  void shouldHoldNoDiscoveryForAnEvictedIssuer() throws Exception {
+    // given
+    oidcServer = OidcTestServer.startDiscovery(DISCOVERY_TEMPLATE);
+    final var issuer = oidcServer.issuerUri();
+    factory.createFromProviderMap(Map.of("idp1", issuerBased("client-1", issuer)));
+    final var cachedBefore = factory.cachedDiscoveryIssuers();
+
+    // when
+    factory.evictDiscovery(List.of(issuer));
+
+    // then
+    assertThat(cachedBefore).containsExactly(issuer);
+    assertThat(factory.cachedDiscoveryIssuers()).isEmpty();
+  }
+
+  @Test
   void shouldFetchDiscoveryPerIssuerWhenIssuersDiffer() throws Exception {
     // given two providers on two different issuers
     oidcServer = OidcTestServer.startDiscovery(DISCOVERY_TEMPLATE);

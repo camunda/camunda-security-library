@@ -16,6 +16,7 @@ import io.camunda.security.spring.oidc.ClientRegistrationMetadata;
 import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory;
 import io.camunda.security.spring.oidc.UrlRedaction;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -256,19 +257,24 @@ public class OidcUserAuthenticationConverter
    */
   protected JwtDecoder getJwtDecoder(final ClientRegistration clientRegistration) {
     final var additionalUris = additionalJwkSetUris(clientRegistration);
-    final var details = clientRegistration.getProviderDetails();
-    final var key =
-        new DecoderKey(
-            clientRegistration.getRegistrationId(),
-            details != null ? details.getIssuerUri() : null,
-            ClientRegistrationMetadata.issuer(clientRegistration).orElse(null),
-            details != null ? details.getJwkSetUri() : null,
-            ClientRegistrationMetadata.audiences(clientRegistration).orElse(null),
-            additionalUris);
     return jwtDecoders.computeIfAbsent(
-        key,
+        decoderKey(clientRegistration),
         k ->
             accessTokenDecoderFactory.createAccessTokenDecoder(clientRegistration, additionalUris));
+  }
+
+  /**
+   * Forgets the decoders built for the given registrations, which a scope that changed its
+   * authentication or was removed no longer serves (ADR-0040). Keyed by their settings, the
+   * decoders would otherwise accumulate with every reconfiguration for the life of the application.
+   */
+  public void evictDecoders(final Collection<ClientRegistration> clientRegistrations) {
+    clientRegistrations.forEach(registration -> jwtDecoders.remove(decoderKey(registration)));
+  }
+
+  /** How many decoders this converter holds. */
+  int decoderCount() {
+    return jwtDecoders.size();
   }
 
   private List<String> additionalJwkSetUris(final ClientRegistration clientRegistration) {
@@ -289,6 +295,17 @@ public class OidcUserAuthenticationConverter
   protected Map<String, Object> getIdTokenClaims(
       final OAuth2AuthenticationToken authenticationToken) {
     return authenticationToken.getPrincipal().getAttributes();
+  }
+
+  private DecoderKey decoderKey(final ClientRegistration clientRegistration) {
+    final var details = clientRegistration.getProviderDetails();
+    return new DecoderKey(
+        clientRegistration.getRegistrationId(),
+        details != null ? details.getIssuerUri() : null,
+        ClientRegistrationMetadata.issuer(clientRegistration).orElse(null),
+        details != null ? details.getJwkSetUri() : null,
+        ClientRegistrationMetadata.audiences(clientRegistration).orElse(null),
+        additionalJwkSetUris(clientRegistration));
   }
 
   private record DecoderKey(
