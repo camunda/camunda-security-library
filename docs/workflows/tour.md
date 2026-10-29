@@ -12,14 +12,14 @@ This tour is the single entry point for understanding what you can do here: slas
 
 ## Slash commands
 
-Six AI-agent workflows live in this repo. Three create well-structured GitHub issues, two write or capture documentation, and one is this tour. Each workflow has a file in `docs/workflows/` and a Claude Code skill. The ADR skill comes from the actora plugin. The other skills are in `.claude/skills/`.
+Six AI-agent workflows live in this repo. Three create well-structured GitHub issues, one writes documentation, one records architecture decisions, and one is this tour. Each workflow has a file in `docs/workflows/` and a Claude Code skill. The ADR skill comes from the actora plugin. The other skills are in `.claude/skills/`.
 
 | Command | Use when | Workflow doc |
 |---|---|---|
 | `/feature` | You want a new capability ("we should be able to...", "add support for...") | [feature-issues.md](feature-issues.md) |
 | `/task` | A small, independently mergeable unit of work | [tasks.md](tasks.md) |
 | `/bug` | Something is broken; expected behavior isn't happening | [bug-issues.md](bug-issues.md) |
-| `/docs` | Document code, modules, features, or architecture | [documenting-code.md](documenting-code.md) |
+| `/docs` | Document code with Javadoc, the arc42 architecture docs, or the adopter guides | [documenting-code.md](documenting-code.md) |
 | `/create-architecture-decision` | Record a fundamental, lasting architectural decision (org plugin, not in `.claude/skills/`) | [adr.md](adr.md) |
 | `/tour` | This tour — orientation only | [tour.md](tour.md) |
 
