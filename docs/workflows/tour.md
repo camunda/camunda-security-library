@@ -12,7 +12,7 @@ This tour is the single entry point for understanding what you can do here: slas
 
 ## Slash commands
 
-Six AI-agent workflows live in this repo. Three create well-structured GitHub issues, two write or capture documentation, and one is this tour. Every workflow is defined in `docs/workflows/` and exposed as a Claude Code skill in `.claude/skills/`.
+Six AI-agent workflows live in this repo. Three create well-structured GitHub issues, two write or capture documentation, and one is this tour. Each workflow has a file in `docs/workflows/` and a Claude Code skill. The ADR skill comes from the actora plugin. The other skills are in `.claude/skills/`.
 
 | Command | Use when | Workflow doc |
 |---|---|---|
@@ -20,8 +20,12 @@ Six AI-agent workflows live in this repo. Three create well-structured GitHub is
 | `/task` | A small, independently mergeable unit of work | [tasks.md](tasks.md) |
 | `/bug` | Something is broken; expected behavior isn't happening | [bug-issues.md](bug-issues.md) |
 | `/docs` | Document code, modules, features, or architecture | [documenting-code.md](documenting-code.md) |
-| `/adr` | Capture an architectural decision before/alongside the change that introduces it | [adr.md](adr.md) |
+| `/create-architecture-decision` | Record a fundamental, lasting architectural decision (org plugin, not in `.claude/skills/`) | [adr.md](adr.md) |
 | `/tour` | This tour — orientation only | [tour.md](tour.md) |
+
+If Claude Code does not prompt you to install the ADR plugin, run this command once: `claude plugin marketplace add camunda/actora && claude plugin install create-architecture-decision@actora`. You need GitHub access to camunda/actora.
+
+The repo also contains the `simple-english` skill in [`.claude/skills/simple-english/`](../../.claude/skills/simple-english/SKILL.md). It is not a workflow. Use it to write or review documentation in Simplified Technical English (STE) Plain mode. All documentation in this repo uses STE.
 
 The three issue-creating workflows all produce self-contained issues — a fresh agent session can read them and deliver without further conversation. Shared helpers (setting issue types, native sub-issue linking, how to link files in issue bodies) live in [github-issue-operations.md](github-issue-operations.md).
 
@@ -62,7 +66,7 @@ Current milestones (with what's open and closed): [GitHub Milestones](https://gi
 - **Commits:** Conventional Commits — `<type>(<scope>): <subject>`. Header max 100 characters, imperative mood, no trailing period.
 - **PRs:** title follows conventional-commits format; squash-merge.
 - **Before every commit:** `mvn verify` must pass — no flaky tests, no skipped tests.
-- **Architectural change?** Write an ADR. Default to writing one whenever a change introduces a new module/port/adapter/SPI, picks between approaches, alters data flow, adds a dependency, or establishes a convention. Use `/adr` (or [adr.md](adr.md)) for the process; see [docs/adr/](../adr/) for prior decisions.
+- For an architectural change, write an ADR only for a fundamental, lasting decision. Use `/create-architecture-decision` or [adr.md](adr.md) for the process. See [docs/adr/](../adr/) for prior decisions.
 - **Linking files in issue bodies:** use clickable GitHub blob URLs, not plain paths — see [github-issue-operations.md](github-issue-operations.md).
 
 ## Where to go next

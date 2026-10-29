@@ -111,6 +111,14 @@ without a debugger attached.
 - Mockito style: use `@ExtendWith(MockitoExtension.class)` with `@Mock` fields; use `@InjectMocks` when possible for the unit under test; avoid `Mockito.mock(...)` in new tests
 - All new classes must have corresponding tests
 
+### Writing style
+
+All documentation, ADRs, Javadoc prose, and PR descriptions use Simplified Technical English (STE) in Plain mode. Claude Code loads the `simple-english` skill from `.claude/skills/simple-english`. Other agents read `.claude/skills/simple-english/SKILL.md`.
+
+New and changed text must pass the self-check in that skill. Fix existing text when you change it. Do not rewrite it in bulk.
+
+ADR field labels (`**DRI**`, `**Status**`) and decision headlines (`**D1. ...**`) are structure. They are allowed, although STE forbids bold. The prose under them follows STE.
+
 ## Key Commands
 
 Commands will be documented as the build is established. Expect standard Maven conventions:
@@ -158,9 +166,9 @@ Common AI-assisted workflows are documented in `docs/workflows/` and are usable 
 | Creating feature issues | `docs/workflows/feature-issues.md` | "we should be able to", "add support for", "I want to be able to" |
 | Creating task issues | `docs/workflows/tasks.md` | "track this task", "break this into tasks", "we need to implement X" |
 | Documenting code | `docs/workflows/documenting-code.md` | "document this", "add docs for", "write documentation for" |
-| Writing ADRs | `docs/workflows/adr.md` | "create an ADR", "document this decision", or before any architectural change |
+| Writing ADRs | `docs/workflows/adr.md` | "create an ADR", "document this decision", or before a fundamental, lasting architectural decision |
 
-Claude Code users can invoke these as slash commands (`/tour`, `/bug`, `/feature`, `/task`, `/docs`, `/adr`) via `.claude/skills/`. Other agents should read the `docs/workflows/` files directly when triggered. `/tour` is the recommended starting point for anyone new to the repo — it links out to everything else.
+Claude Code users can invoke these as slash commands (`/tour`, `/bug`, `/feature`, `/task`, `/docs`) via `.claude/skills/`. The ADR command `/create-architecture-decision` comes from the actora plugin, not from `.claude/skills/`. When a trigger matches, other agents read the `docs/workflows/` file directly. `/tour` is the recommended starting point for anyone new to the repo. It links out to everything else.
 
 ### Features vs tasks
 
@@ -179,6 +187,6 @@ The **Location in Code** and **Acceptance Criteria** fields are what make the di
 
 Architecture decisions are documented in `docs/adr/`. Read these before making changes that touch architectural boundaries.
 
-ADR-writing is part of the standard implementation flow, not an optional add-on. **Default to writing one** for any change that introduces a new module/port/adapter/SPI, picks between viable approaches, alters data flow or storage patterns, adds or replaces a dependency, or establishes a project-wide convention. Bug fixes and style-only changes do not need an ADR.
+An ADR records a fundamental, lasting architectural decision. Write one when a change adds a new Maven module, or a new public contract (SPI) that host applications implement. Write one when a change chooses between viable architectural approaches or adds or replaces a runtime dependency. Write one when a change alters how deployment strategies, policy propagation, authentication, or authorization work. Also write one when a change alters data flow, storage patterns, or persistence shape, or sets a project-wide convention. Bug fixes, style-only changes, and internal refactors that keep all public behavior and set no new convention do not need an ADR.
 
-Each new ADR carries a `Deciders` line listing the people who agreed the change. The full process — when an ADR is required, the body template, the immutability rule — lives in [docs/workflows/adr.md](docs/workflows/adr.md) (Claude Code: `/adr`). Number sequentially against the highest existing entry in `docs/adr/`. Also add a link to the new ADR in [docs/architecture/09-architecture-decisions.md](docs/architecture/09-architecture-decisions.md) (§9.1).
+Each new ADR has a `**DRI**` line and a `**Deciders**` line. The `**Deciders**` line lists the people who agreed the change. The process lives in [docs/workflows/adr.md](docs/workflows/adr.md). In Claude Code, use `/create-architecture-decision`. Number ADRs in sequence from the highest existing entry in `docs/adr/`. Add a link to the new ADR in [docs/architecture/09-architecture-decisions.md](docs/architecture/09-architecture-decisions.md) (§9.1).

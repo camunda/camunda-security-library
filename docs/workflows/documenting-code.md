@@ -54,32 +54,7 @@ After writing, check whether any of these need updating:
 
 ### ADR creation
 
-When documenting an architecture decision, use this format in `docs/adr/`:
-
-```markdown
----
-status: Proposed
----
-
-# ADR-NNNN: <Title>
-
-## Status
-Proposed
-
-## Context
-<What is the problem or question? What forces are at play?>
-
-## Decision
-<What was decided and why?>
-
-## Alternatives Considered
-<What else was considered? Why was it rejected?>
-
-## Consequences
-<What follows from this decision? Both positive and negative.>
-```
-
-Number ADRs sequentially. Check `docs/adr/` for the latest number.
+To record an architecture decision, follow [adr.md](adr.md). In Claude Code, use `/create-architecture-decision`.
 
 ## Quality checks
 

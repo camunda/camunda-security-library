@@ -21,6 +21,7 @@ Hexagonal architecture naming (replaces traditional controller/service/repo nami
 
 ## Project-Specific Patterns
 
+- Documentation, ADRs, Javadoc prose, and PR descriptions use Simplified Technical English (STE) in Plain mode. STE is a controlled form of English from the ASD-STE100 standard. It uses short sentences, active voice, and one meaning for each word. See the Writing style section in [AGENTS.md](../../AGENTS.md).
 - For new core contracts, the hexagonal package structure is `domain/`, `port/in/`, `port/out/`
 - Inbound port interfaces live in `port/in/`; their implementations are named by responsibility, typically `*Service`
 - Outbound port interfaces live in `port/out/`; their implementations are adapters

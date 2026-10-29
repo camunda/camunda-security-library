@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "actora": {
+      "source": {
+        "source": "github",
+        "repo": "camunda/actora"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "create-architecture-decision@actora": true
+  }
+}
