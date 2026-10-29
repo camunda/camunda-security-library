@@ -82,11 +82,11 @@ public class HttpSessionBasedAuthenticationHolder implements CamundaAuthenticati
     Optional.ofNullable(getHttpSession()).ifPresent(this::removeCamundaAuthenticationInSession);
   }
 
-  protected HttpSession getHttpSession() {
+  protected @Nullable HttpSession getHttpSession() {
     return request.getSession(false);
   }
 
-  protected CamundaAuthentication getCamundaAuthenticationFromSessionIfExists(
+  protected @Nullable CamundaAuthentication getCamundaAuthenticationFromSessionIfExists(
       final HttpSession session) {
     final Instant now = Instant.now();
     final Instant lastRefresh = (Instant) session.getAttribute(LAST_REFRESH_ATTR);

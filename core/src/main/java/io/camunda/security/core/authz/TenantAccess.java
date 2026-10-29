@@ -49,7 +49,8 @@ public record TenantAccess(boolean allowed, boolean wildcard, @Nullable List<Str
    * allowed or wildcard grant; a {@code null} request, a request containing a {@code null} element,
    * and a {@link #denied()} verdict never authorize (fail-closed on malformed input).
    */
-  public boolean isAuthorizedForTenantIds(final @Nullable List<String> requestedTenantIds) {
+  public boolean isAuthorizedForTenantIds(
+      final @Nullable List<@Nullable String> requestedTenantIds) {
     if (requestedTenantIds == null || requestedTenantIds.stream().anyMatch(Objects::isNull)) {
       return false;
     }
