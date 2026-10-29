@@ -12,6 +12,7 @@ import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
 import io.camunda.security.spring.oidc.ScopedJwtDecoderFactory;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
 import io.camunda.security.spring.security.ScopedWebappSecurityChainBuilderConfiguration;
+import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -69,5 +70,15 @@ public class ScopedSecurityChainConfiguration {
   @Bean
   public static BeanDefinitionRegistryPostProcessor scopedSecurityChainRegistrar() {
     return new ScopedSecurityChainRegistrar();
+  }
+
+  /**
+   * Wraps Spring Security's shared object post-processor so the objects of a scope's chains belong
+   * to the scope and are released with it (ADR-0040). {@code static} for the same reason as the
+   * registrar: a bean post-processor must exist before the beans it processes.
+   */
+  @Bean
+  public static BeanPostProcessor scopeObjectPostProcessorInstaller() {
+    return new ScopeObjectPostProcessorInstaller();
   }
 }

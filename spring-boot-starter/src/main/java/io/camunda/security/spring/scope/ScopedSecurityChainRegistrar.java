@@ -12,54 +12,35 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.X_CSRF_TOKEN;
 
 import io.camunda.security.api.context.CamundaSecurityScopeProvider;
-import io.camunda.security.api.model.config.AuthenticationMethod;
 import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
-import io.camunda.security.api.model.config.oidc.OidcConfiguration;
-import io.camunda.security.spring.CamundaSecurityLibraryProperties;
-import io.camunda.security.spring.oidc.LazyClientRegistrationRepository;
-import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
-import io.camunda.security.spring.oidc.ScopedJwtDecoderFactory;
-import io.camunda.security.spring.security.ScopedWebappSecurityChainBuilder;
-import io.camunda.security.spring.session.ScopedWebSessionRepositoryFactory;
-import io.camunda.security.spring.session.WebSessionRepositories;
-import io.camunda.security.spring.session.WebSessionRepository;
-import jakarta.servlet.http.HttpServletResponse;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
-import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.beans.factory.support.RootBeanDefinition;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
-import org.springframework.security.web.DefaultSecurityFilterChain;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
-import org.springframework.session.MapSessionRepository;
-import org.springframework.session.SessionRepository;
-import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
  * {@link BeanDefinitionRegistryPostProcessor} that discovers all {@link
  * CamundaSecurityScopeProvider} beans and registers both an API {@link SecurityFilterChain} and a
  * webapp {@link SecurityFilterChain} per {@link ScopedSecurityDescriptor}.
  *
+ * <p>Each registered chain is a {@link ScopeChainView} of the scope's {@link ScopeSlot}, so the
+ * scope can be replaced or removed at runtime under the same bean. Alongside them it registers the
+ * {@link ScopeDispatchingSecurityFilterChain} that serves scopes added later, and the {@link
+ * ScopedSecurityReloadService} that changes scopes (ADR-0040).
+ *
  * <p>Declared {@code static} (via the enclosing {@link ScopedSecurityChainConfiguration}'s {@code
  * static @Bean} method) so Spring does not need to instantiate the enclosing {@code @Configuration}
  * class before the post-processor runs.
  */
-final class ScopedSecurityChainRegistrar
-    implements BeanDefinitionRegistryPostProcessor, ScopedSecurityChainReloader {
+final class ScopedSecurityChainRegistrar implements BeanDefinitionRegistryPostProcessor {
 
   static final String SESSION_COOKIE_PREFIX = "camunda-session-";
   static final String CSRF_COOKIE_PREFIX = X_CSRF_TOKEN + "-";
@@ -67,48 +48,10 @@ final class ScopedSecurityChainRegistrar
   static final int MAX_COOKIE_NAME_LENGTH =
       200; // well under the RFC 6265 4096-byte name=value budget
 
+  static final String RELOAD_SERVICE_BEAN_NAME = "scopedSecurityReloadService";
+  static final String DISPATCHING_CHAIN_BEAN_NAME = "scopedDispatchingSecurityFilterChain";
+
   private static final Logger LOG = LoggerFactory.getLogger(ScopedSecurityChainRegistrar.class);
-
-  /**
-   * Shared per-scope {@link SessionRepositoryFilter} instances, keyed by basePath. Built once per
-   * descriptor so the same per-scope filter instance can be shared across the scope's chains (e.g.
-   * a future session-authenticated API chain) without creating a second session store.
-   *
-   * <p>Populated lazily by {@link #getOrBuildSessionFilter}, which runs from the scoped chain
-   * beans' instance suppliers when Spring instantiates them — not during {@link
-   * #postProcessBeanDefinitionRegistry}. A {@link ConcurrentHashMap} with {@code computeIfAbsent}
-   * keeps the build-once-per-basePath invariant intact even if those beans are ever instantiated
-   * concurrently.
-   */
-  private final Map<String, SessionRepositoryFilter<?>> sessionFiltersByBasePath =
-      new ConcurrentHashMap<>();
-
-  /**
-   * Shared per-scope {@link ApiTokenRefreshSupport} instances, keyed by basePath, built once per
-   * OIDC descriptor by {@link #getOrBuildRefreshSupport} for the same build-once reason as {@link
-   * #sessionFiltersByBasePath} above.
-   */
-  private final Map<String, ApiTokenRefreshSupport> refreshSupportByBasePath =
-      new ConcurrentHashMap<>();
-
-  /** The chain wrappers registered at startup, per normalized basePath; reload swaps them. */
-  private final Map<String, OrderedSecurityFilterChainWrapper> startupApiChains =
-      new ConcurrentHashMap<>();
-
-  private final Map<String, OrderedSecurityFilterChainWrapper> startupWebappChains =
-      new ConcurrentHashMap<>();
-
-  /**
-   * Front every scope that was not present at startup; see {@link
-   * DynamicScopedSecurityFilterChain}.
-   */
-  private final DynamicScopedSecurityFilterChain dynamicApiChain =
-      new DynamicScopedSecurityFilterChain(ORDER_API);
-
-  private final DynamicScopedSecurityFilterChain dynamicWebappChain =
-      new DynamicScopedSecurityFilterChain(ORDER_WEBAPP);
-
-  private volatile ConfigurableListableBeanFactory beanFactory;
 
   @Override
   public void postProcessBeanDefinitionRegistry(final BeanDefinitionRegistry registry)
@@ -123,30 +66,40 @@ final class ScopedSecurityChainRegistrar
       return;
     }
 
-    this.beanFactory = beanFactory;
     final var providerNames = beanFactory.getBeanNamesForType(CamundaSecurityScopeProvider.class);
     if (providerNames.length == 0) {
       LOG.debug("No CamundaSecurityScopeProvider beans found — no scoped chains registered");
       return;
     }
 
-    registerDynamicChains(registry);
     final var descriptors = collectDescriptors(beanFactory, providerNames);
+    rejectDuplicateBasePaths(descriptors);
+    rejectCookieNameCollisions(descriptors);
+
+    final var slots = new ScopeSlots();
+    final var service =
+        new ScopedSecurityReloadService(
+            beanFactory,
+            slots,
+            new ScopeGenerationBuilder(beanFactory),
+            new ScopeRetirement(beanFactory));
+    registry.registerBeanDefinition(
+        RELOAD_SERVICE_BEAN_NAME,
+        new RootBeanDefinition(ScopedSecurityReloadService.class, () -> service));
+    final var dispatcher = new ScopeDispatchingSecurityFilterChain(slots, ORDER_API);
+    registry.registerBeanDefinition(
+        DISPATCHING_CHAIN_BEAN_NAME,
+        new RootBeanDefinition(ScopeDispatchingSecurityFilterChain.class, () -> dispatcher));
 
     if (descriptors.isEmpty()) {
       LOG.debug("CamundaSecurityScopeProvider(s) returned no descriptors — no startup scopes");
       return;
     }
-
-    rejectDuplicateBasePaths(descriptors);
-    rejectCookieNameCollisions(descriptors);
-
     LOG.info(
         "Registering scoped API + webapp security chains for {} descriptor(s) from"
             + " CamundaSecurityScopeProvider(s)",
         descriptors.size());
-
-    registerChains(registry, beanFactory, descriptors);
+    registerChains(registry, service, slots, descriptors);
   }
 
   @Override
@@ -155,7 +108,7 @@ final class ScopedSecurityChainRegistrar
     // Nothing needed here — all work is done in postProcessBeanDefinitionRegistry.
   }
 
-  private static List<ScopedSecurityDescriptor> collectDescriptors(
+  static List<ScopedSecurityDescriptor> collectDescriptors(
       final ConfigurableListableBeanFactory beanFactory, final String[] providerNames) {
     final List<ScopedSecurityDescriptor> descriptors = new ArrayList<>();
     for (final var providerBeanName : providerNames) {
@@ -181,7 +134,7 @@ final class ScopedSecurityChainRegistrar
     return descriptors;
   }
 
-  private static void rejectDuplicateBasePaths(final List<ScopedSecurityDescriptor> descriptors) {
+  static void rejectDuplicateBasePaths(final List<ScopedSecurityDescriptor> descriptors) {
     final var seen = new HashSet<String>();
     final var duplicates = new LinkedHashSet<String>();
     for (final var d : descriptors) {
@@ -198,43 +151,38 @@ final class ScopedSecurityChainRegistrar
     }
   }
 
-  private void registerChains(
+  private static void registerChains(
       final BeanDefinitionRegistry registry,
-      final ConfigurableListableBeanFactory beanFactory,
+      final ScopedSecurityReloadService service,
+      final ScopeSlots slots,
       final List<ScopedSecurityDescriptor> descriptors) {
     for (int i = 0; i < descriptors.size(); i++) {
       final var descriptor = descriptors.get(i);
       final var sanitized = sanitizeBasePath(descriptor.basePath());
+      final var slot =
+          slots.registerStartupSlot(BasePaths.normalize(descriptor.basePath(), "basePath"));
 
-      // API chain
       final var apiChainName = "scopedApiSecurityFilterChain-" + i + "-" + sanitized;
-      final var apiChainBd =
+      registry.registerBeanDefinition(
+          apiChainName,
           new RootBeanDefinition(
               OrderedSecurityFilterChainWrapper.class,
-              () -> {
-                final var chain = buildChain(beanFactory, descriptor);
-                startupApiChains.put(BasePaths.normalize(descriptor.basePath(), "basePath"), chain);
-                return chain;
-              });
-      registry.registerBeanDefinition(apiChainName, apiChainBd);
+              () -> view(service, slot, descriptor, ScopeChainKind.API, ORDER_API)));
       LOG.debug(
           "Registered scoped API chain bean '{}' for basePath={}",
           apiChainName,
           descriptor.basePath());
 
-      // Webapp chain — always registered. When the host provides no webapp paths, buildWebappChain
-      // returns a no-op chain that matches nothing so it is effectively inert.
+      // Webapp chain — always registered. When the host provides no webapp paths, the scope's
+      // webapp chain matches nothing so it is effectively inert. It sorts after the scoped API
+      // chain
+      // (ORDER_API < ORDER_WEBAPP) so a scoped catch-all webapp matcher cannot claim API requests.
       final var webappChainName = "scopedWebappSecurityFilterChain-" + i + "-" + sanitized;
-      final var webappChainBd =
+      registry.registerBeanDefinition(
+          webappChainName,
           new RootBeanDefinition(
               OrderedSecurityFilterChainWrapper.class,
-              () -> {
-                final var chain = buildWebappChain(beanFactory, descriptor);
-                startupWebappChains.put(
-                    BasePaths.normalize(descriptor.basePath(), "basePath"), chain);
-                return chain;
-              });
-      registry.registerBeanDefinition(webappChainName, webappChainBd);
+              () -> view(service, slot, descriptor, ScopeChainKind.WEBAPP, ORDER_WEBAPP)));
       LOG.debug(
           "Registered scoped webapp chain bean '{}' for basePath={}",
           webappChainName,
@@ -242,308 +190,15 @@ final class ScopedSecurityChainRegistrar
     }
   }
 
-  private void registerDynamicChains(final BeanDefinitionRegistry registry) {
-    registry.registerBeanDefinition(
-        "scopedDynamicApiSecurityFilterChain",
-        new RootBeanDefinition(DynamicScopedSecurityFilterChain.class, () -> dynamicApiChain));
-    registry.registerBeanDefinition(
-        "scopedDynamicWebappSecurityFilterChain",
-        new RootBeanDefinition(DynamicScopedSecurityFilterChain.class, () -> dynamicWebappChain));
-  }
-
-  @Override
-  public synchronized void reload() {
-    final var factory = beanFactory;
-    if (factory == null) {
-      throw new IllegalStateException("Scoped security chains were not registered");
-    }
-    final var providerNames = factory.getBeanNamesForType(CamundaSecurityScopeProvider.class);
-    final var descriptors = collectDescriptors(factory, providerNames);
-    rejectDuplicateBasePaths(descriptors);
-    rejectCookieNameCollisions(descriptors);
-
-    final var releaser = new RetiredFilterReleaser(factory);
-    final var built = buildAll(factory, releaser, descriptors);
-
-    final Set<String> removed = new LinkedHashSet<>(startupApiChains.keySet());
-    removed.addAll(dynamicApiChain.chains().keySet());
-    removed.removeAll(built.keySet());
-
-    final List<SecurityFilterChain> retired = new ArrayList<>();
-    swapStartupChains(built, retired);
-    publishDynamicChains(built, retired);
-    removed.forEach(this::evictScope);
-    releaser.release(retired);
-  }
-
-  /**
-   * Builds every chain before anything is swapped, so a descriptor that fails to build leaves every
-   * live chain untouched. State created for chains that never went live is released again.
-   */
-  private Map<String, ScopeChains> buildAll(
-      final ConfigurableListableBeanFactory factory,
-      final RetiredFilterReleaser releaser,
-      final List<ScopedSecurityDescriptor> descriptors) {
-    final var sessionScopesBefore = Set.copyOf(sessionFiltersByBasePath.keySet());
-    // A rebuilt OIDC scope must refresh tokens against its current providers; the live chains keep
-    // the support they were built with.
-    refreshSupportByBasePath.clear();
-    final List<SecurityFilterChain> created = new ArrayList<>();
-    final Map<String, ScopeChains> built = new LinkedHashMap<>();
-    try {
-      for (final var descriptor : descriptors) {
-        final var api = buildChain(factory, descriptor);
-        created.add(api);
-        final var webapp = buildWebappChain(factory, descriptor);
-        created.add(webapp);
-        built.put(
-            BasePaths.normalize(descriptor.basePath(), "basePath"), new ScopeChains(api, webapp));
-      }
-    } catch (final RuntimeException ex) {
-      sessionFiltersByBasePath.keySet().stream()
-          .filter(basePath -> !sessionScopesBefore.contains(basePath))
-          .toList()
-          .forEach(this::evictScope);
-      releaser.release(created);
-      throw ex;
-    }
-    return built;
-  }
-
-  /** Startup scopes keep their wrappers; one that is no longer contributed answers 404. */
-  private void swapStartupChains(
-      final Map<String, ScopeChains> built, final List<SecurityFilterChain> retired) {
-    startupApiChains.forEach(
-        (basePath, wrapper) -> {
-          final var fresh = built.get(basePath);
-          retired.add(wrapper.swap(fresh == null ? denyAll(basePath) : fresh.api()));
-        });
-    startupWebappChains.forEach(
-        (basePath, wrapper) -> {
-          final var fresh = built.get(basePath);
-          retired.add(wrapper.swap(fresh == null ? denyAll(basePath) : fresh.webapp()));
-        });
-  }
-
-  private void publishDynamicChains(
-      final Map<String, ScopeChains> built, final List<SecurityFilterChain> retired) {
-    final Map<String, SecurityFilterChain> api = new LinkedHashMap<>();
-    final Map<String, SecurityFilterChain> webapp = new LinkedHashMap<>();
-    built.forEach(
-        (basePath, chains) -> {
-          if (!startupApiChains.containsKey(basePath)) {
-            api.put(basePath, chains.api());
-            webapp.put(basePath, chains.webapp());
-          }
-        });
-    retired.addAll(dynamicApiChain.chains().values());
-    retired.addAll(dynamicWebappChain.chains().values());
-    dynamicApiChain.replace(api);
-    dynamicWebappChain.replace(webapp);
-  }
-
-  /** Drops the session filter and store repository of a scope so nothing keeps them reachable. */
-  private void evictScope(final String basePath) {
-    refreshSupportByBasePath.remove(basePath);
-    if (sessionFiltersByBasePath.remove(basePath) != null) {
-      LOG.info("Scope {} is no longer contributed; its session state was released", basePath);
-    }
-    beanFactory
-        .getBeanProvider(ScopedWebSessionRepositoryFactory.class)
-        .ifAvailable(repositories -> repositories.evict(basePath));
-  }
-
-  /** Matches everything under the scope and answers 404, so a removed scope never fails open. */
-  private static SecurityFilterChain denyAll(final String basePath) {
-    return new DefaultSecurityFilterChain(
-        PathPatternRequestMatcher.withDefaults().matcher(basePath + "/**"),
-        (request, response, chain) -> ((HttpServletResponse) response).sendError(404));
-  }
-
-  private OrderedSecurityFilterChainWrapper buildChain(
-      final ConfigurableListableBeanFactory beanFactory,
-      final ScopedSecurityDescriptor descriptor) {
-    try {
-      // HttpSecurity is a prototype bean — each call produces a fresh, independent instance.
-      final var http = beanFactory.getBean(HttpSecurity.class);
-      final var builder = beanFactory.getBean(ScopedApiSecurityChainBuilder.class);
-      final var properties = beanFactory.getBean(CamundaSecurityLibraryProperties.class);
-      final SecurityFilterChain chain;
-      if (properties.getAuthentication().isUnprotectedApi()) {
-        final var sessionFilter = getOrBuildSessionFilter(beanFactory, descriptor.basePath());
-        chain = builder.buildUnprotectedScopedApiChain(http, descriptor.basePath(), sessionFilter);
-      } else {
-        final var sessionFilter = getOrBuildSessionFilter(beanFactory, descriptor.basePath());
-        chain =
-            builder.buildScopedApiChain(
-                http,
-                descriptor.basePath(),
-                descriptor.authentication(),
-                () -> {
-                  try {
-                    final var decoderFactory = beanFactory.getBean(ScopedJwtDecoderFactory.class);
-                    return decoderFactory.buildIssuerAwareDecoder(
-                        descriptor.authentication(), "basePath=" + descriptor.basePath());
-                  } catch (final NoSuchBeanDefinitionException missing) {
-                    throw new IllegalStateException(
-                        "Cannot build the OIDC scoped API chain for basePath="
-                            + descriptor.basePath()
-                            + ": required bean "
-                            + ScopedJwtDecoderFactory.class.getName()
-                            + " is not present. It is normally provided unconditionally by"
-                            + " ScopedOidcInfrastructureConfiguration (activated via the"
-                            + " CamundaSecurityAutoConfiguration umbrella), independently of"
-                            + " camunda.security.authentication.method. Ensure that configuration"
-                            + " is imported, or register an equivalent ScopedJwtDecoderFactory"
-                            + " bean.",
-                        missing);
-                  }
-                },
-                () -> null,
-                sessionFilter,
-                getOrBuildRefreshSupport(beanFactory, descriptor));
-      }
-      return new OrderedSecurityFilterChainWrapper(chain, ORDER_API);
-    } catch (final IllegalStateException ex) {
-      throw ex;
-    } catch (final Exception ex) {
-      throw new IllegalStateException(
-          "Failed to build scoped API security chain for basePath=" + descriptor.basePath(), ex);
-    }
-  }
-
-  /**
-   * The scope's {@link ApiTokenRefreshSupport}, built once per basePath, or {@code null} to install
-   * no refresh filter: a BASIC scope holds no OAuth2 token, and an OIDC scope with no provider is
-   * reported by the decoder supplier with a better message. See ADR-0039.
-   */
-  private ApiTokenRefreshSupport getOrBuildRefreshSupport(
-      final ConfigurableListableBeanFactory beanFactory,
-      final ScopedSecurityDescriptor descriptor) {
-    if (descriptor.authentication() == null
-        || descriptor.authentication().getMethod() != AuthenticationMethod.OIDC) {
-      return null;
-    }
-    final var registrationFactory = beanFactory.getBean(ScopedClientRegistrationFactory.class);
-    final var providers = registrationFactory.flatten(descriptor.authentication());
-    if (providers.isEmpty()) {
-      LOG.debug(
-          "Scope basePath={} configures no OIDC provider; its API chain gets no refresh filter",
-          descriptor.basePath());
-      return null;
-    }
-    return refreshSupportByBasePath.computeIfAbsent(
-        BasePaths.normalize(descriptor.basePath(), "basePath"),
-        key ->
-            buildRefreshSupport(
-                beanFactory, registrationFactory, providers, descriptor.basePath()));
-  }
-
-  /**
-   * Builds the scope's OAuth2 client stack for the refresh filter.
-   *
-   * <p>The authorized-client repository is a fresh {@link
-   * HttpSessionOAuth2AuthorizedClientRepository} rather than the webapp chain's instance: it keeps
-   * no per-instance state and reads the authorized clients from a session attribute named by a
-   * class-level constant, so it sees exactly what the login flow stored.
-   *
-   * <p>The client-registration repository is built {@linkplain
-   * LazyClientRegistrationRepository#withoutLoginRoutes without login routes}, like the other
-   * non-login consumers of the provider map. A scope whose host declares no webapp paths has no
-   * login chain at all, so login-only validation would reject a configuration nothing in this
-   * application reads.
-   */
-  private static ApiTokenRefreshSupport buildRefreshSupport(
-      final ConfigurableListableBeanFactory beanFactory,
-      final ScopedClientRegistrationFactory registrationFactory,
-      final Map<String, OidcConfiguration> providers,
-      final String basePath) {
-    final var prefix = BasePaths.normalize(basePath, "basePath");
-    final var clientRegistrationRepository =
-        LazyClientRegistrationRepository.withoutLoginRoutes(
-            registrationFactory, providers, "basePath=" + prefix);
-    final var authorizedClientRepository = new HttpSessionOAuth2AuthorizedClientRepository();
-    final var authorizedClientManager =
-        beanFactory
-            .getBean(OAuth2AuthorizedClientManagerFactory.class)
-            .create(clientRegistrationRepository, authorizedClientRepository);
-    return ApiTokenRefreshSupport.forScope(
-        authorizedClientRepository,
-        authorizedClientManager,
-        basePath,
-        sessionCookieName(basePath),
-        csrfCookieName(basePath));
-  }
-
-  /**
-   * Resolves or creates the shared {@link SessionRepositoryFilter} for the given basePath. The
-   * filter is built once per descriptor and cached so the same instance can be reused across the
-   * scope's chains without creating a second, independent session store.
-   */
-  private SessionRepositoryFilter<?> getOrBuildSessionFilter(
-      final ConfigurableListableBeanFactory beanFactory, final String basePath) {
-    return sessionFiltersByBasePath.computeIfAbsent(
-        BasePaths.normalize(basePath, "basePath"),
-        key ->
-            ScopedWebSessionComponentsFactory.sessionRepositoryFilter(
-                basePath, resolveSessionRepository(beanFactory, basePath)));
-  }
-
-  /**
-   * Resolves the {@link SessionRepository} that backs a scope's {@link SessionRepositoryFilter}, in
-   * order of preference:
-   *
-   * <ol>
-   *   <li>a <b>per-scope</b> durable {@link WebSessionRepository} bound to the scope's own store,
-   *       via {@link ScopedWebSessionRepositoryFactory} (ADR-0009) — so persistent writes route
-   *       structurally at Spring Session's commit time, not via request/thread context;
-   *   <li>the shared durable {@link WebSessionRepository} bean (the legacy, non-per-scope fallback)
-   *       when no per-scope provider is contributed;
-   *   <li>a per-scope in-memory {@link MapSessionRepository} backed by a fresh {@link
-   *       ConcurrentHashMap} (dev/test) — separate instances give store-level isolation on top of
-   *       the cookie {@code Path} isolation.
-   * </ol>
-   */
-  private SessionRepository<?> resolveSessionRepository(
-      final ConfigurableListableBeanFactory beanFactory, final String basePath) {
-    final var perScopeFactory =
-        beanFactory.getBeanProvider(ScopedWebSessionRepositoryFactory.class).getIfAvailable();
-    if (perScopeFactory != null && perScopeFactory.isAvailable()) {
-      // normalize to match how the rest of the scope subsystem keys base paths
-      return perScopeFactory.forBasePath(BasePaths.normalize(basePath, "basePath"));
-    }
-    final var sharedDurableRepo =
-        beanFactory.getBeanProvider(WebSessionRepository.class).getIfAvailable();
-    final var properties = beanFactory.getBean(CamundaSecurityLibraryProperties.class);
-    return WebSessionRepositories.durableOrInMemory(
-        sharedDurableRepo, properties.getSession(), basePath);
-  }
-
-  private OrderedSecurityFilterChainWrapper buildWebappChain(
-      final ConfigurableListableBeanFactory beanFactory,
-      final ScopedSecurityDescriptor descriptor) {
-    try {
-      // HttpSecurity is a prototype bean — each call produces a fresh, independent instance.
-      final var http = beanFactory.getBean(HttpSecurity.class);
-      final var builder = beanFactory.getBean(ScopedWebappSecurityChainBuilder.class);
-      final var sessionFilter = getOrBuildSessionFilter(beanFactory, descriptor.basePath());
-      final SecurityFilterChain chain =
-          builder.buildScopedWebappChain(
-              http,
-              descriptor.basePath(),
-              descriptor.authentication(),
-              sessionFilter,
-              sessionCookieName(descriptor.basePath()),
-              csrfCookieName(descriptor.basePath()));
-      // Webapp chain sorts after the scoped API chain (ORDER_API < ORDER_WEBAPP) so a scoped
-      // catch-all webapp matcher cannot claim API requests ahead of the scoped API chain.
-      return new OrderedSecurityFilterChainWrapper(chain, ORDER_WEBAPP);
-    } catch (final IllegalStateException ex) {
-      throw ex;
-    } catch (final Exception ex) {
-      throw new IllegalStateException(
-          "Failed to build scoped webapp security chain for basePath=" + descriptor.basePath(), ex);
-    }
+  /** The chain bean of a startup scope; the first of its two beans builds the scope. */
+  private static OrderedSecurityFilterChainWrapper view(
+      final ScopedSecurityReloadService service,
+      final ScopeSlot slot,
+      final ScopedSecurityDescriptor descriptor,
+      final ScopeChainKind kind,
+      final int order) {
+    service.initializeStartupScope(slot, descriptor);
+    return new OrderedSecurityFilterChainWrapper(new ScopeChainView(slot, kind), order);
   }
 
   /** The per-scope session cookie name: {@code camunda-session-<sanitize(basePath)>}. */

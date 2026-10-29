@@ -14,6 +14,7 @@ import io.camunda.security.api.context.CamundaSecurityScopeProvider;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.AuthenticationMethod;
 import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
+import io.camunda.security.core.port.in.ScopedSecurityReloadPort;
 import io.camunda.security.core.port.out.BasicAuthUserDetailsPort;
 import io.camunda.security.core.port.out.BasicAuthUserDetailsPort.CamundaUserDetails;
 import io.camunda.security.core.port.out.SecurityPathPort;
@@ -163,20 +164,21 @@ class ScopedSecurityChainConfigurationTest {
   }
 
   @Test
-  void reloadSwapsTheChainsOfARegisteredScope() {
+  void shouldServeANewGenerationThroughTheRegisteredChainBean() {
     ToggleableScopeProvider.CONTRIBUTE.set(true);
     basicRunner()
         .withUserConfiguration(ToggleableScopeProvider.class)
         .run(
             ctx -> {
+              // given
               final var contributed = contributedChain(ctx);
               final var filtersBefore = contributed.getFilters();
 
-              ctx.getBean(ScopedSecurityChainReloader.class).reload();
+              // when
+              ctx.getBean(ScopedSecurityReloadPort.class).refreshCredentials(SCOPED_BASE);
 
-              assertThat(contributed.getFilters())
-                  .as("reload must swap a freshly built chain into the registered wrapper")
-                  .isNotSameAs(filtersBefore);
+              // then
+              assertThat(contributed.getFilters()).isNotSameAs(filtersBefore);
               final var proxy = new FilterChainProxy(List.of(contributed));
               final var response = new MockHttpServletResponse();
               proxy.doFilter(
@@ -186,17 +188,20 @@ class ScopedSecurityChainConfigurationTest {
   }
 
   @Test
-  void reloadRejectsEveryRequestOfAScopeThatIsNoLongerContributed() {
+  void shouldRejectEveryRequestOfAScopeThatIsNoLongerContributed() {
     ToggleableScopeProvider.CONTRIBUTE.set(true);
     basicRunner()
         .withUserConfiguration(ToggleableScopeProvider.class)
         .run(
             ctx -> {
+              // given
               final var contributed = contributedChain(ctx);
               ToggleableScopeProvider.CONTRIBUTE.set(false);
 
-              ctx.getBean(ScopedSecurityChainReloader.class).reload();
+              // when
+              ctx.getBean(ScopedSecurityReloadPort.class).reloadAll();
 
+              // then
               final var proxy = new FilterChainProxy(List.of(contributed));
               final var request = new MockHttpServletRequest("GET", SCOPED_V2);
               request.addHeader("Authorization", basicHeader("alice", "s3cret"));

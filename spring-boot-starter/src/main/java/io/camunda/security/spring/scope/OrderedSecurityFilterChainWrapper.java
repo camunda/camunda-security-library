@@ -23,28 +23,12 @@ import org.springframework.security.web.SecurityFilterChain;
  */
 final class OrderedSecurityFilterChainWrapper implements SecurityFilterChain, Ordered {
 
-  private volatile SecurityFilterChain delegate;
+  private final SecurityFilterChain delegate;
   private final int order;
 
   OrderedSecurityFilterChainWrapper(final SecurityFilterChain delegate, final int order) {
     this.delegate = Objects.requireNonNull(delegate, "delegate must not be null");
     this.order = order;
-  }
-
-  /**
-   * Replaces the wrapped chain. {@link org.springframework.security.web.FilterChainProxy} asks the
-   * chain for its filters on every request, so the next request already sees the new chain.
-   *
-   * @return the chain that was replaced
-   */
-  SecurityFilterChain swap(final SecurityFilterChain replacement) {
-    final var previous = delegate;
-    delegate = Objects.requireNonNull(replacement, "replacement must not be null");
-    return previous;
-  }
-
-  SecurityFilterChain delegate() {
-    return delegate;
   }
 
   @Override
@@ -60,5 +44,9 @@ final class OrderedSecurityFilterChainWrapper implements SecurityFilterChain, Or
   @Override
   public int getOrder() {
     return order;
+  }
+
+  SecurityFilterChain delegate() {
+    return delegate;
   }
 }
