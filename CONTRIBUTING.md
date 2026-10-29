@@ -101,7 +101,7 @@ Three hooks live in `.mvn/hooks/` and are checked into the repository. On `./mvn
 
 ### Architecture Decision Records
 
-Significant design choices are documented as ADRs in `docs/adr/`. When in doubt, write one — a short ADR capturing the reasoning is more valuable than no record at all. See `.claude/docs/workflow.md` for guidance on when to write an ADR.
+The team records fundamental, lasting design decisions as ADRs in `docs/adr/`. See `docs/workflows/adr.md` for the criteria and the process.
 
 ## Releases
 
