@@ -16,11 +16,16 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.context.MembershipResolutionContextPropagator;
+import io.camunda.security.api.model.authz.ConditionalMembership;
+import io.camunda.security.api.model.authz.MembershipCondition;
+import io.camunda.security.api.model.authz.Operand;
+import io.camunda.security.api.model.authz.ResourceAttribute;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.core.port.out.MembershipQuery;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
@@ -78,6 +83,7 @@ class LazyTokenClaimsConverterTest {
     verify(membershipPort, never()).groupIds(any());
     verify(membershipPort, never()).roleIds(any());
     verify(membershipPort, never()).tenantIds(any());
+    verify(membershipPort, never()).conditionalRoleMemberships(any());
   }
 
   @Test
@@ -140,8 +146,8 @@ class LazyTokenClaimsConverterTest {
     capturingConverter.convert(Map.of("sub", "alice"));
 
     // then the propagator was applied once per membership supplier (mapping rules, groups, roles,
-    // tenants)
-    assertThat(decorateCalls.get()).isEqualTo(4);
+    // tenants, conditional role memberships)
+    assertThat(decorateCalls.get()).isEqualTo(5);
   }
 
   @Test
@@ -241,5 +247,74 @@ class LazyTokenClaimsConverterTest {
     final var auth = converter.convert(claims);
 
     assertThat(auth.authenticatedGroupIds()).containsExactly("g1");
+  }
+
+  @Test
+  void resolvesConditionalRoleMembershipsLazilyWithTheRoleQuery() {
+    // given
+    final var reviewerInPayments =
+        new ConditionalMembership(
+            "reviewer",
+            List.of(
+                new MembershipCondition(
+                    ResourceAttribute.WORKSPACE, new Operand.Values(Set.of("payments")))));
+    when(membershipPort.mappingRuleIds(any())).thenReturn(List.of("mr1"));
+    when(membershipPort.groupIds(any())).thenReturn(List.of("g1"));
+    when(membershipPort.roleIds(any())).thenReturn(List.of("viewer"));
+    final var queries = new AtomicReference<MembershipQuery>();
+    when(membershipPort.conditionalRoleMemberships(any()))
+        .thenAnswer(
+            invocation -> {
+              queries.set(invocation.getArgument(0));
+              return List.of(reviewerInPayments);
+            });
+    final var auth = converter.convert(Map.of("sub", "alice"));
+
+    // when
+    final var memberships = auth.conditionalRoleMemberships();
+
+    // then the memberships come in addition to the role ids, never inside them
+    assertThat(memberships).containsExactly(reviewerInPayments);
+    assertThat(auth.authenticatedRoleIds()).containsExactly("viewer");
+    // and the lookup gets the same query as roleIds: the principal, mapping rules and groups
+    assertThat(queries.get().principalId()).isEqualTo("alice");
+    assertThat(queries.get().resolvedMappingRuleIds()).containsExactly("mr1");
+    assertThat(queries.get().resolvedGroupIds()).containsExactly("g1");
+  }
+
+  @Test
+  void hasNoConditionalRoleMembershipsWhenThePortKeepsTheDefault() {
+    // given a host port written before conditional memberships existed
+    final MembershipPort legacyPort =
+        new MembershipPort() {
+          @Override
+          public List<String> mappingRuleIds(final MembershipQuery query) {
+            return List.of();
+          }
+
+          @Override
+          public List<String> groupIds(final MembershipQuery query) {
+            return List.of();
+          }
+
+          @Override
+          public List<String> roleIds(final MembershipQuery query) {
+            return List.of("viewer");
+          }
+
+          @Override
+          public List<String> tenantIds(final MembershipQuery query) {
+            return List.of();
+          }
+        };
+
+    // when
+    final var auth =
+        new LazyTokenClaimsConverter("sub", "azp", true, legacyPort)
+            .convert(Map.of("sub", "alice"));
+
+    // then
+    assertThat(auth.conditionalRoleMemberships()).isEmpty();
+    assertThat(auth.authenticatedRoleIds()).containsExactly("viewer");
   }
 }

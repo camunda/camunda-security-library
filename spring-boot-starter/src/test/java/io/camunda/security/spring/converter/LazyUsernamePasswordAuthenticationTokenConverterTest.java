@@ -15,11 +15,16 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.context.MembershipResolutionContextPropagator;
+import io.camunda.security.api.model.authz.ConditionalMembership;
+import io.camunda.security.api.model.authz.MembershipCondition;
+import io.camunda.security.api.model.authz.Operand;
+import io.camunda.security.api.model.authz.ResourceAttribute;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.core.port.out.MembershipQuery;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
@@ -57,6 +62,7 @@ class LazyUsernamePasswordAuthenticationTokenConverterTest {
     verify(membershipPort, never()).groupIds(any());
     verify(membershipPort, never()).roleIds(any());
     verify(membershipPort, never()).tenantIds(any());
+    verify(membershipPort, never()).conditionalRoleMemberships(any());
   }
 
   @Test
@@ -103,9 +109,9 @@ class LazyUsernamePasswordAuthenticationTokenConverterTest {
     // when the authentication is built (before any membership field is read)
     capturingConverter.convert(new UsernamePasswordAuthenticationToken("alice", "pw"));
 
-    // then the propagator was applied once per membership supplier (groups, roles, tenants —
-    // no mappingRuleIds for BASIC auth)
-    assertThat(decorateCalls.get()).isEqualTo(3);
+    // then the propagator was applied once per membership supplier (groups, roles, tenants,
+    // conditional role memberships — no mappingRuleIds for BASIC auth)
+    assertThat(decorateCalls.get()).isEqualTo(4);
   }
 
   @Test
@@ -214,5 +220,37 @@ class LazyUsernamePasswordAuthenticationTokenConverterTest {
     // then the outer (roles) binding survived the nested (groups) resolution's cleanup — a
     // save-and-restore propagator does not clobber its own outer scope when re-entered
     assertThat(observedDuringRoleLookup.get()).isEqualTo("tenant-x");
+  }
+
+  @Test
+  void resolvesConditionalRoleMembershipsLazilyWithTheRoleQuery() {
+    // given
+    final var reviewerInPayments =
+        new ConditionalMembership(
+            "reviewer",
+            List.of(
+                new MembershipCondition(
+                    ResourceAttribute.WORKSPACE, new Operand.Values(Set.of("payments")))));
+    when(membershipPort.groupIds(any())).thenReturn(List.of("g1"));
+    when(membershipPort.roleIds(any())).thenReturn(List.of("viewer"));
+    final var query = new AtomicReference<MembershipQuery>();
+    when(membershipPort.conditionalRoleMemberships(any()))
+        .thenAnswer(
+            invocation -> {
+              query.set(invocation.getArgument(0));
+              return List.of(reviewerInPayments);
+            });
+    final var auth = converter.convert(new UsernamePasswordAuthenticationToken("alice", "pw"));
+    verify(membershipPort, never()).conditionalRoleMemberships(any());
+
+    // when
+    final var memberships = auth.conditionalRoleMemberships();
+
+    // then the memberships come in addition to the role ids, never inside them
+    assertThat(memberships).containsExactly(reviewerInPayments);
+    assertThat(auth.authenticatedRoleIds()).containsExactly("viewer");
+    // and the lookup gets the same query as roleIds: the principal and its groups
+    assertThat(query.get().principalId()).isEqualTo("alice");
+    assertThat(query.get().resolvedGroupIds()).containsExactly("g1");
   }
 }

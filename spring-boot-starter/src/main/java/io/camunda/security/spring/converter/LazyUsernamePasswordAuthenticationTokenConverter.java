@@ -59,13 +59,18 @@ public final class LazyUsernamePasswordAuthenticationTokenConverter
         decoratedLazyList(
             () ->
                 membershipPort.tenantIds(base.withGroupIds(lazyGroupIds).withRoleIds(lazyRoleIds)));
+    final var lazyConditionalRoleMemberships =
+        CamundaAuthentication.lazyList(
+            contextPropagator.decorateList(
+                () -> membershipPort.conditionalRoleMemberships(base.withGroupIds(lazyGroupIds))));
 
     return CamundaAuthentication.of(
         a ->
             a.user(username)
                 .groupIdsSupplier(() -> lazyGroupIds)
                 .roleIdsSupplier(() -> lazyRoleIds)
-                .tenantsSupplier(() -> lazyTenantIds));
+                .tenantsSupplier(() -> lazyTenantIds)
+                .conditionalRoleMembershipsSupplier(() -> lazyConditionalRoleMemberships));
   }
 
   private List<String> decoratedLazyList(final Supplier<List<String>> supplier) {
