@@ -9,6 +9,7 @@ package io.camunda.security.core.port.out;
 
 import io.camunda.security.api.model.session.PersistentSession;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Outbound port for storing and retrieving authenticated session state.
@@ -27,7 +28,7 @@ public interface SessionStorePort {
    * @param sessionId the session id to look up
    * @return the persisted session, or {@code null} when absent
    */
-  PersistentSession get(String sessionId);
+  @Nullable PersistentSession get(String sessionId);
 
   /** Inserts the session, or updates it in place when one with the same id already exists. */
   void upsert(PersistentSession session);

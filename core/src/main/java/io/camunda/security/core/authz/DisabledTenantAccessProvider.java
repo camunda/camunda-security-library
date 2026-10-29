@@ -8,6 +8,7 @@
 package io.camunda.security.core.authz;
 
 import io.camunda.security.api.model.CamundaAuthentication;
+import org.jspecify.annotations.Nullable;
 
 /**
  * {@link TenantAccessProvider} used when multi-tenancy checks are disabled: every principal holds a
@@ -28,7 +29,7 @@ public final class DisabledTenantAccessProvider implements TenantAccessProvider 
 
   @Override
   public TenantAccess hasTenantAccessByTenantId(
-      final CamundaAuthentication authentication, final String tenantId) {
+      final CamundaAuthentication authentication, final @Nullable String tenantId) {
     return TenantAccess.wildcard(null);
   }
 }

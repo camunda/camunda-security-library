@@ -27,7 +27,7 @@ public record CamundaUserDTO(
     List<String> tenants,
     List<String> groups,
     List<String> roles,
-    String salesPlanType,
+    @Nullable String salesPlanType,
     Map<String, String> c8Links,
     boolean canLogout) {
 
