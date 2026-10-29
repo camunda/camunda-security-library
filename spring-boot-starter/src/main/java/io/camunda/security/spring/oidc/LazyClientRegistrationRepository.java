@@ -8,9 +8,11 @@
 package io.camunda.security.spring.oidc;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -160,6 +162,11 @@ public final class LazyClientRegistrationRepository
       return config.getClientName();
     }
     return StringUtils.hasText(config.getIssuerUri()) ? config.getIssuerUri() : registrationId;
+  }
+
+  /** The registrations resolved so far. Resolves nothing. */
+  public Collection<ClientRegistration> resolvedRegistrations() {
+    return List.copyOf(resolved.values());
   }
 
   @Override

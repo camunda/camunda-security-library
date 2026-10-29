@@ -34,6 +34,7 @@ import io.camunda.security.spring.oidc.LazyClientRegistrationRepository;
 import io.camunda.security.spring.oidc.OidcRedirectionEndpoint;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
+import io.camunda.security.spring.oidc.ScopedOidcClients;
 import io.camunda.security.spring.oidc.UrlRedaction;
 import io.camunda.security.spring.scope.BasePaths;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
@@ -471,6 +472,34 @@ public final class ScopedWebappSecurityChainBuilder {
       final String scopedSessionCookieName,
       final String scopedCsrfCookieName)
       throws Exception {
+    return buildScopedWebappChain(
+        http,
+        basePath,
+        authentication,
+        sessionRepositoryFilter,
+        scopedSessionCookieName,
+        scopedCsrfCookieName,
+        null);
+  }
+
+  /**
+   * As {@link #buildScopedWebappChain(HttpSecurity, String, AuthenticationConfiguration,
+   * SessionRepositoryFilter, String, String)}, with the OIDC client stack a scope generation owns
+   * (ADR-0040): its registrations, authorized clients, manager, token endpoint and assertion keys.
+   * The chain then authenticates every token request with that generation's credentials. A {@code
+   * null} {@code oidcClients} builds a stack for the chain alone, and the token endpoint from the
+   * host's {@link OidcTokenEndpointCustomizer}, as the other overload does. A BASIC scope ignores
+   * it.
+   */
+  public SecurityFilterChain buildScopedWebappChain(
+      final HttpSecurity http,
+      final String basePath,
+      final AuthenticationConfiguration authentication,
+      final SessionRepositoryFilter<?> sessionRepositoryFilter,
+      final String scopedSessionCookieName,
+      final String scopedCsrfCookieName,
+      final ScopedOidcClients oidcClients)
+      throws Exception {
     Objects.requireNonNull(http, "http must not be null");
     Objects.requireNonNull(basePath, "basePath must not be null");
     Objects.requireNonNull(authentication, "authentication must not be null");
@@ -504,7 +533,8 @@ public final class ScopedWebappSecurityChainBuilder {
               authentication,
               sessionRepositoryFilter,
               scopedSessionCookieName,
-              scopedCsrfCookieName);
+              scopedCsrfCookieName,
+              oidcClients);
       case BASIC ->
           buildBasicWebappChainInternal(
               http, prefix, sessionRepositoryFilter, scopedSessionCookieName, scopedCsrfCookieName);
@@ -966,7 +996,8 @@ public final class ScopedWebappSecurityChainBuilder {
       final AuthenticationConfiguration authentication,
       final SessionRepositoryFilter<?> sessionRepositoryFilter,
       final String scopedSessionCookieName,
-      final String scopedCsrfCookieName)
+      final String scopedCsrfCookieName,
+      final ScopedOidcClients oidcClients)
       throws Exception {
 
     final var matchers =
@@ -986,13 +1017,25 @@ public final class ScopedWebappSecurityChainBuilder {
               + "' has no configured providers; "
               + "a scoped OIDC webapp chain requires at least one provider");
     }
-    final var clientRegistrationRepository =
-        new LazyClientRegistrationRepository(
-            scopedClientRegistrationFactory, providerMap, redirectUri, "basePath=" + prefix);
-    final var authorizedClientRepository = new HttpSessionOAuth2AuthorizedClientRepository();
-    final var authorizedClientManager =
-        authorizedClientManagerFactory.create(
-            clientRegistrationRepository, authorizedClientRepository);
+    final LazyClientRegistrationRepository clientRegistrationRepository;
+    final OAuth2AuthorizedClientRepository authorizedClientRepository;
+    final OAuth2AuthorizedClientManager authorizedClientManager;
+    final Function<ClientRegistration, JWK> revocationJwkResolver;
+    if (oidcClients != null) {
+      clientRegistrationRepository = oidcClients.registrations();
+      authorizedClientRepository = oidcClients.authorizedClients();
+      authorizedClientManager = oidcClients.authorizedClientManager();
+      revocationJwkResolver = oidcClients.assertionJwks();
+    } else {
+      clientRegistrationRepository =
+          new LazyClientRegistrationRepository(
+              scopedClientRegistrationFactory, providerMap, redirectUri, "basePath=" + prefix);
+      authorizedClientRepository = new HttpSessionOAuth2AuthorizedClientRepository();
+      authorizedClientManager =
+          authorizedClientManagerFactory.create(
+              clientRegistrationRepository, authorizedClientRepository);
+      revocationJwkResolver = assertionJwkResolver(providerMap);
+    }
     final var scopedResolver =
         new CamundaOidcAuthorizationRequestResolver(
             clientRegistrationRepository,
@@ -1047,7 +1090,11 @@ public final class ScopedWebappSecurityChainBuilder {
                       .redirectionEndpoint(
                           redirectionEndpoint -> redirectionEndpoint.baseUri(redirectUri))
                       .failureHandler(loginFailureHandler(prefix + "/"));
-                  tokenEndpointCustomizerProvider.ifAvailable(oauthLogin::tokenEndpoint);
+                  if (oidcClients != null) {
+                    oauthLogin.tokenEndpoint(oidcClients.tokenEndpoint());
+                  } else {
+                    tokenEndpointCustomizerProvider.ifAvailable(oauthLogin::tokenEndpoint);
+                  }
                   oidcUserServiceProvider.ifAvailable(
                       service -> oauthLogin.userInfoEndpoint(c -> c.oidcUserService(service)));
                   oauthLogin.authorizationEndpoint(
@@ -1068,8 +1115,7 @@ public final class ScopedWebappSecurityChainBuilder {
                           refreshTokenRevocationLogoutHandler(
                               clientRegistrationRepository,
                               authorizedClientRepository,
-                              assertionJwkResolver(
-                                  scopedClientRegistrationFactory.flatten(authentication))));
+                              revocationJwkResolver));
                   logout.logoutSuccessHandler(
                       oidcLogoutSuccessHandler(
                           clientRegistrationRepository,

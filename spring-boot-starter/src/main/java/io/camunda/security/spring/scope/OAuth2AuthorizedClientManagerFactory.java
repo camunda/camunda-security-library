@@ -8,6 +8,8 @@
 package io.camunda.security.spring.scope;
 
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
+import org.springframework.security.oauth2.client.endpoint.OAuth2AccessTokenResponseClient;
+import org.springframework.security.oauth2.client.endpoint.OAuth2RefreshTokenGrantRequest;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 
@@ -22,4 +24,18 @@ public interface OAuth2AuthorizedClientManagerFactory {
   OAuth2AuthorizedClientManager create(
       ClientRegistrationRepository clientRegistrationRepository,
       OAuth2AuthorizedClientRepository authorizedClientRepository);
+
+  /**
+   * Creates the manager of a scope whose refresh-token requests go through the scope's own token
+   * response client, which authenticates with the scope's current credentials — for {@code
+   * private_key_jwt} the scope's own assertion key (ADR-0040). A factory that does not override
+   * this keeps its two-argument behaviour.
+   */
+  default OAuth2AuthorizedClientManager create(
+      final ClientRegistrationRepository clientRegistrationRepository,
+      final OAuth2AuthorizedClientRepository authorizedClientRepository,
+      final OAuth2AccessTokenResponseClient<OAuth2RefreshTokenGrantRequest>
+          refreshTokenResponseClient) {
+    return create(clientRegistrationRepository, authorizedClientRepository);
+  }
 }

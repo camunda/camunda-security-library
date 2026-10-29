@@ -52,6 +52,21 @@ final class LazyClientRegistrationRepositoryTest {
   }
 
   @Test
+  void shouldListOnlyTheRegistrationsResolvedSoFar() throws Exception {
+    // given
+    server = OidcTestServer.startRsa("key");
+    final var repository = newRepository(Map.of("oidc", server.oidcConfiguration("client")));
+    final var before = repository.resolvedRegistrations();
+
+    // when
+    final var resolved = repository.findByRegistrationId("oidc");
+
+    // then
+    assertThat(before).isEmpty();
+    assertThat(repository.resolvedRegistrations()).containsExactly(resolved);
+  }
+
+  @Test
   void shouldResolveOnFirstLookupAndReuseTheResult() throws Exception {
     // given
     server = OidcTestServer.startRsa("key");
