@@ -634,6 +634,32 @@ How each scope's `AuthenticationConfiguration` is assembled (which providers it 
 
 **Activation.** `ScopedSecurityChainConfiguration` is part of the `CamundaSecurityAutoConfiguration` umbrella — no additional `@Import` is needed when a host uses the umbrella. Hosts that `@Import` individual CSL configurations must add `ScopedSecurityChainConfiguration.class` to their `@Import` list. Each descriptor contributes both a scoped API chain and a scoped webapp chain. See [ADR-0013](../adr/0013-camunda-security-scope-provider-spi.md) for the design rationale.
 
+#### Changing scopes at runtime
+
+A host that adds, changes or removes scopes while it runs calls `ScopedSecurityReloadPort` (a bean
+whenever a `CamundaSecurityScopeProvider` bean exists). See
+[ADR-0040](../adr/0040-change-scoped-security-at-runtime.md).
+
+```java
+reloadPort.apply(new ScopedSecurityDescriptor("/physical-tenants/t7", tenantAuthentication));
+reloadPort.rotateCredentials(descriptorWithNewSecret); // keeps the tenant's sessions
+reloadPort.refreshCredentials("/physical-tenants/t7"); // keystore replaced at the same path
+reloadPort.remove("/physical-tenants/t7");             // its paths answer 404 from now on
+reloadPort.reloadAll();                                // re-read every provider, apply the difference
+```
+
+- A change applies to one scope and to the node it is called on. Call it on every node.
+- The provider stays the source of truth: return the change from `CamundaSecurityScopeProvider#get`
+  too, or `reloadAll()` and the next restart undo it. Hand over a fresh `AuthenticationConfiguration`
+  per change rather than mutating the one a scope was built from.
+- A change of anything but credentials ends the scope's existing sessions; a credential change
+  (`clientSecret`, the assertion keystore's `path`, `password`, `keyAlias`, `keyPassword`) keeps them.
+- When a provider of the new configuration cannot be reached, the scope keeps its previous chains
+  and the result is `KEPT_PREVIOUS`; pass `UnreachableIdentityProviderPolicy.APPLY` to apply it
+  anyway, for example when the change withdraws trust from a provider.
+- Scoped login chains authenticate token requests with the scope's own credentials and do not use
+  an `OidcTokenEndpointCustomizer` bean.
+
 ### `OidcResourceServerCustomizer` — customise the OAuth2 resource-server DSL
 
 The OIDC **API** chain (`OidcApiSecurityConfiguration`) routes through every `OidcResourceServerCustomizer` bean inside `oauth2ResourceServer(...)`. Use this for RFC 9728 protected-resource metadata, custom JWT validators, or swapping the bearer-token entry point.
@@ -670,7 +696,7 @@ Use this when your application builds **multiple simultaneous OIDC API chains th
 
 ### `OidcTokenEndpointCustomizer` — customise the OAuth2 login token endpoint
 
-Used most commonly to wire `private_key_jwt` client authentication. Implement the interface and register a bean; `OidcWebappSecurityConfiguration` picks it up via `ObjectProvider` if present.
+Used most commonly to wire `private_key_jwt` client authentication. Implement the interface and register a bean; `OidcWebappSecurityConfiguration` picks it up via `ObjectProvider` if present. It applies to the primary webapp chain only: a scoped login chain exchanges its codes with the scope's own credentials and `private_key_jwt` key (ADR-0040).
 
 ```java
 @Bean
