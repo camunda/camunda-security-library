@@ -7,6 +7,8 @@
  */
 package io.camunda.security.core.authz;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * A resource whose access is scoped to a single owning tenant.
  *
@@ -17,7 +19,7 @@ package io.camunda.security.core.authz;
  */
 public interface TenantOwnedEntity {
 
-  String tenantId();
+  @Nullable String tenantId();
 
   default boolean hasTenantScope() {
     return true;

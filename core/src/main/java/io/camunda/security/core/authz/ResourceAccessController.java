@@ -10,6 +10,7 @@ package io.camunda.security.core.authz;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.auth.SecurityContext;
 import java.util.function.Function;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Translates a {@link SecurityContext} into a {@link ResourceAccessChecks} and applies it to a
@@ -35,7 +36,7 @@ public interface ResourceAccessController {
    * @param resourceChecksApplier function that performs the actual backend operation given the
    *     resolved access checks
    */
-  <T> T doGet(
+  <T> @Nullable T doGet(
       SecurityContext securityContext, Function<ResourceAccessChecks, T> resourceChecksApplier);
 
   /**
@@ -46,7 +47,7 @@ public interface ResourceAccessController {
    * @param resourceChecksApplier function that performs the actual backend operation given the
    *     resolved access checks
    */
-  <T> T doSearch(
+  <T> @Nullable T doSearch(
       SecurityContext securityContext, Function<ResourceAccessChecks, T> resourceChecksApplier);
 
   /**
