@@ -9,9 +9,11 @@ package io.camunda.security.api.model.config;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcProvidersConfiguration;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Authentication configuration bound to {@code camunda.security.authentication.*}.
@@ -137,13 +139,14 @@ public class AuthenticationConfiguration {
    * Whether some users get their groups from Camunda: the method is not OIDC, or an OIDC provider
    * has no groups claim. A host shows Camunda's group management when this is {@code true}.
    *
-   * <p>A provider without its own {@code groups-claim} uses the one of the {@code oidc} block. With
-   * a single provider this is always the opposite of {@link #isExternalGroupsEnabled()}; with
+   * <p>A provider without its own {@code groups-claim} uses the one of the {@code oidc} block. Of
+   * several providers of one issuer, only the first counts, because it verifies the tokens. With a
+   * single provider this is always the opposite of {@link #isExternalGroupsEnabled()}; with
    * several, both can be {@code true}.
    */
   public boolean isCamundaGroupsEnabled() {
     return getMethod() != AuthenticationMethod.OIDC
-        || oidcProviders().stream().anyMatch(provider -> groupsClaimOf(provider) == null);
+        || issuerOwners().stream().anyMatch(provider -> groupsClaimOf(provider) == null);
   }
 
   /**
@@ -151,11 +154,12 @@ public class AuthenticationConfiguration {
    * not know those groups, so a host must not require a group it is given to exist in Camunda when
    * this is {@code true}.
    *
-   * <p>A provider without its own {@code groups-claim} uses the one of the {@code oidc} block.
+   * <p>A provider without its own {@code groups-claim} uses the one of the {@code oidc} block. Of
+   * several providers of one issuer, only the first counts, because it verifies the tokens.
    */
   public boolean isExternalGroupsEnabled() {
     return getMethod() == AuthenticationMethod.OIDC
-        && oidcProviders().stream().anyMatch(provider -> groupsClaimOf(provider) != null);
+        && issuerOwners().stream().anyMatch(provider -> groupsClaimOf(provider) != null);
   }
 
   /**
@@ -201,6 +205,22 @@ public class AuthenticationConfiguration {
             });
     byRegistrationId.keySet().removeIf(registrationId -> !hasText(registrationId));
     return byRegistrationId.isEmpty() ? List.of(getOidc()) : List.copyOf(byRegistrationId.values());
+  }
+
+  /**
+   * The providers whose groups claim can apply to a token: of the providers that share an issuer,
+   * trailing slash ignored, only the first, as in {@link #getGroupsClaim(String)}. The others never
+   * verify a token, so their groups claim is never read. A provider without an {@code issuer-uri}
+   * is kept.
+   */
+  private List<OidcConfiguration> issuerOwners() {
+    final Set<String> ownedIssuers = new HashSet<>();
+    return oidcProviders().stream()
+        .filter(
+            provider ->
+                !hasText(provider.getIssuerUri())
+                    || ownedIssuers.add(withoutTrailingSlash(provider.getIssuerUri())))
+        .toList();
   }
 
   private String groupsClaimOf(final OidcConfiguration provider) {
