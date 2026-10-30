@@ -171,6 +171,9 @@ public class AuthenticationConfiguration {
    * issuer-uri}. A provider without its own {@code groups-claim}, and a token of no known issuer,
    * use the one of the {@code oidc} block.
    *
+   * <p>Several providers of one issuer are not supported for groups, by intent. A browser login
+   * through a later provider of the issuer also gets the groups claim of the first provider.
+   *
    * @param issuer the {@code iss} claim of the token, or {@code null}
    * @return the groups claim, or {@code null} when the groups of the token's user come from Camunda
    */
