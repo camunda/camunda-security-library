@@ -146,7 +146,9 @@ case when either:
 - An OIDC provider has no groups claim. The providers are the
   `camunda.security.authentication.oidc` block when it has a `client-id`, and
   every provider under `providers.oidc.<name>`. A provider without its own
-  `groups-claim` uses the one of the `oidc` block.
+  `groups-claim` uses the one of the `oidc` block. Of several providers with
+  the same `issuer-uri` (a trailing slash doesn't matter), only the first
+  counts, because only it verifies the tokens.
 
 When every provider has a groups claim, the IdPs are the source of truth for
 group membership and CSL's internal group management beans should be
