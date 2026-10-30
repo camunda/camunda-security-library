@@ -1,64 +1,60 @@
----
-status: Accepted
----
-
 # ADR-0040: Derive the groups modes from every OIDC provider
+
+**DRI**: Timothy Cline (timcline)
 
 **Deciders**: Timothy Cline (timcline)
 
-## Status
+**Status**: Accepted (1.3.0)
 
-Accepted (8.11)
+**Purpose**: Defines how CSL tells a host where its users get their groups from.
+
+**Audience**: Developers of host applications that manage or assign groups, and CSL maintainers.
 
 ## Context
 
-`AuthenticationConfiguration.isCamundaGroupsEnabled()` read only the `groups-claim` of the `camunda.security.authentication.oidc` block. A deployment with named providers under `providers.oidc.<name>` got a value that ignored them ([camunda/camunda#44274](https://github.com/camunda/camunda/issues/44274)). `@ConditionalOnCamundaGroupsEnabled` had the same gap.
-
-Hosts use the one flag for two decisions:
-
-1. Whether to offer Camunda's group management, where admins create groups and add members.
-2. Whether a group assigned to a role, tenant or authorization must exist in Camunda.
-
-With one provider both decisions have the same answer. With a provider that has a groups claim and one that does not, they diverge:
-
-- Users of the provider without a claim need Camunda's group management (decision 1 must be "yes").
-- Groups of the provider with a claim exist only in the IdP, so they can't be required to exist in Camunda (decision 2 must be "no").
-
-No single value covers both. Neither decision can be made per provider either. A Camunda group can have members from any provider. An assignment like "group `engineering` gets role Developer" names no provider.
+A host decides if it offers the group management of Camunda, and if an assigned group must exist
+in Camunda. CSL answered both with one value, read from the default OIDC configuration only. With
+several providers, the answers can differ. Users of a provider without a groups claim need the
+group management of Camunda. Groups of a provider with a claim exist only in its identity provider.
 
 ## Decision
 
-`AuthenticationConfiguration` derives two cluster-wide flags from all OIDC providers. No setting is added.
+**D1. CSL gives two groups modes, derived from the OIDC providers.**
+One mode tells if some users get their groups from Camunda. The other tells if some users get
+their groups from a claim. Both can be true. The groups claim of each provider gives the answer,
+so CSL adds no setting.
 
-- `isCamundaGroupsEnabled()`: some users get their groups from Camunda. It is true when the method is not OIDC, or an OIDC provider has no groups claim. This answers decision 1.
-- `isExternalGroupsEnabled()`: some users get their groups from a claim. It is true when the method is OIDC and an OIDC provider has a groups claim. This answers decision 2: when it is true, a host must not require a group to exist in Camunda.
+**D2. CSL reads the groups of a token with the claim of the provider that verifies the token.**
+A host asks for the claim by the issuer of the token, not for one claim for all tokens.
 
-A third method, `getGroupsClaim(String issuer)`, gives the groups claim for a token of that issuer, so a host can resolve each login's groups with the claim of the provider that issued the token:
+**D3. Of the providers of one issuer, only the provider that verifies the tokens counts.**
+This is the first provider of the issuer in the configuration. A trailing slash does not make a
+different issuer ([ADR-0038](0038-verified-token-carries-its-provider-claims.md)). The modes and
+the claim use the same rule, so they always agree.
 
-- The issuer belongs to the first provider with that `issuer-uri`, with the `oidc` block first. Issuer-uris that differ only by a trailing slash are one issuer (ADR-0038, #738). This is the rule `IssuerOwnership` applies when it routes by the configuration, so the claim is the one of the provider that verifies the token.
-- It returns `null` when that provider's users get their groups from Camunda.
+**D4. A provider without a groups claim uses the claim of the default OIDC configuration.**
+Named providers get the principal claims in the same way
+([ADR-0034](0034-named-providers-inherit-principal-claims.md)).
 
-The OIDC providers are the `oidc` block when it has a `client-id`, then the named providers. A named provider with the registration ID of the `oidc` block replaces it, as `ScopedClientRegistrationFactory#flatten` does. A provider with a blank registration ID is left out, as the token decoders leave it out. With none, the `oidc` block alone, so a configuration without named providers keeps today's result. A provider without its own `groups-claim` uses the one of the `oidc` block, as hosts already do for the principal claims. A token of no known issuer also uses the claim of the `oidc` block. Of several providers of one issuer, only the one that owns it counts for the two flags: the others never verify a token, so their groups claim is never read, and counting them would make the flags disagree with `getGroupsClaim`.
+## Alternatives considered
 
-`@ConditionalOnCamundaGroupsEnabled` binds `camunda.security.authentication` and returns `isCamundaGroupsEnabled()`.
+- **Keep one mode.** With mixed providers, the two decisions need different answers.
+- **Decide per provider.** A Camunda group can have members from any provider, and an assignment
+  such as "group engineering gets role Developer" names no provider.
+- **Add a setting for the groups mode.** The groups claims already give the answer, and a
+  separate setting can contradict them.
 
 ## Consequences
 
-**Positive**
+- If only the default OIDC configuration has a groups claim, the result does not change. With one
+  provider, the two modes are always opposites.
+- With mixed providers, a host does not check that an assigned group exists, so it cannot find a
+  typo in a group name.
+- A configuration with mixed providers needs a default OIDC configuration without a groups claim.
+- The condition that activates the group management of Camunda now also reads the authentication
+  method. With basic authentication and a groups claim, it activates.
 
-- The flags reflect every provider. A configuration where only the `oidc` block sets a groups claim gets the same values as before.
-- With one provider the two flags are always opposites, so a host that switches its existence check to `!isExternalGroupsEnabled()` behaves exactly as before for that configuration.
+## Source
 
-**Negative / accepted trade-offs**
-
-- In a mixed setup a host no longer checks that an assigned group exists, even for a group meant for Camunda. A typo is accepted silently, because the host can't tell it from a group of the IdP.
-- A provider can't opt out of the `oidc` block's groups claim, so a mixed setup needs the `oidc` block to have none.
-- `getGroupsClaim` matches a provider by its `issuer-uri`. A provider configured without one is found only through the `oidc` block's fallback.
-- `@ConditionalOnCamundaGroupsEnabled` now also considers the method, as its documentation always said. With basic authentication and a groups claim set, it matches.
-- `getGroupsClaim` follows the routing by the configuration. A host that supplies its own client registration repository routes issuers exactly. If that host also configures two providers whose `issuer-uri`s differ only by a trailing slash, with different groups claims, a token of the second form gets the claim of the first.
-
-## Alternatives Considered
-
-- **Keep one flag.** Rejected: in a mixed setup decisions 1 and 2 need different answers, and no single value gives both.
-- **Decide per provider.** Rejected: a Camunda group can have members from any provider, and an assignment such as "group `engineering` gets role Developer" names no provider.
-- **Add a setting for the groups mode.** Rejected: the providers' `groups-claim`s already say where each provider's groups come from, and a separate setting could contradict them.
+- [The groups mode does not consider several identity providers
+  (camunda/camunda#44274)](https://github.com/camunda/camunda/issues/44274) (internal)
