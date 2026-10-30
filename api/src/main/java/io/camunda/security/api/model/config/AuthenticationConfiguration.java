@@ -166,8 +166,10 @@ public class AuthenticationConfiguration {
    * The groups claim to read the groups of a token of {@code issuer} from: the one of the first
    * provider with that {@code issuer-uri}, the {@code oidc} block first. Issuer-uris that differ
    * only by a trailing slash are one issuer, because discovery settles both on the provider's
-   * issuer. That is the provider that verifies the token. A provider without its own {@code
-   * groups-claim}, and a token of no known issuer, use the one of the {@code oidc} block.
+   * issuer. That is the provider that verifies the token. With a single provider, that provider
+   * verifies every token whatever its issuer, so its claim applies even without an {@code
+   * issuer-uri}. A provider without its own {@code groups-claim}, and a token of no known issuer,
+   * use the one of the {@code oidc} block.
    *
    * @param issuer the {@code iss} claim of the token, or {@code null}
    * @return the groups claim, or {@code null} when the groups of the token's user come from Camunda
@@ -176,7 +178,12 @@ public class AuthenticationConfiguration {
     if (getMethod() != AuthenticationMethod.OIDC) {
       return null;
     }
-    return oidcProviders().stream()
+    final List<OidcConfiguration> providers = oidcProviders();
+    if (providers.size() == 1) {
+      // The token decoder routes every token to the only provider, whatever its issuer.
+      return groupsClaimOf(providers.getFirst());
+    }
+    return providers.stream()
         .filter(provider -> isSameIssuer(issuer, provider.getIssuerUri()))
         .findFirst()
         .map(this::groupsClaimOf)

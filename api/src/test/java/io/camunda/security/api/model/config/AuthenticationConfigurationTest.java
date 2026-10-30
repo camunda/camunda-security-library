@@ -259,14 +259,37 @@ class AuthenticationConfigurationTest {
 
   @Test
   void shouldUseTheGroupsClaimOfTheOidcBlockForATokenOfNoKnownIssuer() {
-    // given
+    // given - several providers, so a token is matched to one by its issuer
     final var config = oidc();
     config.getOidc().setGroupsClaim("roles");
     config.getProviders().getOidc().put("keycloak", provider(KEYCLOAK, "groups"));
+    config.getProviders().getOidc().put("partner", provider(PARTNER, "groups"));
 
     // expect
     assertThat(config.getGroupsClaim("https://unknown.example.com")).isEqualTo("roles");
     assertThat(config.getGroupsClaim(null)).isEqualTo("roles");
+  }
+
+  @Test
+  void shouldReadTheGroupsClaimOfTheOnlyProviderForATokenOfAnyIssuer() {
+    // given - a single provider without an issuer-uri; it verifies every token
+    final var config = oidc();
+    config.getProviders().getOidc().put("keycloak", provider(null, "groups"));
+
+    // expect - the modes and the claim agree, so the external groups are read
+    assertThat(config.isExternalGroupsEnabled()).isTrue();
+    assertThat(config.getGroupsClaim(KEYCLOAK)).isEqualTo("groups");
+    assertThat(config.getGroupsClaim(null)).isEqualTo("groups");
+  }
+
+  @Test
+  void shouldReadTheGroupsClaimOfTheOnlyProviderForATokenOfAnotherIssuer() {
+    // given - a single provider whose issuer-uri differs from the token's iss
+    final var config = oidc();
+    config.getProviders().getOidc().put("keycloak", provider(KEYCLOAK, "groups"));
+
+    // expect
+    assertThat(config.getGroupsClaim(PARTNER)).isEqualTo("groups");
   }
 
   @Test
