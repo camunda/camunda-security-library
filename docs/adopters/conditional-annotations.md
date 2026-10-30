@@ -150,6 +150,10 @@ case when either:
   the same `issuer-uri` (a trailing slash doesn't matter), only the first
   counts, because only it verifies the tokens.
 
+Several providers with the same `issuer-uri` are not supported for groups, by
+intent. A user who logs in through a later provider of that issuer also gets
+the groups claim of the first provider. Give each provider its own issuer.
+
 When every provider has a groups claim, the IdPs are the source of truth for
 group membership and CSL's internal group management beans should be
 suppressed.
