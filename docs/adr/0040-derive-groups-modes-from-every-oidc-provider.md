@@ -41,15 +41,15 @@ Named providers get the principal claims in the same way
 - **Keep one mode.** With mixed providers, the two decisions need different answers.
 - **Decide per provider.** A Camunda group can have members from any provider, and an assignment
   such as "group engineering gets role Developer" names no provider.
-- **Add a setting for the groups mode.** The groups claims already give the answer, and a
-  separate setting can contradict them.
+- **Add a setting for the groups mode.** A separate setting can contradict the groups claims.
 
 ## Consequences
 
 - If only the default OIDC configuration has a groups claim, the result does not change. With one
   provider, the two modes are always opposites.
-- With mixed providers, a host does not check that an assigned group exists, so it cannot find a
-  typo in a group name.
+- With mixed providers, a host does not check that an assigned group exists. It cannot find a typo.
+- Several providers of one issuer are not supported for groups, by intent. A browser login through
+  a later provider of the issuer gets the groups claim of the first provider.
 - A configuration with mixed providers needs a default OIDC configuration without a groups claim.
 - The condition that activates the group management of Camunda now also reads the authentication
   method. With basic authentication and a groups claim, it activates.
