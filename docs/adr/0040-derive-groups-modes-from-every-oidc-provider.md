@@ -4,11 +4,11 @@ status: Accepted
 
 # ADR-0040: Derive the groups modes from every OIDC provider
 
-**Deciders**: Tim Cline
+**Deciders**: Timothy Cline (timcline)
 
 ## Status
 
-Accepted.
+Accepted (8.11)
 
 ## Context
 
