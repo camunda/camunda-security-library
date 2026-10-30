@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class AuthenticationConfigurationTest {
@@ -169,6 +170,45 @@ class AuthenticationConfigurationTest {
     // expect
     assertThat(config.getGroupsClaim(KEYCLOAK)).isEqualTo("roles");
     assertThat(config.getGroupsClaim(KEYCLOAK + "/")).isEqualTo("roles");
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    KEYCLOAK + "," + KEYCLOAK,
+    KEYCLOAK + "/," + KEYCLOAK,
+    KEYCLOAK + "," + KEYCLOAK + "/"
+  })
+  void shouldDeriveTheGroupsModesFromTheProviderThatOwnsAnIssuer(
+      final String ownerIssuerUri, final String secondIssuerUri) {
+    // given - the provider declared first owns the issuer and has no groups claim; a second
+    // provider of the same issuer has one, but never verifies a token
+    final var config = oidc();
+    config.getProviders().getOidc().put("owner", provider(ownerIssuerUri, null));
+    config.getProviders().getOidc().put("second", provider(secondIssuerUri, "groups"));
+
+    // expect - the modes agree with the groups claim that tokens of the issuer are read with
+    assertThat(config.getGroupsClaim(KEYCLOAK)).isNull();
+    assertThat(config.isCamundaGroupsEnabled()).isTrue();
+    assertThat(config.isExternalGroupsEnabled()).isFalse();
+  }
+
+  @ParameterizedTest
+  @CsvSource({
+    KEYCLOAK + "," + KEYCLOAK,
+    KEYCLOAK + "/," + KEYCLOAK,
+    KEYCLOAK + "," + KEYCLOAK + "/"
+  })
+  void shouldIgnoreAProviderWithoutAGroupsClaimThatDoesNotOwnItsIssuer(
+      final String ownerIssuerUri, final String secondIssuerUri) {
+    // given - the owner has a groups claim; the second provider of the same issuer has none
+    final var config = oidc();
+    config.getProviders().getOidc().put("owner", provider(ownerIssuerUri, "groups"));
+    config.getProviders().getOidc().put("second", provider(secondIssuerUri, null));
+
+    // expect
+    assertThat(config.getGroupsClaim(KEYCLOAK)).isEqualTo("groups");
+    assertThat(config.isCamundaGroupsEnabled()).isFalse();
+    assertThat(config.isExternalGroupsEnabled()).isTrue();
   }
 
   @Test
