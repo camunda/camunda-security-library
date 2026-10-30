@@ -178,60 +178,37 @@ class AuthenticationConfigurationTest {
     KEYCLOAK + "/," + KEYCLOAK,
     KEYCLOAK + "," + KEYCLOAK + "/"
   })
-  void shouldCountEveryRegistrationOfAnIssuerForTheGroupsModes(
+  void shouldDeriveTheGroupsModesFromTheProviderThatOwnsAnIssuer(
       final String ownerIssuerUri, final String secondIssuerUri) {
-    // given - two registrations of one issuer; only the second has a groups claim
+    // given - the provider declared first owns the issuer and has no groups claim; a second
+    // provider of the same issuer has one, but never verifies a token
     final var config = oidc();
     config.getProviders().getOidc().put("owner", provider(ownerIssuerUri, null));
     config.getProviders().getOidc().put("second", provider(secondIssuerUri, "groups"));
 
-    // expect - a user can log in through either registration in the browser, so both modes apply
-    assertThat(config.isCamundaGroupsEnabled()).isTrue();
-    assertThat(config.isExternalGroupsEnabled()).isTrue();
-    // a bearer token of the issuer is verified by the owner
+    // expect - the modes agree with the groups claim that tokens of the issuer are read with
     assertThat(config.getGroupsClaim(KEYCLOAK)).isNull();
-    // a browser login uses the claim of the registration the user picked
-    assertThat(config.getGroupsClaimOfRegistration("owner")).isNull();
-    assertThat(config.getGroupsClaimOfRegistration("second")).isEqualTo("groups");
+    assertThat(config.isCamundaGroupsEnabled()).isTrue();
+    assertThat(config.isExternalGroupsEnabled()).isFalse();
   }
 
-  @Test
-  void shouldReadTheGroupsClaimOfTheRegistrationOfABrowserLogin() {
-    // given
+  @ParameterizedTest
+  @CsvSource({
+    KEYCLOAK + "," + KEYCLOAK,
+    KEYCLOAK + "/," + KEYCLOAK,
+    KEYCLOAK + "," + KEYCLOAK + "/"
+  })
+  void shouldIgnoreAProviderWithoutAGroupsClaimThatDoesNotOwnItsIssuer(
+      final String ownerIssuerUri, final String secondIssuerUri) {
+    // given - the owner has a groups claim; the second provider of the same issuer has none
     final var config = oidc();
-    config.getProviders().getOidc().put("keycloak", provider(KEYCLOAK, "groups"));
-    config.getProviders().getOidc().put("partner", provider(PARTNER, null));
+    config.getProviders().getOidc().put("owner", provider(ownerIssuerUri, "groups"));
+    config.getProviders().getOidc().put("second", provider(secondIssuerUri, null));
 
     // expect
-    assertThat(config.getGroupsClaimOfRegistration("keycloak")).isEqualTo("groups");
-    assertThat(config.getGroupsClaimOfRegistration("partner")).isNull();
-  }
-
-  @Test
-  void shouldUseTheGroupsClaimOfTheOidcBlockForARegistrationWithoutOne() {
-    // given
-    final var config = oidc();
-    config.getOidc().setGroupsClaim("roles");
-    config.getProviders().getOidc().put("keycloak", provider(KEYCLOAK, null));
-
-    // expect - also for a registration the configuration does not know
-    assertThat(config.getGroupsClaimOfRegistration("keycloak")).isEqualTo("roles");
-    assertThat(config.getGroupsClaimOfRegistration("unknown")).isEqualTo("roles");
-    assertThat(config.getGroupsClaimOfRegistration(null)).isEqualTo("roles");
-  }
-
-  @Test
-  void shouldReadTheGroupsClaimOfTheOidcBlockRegistration() {
-    // given - the oidc block is a registration of its own
-    final var config = oidc();
-    config.getOidc().setClientId("flat-client");
-    config.getOidc().setIssuerUri(KEYCLOAK);
-    config.getOidc().setGroupsClaim("groups");
-    config.getProviders().getOidc().put("partner", provider(PARTNER, null));
-
-    // expect
-    assertThat(config.getGroupsClaimOfRegistration(OidcConfiguration.DEFAULT_REGISTRATION_ID))
-        .isEqualTo("groups");
+    assertThat(config.getGroupsClaim(KEYCLOAK)).isEqualTo("groups");
+    assertThat(config.isCamundaGroupsEnabled()).isFalse();
+    assertThat(config.isExternalGroupsEnabled()).isTrue();
   }
 
   @Test
@@ -326,8 +303,6 @@ class AuthenticationConfigurationTest {
     assertThat(config.isCamundaGroupsEnabled()).isTrue();
     assertThat(config.isExternalGroupsEnabled()).isFalse();
     assertThat(config.getGroupsClaim(null)).isNull();
-    assertThat(config.getGroupsClaimOfRegistration(OidcConfiguration.DEFAULT_REGISTRATION_ID))
-        .isNull();
   }
 
   private static AuthenticationConfiguration oidc() {
