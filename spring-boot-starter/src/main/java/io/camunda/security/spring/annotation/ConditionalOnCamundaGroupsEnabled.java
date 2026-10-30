@@ -7,32 +7,31 @@
  */
 package io.camunda.security.spring.annotation;
 
-import static io.camunda.security.api.model.config.oidc.OidcConfiguration.GROUPS_CLAIM_PROPERTY;
 import static java.lang.annotation.ElementType.METHOD;
 import static java.lang.annotation.ElementType.TYPE;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
+import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import java.lang.annotation.Documented;
 import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
-import org.springframework.boot.context.properties.source.ConfigurationPropertyName;
 import org.springframework.context.annotation.Condition;
 import org.springframework.context.annotation.ConditionContext;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.core.type.AnnotatedTypeMetadata;
 
 /**
- * Matches when no OIDC groups claim is configured, i.e. Camunda's own group model is in effect
- * rather than group membership being derived from an external OIDC claim.
+ * Matches when some users get their groups from Camunda, i.e. {@link
+ * AuthenticationConfiguration#isCamundaGroupsEnabled()}: the method is not OIDC, or an OIDC
+ * provider has no groups claim. With several providers this considers each of them, not only the
+ * {@code oidc} block.
  *
- * <p>Resolves {@link
- * io.camunda.security.api.model.config.oidc.OidcConfiguration#GROUPS_CLAIM_PROPERTY} via {@link
- * Binder} with a relaxed {@link ConfigurationPropertyName} so that the camelCase ({@code
- * groupsClaim}), kebab-case ({@code groups-claim}), and environment-variable ({@code
- * CAMUNDA_SECURITY_AUTHENTICATION_OIDC_GROUPSCLAIM}) property spellings all match identically. A
- * plain {@code @ConditionalOnExpression}'s SpEL {@code ${...}} placeholder resolution performs an
+ * <p>Binds {@code camunda.security.authentication} via {@link Binder}, so the relaxed spellings of
+ * every property match: camelCase ({@code groupsClaim}), kebab-case ({@code groups-claim}), and
+ * environment variables ({@code CAMUNDA_SECURITY_AUTHENTICATION_OIDC_GROUPSCLAIM}). A plain
+ * {@code @ConditionalOnExpression}'s SpEL {@code ${...}} placeholder resolution performs an
  * exact-key lookup and does not apply Spring Boot's relaxed binding, which previously caused the
  * kebab-case form to be silently ignored.
  */
@@ -43,13 +42,15 @@ import org.springframework.core.type.AnnotatedTypeMetadata;
 public @interface ConditionalOnCamundaGroupsEnabled {
 
   final class CamundaGroupsEnabledCondition implements Condition {
+
+    private static final String AUTHENTICATION_PROPERTIES = "camunda.security.authentication";
+
     @Override
     public boolean matches(final ConditionContext context, final AnnotatedTypeMetadata metadata) {
-      final Binder binder = Binder.get(context.getEnvironment());
-      final ConfigurationPropertyName propertyName =
-          ConfigurationPropertyName.adapt(GROUPS_CLAIM_PROPERTY, '.');
-      final String groupsClaim = binder.bind(propertyName, Bindable.of(String.class)).orElse(null);
-      return groupsClaim == null || groupsClaim.isBlank();
+      return Binder.get(context.getEnvironment())
+          .bind(AUTHENTICATION_PROPERTIES, Bindable.of(AuthenticationConfiguration.class))
+          .orElseGet(AuthenticationConfiguration::new)
+          .isCamundaGroupsEnabled();
     }
   }
 }
