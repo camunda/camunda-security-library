@@ -658,21 +658,31 @@ class RefreshTokenRevocationLogoutHandlerTest {
     }
   }
 
+  /**
+   * Captures the handler's own lines and those of the {@link RefreshTokenRevoker} it sends the
+   * request through, which logs every revocation outcome.
+   */
   private static ListAppender<ILoggingEvent> attachHandlerDebugAppender() {
-    final Logger logger =
-        (Logger) LoggerFactory.getLogger(RefreshTokenRevocationLogoutHandler.class);
-    logger.setLevel(Level.DEBUG);
     final ListAppender<ILoggingEvent> appender = new ListAppender<>();
     appender.start();
-    logger.addAppender(appender);
+    for (final Logger logger : handlerLoggers()) {
+      logger.setLevel(Level.DEBUG);
+      logger.addAppender(appender);
+    }
     return appender;
   }
 
   private static void detachHandlerDebugAppender(final ListAppender<ILoggingEvent> appender) {
-    final Logger logger =
-        (Logger) LoggerFactory.getLogger(RefreshTokenRevocationLogoutHandler.class);
-    logger.detachAppender(appender);
-    logger.setLevel(null);
+    for (final Logger logger : handlerLoggers()) {
+      logger.detachAppender(appender);
+      logger.setLevel(null);
+    }
+  }
+
+  private static List<Logger> handlerLoggers() {
+    return List.of(
+        (Logger) LoggerFactory.getLogger(RefreshTokenRevocationLogoutHandler.class),
+        (Logger) LoggerFactory.getLogger(RefreshTokenRevoker.class));
   }
 
   private static ListAppender<ILoggingEvent> attachRestClientDebugAppender() {

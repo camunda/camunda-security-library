@@ -53,6 +53,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0038: A verified token carries the principal claims of the provider that verified it](../adr/0038-verified-token-carries-its-provider-claims.md)
 - [ADR-0039: API chains refresh the session access token, with their own authorized-client stack](../adr/0039-refresh-access-tokens-on-api-chains.md)
 - [ADR-0041: Limit a membership with conditions](../adr/0041-conditional-memberships.md)
+- [ADR-0043: Revoke the refresh token when a web session expires](../adr/0043-revoke-refresh-token-on-session-expiry.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 

@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
+import org.springframework.session.Session;
 
 /**
  * Builds a per-scope {@link WebSessionRepository} backed by the scope's own {@link
@@ -41,6 +43,7 @@ public final class ScopedWebSessionRepositoryFactory {
   private final WebSessionMapper webSessionMapper;
   private final HttpServletRequest request;
   private final SessionConfiguration sessionConfiguration;
+  private final Consumer<Session> expiredSessionHandler;
   private final Map<String, WebSessionRepository> repositoriesByBasePath =
       new ConcurrentHashMap<>();
 
@@ -49,10 +52,25 @@ public final class ScopedWebSessionRepositoryFactory {
       final WebSessionMapper webSessionMapper,
       final HttpServletRequest request,
       final SessionConfiguration sessionConfiguration) {
+    this(storePortProvider, webSessionMapper, request, sessionConfiguration, session -> {});
+  }
+
+  /**
+   * @param expiredSessionHandler passed to every repository this factory builds, see {@link
+   *     WebSessionRepository#WebSessionRepository(SessionStorePort, WebSessionMapper,
+   *     HttpServletRequest, SessionConfiguration, Consumer)}
+   */
+  public ScopedWebSessionRepositoryFactory(
+      final ScopedSessionStorePortProvider storePortProvider,
+      final WebSessionMapper webSessionMapper,
+      final HttpServletRequest request,
+      final SessionConfiguration sessionConfiguration,
+      final Consumer<Session> expiredSessionHandler) {
     this.storePortProvider = storePortProvider;
     this.webSessionMapper = webSessionMapper;
     this.request = request;
     this.sessionConfiguration = sessionConfiguration;
+    this.expiredSessionHandler = expiredSessionHandler;
   }
 
   /**
@@ -92,6 +110,7 @@ public final class ScopedWebSessionRepositoryFactory {
         Objects.requireNonNull(
             storePortProvider.forBasePath(basePath),
             () -> "ScopedSessionStorePortProvider returned null for basePath=" + basePath);
-    return new WebSessionRepository(storePort, webSessionMapper, request, sessionConfiguration);
+    return new WebSessionRepository(
+        storePort, webSessionMapper, request, sessionConfiguration, expiredSessionHandler);
   }
 }

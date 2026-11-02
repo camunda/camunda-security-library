@@ -136,11 +136,16 @@ public final class ScopedWebappSecurityChainBuilder {
   private final ObjectProvider<OidcProviderConfigurationPort> oidcProviderConfigurationPortProvider;
   private final ObjectProvider<OidcLoginFailurePort> oidcLoginFailurePortProvider;
   private final ObjectProvider<AssertionJwkProvider> assertionJwkProviderProvider;
+  private final ObjectProvider<ExpiredSessionRefreshTokenRevocation>
+      expiredSessionRevocationProvider;
 
   /**
    * @param oidcLoginFailurePortProvider the host's explanations for failed browser logins. It is
    *     resolved on each failed login, not while the chains are built; when it holds no bean, or
    *     more than one, the page shows generic text (ADR-0035).
+   * @param expiredSessionRevocationProvider where each OIDC chain registers its refresh-token
+   *     revoker, so the session store can revoke the token of a session that expires (ADR-0043).
+   *     When it holds no bean, only logout revokes.
    */
   public ScopedWebappSecurityChainBuilder(
       final AuthFailureHandler authFailureHandler,
@@ -160,7 +165,8 @@ public final class ScopedWebappSecurityChainBuilder {
       final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers,
       final ObjectProvider<OidcProviderConfigurationPort> oidcProviderConfigurationPortProvider,
       final ObjectProvider<OidcLoginFailurePort> oidcLoginFailurePortProvider,
-      final ObjectProvider<AssertionJwkProvider> assertionJwkProviderProvider) {
+      final ObjectProvider<AssertionJwkProvider> assertionJwkProviderProvider,
+      final ObjectProvider<ExpiredSessionRefreshTokenRevocation> expiredSessionRevocationProvider) {
     this.authFailureHandler = authFailureHandler;
     this.properties = properties;
     this.pathPort = pathPort;
@@ -179,6 +185,7 @@ public final class ScopedWebappSecurityChainBuilder {
     this.oidcProviderConfigurationPortProvider = oidcProviderConfigurationPortProvider;
     this.oidcLoginFailurePortProvider = oidcLoginFailurePortProvider;
     this.assertionJwkProviderProvider = assertionJwkProviderProvider;
+    this.expiredSessionRevocationProvider = expiredSessionRevocationProvider;
   }
 
   /**
@@ -735,12 +742,18 @@ public final class ScopedWebappSecurityChainBuilder {
    *
    * <p>An empty {@code sources} map yields no resolver, and the handler then says so on the one
    * client-authentication method that needs one.
+   *
+   * <p>The same revoker is registered for the chain's expired sessions (ADR-0043), so a session
+   * that times out has its refresh token revoked with the same client authentication as one the
+   * user logs out of.
    */
   private LogoutHandler refreshTokenRevocationLogoutHandler(
       final ClientRegistrationRepository repo,
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
       final Function<ClientRegistration, JWK> jwkResolver) {
-    return new RefreshTokenRevocationLogoutHandler(repo, authorizedClientRepository, jwkResolver);
+    final var revoker = new RefreshTokenRevoker(jwkResolver);
+    expiredSessionRevocationProvider.ifAvailable(revocation -> revocation.register(repo, revoker));
+    return RefreshTokenRevocationLogoutHandler.sharing(repo, authorizedClientRepository, revoker);
   }
 
   /**
