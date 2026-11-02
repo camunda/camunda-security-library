@@ -69,7 +69,8 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
       final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers,
       final ObjectProvider<OidcProviderConfigurationPort> oidcProviderConfigurationPortProvider,
       final ObjectProvider<OidcLoginFailurePort> oidcLoginFailurePortProvider,
-      final ObjectProvider<AssertionJwkProvider> assertionJwkProviderProvider) {
+      final ObjectProvider<AssertionJwkProvider> assertionJwkProviderProvider,
+      final ObjectProvider<ExpiredSessionRefreshTokenRevocation> expiredSessionRevocationProvider) {
     return new ScopedWebappSecurityChainBuilder(
         authFailureHandler,
         properties,
@@ -88,7 +89,19 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
         securityHeadersCustomizers,
         oidcProviderConfigurationPortProvider,
         oidcLoginFailurePortProvider,
-        assertionJwkProviderProvider);
+        assertionJwkProviderProvider,
+        expiredSessionRevocationProvider);
+  }
+
+  /**
+   * Revokes the refresh token of a web session that expires (ADR-0043). Each OIDC webapp chain the
+   * builder above builds registers with it, and the persistent session store calls it for every
+   * expired session it deletes. Closed with the context, which stops its background thread.
+   */
+  @Bean
+  @ConditionalOnMissingBean
+  public ExpiredSessionRefreshTokenRevocation expiredSessionRefreshTokenRevocation() {
+    return new ExpiredSessionRefreshTokenRevocation();
   }
 
   // Also declared in ScopedOidcInfrastructureConfiguration; provided here too so this configuration
