@@ -55,6 +55,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0040: Derive the groups modes from every OIDC provider](../adr/0040-derive-groups-modes-from-every-oidc-provider.md)
 - [ADR-0041: Limit a membership with conditions](../adr/0041-conditional-memberships.md)
 - [ADR-0042: An OIDC client type, and `none` as a client authentication method](../adr/0042-oidc-client-type-and-client-authentication-method-none.md)
+- [ADR-0043: Revoke the refresh token when a web session expires](../adr/0043-revoke-refresh-token-on-session-expiry.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 

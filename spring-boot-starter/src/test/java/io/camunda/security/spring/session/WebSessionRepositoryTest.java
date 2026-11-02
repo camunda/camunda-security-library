@@ -9,6 +9,7 @@ package io.camunda.security.spring.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.web.context.HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY;
 
 import io.camunda.security.api.model.config.SessionConfiguration;
 import io.camunda.security.api.model.session.PersistentSession;
@@ -21,20 +22,28 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.convert.support.GenericConversionService;
+import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.session.MapSession;
+import org.springframework.session.Session;
 
 @ExtendWith(MockitoExtension.class)
 class WebSessionRepositoryTest {
 
+  private static final Instant EXPIRED_LAST_ACCESS =
+      Instant.now().minusSeconds(MapSession.DEFAULT_MAX_INACTIVE_INTERVAL.toSeconds() * 2);
+
   private WebSessionRepository webSessionRepository;
   private SessionStorePort sessionStore;
   private SessionConfiguration sessionConfiguration;
+  private WebSessionMapper webSessionMapper;
 
   @Mock private HttpServletRequest request;
 
@@ -42,13 +51,11 @@ class WebSessionRepositoryTest {
   void setUp() {
     sessionStore = new SessionStorePortStub();
     sessionConfiguration = new SessionConfiguration();
+    webSessionMapper =
+        new WebSessionMapper(
+            new SpringBasedWebSessionAttributeConverter(new GenericConversionService()));
     webSessionRepository =
-        new WebSessionRepository(
-            sessionStore,
-            new WebSessionMapper(
-                new SpringBasedWebSessionAttributeConverter(new GenericConversionService())),
-            request,
-            sessionConfiguration);
+        new WebSessionRepository(sessionStore, webSessionMapper, request, sessionConfiguration);
   }
 
   @Test
@@ -240,6 +247,111 @@ class WebSessionRepositoryTest {
 
     // then
     assertThat(sessionStore.getAll()).isEmpty();
+  }
+
+  @Test
+  void deleteExpiredWebSessionsHandsEachExpiredSessionToTheHandlerBeforeDeletingIt() {
+    // given
+    final List<String> handedOver = new ArrayList<>();
+    final List<Integer> storedWhenHandedOver = new ArrayList<>();
+    final var repository =
+        repositoryWithHandler(
+            session -> {
+              handedOver.add(session.getId());
+              storedWhenHandedOver.add(sessionStore.getAll().size());
+            });
+    storeSession(repository, EXPIRED_LAST_ACCESS);
+
+    // when
+    repository.deleteExpiredWebSessions();
+
+    // then
+    assertThat(handedOver).hasSize(1);
+    assertThat(storedWhenHandedOver).containsExactly(1);
+    assertThat(sessionStore.getAll()).isEmpty();
+  }
+
+  @Test
+  void deleteExpiredWebSessionsDoesNotHandLiveSessionsToTheHandler() {
+    // given
+    final List<Session> handedOver = new ArrayList<>();
+    final var repository = repositoryWithHandler(handedOver::add);
+    storeSession(repository, Instant.now());
+
+    // when
+    repository.deleteExpiredWebSessions();
+
+    // then
+    assertThat(handedOver).isEmpty();
+    assertThat(sessionStore.getAll()).hasSize(1);
+  }
+
+  @Test
+  void deleteExpiredWebSessionsStillDeletesTheSessionWhenTheHandlerFails() {
+    // given
+    final var repository =
+        repositoryWithHandler(
+            session -> {
+              throw new IllegalStateException("revocation failed");
+            });
+    storeSession(repository, EXPIRED_LAST_ACCESS);
+
+    // when
+    repository.deleteExpiredWebSessions();
+
+    // then
+    assertThat(sessionStore.getAll()).isEmpty();
+  }
+
+  @Test
+  void findByIdHandsAnExpiredSessionToTheHandlerAndDeletesIt() {
+    // given
+    final List<Session> handedOver = new ArrayList<>();
+    final var repository = repositoryWithHandler(handedOver::add);
+    final var stored = storeSession(repository, EXPIRED_LAST_ACCESS);
+
+    // when
+    final var found = repository.findById(stored.getId());
+
+    // then
+    assertThat(found).isNull();
+    assertThat(handedOver).extracting(Session::getId).containsExactly(stored.getId());
+    assertThat(sessionStore.getAll()).isEmpty();
+  }
+
+  @Test
+  void findByIdDoesNotHandASessionWithAnInvalidatedAuthenticationToTheHandler() {
+    // given - deleted because its authentication was invalidated, not because it expired
+    final List<Session> handedOver = new ArrayList<>();
+    final var repository = repositoryWithHandler(handedOver::add);
+    final var authentication = new TestingAuthenticationToken("user", "credentials");
+    authentication.setAuthenticated(false);
+    final var stored = repository.createSession();
+    stored.setLastAccessedTime(Instant.now());
+    stored.setAttribute(SPRING_SECURITY_CONTEXT_KEY, new SecurityContextImpl(authentication));
+    sessionStore.upsert(webSessionMapper.toPersistentSession(stored));
+
+    // when
+    final var found = repository.findById(stored.getId());
+
+    // then
+    assertThat(found).isNull();
+    assertThat(handedOver).isEmpty();
+    assertThat(sessionStore.getAll()).isEmpty();
+  }
+
+  private WebSessionRepository repositoryWithHandler(final Consumer<Session> handler) {
+    return new WebSessionRepository(
+        sessionStore, webSessionMapper, request, sessionConfiguration, handler);
+  }
+
+  /** Writes the session straight to the store, so an expired one is not deleted on save. */
+  private WebSession storeSession(
+      final WebSessionRepository repository, final Instant lastAccessedTime) {
+    final var webSession = repository.createSession();
+    webSession.setLastAccessedTime(lastAccessedTime);
+    sessionStore.upsert(webSessionMapper.toPersistentSession(webSession));
+    return webSession;
   }
 
   static final class SessionStorePortStub implements SessionStorePort {
