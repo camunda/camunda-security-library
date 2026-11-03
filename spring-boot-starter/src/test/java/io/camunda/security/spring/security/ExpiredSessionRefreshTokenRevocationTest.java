@@ -65,12 +65,14 @@ class ExpiredSessionRefreshTokenRevocationTest {
   private static final String REGISTRATION_ID = "oidc";
   private static final String CLIENT_ID = "client-id";
   private static final String TOKEN_URI = "https://idp.example.com/oauth2/token";
+  private static final String ISSUER = "https://idp.example.com";
   private static final String REVOCATION_URI = "https://idp.example.com/oauth2/revoke";
 
   @Mock private ExecutorService executor;
   @Mock private ClientRegistrationRepository firstRepository;
   @Mock private ClientRegistrationRepository secondRepository;
   @Mock private LazyClientRegistrationRepository lazyRepository;
+  @Mock private LazyClientRegistrationRepository otherLazyRepository;
   @Mock private RefreshTokenRevoker firstRevoker;
   @Mock private RefreshTokenRevoker secondRevoker;
 
@@ -161,6 +163,59 @@ class ExpiredSessionRefreshTokenRevocationTest {
     verify(lazyRepository, never()).findByRegistrationId(any());
     verifyNoInteractions(firstRevoker);
     verify(secondRevoker).revoke(eq(registration), any());
+  }
+
+  @Test
+  void shouldNotLookUpAChainConfiguredForTheSameClientAtAnotherProvider() {
+    // given - same client ID, but the configuration names another issuer and token endpoint
+    runInline();
+    final var registration =
+        ClientRegistration.withClientRegistration(registration(CLIENT_ID, TOKEN_URI))
+            .issuerUri(ISSUER)
+            .build();
+    final var otherIssuer = new OidcConfiguration();
+    otherIssuer.setClientId(CLIENT_ID);
+    otherIssuer.setIssuerUri("https://other-idp.example.com");
+    final var otherTokenUri = new OidcConfiguration();
+    otherTokenUri.setClientId(CLIENT_ID);
+    otherTokenUri.setTokenUri("https://other-idp.example.com/oauth2/token");
+    when(lazyRepository.providers()).thenReturn(Map.of(REGISTRATION_ID, otherIssuer));
+    when(otherLazyRepository.providers()).thenReturn(Map.of(REGISTRATION_ID, otherTokenUri));
+    when(secondRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
+    revocation.register(lazyRepository, firstRevoker);
+    revocation.register(otherLazyRepository, firstRevoker);
+    revocation.register(secondRepository, secondRevoker);
+
+    // when
+    revocation.revoke(expiredSession(authorizedClient(registration, "refresh")));
+
+    // then
+    verify(lazyRepository, never()).findByRegistrationId(any());
+    verify(otherLazyRepository, never()).findByRegistrationId(any());
+    verifyNoInteractions(firstRevoker);
+    verify(secondRevoker).revoke(eq(registration), any());
+  }
+
+  @Test
+  void shouldLookUpAChainWhoseIssuerDiffersOnlyByATrailingSlash() {
+    // given
+    runInline();
+    final var registration =
+        ClientRegistration.withClientRegistration(registration(CLIENT_ID, TOKEN_URI))
+            .issuerUri(ISSUER)
+            .build();
+    final var config = new OidcConfiguration();
+    config.setClientId(CLIENT_ID);
+    config.setIssuerUri(ISSUER + "/");
+    when(lazyRepository.providers()).thenReturn(Map.of(REGISTRATION_ID, config));
+    when(lazyRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
+    revocation.register(lazyRepository, firstRevoker);
+
+    // when
+    revocation.revoke(expiredSession(authorizedClient(registration, "refresh")));
+
+    // then
+    verify(firstRevoker).revoke(eq(registration), any());
   }
 
   @Test
