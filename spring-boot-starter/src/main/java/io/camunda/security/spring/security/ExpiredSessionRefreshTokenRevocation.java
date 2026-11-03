@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -166,7 +167,12 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
 
   private void revokeThroughOwningChain(
       final String registrationId, final OAuth2AuthorizedClient authorizedClient) {
-    final List<Owner> owners = owners(registrationId, authorizedClient.getClientRegistration());
+    final Optional<List<Owner>> possibleOwners =
+        owners(registrationId, authorizedClient.getClientRegistration());
+    if (possibleOwners.isEmpty()) {
+      return;
+    }
+    final List<Owner> owners = possibleOwners.get();
     if (owners.isEmpty()) {
       LOG.debug(
           "No OIDC webapp chain owns registration '{}' of an expired web session any more, so its"
@@ -189,18 +195,32 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
     owner.chain().revoker().revoke(owner.registration(), () -> authorizedClient);
   }
 
-  private List<Owner> owners(final String registrationId, final ClientRegistration stored) {
+  /** The chains that own the stored client, or empty when one that may own it fails to resolve. */
+  private Optional<List<Owner>> owners(
+      final String registrationId, final ClientRegistration stored) {
     final List<Owner> owners = new ArrayList<>();
     for (final Chain chain : chains) {
       if (!isConfiguredForClient(chain, registrationId, stored)) {
         continue;
       }
-      final ClientRegistration registration = registrationOf(chain, registrationId);
+      final ClientRegistration registration;
+      try {
+        registration = chain.clientRegistrationRepository().findByRegistrationId(registrationId);
+      } catch (final RuntimeException e) {
+        // The revocation settings of this chain are unknown, and revoking through another chain
+        // could ignore an opt-out of this one.
+        LOG.debug(
+            "Could not resolve OIDC registration '{}', so the refresh token of an expired web"
+                + " session is not revoked [{}].",
+            ScopedClientRegistrationFactory.sanitizeForLog(registrationId),
+            FailureDescription.describe(e));
+        return Optional.empty();
+      }
       if (registration != null && isSameClient(registration, stored)) {
         owners.add(new Owner(chain, registration));
       }
     }
-    return owners;
+    return Optional.of(owners);
   }
 
   private static boolean haveSameRevocationEndpoint(final List<Owner> owners) {
@@ -227,20 +247,6 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
     return config != null
         && (!StringUtils.hasText(config.getClientId())
             || config.getClientId().equals(stored.getClientId()));
-  }
-
-  private static ClientRegistration registrationOf(final Chain chain, final String registrationId) {
-    try {
-      return chain.clientRegistrationRepository().findByRegistrationId(registrationId);
-    } catch (final RuntimeException e) {
-      // A chain whose provider cannot be resolved right now cannot own the session either.
-      LOG.debug(
-          "Could not resolve OIDC registration '{}' while revoking the refresh token of an expired"
-              + " web session [{}].",
-          ScopedClientRegistrationFactory.sanitizeForLog(registrationId),
-          FailureDescription.describe(e));
-      return null;
-    }
   }
 
   /**
