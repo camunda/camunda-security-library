@@ -246,8 +246,9 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
   }
 
   /**
-   * Whether the configuration of the chain can own the stored client, read without discovery. Only
-   * a {@link LazyClientRegistrationRepository} exposes its configuration; any other repository is
+   * Whether the configuration of the chain can own the stored client, read without discovery: the
+   * same client ID, and the same issuer or token endpoint where the configuration sets them. Only a
+   * {@link LazyClientRegistrationRepository} exposes its configuration; any other repository is
    * looked up.
    */
   private static boolean isConfiguredForClient(
@@ -257,9 +258,24 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
       return true;
     }
     final var config = lazy.providers().get(registrationId);
-    return config != null
-        && (!StringUtils.hasText(config.getClientId())
-            || config.getClientId().equals(stored.getClientId()));
+    if (config == null) {
+      return false;
+    }
+    final var provider = stored.getProviderDetails();
+    return matchesIfConfigured(config.getClientId(), stored.getClientId())
+        && matchesIfConfigured(config.getTokenUri(), provider.getTokenUri())
+        && matchesIfConfigured(
+            withoutTrailingSlash(config.getIssuerUri()),
+            withoutTrailingSlash(provider.getIssuerUri()));
+  }
+
+  /** A value the configuration leaves unset matches anything; a set one must be equal. */
+  private static boolean matchesIfConfigured(final String configured, final String stored) {
+    return !StringUtils.hasText(configured) || configured.equals(stored);
+  }
+
+  private static String withoutTrailingSlash(final String uri) {
+    return uri != null && uri.endsWith("/") ? uri.substring(0, uri.length() - 1) : uri;
   }
 
   /**
