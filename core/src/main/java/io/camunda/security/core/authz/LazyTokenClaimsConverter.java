@@ -139,11 +139,11 @@ public final class LazyTokenClaimsConverter implements TokenClaimsAuthentication
                             .withGroupIds(lazyGroupIds)
                             .withRoleIds(lazyRoleIds))));
     final var lazyConditionalRoleMemberships =
-        CamundaAuthentication.lazyList(
-            contextPropagator.decorateList(
-                () ->
-                    membershipPort.conditionalRoleMemberships(
-                        base.withMappingRuleIds(lazyMappingRuleIds).withGroupIds(lazyGroupIds))));
+        LazyMembershipLists.decorated(
+            contextPropagator,
+            () ->
+                membershipPort.conditionalRoleMemberships(
+                    base.withMappingRuleIds(lazyMappingRuleIds).withGroupIds(lazyGroupIds)));
 
     return CamundaAuthentication.of(
         a -> {

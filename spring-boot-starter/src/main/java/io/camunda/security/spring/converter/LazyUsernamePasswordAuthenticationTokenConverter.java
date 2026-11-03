@@ -10,6 +10,7 @@ package io.camunda.security.spring.converter;
 import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.context.MembershipResolutionContextPropagator;
 import io.camunda.security.api.model.CamundaAuthentication;
+import io.camunda.security.core.authz.LazyMembershipLists;
 import io.camunda.security.core.port.out.MembershipPort;
 import io.camunda.security.core.port.out.MembershipPort.PrincipalType;
 import io.camunda.security.core.port.out.MembershipQuery;
@@ -60,9 +61,9 @@ public final class LazyUsernamePasswordAuthenticationTokenConverter
             () ->
                 membershipPort.tenantIds(base.withGroupIds(lazyGroupIds).withRoleIds(lazyRoleIds)));
     final var lazyConditionalRoleMemberships =
-        CamundaAuthentication.lazyList(
-            contextPropagator.decorateList(
-                () -> membershipPort.conditionalRoleMemberships(base.withGroupIds(lazyGroupIds))));
+        LazyMembershipLists.decorated(
+            contextPropagator,
+            () -> membershipPort.conditionalRoleMemberships(base.withGroupIds(lazyGroupIds)));
 
     return CamundaAuthentication.of(
         a ->

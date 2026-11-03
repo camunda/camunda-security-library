@@ -89,7 +89,10 @@ class CamundaAuthenticationJacksonTest {
     assertThat(restored.conditionalRoleMemberships()).isEmpty();
   }
 
-  /** Tells the variants apart by their properties: {@code values} or {@code attribute}. */
+  /**
+   * Tells the variants apart by their properties: exactly one of {@code values} or {@code
+   * attribute}. Any other shape fails, so a new variant can't be read as an existing one.
+   */
   private static final class OperandDeserializer extends StdDeserializer<Operand> {
 
     private OperandDeserializer() {
@@ -100,6 +103,9 @@ class CamundaAuthenticationJacksonTest {
     public Operand deserialize(final JsonParser parser, final DeserializationContext context)
         throws IOException {
       final JsonNode node = parser.readValueAsTree();
+      if (node.has("values") == node.has("attribute")) {
+        throw context.weirdStringException(node.toString(), Operand.class, "Unknown operand shape");
+      }
       final var type = node.has("values") ? Operand.Values.class : Operand.Principal.class;
       return parser.getCodec().treeToValue(node, type);
     }

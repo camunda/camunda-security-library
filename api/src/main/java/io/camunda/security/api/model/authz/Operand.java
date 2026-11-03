@@ -14,6 +14,10 @@ import java.util.Set;
 /**
  * The values a {@link MembershipCondition} compares a resource attribute with: fixed values, or
  * values taken from the caller when the condition is evaluated.
+ *
+ * <p>Like the other model types, {@code Operand} has no Jackson annotations. A host that stores a
+ * {@code CamundaAuthentication} as JSON must register a deserializer for {@code Operand}, or
+ * reading it back fails. {@code CamundaAuthenticationJacksonTest} in the starter shows one.
  */
 public sealed interface Operand extends Serializable permits Operand.Values, Operand.Principal {
 
