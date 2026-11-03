@@ -51,6 +51,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2RefreshToken;
 import org.springframework.security.oauth2.core.oidc.OidcIdToken;
@@ -256,6 +257,28 @@ class ExpiredSessionRefreshTokenRevocationTest {
     // then
     verify(firstRevoker).revoke(eq(registration), any());
     verifyNoInteractions(secondRevoker);
+  }
+
+  @Test
+  void shouldRevokeThroughTheChainThatAuthenticatesLikeTheSession() {
+    // given - two chains own the client; the first uses an authentication the revoker cannot send
+    runInline();
+    final var basic = registration(CLIENT_ID, TOKEN_URI, REVOCATION_URI);
+    final var secretJwt =
+        ClientRegistration.withClientRegistration(basic)
+            .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_JWT)
+            .build();
+    when(firstRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(secretJwt);
+    when(secondRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(basic);
+    revocation.register(firstRepository, firstRevoker);
+    revocation.register(secondRepository, secondRevoker);
+
+    // when - the session logged in through the client_secret_basic chain
+    revocation.revoke(expiredSession(authorizedClient(basic, "refresh")));
+
+    // then
+    verifyNoInteractions(firstRevoker);
+    verify(secondRevoker).revoke(eq(basic), any());
   }
 
   @Test
