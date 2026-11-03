@@ -26,6 +26,8 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Predicate;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.context.SecurityContext;
@@ -237,18 +239,22 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
   }
 
   /**
-   * The owner that authenticates the way the session's own chain did. Two chains of one client can
-   * use different client authentication, and the revoker cannot send every method, so the first
-   * owner is only the fallback.
+   * The owner to revoke through. Two chains of one client can use different client authentication,
+   * and a chain can lack the signing key its method needs, so the owners are tried in this order:
+   * one that can authenticate the way the session's own chain did, one that can authenticate at
+   * all, one with the session's method, and the first.
    */
   private static Owner owningChainOfTheSession(
       final List<Owner> owners, final ClientRegistration stored) {
-    return owners.stream()
-        .filter(
-            owner ->
-                Objects.equals(
-                    owner.registration().getClientAuthenticationMethod(),
-                    stored.getClientAuthenticationMethod()))
+    final Predicate<Owner> canAuthenticate =
+        owner -> owner.chain().revoker().canAuthenticate(owner.registration());
+    final Predicate<Owner> sameMethod =
+        owner ->
+            Objects.equals(
+                owner.registration().getClientAuthenticationMethod(),
+                stored.getClientAuthenticationMethod());
+    return Stream.of(canAuthenticate.and(sameMethod), canAuthenticate, sameMethod)
+        .flatMap(preference -> owners.stream().filter(preference).limit(1))
         .findFirst()
         .orElse(owners.getFirst());
   }
