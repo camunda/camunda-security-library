@@ -194,7 +194,7 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
       }
       return;
     }
-    final Owner owner = owners.getFirst();
+    final Owner owner = owningChainOfTheSession(owners, authorizedClient.getClientRegistration());
     owner.chain().revoker().revoke(owner.registration(), () -> authorizedClient);
   }
 
@@ -234,6 +234,23 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
       }
     }
     return Optional.of(owners);
+  }
+
+  /**
+   * The owner that authenticates the way the session's own chain did. Two chains of one client can
+   * use different client authentication, and the revoker cannot send every method, so the first
+   * owner is only the fallback.
+   */
+  private static Owner owningChainOfTheSession(
+      final List<Owner> owners, final ClientRegistration stored) {
+    return owners.stream()
+        .filter(
+            owner ->
+                Objects.equals(
+                    owner.registration().getClientAuthenticationMethod(),
+                    stored.getClientAuthenticationMethod()))
+        .findFirst()
+        .orElse(owners.getFirst());
   }
 
   private static boolean haveSameRevocationEndpoint(final List<Owner> owners) {
