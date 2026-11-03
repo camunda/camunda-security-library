@@ -320,6 +320,22 @@ class WebSessionRepositoryTest {
   }
 
   @Test
+  void saveHandsASessionThatExpiredDuringTheRequestToTheHandlerAndDeletesIt() {
+    // given - a request loaded the session while it was live
+    final List<Session> handedOver = new ArrayList<>();
+    final var repository = repositoryWithHandler(handedOver::add);
+    final var webSession = storeSession(repository, Instant.now());
+
+    // when - the request saves it after its idle deadline
+    webSession.setLastAccessedTime(EXPIRED_LAST_ACCESS);
+    repository.save(webSession);
+
+    // then
+    assertThat(handedOver).extracting(Session::getId).containsExactly(webSession.getId());
+    assertThat(sessionStore.getAll()).isEmpty();
+  }
+
+  @Test
   void findByIdDoesNotHandASessionWithAnInvalidatedAuthenticationToTheHandler() {
     // given - deleted because its authentication was invalidated, not because it expired
     final List<Session> handedOver = new ArrayList<>();

@@ -41,9 +41,9 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
 
   /**
    * @param expiredSessionHandler called with each session that expired, right before this
-   *     repository deletes it, in the expiry sweep and when a request finds its session expired.
-   *     CSL uses it to revoke the session's refresh token (ADR-0043). A failure in the handler
-   *     never stops the deletion.
+   *     repository deletes it: in the expiry sweep, when a request finds its session expired, and
+   *     when a request saves a session that expired while it ran. CSL uses it to revoke the
+   *     session's refresh token (ADR-0043). A failure in the handler never stops the deletion.
    */
   public WebSessionRepository(
       final SessionStorePort sessionStorePort,
@@ -84,6 +84,8 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
     if (!webSession.shouldBeDeleted()) {
       saveWebSessionIfChanged(webSession);
     } else {
+      // A request can load a live session and finish after its idle deadline.
+      notifyIfExpired(webSession);
       deleteById(webSession.getId());
     }
   }

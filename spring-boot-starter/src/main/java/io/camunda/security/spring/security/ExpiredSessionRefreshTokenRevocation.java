@@ -10,10 +10,14 @@ package io.camunda.security.spring.security;
 import static org.springframework.security.web.context.HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY;
 
 import io.camunda.security.spring.oidc.FailureDescription;
+import io.camunda.security.spring.oidc.LazyClientRegistrationRepository;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -30,6 +34,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
 import org.springframework.session.Session;
+import org.springframework.util.StringUtils;
 
 /**
  * Revokes the refresh token of a web session that expired, as logout does for a session the user
@@ -42,7 +47,11 @@ import org.springframework.session.Session;
  * webapp chain {@link #register registers} its client registrations and its {@link
  * RefreshTokenRevoker}; the session goes to the chain that knows its registration ID with the same
  * client and token endpoint. Two scopes can use one registration ID for different providers, and
- * the stored client must never be sent to the wrong one.
+ * the stored client must never be sent to the wrong one. A chain whose configuration names another
+ * client is skipped before its registration is looked up, so an unrelated provider that is down
+ * cannot slow the revocation. When several chains own the client but disagree on revocation, for
+ * example one scope opts out, the token is not revoked: the session does not say which scope it
+ * came from, and an opt-out must hold.
  *
  * <p>The revocation request runs on one background thread with a bounded queue, so neither the
  * sweep nor a request waits on the IdP. When the queue is full, for example while the IdP is
@@ -68,6 +77,7 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
   private final List<Chain> chains = new CopyOnWriteArrayList<>();
   private final ExecutorService executor;
   private final AtomicBoolean saturated = new AtomicBoolean();
+  private final Set<String> ambiguousRegistrationIds = ConcurrentHashMap.newKeySet();
 
   public ExpiredSessionRefreshTokenRevocation() {
     this(defaultExecutor());
@@ -156,18 +166,67 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
 
   private void revokeThroughOwningChain(
       final String registrationId, final OAuth2AuthorizedClient authorizedClient) {
-    final ClientRegistration stored = authorizedClient.getClientRegistration();
+    final List<Owner> owners = owners(registrationId, authorizedClient.getClientRegistration());
+    if (owners.isEmpty()) {
+      LOG.debug(
+          "No OIDC webapp chain owns registration '{}' of an expired web session any more, so its"
+              + " refresh token is not revoked.",
+          ScopedClientRegistrationFactory.sanitizeForLog(registrationId));
+      return;
+    }
+    if (!haveSameRevocationEndpoint(owners)) {
+      // One WARN per registration: the configuration stays ambiguous until it is changed.
+      if (ambiguousRegistrationIds.add(registrationId)) {
+        LOG.warn(
+            "OIDC registration '{}' belongs to several webapp chains with different refresh-token"
+                + " revocation settings, so the refresh tokens of its expired web sessions are not"
+                + " revoked. Give the scopes the same revocation settings to revoke them.",
+            ScopedClientRegistrationFactory.sanitizeForLog(registrationId));
+      }
+      return;
+    }
+    final Owner owner = owners.getFirst();
+    owner.chain().revoker().revoke(owner.registration(), () -> authorizedClient);
+  }
+
+  private List<Owner> owners(final String registrationId, final ClientRegistration stored) {
+    final List<Owner> owners = new ArrayList<>();
     for (final Chain chain : chains) {
+      if (!isConfiguredForClient(chain, registrationId, stored)) {
+        continue;
+      }
       final ClientRegistration registration = registrationOf(chain, registrationId);
       if (registration != null && isSameClient(registration, stored)) {
-        chain.revoker().revoke(registration, () -> authorizedClient);
-        return;
+        owners.add(new Owner(chain, registration));
       }
     }
-    LOG.debug(
-        "No OIDC webapp chain owns registration '{}' of an expired web session any more, so its"
-            + " refresh token is not revoked.",
-        ScopedClientRegistrationFactory.sanitizeForLog(registrationId));
+    return owners;
+  }
+
+  private static boolean haveSameRevocationEndpoint(final List<Owner> owners) {
+    final String first = RefreshTokenRevoker.revocationEndpoint(owners.getFirst().registration());
+    return owners.stream()
+        .allMatch(
+            owner ->
+                Objects.equals(
+                    first, RefreshTokenRevoker.revocationEndpoint(owner.registration())));
+  }
+
+  /**
+   * Whether the configuration of the chain can own the stored client, read without discovery. Only
+   * a {@link LazyClientRegistrationRepository} exposes its configuration; any other repository is
+   * looked up.
+   */
+  private static boolean isConfiguredForClient(
+      final Chain chain, final String registrationId, final ClientRegistration stored) {
+    if (!(chain.clientRegistrationRepository()
+        instanceof final LazyClientRegistrationRepository lazy)) {
+      return true;
+    }
+    final var config = lazy.providers().get(registrationId);
+    return config != null
+        && (!StringUtils.hasText(config.getClientId())
+            || config.getClientId().equals(stored.getClientId()));
   }
 
   private static ClientRegistration registrationOf(final Chain chain, final String registrationId) {
@@ -230,4 +289,6 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
 
   private record Chain(
       ClientRegistrationRepository clientRegistrationRepository, RefreshTokenRevoker revoker) {}
+
+  private record Owner(Chain chain, ClientRegistration registration) {}
 }
