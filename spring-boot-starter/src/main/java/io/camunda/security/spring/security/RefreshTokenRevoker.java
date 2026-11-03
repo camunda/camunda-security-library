@@ -303,14 +303,13 @@ public final class RefreshTokenRevoker {
   }
 
   /**
-   * The client-authentication parameters for the request body, mirroring what Spring's {@code
-   * DefaultOAuth2TokenRequestParametersConverter} sends to the token endpoint: no {@code client_id}
-   * for {@code client_secret_basic} (it travels in the {@code Authorization} header instead), a
-   * {@code client_secret} for {@code client_secret_post}, and a {@code client_assertion} pair for
-   * the assertion-based methods. That converter itself is not reused because it would also add the
-   * {@code grant_type} and {@code refresh_token} of a token request, which have no place in a
-   * revocation request.
+   * Whether this revoker can authenticate a revocation request for {@code clientRegistration}. Lets
+   * a caller with several chains of one client pick a chain that can send the request.
    */
+  boolean canAuthenticate(final ClientRegistration clientRegistration) {
+    return unsupportedClientAuthentication(clientRegistration) == null;
+  }
+
   /**
    * Why this client's revocation request cannot be authenticated, or {@code null} when it can.
    *
@@ -334,6 +333,15 @@ public final class RefreshTokenRevoker {
     return null;
   }
 
+  /**
+   * The client-authentication parameters for the request body, mirroring what Spring's {@code
+   * DefaultOAuth2TokenRequestParametersConverter} sends to the token endpoint: no {@code client_id}
+   * for {@code client_secret_basic} (it travels in the {@code Authorization} header instead), a
+   * {@code client_secret} for {@code client_secret_post}, and a {@code client_assertion} pair for
+   * the assertion-based methods. That converter itself is not reused because it would also add the
+   * {@code grant_type} and {@code refresh_token} of a token request, which have no place in a
+   * revocation request.
+   */
   private MultiValueMap<String, String> clientAuthenticationParameters(
       final OAuth2RefreshTokenGrantRequest grantRequest) {
     final ClientRegistration clientRegistration = grantRequest.getClientRegistration();
