@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -97,6 +98,41 @@ class RefreshTokenRevokerTest {
                     }))
         .doesNotThrowAnyException();
     server.verify();
+  }
+
+  @Test
+  void shouldTellWhichClientAuthenticationItCanSend() {
+    // given - a revoker without a signing key, as set up above
+    final var basic = registration(REVOCATION_ENDPOINT);
+
+    // then
+    assertThat(revoker.canAuthenticate(basic)).isTrue();
+    assertThat(
+            revoker.canAuthenticate(withMethod(basic, ClientAuthenticationMethod.PRIVATE_KEY_JWT)))
+        .isFalse();
+    assertThat(
+            revoker.canAuthenticate(
+                withMethod(basic, ClientAuthenticationMethod.CLIENT_SECRET_JWT)))
+        .isFalse();
+  }
+
+  @Test
+  void shouldAuthenticatePrivateKeyJwtWithASigningKey() throws Exception {
+    // given
+    final var key = new RSAKeyGenerator(2048).keyID("kid").generate();
+    final var withKey = new RefreshTokenRevoker(registration -> key, RestClient.builder().build());
+    final var keyJwt =
+        withMethod(registration(REVOCATION_ENDPOINT), ClientAuthenticationMethod.PRIVATE_KEY_JWT);
+
+    // then
+    assertThat(withKey.canAuthenticate(keyJwt)).isTrue();
+  }
+
+  private static ClientRegistration withMethod(
+      final ClientRegistration registration, final ClientAuthenticationMethod method) {
+    return ClientRegistration.withClientRegistration(registration)
+        .clientAuthenticationMethod(method)
+        .build();
   }
 
   private static ClientRegistration registration(final String revocationEndpoint) {

@@ -256,7 +256,7 @@ class ExpiredSessionRefreshTokenRevocationTest {
 
     // then
     verify(firstRevoker).revoke(eq(registration), any());
-    verifyNoInteractions(secondRevoker);
+    verify(secondRevoker, never()).revoke(any(), any());
   }
 
   @Test
@@ -277,8 +277,32 @@ class ExpiredSessionRefreshTokenRevocationTest {
     revocation.revoke(expiredSession(authorizedClient(basic, "refresh")));
 
     // then
-    verifyNoInteractions(firstRevoker);
+    verify(firstRevoker, never()).revoke(any(), any());
     verify(secondRevoker).revoke(eq(basic), any());
+  }
+
+  @Test
+  void shouldRevokeThroughAChainThatCanSignWhenTheFirstHasNoSigningKey() {
+    // given - two private_key_jwt chains own the client; only the second has a signing key
+    runInline();
+    final var keyJwt =
+        ClientRegistration.withClientRegistration(
+                registration(CLIENT_ID, TOKEN_URI, REVOCATION_URI))
+            .clientAuthenticationMethod(ClientAuthenticationMethod.PRIVATE_KEY_JWT)
+            .build();
+    when(firstRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(keyJwt);
+    when(secondRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(keyJwt);
+    when(firstRevoker.canAuthenticate(keyJwt)).thenReturn(false);
+    when(secondRevoker.canAuthenticate(keyJwt)).thenReturn(true);
+    revocation.register(firstRepository, firstRevoker);
+    revocation.register(secondRepository, secondRevoker);
+
+    // when
+    revocation.revoke(expiredSession(authorizedClient(keyJwt, "refresh")));
+
+    // then
+    verify(firstRevoker, never()).revoke(any(), any());
+    verify(secondRevoker).revoke(eq(keyJwt), any());
   }
 
   @Test
