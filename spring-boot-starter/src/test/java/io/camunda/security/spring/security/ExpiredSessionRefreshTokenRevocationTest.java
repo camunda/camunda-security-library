@@ -219,6 +219,27 @@ class ExpiredSessionRefreshTokenRevocationTest {
   }
 
   @Test
+  void shouldRevokeASessionStoredBeforeTheProviderSwitchedToIssuerDiscovery() {
+    // given - the session has no issuer, because the provider then used explicit endpoints
+    runInline();
+    final var stored = registration(CLIENT_ID, TOKEN_URI);
+    final var discovered =
+        ClientRegistration.withClientRegistration(stored).issuerUri(ISSUER).build();
+    final var config = new OidcConfiguration();
+    config.setClientId(CLIENT_ID);
+    config.setIssuerUri(ISSUER);
+    when(lazyRepository.providers()).thenReturn(Map.of(REGISTRATION_ID, config));
+    when(lazyRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(discovered);
+    revocation.register(lazyRepository, firstRevoker);
+
+    // when
+    revocation.revoke(expiredSession(authorizedClient(stored, "refresh")));
+
+    // then
+    verify(firstRevoker).revoke(eq(discovered), any());
+  }
+
+  @Test
   void shouldRevokeOnceWhenSeveralChainsOwnTheClientWithTheSameRevocationSettings() {
     // given
     runInline();
