@@ -79,6 +79,7 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
   private final ExecutorService executor;
   private final AtomicBoolean saturated = new AtomicBoolean();
   private final Set<String> ambiguousRegistrationIds = ConcurrentHashMap.newKeySet();
+  private final Set<String> unresolvedRegistrationIds = ConcurrentHashMap.newKeySet();
 
   public ExpiredSessionRefreshTokenRevocation() {
     this(defaultExecutor());
@@ -172,6 +173,8 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
     if (possibleOwners.isEmpty()) {
       return;
     }
+    // Resolved again: the next failure to resolve it warns again.
+    unresolvedRegistrationIds.remove(registrationId);
     final List<Owner> owners = possibleOwners.get();
     if (owners.isEmpty()) {
       LOG.debug(
@@ -208,12 +211,22 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
         registration = chain.clientRegistrationRepository().findByRegistrationId(registrationId);
       } catch (final RuntimeException e) {
         // The revocation settings of this chain are unknown, and revoking through another chain
-        // could ignore an opt-out of this one.
-        LOG.debug(
-            "Could not resolve OIDC registration '{}', so the refresh token of an expired web"
-                + " session is not revoked [{}].",
-            ScopedClientRegistrationFactory.sanitizeForLog(registrationId),
-            FailureDescription.describe(e));
+        // could ignore an opt-out of this one. One WARN per outage of a registration rather than
+        // one per session; the rest go to DEBUG.
+        if (unresolvedRegistrationIds.add(registrationId)) {
+          LOG.warn(
+              "Could not resolve OIDC registration '{}', so the refresh tokens of expired web"
+                  + " sessions are not revoked until it resolves again. They may remain valid"
+                  + " until they expire [{}].",
+              ScopedClientRegistrationFactory.sanitizeForLog(registrationId),
+              FailureDescription.describe(e));
+        } else {
+          LOG.debug(
+              "Could not resolve OIDC registration '{}', so the refresh token of an expired web"
+                  + " session is not revoked [{}].",
+              ScopedClientRegistrationFactory.sanitizeForLog(registrationId),
+              FailureDescription.describe(e));
+        }
         return Optional.empty();
       }
       if (registration != null && isSameClient(registration, stored)) {
