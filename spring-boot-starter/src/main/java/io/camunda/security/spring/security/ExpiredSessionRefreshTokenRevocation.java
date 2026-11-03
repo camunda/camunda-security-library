@@ -247,9 +247,9 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
 
   /**
    * Whether the configuration of the chain can own the stored client, read without discovery: the
-   * same client ID, and the same issuer or token endpoint where the configuration sets them. Only a
-   * {@link LazyClientRegistrationRepository} exposes its configuration; any other repository is
-   * looked up.
+   * same client ID, and the same issuer or token endpoint where the configuration sets them and the
+   * session records them. Only a {@link LazyClientRegistrationRepository} exposes its
+   * configuration; any other repository is looked up.
    */
   private static boolean isConfiguredForClient(
       final Chain chain, final String registrationId, final ClientRegistration stored) {
@@ -264,9 +264,12 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
     final var provider = stored.getProviderDetails();
     return matchesIfConfigured(config.getClientId(), stored.getClientId())
         && matchesIfConfigured(config.getTokenUri(), provider.getTokenUri())
-        && matchesIfConfigured(
-            withoutTrailingSlash(config.getIssuerUri()),
-            withoutTrailingSlash(provider.getIssuerUri()));
+        // A session stored before the provider switched to issuer discovery has no issuer; the
+        // client ID and token endpoint still decide after the lookup.
+        && (provider.getIssuerUri() == null
+            || matchesIfConfigured(
+                withoutTrailingSlash(config.getIssuerUri()),
+                withoutTrailingSlash(provider.getIssuerUri())));
   }
 
   /** A value the configuration leaves unset matches anything; a set one must be equal. */
