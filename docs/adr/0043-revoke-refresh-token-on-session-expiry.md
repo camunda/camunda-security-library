@@ -30,8 +30,9 @@ that CSL deletes because its login became invalid is not revoked. Its tokens are
 **D2. CSL reads the token from the stored session, and sends it only to its own provider.**
 The expiry has no request, so CSL reads the token from the session data. Two scopes can use one
 provider name for different providers. CSL sends the token only to a provider with the same client
-and the same token endpoint as the session. If no provider matches, or the providers that match
-have different revocation settings, CSL does not revoke. An opt-out of one scope always applies.
+and the same token endpoint as the session. CSL does not revoke if no provider matches, if the
+providers that match have different revocation settings, or if CSL cannot read the settings of a
+provider that can match. An opt-out of one scope always applies.
 
 **D3. CSL revokes in the background, and never waits for the provider.**
 The session is deleted at once, and the request goes to a queue of fixed size. If the queue is
