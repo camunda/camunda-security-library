@@ -210,13 +210,13 @@ class ExpiredSessionRefreshTokenRevocationTest {
   }
 
   @Test
-  void shouldTryTheNextChainWhenARegistrationCannotBeResolved() {
-    // given
+  void shouldNotRevokeWhenAChainThatMayOwnTheClientCannotBeResolved() {
+    // given - the unresolved chain may be a scope that opted out of revocation
     runInline();
-    final var registration = registration(CLIENT_ID, TOKEN_URI);
-    when(firstRepository.findByRegistrationId(REGISTRATION_ID))
+    final var registration = registration(CLIENT_ID, TOKEN_URI, REVOCATION_URI);
+    when(firstRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
+    when(secondRepository.findByRegistrationId(REGISTRATION_ID))
         .thenThrow(new IllegalStateException("discovery failed"));
-    when(secondRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
     revocation.register(firstRepository, firstRevoker);
     revocation.register(secondRepository, secondRevoker);
 
@@ -224,7 +224,7 @@ class ExpiredSessionRefreshTokenRevocationTest {
     revocation.revoke(expiredSession(authorizedClient(registration, "refresh")));
 
     // then
-    verify(secondRevoker).revoke(eq(registration), any());
+    verifyNoInteractions(firstRevoker, secondRevoker);
   }
 
   @Test
