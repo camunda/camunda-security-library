@@ -14,6 +14,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -23,6 +24,8 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.camunda.security.spring.oidc.LazyClientRegistrationRepository;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -62,10 +65,12 @@ class ExpiredSessionRefreshTokenRevocationTest {
   private static final String REGISTRATION_ID = "oidc";
   private static final String CLIENT_ID = "client-id";
   private static final String TOKEN_URI = "https://idp.example.com/oauth2/token";
+  private static final String REVOCATION_URI = "https://idp.example.com/oauth2/revoke";
 
   @Mock private ExecutorService executor;
   @Mock private ClientRegistrationRepository firstRepository;
   @Mock private ClientRegistrationRepository secondRepository;
+  @Mock private LazyClientRegistrationRepository lazyRepository;
   @Mock private RefreshTokenRevoker firstRevoker;
   @Mock private RefreshTokenRevoker secondRevoker;
 
@@ -135,6 +140,73 @@ class ExpiredSessionRefreshTokenRevocationTest {
     // then
     verifyNoInteractions(firstRevoker);
     verify(secondRevoker).revoke(eq(owning), any());
+  }
+
+  @Test
+  void shouldNotLookUpAChainConfiguredForAnotherClient() {
+    // given - the lookup would start discovery of an unrelated provider
+    runInline();
+    final var registration = registration(CLIENT_ID, TOKEN_URI);
+    final var otherClient = new OidcConfiguration();
+    otherClient.setClientId("other-client-id");
+    when(lazyRepository.providers()).thenReturn(Map.of(REGISTRATION_ID, otherClient));
+    when(secondRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
+    revocation.register(lazyRepository, firstRevoker);
+    revocation.register(secondRepository, secondRevoker);
+
+    // when
+    revocation.revoke(expiredSession(authorizedClient(registration, "refresh")));
+
+    // then
+    verify(lazyRepository, never()).findByRegistrationId(any());
+    verifyNoInteractions(firstRevoker);
+    verify(secondRevoker).revoke(eq(registration), any());
+  }
+
+  @Test
+  void shouldRevokeOnceWhenSeveralChainsOwnTheClientWithTheSameRevocationSettings() {
+    // given
+    runInline();
+    final var registration = registration(CLIENT_ID, TOKEN_URI, REVOCATION_URI);
+    when(firstRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
+    when(secondRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(registration(CLIENT_ID, TOKEN_URI, REVOCATION_URI));
+    revocation.register(firstRepository, firstRevoker);
+    revocation.register(secondRepository, secondRevoker);
+
+    // when
+    revocation.revoke(expiredSession(authorizedClient(registration, "refresh")));
+
+    // then
+    verify(firstRevoker).revoke(eq(registration), any());
+    verifyNoInteractions(secondRevoker);
+  }
+
+  @Test
+  void shouldNotRevokeWhenTheChainsThatOwnTheClientDisagreeOnRevocation() {
+    // given - one scope opted out of revocation, the other did not
+    runInline();
+    final var enabled = registration(CLIENT_ID, TOKEN_URI, REVOCATION_URI);
+    when(firstRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(enabled);
+    when(secondRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(registration(CLIENT_ID, TOKEN_URI));
+    revocation.register(firstRepository, firstRevoker);
+    revocation.register(secondRepository, secondRevoker);
+    final var session = expiredSession(authorizedClient(enabled, "refresh"));
+
+    // when
+    revocation.revoke(session);
+    revocation.revoke(session);
+
+    // then
+    verifyNoInteractions(firstRevoker, secondRevoker);
+    assertThat(logs.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .singleElement()
+        .satisfies(
+            event ->
+                assertThat(event.getFormattedMessage())
+                    .contains("different refresh-token revocation settings"));
   }
 
   @Test
@@ -286,12 +358,19 @@ class ExpiredSessionRefreshTokenRevocationTest {
   }
 
   private static ClientRegistration registration(final String clientId, final String tokenUri) {
+    return registration(clientId, tokenUri, null);
+  }
+
+  private static ClientRegistration registration(
+      final String clientId, final String tokenUri, final String revocationUri) {
     return ClientRegistration.withRegistrationId(REGISTRATION_ID)
         .clientId(clientId)
         .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
         .redirectUri("https://app.example.com/sso-callback")
         .authorizationUri("https://idp.example.com/oauth2/authorize")
         .tokenUri(tokenUri)
+        .providerConfigurationMetadata(
+            revocationUri == null ? Map.of() : Map.of("revocation_endpoint", revocationUri))
         .build();
   }
 

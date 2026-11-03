@@ -293,7 +293,7 @@ public final class RefreshTokenRevoker {
    * provider metadata, which issuer discovery populates and {@code ScopedClientRegistrationFactory}
    * also fills from an explicitly configured {@code revocation-endpoint-uri}.
    */
-  private static String revocationEndpoint(final ClientRegistration clientRegistration) {
+  static String revocationEndpoint(final ClientRegistration clientRegistration) {
     final Object endpoint =
         clientRegistration
             .getProviderDetails()
