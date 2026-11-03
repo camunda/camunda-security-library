@@ -228,6 +228,37 @@ class ExpiredSessionRefreshTokenRevocationTest {
   }
 
   @Test
+  void shouldWarnOnceWhileARegistrationCannotBeResolvedAndAgainAfterItRecovers() {
+    // given a chain whose lookup fails twice, then resolves, then fails again
+    runInline();
+    final var registration = registration(CLIENT_ID, TOKEN_URI, REVOCATION_URI);
+    when(firstRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenThrow(new IllegalStateException("discovery failed"))
+        .thenThrow(new IllegalStateException("discovery failed"))
+        .thenReturn(registration)
+        .thenThrow(new IllegalStateException("discovery failed"));
+    revocation.register(firstRepository, firstRevoker);
+    final var session = expiredSession(authorizedClient(registration, "refresh"));
+
+    // when
+    revocation.revoke(session);
+    revocation.revoke(session);
+    revocation.revoke(session);
+    revocation.revoke(session);
+
+    // then one WARN for each outage, and the session in between is revoked
+    assertThat(logs.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .hasSize(2)
+        .allSatisfy(
+            event ->
+                assertThat(event.getFormattedMessage())
+                    .contains("Could not resolve OIDC registration")
+                    .doesNotContain("refresh-token-value"));
+    verify(firstRevoker).revoke(eq(registration), any());
+  }
+
+  @Test
   void shouldNotRevokeWhenNoChainOwnsTheRegistration() {
     // given
     runInline();
