@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.camunda.security.spring.authz.AuthorizationCheckerConfiguration;
 import io.camunda.security.spring.authz.AuthorizationConfiguration;
+import io.camunda.security.spring.client.OutboundCredentialsConfiguration;
 import io.camunda.security.spring.context.CamundaAuthenticationBeansConfiguration;
 import io.camunda.security.spring.cors.CorsBeansConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
@@ -101,6 +102,7 @@ class CamundaSecurityAutoConfigurationTest {
             ScopedOidcInfrastructureConfiguration.class,
             WebAppAuthorizationFilterConfiguration.class,
             AdminUserCheckFilterConfiguration.class,
-            UserConfiguration.class);
+            UserConfiguration.class,
+            OutboundCredentialsConfiguration.class);
   }
 }
