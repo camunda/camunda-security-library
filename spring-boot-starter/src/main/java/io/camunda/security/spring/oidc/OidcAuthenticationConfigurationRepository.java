@@ -26,7 +26,7 @@ public class OidcAuthenticationConfigurationRepository implements OidcProviderCo
   public static final String REGISTRATION_ID = OidcConfiguration.DEFAULT_REGISTRATION_ID;
 
   private final ScopedClientRegistrationFactory clientRegistrationFactory;
-  private final Map<String, OidcConfiguration> providers;
+  private volatile Map<String, OidcConfiguration> providers;
 
   public OidcAuthenticationConfigurationRepository(
       final CamundaSecurityLibraryProperties securityConfiguration,
@@ -62,5 +62,16 @@ public class OidcAuthenticationConfigurationRepository implements OidcProviderCo
   @Override
   public Map<String, OidcConfiguration> getOidcAuthenticationConfigurations() {
     return Collections.unmodifiableMap(new LinkedHashMap<>(providers));
+  }
+
+  /**
+   * Serves other credentials for the same providers from now on, in one step, for a credential
+   * rotation of the primary chains. The caller checks that only credentials differ.
+   *
+   * @param providers by registrationId, as {@link ScopedClientRegistrationFactory#flatten} returns
+   *     them; they must not be changed afterwards
+   */
+  public void replaceCredentials(final Map<String, OidcConfiguration> providers) {
+    this.providers = Collections.unmodifiableMap(new LinkedHashMap<>(providers));
   }
 }

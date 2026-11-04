@@ -39,11 +39,15 @@ public final class LazyClientRegistrationRepository
     implements ClientRegistrationRepository, Iterable<ClientRegistration> {
 
   private final ScopedClientRegistrationFactory factory;
-  private final Map<String, OidcConfiguration> providers;
   private final String scopedRedirectUriPath;
   private final String scopeDescription;
   private final ScopedClientRegistrationFactory.LoginRouteChecks loginRouteChecks;
-  private final Map<String, ClientRegistration> resolved = new ConcurrentHashMap<>();
+
+  /**
+   * The providers and the registrations resolved from them, replaced as a whole when credentials
+   * rotate, so a lookup never pairs a registration with providers it was not built from.
+   */
+  private volatile State state;
 
   public LazyClientRegistrationRepository(
       final ScopedClientRegistrationFactory factory,
@@ -94,9 +98,11 @@ public final class LazyClientRegistrationRepository
     } else {
       factory.validateWithoutNetwork(normalized, scopedRedirectUriPath);
     }
-    this.providers =
-        Collections.unmodifiableMap(
-            ScopedClientRegistrationFactory.withoutBlankRegistrationIds(normalized));
+    state =
+        new State(
+            Collections.unmodifiableMap(
+                ScopedClientRegistrationFactory.withoutBlankRegistrationIds(normalized)),
+            new ConcurrentHashMap<>());
   }
 
   /**
@@ -126,7 +132,7 @@ public final class LazyClientRegistrationRepository
 
   /** The configured registrationIds, in the order of the configuration. Resolves nothing. */
   public Set<String> registrationIds() {
-    return providers.keySet();
+    return state.providers().keySet();
   }
 
   /**
@@ -135,7 +141,7 @@ public final class LazyClientRegistrationRepository
    * reaches describe one provider. Resolves nothing.
    */
   public Map<String, OidcConfiguration> providers() {
-    return providers;
+    return state.providers();
   }
 
   /**
@@ -148,13 +154,13 @@ public final class LazyClientRegistrationRepository
    */
   public Map<String, String> clientNamesByRegistrationId() {
     final var names = new LinkedHashMap<String, String>();
-    providers.forEach((id, config) -> names.put(id, clientName(id, config)));
+    state.providers().forEach((id, config) -> names.put(id, clientName(id, config)));
     return names;
   }
 
   /** Names each configured provider, as a failure log of this repository names it. */
   public String providerDescriptions() {
-    return DeferredOidcResolution.describeProviders(providers);
+    return DeferredOidcResolution.describeProviders(state.providers());
   }
 
   private static String clientName(final String registrationId, final OidcConfiguration config) {
@@ -166,34 +172,28 @@ public final class LazyClientRegistrationRepository
 
   /** The registrations resolved so far. Resolves nothing. */
   public Collection<ClientRegistration> resolvedRegistrations() {
-    return List.copyOf(resolved.values());
+    return List.copyOf(state.resolved().values());
   }
 
   @Override
   public ClientRegistration findByRegistrationId(final String registrationId) {
-    final var config = providers.get(registrationId);
+    final var current = state;
+    final var config = current.providers().get(registrationId);
     if (config == null) {
       return null;
     }
     // Two lookups of the same registration each make their own attempt. A single-flight lock
     // would hold one caller for the complete discovery timeout of the other attempt, which is 30
     // seconds for an unreachable provider. The first result wins.
-    final var cached = resolved.get(registrationId);
+    final var cached = current.resolved().get(registrationId);
     if (cached != null) {
       return cached;
     }
     // buildAll, not createFromProviderMap: the constructor already ran the no-network validation
     // once, over the whole map. Re-running it here on every retry of a registration that keeps
     // failing to build would re-log the same WARN on every request.
-    final var registration =
-        DeferredOidcResolution.resolve(
-            describe(registrationId, config),
-            () ->
-                factory
-                    .buildAll(
-                        Map.of(registrationId, config), scopedRedirectUriPath, loginRouteChecks)
-                    .getFirst());
-    final var winner = resolved.putIfAbsent(registrationId, registration);
+    final var registration = build(registrationId, config);
+    final var winner = current.resolved().putIfAbsent(registrationId, registration);
     return winner != null ? winner : registration;
   }
 
@@ -202,7 +202,58 @@ public final class LazyClientRegistrationRepository
     // providers is already filtered by the constructor, so no key here can reach
     // findByRegistrationId's resolved cache (a ConcurrentHashMap, which throws
     // NullPointerException on get(null)).
-    return providers.keySet().stream().map(this::findByRegistrationId).iterator();
+    return state.providers().keySet().stream().map(this::findByRegistrationId).iterator();
+  }
+
+  /**
+   * Builds the registrations of {@code providers} next to the ones in use, without publishing them:
+   * every registration, so that the identity provider can be asked whether it accepts the new
+   * credentials before they are used. Discovery documents come from the factory's cache.
+   *
+   * @param providers the same registrationIds and settings as now, with other credentials; the
+   *     caller checks that only credentials differ
+   * @throws IllegalArgumentException if the registrationIds differ from the ones served
+   * @throws RuntimeException if a registration cannot be built, for example because its provider
+   *     cannot be reached; nothing changed then
+   */
+  public Prepared prepareCredentials(final Map<String, OidcConfiguration> providers) {
+    final var normalized = new LinkedHashMap<>(providers);
+    if (loginRouteChecks == ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED) {
+      factory.validateWithoutLoginRoutes(normalized);
+    } else {
+      factory.validateWithoutNetwork(normalized, scopedRedirectUriPath);
+    }
+    final var next =
+        Collections.unmodifiableMap(
+            ScopedClientRegistrationFactory.withoutBlankRegistrationIds(normalized));
+    if (!next.keySet().equals(state.providers().keySet())) {
+      throw new IllegalArgumentException(
+          "A credential rotation must keep the registrationIds %s, got %s"
+              .formatted(state.providers().keySet(), next.keySet()));
+    }
+    final Map<String, ClientRegistration> registrations = new LinkedHashMap<>();
+    next.forEach((id, config) -> registrations.put(id, build(id, config)));
+    return new Prepared(this, next, Collections.unmodifiableMap(registrations));
+  }
+
+  /**
+   * Serves the prepared registrations from now on, in one step. A lookup that started before it may
+   * still return a previous registration.
+   */
+  public void publishCredentials(final Prepared prepared) {
+    if (prepared.repository() != this) {
+      throw new IllegalArgumentException("Prepared for another repository");
+    }
+    state = new State(prepared.providers(), new ConcurrentHashMap<>(prepared.registrations()));
+  }
+
+  private ClientRegistration build(final String registrationId, final OidcConfiguration config) {
+    return DeferredOidcResolution.resolve(
+        describe(registrationId, config),
+        () ->
+            factory
+                .buildAll(Map.of(registrationId, config), scopedRedirectUriPath, loginRouteChecks)
+                .getFirst());
   }
 
   private String describe(final String registrationId, final OidcConfiguration config) {
@@ -210,4 +261,17 @@ public final class LazyClientRegistrationRepository
         + DeferredOidcResolution.describeProvider(registrationId, config)
         + (StringUtils.hasText(scopeDescription) ? " for " + scopeDescription : "");
   }
+
+  /**
+   * Registrations built by {@link #prepareCredentials} and not yet served.
+   *
+   * @param registrations by registrationId, each built from {@code providers}
+   */
+  public record Prepared(
+      LazyClientRegistrationRepository repository,
+      Map<String, OidcConfiguration> providers,
+      Map<String, ClientRegistration> registrations) {}
+
+  private record State(
+      Map<String, OidcConfiguration> providers, Map<String, ClientRegistration> resolved) {}
 }

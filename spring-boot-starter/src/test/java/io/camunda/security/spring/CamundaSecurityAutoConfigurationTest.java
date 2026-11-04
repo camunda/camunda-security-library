@@ -18,6 +18,7 @@ import io.camunda.security.spring.oidc.OidcBeansConfiguration;
 import io.camunda.security.spring.oidc.OidcClaimsProviderConfiguration;
 import io.camunda.security.spring.oidc.OidcWebappClientBeansConfiguration;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
+import io.camunda.security.spring.scope.PrimaryCredentialsReloadConfiguration;
 import io.camunda.security.spring.scope.ScopedApiSecurityChainBuilderConfiguration;
 import io.camunda.security.spring.scope.ScopedSecurityChainConfiguration;
 import io.camunda.security.spring.security.AdminUserCheckFilterConfiguration;
@@ -91,6 +92,7 @@ class CamundaSecurityAutoConfigurationTest {
             OidcWebappSecurityConfiguration.class,
             ScopedApiSecurityChainBuilderConfiguration.class,
             ScopedSecurityChainConfiguration.class,
+            PrimaryCredentialsReloadConfiguration.class,
             ScopedWebappSecurityChainBuilderConfiguration.class,
             UnprotectedApiSecurityConfiguration.class,
             AuthFailureHandlerConfiguration.class,
