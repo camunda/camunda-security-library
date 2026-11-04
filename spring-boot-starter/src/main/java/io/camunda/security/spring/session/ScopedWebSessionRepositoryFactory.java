@@ -10,13 +10,14 @@ package io.camunda.security.spring.session;
 import io.camunda.security.api.model.config.SessionConfiguration;
 import io.camunda.security.core.port.out.ScopedSessionStorePortProvider;
 import io.camunda.security.core.port.out.SessionStorePort;
+import io.camunda.security.spring.session.WebSessionRepository.ExpiryCheck;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 import org.springframework.session.Session;
 
 /**
@@ -43,7 +44,7 @@ public final class ScopedWebSessionRepositoryFactory {
   private final WebSessionMapper webSessionMapper;
   private final HttpServletRequest request;
   private final SessionConfiguration sessionConfiguration;
-  private final Consumer<Session> expiredSessionHandler;
+  private final BiConsumer<Session, ExpiryCheck> expiredSessionHandler;
   private final Map<String, WebSessionRepository> repositoriesByBasePath =
       new ConcurrentHashMap<>();
 
@@ -52,20 +53,21 @@ public final class ScopedWebSessionRepositoryFactory {
       final WebSessionMapper webSessionMapper,
       final HttpServletRequest request,
       final SessionConfiguration sessionConfiguration) {
-    this(storePortProvider, webSessionMapper, request, sessionConfiguration, session -> {});
+    this(
+        storePortProvider, webSessionMapper, request, sessionConfiguration, (session, check) -> {});
   }
 
   /**
    * @param expiredSessionHandler passed to every repository this factory builds, see {@link
    *     WebSessionRepository#WebSessionRepository(SessionStorePort, WebSessionMapper,
-   *     HttpServletRequest, SessionConfiguration, Consumer)}
+   *     HttpServletRequest, SessionConfiguration, BiConsumer)}
    */
   public ScopedWebSessionRepositoryFactory(
       final ScopedSessionStorePortProvider storePortProvider,
       final WebSessionMapper webSessionMapper,
       final HttpServletRequest request,
       final SessionConfiguration sessionConfiguration,
-      final Consumer<Session> expiredSessionHandler) {
+      final BiConsumer<Session, ExpiryCheck> expiredSessionHandler) {
     this.storePortProvider = storePortProvider;
     this.webSessionMapper = webSessionMapper;
     this.request = request;

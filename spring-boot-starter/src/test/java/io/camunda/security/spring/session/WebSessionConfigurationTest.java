@@ -9,6 +9,9 @@ package io.camunda.security.spring.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.springframework.security.web.context.HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY;
 
 import io.camunda.security.api.model.config.SessionConfiguration;
@@ -18,6 +21,7 @@ import io.camunda.security.core.port.out.SessionStorePort;
 import io.camunda.security.spring.security.ExpiredSessionRefreshTokenRevocation;
 import io.camunda.security.spring.security.RefreshTokenRevoker;
 import io.camunda.security.spring.session.WebSessionMapper.SpringBasedWebSessionAttributeConverter;
+import io.camunda.security.spring.session.WebSessionRepository.ExpiryCheck;
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.time.Instant;
 import java.util.List;
@@ -181,13 +185,14 @@ class WebSessionConfigurationTest {
             lookedUp.countDown();
             return null;
           },
+          new HttpSessionOAuth2AuthorizedClientRepository(),
           new RefreshTokenRevoker(null));
       final var beanFactory = new StaticListableBeanFactory(Map.of("revocation", revocation));
 
       // when
       WebSessionConfiguration.expiredSessionHandler(
               beanFactory.getBeanProvider(ExpiredSessionRefreshTokenRevocation.class))
-          .accept(sessionWithRefreshToken());
+          .accept(sessionWithRefreshToken(), ExpiryCheck.REQUEST);
 
       // then
       assertThat(lookedUp.await(5, TimeUnit.SECONDS)).isTrue();
@@ -204,8 +209,29 @@ class WebSessionConfigurationTest {
             () ->
                 WebSessionConfiguration.expiredSessionHandler(
                         beanFactory.getBeanProvider(ExpiredSessionRefreshTokenRevocation.class))
-                    .accept(sessionWithRefreshToken()))
+                    .accept(sessionWithRefreshToken(), ExpiryCheck.REQUEST))
         .doesNotThrowAnyException();
+  }
+
+  @Test
+  void expiredSessionHandlerLetsOnlyTheSweepWait() {
+    // given
+    final var revocation = mock(ExpiredSessionRefreshTokenRevocation.class);
+    final var handler =
+        WebSessionConfiguration.expiredSessionHandler(
+            new StaticListableBeanFactory(Map.of("revocation", revocation))
+                .getBeanProvider(ExpiredSessionRefreshTokenRevocation.class));
+    final var fromSweep = new MapSession();
+    final var fromRequest = new MapSession();
+
+    // when
+    handler.accept(fromSweep, ExpiryCheck.SWEEP);
+    handler.accept(fromRequest, ExpiryCheck.REQUEST);
+
+    // then
+    verify(revocation).revokeFromSweep(fromSweep);
+    verify(revocation).revoke(fromRequest);
+    verifyNoMoreInteractions(revocation);
   }
 
   private static Session sessionWithRefreshToken() {
