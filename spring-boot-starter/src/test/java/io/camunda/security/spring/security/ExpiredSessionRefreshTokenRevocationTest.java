@@ -466,17 +466,23 @@ class ExpiredSessionRefreshTokenRevocationTest {
 
   @Test
   void shouldWarnOnceWhileALaneStaysFullAndAgainForTheNextBacklog() {
-    // given a lane with room for one revocation, whose revocations are held
-    revocation = revocationWithCapacity(1, Duration.ofSeconds(5));
+    // given a lane with room for two revocations, whose revocations are held
+    revocation = revocationWithCapacity(2, Duration.ofSeconds(5));
     holdTasks();
     revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
     final var session = expiredSession(authorizedClient(registration(CLIENT_ID, TOKEN_URI), "r"));
 
-    // when the lane fills and stays full while the worker finishes one task in between
+    // when the lane fills, and the worker finishes one task while new ones keep it full
     revocation.revoke(session);
     revocation.revoke(session);
     revocation.revoke(session);
     held.removeFirst().run();
+    revocation.revoke(session);
+    revocation.revoke(session);
+    // and then the backlog drains, and the lane fills again
+    held.removeFirst().run();
+    held.removeFirst().run();
+    revocation.revoke(session);
     revocation.revoke(session);
     revocation.revoke(session);
 

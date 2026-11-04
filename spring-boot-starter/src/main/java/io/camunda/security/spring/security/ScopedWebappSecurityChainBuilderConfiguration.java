@@ -96,7 +96,7 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
   /**
    * Revokes the refresh token of a web session that expires (ADR-0043). Each OIDC webapp chain the
    * builder above builds registers with it, and the persistent session store calls it for every
-   * expired session it deletes. Closed with the context, which stops its background thread.
+   * expired session it deletes. Closed with the context, which stops its background threads.
    */
   @Bean
   @ConditionalOnMissingBean

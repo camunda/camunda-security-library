@@ -261,8 +261,7 @@ public final class RefreshTokenRevoker {
               .toEntity(String.class);
     } catch (final RuntimeException e) {
       // Type only, same reasoning as the net in RefreshTokenRevocationLogoutHandler#logout, but
-      // with the identifiers that make the
-      // line actionable in a multi-provider deployment.
+      // with the identifiers that make the line actionable in a multi-provider deployment.
       LOG.warn(
           "Failed to revoke the refresh token for OIDC registration '{}' at {} [{}]. The local"
               + " session is still terminated, but the refresh token may remain valid until it"
