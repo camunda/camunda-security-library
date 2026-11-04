@@ -752,7 +752,8 @@ public final class ScopedWebappSecurityChainBuilder {
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
       final Function<ClientRegistration, JWK> jwkResolver) {
     final var revoker = new RefreshTokenRevoker(jwkResolver);
-    expiredSessionRevocationProvider.ifAvailable(revocation -> revocation.register(repo, revoker));
+    expiredSessionRevocationProvider.ifAvailable(
+        revocation -> revocation.register(repo, authorizedClientRepository, revoker));
     return RefreshTokenRevocationLogoutHandler.sharing(repo, authorizedClientRepository, revoker);
   }
 

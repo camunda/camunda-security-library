@@ -8,13 +8,16 @@
 package io.camunda.security.spring.security;
 
 import static io.camunda.security.spring.security.ExpiredSessionRefreshTokenRevocation.AUTHORIZED_CLIENTS_ATTRIBUTE;
+import static io.camunda.security.spring.security.ExpiredSessionRefreshTokenRevocation.LOOKUP_BACKOFF;
+import static io.camunda.security.spring.security.ExpiredSessionRefreshTokenRevocation.QUEUE_CAPACITY;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -26,11 +29,13 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.spring.oidc.LazyClientRegistrationRepository;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,6 +55,7 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
@@ -68,6 +74,8 @@ class ExpiredSessionRefreshTokenRevocationTest {
   private static final String TOKEN_URI = "https://idp.example.com/oauth2/token";
   private static final String ISSUER = "https://idp.example.com";
   private static final String REVOCATION_URI = "https://idp.example.com/oauth2/revoke";
+  private static final HttpSessionOAuth2AuthorizedClientRepository SESSION_CLIENTS =
+      new HttpSessionOAuth2AuthorizedClientRepository();
 
   @Mock private ExecutorService executor;
   @Mock private ClientRegistrationRepository firstRepository;
@@ -79,10 +87,12 @@ class ExpiredSessionRefreshTokenRevocationTest {
 
   private ExpiredSessionRefreshTokenRevocation revocation;
   private ListAppender<ILoggingEvent> logs;
+  private final AtomicLong now = new AtomicLong();
+  private final List<Runnable> held = new CopyOnWriteArrayList<>();
 
   @BeforeEach
   void setUp() {
-    revocation = new ExpiredSessionRefreshTokenRevocation(executor);
+    revocation = revocationWithCapacity(QUEUE_CAPACITY, Duration.ofSeconds(5));
     logs = new ListAppender<>();
     logs.start();
     logger().addAppender(logs);
@@ -114,7 +124,7 @@ class ExpiredSessionRefreshTokenRevocationTest {
     final var registration = registration(CLIENT_ID, TOKEN_URI);
     final var client = authorizedClient(registration, "refresh");
     when(firstRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
-    revocation.register(firstRepository, firstRevoker);
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
 
     // when
     revocation.revoke(expiredSession(client));
@@ -134,8 +144,8 @@ class ExpiredSessionRefreshTokenRevocationTest {
     when(firstRepository.findByRegistrationId(REGISTRATION_ID))
         .thenReturn(registration(CLIENT_ID, "https://other-idp.example.com/oauth2/token"));
     when(secondRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(owning);
-    revocation.register(firstRepository, firstRevoker);
-    revocation.register(secondRepository, secondRevoker);
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    revocation.register(secondRepository, SESSION_CLIENTS, secondRevoker);
 
     // when
     revocation.revoke(expiredSession(client));
@@ -154,8 +164,8 @@ class ExpiredSessionRefreshTokenRevocationTest {
     otherClient.setClientId("other-client-id");
     when(lazyRepository.providers()).thenReturn(Map.of(REGISTRATION_ID, otherClient));
     when(secondRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
-    revocation.register(lazyRepository, firstRevoker);
-    revocation.register(secondRepository, secondRevoker);
+    revocation.register(lazyRepository, SESSION_CLIENTS, firstRevoker);
+    revocation.register(secondRepository, SESSION_CLIENTS, secondRevoker);
 
     // when
     revocation.revoke(expiredSession(authorizedClient(registration, "refresh")));
@@ -183,9 +193,9 @@ class ExpiredSessionRefreshTokenRevocationTest {
     when(lazyRepository.providers()).thenReturn(Map.of(REGISTRATION_ID, otherIssuer));
     when(otherLazyRepository.providers()).thenReturn(Map.of(REGISTRATION_ID, otherTokenUri));
     when(secondRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
-    revocation.register(lazyRepository, firstRevoker);
-    revocation.register(otherLazyRepository, firstRevoker);
-    revocation.register(secondRepository, secondRevoker);
+    revocation.register(lazyRepository, SESSION_CLIENTS, firstRevoker);
+    revocation.register(otherLazyRepository, SESSION_CLIENTS, firstRevoker);
+    revocation.register(secondRepository, SESSION_CLIENTS, secondRevoker);
 
     // when
     revocation.revoke(expiredSession(authorizedClient(registration, "refresh")));
@@ -210,7 +220,7 @@ class ExpiredSessionRefreshTokenRevocationTest {
     config.setIssuerUri(ISSUER + "/");
     when(lazyRepository.providers()).thenReturn(Map.of(REGISTRATION_ID, config));
     when(lazyRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
-    revocation.register(lazyRepository, firstRevoker);
+    revocation.register(lazyRepository, SESSION_CLIENTS, firstRevoker);
 
     // when
     revocation.revoke(expiredSession(authorizedClient(registration, "refresh")));
@@ -231,7 +241,7 @@ class ExpiredSessionRefreshTokenRevocationTest {
     config.setIssuerUri(ISSUER);
     when(lazyRepository.providers()).thenReturn(Map.of(REGISTRATION_ID, config));
     when(lazyRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(discovered);
-    revocation.register(lazyRepository, firstRevoker);
+    revocation.register(lazyRepository, SESSION_CLIENTS, firstRevoker);
 
     // when
     revocation.revoke(expiredSession(authorizedClient(stored, "refresh")));
@@ -248,8 +258,8 @@ class ExpiredSessionRefreshTokenRevocationTest {
     when(firstRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
     when(secondRepository.findByRegistrationId(REGISTRATION_ID))
         .thenReturn(registration(CLIENT_ID, TOKEN_URI, REVOCATION_URI));
-    revocation.register(firstRepository, firstRevoker);
-    revocation.register(secondRepository, secondRevoker);
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    revocation.register(secondRepository, SESSION_CLIENTS, secondRevoker);
 
     // when
     revocation.revoke(expiredSession(authorizedClient(registration, "refresh")));
@@ -270,8 +280,8 @@ class ExpiredSessionRefreshTokenRevocationTest {
             .build();
     when(firstRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(secretJwt);
     when(secondRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(basic);
-    revocation.register(firstRepository, firstRevoker);
-    revocation.register(secondRepository, secondRevoker);
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    revocation.register(secondRepository, SESSION_CLIENTS, secondRevoker);
 
     // when - the session logged in through the client_secret_basic chain
     revocation.revoke(expiredSession(authorizedClient(basic, "refresh")));
@@ -294,8 +304,8 @@ class ExpiredSessionRefreshTokenRevocationTest {
     when(secondRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(keyJwt);
     when(firstRevoker.canAuthenticate(keyJwt)).thenReturn(false);
     when(secondRevoker.canAuthenticate(keyJwt)).thenReturn(true);
-    revocation.register(firstRepository, firstRevoker);
-    revocation.register(secondRepository, secondRevoker);
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    revocation.register(secondRepository, SESSION_CLIENTS, secondRevoker);
 
     // when
     revocation.revoke(expiredSession(authorizedClient(keyJwt, "refresh")));
@@ -313,8 +323,8 @@ class ExpiredSessionRefreshTokenRevocationTest {
     when(firstRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(enabled);
     when(secondRepository.findByRegistrationId(REGISTRATION_ID))
         .thenReturn(registration(CLIENT_ID, TOKEN_URI));
-    revocation.register(firstRepository, firstRevoker);
-    revocation.register(secondRepository, secondRevoker);
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    revocation.register(secondRepository, SESSION_CLIENTS, secondRevoker);
     final var session = expiredSession(authorizedClient(enabled, "refresh"));
 
     // when
@@ -340,8 +350,8 @@ class ExpiredSessionRefreshTokenRevocationTest {
     when(firstRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
     when(secondRepository.findByRegistrationId(REGISTRATION_ID))
         .thenThrow(new IllegalStateException("discovery failed"));
-    revocation.register(firstRepository, firstRevoker);
-    revocation.register(secondRepository, secondRevoker);
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    revocation.register(secondRepository, SESSION_CLIENTS, secondRevoker);
 
     // when
     revocation.revoke(expiredSession(authorizedClient(registration, "refresh")));
@@ -360,14 +370,14 @@ class ExpiredSessionRefreshTokenRevocationTest {
         .thenThrow(new IllegalStateException("discovery failed"))
         .thenReturn(registration)
         .thenThrow(new IllegalStateException("discovery failed"));
-    revocation.register(firstRepository, firstRevoker);
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
     final var session = expiredSession(authorizedClient(registration, "refresh"));
 
-    // when
-    revocation.revoke(session);
-    revocation.revoke(session);
-    revocation.revoke(session);
-    revocation.revoke(session);
+    // when - each after the back-off, so each looks the registration up
+    for (int i = 0; i < 4; i++) {
+      now.addAndGet(LOOKUP_BACKOFF.toNanos() + 1);
+      revocation.revoke(session);
+    }
 
     // then one WARN for each outage, and the session in between is revoked
     assertThat(logs.list)
@@ -386,7 +396,7 @@ class ExpiredSessionRefreshTokenRevocationTest {
     // given
     runInline();
     final var registration = registration(CLIENT_ID, TOKEN_URI);
-    revocation.register(firstRepository, firstRevoker);
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
 
     // when
     revocation.revoke(expiredSession(authorizedClient(registration, "refresh")));
@@ -398,7 +408,7 @@ class ExpiredSessionRefreshTokenRevocationTest {
   @Test
   void shouldNotScheduleAnythingForASessionWithoutARefreshToken() {
     // given
-    revocation.register(firstRepository, firstRevoker);
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
     final var client = authorizedClient(registration(CLIENT_ID, TOKEN_URI), null);
 
     // when
@@ -411,7 +421,7 @@ class ExpiredSessionRefreshTokenRevocationTest {
   @Test
   void shouldNotScheduleAnythingForASessionThatIsNotAnOidcLogin() {
     // given
-    revocation.register(firstRepository, firstRevoker);
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
     final var session = new MapSession();
     session.setAttribute(
         SPRING_SECURITY_CONTEXT_KEY,
@@ -434,16 +444,123 @@ class ExpiredSessionRefreshTokenRevocationTest {
   }
 
   @Test
-  void shouldWarnOnceWhileTheQueueStaysFull() {
-    // given
-    doThrow(new RejectedExecutionException("full")).when(executor).execute(any());
-    revocation.register(firstRepository, firstRevoker);
-    final var session =
-        expiredSession(authorizedClient(registration(CLIENT_ID, TOKEN_URI), "refresh"));
+  void shouldNotLookUpARegistrationAgainDuringTheBackOff() {
+    // given a chain whose provider cannot be reached
+    runInline();
+    final var registration = registration(CLIENT_ID, TOKEN_URI, REVOCATION_URI);
+    when(firstRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenThrow(new IllegalStateException("discovery timed out"));
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    final var session = expiredSession(authorizedClient(registration, "refresh"));
 
     // when
     revocation.revoke(session);
     revocation.revoke(session);
+    now.addAndGet(LOOKUP_BACKOFF.toNanos() + 1);
+    revocation.revoke(session);
+
+    // then the second session does not start another discovery, the third does
+    verify(firstRepository, times(2)).findByRegistrationId(REGISTRATION_ID);
+    verifyNoInteractions(firstRevoker);
+  }
+
+  @Test
+  void shouldWarnOnceWhileALaneStaysFullAndAgainForTheNextBacklog() {
+    // given a lane with room for one revocation, whose revocations are held
+    revocation = revocationWithCapacity(1, Duration.ofSeconds(5));
+    holdTasks();
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    final var session = expiredSession(authorizedClient(registration(CLIENT_ID, TOKEN_URI), "r"));
+
+    // when the lane fills and stays full while the worker finishes one task in between
+    revocation.revoke(session);
+    revocation.revoke(session);
+    revocation.revoke(session);
+    held.removeFirst().run();
+    revocation.revoke(session);
+    revocation.revoke(session);
+
+    // then one WARN per backlog, not one per finished task
+    assertThat(logs.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .hasSize(2)
+        .allSatisfy(
+            event ->
+                assertThat(event.getFormattedMessage())
+                    .contains("its revocation queue is full")
+                    .contains(TOKEN_URI)
+                    .doesNotContain("refresh-token-value"));
+  }
+
+  @Test
+  void shouldNotLetAFullLaneHoldUpTheRevocationsOfAnotherProvider() {
+    // given the lane of an unreachable provider is full
+    revocation = revocationWithCapacity(1, Duration.ofSeconds(5));
+    holdTasks();
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    final var down =
+        expiredSession(
+            authorizedClient(registration(CLIENT_ID, "https://down.example.com/token"), "r"));
+    revocation.revoke(down);
+    revocation.revoke(down);
+
+    // when a session of another provider expires
+    revocation.revoke(expiredSession(authorizedClient(registration(CLIENT_ID, TOKEN_URI), "r")));
+
+    // then its revocation is queued on its own lane
+    assertThat(held).hasSize(2);
+  }
+
+  @Test
+  void shouldLetTheSweepWaitForRoomInAFullLane() throws Exception {
+    // given a full lane whose worker finishes its task shortly
+    revocation = revocationWithCapacity(1, Duration.ofSeconds(5));
+    holdTasks();
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    final var session = expiredSession(authorizedClient(registration(CLIENT_ID, TOKEN_URI), "r"));
+    revocation.revokeFromSweep(session);
+    final var worker =
+        Thread.ofVirtual()
+            .start(
+                () -> {
+                  sleep(Duration.ofMillis(100));
+                  held.removeFirst().run();
+                });
+
+    // when
+    revocation.revokeFromSweep(session);
+    worker.join();
+
+    // then the sweep's revocation is queued, not dropped
+    assertThat(held).hasSize(1);
+    assertThat(logs.list).noneMatch(event -> event.getLevel() == Level.WARN);
+  }
+
+  @Test
+  void shouldLetTheSweepWaitOnlyOncePerBacklog() {
+    // given a full lane whose worker does not finish
+    final var sweepWait = Duration.ofMillis(500);
+    revocation = revocationWithCapacity(1, sweepWait);
+    holdTasks();
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    final var session = expiredSession(authorizedClient(registration(CLIENT_ID, TOKEN_URI), "r"));
+    revocation.revokeFromSweep(session);
+
+    // when
+    final long firstDrop = timed(() -> revocation.revokeFromSweep(session));
+    final long secondDrop = timed(() -> revocation.revokeFromSweep(session));
+
+    // then only the first drop waited
+    assertThat(firstDrop).isGreaterThanOrEqualTo(sweepWait.toMillis());
+    assertThat(secondDrop).isLessThan(sweepWait.toMillis() / 2);
+    assertThat(held).hasSize(1);
+  }
+
+  @Test
+  void shouldWarnWhenAChainDoesNotStoreItsAuthorizedClientsInTheSession() {
+    // when
+    revocation.register(
+        firstRepository, mock(OAuth2AuthorizedClientRepository.class), firstRevoker);
 
     // then
     assertThat(logs.list)
@@ -452,14 +569,14 @@ class ExpiredSessionRefreshTokenRevocationTest {
         .satisfies(
             event ->
                 assertThat(event.getFormattedMessage())
-                    .contains("Dropping refresh-token revocations")
-                    .doesNotContain("refresh-token-value"));
+                    .contains("not in the web session")
+                    .contains("Logout still revokes them"));
   }
 
   @Test
   void shouldNeverThrowOnAnUnreadableSession() {
     // given
-    revocation.register(firstRepository, firstRevoker);
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
     final var session = new MapSession();
     session.setAttribute(
         SPRING_SECURITY_CONTEXT_KEY, new SecurityContextImpl(oauth2Authentication()));
@@ -471,12 +588,47 @@ class ExpiredSessionRefreshTokenRevocationTest {
   }
 
   @Test
-  void shouldShutDownTheExecutorOnClose() {
+  void shouldShutDownTheLanesOnClose() {
+    // given a lane
+    runInline();
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    revocation.revoke(expiredSession(authorizedClient(registration(CLIENT_ID, TOKEN_URI), "r")));
+
     // when
     revocation.close();
 
     // then
     verify(executor).shutdown();
+  }
+
+  private ExpiredSessionRefreshTokenRevocation revocationWithCapacity(
+      final int capacity, final Duration sweepWait) {
+    return new ExpiredSessionRefreshTokenRevocation(() -> executor, capacity, sweepWait, now::get);
+  }
+
+  /** Queues the revocations instead of running them; a test runs them from {@link #held}. */
+  private void holdTasks() {
+    doAnswer(
+            invocation -> {
+              held.add(invocation.getArgument(0));
+              return null;
+            })
+        .when(executor)
+        .execute(any());
+  }
+
+  private static long timed(final Runnable action) {
+    final long start = System.nanoTime();
+    action.run();
+    return Duration.ofNanos(System.nanoTime() - start).toMillis();
+  }
+
+  private static void sleep(final Duration duration) {
+    try {
+      Thread.sleep(duration);
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   private void runInline() {
