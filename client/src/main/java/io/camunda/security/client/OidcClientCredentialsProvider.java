@@ -25,6 +25,7 @@ import java.time.Clock;
 import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,12 +37,13 @@ import org.slf4j.LoggerFactory;
  * <p>The token is cached and refreshed shortly before it expires (30 seconds, or half the lifetime
  * of a short-lived token). Concurrent callers share one token request, and its outcome. A response
  * without {@code expires_in} is not cached, but callers that waited for that request still share
- * it. After a {@code 401}, {@link #shouldRetryRequest} fetches a new token, blocking on at most one
- * token request, and answers {@code true} only if it differs from the cached one. If that request
- * fails, the rejected token is dropped: the next call asks the IdP again, as on a cold start,
- * instead of sending the rejected token. If a refresh fails without a {@code 401}, the old token is
- * used until it expires. {@code shouldRetryRequest} may be called from any thread; the provider
- * never repeats a request itself.
+ * it. After a {@code 401}, {@link #shouldRetryRequest} marks the cached token as rejected at once,
+ * so no call sends it. Then it fetches a new token, blocking on at most one token request, and
+ * answers {@code true} only if it differs from the cached one. Other calls wait for that token. If
+ * the request fails, the next call asks the IdP again, as on a cold start. If a refresh fails
+ * without a {@code 401}, the old token is used until it expires, and the provider logs one WARN for
+ * the first failure. {@code shouldRetryRequest} may be called from any thread; the provider never
+ * repeats a request itself.
  *
  * <p>A token request that gets no answer ends at the read timeout. An interrupt does not stop it,
  * but it does stop a caller that waits for the lock. The response must be strict: {@code
@@ -59,8 +61,9 @@ public final class OidcClientCredentialsProvider implements OutboundCredentialsP
   private final Clock clock;
   // Fair, so that new callers overtake queued waiters less often.
   private final ReentrantLock lock = new ReentrantLock(true);
-  // The only mutable field: read once per call without the lock, replaced as a whole under it.
-  private volatile State state = State.EMPTY;
+  // The only mutable field: read once per call without the lock. It is replaced as a whole under
+  // the lock, and a 401 handler marks the rejected token in it without the lock.
+  private final AtomicReference<State> state = new AtomicReference<>(State.EMPTY);
 
   public OidcClientCredentialsProvider(final OidcClientCredentialsConfiguration config) {
     this(config, Clock.systemUTC());
@@ -74,50 +77,64 @@ public final class OidcClientCredentialsProvider implements OutboundCredentialsP
 
   @Override
   public void applyCredentials(final CredentialsApplier applier) throws IOException {
-    final State seen = state;
-    final CachedToken token = isUsable(seen.cached()) ? seen.cached() : refreshOrKeepOld(seen);
+    final State seen = state.get();
+    final CachedToken token =
+        !seen.rejected() && isUsable(seen.cached()) ? seen.cached() : refreshOrKeepOld(seen);
     applier.put("Authorization", token.authorizationHeader());
   }
 
   /**
    * If the refresh fails, the old token is used until it expires. It is read from {@link #state}
-   * again, so a token that was dropped after a {@code 401} is never used. An interrupted caller
+   * again, so a token that was rejected with a {@code 401} is never used. An interrupted caller
    * always fails.
    */
   private CachedToken refreshOrKeepOld(final State seen) throws TokenRequestException {
     try {
-      return refresh(seen, false);
+      return refresh(seen);
     } catch (final TokenRequestException e) {
-      final CachedToken old = state.cached();
+      final State current = state.get();
+      // Without a cached token, do not read the clock: it may be what failed.
       if (!Thread.currentThread().isInterrupted()
-          && old != null
-          && clock.instant().isBefore(old.expiresAt())) {
+          && current.cached() != null
+          && usableOld(current, clock.instant())) {
         LOG.debug(
             "Refresh for client '{}' failed; the old token is used until it expires",
             config.clientId());
-        return old;
+        return current.cached();
       }
       throw e;
     }
   }
 
+  /** The cached token is not expired, and the IdP did not reject it. */
+  private static boolean usableOld(final State current, final Instant now) {
+    return current.cached() != null
+        && !current.rejected()
+        && now.isBefore(current.cached().expiresAt());
+  }
+
   /**
    * Compares the new token with the cached one, not with the token that the failed request carried.
-   * After the first {@code 401}, a late {@code 401} for the same old token can fetch one more
-   * token, or drop a new token when the IdP is down.
+   * The provider marks the cached token as rejected when the {@code 401} is reported, before the
+   * token request. Other calls then wait for the new token and do not send the rejected one. After
+   * the first {@code 401}, a late {@code 401} for the same old token marks the new token as
+   * rejected at once, so every call waits for one more token request.
    */
   @Override
   public boolean shouldRetryRequest(final StatusCode statusCode) {
     if (!statusCode.isUnauthorized()) {
       return false;
     }
-    final State seen = state;
+    final State seen = state.get();
     if (seen.cached() == null) {
-      // Nothing is cached, so the retry fetches a new token anyway.
+      // Cold start, a failed cold start, or a token that is not cached: the retry fetches a new
+      // token anyway.
       return true;
     }
+    // Without the lock, so an interrupt cannot skip it. Only the token that got the 401 is marked.
+    state.updateAndGet(s -> s.cached() == seen.cached() ? s.rejectCached() : s);
     try {
-      final CachedToken fresh = refresh(seen, true);
+      final CachedToken fresh = refresh(seen);
       // The same token again means the IdP does not help; a retry would be rejected again.
       return !seen.cached().accessToken().equals(fresh.accessToken());
     } catch (final TokenRequestException e) {
@@ -140,14 +157,12 @@ public final class OidcClientCredentialsProvider implements OutboundCredentialsP
    * that outcome is shared, so callers waiting on a failing or hanging IdP fail together after one
    * request instead of one timeout each.
    *
-   * <p>If {@code dropRejected} is set, the caller got a {@code 401} for {@code seen.cached()}. When
-   * the request then fails, that token is dropped, so the next call asks the IdP again, as on a
-   * cold start, instead of sending the rejected token. During an IdP outage after a {@code 401},
-   * every call then tries the IdP, one shared request at a time. Otherwise a failed refresh keeps
-   * the old token, and {@code applyCredentials} uses it until it expires.
+   * <p>After a {@code 401}, the token is already marked as rejected, before this method runs. Then
+   * no call sends it. During an IdP outage, every call tries the IdP, one shared request at a time.
+   * Otherwise a failed refresh keeps the old token, and {@code applyCredentials} uses it until it
+   * expires.
    */
-  private CachedToken refresh(final State seen, final boolean dropRejected)
-      throws TokenRequestException {
+  private CachedToken refresh(final State seen) throws TokenRequestException {
     try {
       lock.lockInterruptibly();
     } catch (final InterruptedException e) {
@@ -160,39 +175,64 @@ public final class OidcClientCredentialsProvider implements OutboundCredentialsP
           e);
     }
     try {
-      final State now = state;
+      final State now = state.get();
       if (now.attempt() > seen.attempt()) {
         if (now.lastFailure() != null) {
-          if (dropRejected && now.cached() == seen.cached()) {
-            state = new State(null, now.attempt(), now.lastToken(), now.lastFailure());
-          }
           throw now.lastFailure().forWaiter(config.clientId());
         }
         if (now.lastToken() != null) {
           return now.lastToken();
         }
       }
-      return fetchAndPublish(now, seen, dropRejected);
+      return fetchAndPublish(now);
     } finally {
       lock.unlock();
     }
   }
 
-  /** Must be called under the lock; replaces {@link #state} once, on success and on failure. */
-  private CachedToken fetchAndPublish(final State now, final State seen, final boolean dropRejected)
-      throws TokenRequestException {
+  /**
+   * Must be called under the lock; replaces {@link #state} once, on success and on failure. A
+   * rejected token stays marked: the mark was made when the {@code 401} was reported, so a failure
+   * reads the state again.
+   *
+   * <p>It logs once for each token request, not once for each waiter. If a refresh fails and the
+   * old token is used, it logs a WARN for the first failure and DEBUG for the next ones. It logs
+   * INFO when a request succeeds after a failure.
+   */
+  private CachedToken fetchAndPublish(final State now) throws TokenRequestException {
     try {
       final CachedToken token = fetchToken();
       final CachedToken cacheable = token.refreshAt() != null ? token : null;
       // An uncacheable token is not cached, but callers that waited for this request share it.
-      state = new State(cacheable, now.attempt() + 1, token, null);
+      state.set(new State(cacheable, now.attempt() + 1, token, null, false));
+      if (now.lastFailure() != null) {
+        LOG.info("Token request for client '{}' succeeded again", config.clientId());
+      }
       return token;
     } catch (final TokenRequestException e) {
-      // Keep the old token: applyCredentials uses it until it expires. Drop it only if the IdP
-      // rejected it with a 401.
-      final CachedToken keep = dropRejected && now.cached() == seen.cached() ? null : now.cached();
-      state = new State(keep, now.attempt() + 1, null, e);
+      final State failed =
+          state.updateAndGet(
+              cur -> new State(cur.cached(), now.attempt() + 1, null, e, cur.rejected()));
+      logKeptOldToken(failed, now, e);
       throw e;
+    }
+  }
+
+  /** An expired or rejected token is a failure that reaches the caller; it is not logged here. */
+  private void logKeptOldToken(
+      final State failed, final State before, final TokenRequestException e) {
+    // Nothing to log for a cold start or a rejected token; do not read the clock then.
+    if (failed.cached() == null || failed.rejected() || !usableOld(failed, clock.instant())) {
+      return;
+    }
+    final String message =
+        "Token refresh for client '{}' failed; the old token is used until {}: {}";
+    final Instant expiresAt = failed.cached().expiresAt();
+    // The message is sanitized and has no secret, so no stack trace is needed.
+    if (before.lastFailure() == null) {
+      LOG.warn(message, config.clientId(), expiresAt, e.getMessage());
+    } else {
+      LOG.debug(message, config.clientId(), expiresAt, e.getMessage());
     }
   }
 
@@ -439,25 +479,37 @@ public final class OidcClientCredentialsProvider implements OutboundCredentialsP
   /**
    * What callers read without the lock. {@code cached} is the token to use, {@code attempt} counts
    * token requests, and {@code lastToken} / {@code lastFailure} are the outcome of the latest one,
-   * shared with callers that waited for it.
+   * shared with callers that waited for it. {@code rejected} is set when the IdP rejected {@code
+   * cached} with a {@code 401}: no call uses it then.
    */
   private static final class State {
-    static final State EMPTY = new State(null, 0, null, null);
+    static final State EMPTY = new State(null, 0, null, null, false);
 
     private final CachedToken cached;
     private final long attempt;
     private final CachedToken lastToken;
     private final TokenRequestException lastFailure;
+    private final boolean rejected;
 
     State(
         final CachedToken cached,
         final long attempt,
         final CachedToken lastToken,
-        final TokenRequestException lastFailure) {
+        final TokenRequestException lastFailure,
+        final boolean rejected) {
       this.cached = cached;
       this.attempt = attempt;
       this.lastToken = lastToken;
       this.lastFailure = lastFailure;
+      this.rejected = rejected;
+    }
+
+    /** The same state, but {@code cached} is rejected, and it is not shared as the last token. */
+    State rejectCached() {
+      if (rejected) {
+        return this;
+      }
+      return new State(cached, attempt, lastToken == cached ? null : lastToken, lastFailure, true);
     }
 
     CachedToken cached() {
@@ -474,6 +526,10 @@ public final class OidcClientCredentialsProvider implements OutboundCredentialsP
 
     TokenRequestException lastFailure() {
       return lastFailure;
+    }
+
+    boolean rejected() {
+      return rejected;
     }
   }
 }

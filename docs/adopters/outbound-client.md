@@ -53,22 +53,25 @@ authentication.
 ### Retries and token caching
 
 `shouldRetryRequest(StatusCode.ofHttp(status))` is `false` for anything but `401`. For a `401` the
-provider requests a new token and returns `true` if it differs from the cached one; if the IdP hands
-out the same token again, or fails, it returns `false` and logs the failure. If the token request
-fails, the provider drops the rejected token, so the next call requests a new token. The call may
-block on one token request, and it may run on any thread, so it works with `sendAsync` where the
-response arrives on another thread than the request.
+provider drops the rejected token at once, so other calls do not send it. They wait for the new
+token. The provider then requests a new token and returns `true` if it differs from the cached one.
+If the IdP hands out the same token again, or fails, it returns `false` and logs the failure. If the
+token request fails, the next call requests a new token again. The call may block on one token
+request, and it may run on any thread, so it works with `sendAsync` where the response arrives on
+another thread than the request.
 
 The provider compares the new token with the cached one. It does not know which token the failed
 request carried. Suppose several requests get a `401` for the same old token. The first call fetches
-a new token. A late `401` for the old token can fetch one more token. If the IdP is down then, the
-late call can drop the new token. Retry at most once per request, as above, to limit this.
+a new token. A late `401` for the old token drops the new token at once, and every call waits for
+one more token request. Retry at most once per request, as above, to limit this.
 
 The token is cached and refreshed 30 seconds before it expires, or halfway through its lifetime if
 that is shorter. If the refresh fails, the provider keeps sending the old token until it expires.
-It does not do this after a `401` for that token, because the IdP rejected it. A response without
-`expires_in`, or with `0`, is not cached. Concurrent callers share one token request, and its
-failure: if the IdP is slow or down, every waiting caller fails after one timeout, not one each.
+It does not do this after a `401` for that token, because the IdP rejected it. A failed refresh
+that keeps the old token logs one WARN for the first failure. The next failures log at DEBUG. The
+provider logs INFO when the IdP works again. A response without `expires_in`, or with `0`, is not
+cached. Concurrent callers share one token request, and its failure: if the IdP is slow or down,
+every waiting caller fails after one timeout, not one each.
 
 The provider uses the Nimbus OAuth SDK (`oauth2-oidc-sdk`) for the token request. It accepts only
 responses that follow RFC 6749:

@@ -11,6 +11,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.nimbusds.oauth2.sdk.ParseException;
 import com.nimbusds.oauth2.sdk.http.HTTPRequest;
 import io.camunda.security.client.OutboundCredentialsProvider.StatusCode;
@@ -43,6 +47,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.slf4j.LoggerFactory;
 
 class OidcClientCredentialsProviderTest {
 
@@ -559,18 +564,89 @@ class OidcClientCredentialsProviderTest {
       release.countDown();
 
       assertThat(retry.get(10, TimeUnit.SECONDS)).isFalse();
-      // The refreshing caller may read the token before the waiter drops it, so its result is open.
-      try {
-        refresh.get(10, TimeUnit.SECONDS);
-      } catch (final ExecutionException e) {
-        assertThat(e.getCause()).isInstanceOf(TokenRequestException.class);
-      }
+      // The 401 marks the token before the release, so the refreshing caller cannot use it.
+      assertThat(failureOf(refresh)).isInstanceOf(TokenRequestException.class);
     } finally {
       release.countDown();
       pool.shutdownNow();
     }
 
     assertThatThrownBy(() -> authorization(provider)).isInstanceOf(TokenRequestException.class);
+  }
+
+  @Test
+  void interruptedUnauthorizedHandlerStillDropsTheRejectedToken() throws IOException {
+    final var provider = provider();
+    authorization(provider);
+
+    Thread.currentThread().interrupt();
+    try {
+      assertThat(provider.shouldRetryRequest(StatusCode.ofHttp(401))).isFalse();
+      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+    } finally {
+      Thread.interrupted();
+    }
+
+    assertThat(authorization(provider)).isEqualTo("Authorization=Bearer token-2");
+    assertThat(endpoint.requestCount()).isEqualTo(2);
+  }
+
+  @Test
+  void callersDuringARefreshAfterUnauthorizedWaitForTheNewToken() throws Exception {
+    final var provider = provider();
+    authorization(provider);
+    final CountDownLatch release = endpoint.blockResponses();
+    final Callers pool = new Callers(2);
+    try {
+      final Future<Boolean> retry =
+          pool.submit(() -> provider.shouldRetryRequest(StatusCode.ofHttp(401)));
+      awaitRequests(2);
+      final Future<String> caller = pool.submit(() -> authorization(provider));
+      pool.awaitAllWaiting();
+      release.countDown();
+
+      assertThat(retry.get(10, TimeUnit.SECONDS)).isTrue();
+      assertThat(caller.get(10, TimeUnit.SECONDS)).isEqualTo("Authorization=Bearer token-2");
+    } finally {
+      release.countDown();
+      pool.shutdownNow();
+    }
+
+    assertThat(endpoint.requestCount()).isEqualTo(2);
+  }
+
+  @Test
+  void failedRefreshThatKeepsTheOldTokenWarnsOnceAndLogsRecovery() throws IOException {
+    final var provider = provider();
+    authorization(provider);
+    clock.advance(Duration.ofSeconds(3590));
+    endpoint.respondWith(503, "{\"error\":\"temporarily_unavailable\"}");
+
+    try (var logs = new LogCapture()) {
+      assertThat(authorization(provider)).isEqualTo("Authorization=Bearer token-1");
+      assertThat(authorization(provider)).isEqualTo("Authorization=Bearer token-1");
+      assertThat(endpoint.requestCount()).isEqualTo(3);
+
+      final List<ILoggingEvent> failures = logs.eventsContaining("Token refresh for client");
+      assertThat(failures)
+          .extracting(ILoggingEvent::getLevel)
+          .containsExactly(Level.WARN, Level.DEBUG);
+      assertThat(failures)
+          .allSatisfy(
+              event ->
+                  assertThat(event.getFormattedMessage())
+                      .contains("my-client", "HTTP 503")
+                      .doesNotContain(SECRET, "token-1"));
+
+      endpoint.respondWith(
+          200, "{\"access_token\":\"token-9\",\"token_type\":\"Bearer\",\"expires_in\":3600}");
+      assertThat(authorization(provider)).isEqualTo("Authorization=Bearer token-9");
+
+      final List<ILoggingEvent> recovery = logs.eventsContaining("succeeded again");
+      assertThat(recovery).hasSize(1);
+      assertThat(recovery.getFirst().getLevel()).isEqualTo(Level.INFO);
+      assertThat(recovery.getFirst().getFormattedMessage()).contains("my-client");
+    }
   }
 
   @Test
@@ -1000,6 +1076,36 @@ class OidcClientCredentialsProviderTest {
         .isInstanceOf(TokenRequestException.class)
         .hasMessageContaining("not usable");
     assertNoneOfTheMessagesContains(failure, "abc-secret");
+  }
+
+  /** Captures the logs of the provider at DEBUG; restores the logger when closed. */
+  private static final class LogCapture implements AutoCloseable {
+    private final Logger logger =
+        (Logger) LoggerFactory.getLogger(OidcClientCredentialsProvider.class);
+    private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    private final Level oldLevel = logger.getLevel();
+    private final boolean oldAdditive = logger.isAdditive();
+
+    LogCapture() {
+      appender.start();
+      logger.addAppender(appender);
+      logger.setLevel(Level.DEBUG);
+      logger.setAdditive(false);
+    }
+
+    List<ILoggingEvent> eventsContaining(final String text) {
+      return appender.list.stream()
+          .filter(event -> event.getFormattedMessage().contains(text))
+          .toList();
+    }
+
+    @Override
+    public void close() {
+      logger.detachAppender(appender);
+      logger.setLevel(oldLevel);
+      logger.setAdditive(oldAdditive);
+      appender.stop();
+    }
   }
 
   /** A clock that fails once armed; the provider reads it before it sends a token request. */
