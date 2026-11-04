@@ -13,6 +13,7 @@ import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.annotation.ConditionalOnPersistentWebSessionEnabled;
 import io.camunda.security.spring.security.ExpiredSessionRefreshTokenRevocation;
 import io.camunda.security.spring.session.WebSessionMapper.SpringBasedWebSessionAttributeConverter;
+import io.camunda.security.spring.session.WebSessionRepository.ExpiryCheck;
 import jakarta.servlet.http.HttpServletRequest;
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.util.Collection;
@@ -21,7 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -124,10 +125,17 @@ public class WebSessionConfiguration {
    * configuration, and a host that imports this configuration without it keeps logout-only
    * revocation.
    */
-  static Consumer<Session> expiredSessionHandler(
+  static BiConsumer<Session, ExpiryCheck> expiredSessionHandler(
       final ObjectProvider<ExpiredSessionRefreshTokenRevocation> expiredSessionRevocation) {
-    return session ->
-        expiredSessionRevocation.ifAvailable(revocation -> revocation.revoke(session));
+    return (session, check) ->
+        expiredSessionRevocation.ifAvailable(
+            revocation -> {
+              if (check == ExpiryCheck.SWEEP) {
+                revocation.revokeFromSweep(session);
+              } else {
+                revocation.revoke(session);
+              }
+            });
   }
 
   @Bean

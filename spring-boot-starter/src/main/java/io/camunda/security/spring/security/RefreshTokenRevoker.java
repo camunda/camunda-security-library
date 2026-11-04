@@ -229,7 +229,7 @@ public final class RefreshTokenRevoker {
     form.set(OAuth2ParameterNames.TOKEN_TYPE_HINT, REFRESH_TOKEN_TYPE_HINT);
     // Inside the try: signing a client assertion can fail on a missing or unreadable keystore,
     // and that failure has to keep the registration id rather than falling through to the net in
-    // logout(), which has none.
+    // RefreshTokenRevocationLogoutHandler#logout, which has none.
     final ResponseEntity<String> response;
     try {
       form.addAll(clientAuthenticationParameters(grantRequest));
@@ -260,7 +260,8 @@ public final class RefreshTokenRevoker {
               .onStatus(anyStatus -> true, (req, res) -> {})
               .toEntity(String.class);
     } catch (final RuntimeException e) {
-      // Type only, same reasoning as the net in logout(), but with the identifiers that make the
+      // Type only, same reasoning as the net in RefreshTokenRevocationLogoutHandler#logout, but
+      // with the identifiers that make the
       // line actionable in a multi-provider deployment.
       LOG.warn(
           "Failed to revoke the refresh token for OIDC registration '{}' at {} [{}]. The local"
@@ -407,13 +408,6 @@ public final class RefreshTokenRevoker {
   }
 
   /**
-   * The JDK client is chosen over {@code SimpleClientHttpRequestFactory} for two reasons: it can
-   * enforce a whole-exchange deadline (see {@link #REQUEST_TIMEOUT}), and its default redirect
-   * policy is {@code NEVER}, so a 3xx from the revocation endpoint arrives as a 3xx instead of
-   * being quietly followed — which is what makes the non-2xx check in {@link #revokeOrThrow}
-   * meaningful rather than theoretical.
-   */
-  /**
    * The RFC 7009 {@code error} code from a failed response, as {@code ", error=invalid_client"}, or
    * an empty string.
    *
@@ -433,6 +427,13 @@ public final class RefreshTokenRevoker {
     }
   }
 
+  /**
+   * The JDK client is chosen over {@code SimpleClientHttpRequestFactory} for two reasons: it can
+   * enforce a whole-exchange deadline (see {@link #REQUEST_TIMEOUT}), and its default redirect
+   * policy is {@code NEVER}, so a 3xx from the revocation endpoint arrives as a 3xx instead of
+   * being quietly followed — which is what makes the non-2xx check in {@link #revokeOrThrow}
+   * meaningful rather than theoretical.
+   */
   private static RestClient defaultRestClient() {
     final var httpClient = HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build();
     final var requestFactory = new JdkClientHttpRequestFactory(httpClient);

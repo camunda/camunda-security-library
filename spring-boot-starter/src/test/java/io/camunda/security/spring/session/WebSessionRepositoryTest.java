@@ -15,6 +15,7 @@ import io.camunda.security.api.model.config.SessionConfiguration;
 import io.camunda.security.api.model.session.PersistentSession;
 import io.camunda.security.core.port.out.SessionStorePort;
 import io.camunda.security.spring.session.WebSessionMapper.SpringBasedWebSessionAttributeConverter;
+import io.camunda.security.spring.session.WebSessionRepository.ExpiryCheck;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.time.Instant;
@@ -356,9 +357,38 @@ class WebSessionRepositoryTest {
     assertThat(sessionStore.getAll()).isEmpty();
   }
 
+  @Test
+  void handsTheHandlerWhereTheExpiryWasFound() {
+    // given
+    final List<ExpiryCheck> checks = new ArrayList<>();
+    final var repository =
+        new WebSessionRepository(
+            sessionStore,
+            webSessionMapper,
+            request,
+            sessionConfiguration,
+            (session, check) -> checks.add(check));
+    final var foundByRequest = storeSession(repository, EXPIRED_LAST_ACCESS);
+    repository.findById(foundByRequest.getId());
+    final var savedByRequest = storeSession(repository, Instant.now());
+    savedByRequest.setLastAccessedTime(EXPIRED_LAST_ACCESS);
+    repository.save(savedByRequest);
+    storeSession(repository, EXPIRED_LAST_ACCESS);
+
+    // when
+    repository.deleteExpiredWebSessions();
+
+    // then the sweep can wait on the handler, a request must not
+    assertThat(checks).containsExactly(ExpiryCheck.REQUEST, ExpiryCheck.REQUEST, ExpiryCheck.SWEEP);
+  }
+
   private WebSessionRepository repositoryWithHandler(final Consumer<Session> handler) {
     return new WebSessionRepository(
-        sessionStore, webSessionMapper, request, sessionConfiguration, handler);
+        sessionStore,
+        webSessionMapper,
+        request,
+        sessionConfiguration,
+        (session, check) -> handler.accept(session));
   }
 
   /** Writes the session straight to the store, so an expired one is not deleted on save. */

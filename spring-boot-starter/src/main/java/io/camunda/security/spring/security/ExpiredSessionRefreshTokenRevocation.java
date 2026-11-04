@@ -12,6 +12,7 @@ import static org.springframework.security.web.context.HttpSessionSecurityContex
 import io.camunda.security.spring.oidc.FailureDescription;
 import io.camunda.security.spring.oidc.LazyClientRegistrationRepository;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -23,10 +24,13 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.LongSupplier;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,6 +40,7 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
 import org.springframework.session.Session;
 import org.springframework.util.StringUtils;
 
@@ -45,21 +50,28 @@ import org.springframework.util.StringUtils;
  * expired session it deletes: in the periodic expiry sweep, and when a request finds its session
  * expired.
  *
- * <p>Neither path has the request the session belonged to, so the token is read from the stored
- * session attributes rather than through an {@code OAuth2AuthorizedClientRepository}. Every OIDC
- * webapp chain {@link #register registers} its client registrations and its {@link
- * RefreshTokenRevoker}; the session goes to the chain that knows its registration ID with the same
- * client and token endpoint. Two scopes can use one registration ID for different providers, and
- * the stored client must never be sent to the wrong one. A chain whose configuration names another
- * client is skipped before its registration is looked up, so an unrelated provider that is down
- * cannot slow the revocation. When several chains own the client but disagree on revocation, for
- * example one scope opts out, the token is not revoked: the session does not say which scope it
- * came from, and an opt-out must hold.
+ * <p>Neither path has the request the session belonged to, so the token is read from the session
+ * attribute that {@link HttpSessionOAuth2AuthorizedClientRepository} writes, rather than through
+ * the chain's {@link OAuth2AuthorizedClientRepository}. A chain whose host replaces that repository
+ * with another store keeps logout revocation but loses revocation on expiry; registering such a
+ * chain logs a {@code WARN}. Every OIDC webapp chain {@link #register registers} its client
+ * registrations and its {@link RefreshTokenRevoker}; the session goes to the chain that knows its
+ * registration ID with the same client and token endpoint. Two scopes can use one registration ID
+ * for different providers, and the stored client must never be sent to the wrong one. A chain whose
+ * configuration names another client is skipped before its registration is looked up, so an
+ * unrelated provider that is down cannot slow the revocation. When several chains own the client
+ * but disagree on revocation, for example one scope opts out, the token is not revoked: the session
+ * does not say which scope it came from, and an opt-out must hold.
  *
- * <p>The revocation request runs on one background thread with a bounded queue, so neither the
- * sweep nor a request waits on the IdP. When the queue is full, for example while the IdP is
- * unreachable, further revocations are dropped with a {@code WARN}; the session is deleted either
- * way. Every failure is fail-soft: {@link #revoke} never throws.
+ * <p>Revocations run in the background, on one lane per provider, keyed by the stored client's
+ * token endpoint. Each lane has its own thread and a bounded backlog, so a provider that is slow or
+ * down cannot hold up the revocations of another. A request never waits: when its lane is full, the
+ * revocation is dropped with a {@code WARN}. The expiry sweep runs on its own thread and calls
+ * {@link #revokeFromSweep}, which waits briefly for room, once per backlog, so a large sweep
+ * against a healthy provider is not dropped. After a registration fails to resolve, it is skipped
+ * for {@link #LOOKUP_BACKOFF}, so an unreachable provider does not start a discovery for every
+ * session. The session is deleted either way, and every failure is fail-soft: neither method
+ * throws.
  */
 public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable {
 
@@ -71,36 +83,74 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
   static final String AUTHORIZED_CLIENTS_ATTRIBUTE =
       HttpSessionOAuth2AuthorizedClientRepository.class.getName() + ".AUTHORIZED_CLIENTS";
 
-  /** Bounds the memory and the IdP backlog when many sessions expire while the IdP is down. */
+  /** Bounds the memory and the backlog of one provider when many of its sessions expire. */
   static final int QUEUE_CAPACITY = 1_000;
+
+  /** How long the sweep waits for room in a full lane before it drops, once per backlog. */
+  static final Duration SWEEP_WAIT = Duration.ofSeconds(5);
+
+  /** How long a registration that failed to resolve is skipped before it is looked up again. */
+  static final Duration LOOKUP_BACKOFF = Duration.ofMinutes(1);
+
+  /** Bounds the lanes, whose keys come from stored sessions; further providers share one lane. */
+  static final int MAX_LANES = 64;
+
+  private static final String SHARED_LANE = "*";
 
   private static final Logger LOG =
       LoggerFactory.getLogger(ExpiredSessionRefreshTokenRevocation.class);
 
   private final List<Chain> chains = new CopyOnWriteArrayList<>();
-  private final ExecutorService executor;
-  private final AtomicBoolean saturated = new AtomicBoolean();
+  private final Map<String, Lane> lanes = new ConcurrentHashMap<>();
+  private final Supplier<ExecutorService> laneExecutors;
+  private final int laneCapacity;
+  private final Duration sweepWait;
+  private final LongSupplier nanoTime;
   private final Set<String> ambiguousRegistrationIds = ConcurrentHashMap.newKeySet();
-  private final Set<String> unresolvedRegistrationIds = ConcurrentHashMap.newKeySet();
+  // Deadline (System.nanoTime) until which a chain's registration is not looked up again.
+  private final Map<Lookup, Long> unresolvedUntil = new ConcurrentHashMap<>();
 
   public ExpiredSessionRefreshTokenRevocation() {
-    this(defaultExecutor());
+    this(
+        ExpiredSessionRefreshTokenRevocation::laneExecutor,
+        QUEUE_CAPACITY,
+        SWEEP_WAIT,
+        System::nanoTime);
   }
 
-  // Visible for testing: lets a test run revocations on the calling thread or reject them.
-  ExpiredSessionRefreshTokenRevocation(final ExecutorService executor) {
-    this.executor = Objects.requireNonNull(executor, "executor must not be null");
+  // Visible for testing: a test runs revocations inline or holds them, and controls the clock.
+  ExpiredSessionRefreshTokenRevocation(
+      final Supplier<ExecutorService> laneExecutors,
+      final int laneCapacity,
+      final Duration sweepWait,
+      final LongSupplier nanoTime) {
+    this.laneExecutors = Objects.requireNonNull(laneExecutors, "laneExecutors must not be null");
+    this.laneCapacity = laneCapacity;
+    this.sweepWait = Objects.requireNonNull(sweepWait, "sweepWait must not be null");
+    this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime must not be null");
   }
 
   /**
    * Registers an OIDC webapp chain. Called once per chain while the chains are built.
    *
    * @param clientRegistrationRepository the client registrations of the chain
+   * @param authorizedClientRepository where the chain stores its authorized clients; revocation on
+   *     expiry reads them only from the session, see the class Javadoc
    * @param revoker the revoker the chain's logout handler uses
    */
   public void register(
       final ClientRegistrationRepository clientRegistrationRepository,
+      final OAuth2AuthorizedClientRepository authorizedClientRepository,
       final RefreshTokenRevoker revoker) {
+    if (!(authorizedClientRepository instanceof HttpSessionOAuth2AuthorizedClientRepository)) {
+      LOG.warn(
+          "An OIDC webapp chain stores its authorized clients in {}, not in the web session, so"
+              + " the refresh tokens of its expired web sessions are not revoked. Logout still"
+              + " revokes them.",
+          authorizedClientRepository == null
+              ? "no repository"
+              : authorizedClientRepository.getClass().getName());
+    }
     chains.add(
         new Chain(
             Objects.requireNonNull(
@@ -109,12 +159,26 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
   }
 
   /**
-   * Schedules the revocation of the refresh token of {@code expiredSession}, if it holds one. Reads
-   * the session on the calling thread, so the caller can delete it right after. Never throws.
+   * Schedules the revocation of the refresh token of {@code expiredSession}, if it holds one, for a
+   * request that found the session expired. Never waits: a full lane drops it. Reads the session on
+   * the calling thread, so the caller can delete it right after. Never throws.
    */
   public void revoke(final Session expiredSession) {
+    revoke(expiredSession, false);
+  }
+
+  /**
+   * Like {@link #revoke}, for the expiry sweep, which runs on its own thread: waits up to {@link
+   * #SWEEP_WAIT} for room in a full lane, once per backlog, so a large sweep is not dropped while
+   * the provider keeps up. Never throws.
+   */
+  public void revokeFromSweep(final Session expiredSession) {
+    revoke(expiredSession, true);
+  }
+
+  private void revoke(final Session expiredSession, final boolean mayWait) {
     try {
-      scheduleRevocation(expiredSession);
+      scheduleRevocation(expiredSession, mayWait);
     } catch (final RuntimeException e) {
       // Deliberately swallowed: deleting an expired session must not depend on revocation.
       LOG.warn(
@@ -131,10 +195,10 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
 
   @Override
   public void close() {
-    executor.shutdown();
+    lanes.values().forEach(lane -> lane.executor().shutdown());
   }
 
-  private void scheduleRevocation(final Session expiredSession) {
+  private void scheduleRevocation(final Session expiredSession, final boolean mayWait) {
     if (chains.isEmpty()) {
       return;
     }
@@ -152,20 +216,57 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
           ScopedClientRegistrationFactory.sanitizeForLog(registrationId));
       return;
     }
-    try {
-      executor.execute(() -> revokeThroughOwningChain(registrationId, authorizedClient));
-      saturated.set(false);
-    } catch (final RejectedExecutionException e) {
-      // One WARN per backlog rather than one per session: a backlog means the IdP is slow or
-      // down, and every session that expires meanwhile would repeat the same line.
-      if (saturated.compareAndSet(false, true)) {
+    final Lane lane = lane(laneKey(authorizedClient.getClientRegistration()));
+    if (!lane.tryEnter(mayWait, sweepWait)) {
+      // One WARN per backlog rather than one per session: the flag resets only once the lane's
+      // backlog is gone.
+      if (lane.saturated().compareAndSet(false, true)) {
         LOG.warn(
-            "Dropping refresh-token revocations of expired web sessions: {} are already queued,"
-                + " likely because the identity provider is slow or unreachable. The sessions are"
-                + " still deleted, but their refresh tokens may remain valid until they expire.",
-            QUEUE_CAPACITY);
+            "Dropping refresh-token revocations of expired web sessions for token endpoint '{}':"
+                + " its revocation queue is full ({} queued). The identity provider may be slow or"
+                + " unreachable, or many sessions expired at once. The sessions are still deleted,"
+                + " but their refresh tokens may remain valid until they expire.",
+            ScopedClientRegistrationFactory.sanitizeForLog(lane.key()),
+            laneCapacity);
       }
+      return;
     }
+    try {
+      lane.executor()
+          .execute(
+              () -> {
+                try {
+                  revokeThroughOwningChain(registrationId, authorizedClient);
+                } finally {
+                  lane.leave();
+                }
+              });
+    } catch (final RejectedExecutionException e) {
+      // Only after close(): the lanes have unbounded queues.
+      lane.leave();
+    }
+  }
+
+  private Lane lane(final String key) {
+    final Lane existing = lanes.get(key);
+    if (existing != null) {
+      return existing;
+    }
+    final String bounded = lanes.size() < MAX_LANES ? key : SHARED_LANE;
+    return lanes.computeIfAbsent(
+        bounded, k -> new Lane(k, laneExecutors.get(), new Semaphore(laneCapacity), laneCapacity));
+  }
+
+  /** The provider of the stored client: its token endpoint, else its issuer, else its ID. */
+  private static String laneKey(final ClientRegistration stored) {
+    final var provider = stored.getProviderDetails();
+    if (StringUtils.hasText(provider.getTokenUri())) {
+      return provider.getTokenUri();
+    }
+    if (StringUtils.hasText(provider.getIssuerUri())) {
+      return provider.getIssuerUri();
+    }
+    return stored.getRegistrationId();
   }
 
   private void revokeThroughOwningChain(
@@ -175,8 +276,6 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
     if (possibleOwners.isEmpty()) {
       return;
     }
-    // Resolved again: the next failure to resolve it warns again.
-    unresolvedRegistrationIds.remove(registrationId);
     final List<Owner> owners = possibleOwners.get();
     if (owners.isEmpty()) {
       LOG.debug(
@@ -208,6 +307,17 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
       if (!isConfiguredForClient(chain, registrationId, stored)) {
         continue;
       }
+      final Lookup lookup = new Lookup(chain, registrationId);
+      final Long backoffUntil = unresolvedUntil.get(lookup);
+      if (backoffUntil != null && nanoTime.getAsLong() - backoffUntil < 0) {
+        // Failed to resolve a moment ago: skip it rather than start another discovery that is
+        // likely to time out and hold this provider's lane.
+        LOG.debug(
+            "OIDC registration '{}' failed to resolve recently, so the refresh token of an expired"
+                + " web session is not revoked.",
+            ScopedClientRegistrationFactory.sanitizeForLog(registrationId));
+        return Optional.empty();
+      }
       final ClientRegistration registration;
       try {
         registration = chain.clientRegistrationRepository().findByRegistrationId(registrationId);
@@ -215,7 +325,9 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
         // The revocation settings of this chain are unknown, and revoking through another chain
         // could ignore an opt-out of this one. One WARN per outage of a registration rather than
         // one per session; the rest go to DEBUG.
-        if (unresolvedRegistrationIds.add(registrationId)) {
+        final boolean firstFailure =
+            unresolvedUntil.put(lookup, nanoTime.getAsLong() + LOOKUP_BACKOFF.toNanos()) == null;
+        if (firstFailure) {
           LOG.warn(
               "Could not resolve OIDC registration '{}', so the refresh tokens of expired web"
                   + " sessions are not revoked until it resolves again. They may remain valid"
@@ -231,6 +343,8 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
         }
         return Optional.empty();
       }
+      // Resolved again: the next failure to resolve it warns again.
+      unresolvedUntil.remove(lookup);
       if (registration != null && isSameClient(registration, stored)) {
         owners.add(new Owner(chain, registration));
       }
@@ -332,18 +446,16 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
         : null;
   }
 
-  private static ExecutorService defaultExecutor() {
+  /**
+   * One thread that stops when idle. The queue is unbounded because the lane's semaphore bounds it,
+   * so that a request can drop and the sweep can wait.
+   */
+  private static ExecutorService laneExecutor() {
     final var threadFactory =
         Thread.ofPlatform().name("camunda-session-expiry-revocation-", 0).daemon(true).factory();
     final var executor =
         new ThreadPoolExecutor(
-            1,
-            1,
-            1,
-            TimeUnit.MINUTES,
-            new LinkedBlockingQueue<>(QUEUE_CAPACITY),
-            threadFactory,
-            new ThreadPoolExecutor.AbortPolicy());
+            1, 1, 1, TimeUnit.MINUTES, new LinkedBlockingQueue<>(), threadFactory);
     executor.allowCoreThreadTimeOut(true);
     return executor;
   }
@@ -352,4 +464,42 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
       ClientRegistrationRepository clientRegistrationRepository, RefreshTokenRevoker revoker) {}
 
   private record Owner(Chain chain, ClientRegistration registration) {}
+
+  private record Lookup(Chain chain, String registrationId) {}
+
+  /** The revocations of one provider: a thread, and permits for its queued and running tasks. */
+  private record Lane(
+      String key,
+      ExecutorService executor,
+      Semaphore permits,
+      int capacity,
+      AtomicBoolean saturated) {
+
+    Lane(final String key, final ExecutorService executor, final Semaphore permits, final int cap) {
+      this(key, executor, permits, cap, new AtomicBoolean());
+    }
+
+    /**
+     * Takes a permit: at once, or for the sweep by waiting, unless this backlog already timed out.
+     */
+    boolean tryEnter(final boolean mayWait, final Duration wait) {
+      if (!mayWait || saturated.get()) {
+        return permits.tryAcquire();
+      }
+      try {
+        return permits.tryAcquire(wait.toNanos(), TimeUnit.NANOSECONDS);
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
+        return false;
+      }
+    }
+
+    /** Returns the permit, and ends the backlog once nothing is queued or running. */
+    void leave() {
+      permits.release();
+      if (permits.availablePermits() == capacity) {
+        saturated.set(false);
+      }
+    }
+  }
 }

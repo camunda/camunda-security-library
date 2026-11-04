@@ -14,7 +14,7 @@ import io.camunda.security.spring.security.CamundaSecurityFilterChainConstants;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.session.Session;
@@ -29,28 +29,29 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
   private final WebSessionMapper webSessionMapper;
   private final HttpServletRequest request;
   private final SessionConfiguration sessionConfiguration;
-  private final Consumer<Session> expiredSessionHandler;
+  private final BiConsumer<Session, ExpiryCheck> expiredSessionHandler;
 
   public WebSessionRepository(
       final SessionStorePort sessionStorePort,
       final WebSessionMapper webSessionMapper,
       final HttpServletRequest request,
       final SessionConfiguration sessionConfiguration) {
-    this(sessionStorePort, webSessionMapper, request, sessionConfiguration, session -> {});
+    this(sessionStorePort, webSessionMapper, request, sessionConfiguration, (session, check) -> {});
   }
 
   /**
    * @param expiredSessionHandler called with each session that expired, right before this
-   *     repository deletes it: in the expiry sweep, when a request finds its session expired, and
-   *     when a request saves a session that expired while it ran. CSL uses it to revoke the
-   *     session's refresh token (ADR-0043). A failure in the handler never stops the deletion.
+   *     repository deletes it, and with where the expiry was found: in the expiry sweep, when a
+   *     request finds its session expired, or when a request saves a session that expired while it
+   *     ran. CSL uses it to revoke the session's refresh token (ADR-0043). A failure in the handler
+   *     never stops the deletion.
    */
   public WebSessionRepository(
       final SessionStorePort sessionStorePort,
       final WebSessionMapper webSessionMapper,
       final HttpServletRequest request,
       final SessionConfiguration sessionConfiguration,
-      final Consumer<Session> expiredSessionHandler) {
+      final BiConsumer<Session, ExpiryCheck> expiredSessionHandler) {
     this.sessionStorePort = sessionStorePort;
     this.webSessionMapper = webSessionMapper;
     this.request = request;
@@ -85,7 +86,7 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
       saveWebSessionIfChanged(webSession);
     } else {
       // A request can load a live session and finish after its idle deadline.
-      notifyIfExpired(webSession);
+      notifyIfExpired(webSession, ExpiryCheck.REQUEST);
       deleteById(webSession.getId());
     }
   }
@@ -124,7 +125,7 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
 
   private void deleteWebSessionIfExpired(final WebSession webSession) {
     if (webSession.shouldBeDeleted()) {
-      notifyIfExpired(webSession);
+      notifyIfExpired(webSession, ExpiryCheck.SWEEP);
       deleteById(webSession.getId());
     }
   }
@@ -134,12 +135,12 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
    * deleted because its authentication was invalidated, for example after a failed token refresh,
    * holds no token worth revoking.
    */
-  private void notifyIfExpired(final WebSession webSession) {
+  private void notifyIfExpired(final WebSession webSession, final ExpiryCheck check) {
     if (!webSession.isExpired()) {
       return;
     }
     try {
-      expiredSessionHandler.accept(webSession);
+      expiredSessionHandler.accept(webSession, check);
     } catch (final RuntimeException e) {
       // The session ID is a credential until the session is deleted, so it is not logged here.
       LOGGER.warn(
@@ -170,7 +171,7 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
       // or the web session could not be restored,
       // then immediately delete the persistent session
       if (webSession != null) {
-        notifyIfExpired(webSession);
+        notifyIfExpired(webSession, ExpiryCheck.REQUEST);
       }
       deleteById(persistentSession.id());
       return null;
@@ -220,5 +221,13 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
 
   private boolean isSessionIdNotEmpty(final String sessionId) {
     return sessionId != null && !sessionId.isEmpty();
+  }
+
+  /** Where an expired session was found. */
+  public enum ExpiryCheck {
+    /** The periodic expiry sweep, on its own thread, which no request waits on. */
+    SWEEP,
+    /** A request, which must not wait on the handler. */
+    REQUEST
   }
 }
