@@ -169,3 +169,36 @@ MacBook (18 cores, other builds running), JDK 21, `MockHttpServletRequest` throu
 Full `./mvnw verify`: api 241, core 180, validation 267, spring-boot-starter 1,743 — all green
 (baseline on `main`: 229 / 180 / 267 / 1,650). New test dependency: `org.awaitility:awaitility`
 (test scope, version from the Spring Boot BOM).
+
+## Primary chains: credential rotation
+
+Branch `mk-csl-poc-default-chain-reload`, version `1.2.1-pt-poc-default-SNAPSHOT`. The primary
+(unscoped) chains serve the host's `default` tenant and were built once, with no entry point. A full
+reload of them is not needed to rotate a client secret: only the client registrations
+(`LazyClientRegistrationRepository`) and the provider configurations
+(`OidcAuthenticationConfigurationRepository`, read by `AssertionJwkProvider` on every call) hold
+credentials. Decoders, validators and claim converters do not.
+
+`PrimaryCredentialsReloadPort#rotateCredentials(AuthenticationConfiguration)` rejects any change
+beyond credentials (scope fingerprint), builds every new registration next to the old ones, asks the
+identity provider whether it accepts the new credentials (`ClientCredentialsCheck`: a refresh-token
+request with an unknown token; `invalid_client`/401 rejects, `invalid_grant` accepts), then publishes
+the registrations and the provider configurations. Rejected or unknown returns `KEPT_PREVIOUS`. The
+default authorized-client repository now rebinds a session's stored client to the current
+registration, as scopes do.
+
+| Capability | Proven by |
+|---|---|
+| A session refreshes with the rotated secret after the old one is revoked; a new login uses it | `PrimaryCredentialRotationTest#shouldKeepTheSessionAndRefreshItsTokenWithTheRotatedSecret` |
+| Rejected secret and unreachable provider keep the previous secret | `#shouldKeepThePreviousSecretWhen…` (2 tests) |
+| A change of more than credentials is refused | `#shouldRejectAChangeOfMoreThanTheCredentials` |
+| 50 rotations: one resolved registration, earlier ones collected; p50 2 ms, max 4 ms | `#shouldReleaseTheRegistrationsOfEarlierRotations` |
+
+Mutation check: without the rebinding repository the refresh test fails. Full `./mvnw verify`: api
+241, core 180, validation 267, spring-boot-starter 1,748, all green. End to end on three brokers
+against Keycloak: camunda branch `mk-pt-poc-search-client-swap`, `POC-NOTES.md`.
+
+Not done: `private_key_jwt` on the primary chains is host-wired (token endpoint customizer, client
+manager) and untested here; two writes on publish; `HS256` ID-token decoders cached by Spring per
+registration id keep the old secret. Found on the way: the scoped `rotateCredentials` checks only
+that the provider answers discovery, so it publishes a secret the provider rejects.
