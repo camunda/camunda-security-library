@@ -128,6 +128,24 @@ class RefreshTokenRevokerTest {
     assertThat(withKey.canAuthenticate(keyJwt)).isTrue();
   }
 
+  @Test
+  void shouldNotAuthenticatePrivateKeyJwtWhenTheSigningKeyCannotBeLoaded() {
+    // given - a keystore that is missing, and a resolver that finds no key
+    final var unreadable =
+        new RefreshTokenRevoker(
+            registration -> {
+              throw new IllegalStateException("keystore /secret/path.p12 not found");
+            },
+            RestClient.builder().build());
+    final var noKey = new RefreshTokenRevoker(registration -> null, RestClient.builder().build());
+    final var keyJwt =
+        withMethod(registration(REVOCATION_ENDPOINT), ClientAuthenticationMethod.PRIVATE_KEY_JWT);
+
+    // then
+    assertThat(unreadable.canAuthenticate(keyJwt)).isFalse();
+    assertThat(noKey.canAuthenticate(keyJwt)).isFalse();
+  }
+
   private static ClientRegistration withMethod(
       final ClientRegistration registration, final ClientAuthenticationMethod method) {
     return ClientRegistration.withClientRegistration(registration)
