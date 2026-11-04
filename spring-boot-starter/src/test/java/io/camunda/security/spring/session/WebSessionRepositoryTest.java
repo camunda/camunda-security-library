@@ -8,6 +8,8 @@
 package io.camunda.security.spring.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.web.context.HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY;
 
@@ -355,6 +357,29 @@ class WebSessionRepositoryTest {
     assertThat(found).isNull();
     assertThat(handedOver).isEmpty();
     assertThat(sessionStore.getAll()).isEmpty();
+  }
+
+  @Test
+  void deleteExpiredWebSessionsKeepsASessionUsedSinceTheSnapshot() {
+    // given - the sweep's snapshot shows the session expired, but a request used it since
+    final var store = spy(new SessionStorePortStub());
+    sessionStore = store;
+    final List<Session> handedOver = new ArrayList<>();
+    final var repository = repositoryWithHandler(handedOver::add);
+    final var stale = repository.createSession();
+    stale.setLastAccessedTime(EXPIRED_LAST_ACCESS);
+    final var current =
+        webSessionMapper.fromPersistentSession(webSessionMapper.toPersistentSession(stale));
+    current.setLastAccessedTime(Instant.now());
+    store.upsert(webSessionMapper.toPersistentSession(current));
+    doReturn(List.of(webSessionMapper.toPersistentSession(stale))).when(store).getAll();
+
+    // when
+    repository.deleteExpiredWebSessions();
+
+    // then
+    assertThat(handedOver).isEmpty();
+    assertThat(store.get(stale.getId())).isNotNull();
   }
 
   @Test

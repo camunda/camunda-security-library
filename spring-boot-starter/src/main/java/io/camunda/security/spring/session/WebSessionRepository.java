@@ -123,11 +123,30 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
             () -> deleteById(persistentSession.id()));
   }
 
-  private void deleteWebSessionIfExpired(final WebSession webSession) {
-    if (webSession.shouldBeDeleted()) {
-      notifyIfExpired(webSession, ExpiryCheck.SWEEP);
-      deleteById(webSession.getId());
+  /**
+   * Deletes a session that the {@code getAll()} snapshot shows as expired, after reading it again.
+   * The handler can make the sweep wait, so a later entry of the snapshot can be stale: a request
+   * may have used the session in the meantime. A session that is expired in the store stays
+   * expired, because a request that finds it expired deletes it.
+   */
+  private void deleteWebSessionIfExpired(final WebSession snapshot) {
+    if (!snapshot.shouldBeDeleted()) {
+      return;
     }
+    final PersistentSession current = sessionStorePort.get(snapshot.getId());
+    if (current == null) {
+      // Deleted in the meantime, for example by a request that found it expired.
+      return;
+    }
+    toWebSession(current)
+        .ifPresentOrElse(
+            webSession -> {
+              if (webSession.shouldBeDeleted()) {
+                notifyIfExpired(webSession, ExpiryCheck.SWEEP);
+                deleteById(webSession.getId());
+              }
+            },
+            () -> deleteById(current.id()));
   }
 
   /**

@@ -673,6 +673,25 @@ class ExpiredSessionRefreshTokenRevocationTest {
   }
 
   @Test
+  void shouldNotCheckHowOwnersAuthenticateWhenThereIsNoRevocationEndpoint() {
+    // given two chains of one client whose provider has no revocation endpoint
+    runInline();
+    final var registration = registration(CLIENT_ID, TOKEN_URI);
+    when(firstRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
+    when(secondRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    revocation.register(secondRepository, SESSION_CLIENTS, secondRevoker);
+
+    // when
+    revocation.revoke(expiredSession(authorizedClient(registration, "refresh")));
+
+    // then the first owner's revoker takes its no-endpoint path, and no signing key is loaded
+    verify(firstRevoker).revoke(eq(registration), any());
+    verify(firstRevoker, never()).canAuthenticate(any());
+    verify(secondRevoker, never()).canAuthenticate(any());
+  }
+
+  @Test
   void shouldRevokeThroughTheChainWhoseSigningKeyLoads() {
     // given two chains of one private_key_jwt client; the first chain's keystore is unreadable
     runInline();
