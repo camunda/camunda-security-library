@@ -45,8 +45,9 @@ import org.slf4j.LoggerFactory;
  *
  * <p>A token request that gets no answer ends at the read timeout. An interrupt does not stop it,
  * but it does stop a caller that waits for the lock. The response must be strict: {@code
- * Content-Type: application/json}, a non-blank {@code access_token} and {@code token_type} ({@code
- * Bearer} or {@code DPoP}), and a numeric {@code expires_in} if present.
+ * Content-Type: application/json}, a non-blank {@code access_token} and {@code token_type} {@code
+ * Bearer} (DPoP is not supported, because the client sends no DPoP proof), and a numeric {@code
+ * expires_in} if present.
  */
 public final class OidcClientCredentialsProvider implements OutboundCredentialsProvider {
 
@@ -273,9 +274,13 @@ public final class OidcClientCredentialsProvider implements OutboundCredentialsP
       // No cause: the Nimbus exception can quote the response body, and so the token.
       throw unusableResponse(e, response.getStatusCode());
     }
-    if (AccessTokenType.N_A.equals(token.getType())) {
+    if (!AccessTokenType.BEARER.equals(token.getType())) {
       throw new TokenRequestException(
-          "Token response of client '" + config.clientId() + "' is not usable: token_type N_A",
+          "Token response of client '"
+              + config.clientId()
+              + "' is not usable: token_type "
+              + sanitize(token.getType().getValue())
+              + " is not supported; only Bearer is",
           response.getStatusCode(),
           null,
           null,

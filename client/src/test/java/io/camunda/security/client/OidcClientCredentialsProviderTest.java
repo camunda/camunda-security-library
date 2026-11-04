@@ -187,6 +187,28 @@ class OidcClientCredentialsProviderTest {
   }
 
   @Test
+  void unauthorizedWithTheSameTokenRecoversWhenTheIdpIssuesANewOne() throws IOException {
+    final var provider = provider();
+    authorization(provider);
+    assertThat(endpoint.requestCount()).isEqualTo(1);
+    endpoint.respondWith(
+        200, "{\"access_token\":\"token-1\",\"token_type\":\"Bearer\",\"expires_in\":3600}");
+
+    assertThat(provider.shouldRetryRequest(StatusCode.ofHttp(401))).isFalse();
+    assertThat(endpoint.requestCount()).isEqualTo(2);
+    assertThat(authorization(provider)).isEqualTo("Authorization=Bearer token-1");
+    assertThat(endpoint.requestCount()).isEqualTo(2);
+
+    endpoint.respondWith(
+        200, "{\"access_token\":\"token-2\",\"token_type\":\"Bearer\",\"expires_in\":3600}");
+
+    assertThat(provider.shouldRetryRequest(StatusCode.ofHttp(401))).isTrue();
+    assertThat(endpoint.requestCount()).isEqualTo(3);
+    assertThat(authorization(provider)).isEqualTo("Authorization=Bearer token-2");
+    assertThat(endpoint.requestCount()).isEqualTo(3);
+  }
+
+  @Test
   void unauthorizedMayBeReportedOnAnotherThreadThanTheOneThatApplied() throws Exception {
     final var provider = provider();
     final ExecutorService other = Executors.newSingleThreadExecutor();
@@ -965,16 +987,8 @@ class OidcClientCredentialsProviderTest {
     assertNoneOfTheMessagesContains(failure, "abc-secret");
   }
 
-  @Test
-  void dpopTokenTypeIsSentAsDpop() throws IOException {
-    endpoint.respondWith(
-        200, "{\"access_token\":\"abc\",\"token_type\":\"DPoP\",\"expires_in\":60}");
-
-    assertThat(authorization(provider())).isEqualTo("Authorization=DPoP abc");
-  }
-
   @ParameterizedTest
-  @ValueSource(strings = {"mac", "N_A"})
+  @ValueSource(strings = {"mac", "N_A", "DPoP"})
   void otherTokenTypesFail(final String tokenType) {
     endpoint.respondWith(
         200,

@@ -76,7 +76,7 @@ responses that follow RFC 6749:
 - The success response has `Content-Type: application/json`.
 - `access_token` is a string that is not blank. It has only visible ASCII characters (no space,
   no control character), because it goes into an HTTP header.
-- `token_type` is `Bearer` or `DPoP` (any case).
+- `token_type` is `Bearer` (any case). DPoP is not supported.
 - `expires_in`, if present, is a number or a numeric string with no spaces, and it is not
   negative.
 
