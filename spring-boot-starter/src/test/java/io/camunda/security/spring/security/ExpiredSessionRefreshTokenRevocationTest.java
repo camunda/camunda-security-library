@@ -9,14 +9,17 @@ package io.camunda.security.spring.security;
 
 import static io.camunda.security.spring.security.ExpiredSessionRefreshTokenRevocation.AUTHORIZED_CLIENTS_ATTRIBUTE;
 import static io.camunda.security.spring.security.ExpiredSessionRefreshTokenRevocation.LOOKUP_BACKOFF;
+import static io.camunda.security.spring.security.ExpiredSessionRefreshTokenRevocation.MAX_LANES;
 import static io.camunda.security.spring.security.ExpiredSessionRefreshTokenRevocation.QUEUE_CAPACITY;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -27,13 +30,18 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.jwk.RSAKey;
+import com.nimbusds.jose.jwk.gen.RSAKeyGenerator;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.spring.oidc.LazyClientRegistrationRepository;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
@@ -563,6 +571,138 @@ class ExpiredSessionRefreshTokenRevocationTest {
   }
 
   @Test
+  void shouldRedactTheTokenEndpointInTheQueueFullWarning() {
+    // given a full lane whose token endpoint carries credentials and a query secret
+    revocation = revocationWithCapacity(1, Duration.ofSeconds(5));
+    holdTasks();
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    final var session =
+        expiredSession(
+            authorizedClient(
+                registration(CLIENT_ID, "https://user:secret@idp.example.com/token?key=abc"), "r"));
+
+    // when
+    revocation.revoke(session);
+    revocation.revoke(session);
+
+    // then
+    assertThat(logs.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .singleElement()
+        .satisfies(
+            event ->
+                assertThat(event.getFormattedMessage())
+                    .contains("@idp.example.com/token")
+                    .doesNotContain("user")
+                    .doesNotContain("secret")
+                    .doesNotContain("key=abc"));
+  }
+
+  @Test
+  void shouldNotExceedTheLaneBoundForConcurrentNewProviders() throws Exception {
+    // given
+    holdTasks();
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    final int providers = MAX_LANES * 3;
+    final var start = new CountDownLatch(1);
+    final List<Thread> threads = new ArrayList<>();
+    for (int i = 0; i < providers; i++) {
+      final var session =
+          expiredSession(
+              authorizedClient(registration(CLIENT_ID, "https://idp-" + i + ".example.com"), "r"));
+      threads.add(
+          Thread.ofPlatform()
+              .start(
+                  () -> {
+                    awaitQuietly(start);
+                    revocation.revoke(session);
+                  }));
+    }
+
+    // when
+    start.countDown();
+    for (final Thread thread : threads) {
+      thread.join();
+    }
+
+    // then the providers beyond the bound share one more lane
+    assertThat(revocation.laneCount()).isEqualTo(MAX_LANES + 1);
+  }
+
+  @Test
+  void shouldStopWaitingInTheSweepOnceTheBacklogUsedItsBudget() throws Exception {
+    // given a full lane of two whose worker frees one place every 100 ms, so the backlog never
+    // drains, and a 300 ms budget
+    revocation = revocationWithCapacity(2, Duration.ofSeconds(1), Duration.ofMillis(300));
+    holdTasks();
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    final var session = expiredSession(authorizedClient(registration(CLIENT_ID, TOKEN_URI), "r"));
+    revocation.revokeFromSweep(session);
+    revocation.revokeFromSweep(session);
+    final var worker =
+        Thread.ofPlatform()
+            .daemon()
+            .start(
+                () -> {
+                  while (!Thread.currentThread().isInterrupted()) {
+                    sleep(Duration.ofMillis(100));
+                    if (!held.isEmpty()) {
+                      held.removeFirst().run();
+                    }
+                  }
+                });
+
+    // when the sweep keeps finding the lane full
+    final long elapsed =
+        timed(
+            () -> {
+              for (int i = 0; i < 20; i++) {
+                revocation.revokeFromSweep(session);
+              }
+            });
+    worker.interrupt();
+    worker.join();
+
+    // then it waited about the budget, not once for each session, and then dropped
+    assertThat(elapsed).isLessThan(1_000);
+    assertThat(logs.list)
+        .filteredOn(event -> event.getLevel() == Level.WARN)
+        .anySatisfy(
+            event ->
+                assertThat(event.getFormattedMessage()).contains("its revocation queue is full"));
+  }
+
+  @Test
+  void shouldRevokeThroughTheChainWhoseSigningKeyLoads() {
+    // given two chains of one private_key_jwt client; the first chain's keystore is unreadable
+    runInline();
+    final var registration =
+        ClientRegistration.withClientRegistration(
+                registration(CLIENT_ID, TOKEN_URI, REVOCATION_URI))
+            .clientAuthenticationMethod(ClientAuthenticationMethod.PRIVATE_KEY_JWT)
+            .build();
+    final var broken =
+        spy(
+            new RefreshTokenRevoker(
+                ignored -> {
+                  throw new IllegalStateException("keystore not found");
+                }));
+    final var healthy = spy(new RefreshTokenRevoker(ignored -> signingKey()));
+    doNothing().when(healthy).revoke(any(), any());
+    when(firstRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
+    when(secondRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
+    revocation.register(firstRepository, SESSION_CLIENTS, broken);
+    revocation.register(secondRepository, SESSION_CLIENTS, healthy);
+
+    // when
+    revocation.revoke(expiredSession(authorizedClient(registration, "refresh")));
+
+    // then
+    verify(healthy).revoke(eq(registration), any());
+    verify(broken, never()).revoke(any(), any());
+  }
+
+  @Test
   void shouldWarnWhenAChainDoesNotStoreItsAuthorizedClientsInTheSession() {
     // when
     revocation.register(
@@ -609,7 +749,13 @@ class ExpiredSessionRefreshTokenRevocationTest {
 
   private ExpiredSessionRefreshTokenRevocation revocationWithCapacity(
       final int capacity, final Duration sweepWait) {
-    return new ExpiredSessionRefreshTokenRevocation(() -> executor, capacity, sweepWait, now::get);
+    return revocationWithCapacity(capacity, sweepWait, Duration.ofMinutes(5));
+  }
+
+  private ExpiredSessionRefreshTokenRevocation revocationWithCapacity(
+      final int capacity, final Duration sweepWait, final Duration sweepWaitBudget) {
+    return new ExpiredSessionRefreshTokenRevocation(
+        () -> executor, capacity, sweepWait, sweepWaitBudget, now::get);
   }
 
   /** Queues the revocations instead of running them; a test runs them from {@link #held}. */
@@ -621,6 +767,22 @@ class ExpiredSessionRefreshTokenRevocationTest {
             })
         .when(executor)
         .execute(any());
+  }
+
+  private static void awaitQuietly(final CountDownLatch latch) {
+    try {
+      latch.await();
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
+  }
+
+  private static RSAKey signingKey() {
+    try {
+      return new RSAKeyGenerator(2048).keyID("kid").generate();
+    } catch (final JOSEException e) {
+      throw new IllegalStateException(e);
+    }
   }
 
   private static long timed(final Runnable action) {

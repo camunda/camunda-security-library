@@ -144,6 +144,9 @@ public final class RefreshTokenRevoker {
   private final Converter<OAuth2RefreshTokenGrantRequest, MultiValueMap<String, String>>
       clientAssertionConverter;
 
+  /** The source of the assertion signing key, or {@code null}; see {@link #canAuthenticate}. */
+  private final Function<ClientRegistration, JWK> jwkResolver;
+
   /**
    * @param jwkResolver supplies the signing key for an assertion-authenticated client, or {@code
    *     null} when the deployment has no assertion configuration to resolve one from
@@ -157,6 +160,7 @@ public final class RefreshTokenRevoker {
   RefreshTokenRevoker(
       final Function<ClientRegistration, JWK> jwkResolver, final RestClient restClient) {
     this.restClient = Objects.requireNonNull(restClient, "restClient must not be null");
+    this.jwkResolver = jwkResolver;
     clientAssertionConverter = jwkResolver != null ? assertionConverter(jwkResolver) : null;
   }
 
@@ -304,10 +308,29 @@ public final class RefreshTokenRevoker {
 
   /**
    * Whether this revoker can authenticate a revocation request for {@code clientRegistration}. Lets
-   * a caller with several chains of one client pick a chain that can send the request.
+   * a caller with several chains of one client pick a chain that can send the request. For {@code
+   * private_key_jwt} it resolves the signing key, so a chain whose keystore is missing or
+   * unreadable does not count.
    */
   boolean canAuthenticate(final ClientRegistration clientRegistration) {
-    return unsupportedClientAuthentication(clientRegistration) == null;
+    if (unsupportedClientAuthentication(clientRegistration) != null) {
+      return false;
+    }
+    if (!ClientAuthenticationMethod.PRIVATE_KEY_JWT.equals(
+        clientRegistration.getClientAuthenticationMethod())) {
+      return true;
+    }
+    try {
+      return jwkResolver.apply(clientRegistration) != null;
+    } catch (final RuntimeException e) {
+      // Type only, as for a failed revocation: a keystore error can name a path or an alias.
+      LOG.debug(
+          "No assertion signing key for OIDC registration '{}' [{}]; another chain is preferred"
+              + " for its refresh-token revocation.",
+          ScopedClientRegistrationFactory.sanitizeForLog(clientRegistration.getRegistrationId()),
+          e.getClass().getName());
+      return false;
+    }
   }
 
   /**
