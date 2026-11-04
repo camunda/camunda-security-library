@@ -8,11 +8,14 @@
 package io.camunda.security.spring;
 
 import io.camunda.security.api.model.config.*;
+import io.camunda.security.api.model.config.client.OutboundClientConfiguration;
 import io.camunda.security.api.model.config.headers.HeaderConfiguration;
 import io.camunda.security.api.model.config.initialization.InitializationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import jakarta.annotation.PostConstruct;
 import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 import org.slf4j.Logger;
@@ -54,6 +57,7 @@ public class CamundaSecurityLibraryProperties {
   private HeaderConfiguration httpHeaders = new HeaderConfiguration();
   private SaasConfiguration saas = new SaasConfiguration();
   private SessionConfiguration session = new SessionConfiguration();
+  private Map<String, OutboundClientConfiguration> client = new LinkedHashMap<>();
 
   /**
    * The ID validation pattern is configurable with the intention to:
@@ -97,6 +101,15 @@ public class CamundaSecurityLibraryProperties {
 
   public void setMultiTenancy(final MultiTenancyConfiguration multiTenancy) {
     this.multiTenancy = multiTenancy;
+  }
+
+  /** Named outbound clients, bound from {@code camunda.security.client.<name>}. */
+  public Map<String, OutboundClientConfiguration> getClient() {
+    return client;
+  }
+
+  public void setClient(final Map<String, OutboundClientConfiguration> client) {
+    this.client = client != null ? client : new LinkedHashMap<>();
   }
 
   public boolean isApiProtected() {

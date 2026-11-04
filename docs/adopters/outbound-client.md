@@ -112,6 +112,59 @@ request.
 
 ## Spring
 
-Spring hosts will bind named clients under `camunda.security.client.<name>` through the CSL starter.
-That binding comes in a later pull request. Until then, build the providers with the factories in
-`OutboundCredentialsProviders`, as shown above.
+The CSL starter binds named clients under `camunda.security.client.<name>`. Use lowercase names
+with `-` for `<name>`. The starter builds one provider for each client and puts them in an
+`OutboundCredentialsProviders` bean.
+
+```yaml
+camunda:
+  security:
+    client:
+      hub:
+        oidc:
+          token-uri: https://idp.example.com/oauth/token
+          client-id: my-client
+          client-secret: ${HUB_CLIENT_SECRET}
+          audience: hub-api
+          scopes: [read]
+          read-timeout: 5s
+      ops:
+        basic:
+          username: ops
+          password: ${OPS_PASSWORD}
+```
+
+Each client sets exactly one of `oidc` and `basic`.
+
+| Property | Applies to | Meaning |
+|---|---|---|
+| `oidc.token-uri` | `oidc` | The IdP token endpoint. Required. It must be an absolute http or https URI without user-info. |
+| `oidc.client-id` | `oidc` | The client ID. Required. |
+| `oidc.client-secret` | `oidc` | The client secret. Required. |
+| `oidc.audience` | `oidc` | Optional `audience` request parameter. |
+| `oidc.scopes` | `oidc` | Optional list of scopes. |
+| `oidc.resource` | `oidc` | Optional `resource` request parameter. |
+| `oidc.connect-timeout` | `oidc` | Connect timeout of the token request. The default is 10 seconds. |
+| `oidc.read-timeout` | `oidc` | Read timeout of the token request. The default is 10 seconds. |
+| `basic.username` | `basic` | The user name. Required. It must not contain `:`. |
+| `basic.password` | `basic` | The password. Required. |
+
+The binder ignores keys that it does not know. A key with a spelling error therefore has no effect.
+For example, a misspelled `token-uri` fails startup with "token-uri must be set". A misspelled
+`oidc` or `basic` block leaves the client out, and `get` then throws for that name. Startup error
+messages name the property and never show a value.
+
+To get the bean, import `OutboundCredentialsConfiguration`, or activate the umbrella
+`CamundaSecurityAutoConfiguration`. The bean always exists, also when you configure no client. Then
+ask it for a client by name:
+
+```java
+@Import(OutboundCredentialsConfiguration.class)
+class MyConfiguration {}
+
+OutboundCredentialsProvider hub = providers.get("hub");
+```
+
+`get` throws `IllegalArgumentException` for an unknown name. Spring closes the registry when the
+context closes. To use your own registry, declare a bean of type `OutboundCredentialsProviders`.
+The library bean then backs off.

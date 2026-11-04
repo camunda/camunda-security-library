@@ -469,6 +469,12 @@
       "defaultValue": true
     },
     {
+      "name": "camunda.security.client",
+      "type": "java.util.Map<java.lang.String,io.camunda.security.api.model.config.client.OutboundClientConfiguration>",
+      "description": "Named outbound clients that add credentials to calls to CSL-protected services. Each client sets exactly one of oidc or basic.",
+      "sourceType": "io.camunda.security.spring.CamundaSecurityLibraryProperties"
+    },
+    {
       "name": "camunda.security.csrf.cookie-http-only",
       "type": "java.lang.Boolean",
       "sourceType": "io.camunda.security.api.model.config.CsrfConfiguration",
