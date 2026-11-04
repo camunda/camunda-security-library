@@ -12,6 +12,7 @@ import static org.springframework.security.web.context.HttpSessionSecurityContex
 import io.camunda.security.spring.oidc.FailureDescription;
 import io.camunda.security.spring.oidc.LazyClientRegistrationRepository;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
+import io.camunda.security.spring.oidc.UrlRedaction;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +29,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -67,11 +69,12 @@ import org.springframework.util.StringUtils;
  * token endpoint. Each lane has its own thread and a bounded backlog, so a provider that is slow or
  * down cannot hold up the revocations of another. A request never waits: when its lane is full, the
  * revocation is dropped with a {@code WARN}. The expiry sweep runs on its own thread and calls
- * {@link #revokeFromSweep}, which waits briefly for room, once per backlog, so a large sweep
- * against a healthy provider is not dropped. After a registration fails to resolve, it is skipped
- * for {@link #LOOKUP_BACKOFF}, so an unreachable provider does not start a discovery for every
- * session. The session is deleted either way, and every failure is fail-soft: neither method
- * throws.
+ * {@link #revokeFromSweep}, which waits for room while the provider keeps up, so a large sweep
+ * against a healthy provider is not dropped. A provider that does not keep up, or a backlog that
+ * has used up its waiting budget, makes the sweep drop instead, so the sweep reaches the sessions
+ * of the other providers. After a registration fails to resolve, it is skipped for {@link
+ * #LOOKUP_BACKOFF}, so an unreachable provider does not start a discovery for every session. The
+ * session is deleted either way, and every failure is fail-soft: neither method throws.
  */
 public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable {
 
@@ -86,13 +89,25 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
   /** Bounds the memory and the backlog of one provider when many of its sessions expire. */
   static final int QUEUE_CAPACITY = 1_000;
 
-  /** How long the sweep waits for room in a full lane before it drops, once per backlog. */
-  static final Duration SWEEP_WAIT = Duration.ofSeconds(5);
+  /**
+   * How long the sweep waits for one free place in a full lane. A provider that needs longer for a
+   * revocation does not keep up, and the sweep drops the rest of the backlog.
+   */
+  static final Duration SWEEP_WAIT = Duration.ofSeconds(1);
+
+  /**
+   * How long the sweep waits in total for one backlog of a lane, half the sweep interval. A large
+   * sweep then cannot hold up the sessions of the other providers for long.
+   */
+  static final Duration SWEEP_WAIT_BUDGET = Duration.ofMinutes(5);
 
   /** How long a registration that failed to resolve is skipped before it is looked up again. */
   static final Duration LOOKUP_BACKOFF = Duration.ofMinutes(1);
 
-  /** Bounds the lanes, whose keys come from stored sessions; further providers share one lane. */
+  /**
+   * Bounds the lanes, whose keys come from stored sessions: at most this many providers get a lane
+   * of their own, and any further providers share one more.
+   */
   static final int MAX_LANES = 64;
 
   private static final String SHARED_LANE = "*";
@@ -105,6 +120,7 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
   private final Supplier<ExecutorService> laneExecutors;
   private final int laneCapacity;
   private final Duration sweepWait;
+  private final Duration sweepWaitBudget;
   private final LongSupplier nanoTime;
   private final Set<String> ambiguousRegistrationIds = ConcurrentHashMap.newKeySet();
   // Deadline (System.nanoTime) until which a chain's registration is not looked up again.
@@ -115,6 +131,7 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
         ExpiredSessionRefreshTokenRevocation::laneExecutor,
         QUEUE_CAPACITY,
         SWEEP_WAIT,
+        SWEEP_WAIT_BUDGET,
         System::nanoTime);
   }
 
@@ -123,10 +140,13 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
       final Supplier<ExecutorService> laneExecutors,
       final int laneCapacity,
       final Duration sweepWait,
+      final Duration sweepWaitBudget,
       final LongSupplier nanoTime) {
     this.laneExecutors = Objects.requireNonNull(laneExecutors, "laneExecutors must not be null");
     this.laneCapacity = laneCapacity;
     this.sweepWait = Objects.requireNonNull(sweepWait, "sweepWait must not be null");
+    this.sweepWaitBudget =
+        Objects.requireNonNull(sweepWaitBudget, "sweepWaitBudget must not be null");
     this.nanoTime = Objects.requireNonNull(nanoTime, "nanoTime must not be null");
   }
 
@@ -168,9 +188,10 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
   }
 
   /**
-   * Like {@link #revoke}, for the expiry sweep, which runs on its own thread: waits up to {@link
-   * #SWEEP_WAIT} for room in a full lane, once per backlog, so a large sweep is not dropped while
-   * the provider keeps up. Never throws.
+   * Like {@link #revoke}, for the expiry sweep, which runs on its own thread: waits for room in a
+   * full lane while the provider frees a place within {@link #SWEEP_WAIT}, and for at most {@link
+   * #SWEEP_WAIT_BUDGET} per backlog, so a large sweep is not dropped while the provider keeps up.
+   * Never throws.
    */
   public void revokeFromSweep(final Session expiredSession) {
     revoke(expiredSession, true);
@@ -191,6 +212,11 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
   /** The number of registered chains. Exists so tests can assert the chain builder's wiring. */
   int registeredChainCount() {
     return chains.size();
+  }
+
+  /** The number of lanes. Exists so tests can assert the lane bound. */
+  int laneCount() {
+    return lanes.size();
   }
 
   @Override
@@ -217,7 +243,7 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
       return;
     }
     final Lane lane = lane(laneKey(authorizedClient.getClientRegistration()));
-    if (!lane.tryEnter(mayWait, sweepWait)) {
+    if (!lane.tryEnter(mayWait, sweepWait, sweepWaitBudget)) {
       // One WARN per backlog rather than one per session: the flag resets only once the lane's
       // backlog is gone.
       if (lane.saturated().compareAndSet(false, true)) {
@@ -226,7 +252,7 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
                 + " its revocation queue is full ({} queued). The identity provider may be slow or"
                 + " unreachable, or many sessions expired at once. The sessions are still deleted,"
                 + " but their refresh tokens may remain valid until they expire.",
-            ScopedClientRegistrationFactory.sanitizeForLog(lane.key()),
+            UrlRedaction.redact(lane.key()),
             laneCapacity);
       }
       return;
@@ -252,9 +278,17 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
     if (existing != null) {
       return existing;
     }
-    final String bounded = lanes.size() < MAX_LANES ? key : SHARED_LANE;
-    return lanes.computeIfAbsent(
-        bounded, k -> new Lane(k, laneExecutors.get(), new Semaphore(laneCapacity), laneCapacity));
+    // Under the lock, so concurrent sessions of new providers cannot exceed MAX_LANES.
+    synchronized (lanes) {
+      final Lane created = lanes.get(key);
+      if (created != null) {
+        return created;
+      }
+      final String bounded = lanes.size() < MAX_LANES ? key : SHARED_LANE;
+      return lanes.computeIfAbsent(
+          bounded,
+          k -> new Lane(k, laneExecutors.get(), new Semaphore(laneCapacity), laneCapacity));
+    }
   }
 
   /** The provider of the stored client: its token endpoint, else its issuer, else its ID. */
@@ -467,31 +501,45 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
 
   private record Lookup(Chain chain, String registrationId) {}
 
-  /** The revocations of one provider: a thread, and permits for its queued and running tasks. */
+  /**
+   * The revocations of one provider: a thread, permits for its queued and running tasks, and the
+   * state of the current backlog.
+   */
   private record Lane(
       String key,
       ExecutorService executor,
       Semaphore permits,
       int capacity,
-      AtomicBoolean saturated) {
+      AtomicBoolean saturated,
+      AtomicLong sweepWaitedNanos) {
 
     Lane(final String key, final ExecutorService executor, final Semaphore permits, final int cap) {
-      this(key, executor, permits, cap, new AtomicBoolean());
+      this(key, executor, permits, cap, new AtomicBoolean(), new AtomicLong());
     }
 
     /**
-     * Takes a permit: at once, or for the sweep by waiting, unless the lane already drops
-     * revocations for this backlog.
+     * Takes a permit: at once, or for the sweep by waiting up to {@code wait} for one, unless the
+     * lane already drops revocations for this backlog or the backlog has used up {@code budget}.
      */
-    boolean tryEnter(final boolean mayWait, final Duration wait) {
+    boolean tryEnter(final boolean mayWait, final Duration wait, final Duration budget) {
       if (!mayWait || saturated.get()) {
         return permits.tryAcquire();
       }
+      if (permits.tryAcquire()) {
+        return true;
+      }
+      final long remaining = budget.toNanos() - sweepWaitedNanos.get();
+      if (remaining <= 0) {
+        return false;
+      }
+      final long start = System.nanoTime();
       try {
-        return permits.tryAcquire(wait.toNanos(), TimeUnit.NANOSECONDS);
+        return permits.tryAcquire(Math.min(wait.toNanos(), remaining), TimeUnit.NANOSECONDS);
       } catch (final InterruptedException e) {
         Thread.currentThread().interrupt();
         return false;
+      } finally {
+        sweepWaitedNanos.addAndGet(System.nanoTime() - start);
       }
     }
 
@@ -500,6 +548,7 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
       permits.release();
       if (permits.availablePermits() == capacity) {
         saturated.set(false);
+        sweepWaitedNanos.set(0);
       }
     }
   }
