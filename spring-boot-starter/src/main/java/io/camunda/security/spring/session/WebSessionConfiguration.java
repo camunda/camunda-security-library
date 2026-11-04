@@ -120,10 +120,12 @@ public class WebSessionConfiguration {
   }
 
   /**
-   * Revokes the refresh token of each expired session the repositories delete (ADR-0043). Resolved
-   * per expired session rather than at startup: the revocation bean belongs to the chain builder's
-   * configuration, and a host that imports this configuration without it keeps logout-only
-   * revocation.
+   * Revokes the refresh token of each expired session the repositories delete (ADR-0043). A session
+   * the sweep found goes to {@link ExpiredSessionRefreshTokenRevocation#revokeFromSweep}, which can
+   * wait briefly for room; one a request found goes to {@link
+   * ExpiredSessionRefreshTokenRevocation#revoke}, which never waits. Resolved per expired session
+   * rather than at startup: the revocation bean belongs to the chain builder's configuration, and a
+   * host that imports this configuration without it keeps logout-only revocation.
    */
   static BiConsumer<Session, ExpiryCheck> expiredSessionHandler(
       final ObjectProvider<ExpiredSessionRefreshTokenRevocation> expiredSessionRevocation) {

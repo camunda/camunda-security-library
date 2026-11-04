@@ -480,7 +480,8 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
     }
 
     /**
-     * Takes a permit: at once, or for the sweep by waiting, unless this backlog already timed out.
+     * Takes a permit: at once, or for the sweep by waiting, unless the lane already drops
+     * revocations for this backlog.
      */
     boolean tryEnter(final boolean mayWait, final Duration wait) {
       if (!mayWait || saturated.get()) {
