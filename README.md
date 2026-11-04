@@ -29,6 +29,7 @@ No host-specific code leaks into the library domain. Swapping a database, replac
   - Put shared public models in `api/model` (for example `CamundaAuthentication`).
   - Put shared public context/helper contracts in `api/context` (for example holders, providers, converters).
 - `spring-boot-starter`: Spring configuration classes for authentication filter chains, activated by explicit `@Import` — no auto-configuration, see [ADR-0003](docs/adr/0003-no-spring-boot-auto-configuration.md).
+- `client`: Spring-free client that adds credentials (OIDC client credentials or Basic) to outgoing calls to CSL-protected services, see [ADR-0042](docs/adr/0042-spring-free-client-for-csl-protected-services.md) and [the usage guide](docs/adopters/outbound-client.md).
 - `adapters` *(planned)*: non-Spring infrastructure adapter code for environments that do not use Spring Boot.
 
 Rule of thumb: if a type is a hexagonal inbound or outbound port, keep it in `core`. Use `api` for public adopter-facing models and helper/context contracts that are not hexagonal ports.
