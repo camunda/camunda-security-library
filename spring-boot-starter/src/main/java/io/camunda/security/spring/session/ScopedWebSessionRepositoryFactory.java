@@ -10,12 +10,15 @@ package io.camunda.security.spring.session;
 import io.camunda.security.api.model.config.SessionConfiguration;
 import io.camunda.security.core.port.out.ScopedSessionStorePortProvider;
 import io.camunda.security.core.port.out.SessionStorePort;
+import io.camunda.security.spring.session.WebSessionRepository.ExpiryCheck;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
+import org.springframework.session.Session;
 
 /**
  * Builds a per-scope {@link WebSessionRepository} backed by the scope's own {@link
@@ -41,6 +44,7 @@ public final class ScopedWebSessionRepositoryFactory {
   private final WebSessionMapper webSessionMapper;
   private final HttpServletRequest request;
   private final SessionConfiguration sessionConfiguration;
+  private final BiConsumer<Session, ExpiryCheck> expiredSessionHandler;
   private final Map<String, WebSessionRepository> repositoriesByBasePath =
       new ConcurrentHashMap<>();
 
@@ -49,10 +53,26 @@ public final class ScopedWebSessionRepositoryFactory {
       final WebSessionMapper webSessionMapper,
       final HttpServletRequest request,
       final SessionConfiguration sessionConfiguration) {
+    this(
+        storePortProvider, webSessionMapper, request, sessionConfiguration, (session, check) -> {});
+  }
+
+  /**
+   * @param expiredSessionHandler passed to every repository this factory builds, see {@link
+   *     WebSessionRepository#WebSessionRepository(SessionStorePort, WebSessionMapper,
+   *     HttpServletRequest, SessionConfiguration, BiConsumer)}
+   */
+  public ScopedWebSessionRepositoryFactory(
+      final ScopedSessionStorePortProvider storePortProvider,
+      final WebSessionMapper webSessionMapper,
+      final HttpServletRequest request,
+      final SessionConfiguration sessionConfiguration,
+      final BiConsumer<Session, ExpiryCheck> expiredSessionHandler) {
     this.storePortProvider = storePortProvider;
     this.webSessionMapper = webSessionMapper;
     this.request = request;
     this.sessionConfiguration = sessionConfiguration;
+    this.expiredSessionHandler = expiredSessionHandler;
   }
 
   /**
@@ -92,6 +112,7 @@ public final class ScopedWebSessionRepositoryFactory {
         Objects.requireNonNull(
             storePortProvider.forBasePath(basePath),
             () -> "ScopedSessionStorePortProvider returned null for basePath=" + basePath);
-    return new WebSessionRepository(storePort, webSessionMapper, request, sessionConfiguration);
+    return new WebSessionRepository(
+        storePort, webSessionMapper, request, sessionConfiguration, expiredSessionHandler);
   }
 }

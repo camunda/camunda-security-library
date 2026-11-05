@@ -11,7 +11,9 @@ import io.camunda.security.core.port.out.ScopedSessionStorePortProvider;
 import io.camunda.security.core.port.out.SessionStorePort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.annotation.ConditionalOnPersistentWebSessionEnabled;
+import io.camunda.security.spring.security.ExpiredSessionRefreshTokenRevocation;
 import io.camunda.security.spring.session.WebSessionMapper.SpringBasedWebSessionAttributeConverter;
+import io.camunda.security.spring.session.WebSessionRepository.ExpiryCheck;
 import jakarta.servlet.http.HttpServletRequest;
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.util.Collection;
@@ -20,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -28,6 +31,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.support.GenericConversionService;
+import org.springframework.session.Session;
 
 /**
  * Wires the persistent web-session lifecycle: the Spring Session {@link WebSessionRepository}, its
@@ -79,9 +83,14 @@ public class WebSessionConfiguration {
       final SessionStorePort sessionStorePort,
       final WebSessionMapper webSessionMapper,
       final HttpServletRequest request,
-      final CamundaSecurityLibraryProperties properties) {
+      final CamundaSecurityLibraryProperties properties,
+      final ObjectProvider<ExpiredSessionRefreshTokenRevocation> expiredSessionRevocation) {
     return new WebSessionRepository(
-        sessionStorePort, webSessionMapper, request, properties.getSession());
+        sessionStorePort,
+        webSessionMapper,
+        request,
+        properties.getSession(),
+        expiredSessionHandler(expiredSessionRevocation));
   }
 
   /**
@@ -98,11 +107,37 @@ public class WebSessionConfiguration {
       final ObjectProvider<ScopedSessionStorePortProvider> storePortProvider,
       final WebSessionMapper webSessionMapper,
       final HttpServletRequest request,
-      final CamundaSecurityLibraryProperties properties) {
+      final CamundaSecurityLibraryProperties properties,
+      final ObjectProvider<ExpiredSessionRefreshTokenRevocation> expiredSessionRevocation) {
     // getIfAvailable (not getIfUnique): null when absent (→ fall back); on multiple providers it
     // resolves a @Primary if declared, otherwise throws — unprioritized ambiguity fails fast.
     return new ScopedWebSessionRepositoryFactory(
-        storePortProvider.getIfAvailable(), webSessionMapper, request, properties.getSession());
+        storePortProvider.getIfAvailable(),
+        webSessionMapper,
+        request,
+        properties.getSession(),
+        expiredSessionHandler(expiredSessionRevocation));
+  }
+
+  /**
+   * Revokes the refresh token of each expired session the repositories delete (ADR-0043). A session
+   * the sweep found goes to {@link ExpiredSessionRefreshTokenRevocation#revokeFromSweep}, which can
+   * wait briefly for room; one a request found goes to {@link
+   * ExpiredSessionRefreshTokenRevocation#revoke}, which never waits. Resolved per expired session
+   * rather than at startup: the revocation bean belongs to the chain builder's configuration, and a
+   * host that imports this configuration without it keeps logout-only revocation.
+   */
+  static BiConsumer<Session, ExpiryCheck> expiredSessionHandler(
+      final ObjectProvider<ExpiredSessionRefreshTokenRevocation> expiredSessionRevocation) {
+    return (session, check) ->
+        expiredSessionRevocation.ifAvailable(
+            revocation -> {
+              if (check == ExpiryCheck.SWEEP) {
+                revocation.revokeFromSweep(session);
+              } else {
+                revocation.revoke(session);
+              }
+            });
   }
 
   @Bean

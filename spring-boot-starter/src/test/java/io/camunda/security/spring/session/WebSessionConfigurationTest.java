@@ -8,21 +8,46 @@
 package io.camunda.security.spring.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.springframework.security.web.context.HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY;
 
 import io.camunda.security.api.model.config.SessionConfiguration;
 import io.camunda.security.api.model.session.PersistentSession;
 import io.camunda.security.core.port.out.ScopedSessionStorePortProvider;
 import io.camunda.security.core.port.out.SessionStorePort;
+import io.camunda.security.spring.security.ExpiredSessionRefreshTokenRevocation;
+import io.camunda.security.spring.security.RefreshTokenRevoker;
 import io.camunda.security.spring.session.WebSessionMapper.SpringBasedWebSessionAttributeConverter;
+import io.camunda.security.spring.session.WebSessionRepository.ExpiryCheck;
 import java.lang.Thread.UncaughtExceptionHandler;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.support.GenericConversionService;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.core.context.SecurityContextImpl;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.OAuth2AccessToken;
+import org.springframework.security.oauth2.core.OAuth2RefreshToken;
+import org.springframework.security.oauth2.core.oidc.OidcIdToken;
+import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
+import org.springframework.session.MapSession;
+import org.springframework.session.Session;
 
 /**
  * The runner imports only {@link WebSessionConfiguration} — deliberately not {@code
@@ -148,6 +173,97 @@ class WebSessionConfigurationTest {
                     .hasSingleBean(WebSessionAttributeConverter.class)
                     .getBean(WebSessionAttributeConverter.class)
                     .isInstanceOf(HostConverterConfiguration.HostConverter.class));
+  }
+
+  @Test
+  void expiredSessionHandlerHandsTheSessionToTheRevocationBean() throws Exception {
+    // given - a chain whose registration lookup shows that the revocation saw the session
+    final var lookedUp = new CountDownLatch(1);
+    try (var revocation = new ExpiredSessionRefreshTokenRevocation()) {
+      revocation.register(
+          registrationId -> {
+            lookedUp.countDown();
+            return null;
+          },
+          new HttpSessionOAuth2AuthorizedClientRepository(),
+          new RefreshTokenRevoker(null));
+      final var beanFactory = new StaticListableBeanFactory(Map.of("revocation", revocation));
+
+      // when
+      WebSessionConfiguration.expiredSessionHandler(
+              beanFactory.getBeanProvider(ExpiredSessionRefreshTokenRevocation.class))
+          .accept(sessionWithRefreshToken(), ExpiryCheck.REQUEST);
+
+      // then
+      assertThat(lookedUp.await(5, TimeUnit.SECONDS)).isTrue();
+    }
+  }
+
+  @Test
+  void expiredSessionHandlerDoesNothingWithoutTheRevocationBean() {
+    // given - a host that imports this configuration without the chain builder's
+    final var beanFactory = new StaticListableBeanFactory();
+
+    // then
+    assertThatCode(
+            () ->
+                WebSessionConfiguration.expiredSessionHandler(
+                        beanFactory.getBeanProvider(ExpiredSessionRefreshTokenRevocation.class))
+                    .accept(sessionWithRefreshToken(), ExpiryCheck.REQUEST))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  void expiredSessionHandlerLetsOnlyTheSweepWait() {
+    // given
+    final var revocation = mock(ExpiredSessionRefreshTokenRevocation.class);
+    final var handler =
+        WebSessionConfiguration.expiredSessionHandler(
+            new StaticListableBeanFactory(Map.of("revocation", revocation))
+                .getBeanProvider(ExpiredSessionRefreshTokenRevocation.class));
+    final var fromSweep = new MapSession();
+    final var fromRequest = new MapSession();
+
+    // when
+    handler.accept(fromSweep, ExpiryCheck.SWEEP);
+    handler.accept(fromRequest, ExpiryCheck.REQUEST);
+
+    // then
+    verify(revocation).revokeFromSweep(fromSweep);
+    verify(revocation).revoke(fromRequest);
+    verifyNoMoreInteractions(revocation);
+  }
+
+  private static Session sessionWithRefreshToken() {
+    final var idToken =
+        new OidcIdToken(
+            "id-token", Instant.now(), Instant.now().plusSeconds(60), Map.of("sub", "user"));
+    final var authentication =
+        new OAuth2AuthenticationToken(new DefaultOidcUser(List.of(), idToken), List.of(), "oidc");
+    final var registration =
+        ClientRegistration.withRegistrationId("oidc")
+            .clientId("client-id")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("https://app.example.com/sso-callback")
+            .authorizationUri("https://idp.example.com/oauth2/authorize")
+            .tokenUri("https://idp.example.com/oauth2/token")
+            .build();
+    final var client =
+        new OAuth2AuthorizedClient(
+            registration,
+            "user",
+            new OAuth2AccessToken(
+                OAuth2AccessToken.TokenType.BEARER,
+                "access-token",
+                Instant.now(),
+                Instant.now().plusSeconds(60)),
+            new OAuth2RefreshToken("refresh-token", Instant.now()));
+    final var session = new MapSession();
+    session.setAttribute(SPRING_SECURITY_CONTEXT_KEY, new SecurityContextImpl(authentication));
+    session.setAttribute(
+        HttpSessionOAuth2AuthorizedClientRepository.class.getName() + ".AUTHORIZED_CLIENTS",
+        Map.of("oidc", client));
+    return session;
   }
 
   @Test
