@@ -119,6 +119,36 @@ class ConditionalAnnotationsIntegrationTest {
         .run(context -> assertThat(context).doesNotHaveBean("camundaGroupsBean"));
   }
 
+  @Test
+  void conditionalOnCamundaGroupsEnabledDoesNotMatchWhenTheOnlyNamedProviderHasAGroupsClaim() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.method=oidc",
+            "camunda.security.authentication.providers.oidc.keycloak.client-id=client",
+            "camunda.security.authentication.providers.oidc.keycloak.groups-claim=groups")
+        .run(context -> assertThat(context).doesNotHaveBean("camundaGroupsBean"));
+  }
+
+  @Test
+  void conditionalOnCamundaGroupsEnabledMatchesWhenANamedProviderHasNoGroupsClaim() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.method=oidc",
+            "camunda.security.authentication.providers.oidc.keycloak.client-id=client",
+            "camunda.security.authentication.providers.oidc.keycloak.groups-claim=groups",
+            "camunda.security.authentication.providers.oidc.partner.client-id=client")
+        .run(context -> assertThat(context).hasBean("camundaGroupsBean"));
+  }
+
+  @Test
+  void conditionalOnCamundaGroupsEnabledMatchesWithBasicAuthenticationAndAGroupsClaim() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.method=basic",
+            "camunda.security.authentication.oidc.groups-claim=groups")
+        .run(context -> assertThat(context).hasBean("camundaGroupsBean"));
+  }
+
   @Configuration
   static class ConditionalBeansConfiguration {
 
