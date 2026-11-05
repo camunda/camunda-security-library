@@ -7,6 +7,7 @@ The CSL is a multi-module Maven library. Modules will be added as implementation
 - `api/` — Public, host-facing surface: model records adopters consume (`api/model/`), context interfaces hosts implement (`api/context/`), and configuration records bound by Spring in the starter (`api/model/config/`). No dependencies on `core/`.
 - `core/` — Framework-free domain logic and port interfaces. For new code, contracts live under `port/in/` and `port/out/`. Depends on `api/` so port signatures can speak the public model types directly. Zero Spring or zeebe-protocol dependencies (enforced by `DomainArchTest`).
 - `spring-boot-starter/` — Spring configuration classes for filter chains, authentication beans, and related infrastructure. **No Spring Boot auto-configuration is registered by CSL** (see [ADR-0003](../../docs/adr/0003-no-spring-boot-auto-configuration.md)): there is no `AutoConfiguration.imports` file. Hosts opt in either by `@Import`ing individual configuration classes, or by activating the opt-in umbrella `CamundaSecurityAutoConfiguration` via `@ImportAutoConfiguration` / their own `AutoConfiguration.imports`. Every library-supplied bean has `@ConditionalOnMissingBean` so hosts can override individual beans without touching the configuration class.
+- `client/` — Spring-free client that adds credentials (OIDC client credentials or Basic) to outgoing calls to CSL-protected services, behind `OutboundCredentialsProvider`. Java 8 (`--release 8`, see [client/README.md](../../client/README.md)); the token request uses the Nimbus OAuth SDK (`oauth2-oidc-sdk`); no dependency on any other CSL module (enforced by `ClientArchTest`). See [ADR-0042](../../docs/adr/0042-spring-free-client-for-csl-protected-services.md).
 
 ## Key Boundaries
 
@@ -193,6 +194,7 @@ Caller invokes a `*Port` method with domain types
   - **Data model** (plain, no Spring deps): `api/model/config/` — e.g., `AuthenticationConfiguration`, `OidcConfiguration`
   - **Spring binding logic**: `spring-boot-starter/` — @ConfigurationProperties binds `api/model/config/` classes
 - Configuration, default beans, conditional activation → `spring-boot-starter/` (under `io.camunda.security.spring.*`). Use plain `@Configuration`, not `@AutoConfiguration` — only the umbrella `CamundaSecurityAutoConfiguration` carries that annotation, and it is intentionally left out of `AutoConfiguration.imports`. Do not register library configuration classes in `AutoConfiguration.imports`; hosts opt in via `@Import` of individual classes or `@ImportAutoConfiguration(CamundaSecurityAutoConfiguration.class)`. When adding a new library configuration class, also add it to the umbrella's `@Import` list (and to `CamundaSecurityAutoConfigurationTest`).
+  - **Exception:** the `client` config types are immutable final classes (Java 8) outside `api/model/config/` ([ADR-0042](../../docs/adr/0042-spring-free-client-for-csl-protected-services.md)).
 
 ## What Not to Touch
 

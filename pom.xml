@@ -40,6 +40,7 @@
         <archunit.version>1.5.1</archunit.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <nimbus-jose-jwt.version>10.10</nimbus-jose-jwt.version>
+        <oauth2-oidc-sdk.version>11.38.2</oauth2-oidc-sdk.version>
         <plugin.version.enforcer>3.7.0</plugin.version.enforcer>
         <plugin.version.spotless>3.10.4</plugin.version.spotless>
         <plugin.version.google-java-format>1.35.0</plugin.version.google-java-format>
@@ -58,6 +59,7 @@
         <module>api</module>
         <module>validation</module>
         <module>spring-boot-starter</module>
+        <module>client</module>
     </modules>
 
     <distributionManagement>
@@ -105,7 +107,7 @@
             <!--
               Pinned because Spring Boot 4.0.x's BOM does not manage
               nimbus-jose-jwt directly; it is pulled in transitively via
-              spring-security-oauth2-jose → oauth2-oidc-sdk. CSL references
+              spring-security-oauth2-client → oauth2-oidc-sdk. CSL references
               Nimbus types directly from CompositeJWKSource and the composite
               JwtDecoder wiring, so the version is pinned here to keep the
               compile classpath aligned with the transitive runtime classpath.
@@ -114,6 +116,17 @@
                 <groupId>com.nimbusds</groupId>
                 <artifactId>nimbus-jose-jwt</artifactId>
                 <version>${nimbus-jose-jwt.version}</version>
+            </dependency>
+            <!--
+              Pinned because Spring Boot's BOM does not manage oauth2-oidc-sdk.
+              11.38.2 is the version that spring-security-oauth2-jose (the CSL
+              starter) and camunda/camunda resolve, so the client module builds
+              its OAuth token request with the same version as the hosts use.
+            -->
+            <dependency>
+                <groupId>com.nimbusds</groupId>
+                <artifactId>oauth2-oidc-sdk</artifactId>
+                <version>${oauth2-oidc-sdk.version}</version>
             </dependency>
             <!--
               Pinned because Spring Boot 4.0.x's BOM does not manage
