@@ -260,11 +260,17 @@ search index, RDBMS, in-memory store, etc.
 **Methods**
 
 ```java
-Set<String> mappingRuleIds(MembershipQuery query);
-Set<String> groupIds(MembershipQuery query);
-Set<String> roleIds(MembershipQuery query);
-Set<String> tenantIds(MembershipQuery query);
+List<String> mappingRuleIds(MembershipQuery query);
+List<String> groupIds(MembershipQuery query);
+List<String> roleIds(MembershipQuery query);
+List<String> tenantIds(MembershipQuery query);
+default List<ConditionalMembership> conditionalRoleMemberships(MembershipQuery query);
 ```
+
+`conditionalRoleMemberships` returns the role memberships that apply only to resources that meet
+their conditions (ADR-0041). It gets the same query as `roleIds`, and it must not repeat a global
+membership that `roleIds` returns. The default returns an empty list, so a host without conditional
+memberships needs no change.
 
 **CSL default:** none — the host must supply this bean.
 
