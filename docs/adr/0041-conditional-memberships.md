@@ -49,7 +49,7 @@ would read it as unrestricted. Until then, conditional memberships stay in the h
 
 ## Consequences
 
-- One model covers any restriction Hub needs, such as workspace or process application.
+- One model covers any restriction Hub needs, such as workspace or project.
 - Existing readers of memberships need no change: they see only global memberships.
 - Each host maps every attribute it supports; a missing mapping denies rather than grants.
 - A new kind of condition needs a CSL release.

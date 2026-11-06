@@ -85,7 +85,7 @@ class ConditionalMembershipTest {
     // when
     final var ownTasks =
         new MembershipCondition(
-            ResourceAttribute.ASSIGNEE, new Operand.Principal(PrincipalAttribute.USERNAME));
+            ResourceAttribute.PROJECT, new Operand.Principal(PrincipalAttribute.USERNAME));
     final var membership = new ConditionalMembership("reviewer", List.of(IN_PAYMENTS, ownTasks));
 
     // then

@@ -37,7 +37,7 @@ class CamundaAuthenticationTest {
               new MembershipCondition(
                   ResourceAttribute.WORKSPACE, new Operand.Values(Set.of("payments"))),
               new MembershipCondition(
-                  ResourceAttribute.ASSIGNEE, new Operand.Principal(PrincipalAttribute.USERNAME))));
+                  ResourceAttribute.PROJECT, new Operand.Principal(PrincipalAttribute.USERNAME))));
 
   @Test
   void shouldFailToConvertWithUsernameAndClientId() {

@@ -51,7 +51,7 @@ class CamundaAuthenticationJacksonTest {
                 new MembershipCondition(
                     ResourceAttribute.WORKSPACE, new Operand.Values(Set.of("payments"))),
                 new MembershipCondition(
-                    ResourceAttribute.ASSIGNEE,
+                    ResourceAttribute.PROJECT,
                     new Operand.Principal(PrincipalAttribute.USERNAME))));
     final var authentication =
         CamundaAuthentication.of(

@@ -14,10 +14,9 @@ package io.camunda.security.api.model.authz;
 public enum ResourceAttribute {
   /** The ID of the workspace a resource belongs to, or of the workspace itself. */
   WORKSPACE,
-  /** The user a user task is assigned to. */
-  ASSIGNEE,
-  /** The users that are candidates for a user task. */
-  CANDIDATE_USERS,
-  /** The groups that are candidates for a user task. */
-  CANDIDATE_GROUPS
+  /**
+   * The ID of the project a resource belongs to, or of the project itself. A project was called a
+   * process application before Camunda 8.10.
+   */
+  PROJECT
 }
