@@ -97,7 +97,7 @@ Hardened production deployments should register their own `WebSessionAttributeCo
 
 Both kinds of converter must also read the conditional role memberships that `CamundaAuthentication` holds (ADR-0041). A session that holds one fails to load otherwise:
 
-- **`ObjectInputFilter` allowlist:** allow `ConditionalMembership`, `MembershipCondition`, `ResourceAttribute` and `Operand$Equals`, all in `io.camunda.security.api.model.authz`. Add each new kind of operand when a CSL release adds it.
+- **`ObjectInputFilter` allowlist:** allow `ConditionalMembership`, `MembershipCondition`, `ResourceAttribute` and `Operand$Equals`, all in `io.camunda.security.api.model.authz`, and `java.lang.Enum`. Java serialization checks `java.lang.Enum` as the superclass of `ResourceAttribute`, so the filter rejects the session without it. Add each new kind of operand when a CSL release adds it.
 - **JSON converter:** register a deserializer for `Operand`, because it is an interface without Jackson annotations. `CamundaAuthenticationJacksonTest` in the starter shows one.
 
 A JSON session stored before conditional memberships existed still loads, with no conditional memberships; the same test covers this.
