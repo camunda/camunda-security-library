@@ -9,44 +9,35 @@ package io.camunda.security.api.model.authz;
 
 import java.io.Serializable;
 import java.util.Objects;
-import java.util.Set;
 
 /**
- * The values a {@link MembershipCondition} compares a resource attribute with: fixed values, or
- * values taken from the caller when the condition is evaluated.
+ * What a {@link MembershipCondition} compares a resource attribute with.
+ *
+ * <p>The interface is sealed so that new kinds of operand can be added later, such as a set of
+ * values. A host that can't evaluate an operand denies (ADR-0041).
  *
  * <p>Like the other model types, {@code Operand} has no Jackson annotations. A host that stores a
  * {@code CamundaAuthentication} as JSON must register a deserializer for {@code Operand}, or
  * reading it back fails. {@code CamundaAuthenticationJacksonTest} in the starter shows one.
  */
-public sealed interface Operand extends Serializable permits Operand.Values, Operand.Principal {
+public sealed interface Operand extends Serializable permits Operand.Equals {
 
   /**
-   * Fixed values.
+   * One value that the resource attribute must equal.
    *
-   * @param values the values; at least one, none of them {@code null}
+   * <p>The comparison is literal. In particular, {@code *} is not a wildcard: a membership that
+   * applies to every resource is a global role membership, not a conditional one (ADR-0041).
+   *
+   * @param value the value; not blank
    */
-  record Values(Set<String> values) implements Operand {
+  record Equals(String value) implements Operand {
 
-    public Values {
-      Objects.requireNonNull(values, "values");
-      if (values.isEmpty()) {
+    public Equals {
+      Objects.requireNonNull(value, "value");
+      if (value.isBlank()) {
         throw new IllegalArgumentException(
-            "An operand needs at least one value; a condition without values can never be met.");
+            "An operand needs a value; a blank value can never be met.");
       }
-      values = Set.copyOf(values);
-    }
-  }
-
-  /**
-   * The values of one attribute of the caller.
-   *
-   * @param attribute the attribute of the caller that provides the values
-   */
-  record Principal(PrincipalAttribute attribute) implements Operand {
-
-    public Principal {
-      Objects.requireNonNull(attribute, "attribute");
     }
   }
 }

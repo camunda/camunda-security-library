@@ -95,6 +95,13 @@ The default `SpringBasedWebSessionAttributeConverter` uses Java native serializa
 
 Hardened production deployments should register their own `WebSessionAttributeConverter` — for example a JSON converter with explicit DTOs, or a `DeserializingConverter` configured with an `ObjectInputFilter` allowlist. See [ADR-0009 §Risks and follow-ups](../adr/0009-session-store-port-and-web-session-ownership.md#risks-and-follow-ups) for the threat-model discussion.
 
+Both kinds of converter must also read the conditional role memberships that `CamundaAuthentication` holds (ADR-0041). A session that holds one fails to load otherwise:
+
+- **`ObjectInputFilter` allowlist:** allow `ConditionalMembership`, `MembershipCondition`, `ResourceAttribute` and `Operand$Equals`, all in `io.camunda.security.api.model.authz`. Add each new kind of operand when a CSL release adds it.
+- **JSON converter:** register a deserializer for `Operand`, because it is an interface without Jackson annotations. `CamundaAuthenticationJacksonTest` in the starter shows one.
+
+A JSON session stored before conditional memberships existed still loads, with no conditional memberships; the same test covers this.
+
 ## Property bridge for legacy keys
 
 The canonical activation property is `camunda.security.session.persistent.enabled`. Hosts that ship from legacy OC builds may still see one of:

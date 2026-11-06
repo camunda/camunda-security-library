@@ -12,13 +12,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class ConditionalMembershipTest {
 
   private static final MembershipCondition IN_PAYMENTS =
-      new MembershipCondition(ResourceAttribute.WORKSPACE, new Operand.Values(Set.of("payments")));
+      new MembershipCondition(ResourceAttribute.WORKSPACE_ID, new Operand.Equals("payments"));
 
   @Test
   void shouldKeepIdAndConditions() {
@@ -81,14 +80,13 @@ class ConditionalMembershipTest {
   }
 
   @Test
-  void shouldAcceptAPrincipalOperand() {
+  void shouldKeepConditionsOnDifferentAttributes() {
     // when
-    final var ownTasks =
-        new MembershipCondition(
-            ResourceAttribute.PROJECT, new Operand.Principal(PrincipalAttribute.USERNAME));
-    final var membership = new ConditionalMembership("reviewer", List.of(IN_PAYMENTS, ownTasks));
+    final var inInvoicing =
+        new MembershipCondition(ResourceAttribute.PROJECT_ID, new Operand.Equals("invoicing"));
+    final var membership = new ConditionalMembership("reviewer", List.of(IN_PAYMENTS, inInvoicing));
 
     // then
-    assertThat(membership.conditions()).containsExactly(IN_PAYMENTS, ownTasks);
+    assertThat(membership.conditions()).containsExactly(IN_PAYMENTS, inInvoicing);
   }
 }

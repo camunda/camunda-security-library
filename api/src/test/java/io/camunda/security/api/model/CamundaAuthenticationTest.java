@@ -14,7 +14,6 @@ import static org.assertj.core.api.AssertionsForClassTypes.assertThatExceptionOf
 import io.camunda.security.api.model.authz.ConditionalMembership;
 import io.camunda.security.api.model.authz.MembershipCondition;
 import io.camunda.security.api.model.authz.Operand;
-import io.camunda.security.api.model.authz.PrincipalAttribute;
 import io.camunda.security.api.model.authz.ResourceAttribute;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -24,20 +23,19 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class CamundaAuthenticationTest {
 
-  private static final ConditionalMembership REVIEWER_IN_PAYMENTS_ON_OWN_TASKS =
+  private static final ConditionalMembership REVIEWER_IN_PAYMENTS_INVOICING =
       new ConditionalMembership(
           "reviewer",
           List.of(
               new MembershipCondition(
-                  ResourceAttribute.WORKSPACE, new Operand.Values(Set.of("payments"))),
+                  ResourceAttribute.WORKSPACE_ID, new Operand.Equals("payments")),
               new MembershipCondition(
-                  ResourceAttribute.PROJECT, new Operand.Principal(PrincipalAttribute.USERNAME))));
+                  ResourceAttribute.PROJECT_ID, new Operand.Equals("invoicing"))));
 
   @Test
   void shouldFailToConvertWithUsernameAndClientId() {
@@ -390,12 +388,12 @@ class CamundaAuthenticationTest {
             b ->
                 b.user("demo-user")
                     .role("viewer")
-                    .conditionalRoleMemberships(List.of(REVIEWER_IN_PAYMENTS_ON_OWN_TASKS)));
+                    .conditionalRoleMemberships(List.of(REVIEWER_IN_PAYMENTS_INVOICING)));
 
     // then
     assertThat(authentication.authenticatedRoleIds()).containsExactly("viewer");
     assertThat(authentication.conditionalRoleMemberships())
-        .containsExactly(REVIEWER_IN_PAYMENTS_ON_OWN_TASKS);
+        .containsExactly(REVIEWER_IN_PAYMENTS_INVOICING);
   }
 
   @Test
@@ -409,7 +407,7 @@ class CamundaAuthenticationTest {
                     .conditionalRoleMembershipsSupplier(
                         () -> {
                           lookups.incrementAndGet();
-                          return List.of(REVIEWER_IN_PAYMENTS_ON_OWN_TASKS);
+                          return List.of(REVIEWER_IN_PAYMENTS_INVOICING);
                         }));
     assertThat(lookups.get()).isZero();
 
@@ -419,7 +417,7 @@ class CamundaAuthenticationTest {
 
     // then
     assertThat(authentication.conditionalRoleMemberships())
-        .containsExactly(REVIEWER_IN_PAYMENTS_ON_OWN_TASKS);
+        .containsExactly(REVIEWER_IN_PAYMENTS_INVOICING);
     assertThat(lookups.get()).isEqualTo(1);
   }
 
@@ -430,7 +428,7 @@ class CamundaAuthenticationTest {
                 CamundaAuthentication.of(
                     b ->
                         b.user("demo-user")
-                            .conditionalRoleMemberships(List.of(REVIEWER_IN_PAYMENTS_ON_OWN_TASKS))
+                            .conditionalRoleMemberships(List.of(REVIEWER_IN_PAYMENTS_INVOICING))
                             .conditionalRoleMembershipsSupplier(List::of)))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("conditionalRoleMemberships");
@@ -445,7 +443,7 @@ class CamundaAuthenticationTest {
                 b.user("demo-user")
                     .role("viewer")
                     .conditionalRoleMembershipsSupplier(
-                        () -> List.of(REVIEWER_IN_PAYMENTS_ON_OWN_TASKS)));
+                        () -> List.of(REVIEWER_IN_PAYMENTS_INVOICING)));
 
     // when
     final var bytes = new ByteArrayOutputStream();
@@ -461,6 +459,6 @@ class CamundaAuthenticationTest {
     assertThat(restored).isEqualTo(authentication);
     assertThat(restored.authenticatedRoleIds()).containsExactly("viewer");
     assertThat(restored.conditionalRoleMemberships())
-        .containsExactly(REVIEWER_IN_PAYMENTS_ON_OWN_TASKS);
+        .containsExactly(REVIEWER_IN_PAYMENTS_INVOICING);
   }
 }

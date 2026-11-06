@@ -10,72 +10,53 @@ package io.camunda.security.api.model.authz;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.util.HashSet;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class MembershipConditionTest {
 
   @Test
   void shouldKeepAttributeAndOperand() {
     // given
-    final var operand = new Operand.Values(Set.of("payments"));
+    final var operand = new Operand.Equals("payments");
 
     // when
-    final var condition = new MembershipCondition(ResourceAttribute.WORKSPACE, operand);
+    final var condition = new MembershipCondition(ResourceAttribute.WORKSPACE_ID, operand);
 
     // then
-    assertThat(condition.attribute()).isEqualTo(ResourceAttribute.WORKSPACE);
+    assertThat(condition.attribute()).isEqualTo(ResourceAttribute.WORKSPACE_ID);
     assertThat(condition.operand()).isEqualTo(operand);
   }
 
   @Test
   void shouldRejectNullAttribute() {
-    assertThatThrownBy(() -> new MembershipCondition(null, new Operand.Values(Set.of("payments"))))
+    assertThatThrownBy(() -> new MembershipCondition(null, new Operand.Equals("payments")))
         .isInstanceOf(NullPointerException.class);
   }
 
   @Test
   void shouldRejectNullOperand() {
-    assertThatThrownBy(() -> new MembershipCondition(ResourceAttribute.WORKSPACE, null))
+    assertThatThrownBy(() -> new MembershipCondition(ResourceAttribute.WORKSPACE_ID, null))
         .isInstanceOf(NullPointerException.class);
   }
 
   @Test
-  void shouldCopyValues() {
-    // given
-    final var values = new HashSet<>(Set.of("payments"));
-    final var operand = new Operand.Values(values);
-
-    // when
-    values.add("lending");
-
-    // then
-    assertThat(operand.values()).containsExactly("payments");
+  void shouldRejectNullValue() {
+    assertThatThrownBy(() -> new Operand.Equals(null)).isInstanceOf(NullPointerException.class);
   }
 
-  @Test
-  void shouldRejectNoValues() {
-    // a condition without values can never be met
-    assertThatThrownBy(() -> new Operand.Values(Set.of()))
+  @ParameterizedTest
+  @ValueSource(strings = {"", " "})
+  void shouldRejectBlankValue(final String value) {
+    // a blank value can never be met
+    assertThatThrownBy(() -> new Operand.Equals(value))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
-  void shouldRejectNullValues() {
-    assertThatThrownBy(() -> new Operand.Values(null)).isInstanceOf(NullPointerException.class);
-  }
-
-  @Test
-  void shouldRejectANullValue() {
-    final var values = new HashSet<String>();
-    values.add(null);
-
-    assertThatThrownBy(() -> new Operand.Values(values)).isInstanceOf(NullPointerException.class);
-  }
-
-  @Test
-  void shouldRejectNullPrincipalAttribute() {
-    assertThatThrownBy(() -> new Operand.Principal(null)).isInstanceOf(NullPointerException.class);
+  void shouldKeepAWildcardAsALiteralValue() {
+    // "*" is not a wildcard; a membership on every resource is a global role membership
+    assertThat(new Operand.Equals("*").value()).isEqualTo("*");
   }
 }

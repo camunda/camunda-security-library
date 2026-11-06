@@ -24,7 +24,6 @@ import io.camunda.security.core.port.out.MembershipQuery;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
@@ -230,7 +229,7 @@ class LazyUsernamePasswordAuthenticationTokenConverterTest {
             "reviewer",
             List.of(
                 new MembershipCondition(
-                    ResourceAttribute.WORKSPACE, new Operand.Values(Set.of("payments")))));
+                    ResourceAttribute.WORKSPACE_ID, new Operand.Equals("payments"))));
     when(membershipPort.groupIds(any())).thenReturn(List.of("g1"));
     when(membershipPort.roleIds(any())).thenReturn(List.of("viewer"));
     final var query = new AtomicReference<MembershipQuery>();

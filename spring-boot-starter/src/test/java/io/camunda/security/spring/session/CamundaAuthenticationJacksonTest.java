@@ -20,17 +20,15 @@ import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.authz.ConditionalMembership;
 import io.camunda.security.api.model.authz.MembershipCondition;
 import io.camunda.security.api.model.authz.Operand;
-import io.camunda.security.api.model.authz.PrincipalAttribute;
 import io.camunda.security.api.model.authz.ResourceAttribute;
 import java.io.IOException;
 import java.util.List;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
  * A host that stores {@link CamundaAuthentication} as JSON, for example in a web session or a batch
  * operation, must be able to read conditional memberships back. The API types carry no Jackson
- * annotations, so the host tells Jackson which {@link Operand} variant a JSON object is; this test
+ * annotations, so the host tells Jackson which {@link Operand} type a JSON object is; this test
  * registers the deserializer such a host needs.
  */
 class CamundaAuthenticationJacksonTest {
@@ -42,24 +40,23 @@ class CamundaAuthenticationJacksonTest {
           .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
   @Test
-  void shouldRoundTripConditionalMembershipsWithBothOperands() throws Exception {
+  void shouldRoundTripConditionalMemberships() throws Exception {
     // given
-    final var reviewerInPaymentsOnOwnTasks =
+    final var reviewerInPaymentsInvoicing =
         new ConditionalMembership(
             "reviewer",
             List.of(
                 new MembershipCondition(
-                    ResourceAttribute.WORKSPACE, new Operand.Values(Set.of("payments"))),
+                    ResourceAttribute.WORKSPACE_ID, new Operand.Equals("payments")),
                 new MembershipCondition(
-                    ResourceAttribute.PROJECT,
-                    new Operand.Principal(PrincipalAttribute.USERNAME))));
+                    ResourceAttribute.PROJECT_ID, new Operand.Equals("invoicing"))));
     final var authentication =
         CamundaAuthentication.of(
             b ->
                 b.user("demo-user")
                     .role("viewer")
                     .conditionalRoleMembershipsSupplier(
-                        () -> List.of(reviewerInPaymentsOnOwnTasks)));
+                        () -> List.of(reviewerInPaymentsInvoicing)));
 
     // when
     final var json = objectMapper.writeValueAsString(authentication);
@@ -68,7 +65,7 @@ class CamundaAuthenticationJacksonTest {
     // then
     assertThat(restored).isEqualTo(authentication);
     assertThat(restored.authenticatedRoleIds()).containsExactly("viewer");
-    assertThat(restored.conditionalRoleMemberships()).containsExactly(reviewerInPaymentsOnOwnTasks);
+    assertThat(restored.conditionalRoleMemberships()).containsExactly(reviewerInPaymentsInvoicing);
   }
 
   @Test
@@ -90,8 +87,8 @@ class CamundaAuthenticationJacksonTest {
   }
 
   /**
-   * Tells the variants apart by their properties: exactly one of {@code values} or {@code
-   * attribute}. Any other shape fails, so a new variant can't be read as an existing one.
+   * Reads {@link Operand.Equals}, the only kind of operand so far. Any other shape fails, so a
+   * later kind of operand can't be read as {@code Equals}.
    */
   private static final class OperandDeserializer extends StdDeserializer<Operand> {
 
@@ -103,11 +100,10 @@ class CamundaAuthenticationJacksonTest {
     public Operand deserialize(final JsonParser parser, final DeserializationContext context)
         throws IOException {
       final JsonNode node = parser.readValueAsTree();
-      if (node.has("values") == node.has("attribute")) {
+      if (node.size() != 1 || !node.has("value")) {
         throw context.weirdStringException(node.toString(), Operand.class, "Unknown operand shape");
       }
-      final var type = node.has("values") ? Operand.Values.class : Operand.Principal.class;
-      return parser.getCodec().treeToValue(node, type);
+      return parser.getCodec().treeToValue(node, Operand.Equals.class);
     }
   }
 }

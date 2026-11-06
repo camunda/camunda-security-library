@@ -11,11 +11,11 @@ import java.io.Serializable;
 import java.util.Objects;
 
 /**
- * Requires an attribute of the resource being accessed to share at least one value with an operand.
- * A resource that has no value for the attribute doesn't meet the condition (ADR-0041).
+ * Requires an attribute of the resource being accessed to match an operand. A resource that has no
+ * value for the attribute doesn't meet the condition (ADR-0041).
  *
  * @param attribute the attribute of the resource
- * @param operand the values to compare with
+ * @param operand what to compare the attribute with
  */
 public record MembershipCondition(ResourceAttribute attribute, Operand operand)
     implements Serializable {
