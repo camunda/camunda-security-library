@@ -7,6 +7,7 @@
  */
 package io.camunda.security.core.port.out;
 
+import io.camunda.security.api.model.authz.ConditionalMembership;
 import java.util.List;
 
 /**
@@ -23,6 +24,8 @@ import java.util.List;
  *   <li>{@link #groupIds(MembershipQuery)} additionally receives the resolved mapping-rule IDs.
  *   <li>{@link #roleIds(MembershipQuery)} additionally receives the resolved group IDs.
  *   <li>{@link #tenantIds(MembershipQuery)} additionally receives the resolved role IDs.
+ *   <li>{@link #conditionalRoleMemberships(MembershipQuery)} receives the same query as {@link
+ *       #roleIds(MembershipQuery)}.
  * </ul>
  *
  * <p>The resolved-IDs fields on the query may hold lazy lists that materialise on first iteration;
@@ -37,6 +40,15 @@ public interface MembershipPort {
   List<String> roleIds(MembershipQuery query);
 
   List<String> tenantIds(MembershipQuery query);
+
+  /**
+   * Returns the principal's role memberships that apply only to resources meeting their conditions
+   * (ADR-0041). They come in addition to {@link #roleIds(MembershipQuery)} and must not repeat a
+   * global membership. Hosts without conditional memberships keep the default, which returns none.
+   */
+  default List<ConditionalMembership> conditionalRoleMemberships(final MembershipQuery query) {
+    return List.of();
+  }
 
   /** Identity type of the authenticated principal. */
   enum PrincipalType {
