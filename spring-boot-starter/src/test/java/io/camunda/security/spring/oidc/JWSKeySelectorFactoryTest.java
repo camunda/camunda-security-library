@@ -51,7 +51,7 @@ class JWSKeySelectorFactoryTest {
   @Test
   void shouldExposeTheDocumentedDefaultTimeoutsAndCacheBounds() {
     // Values are asserted explicitly (not just referenced via the production constants) so this
-    // test fails if a future edit silently changes the documented bound in ADR-0032 — see that
+    // test fails if a future edit silently changes the documented bound in ADR-0042 — see that
     // ADR's "Decision" section for why each number was chosen.
     final var factory = new JWSKeySelectorFactory();
 
@@ -164,7 +164,7 @@ class JWSKeySelectorFactoryTest {
 
       // then, with nothing asking the selector for a key, the JWKS endpoint is still fetched
       // again, on the background schedule alone — this is the `scheduled = true` behaviour
-      // ADR-0032 turns on, and the reason a provider serving near-zero traffic no longer lets its
+      // ADR-0042 turns on, and the reason a provider serving near-zero traffic no longer lets its
       // cache lapse and block the next request that arrives
       await().atMost(AWAIT_TIMEOUT).until(() -> requestCount.get() > afterFirstCall);
     }
@@ -356,7 +356,7 @@ class JWSKeySelectorFactoryTest {
       // executors are non-daemon and nothing closes a JWKSource, so without this a host's JVM
       // would hang after its Spring context closed. Surefire cannot catch that — it exits its
       // fork explicitly — hence this direct assertion. The fetches themselves run on virtual
-      // threads, which are always daemon. See ADR-0032.
+      // threads, which are always daemon. See ADR-0042.
       await()
           .atMost(AWAIT_TIMEOUT)
           .untilAsserted(

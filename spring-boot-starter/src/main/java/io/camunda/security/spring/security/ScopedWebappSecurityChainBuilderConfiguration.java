@@ -14,11 +14,13 @@ import io.camunda.security.spring.cors.NoOpCorsConfigurationSource;
 import io.camunda.security.spring.filter.AdminUserCheckFilter;
 import io.camunda.security.spring.filter.WebAppAuthorizationCheckFilter;
 import io.camunda.security.spring.handler.AuthFailureHandler;
+import io.camunda.security.spring.oidc.AssertionJwkProvider;
 import io.camunda.security.spring.oidc.FailSoftOidcUserService;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
 import io.camunda.security.spring.scope.OAuth2AuthorizedClientManagerFactory;
 import io.camunda.security.spring.spi.OidcAuthenticationEntryPoint;
+import io.camunda.security.spring.spi.OidcLoginFailurePort;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
@@ -65,7 +67,9 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
       final ObjectProvider<HttpsRedirectCustomizer> httpsRedirectCustomizers,
       final ObjectProvider<OidcAuthenticationEntryPoint> oidcAuthenticationEntryPointProvider,
       final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers,
-      final ObjectProvider<OidcProviderConfigurationPort> oidcProviderConfigurationPortProvider) {
+      final ObjectProvider<OidcProviderConfigurationPort> oidcProviderConfigurationPortProvider,
+      final ObjectProvider<OidcLoginFailurePort> oidcLoginFailurePortProvider,
+      final ObjectProvider<AssertionJwkProvider> assertionJwkProviderProvider) {
     return new ScopedWebappSecurityChainBuilder(
         authFailureHandler,
         properties,
@@ -82,7 +86,9 @@ public class ScopedWebappSecurityChainBuilderConfiguration {
         httpsRedirectCustomizers,
         oidcAuthenticationEntryPointProvider,
         securityHeadersCustomizers,
-        oidcProviderConfigurationPortProvider);
+        oidcProviderConfigurationPortProvider,
+        oidcLoginFailurePortProvider,
+        assertionJwkProviderProvider);
   }
 
   // Also declared in ScopedOidcInfrastructureConfiguration; provided here too so this configuration

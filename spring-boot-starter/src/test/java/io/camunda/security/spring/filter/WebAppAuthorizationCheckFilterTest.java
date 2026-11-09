@@ -17,12 +17,14 @@ import io.camunda.security.api.model.authz.PermissionType;
 import io.camunda.security.core.auth.RequiredAuthorization;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.spring.spi.WebAppAccessDeniedHandlerPort;
+import io.camunda.security.spring.spi.WebAppAuthorizationEnabledPort;
 import io.camunda.security.spring.spi.WebAppProviderPort;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -117,8 +119,9 @@ class WebAppAuthorizationCheckFilterTest {
   @Test
   void authorizationDisabledPassesThroughWithoutCheck() throws Exception {
     // With authorization globally disabled, an authenticated principal on a resolved web app whose
-    // check port would deny access must still pass through — no web-app resolution, no port call,
-    // no denial.
+    // check port would deny access must still pass through — no authentication or web-app
+    // resolution, no port call, no denial.
+    final var authenticationCalls = new AtomicInteger();
     final var webAppProvider = new RecordingWebAppProvider("operate");
     final var checkPort = new RecordingCheckPort(false);
     final var deniedHandler = new RecordingDeniedHandler();
@@ -128,16 +131,60 @@ class WebAppAuthorizationCheckFilterTest {
             webAppProvider,
             checkPort,
             deniedHandler,
-            () -> alice(),
+            () -> {
+              authenticationCalls.incrementAndGet();
+              return alice();
+            },
             DEFAULT_STATIC_RESOURCE_SUFFIXES);
 
     final var chain = new MockFilterChain();
     filter.doFilter(request("/operate/processes"), new MockHttpServletResponse(), chain);
 
     assertThat(chain.getRequest()).isNotNull();
+    assertThat(authenticationCalls).hasValue(0);
     assertThat(webAppProvider.callCount).isZero();
     assertThat(checkPort.callCount).isZero();
     assertThat(deniedHandler.callCount).isZero();
+  }
+
+  @Test
+  void authorizationEnablementIsResolvedForEachRequest() throws Exception {
+    final var filter =
+        filterAsking(
+            request -> request.getRequestURI().startsWith("/scope-on/"), "operate", alice());
+
+    assertThat(passesThrough(filter, "/scope-off/operate/processes")).isTrue();
+    assertThat(passesThrough(filter, "/scope-on/operate/processes")).isFalse();
+  }
+
+  @Test
+  void requestsSkippingTheCheckPassWithoutAskingAuthorizationEnabledPort() throws Exception {
+    final var enabledPort = new RecordingEnabledPort();
+    final var filter = filterAsking(enabledPort, "operate", alice());
+
+    assertThat(passesThrough(filter, "/operate/assets/main.js")).isTrue();
+    assertThat(passesThrough(filter, "/operate/forbidden")).isTrue();
+    assertThat(
+            passesThrough(
+                filterAsking(enabledPort, "operate", CamundaAuthentication.anonymous()),
+                "/operate/processes"))
+        .isTrue();
+    assertThat(passesThrough(filterAsking(enabledPort, null, alice()), "/some/random/path"))
+        .isTrue();
+    assertThat(enabledPort.callCount).isZero();
+  }
+
+  @Test
+  void failingAuthorizationEnabledPortLeavesTheDecisionToTheCheckPort() throws Exception {
+    final var filter =
+        filterAsking(
+            request -> {
+              throw new IllegalStateException("scope lookup failed");
+            },
+            "operate",
+            alice());
+
+    assertThat(passesThrough(filter, "/operate/processes")).isFalse();
   }
 
   @Test
@@ -225,6 +272,27 @@ class WebAppAuthorizationCheckFilterTest {
         DEFAULT_STATIC_RESOURCE_SUFFIXES);
   }
 
+  private static WebAppAuthorizationCheckFilter filterAsking(
+      final WebAppAuthorizationEnabledPort enabledPort,
+      final String webApp,
+      final CamundaAuthentication authentication) {
+    return new WebAppAuthorizationCheckFilter(
+        enabledPort,
+        new RecordingWebAppProvider(webApp),
+        new RecordingCheckPort(false),
+        new RecordingDeniedHandler(),
+        () -> authentication,
+        DEFAULT_STATIC_RESOURCE_SUFFIXES);
+  }
+
+  /** Returns whether the filter forwarded the request; it is denied otherwise. */
+  private static boolean passesThrough(
+      final WebAppAuthorizationCheckFilter filter, final String uri) throws Exception {
+    final var chain = new MockFilterChain();
+    filter.doFilter(request(uri), new MockHttpServletResponse(), chain);
+    return chain.getRequest() != null;
+  }
+
   private static MockHttpServletRequest request(final String uri) {
     final var request = new MockHttpServletRequest();
     request.setRequestURI(uri);
@@ -247,6 +315,16 @@ class WebAppAuthorizationCheckFilterTest {
     public Optional<String> webAppFor(final HttpServletRequest request) {
       callCount++;
       return Optional.ofNullable(webApp);
+    }
+  }
+
+  private static final class RecordingEnabledPort implements WebAppAuthorizationEnabledPort {
+    int callCount;
+
+    @Override
+    public boolean isAuthorizationEnabled(final HttpServletRequest request) {
+      callCount++;
+      return true;
     }
   }
 

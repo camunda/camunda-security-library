@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0032: Scheduled refresh-ahead JWKS caching and realistic HTTP timeouts
+# ADR-0042: Scheduled refresh-ahead JWKS caching and realistic HTTP timeouts
 
 **Deciders**: Ben Sheppard
 

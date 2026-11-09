@@ -20,6 +20,8 @@ import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -40,6 +42,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.web.firewall.RequestRejectedException;
 import org.springframework.security.web.firewall.StrictHttpFirewall;
 
@@ -270,6 +273,64 @@ class ScopedClientRegistrationFactoryTest {
   }
 
   @Test
+  void shouldCarryConfiguredRevocationEndpointInMetadata() {
+    // given a provider configured with explicit endpoints, including a revocation endpoint, as a
+    // deployment that does not use issuer discovery must do to get revocation at all (ADR-0036)
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("my-client")
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .authorizationUri("https://idp.example.com/auth")
+            .tokenUri("https://idp.example.com/token")
+            .jwkSetUri("https://idp.example.com/jwks")
+            .revocationEndpointUri("https://idp.example.com/revoke")
+            .build();
+
+    // when
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    // then RefreshTokenRevocationLogoutHandler finds it under the standard RFC 8414 metadata key
+    final var metadata = registrations.get(0).getProviderDetails().getConfigurationMetadata();
+    assertThat(metadata.get("revocation_endpoint")).isEqualTo("https://idp.example.com/revoke");
+  }
+
+  @Test
+  void shouldSuppressConfiguredRevocationEndpointWhenRevocationDisabled() {
+    // given a provider that configures a revocation endpoint and then opts out
+    final var oidc =
+        OidcConfiguration.builder()
+            .clientId("my-client")
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .authorizationUri("https://idp.example.com/auth")
+            .tokenUri("https://idp.example.com/token")
+            .jwkSetUri("https://idp.example.com/jwks")
+            .revocationEndpointUri("https://idp.example.com/revoke")
+            .revocationEnabled(false)
+            .build();
+
+    // when
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    // then the opt-out wins over the configured URI, as it does for post-logout-redirect-enabled
+    final var metadata = registrations.get(0).getProviderDetails().getConfigurationMetadata();
+    assertThat(metadata).doesNotContainKey("revocation_endpoint");
+  }
+
+  @Test
+  void shouldOmitRevocationEndpointFromMetadataWhenUnset() {
+    // given a provider that configures no revocation endpoint, as MS Entra deployments cannot
+    final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
+
+    // when
+    final var registrations = factory.createFromProviderMap(Map.of("myid", oidc));
+
+    // then the key is absent rather than present-and-empty, which is what the handler treats as
+    // "this provider cannot revoke"
+    final var metadata = registrations.get(0).getProviderDetails().getConfigurationMetadata();
+    assertThat(metadata).doesNotContainKey("revocation_endpoint");
+  }
+
+  @Test
   void shouldStashEmptyAudiencesEntryWhenAudiencesUnset() {
     // given a scoped provider with no audiences configured
     final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
@@ -283,6 +344,57 @@ class ScopedClientRegistrationFactoryTest {
     assertThat(metadata.get(TokenValidatorFactory.AUDIENCES_METADATA_KEY))
         .asInstanceOf(InstanceOfAssertFactories.collection(String.class))
         .isEmpty();
+  }
+
+  @Test
+  void shouldStashEmptyIssuerEntryWhenIssuerUnsetSoItNeverInheritsAnotherScopesIssuer() {
+    // given a scoped provider on explicit endpoints, with no issuer-uri
+    final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
+
+    // when
+    final var registration = factory.createFromProviderMap(Map.of("myid", oidc)).get(0);
+
+    // then the issuer key is present (authoritative by presence) but empty
+    assertThat(registration.getProviderDetails().getConfigurationMetadata())
+        .containsEntry(ClientRegistrationMetadata.ISSUER, "");
+    // and a validator built over a conflicting providers-map issuer for the same id ignores it
+    final var rootConfig = new OidcConfiguration();
+    rootConfig.setIssuerUri("https://root-issuer");
+    final var validator =
+        new TokenValidatorFactory(Map.of("myid", rootConfig), Duration.ofSeconds(60), List.of())
+            .createTokenValidator(registration);
+    final var now = Instant.now();
+    final var jwt =
+        new Jwt(
+            "t",
+            now,
+            now.plusSeconds(60),
+            Map.of("alg", "RS256"),
+            Map.of("sub", "alice", "iss", "https://scope-issuer"));
+    assertThat(validator.validate(jwt).hasErrors()).isFalse();
+  }
+
+  @Test
+  void shouldCarryTheLoginSettingsOfTheScopeInTheRegistration() {
+    // given two scopes that share a registration id with different login settings
+    final var withSettings = explicitEndpoints("my-client", "https://idp-a.example.com");
+    withSettings.setAdditionalJwkSetUris(List.of("https://idp-a.example.com/extra-jwks", " "));
+    withSettings.setPreferIdTokenClaims(true);
+    final var withoutSettings = explicitEndpoints("my-client", "https://idp-b.example.com");
+
+    // when
+    final var a = factory.createFromProviderMap(Map.of("myid", withSettings)).get(0);
+    final var b = factory.createFromProviderMap(Map.of("myid", withoutSettings)).get(0);
+
+    // then each registration carries its own values, and the empty ones are still present
+    assertThat(a.getProviderDetails().getConfigurationMetadata())
+        .containsEntry(
+            ClientRegistrationMetadata.ADDITIONAL_JWK_SET_URIS,
+            List.of("https://idp-a.example.com/extra-jwks"))
+        .containsEntry(ClientRegistrationMetadata.PREFER_ID_TOKEN_CLAIMS, true);
+    assertThat(b.getProviderDetails().getConfigurationMetadata())
+        .containsEntry(ClientRegistrationMetadata.ADDITIONAL_JWK_SET_URIS, List.of())
+        .containsEntry(ClientRegistrationMetadata.PREFER_ID_TOKEN_CLAIMS, false);
   }
 
   @Test

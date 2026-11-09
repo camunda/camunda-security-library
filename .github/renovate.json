@@ -13,6 +13,12 @@
   },
   "packageRules": [
     {
+      "description": "Hold Maven at 3.9.x: 3.10 credential origin scoping breaks the nexus-staging SNAPSHOT deploy (401). See #716.",
+      "matchManagers": ["maven-wrapper"],
+      "matchPackageNames": ["org.apache.maven:apache-maven"],
+      "allowedVersions": "<3.10"
+    },
+    {
       "description": "Exclude SNAPSHOT versions — Renovate sometimes proposes them as pre-releases.",
       "matchManagers": ["maven"],
       "allowedVersions": "!/-SNAPSHOT$/"

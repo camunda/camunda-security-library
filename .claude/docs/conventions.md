@@ -21,6 +21,7 @@ Hexagonal architecture naming (replaces traditional controller/service/repo nami
 
 ## Project-Specific Patterns
 
+- Documentation, ADRs, Javadoc prose, and PR descriptions use Simplified Technical English (STE) in Plain mode. STE is a controlled form of English from the ASD-STE100 standard. It uses short sentences, active voice, and one meaning for each word. See the Writing style section in [AGENTS.md](../../AGENTS.md).
 - For new core contracts, the hexagonal package structure is `domain/`, `port/in/`, `port/out/`
 - Inbound port interfaces live in `port/in/`; their implementations are named by responsibility, typically `*Service`
 - Outbound port interfaces live in `port/out/`; their implementations are adapters
@@ -47,5 +48,5 @@ Hexagonal architecture naming (replaces traditional controller/service/repo nami
 - Contract tests for APIs: Pact consumer-driven contracts
 - ArchUnit tests enforce hexagonal boundary rules (see `DomainArchTest`)
 - Configuration class tests: use `ApplicationContextRunner` to verify that explicitly importing a configuration class creates the expected beans and that `@ConditionalOnMissingBean` back-off works when the host registers its own bean
-- **No `Thread.sleep` in tests:** wait for asynchronous behaviour with Awaitility (`await().atMost(...).until(...)` / `untilAsserted(...)`), which continues as soon as the condition holds and names the unmet condition on failure. Where the test owns both sides, force the interleaving with a `CountDownLatch` instead (e.g. a fake endpoint that holds its response until released), or inject a controllable clock where the code accepts one. See [ADR-0033](../../docs/adr/0033-no-thread-sleep-in-tests-use-awaitility.md)
+- **No `Thread.sleep` in tests:** wait for asynchronous behaviour with Awaitility (`await().atMost(...).until(...)` / `untilAsserted(...)`), which continues as soon as the condition holds and names the unmet condition on failure. Where the test owns both sides, force the interleaving with a `CountDownLatch` instead (e.g. a fake endpoint that holds its response until released), or inject a controllable clock where the code accepts one. See [ADR-0043](../../docs/adr/0043-no-thread-sleep-in-tests-use-awaitility.md)
 - All new classes must have corresponding tests before committing

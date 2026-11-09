@@ -40,6 +40,7 @@ public final class LazyClientRegistrationRepository
   private final Map<String, OidcConfiguration> providers;
   private final String scopedRedirectUriPath;
   private final String scopeDescription;
+  private final ScopedClientRegistrationFactory.LoginRouteChecks loginRouteChecks;
   private final Map<String, ClientRegistration> resolved = new ConcurrentHashMap<>();
 
   public LazyClientRegistrationRepository(
@@ -61,20 +62,64 @@ public final class LazyClientRegistrationRepository
       final Map<String, OidcConfiguration> providers,
       final String scopedRedirectUriPath,
       final String scopeDescription) {
+    this(
+        factory,
+        providers,
+        scopedRedirectUriPath,
+        scopeDescription,
+        ScopedClientRegistrationFactory.LoginRouteChecks.ENFORCED);
+  }
+
+  private LazyClientRegistrationRepository(
+      final ScopedClientRegistrationFactory factory,
+      final Map<String, OidcConfiguration> providers,
+      final String scopedRedirectUriPath,
+      final String scopeDescription,
+      final ScopedClientRegistrationFactory.LoginRouteChecks loginRouteChecks) {
     this.factory = Objects.requireNonNull(factory, "factory must not be null");
     final var normalized =
         Collections.unmodifiableMap(
             new LinkedHashMap<>(Objects.requireNonNull(providers, "providers must not be null")));
     this.scopedRedirectUriPath = scopedRedirectUriPath;
     this.scopeDescription = scopeDescription;
+    this.loginRouteChecks = loginRouteChecks;
     // Validated before filtering: a blank registrationId is warn-only, not rejected, and that
     // warning must still fire for it. ScopedClientRegistrationFactory#withoutBlankRegistrationIds
     // then keeps the entry out of every reader below (iterator(), findByRegistrationId(),
     // registrationIds(), providers()) in this one place, rather than each one filtering it again.
-    factory.validateWithoutNetwork(normalized, scopedRedirectUriPath);
+    if (loginRouteChecks == ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED) {
+      factory.validateWithoutLoginRoutes(normalized);
+    } else {
+      factory.validateWithoutNetwork(normalized, scopedRedirectUriPath);
+    }
     this.providers =
         Collections.unmodifiableMap(
             ScopedClientRegistrationFactory.withoutBlankRegistrationIds(normalized));
+  }
+
+  /**
+   * A repository for a caller that derives no browser login route from the configuration — a
+   * bearer-only API chain, or the access-token refresh of an API chain
+   * (camunda-security-library#662). It validates and resolves with {@link
+   * ScopedClientRegistrationFactory.LoginRouteChecks#SKIPPED}, the same mode {@link
+   * ScopedJwtDecoderFactory} and {@link ScopedOidcClaimsProviderFactory} use, so login-only checks
+   * do not reject a configuration that no login route ever reads. In particular {@code
+   * user-info-required=true} together with {@code user-info-enabled=false} is inert for such a
+   * caller and must not fail its startup.
+   *
+   * @param scopeDescription the name a failure log gives to the scope this repository serves (for
+   *     example {@code basePath=/physical-tenants/t1}), or {@code null} for the unscoped text
+   */
+  public static LazyClientRegistrationRepository withoutLoginRoutes(
+      final ScopedClientRegistrationFactory factory,
+      final Map<String, OidcConfiguration> providers,
+      final String scopeDescription) {
+    return new LazyClientRegistrationRepository(
+        factory,
+        providers,
+        null,
+        scopeDescription,
+        ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED);
   }
 
   /** The configured registrationIds, in the order of the configuration. Resolves nothing. */
@@ -139,9 +184,7 @@ public final class LazyClientRegistrationRepository
             () ->
                 factory
                     .buildAll(
-                        Map.of(registrationId, config),
-                        scopedRedirectUriPath,
-                        ScopedClientRegistrationFactory.LoginRouteChecks.ENFORCED)
+                        Map.of(registrationId, config), scopedRedirectUriPath, loginRouteChecks)
                     .getFirst());
     final var winner = resolved.putIfAbsent(registrationId, registration);
     return winner != null ? winner : registration;

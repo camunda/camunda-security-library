@@ -31,15 +31,31 @@ public final class DeferredOidcClaimsProvider implements OidcClaimsProvider {
 
   private final Supplier<OidcClaimsProvider> delegate;
   private final String subject;
+  private final OidcClaimsProvider explicitEndpoints;
 
   /**
    * @param subject what the delegate resolves. A failure log names the subject.
    */
   public DeferredOidcClaimsProvider(
       final String subject, final Supplier<OidcClaimsProvider> delegate) {
+    this(subject, delegate, null);
+  }
+
+  /**
+   * @param subject what the delegate resolves. A failure log names the subject.
+   * @param explicitEndpoints augments a token from the UserInfo endpoint that its verifying
+   *     provider recorded, without the mapping the delegate builds; {@code null} to use the
+   *     delegate for those tokens too. A scoped token then does not depend on the global mapping,
+   *     whose build can fail on providers that have nothing to do with it.
+   */
+  public DeferredOidcClaimsProvider(
+      final String subject,
+      final Supplier<OidcClaimsProvider> delegate,
+      final OidcClaimsProvider explicitEndpoints) {
     this.subject = Objects.requireNonNull(subject, "subject must not be null");
     Objects.requireNonNull(delegate, "delegate must not be null");
     this.delegate = DeferredOidcResolution.memoizeOnSuccess(() -> build(delegate));
+    this.explicitEndpoints = explicitEndpoints;
   }
 
   @Override
@@ -49,6 +65,24 @@ public final class DeferredOidcClaimsProvider implements OidcClaimsProvider {
       return jwtClaims;
     }
     return DeferredOidcResolution.resolve(subject, delegate).claimsFor(jwtClaims, tokenValue);
+  }
+
+  @Override
+  public Map<String, Object> claimsFor(
+      final Map<String, Object> jwtClaims,
+      final String tokenValue,
+      final boolean userInfoEnabled,
+      final String userInfoUri) {
+    // A provider that disables UserInfo needs no delegate: building it reads the global
+    // configuration, which can fail on providers that have nothing to do with this token.
+    if (!userInfoEnabled || !CachingOidcClaimsProvider.canAugment(jwtClaims, tokenValue)) {
+      return jwtClaims;
+    }
+    final var provider =
+        explicitEndpoints != null
+            ? explicitEndpoints
+            : DeferredOidcResolution.resolve(subject, delegate);
+    return provider.claimsFor(jwtClaims, tokenValue, userInfoEnabled, userInfoUri);
   }
 
   /**

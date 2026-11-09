@@ -67,7 +67,7 @@ public class JWSKeySelectorFactory {
   /**
    * HTTP connect/read timeout for JWK Set retrieval, in milliseconds. Nimbus's 500ms default
    * ({@link JWKSourceBuilder#DEFAULT_HTTP_CONNECT_TIMEOUT}) is tight for a real IdP under ordinary
-   * load. See ADR-0032.
+   * load. See ADR-0042.
    */
   private static final int HTTP_CONNECT_TIMEOUT_MILLIS = 3_000;
 
@@ -78,7 +78,7 @@ public class JWSKeySelectorFactory {
 
   /**
    * Maximum time a cached JWK Set is trusted before a fresh fetch is forced: the staleness bound of
-   * ADR-0032. Nimbus's default ({@link JWKSourceBuilder#DEFAULT_CACHE_TIME_TO_LIVE}), made
+   * ADR-0042. Nimbus's default ({@link JWKSourceBuilder#DEFAULT_CACHE_TIME_TO_LIVE}), made
    * explicit.
    */
   private static final long CACHE_TIME_TO_LIVE_MILLIS = JWKSourceBuilder.DEFAULT_CACHE_TIME_TO_LIVE;
@@ -200,10 +200,10 @@ public class JWSKeySelectorFactory {
    * Creates a {@link JWKSource} for the given JWK Set URL.
    *
    * <p>Configures scheduled refresh-ahead caching (background refresh, independent of request
-   * timing — see ADR-0032) and an explicit, longer-than-Nimbus-default HTTP connect/read timeout,
+   * timing — see ADR-0042) and an explicit, longer-than-Nimbus-default HTTP connect/read timeout,
    * so that a slow or briefly unavailable JWKS endpoint does not block every concurrent decode
    * request at once. Rate limiting stays disabled; whether to enable it is a separate design
-   * question (see ADR-0032's "Alternatives Considered").
+   * question (see ADR-0042's "Alternatives Considered").
    *
    * <p>The refresh executors are supplied explicitly (and shared across all sources) rather than
    * left to Nimbus, whose own defaults are <em>non-daemon</em> single-thread pools per source that

@@ -15,12 +15,16 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
@@ -114,6 +118,43 @@ class IssuerAwareTokenValidatorTest {
     } finally {
       detachAppender(appender);
     }
+  }
+
+  /**
+   * Providers configured as https://idp/ and https://idp are one issuer, owned by the first
+   * declared. Its rules apply to tokens of either form, whichever form arrives first; the other's
+   * rules, for example stricter audiences, never apply in its place.
+   */
+  @ParameterizedTest
+  @CsvSource({"lenient, true", "strict, false"})
+  void shouldValidateBothFormsOfATwinIssuerWithTheFirstDeclaredProvidersRules(
+      final String firstDeclared, final boolean accepted) {
+    // given - both registrations resolved to the provider's issuer
+    final var lenient = registration("lenient", "https://idp");
+    final var strict = registration("strict", "https://idp");
+    final Map<String, OidcConfiguration> providers = new LinkedHashMap<>();
+    final var lenientConfig = OidcConfiguration.builder().issuerUri("https://idp/").build();
+    final var strictConfig = OidcConfiguration.builder().issuerUri("https://idp").build();
+    if ("lenient".equals(firstDeclared)) {
+      providers.put("lenient", lenientConfig);
+      providers.put("strict", strictConfig);
+    } else {
+      providers.put("strict", strictConfig);
+      providers.put("lenient", lenientConfig);
+    }
+    final var validator =
+        new IssuerAwareTokenValidator(
+            IssuerRegistrations.ofConfiguration(
+                providers, id -> "lenient".equals(id) ? lenient : strict),
+            new RegistrationScopedTokenValidatorFactory("lenient"));
+
+    // when - a token of the slash form comes first, then one of the provider's form
+    final var first = validator.validate(createJwtWithIssuer("https://idp/"));
+    final var second = validator.validate(createJwtWithIssuer("https://idp"));
+
+    // then - the owner's rules decide both
+    assertThat(first.hasErrors()).isNotEqualTo(accepted);
+    assertThat(second.hasErrors()).isNotEqualTo(accepted);
   }
 
   private static ClientRegistration registration(

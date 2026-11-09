@@ -19,6 +19,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.BadJwtException;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtException;
 
 /**
@@ -211,6 +212,57 @@ final class ScopedJwtDecoderFactoryTest {
     assertThatThrownBy(() -> decoderB.decode(tokenForAudA)).isInstanceOf(BadJwtException.class);
   }
 
+  /**
+   * Two scopes whose providers declare the same issuer with other claim settings: each scope's
+   * decoder tags the token with the claims of its own provider, so the token of one scope is never
+   * mapped with the claim settings of the other. The shared claims map of the converter is keyed by
+   * issuer only, and could not tell them apart.
+   */
+  @Test
+  void shouldTagATokenWithTheClaimsOfTheProviderOfItsOwnScope() throws Exception {
+    serverA = OidcTestServer.startRsa("shared-key");
+    final var providerA = serverA.oidcConfiguration("client-a");
+    providerA.setUsernameClaim("a_user");
+    final var providerB = serverA.oidcConfiguration("client-b");
+    providerB.setUsernameClaim("b_user");
+    final var scopeA = auth(Map.of("a", providerA));
+    final var scopeB = auth(Map.of("b", providerB));
+    final var token = serverA.sign(serverA.issuerUri());
+
+    final var fromA =
+        factoryFor(Map.of("a", providerA)).buildIssuerAwareDecoder(scopeA).decode(token);
+    final var fromB =
+        factoryFor(Map.of("b", providerB)).buildIssuerAwareDecoder(scopeB).decode(token);
+
+    assertThat(usernameClaimOf(fromA)).isEqualTo("a_user");
+    assertThat(usernameClaimOf(fromB)).isEqualTo("b_user");
+  }
+
+  /** A named provider of a scope that sets no claim inherits those of the scope's default slot. */
+  @Test
+  void shouldTagATokenWithTheClaimsANamedProviderInheritsFromItsScope() throws Exception {
+    serverA = OidcTestServer.startRsa("key-a");
+    serverB = OidcTestServer.startRsa("key-b");
+    final var authentication = twoProviderAuth(serverA, serverB);
+    authentication.getOidc().setUsernameClaim("email");
+    authentication.getProviders().getOidc().get("provider-b").setUsernameClaim("upn");
+    final var factory =
+        factoryFor(
+            Map.of(
+                "provider-a", serverA.oidcConfiguration("client-a"),
+                "provider-b", serverB.oidcConfiguration("client-b")));
+    final var decoder = factory.buildIssuerAwareDecoder(authentication);
+
+    assertThat(usernameClaimOf(decoder.decode(serverA.sign(serverA.issuerUri()))))
+        .isEqualTo("email");
+    assertThat(usernameClaimOf(decoder.decode(serverB.sign(serverB.issuerUri())))).isEqualTo("upn");
+  }
+
+  private static String usernameClaimOf(final Jwt jwt) {
+    assertThat(jwt).isInstanceOf(VerifiedJwt.class);
+    return ((VerifiedJwt) jwt).principalClaims().orElseThrow().usernameClaim();
+  }
+
   // ---------------------------------------------------------------------------
   // Empty providers
   // ---------------------------------------------------------------------------
@@ -274,6 +326,69 @@ final class ScopedJwtDecoderFactoryTest {
     assertThatThrownBy(() -> decoder.decode(tokenUnknownIssuer))
         .isInstanceOf(BadJwtException.class)
         .hasMessageContaining("unregistered-idp");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Configured issuer and the provider's issuer differ by a trailing slash (#61896)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Entra ID's discovery document declares {@code .../v2.0}, and Okta's has no trailing slash, but
+   * operators often configure {@code issuer-uri} with one. Discovery used to fail on the mismatch,
+   * which stopped the gateway from starting. The registration now takes the provider's form, which
+   * is also what its tokens carry.
+   */
+  @Test
+  void shouldDecodeATokenWhenTheConfiguredIssuerHasATrailingSlashTheProviderDoesNot()
+      throws Exception {
+    // given
+    serverA = OidcTestServer.startRsa("key-a");
+    final var providers =
+        Map.of("provider-a", discoveredProvider("client-a", serverA.issuerUri() + "/"));
+    final var decoder = factoryFor(providers).buildIssuerAwareDecoder(auth(providers));
+
+    // when the provider's token carries its own form of the issuer
+    final var jwt = decoder.decode(serverA.sign(serverA.issuerUri()));
+
+    // then
+    assertThat(jwt.getSubject()).isEqualTo("alice");
+    assertThat(jwt.getIssuer().toString()).isEqualTo(serverA.issuerUri());
+  }
+
+  /** With several providers, the token reaches its provider through its iss claim. */
+  @Test
+  void shouldRouteATokenToTheProviderWhoseConfiguredIssuerHasAnExtraTrailingSlash()
+      throws Exception {
+    // given
+    serverA = OidcTestServer.startRsa("key-a");
+    serverB = OidcTestServer.startRsa("key-b");
+    final var providers =
+        Map.of(
+            "provider-a", discoveredProvider("client-a", serverA.issuerUri() + "/"),
+            "provider-b", discoveredProvider(serverB, "client-b"));
+    final var decoder = factoryFor(providers).buildIssuerAwareDecoder(auth(providers));
+
+    // when / then
+    assertThat(decoder.decode(serverA.sign(serverA.issuerUri())).getSubject()).isEqualTo("alice");
+    assertThat(decoder.decode(serverB.sign(serverB.issuerUri())).getSubject()).isEqualTo("alice");
+  }
+
+  /**
+   * Tolerating the slash in discovery doesn't loosen token validation: the registration's issuer is
+   * the provider's form, and a token claiming the configured form is still rejected.
+   */
+  @Test
+  void shouldStillRejectATokenWhoseIssuerIsTheConfiguredFormRatherThanTheProvidersForm()
+      throws Exception {
+    // given
+    serverA = OidcTestServer.startRsa("key-a");
+    final var providers =
+        Map.of("provider-a", discoveredProvider("client-a", serverA.issuerUri() + "/"));
+    final var decoder = factoryFor(providers).buildIssuerAwareDecoder(auth(providers));
+
+    // when / then
+    final var token = serverA.sign(serverA.issuerUri() + "/");
+    assertThatThrownBy(() -> decoder.decode(token)).isInstanceOf(BadJwtException.class);
   }
 
   // ---------------------------------------------------------------------------
@@ -355,10 +470,16 @@ final class ScopedJwtDecoderFactoryTest {
    */
   private static OidcConfiguration discoveredProvider(
       final OidcTestServer server, final String clientId) {
+    return discoveredProvider(clientId, server.issuerUri());
+  }
+
+  /** As {@link #discoveredProvider(OidcTestServer, String)}, with the issuer-uri as configured. */
+  private static OidcConfiguration discoveredProvider(
+      final String clientId, final String configuredIssuerUri) {
     return OidcConfiguration.builder()
         .clientId(clientId)
         .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
-        .issuerUri(server.issuerUri())
+        .issuerUri(configuredIssuerUri)
         .build();
   }
 

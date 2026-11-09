@@ -86,14 +86,19 @@ public class OidcWebappClientBeansConfiguration {
    *
    * <p>The issuer requirement needs no network access, so the method checks it here, on the
    * providers the decoder routes by, and a configuration error still stops the start.
+   *
+   * <p>Each token comes back as a {@link VerifiedJwt} with the principal claims of the provider
+   * that verified it, see {@link VerifiedJwtDecoder}.
    */
   @Bean
   @ConditionalOnMissingBean
   public JwtDecoder jwtDecoder(
       final ClientRegistrationRepository clientRegistrationRepository,
       final OidcProviderConfigurationPort oidcProviderConfigurationPort,
-      final OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory) {
+      final OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory,
+      final CamundaSecurityLibraryProperties properties) {
     requireIterable(clientRegistrationRepository);
+    final var defaultSlot = properties.getAuthentication().getOidc();
     if (clientRegistrationRepository instanceof final LazyClientRegistrationRepository lazy) {
       final var providers = lazy.providers();
       oidcAccessTokenDecoderFactory.validateProvidersHaveIssuer(providers);
@@ -102,17 +107,27 @@ public class OidcWebappClientBeansConfiguration {
               DeferredOidcResolution.resolve(
                   decoderSubject(lazy),
                   () ->
-                      oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
-                          providers, lazy::findByRegistrationId)));
+                      VerifiedJwtDecoder.withClaims(
+                          oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
+                              providers, lazy::findByRegistrationId),
+                          OidcAccessTokenDecoderFactory.registrationIdByIssuer(providers),
+                          providers,
+                          defaultSlot)));
     }
     final var providers = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
     return new DeferredJwtDecoder(
         () ->
             DeferredOidcResolution.resolve(
                 decoderSubject(clientRegistrationRepository),
-                () ->
-                    oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
-                        iterableRegistrations(clientRegistrationRepository), providers)));
+                () -> {
+                  final var registrations = iterableRegistrations(clientRegistrationRepository);
+                  return VerifiedJwtDecoder.withClaims(
+                      oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
+                          registrations, providers),
+                      OidcAccessTokenDecoderFactory.registrationIdByIssuer(registrations),
+                      providers,
+                      defaultSlot);
+                }));
   }
 
   /**

@@ -9,6 +9,7 @@ package io.camunda.security.spring.oidc;
 
 import io.camunda.security.api.context.MembershipResolutionContextPropagator;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.camunda.security.api.model.config.oidc.OidcPrincipalClaims;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
 import io.camunda.security.core.port.out.MembershipPort;
@@ -18,6 +19,7 @@ import io.camunda.security.spring.converter.TokenClaimsConvertersByIssuer;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -127,10 +129,12 @@ public class OidcBeansConfiguration {
    * MembershipResolutionContextPropagator} live; backing off avoids a fatal wiring failure when
    * they're absent.
    *
-   * <p>Two registrations that share an issuer resolve by the order of {@code
-   * getOidcAuthenticationConfigurations()}, which is the order of the configuration with the flat
-   * block first. The decoder of the same deployment reads that order as well, so the converter of a
-   * token comes from the provider that verified it.
+   * <p>A token that a decoder of the library verified carries the principal claims of the provider
+   * that verified it ({@link VerifiedJwt}), and is mapped with a converter for those claims, one
+   * per distinct set of claims. The issuer map serves the tokens of a decoder the host builds
+   * itself: it looks the configured issuer-uri up exactly, and two registrations that share an
+   * issuer resolve by the order of {@code getOidcAuthenticationConfigurations()}, which is the
+   * order of the configuration with the flat block first.
    */
   @Bean
   @ConditionalOnBean({MembershipPort.class, LazyTokenClaimsConverter.class})
@@ -150,26 +154,46 @@ public class OidcBeansConfiguration {
     // here. Filtered first: a blank/null registrationId must not win ownership over a valid
     // provider sharing its issuer, or the claims converter is built from the wrong configuration
     // while the decoder verifies the token with the valid one.
+    // Exact: the map serves only tokens of a decoder the host builds itself, whose routing is
+    // unknown. The library's own decoders tag each token with its provider's claims instead.
     final var winningRegistrationIdByIssuer =
         IssuerOwnership.registrationIdByIssuer(
             ScopedClientRegistrationFactory.withoutBlankRegistrationIds(configurations),
             LOG,
-            "the claim configuration");
+            "the claim configuration",
+            false);
     final Map<String, LazyTokenClaimsConverter> byIssuer = new LinkedHashMap<>();
     winningRegistrationIdByIssuer.forEach(
         (issuerUri, registrationId) -> {
           final var config = configurations.get(registrationId);
+          if (config == flatOidcConfiguration) {
+            byIssuer.put(issuerUri, lazyTokenClaimsConverter);
+            return;
+          }
+          // A named provider uses the global claims for each claim that it does not set.
+          final var claims = OidcPrincipalClaims.resolve(config, flatOidcConfiguration);
           final var converter =
-              config == flatOidcConfiguration
-                  ? lazyTokenClaimsConverter
-                  : new LazyTokenClaimsConverter(
-                      config.getUsernameClaim(),
-                      config.getClientIdClaim(),
-                      config.isPreferUsernameClaim(),
-                      membershipPort,
-                      contextPropagator);
+              new LazyTokenClaimsConverter(
+                  claims.usernameClaim(),
+                  claims.clientIdClaim(),
+                  claims.preferUsernameClaim(),
+                  membershipPort,
+                  contextPropagator);
           byIssuer.put(issuerUri, converter);
         });
-    return new TokenClaimsConvertersByIssuer(byIssuer);
+    final Map<OidcPrincipalClaims, LazyTokenClaimsConverter> byPrincipalClaims =
+        new ConcurrentHashMap<>();
+    return new TokenClaimsConvertersByIssuer(
+        byIssuer,
+        claims ->
+            byPrincipalClaims.computeIfAbsent(
+                claims,
+                c ->
+                    new LazyTokenClaimsConverter(
+                        c.usernameClaim(),
+                        c.clientIdClaim(),
+                        c.preferUsernameClaim(),
+                        membershipPort,
+                        contextPropagator)));
   }
 }

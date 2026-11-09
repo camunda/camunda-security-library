@@ -440,9 +440,25 @@ In this example, the library treats `groups` as the claim source for group mappi
 |---|---|---|---|
 | `enabled` | boolean | `true` | Toggles CSRF protection on the webapp chains. |
 | `cookie-http-only` | boolean | `false` | When `false`, the CSRF cookie is readable by browser-side JavaScript so it can echo the token. Flip to `true` only for API-only hosts. |
-| `ignored-path-patterns` | set&lt;string&gt; | empty | Ant-style patterns CSRF protection skips, in addition to the always-ignored unprotected paths and the logout endpoint. |
+| `ignored-path-patterns` | set&lt;string&gt; | empty | Ant-style patterns CSRF protection skips, in addition to the always-ignored unprotected paths and the logout endpoint. Under a non-root servlet path, patterns are relative to it (like `SecurityPathPort` paths). |
 
 The login endpoint (`/login`, and its scoped `<basePath>/login` variants) always requires a valid CSRF token, even for a browser that holds no session yet — it cannot be exempted via `ignored-path-patterns`. Without this, a cross-site `POST /login` is otherwise indistinguishable from a legitimate one on a browser that already has an authenticated session, and silently replaces the victim's session with an attacker-controlled one (camunda/security-testing-findings#281). An anonymous `GET /login` still receives a CSRF token (via the same cookie/response-header mechanism used for authenticated requests) so a legitimate login can obtain one to submit back.
+
+`SecurityPathPort#unprotectedPaths()` may cover `/login` (e.g. via `/**`). The unprotected chain then serves only GET/HEAD/OPTIONS/TRACE on `/login` and issues the CSRF token on `GET /login` (the chain only ever issues the token, and only on login-path requests; it never enforces CSRF); state-changing requests are passed on to the next chain: the API or webapp chain covering `/login` (which enforces CSRF), otherwise a deny chain, which rejects them with 404: the catch-all, or with it disabled `unclaimedLoginGuardSecurityFilterChain`, which matches exactly the requests the unprotected chain passes on. With `camunda.security.csrf.enabled=false` nothing is rerouted: the unprotected chain serves every method on `/login`. Caveats:
+
+- Exact `/login` only: `/login/foo` under `/login/**` stays unprotected for all methods.
+- With CSRF enabled, a pattern matching a scoped `<basePath>/login` fails startup.
+- OIDC: `GET /login` never reaches `CamundaLoginPickerFilter`.
+- With `catch-all-unhandled-paths-enabled=false`, a host chain that should serve state-changing `/login` must be ordered before `ORDER_UNHANDLED`, and must enforce CSRF on `/login` itself: CSL routes these requests but cannot check the claiming chain's CSRF configuration.
+
+**Migrating from 1.1.0:**
+
+- A host that moved `/login` into `unprotectedApiPaths()` can move it back.
+- With `camunda.security.authentication.catch-all-unhandled-paths-enabled=false`, CSL now registers `unclaimedLoginGuardSecurityFilterChain` at `ORDER_UNHANDLED` (3). A host catch-all chain without a `securityMatcher` (matching any request) must be ordered after it; otherwise Spring Security fails startup with an `UnreachableFilterChainException` naming the guard chain.
+- Under a non-root servlet path (a host `PathPatternRequestMatcher.Builder` with a `basePath`), all CSRF-exempt patterns (`unprotectedPaths()`, `unprotectedApiPaths()`, logout, `camunda.security.csrf.ignored-path-patterns`) are now resolved relative to the servlet path, like every chain's routing. Write `ignored-path-patterns` without the servlet path prefix: `/foo` exempts `<servlet-path>/foo`, while `<servlet-path>/foo` no longer matches.
+- `SecurityFilterChainSupport.applyCsrfConfiguration(...)` no longer fails startup when an unprotected pattern overlaps the unscoped `/login`. A host that builds its own unprotected chain (instead of using `BaseSecurityConfiguration`'s) must exclude state-changing requests to `/login` from it, as `BaseSecurityConfiguration` does, otherwise they are served without CSRF.
+
+See [ADR-0032](../adr/0032-scope-login-csrf-guard-to-state-changing-requests.md).
 
 ### `camunda.security.http-headers.*`
 
@@ -512,9 +528,11 @@ public CamundaAuthenticationConverter<Authentication> authenticationConverter(
 }
 ```
 
-CSL supplies `TokenClaimsConvertersByIssuer` as a bean (when `MembershipPort` and `LazyTokenClaimsConverter` are both present) so a multi-provider deployment resolves each bearer token's claims using the `usernameClaim`/`clientIdClaim` config of the registration that declared its `iss`, instead of always the primary provider's. It's optional — passing `null` (or omitting it via the two-argument constructor) keeps every token on the primary provider's claim config.
+CSL supplies `TokenClaimsConvertersByIssuer` as a bean (when `MembershipPort` and `LazyTokenClaimsConverter` are both present) so a multi-provider deployment resolves each bearer token's claims using the `usernameClaim`/`clientIdClaim` config of the provider that verified it, instead of always the primary provider's. It's optional — passing `null` (or omitting it via the two-argument constructor) keeps every token on the primary provider's claim config.
 
-Per-provider claim configuration does not inherit from the flat block: a `providers.oidc.<id>` entry that omits `username-claim`/`client-id-claim` gets `OidcConfiguration`'s own defaults, not the flat block's — a BYOIDP provider declaring only `issuer-uri` and `client-id` loses client-credentials/M2M claim resolution unless it repeats `client-id-claim` itself.
+Every decoder CSL builds — the default `JwtDecoder` and the decoder of each scoped API chain — returns its tokens as a `VerifiedJwt`, which carries the principal claims of the provider whose registration verified the token, from that decoder's own scope. The converter uses those claims, so a scoped token is never mapped with the claim settings of a provider of another scope that declares the same issuer. A token from a `JwtDecoder` the host builds itself is looked up by its exact `iss` in the configured issuer-uris instead. A host that wraps CSL's decoder must return the `VerifiedJwt` it receives, not a rebuilt `Jwt`, or its tokens fall back to that lookup by issuer. See [ADR-0038](../adr/0038-verified-token-carries-its-provider-claims.md).
+
+A named provider uses the claims of the flat block for each of `username-claim`, `client-id-claim` and `prefer-username-claim` that it does not set. A value that the provider sets wins, also when it is the default (for example `username-claim: sub`). A host that builds claim converters from providers itself must apply the same rule with `OidcPrincipalClaims.resolve(provider, flatBlock)`. See [ADR-0034](../adr/0034-named-providers-inherit-principal-claims.md).
 
 **Registering `OidcUserAuthenticationConverter`.** The login-flow counterpart: it converts the `OAuth2AuthenticationToken` of a browser session by decoding the stored access token, so authorization-relevant claims come from the access token rather than the ID token.
 
@@ -535,7 +553,12 @@ public CamundaAuthenticationConverter<Authentication> oidcUserAuthenticationConv
 }
 ```
 
-CSL supplies `AdditionalJwkSetUrisByRegistrationId` as a bean (`OidcBeansConfiguration`), built from every configured provider that declares `additional-jwk-set-uris`, with or without an `issuer-uri`, since the lookup is keyed by registration id. It is optional: the four-argument constructor, or an empty lookup, decodes against each registration's primary `jwk-set-uri` only. A host that registers its own must key it by registration id; a map keyed by anything else resolves nothing and the converter silently falls back to ID-token claims. See [ADR-0030](../adr/0030-additional-jwk-set-uris-by-registration-id.md).
+CSL supplies `AdditionalJwkSetUrisByRegistrationId` as a bean (`OidcBeansConfiguration`), built from every configured provider that declares `additional-jwk-set-uris`, with or without an `issuer-uri`, since the lookup is keyed by registration id. The converter finds the additional JWK Set URIs and `prefer-id-token-claims` of a login in this order:
+
+1. The entry in the metadata of the login's registration (`ClientRegistrationMetadata`). `ScopedClientRegistrationFactory` writes it for every registration, also when it is empty or false, so scopes with the same registration id keep their own settings.
+2. For a registration without the entry, for example one that a host builds itself: the lookup or the map from the constructor, by registration id. The four-argument constructor, or an empty lookup, decodes against the primary `jwk-set-uri` only.
+
+A host that registers its own lookup must key it by registration id. A map with other keys finds nothing, and the converter falls back to ID-token claims without an error. See [ADR-0030](../adr/0030-additional-jwk-set-uris-by-registration-id.md) and [ADR-0033](../adr/0033-login-settings-carried-by-the-registration.md).
 
 There is also a six-argument constructor taking `Map<String, Boolean> preferIdTokenClaimsByRegistrationId`, which short-circuits the access-token decode for the named registrations and uses the merged ID-token/UserInfo claims instead. For setups where the access token is signed by a key set Camunda cannot reach, or lacks claims Camunda needs.
 
@@ -834,6 +857,19 @@ public WebAppAccessDeniedHandlerPort jsonProblemDetailDeniedHandler(final Object
 
 Registering any `WebAppAccessDeniedHandlerPort` bean disables the library default. The handler is invoked exactly once per denied request; the filter does not call `filterChain.doFilter(...)` afterwards.
 
+### Per-scope authorization flag: `WebAppAuthorizationEnabledPort` (optional)
+
+By default the filter skips the check for every request when `camunda.security.authorizations.enabled` is `false`. A host that serves several scopes with their own value of this flag (for example one per physical tenant) registers a `WebAppAuthorizationEnabledPort`. The filter then asks it on each request instead of reading the global flag:
+
+```java
+@Bean
+public WebAppAuthorizationEnabledPort webAppAuthorizationEnabledPort(final MyScopeResolver scopes) {
+  return request -> scopes.find(request).map(Scope::authorizationsEnabled).orElse(true);
+}
+```
+
+The SPI only decides whether the filter asks the check port. The default `AuthorizationCheckPort` approves every request while the global flag is off, so a host with per-scope flags must also supply an `AuthorizationCheckPort` that applies each scope's flag and rejects unknown scopes. Return `true` for an unresolvable scope so that port decides. The filter asks the SPI only for authenticated requests to a resolved web app. If the SPI throws, the filter logs a warning and treats authorization as enabled.
+
 ### Required and supplied beans for web app authorization
 
 | Bean | Default | When |
@@ -845,6 +881,7 @@ Registering any `WebAppAccessDeniedHandlerPort` bean disables the library defaul
 | `AuthorizationScopeRepositoryPort` | None — host must register | Required when relying on the default `AuthorizationService`. Not needed if the host supplies its own `AuthorizationCheckPort` |
 | `MembershipPort` | None — host must register | Required for the default `AuthorizationService` — the claims converter resolves principal owners through it |
 | `WebAppAccessDeniedHandlerPort` | `RedirectingWebAppAccessDeniedAdapter` (gated on `WebAppProviderPort` + `@ConditionalOnMissingBean`) | Override for JSON 403, forwards, etc. |
+| `WebAppAuthorizationEnabledPort` | None — the filter reads `camunda.security.authorizations.enabled` | Register when the flag differs per scope |
 
 If any of the required beans is missing (and `AuthorizationCheckPort` not satisfied either way), the filter bean isn't created. The webapp chain still works — it just doesn't enforce the per-web-app `ACCESS` check. Adopt incrementally by registering the SPIs as you build out the host's authorization data layer.
 
@@ -1099,8 +1136,22 @@ HTTP response headers are configured by `HeaderConfiguration`. Defaults are the 
 
 Session policy:
 
-- API chains (OIDC and basic) — `SessionCreationPolicy.NEVER`. Stateless; no cookie issued.
+- API chains (OIDC and basic) — `SessionCreationPolicy.NEVER`. They never create a session and never issue a cookie, but they do **restore** one: the same `SessionRepositoryFilter` the matching webapp chain uses is installed before `SecurityContextHolderFilter`, so a browser that logged in on the webapp chain is authenticated on API paths without presenting a bearer token. A bearer-only request is unaffected and still creates nothing.
 - Webapp chains — session-backed. The cookie is `camunda-session`; logout clears it along with `X-CSRF-TOKEN`.
+
+### Access-token refresh on API chains
+
+An OIDC API chain refreshes a session-authenticated caller's access token exactly as the webapp chain does: an `OAuth2RefreshTokenFilter` runs after `AuthorizationFilter`, renews an access token that has expired — or, for tokens whose lifetime exceeds two minutes, one that expires within the next 60 seconds; the skew is deliberately skipped for shorter-lived tokens, which would otherwise sit in a perpetual refresh loop — and writes the renewed authorized client back to the session. Host code that reads the stored access token — for example to re-verify a permission against the IdP — can therefore rely on it being current on every request, not only after a webapp request. See [ADR-0039](../adr/0039-refresh-access-tokens-on-api-chains.md).
+
+What this means operationally:
+
+- When the access token has expired **and cannot be renewed** — no refresh token was issued, or the IdP rejects the refresh — the caller is logged out and the request gets `401` with the chain's RFC 6750 bearer challenge, instead of being served with a stale token. Deployments whose IdP issues no refresh token (for example, no `offline_access` scope) will see API sessions end at the access token's lifetime. Request `offline_access` if you need the session to outlive the access token.
+- When the refresh fails because the **IdP is unreachable or erroring**, the session is kept and the request gets `503` with a `Retry-After` header, so the client can retry once the IdP recovers. Previously such a request went through with the stale token, so this is visible to operators during an IdP outage.
+- The forced logout invalidates the session and expires the session and CSRF cookies — the scope's own cookie names, under the scope's path, for a path-scoped chain.
+- Bearer requests are untouched: the filter acts on an `OAuth2AuthenticationToken` and ignores the `JwtAuthenticationToken` a bearer request produces.
+- **Unprotected API paths are exempt.** Anything in `unprotectedApiPaths()` is permit-all, so the refresh filter skips it: a browser whose session token has expired still gets an answer from a public endpoint rather than a `401` and a forced logout.
+- HTTP Basic API chains hold no OAuth2 token and get no refresh filter. Neither do the permit-all chains built for `unprotected-api=true`.
+- A bearer-only deployment (`camunda.security.authentication.webapp-enabled=false`) registers no `OAuth2AuthorizedClientRepository`/`OAuth2AuthorizedClientManager`, so its API chain is built without the filter — there is no session login and so no stored token to refresh.
 
 ## What this library deliberately does *not* provide
 

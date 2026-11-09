@@ -7,14 +7,20 @@
  */
 package io.camunda.security.spring.converter;
 
+import static io.camunda.security.spring.oidc.ScopedClientRegistrationFactory.sanitizeForLog;
+
 import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
+import io.camunda.security.spring.oidc.ClientRegistrationMetadata;
 import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory;
+import io.camunda.security.spring.oidc.UrlRedaction;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,6 +36,7 @@ import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
+import org.springframework.security.oauth2.jwt.JwtValidationException;
 
 public class OidcUserAuthenticationConverter
     implements CamundaAuthenticationConverter<Authentication> {
@@ -41,7 +48,7 @@ public class OidcUserAuthenticationConverter
   private final OidcAccessTokenDecoderFactory accessTokenDecoderFactory;
   private final LazyTokenClaimsConverter tokenClaimsConverter;
   private final HttpServletRequest request;
-  private final Map<String, JwtDecoder> jwtDecoders;
+  private final Map<DecoderKey, JwtDecoder> jwtDecoders;
   private final AdditionalJwkSetUrisByRegistrationId additionalJwkSetUris;
   private final Map<String, Boolean> preferIdTokenClaimsByRegistrationId;
 
@@ -121,34 +128,62 @@ public class OidcUserAuthenticationConverter
   }
 
   protected Map<String, Object> getClaims(final OAuth2AuthenticationToken authenticationToken) {
+    // Load the authorized client once: its registration holds the login settings of the scope, and
+    // a custom OAuth2AuthorizedClientRepository can read it from a remote store.
+    final var authorizedClient = getAuthorizedClient(authenticationToken, request);
     // When prefer-id-token-claims is enabled for the current registration we short-circuit the
     // access-token decode path entirely and use the OidcUser principal attributes (which Spring
     // populates with the ID-token and userInfo merged claims). This lets operators opt in to
     // sourcing authorisation-relevant claims from userInfo in setups where the access token is
     // signed by a key set that Camunda cannot reach, or lacks claims Camunda needs.
-    if (shouldPreferIdTokenClaims(authenticationToken)) {
+    if (shouldPreferIdTokenClaims(authenticationToken, authorizedClient)) {
       return getIdTokenClaims(authenticationToken);
     }
-    return Optional.ofNullable(getAccessTokenClaims(authenticationToken))
+    return Optional.ofNullable(getAccessTokenClaims(authenticationToken, authorizedClient))
         .orElseGet(
             () -> {
-              LOGGER.warn("Falling back to ID Token claims");
+              LOGGER.warn(
+                  "Falling back to ID Token claims for registration '{}'",
+                  sanitizeForLog(authenticationToken.getAuthorizedClientRegistrationId()));
               return getIdTokenClaims(authenticationToken);
             });
   }
 
-  private boolean shouldPreferIdTokenClaims(final OAuth2AuthenticationToken authenticationToken) {
-    if (preferIdTokenClaimsByRegistrationId.isEmpty()) {
+  private boolean shouldPreferIdTokenClaims(
+      final OAuth2AuthenticationToken authenticationToken,
+      final OAuth2AuthorizedClient authorizedClient) {
+    final var registrationId = authenticationToken.getAuthorizedClientRegistrationId();
+    if (registrationId == null) {
       return false;
     }
-    final var registrationId = authenticationToken.getAuthorizedClientRegistrationId();
-    return registrationId != null
-        && Boolean.TRUE.equals(preferIdTokenClaimsByRegistrationId.get(registrationId));
+    return Optional.ofNullable(authorizedClient)
+        .map(OAuth2AuthorizedClient::getClientRegistration)
+        .flatMap(ClientRegistrationMetadata::preferIdTokenClaims)
+        .orElseGet(
+            () -> Boolean.TRUE.equals(preferIdTokenClaimsByRegistrationId.get(registrationId)));
   }
 
+  /**
+   * Loads the authorized client and decodes its access token.
+   *
+   * @deprecated {@link #getClaims} no longer calls this method, because it loads the authorized
+   *     client once and passes it on. To change the decode, override {@link
+   *     #getAccessTokenClaims(OAuth2AuthenticationToken, OAuth2AuthorizedClient)}.
+   */
+  @Deprecated(since = "1.1.0")
   protected Map<String, Object> getAccessTokenClaims(
       final OAuth2AuthenticationToken authenticationToken) {
-    final var authorizedClient = getAuthorizedClient(authenticationToken, request);
+    return getAccessTokenClaims(
+        authenticationToken, getAuthorizedClient(authenticationToken, request));
+  }
+
+  /**
+   * Decodes the access token of {@code authorizedClient}, or returns {@code null} when there is
+   * none or it does not decode.
+   */
+  protected Map<String, Object> getAccessTokenClaims(
+      final OAuth2AuthenticationToken authenticationToken,
+      final OAuth2AuthorizedClient authorizedClient) {
     return Optional.ofNullable(authorizedClient)
         .map(OAuth2AuthorizedClient::getAccessToken)
         .map(OAuth2AccessToken::getTokenValue)
@@ -156,7 +191,7 @@ public class OidcUserAuthenticationConverter
             tokenValue -> {
               final var clientRegistration = authorizedClient.getClientRegistration();
               final var jwtDecoder = getJwtDecoder(clientRegistration);
-              return decodeAccessToken(jwtDecoder, tokenValue);
+              return decodeAccessToken(loggingFailures(jwtDecoder, clientRegistration), tokenValue);
             })
         .map(Jwt::getClaims)
         .orElse(null);
@@ -173,22 +208,94 @@ public class OidcUserAuthenticationConverter
     try {
       return jwtDecoder.decode(accessTokenValue);
     } catch (final JwtException e) {
-      LOGGER.warn("Failed to decode Access Token: '{}', returning null", e.getMessage());
+      // DEBUG only: the decoder from getAccessTokenClaims already logs the failure at WARN, with
+      // the registration that this hook does not get.
+      LOGGER.debug("Failed to decode Access Token: {}, returning null", reasonForLog(e));
       return null;
     }
   }
 
+  /**
+   * Logs a decode failure at WARN with the registration, its client ID and its issuer. Scopes can
+   * use the same registration ID and issuer, so the client ID helps to find the scope. The {@link
+   * #decodeAccessToken} hook does not get these values. A host that overrides the hook also gets
+   * this decoder.
+   */
+  private static JwtDecoder loggingFailures(
+      final JwtDecoder jwtDecoder, final ClientRegistration clientRegistration) {
+    return token -> {
+      try {
+        return jwtDecoder.decode(token);
+      } catch (final JwtException e) {
+        LOGGER.warn(
+            "Failed to decode Access Token for registration '{}' with client '{}' and issuer '{}':"
+                + " {}",
+            sanitizeForLog(clientRegistration.getRegistrationId()),
+            sanitizeForLog(clientRegistration.getClientId()),
+            UrlRedaction.redact(issuerForLog(clientRegistration)),
+            reasonForLog(e));
+        throw e;
+      }
+    };
+  }
+
+  /**
+   * The message of a failed claim check names only the claim. Other failures, for example of the
+   * key source, can name the JWK Set URL with credentials in it, so only their type is logged.
+   */
+  private static String reasonForLog(final JwtException e) {
+    return e instanceof JwtValidationException
+        ? sanitizeForLog(e.getMessage())
+        : e.getClass().getSimpleName();
+  }
+
+  /**
+   * Returns one decoder for each different provider setting. Scopes can use the same registration
+   * ID with a different issuer, key set or audience. Thus the key holds all settings of the
+   * decoder.
+   */
   protected JwtDecoder getJwtDecoder(final ClientRegistration clientRegistration) {
-    final var clientRegistrationId = clientRegistration.getRegistrationId();
+    final var additionalUris = additionalJwkSetUris(clientRegistration);
+    final var details = clientRegistration.getProviderDetails();
+    final var key =
+        new DecoderKey(
+            clientRegistration.getRegistrationId(),
+            details != null ? details.getIssuerUri() : null,
+            ClientRegistrationMetadata.issuer(clientRegistration).orElse(null),
+            details != null ? details.getJwkSetUri() : null,
+            ClientRegistrationMetadata.audiences(clientRegistration).orElse(null),
+            additionalUris);
     return jwtDecoders.computeIfAbsent(
-        clientRegistrationId,
+        key,
         k ->
-            accessTokenDecoderFactory.createAccessTokenDecoder(
-                clientRegistration, additionalJwkSetUris.get(k)));
+            accessTokenDecoderFactory.createAccessTokenDecoder(clientRegistration, additionalUris));
+  }
+
+  private List<String> additionalJwkSetUris(final ClientRegistration clientRegistration) {
+    final var own = ClientRegistrationMetadata.additionalJwkSetUris(clientRegistration);
+    if (own.isEmpty()) {
+      return additionalJwkSetUris.get(clientRegistration.getRegistrationId());
+    }
+    // An empty list is the scope's own answer and must not fall back to the lookup.
+    return own.get().isEmpty() ? null : own.get();
+  }
+
+  private static String issuerForLog(final ClientRegistration clientRegistration) {
+    final var details = clientRegistration.getProviderDetails();
+    return ClientRegistrationMetadata.issuer(clientRegistration)
+        .orElse(details != null ? details.getIssuerUri() : null);
   }
 
   protected Map<String, Object> getIdTokenClaims(
       final OAuth2AuthenticationToken authenticationToken) {
     return authenticationToken.getPrincipal().getAttributes();
   }
+
+  private record DecoderKey(
+      String registrationId,
+      String issuerUri,
+      String issuerMetadata,
+      String jwkSetUri,
+      Set<String> audiences,
+      List<String> additionalJwkSetUris) {}
 }

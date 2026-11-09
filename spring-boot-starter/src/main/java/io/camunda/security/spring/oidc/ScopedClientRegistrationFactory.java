@@ -66,6 +66,12 @@ public final class ScopedClientRegistrationFactory {
 
   private static final Logger LOG = LoggerFactory.getLogger(ScopedClientRegistrationFactory.class);
 
+  /** Spring's issuer-mismatch message reads {@code <prefix><declared><suffix><requested>"}. */
+  private static final String ISSUER_MISMATCH_PREFIX = "The Issuer \"";
+
+  private static final String ISSUER_MISMATCH_SUFFIX =
+      "\" provided in the configuration metadata did not match the requested issuer \"";
+
   private static final String BASE_URL_PLACEHOLDER = "{baseUrl}";
 
   /**
@@ -599,6 +605,9 @@ public final class ScopedClientRegistrationFactory {
       // chain. A caller that mounts no such chain never dereferences the value.
       warnIfNotAbsoluteHttpUrl(
           registrationId, "end-session-endpoint-uri", oidc.getEndSessionEndpointUri());
+      // RefreshTokenRevocationLogoutHandler is likewise only wired onto the webapp logout chain.
+      warnIfNotAbsoluteHttpUrl(
+          registrationId, "revocation-endpoint-uri", oidc.getRevocationEndpointUri());
     }
     if (oidc.getAdditionalJwkSetUris() != null) {
       oidc.getAdditionalJwkSetUris()
@@ -1210,9 +1219,10 @@ public final class ScopedClientRegistrationFactory {
   /**
    * Adds this registration's own entries to the discovered metadata by build-then-rebuild, since
    * {@code providerConfigurationMetadata} replaces the map and would drop a discovered {@code
-   * end_session_endpoint}. The audiences key and the {@link
-   * FailSoftOidcUserService#USER_INFO_REQUIRED_METADATA_KEY} key are always set, even when
-   * false/empty, because both are authoritative by presence; an explicit end-session endpoint wins.
+   * end_session_endpoint} or {@code revocation_endpoint}. It always sets the audiences, issuer,
+   * user-info-required, additional JWK Set URIs and prefer-id-token-claims keys, also when empty or
+   * false, because an entry that exists always wins. An explicit end-session or revocation endpoint
+   * wins.
    *
    * <p>The map is fresh per registration — the only reason registrations sharing an issuer cannot
    * see each other's audiences or user-info-required flag.
@@ -1225,12 +1235,52 @@ public final class ScopedClientRegistrationFactory {
         TokenValidatorFactory.AUDIENCES_METADATA_KEY,
         oidc.getAudiences() != null ? List.copyOf(oidc.getAudiences()) : List.of());
     merged.put(FailSoftOidcUserService.USER_INFO_REQUIRED_METADATA_KEY, oidc.isUserInfoRequired());
+    ClientRegistrationMetadata.write(merged, oidc);
+    // The token validators expect this issuer. Discovery can settle on the provider's form of the
+    // configured issuer-uri (see discover), so record the one the registration resolved to.
+    final var resolvedIssuer = built.getProviderDetails().getIssuerUri();
+    if (StringUtils.hasText(resolvedIssuer)) {
+      merged.put(ClientRegistrationMetadata.ISSUER, resolvedIssuer);
+    }
     if (StringUtils.hasText(oidc.getEndSessionEndpointUri())) {
       merged.put("end_session_endpoint", oidc.getEndSessionEndpointUri());
     }
+    applyRevocationEndpoint(merged, oidc, built.getRegistrationId());
     return ClientRegistration.withClientRegistration(built)
         .providerConfigurationMetadata(merged)
         .build();
+  }
+
+  /**
+   * Writes, or removes, the registration's {@code revocation_endpoint}.
+   *
+   * <p>Removal is the point of the flag. The endpoint is normally discovered rather than
+   * configured, so an IdP that publishes one would otherwise switch revocation on for a deployment
+   * that never asked for it, and there would be no way to decline. Stripping the key here rather
+   * than testing the flag at logout keeps {@code RefreshTokenRevocationLogoutHandler} reading one
+   * thing (does this registration have an endpoint?), and reuses the no-op path it already has.
+   *
+   * <p>Disabling wins over a configured URI, as it does for {@code post-logout-redirect-enabled}:
+   * an operator who sets both is saying "not against this IdP", which is the more specific
+   * statement. It is logged, because silently ignoring a value someone configured on purpose is
+   * otherwise an afternoon lost.
+   */
+  private static void applyRevocationEndpoint(
+      final Map<String, Object> merged, final OidcConfiguration oidc, final String registrationId) {
+    if (oidc.isRevocationEnabled()) {
+      if (StringUtils.hasText(oidc.getRevocationEndpointUri())) {
+        merged.put("revocation_endpoint", oidc.getRevocationEndpointUri());
+      }
+      return;
+    }
+    if (StringUtils.hasText(oidc.getRevocationEndpointUri())) {
+      LOG.warn(
+          "OIDC registration '{}' sets both revocation-endpoint-uri and revocation-enabled=false;"
+              + " the configured URI is ignored and no refresh token will be revoked. Remove one of"
+              + " the two to make the intent explicit.",
+          sanitizeForLog(registrationId));
+    }
+    merged.remove("revocation_endpoint");
   }
 
   /**
@@ -1451,9 +1501,66 @@ public final class ScopedClientRegistrationFactory {
    */
   private ClientRegistration.Builder discoveredBuilder(final String issuerUri) {
     final var cached = discoveryByIssuer.get(issuerUri);
-    return cached != null
-        ? ClientRegistrations.fromOidcConfiguration(cached)
-        : ClientRegistrations.fromIssuerLocation(issuerUri);
+    return cached != null ? ClientRegistrations.fromOidcConfiguration(cached) : discover(issuerUri);
+  }
+
+  /**
+   * The issuer the discovery document declared, read from Spring's mismatch message ({@code The
+   * Issuer "<declared>" provided in the configuration metadata did not match the requested issuer
+   * "<requested>"}), as {@code fromIssuerLocation} does not expose the document. {@code null} if
+   * the message has another form, which makes {@link #discover} rethrow: a Spring upgrade that
+   * changes the message fails safe, and the trailing-slash tests catch it.
+   */
+  static String declaredIssuer(final IllegalStateException issuerMismatch) {
+    final var message = issuerMismatch.getMessage();
+    if (message == null || !message.startsWith(ISSUER_MISMATCH_PREFIX)) {
+      return null;
+    }
+    final var end = message.indexOf(ISSUER_MISMATCH_SUFFIX, ISSUER_MISMATCH_PREFIX.length());
+    return end < 0 ? null : message.substring(ISSUER_MISMATCH_PREFIX.length(), end);
+  }
+
+  /**
+   * Discovery from {@code issuer-uri}, tolerating a trailing slash the identity provider's document
+   * doesn't have (or has where the configuration doesn't).
+   *
+   * <p>{@code fromIssuerLocation} requires the document's {@code issuer} to equal the configured
+   * string exactly, and throws {@link IllegalStateException} when it doesn't — the one failure it
+   * reports with that type; an unreachable or unparseable document is an {@link
+   * IllegalArgumentException}. Entra ID ({@code .../v2.0} in the document) and Okta (no trailing
+   * slash) are commonly configured with a trailing slash, which failed startup and login. When the
+   * two differ only by that slash, discovery is retried with the other form, and the registration
+   * takes the provider's issuer: it is what the provider's tokens carry in {@code iss}, so the
+   * token validators, which compare against the registration's issuer exactly, accept them. Any
+   * other mismatch, or a retry that fails too, rethrows the original exception.
+   */
+  private static ClientRegistration.Builder discover(final String issuerUri) {
+    try {
+      return ClientRegistrations.fromIssuerLocation(issuerUri);
+    } catch (final IllegalStateException issuerMismatch) {
+      final var alternative = IssuerUris.withToggledTrailingSlash(issuerUri);
+      // Retry only if the document declared exactly the other slash form. Any other mismatch is a
+      // real misconfiguration, and the retry could otherwise reach a different document that
+      // happens to declare the alternative.
+      if (alternative == null || !alternative.equals(declaredIssuer(issuerMismatch))) {
+        throw issuerMismatch;
+      }
+      final ClientRegistration.Builder builder;
+      try {
+        builder = ClientRegistrations.fromIssuerLocation(alternative);
+      } catch (final RuntimeException retryFailure) {
+        issuerMismatch.addSuppressed(retryFailure);
+        throw issuerMismatch;
+      }
+      LOG.warn(
+          "The configured issuer-uri '{}' differs from the issuer '{}' that the identity provider's"
+              + " discovery document declares only by a trailing slash. Using '{}', which is what"
+              + " its tokens carry; set issuer-uri to it to remove this warning.",
+          UrlRedaction.redact(issuerUri),
+          UrlRedaction.redact(alternative),
+          UrlRedaction.redact(alternative));
+      return builder;
+    }
   }
 
   /**

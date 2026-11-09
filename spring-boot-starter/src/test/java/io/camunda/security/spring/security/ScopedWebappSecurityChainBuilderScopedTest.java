@@ -9,11 +9,15 @@ package io.camunda.security.spring.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.entry;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nimbusds.jose.jwk.RSAKey;
+import io.camunda.security.api.model.config.AssertionConfiguration;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.AuthenticationMethod;
+import io.camunda.security.api.model.config.KeystoreConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcProvidersConfiguration;
 import io.camunda.security.core.port.in.OidcProviderConfigurationPort;
@@ -25,15 +29,20 @@ import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.oidc.OidcTokenEndpointCustomizer;
 import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
 import io.camunda.security.spring.oidc.ScopedOidcInfrastructureConfiguration;
+import io.camunda.security.spring.spi.OidcLoginFailureNotice;
+import io.camunda.security.spring.spi.OidcLoginFailurePort;
 import io.camunda.security.spring.testsupport.StubSecurityPaths;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.nio.file.Paths;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -41,6 +50,7 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -49,13 +59,21 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.HttpSessionOAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.client.web.OAuth2LoginAuthenticationFilter;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.DefaultSecurityFilterChain;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AuthenticationFailureHandler;
+import org.springframework.security.web.authentication.logout.CompositeLogoutHandler;
 import org.springframework.security.web.authentication.logout.LogoutFilter;
+import org.springframework.security.web.authentication.logout.LogoutHandler;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
+import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.session.MapSessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
@@ -339,6 +357,228 @@ class ScopedWebappSecurityChainBuilderScopedTest {
               .as("resolved registration must be the scoped one (redirect URI carries the prefix)")
               .isEqualTo("{baseUrl}" + BASE_PATH + "/sso-callback");
         });
+  }
+
+  /**
+   * ADR-0036. Both assertions matter, and the ordering one is the load-bearing half: {@link
+   * RefreshTokenRevocationLogoutHandler} reads the refresh token out of the session-backed
+   * authorized client, so it has to run before {@link SecurityContextLogoutHandler} invalidates
+   * that session. {@code LogoutConfigurer} appends its own context handler last, which is why
+   * registration goes through {@code addLogoutHandler} rather than the success handler — and
+   * getting it wrong is silent, because the token would simply never be revoked.
+   */
+  @Test
+  void primaryOidcChainRevokesRefreshTokenBeforeInvalidatingTheSession() {
+    new WebApplicationContextRunner()
+        // Same configuration set as
+        // primaryOidcChainReadsThePerRegistrationMapFromTheProviderConfigurationPort below: it is
+        // the one combination in this class that starts the primary chain, since
+        // PrimaryOidcChainConfig needs an OidcProviderConfigurationPort bean. Nothing about the
+        // post-logout route or the host-supplied port matters to the ordering asserted here.
+        .withUserConfiguration(
+            ObjectMapperConfig.class,
+            StubPathsWithPostLogoutRoute.class,
+            HostSuppliedProviderPortConfig.class,
+            PrimaryOidcChainConfig.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                BaseSecurityConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                ScopedOidcInfrastructureConfiguration.class,
+                ScopedWebappSecurityChainBuilderConfiguration.class))
+        .run(
+            ctx ->
+                assertRevocationRunsBeforeSessionInvalidation(
+                    logoutHandlers(ctx, "primaryOidcTestChain")));
+  }
+
+  @Test
+  void scopedOidcChainRevokesRefreshTokenBeforeInvalidatingTheSession() {
+    runner.run(
+        ctx ->
+            assertRevocationRunsBeforeSessionInvalidation(
+                logoutHandlers(ctx, "scopedOidcTestChain")));
+  }
+
+  private static void assertRevocationRunsBeforeSessionInvalidation(
+      final List<LogoutHandler> handlers) {
+    final var revocationIndex = indexOfHandler(handlers, RefreshTokenRevocationLogoutHandler.class);
+    final var contextIndex = indexOfHandler(handlers, SecurityContextLogoutHandler.class);
+    assertThat(revocationIndex)
+        .as("OIDC logout must wire the refresh-token revocation handler")
+        .isNotNegative();
+    assertThat(contextIndex)
+        .as("LogoutConfigurer is expected to contribute a SecurityContextLogoutHandler")
+        .isNotNegative();
+    assertThat(revocationIndex)
+        .as("revocation must read the refresh token before the session holding it is invalidated")
+        .isLessThan(contextIndex);
+  }
+
+  /**
+   * ADR-0036. The resolver must read the OIDC configuration of the scope whose chain it belongs to.
+   * Reading the cluster-wide {@code OidcProviderConfigurationPort} instead — as this did before —
+   * misses a scoped provider's registrationId entirely, and the handler's fail-soft path turns that
+   * miss into a {@code WARN} and a refresh token that stays valid.
+   */
+  @Test
+  void assertionJwkResolverResolvesTheKeyOfTheScopeItWasBuiltFrom() throws Exception {
+    // given a scope configuring one private_key_jwt provider with a resolvable keystore
+    final var sources =
+        Map.of(
+            "scoped-idp",
+            oidcWithAssertionKeystore(),
+            "other-idp",
+            OidcConfiguration.builder().build());
+    final var resolver = ScopedWebappSecurityChainBuilder.assertionJwkResolver(sources);
+
+    // when the handler resolves the signing key for that provider
+    final var jwk = resolver.apply(registrationWithId("scoped-idp"));
+
+    // then it is the scope's own key
+    assertThat(jwk).isInstanceOf(RSAKey.class);
+    assertThat(jwk.isPrivate()).isTrue();
+  }
+
+  /**
+   * The failure the Javadoc on the resolver describes: two scopes using the same registrationId
+   * with different keys. Asserting only the key's type would pass while handing one scope the
+   * other's key, which a provider would reject and fail-soft would hide.
+   */
+  @Test
+  void assertionJwkResolverGivesEachScopeItsOwnKeyWhenTheyShareARegistrationId() throws Exception {
+    // given two scopes that both configure "oidc", backed by different keystores
+    final var scopeA =
+        ScopedWebappSecurityChainBuilder.assertionJwkResolver(
+            Map.of("oidc", oidcWithAssertionKeystore("keystore.p12", "camunda-standalone")));
+    final var scopeB =
+        ScopedWebappSecurityChainBuilder.assertionJwkResolver(
+            Map.of("oidc", oidcWithAssertionKeystore("keystore-second.p12", "camunda-second")));
+
+    // when each resolves the key for that shared registrationId
+    final var keyA = scopeA.apply(registrationWithId("oidc"));
+    final var keyB = scopeB.apply(registrationWithId("oidc"));
+
+    // then each got its own, rather than whichever the cluster-wide lookup happened to hold
+    assertThat(keyA.getKeyID()).isNotBlank();
+    assertThat(keyB.getKeyID()).isNotBlank();
+    assertThat(keyA.getKeyID()).isNotEqualTo(keyB.getKeyID());
+  }
+
+  @Test
+  void assertionJwkResolverFailsLoudlyForARegistrationTheScopeDoesNotConfigure() {
+    // given a scope that knows nothing about the registration being logged out of, which is
+    // exactly what a cluster-wide lookup produced for a scoped provider
+    final var resolver =
+        ScopedWebappSecurityChainBuilder.assertionJwkResolver(
+            Map.of("scoped-idp", OidcConfiguration.builder().build()));
+    final var unknown = registrationWithId("a-registration-from-another-scope");
+
+    // when the handler tries to resolve a signing key
+    // then the miss surfaces rather than silently producing an unsigned assertion
+    assertThatThrownBy(() -> resolver.apply(unknown))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("a-registration-from-another-scope");
+  }
+
+  /**
+   * The resolver is built during chain construction, so a map the provider-map invariant tolerates
+   * must not fail the startup. A blank registrationId is warn-only there, and a host-supplied
+   * {@code OidcProviderConfigurationPort} can return one — {@code Map.copyOf} would reject it.
+   */
+  @Test
+  void assertionJwkResolverToleratesRegistrationIdsTheProviderMapInvariantAllows()
+      throws Exception {
+    // given a scope whose configuration carries a blank and a null registrationId alongside a
+    // real one
+    final Map<String, OidcConfiguration> sources = new LinkedHashMap<>();
+    sources.put("", OidcConfiguration.builder().build());
+    sources.put(null, OidcConfiguration.builder().build());
+    sources.put("scoped-idp", oidcWithAssertionKeystore());
+
+    // when the chain builds its resolver
+    final var resolver = ScopedWebappSecurityChainBuilder.assertionJwkResolver(sources);
+
+    // then construction succeeded and the real registration still resolves its own key
+    assertThat(resolver.apply(registrationWithId("scoped-idp"))).isInstanceOf(RSAKey.class);
+  }
+
+  @Test
+  void assertionJwkResolverIsAbsentWhenTheScopeConfiguresNoProviders() {
+    // given a scope with no OIDC providers at all
+    // when a resolver is built
+    // then there is none, and the handler reports that only for the methods that need a key
+    assertThat(ScopedWebappSecurityChainBuilder.assertionJwkResolver(Map.of())).isNull();
+    assertThat(ScopedWebappSecurityChainBuilder.assertionJwkResolver(null)).isNull();
+  }
+
+  private static OidcConfiguration oidcWithAssertionKeystore() throws Exception {
+    return oidcWithAssertionKeystore("keystore.p12", "camunda-standalone");
+  }
+
+  private static OidcConfiguration oidcWithAssertionKeystore(
+      final String resource, final String alias) throws Exception {
+    final var keystorePath =
+        Paths.get(
+                Objects.requireNonNull(
+                        ScopedWebappSecurityChainBuilderScopedTest.class
+                            .getClassLoader()
+                            .getResource(resource))
+                    .toURI())
+            .toString();
+    return OidcConfiguration.builder()
+        .assertionConfiguration(
+            AssertionConfiguration.builder()
+                .keystoreConfiguration(
+                    KeystoreConfiguration.builder()
+                        .path(keystorePath)
+                        .password("password")
+                        .keyAlias(alias)
+                        .keyPassword("password")
+                        .build())
+                .build())
+        .build();
+  }
+
+  private static ClientRegistration registrationWithId(final String registrationId) {
+    return ClientRegistration.withRegistrationId(registrationId)
+        .clientId("client-id")
+        .clientAuthenticationMethod(ClientAuthenticationMethod.PRIVATE_KEY_JWT)
+        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+        .redirectUri("{baseUrl}/sso-callback")
+        .authorizationUri("https://idp.example.com/auth")
+        .tokenUri("https://idp.example.com/token")
+        .jwkSetUri("https://idp.example.com/jwks")
+        .userNameAttributeName("sub")
+        .scope("openid")
+        .build();
+  }
+
+  private static int indexOfHandler(
+      final List<LogoutHandler> handlers, final Class<? extends LogoutHandler> type) {
+    for (int i = 0; i < handlers.size(); i++) {
+      if (type.isInstance(handlers.get(i))) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  @SuppressWarnings("unchecked")
+  private static List<LogoutHandler> logoutHandlers(
+      final org.springframework.context.ApplicationContext ctx, final String chainBeanName) {
+    final var chain =
+        (DefaultSecurityFilterChain) ctx.getBean(chainBeanName, SecurityFilterChain.class);
+    final var logoutFilter =
+        chain.getFilters().stream()
+            .filter(LogoutFilter.class::isInstance)
+            .map(LogoutFilter.class::cast)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(chainBeanName + " must have a LogoutFilter"));
+    final var composite =
+        (CompositeLogoutHandler) ReflectionTestUtils.getField(logoutFilter, "handler");
+    return (List<LogoutHandler>) ReflectionTestUtils.getField(composite, "logoutHandlers");
   }
 
   /**
@@ -707,6 +947,106 @@ class ScopedWebappSecurityChainBuilderScopedTest {
     providers.setOidc(oidcMap);
     auth.setProviders(providers);
     return auth;
+  }
+
+  /**
+   * Both OIDC chains must render the host's {@link OidcLoginFailurePort} notice when a browser
+   * login fails (ADR-0035). Read off each chain's own login filter, so a chain that kept
+   * constructing its failure handler without the port fails here.
+   */
+  @Test
+  void scopedOidcChainExplainsFailedBrowserLoginsWithTheHostsPort() {
+    runner
+        .withUserConfiguration(HostLoginFailurePortConfig.class)
+        .run(
+            ctx ->
+                assertThat(renderFailedBrowserLogin(ctx, "scopedOidcTestChain"))
+                    .contains(HostLoginFailurePortConfig.TITLE)
+                    .contains("<a class=\"button\" href=\"" + BASE_PATH + "/\">Try again</a>"));
+  }
+
+  @Test
+  void primaryOidcChainExplainsFailedBrowserLoginsWithTheHostsPort() {
+    new WebApplicationContextRunner()
+        .withUserConfiguration(
+            ObjectMapperConfig.class,
+            StubPathsWithPostLogoutRoute.class,
+            HostSuppliedProviderPortConfig.class,
+            PrimaryOidcChainConfig.class,
+            HostLoginFailurePortConfig.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                BaseSecurityConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                ScopedOidcInfrastructureConfiguration.class,
+                ScopedWebappSecurityChainBuilderConfiguration.class))
+        .run(
+            ctx ->
+                assertThat(renderFailedBrowserLogin(ctx, "primaryOidcTestChain"))
+                    .contains(HostLoginFailurePortConfig.TITLE)
+                    .contains("<a class=\"button\" href=\"/\">Try again</a>"));
+  }
+
+  @Test
+  void scopedOidcChainShowsTheGenericFailedLoginPageWithoutAPort() {
+    runner.run(
+        ctx ->
+            assertThat(renderFailedBrowserLogin(ctx, "scopedOidcTestChain"))
+                .contains("Sign-in failed")
+                .doesNotContain(HostLoginFailurePortConfig.TITLE));
+  }
+
+  @Test
+  void scopedOidcChainStartsAndShowsTheGenericPageWithTwoPorts() {
+    // two port beans must not fail startup; the page falls back to generic text
+    runner
+        .withUserConfiguration(TwoLoginFailurePortsConfig.class)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasNotFailed();
+              assertThat(renderFailedBrowserLogin(ctx, "scopedOidcTestChain"))
+                  .contains("Sign-in failed")
+                  .doesNotContain(HostLoginFailurePortConfig.TITLE);
+            });
+  }
+
+  @Test
+  void scopedOidcChainRecoversAStaleCallbackUnderItsBasePath() {
+    runner.run(
+        ctx ->
+            assertThat(
+                    failBrowserLogin(ctx, "scopedOidcTestChain", "authorization_request_not_found")
+                        .getRedirectedUrl())
+                .isEqualTo(BASE_PATH + "/"));
+  }
+
+  private static String renderFailedBrowserLogin(
+      final org.springframework.context.ApplicationContext ctx, final String chainName)
+      throws Exception {
+    return failBrowserLogin(ctx, chainName, "invalid_id_token").getContentAsString();
+  }
+
+  private static MockHttpServletResponse failBrowserLogin(
+      final org.springframework.context.ApplicationContext ctx,
+      final String chainName,
+      final String errorCode)
+      throws Exception {
+    final var chain =
+        (DefaultSecurityFilterChain) ctx.getBean(chainName, SecurityFilterChain.class);
+    final var loginFilter =
+        chain.getFilters().stream()
+            .filter(OAuth2LoginAuthenticationFilter.class::isInstance)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(chainName + " must have an OAuth2 login filter"));
+    final var failureHandler =
+        (AuthenticationFailureHandler) ReflectionTestUtils.getField(loginFilter, "failureHandler");
+    final var request = new MockHttpServletRequest("GET", "/sso-callback");
+    request.addHeader(HttpHeaders.ACCEPT, "text/html");
+    final var response = new MockHttpServletResponse();
+    failureHandler.onAuthenticationFailure(
+        request, response, new OAuth2AuthenticationException(new OAuth2Error(errorCode)));
+    return response;
   }
 
   /**
@@ -1579,6 +1919,34 @@ class ScopedWebappSecurityChainBuilderScopedTest {
             throw new UnsupportedOperationException("stub — not called in this test");
           },
           scopedSessionFilter());
+    }
+  }
+
+  @Configuration
+  static class HostLoginFailurePortConfig {
+
+    static final String TITLE = "Explained by the host";
+
+    @Bean
+    OidcLoginFailurePort hostLoginFailurePort() {
+      return (request, exception) ->
+          Optional.of(new OidcLoginFailureNotice(403, TITLE, "The host knows why."));
+    }
+  }
+
+  @Configuration
+  static class TwoLoginFailurePortsConfig {
+
+    @Bean
+    OidcLoginFailurePort firstLoginFailurePort() {
+      return (request, exception) ->
+          Optional.of(new OidcLoginFailureNotice(403, HostLoginFailurePortConfig.TITLE, "first"));
+    }
+
+    @Bean
+    OidcLoginFailurePort secondLoginFailurePort() {
+      return (request, exception) ->
+          Optional.of(new OidcLoginFailureNotice(403, HostLoginFailurePortConfig.TITLE, "second"));
     }
   }
 }

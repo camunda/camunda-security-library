@@ -16,6 +16,18 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.Target;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 
+/**
+ * Matches when the configured authentication method is not {@code oidc}.
+ *
+ * <p>Audited against the relaxed-binding gap described in <a
+ * href="https://github.com/camunda/camunda-security-library/issues/554">#554</a>: the referenced
+ * property, {@code camunda.security.authentication.method}, has no camelCase word boundary, so its
+ * camelCase and kebab-case YAML spellings are identical and this {@code @ConditionalOnExpression}'s
+ * exact-key placeholder lookup cannot diverge from relaxed binding the way {@code groupsClaim} /
+ * {@code groups-claim} did. If this property is ever renamed to something with an internal word
+ * boundary, switch this condition to the {@code Binder}-based pattern used by {@link
+ * ConditionalOnCamundaGroupsEnabled} instead of {@code @ConditionalOnExpression}.
+ */
 @Target({TYPE, METHOD})
 @Retention(RUNTIME)
 @Documented

@@ -9,13 +9,11 @@ package io.camunda.security.spring.oidc;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.time.Duration;
-import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
@@ -31,8 +29,9 @@ import org.springframework.util.StringUtils;
  *
  * <ul>
  *   <li>A {@link JwtTimestampValidator} using the configured clock skew
- *   <li>A {@link JwtIssuerValidator} when the matched {@link OidcConfiguration} declares an issuer
- *       URI
+ *   <li>A {@link JwtIssuerValidator} for the issuer that the registration carries (see {@link
+ *       ClientRegistrationMetadata#issuer}). If it carries none, it uses the issuer URI of the
+ *       matched {@link OidcConfiguration}. An empty issuer entry turns the check off
  *   <li>An {@link AudienceValidator} when the matched {@link OidcConfiguration} declares audiences
  *   <li>Any extra validators supplied by the host (e.g. SaaS organization/cluster validators)
  * </ul>
@@ -86,8 +85,9 @@ public class TokenValidatorFactory {
 
     validators.add(new JwtTimestampValidator(clockSkew));
 
-    if (providerConfig != null && StringUtils.hasText(providerConfig.getIssuerUri())) {
-      validators.add(new JwtIssuerValidator(providerConfig.getIssuerUri()));
+    final var issuerUri = resolveIssuerUri(clientRegistration, providerConfig);
+    if (StringUtils.hasText(issuerUri)) {
+      validators.add(new JwtIssuerValidator(issuerUri));
     }
 
     final var audiences = resolveAudiences(clientRegistration, providerConfig);
@@ -101,28 +101,29 @@ public class TokenValidatorFactory {
   }
 
   /**
+   * Returns the issuer that the tokens of a registration must have. The issuer that the
+   * registration carries wins over the {@code providers} map, because scopes with the same
+   * registration ID can have different issuers. An empty issuer entry does not fall back to the
+   * map, so a scope without an issuer never uses the issuer of another scope.
+   */
+  private static String resolveIssuerUri(
+      final ClientRegistration clientRegistration, final OidcConfiguration providerConfig) {
+    return ClientRegistrationMetadata.issuer(clientRegistration)
+        .orElse(providerConfig != null ? providerConfig.getIssuerUri() : null);
+  }
+
+  /**
    * Resolves a registration's expected audiences: the {@link #AUDIENCES_METADATA_KEY} metadata
    * entry when present (authoritative, even when empty — an empty set disables audience
    * validation), otherwise the {@code providers}-map audiences.
    */
   private Set<String> resolveAudiences(
       final ClientRegistration clientRegistration, final OidcConfiguration providerConfig) {
-    final var metadata = clientRegistration.getProviderDetails().getConfigurationMetadata();
-    if (metadata.containsKey(AUDIENCES_METADATA_KEY)) {
-      final var metadataAudiences = metadata.get(AUDIENCES_METADATA_KEY);
-      if (!(metadataAudiences instanceof final Collection<?> collection)) {
-        throw new IllegalStateException(
-            "Metadata key '"
-                + AUDIENCES_METADATA_KEY
-                + "' must hold a Collection of audiences but was: "
-                + (metadataAudiences == null ? "null" : metadataAudiences.getClass().getName()));
-      }
-      // String.class::cast fails fast (ClassCastException) on any non-String element.
-      return collection.stream().map(String.class::cast).collect(Collectors.toSet());
-    }
-    if (providerConfig != null && providerConfig.getAudiences() != null) {
-      return providerConfig.getAudiences();
-    }
-    return Set.of();
+    return ClientRegistrationMetadata.audiences(clientRegistration)
+        .orElseGet(
+            () ->
+                providerConfig != null && providerConfig.getAudiences() != null
+                    ? providerConfig.getAudiences()
+                    : Set.of());
   }
 }

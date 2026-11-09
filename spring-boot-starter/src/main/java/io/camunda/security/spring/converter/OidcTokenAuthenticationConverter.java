@@ -11,6 +11,7 @@ import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.context.OidcClaimsProvider;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
+import io.camunda.security.spring.oidc.VerifiedJwt;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -107,10 +108,7 @@ public final class OidcTokenAuthenticationConverter
       return Optional.of(authentication)
           .map(JwtAuthenticationToken.class::cast)
           .map(JwtAuthenticationToken::getToken)
-          .map(
-              jwt ->
-                  resolveTokenClaimsConverter(jwt)
-                      .convert(claimsProvider.claimsFor(jwt.getClaims(), jwt.getTokenValue())))
+          .map(jwt -> resolveTokenClaimsConverter(jwt).convert(claimsOf(jwt)))
           .orElseThrow(
               () ->
                   new IllegalStateException(
@@ -119,6 +117,18 @@ public final class OidcTokenAuthenticationConverter
       throw new OAuth2AuthenticationException(
           new OAuth2Error(OAuth2ErrorCodes.INVALID_TOKEN, e.getMessage(), null), e);
     }
+  }
+
+  /**
+   * The claims to map: augmented from UserInfo as the provider that verified the token decides, if
+   * its decoder recorded that, and else as the claims provider decides by issuer.
+   */
+  private Map<String, Object> claimsOf(final Jwt jwt) {
+    if (jwt instanceof final VerifiedJwt verified && verified.decidesUserInfo()) {
+      return claimsProvider.claimsFor(
+          jwt.getClaims(), jwt.getTokenValue(), verified.userInfoEnabled(), verified.userInfoUri());
+    }
+    return claimsProvider.claimsFor(jwt.getClaims(), jwt.getTokenValue());
   }
 
   /**
@@ -131,8 +141,7 @@ public final class OidcTokenAuthenticationConverter
    */
   private LazyTokenClaimsConverter resolveTokenClaimsConverter(final Jwt jwt) {
     final var issuer = Objects.toString(jwt.getClaims().get(JwtClaimNames.ISS), null);
-    final var converter =
-        tokenClaimsConvertersByIssuer.getOrDefault(issuer, defaultTokenClaimsConverter);
+    final var converter = tokenClaimsConvertersByIssuer.forToken(jwt, defaultTokenClaimsConverter);
     LOG.debug(
         "Resolved token claims converter for issuer '{}': {}",
         issuer,

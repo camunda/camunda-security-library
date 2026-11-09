@@ -122,7 +122,7 @@ If you keep the Implementation Plan section in the parent body, edit it to add t
 
 ### 6. Flag ADR-shaped decisions
 
-If the task introduces a port/adapter/SPI, picks between viable approaches, or establishes a convention that other tasks will follow, point the user at the ADR workflow (`/adr` in Claude Code, or [adr.md](adr.md) for other agents). Tasks that just implement the mechanical work of an already-recorded decision don't need a fresh ADR — link the existing one in the Additional Context section instead.
+If the task adds a new Maven module or a new SPI for host applications, point the user at the ADR workflow. If the task sets a convention that other tasks will follow, do the same. In Claude Code, use `/create-architecture-decision`. Other agents read [adr.md](adr.md). Write an ADR only for a fundamental, lasting decision. A task that only does the mechanical work of a recorded decision needs no new ADR. Link the existing ADR in the Additional Context section instead.
 
 ### 7. Confirm with the user
 

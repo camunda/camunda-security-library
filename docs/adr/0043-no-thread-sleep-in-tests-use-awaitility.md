@@ -2,7 +2,7 @@
 status: Accepted
 ---
 
-# ADR-0033: No `Thread.sleep` in tests; wait on conditions with Awaitility
+# ADR-0043: No `Thread.sleep` in tests; wait on conditions with Awaitility
 
 **Deciders**: Ben Sheppard
 

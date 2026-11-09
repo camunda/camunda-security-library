@@ -19,6 +19,7 @@ import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
+import io.camunda.security.spring.oidc.ClientRegistrationMetadata;
 import io.camunda.security.spring.oidc.JWSKeySelectorFactory;
 import io.camunda.security.spring.oidc.OidcAccessTokenDecoderFactory;
 import io.camunda.security.spring.oidc.OidcTestServer;
@@ -68,6 +69,7 @@ final class OidcUserAuthenticationConverterAdditionalJwksTest {
 
   private OidcTestServer primary;
   private OidcTestServer additional;
+  private Map<String, Object> registrationMetadata = Map.of();
   private ListAppender<ILoggingEvent> logAppender;
   private Logger converterLogger;
 
@@ -110,6 +112,29 @@ final class OidcUserAuthenticationConverterAdditionalJwksTest {
 
     assertThat(claims).doesNotContainKey(ACCESS_TOKEN_ONLY_CLAIM).containsEntry("source", "id");
     assertThat(fallbackWarnings()).hasSize(1);
+    // the decode WARN names the registration and the client, so an operator can find the scope
+    assertThat(warnings())
+        .anySatisfy(
+            message ->
+                assertThat(message)
+                    .contains("Failed to decode Access Token for registration 'oidc'")
+                    .contains("with client 'test-client'"));
+  }
+
+  @Test
+  void shouldRedactTheIssuerInTheDecodeWarning() throws Exception {
+    // an issuer URL can hold credentials or tokens, which must not reach the log
+    startJwksServers();
+    registrationMetadata =
+        Map.of(ClientRegistrationMetadata.ISSUER, "https://user:secret@idp.example/?k=v");
+    final var converter = converter(null, AdditionalJwkSetUrisByRegistrationId.empty());
+
+    convert(converter, additional.sign(null, accessTokenClaims()));
+
+    assertThat(warnings())
+        .anySatisfy(message -> assertThat(message).contains("Failed to decode Access Token"))
+        .noneSatisfy(message -> assertThat(message).contains("secret"))
+        .noneSatisfy(message -> assertThat(message).contains("k=v"));
   }
 
   @Test
@@ -128,6 +153,32 @@ final class OidcUserAuthenticationConverterAdditionalJwksTest {
     assertThat(claims).containsEntry(ACCESS_TOKEN_ONLY_CLAIM, List.of("admins"));
     assertThat(claims).containsEntry("iss", issuerUri);
     assertThat(fallbackWarnings()).isEmpty();
+  }
+
+  @Test
+  void shouldUseTheAdditionalJwkSetUrisTheRegistrationCarries() throws Exception {
+    // a registration built per scope carries its own URIs; the host passes no lookup at all
+    startJwksServers();
+    registrationMetadata =
+        Map.of(ClientRegistrationMetadata.ADDITIONAL_JWK_SET_URIS, List.of(additional.jwksUri()));
+    final var converter = converter(null, AdditionalJwkSetUrisByRegistrationId.empty());
+
+    final var claims = convert(converter, additional.sign(null, accessTokenClaims()));
+
+    assertThat(claims).containsEntry(ACCESS_TOKEN_ONLY_CLAIM, List.of("admins"));
+  }
+
+  @Test
+  void shouldNotBorrowTheLookupUrisWhenTheRegistrationCarriesNone() throws Exception {
+    // the lookup holds the URIs of another scope under the same registration id
+    startJwksServers();
+    registrationMetadata = Map.of(ClientRegistrationMetadata.ADDITIONAL_JWK_SET_URIS, List.of());
+    final var converter =
+        converter(null, new AdditionalJwkSetUrisByRegistrationId(additionalUrisByRegistrationId()));
+
+    final var claims = convert(converter, additional.sign(null, accessTokenClaims()));
+
+    assertThat(claims).doesNotContainKey(ACCESS_TOKEN_ONLY_CLAIM).containsEntry("source", "id");
   }
 
   private void startJwksServers() throws Exception {
@@ -221,6 +272,7 @@ final class OidcUserAuthenticationConverterAdditionalJwksTest {
         .tokenUri(primary.issuerUri() + "/token")
         .jwkSetUri(primary.jwksUri())
         .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+        .providerConfigurationMetadata(registrationMetadata)
         .build();
   }
 
@@ -229,6 +281,13 @@ final class OidcUserAuthenticationConverterAdditionalJwksTest {
     logAppender = new ListAppender<>();
     logAppender.start();
     converterLogger.addAppender(logAppender);
+  }
+
+  private List<String> warnings() {
+    return logAppender.list.stream()
+        .filter(event -> event.getLevel() == Level.WARN)
+        .map(ILoggingEvent::getFormattedMessage)
+        .toList();
   }
 
   private List<String> fallbackWarnings() {

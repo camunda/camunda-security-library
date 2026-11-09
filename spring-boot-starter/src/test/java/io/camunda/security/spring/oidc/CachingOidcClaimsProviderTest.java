@@ -113,6 +113,44 @@ class CachingOidcClaimsProviderTest {
 
   // --- Cache ---
 
+  /**
+   * Two scopes accept the same token with different UserInfo endpoints: each endpoint is called,
+   * and each scope gets its own claims, not those that the other scope cached.
+   */
+  @Test
+  void cachesTheClaimsOfOneTokenPerUserInfoEndpoint() {
+    final var endpointA = "https://idp.example/scope-a/userinfo";
+    final var endpointB = "https://idp.example/scope-b/userinfo";
+    when(fetcher.fetch(eq(endpointA), any())).thenReturn(Map.of("sub", "alice", "groups", "a"));
+    when(fetcher.fetch(eq(endpointB), any())).thenReturn(Map.of("sub", "alice", "groups", "b"));
+    final Map<String, Object> jwt =
+        Map.of("sub", "alice", "iss", ISSUER, "iat", 1000L, "exp", 9999L, "scope", "openid");
+    final var p = provider(URI_BY_ISSUER);
+
+    assertThat(p.claimsFor(jwt, "tok1", true, endpointA)).containsEntry("groups", "a");
+    assertThat(p.claimsFor(jwt, "tok1", true, endpointB)).containsEntry("groups", "b");
+    assertThat(p.claimsFor(jwt, "tok1", true, endpointA)).containsEntry("groups", "a");
+
+    verify(fetcher, times(1)).fetch(eq(endpointA), any());
+    verify(fetcher, times(1)).fetch(eq(endpointB), any());
+  }
+
+  /** A failed fetch at one scope's endpoint does not suppress the fetch at another's. */
+  @Test
+  void keepsAFailedFetchToItsOwnUserInfoEndpoint() {
+    final var endpointA = "https://idp.example/scope-a/userinfo";
+    final var endpointB = "https://idp.example/scope-b/userinfo";
+    when(fetcher.fetch(eq(endpointA), any()))
+        .thenThrow(new OidcUserInfoFetchException("scope A's IdP is down"));
+    when(fetcher.fetch(eq(endpointB), any())).thenReturn(Map.of("sub", "alice", "groups", "b"));
+    final Map<String, Object> jwt =
+        Map.of("sub", "alice", "iss", ISSUER, "iat", 1000L, "exp", 9999L, "scope", "openid");
+    final var p = provider(URI_BY_ISSUER);
+
+    assertThat(p.claimsFor(jwt, "tok1", true, endpointA)).doesNotContainKey("groups");
+    assertThat(p.claimsFor(jwt, "tok1", true, endpointB)).containsEntry("groups", "b");
+  }
+
   @Test
   void cacheHitDoesNotCallFetcherAgain() {
     when(fetcher.fetch(any(), any())).thenReturn(Map.of("sub", "alice", "groups", List.of("eng")));

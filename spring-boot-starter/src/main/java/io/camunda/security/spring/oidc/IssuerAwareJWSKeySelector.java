@@ -101,7 +101,7 @@ public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelecto
    * <p>Two requests that race on the first resolution of an issuer therefore each build a selector,
    * and the loser of the {@code putIfAbsent} discards its own. That is harmless: a selector's
    * Nimbus {@code JWKSource} fetches nothing and starts no thread until it is actually asked for a
-   * key (see ADR-0032), so a never-used candidate holds no live resources.
+   * key (see ADR-0042), so a never-used candidate holds no live resources.
    */
   private JWSKeySelector<SecurityContext> keySelectorFor(final String issuer)
       throws KeySourceException {
@@ -145,7 +145,13 @@ public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelecto
     final var clientRegistration = getClientRegistrationByIssuer(issuer);
     final var providerDetails = clientRegistration.getProviderDetails();
     final var jwkSetUri = providerDetails.getJwkSetUri();
-    final var additionalUris = additionalJwkSetUrisByIssuer.get(issuer);
+    // The routed registration's own URIs, never a lookup by issuer: the map below holds only the
+    // providers that set additional URIs, so a miss there says nothing about who owns the issuer,
+    // and its trailing-slash twin could belong to another provider. The map, matched exactly, is
+    // for host-built registrations that carry no CSL metadata.
+    final var additionalUris =
+        ClientRegistrationMetadata.additionalJwkSetUris(clientRegistration)
+            .orElseGet(() -> additionalJwkSetUrisByIssuer.get(issuer));
     try {
       return jwsKeySelectorFactory.createJWSKeySelector(jwkSetUri, additionalUris);
     } catch (final IllegalArgumentException invalidJwkSetUri) {

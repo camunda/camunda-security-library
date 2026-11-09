@@ -38,6 +38,7 @@ public class OidcConfiguration {
   public static final boolean DEFAULT_IDP_LOGOUT_ENABLED = true;
   public static final boolean DEFAULT_POST_LOGOUT_REDIRECT_ENABLED = true;
   public static final boolean DEFAULT_USER_INFO_ENABLED = true;
+  public static final boolean DEFAULT_REVOCATION_ENABLED = true;
   public static final boolean DEFAULT_USER_INFO_REQUIRED = false;
 
   private String issuerUri;
@@ -53,6 +54,8 @@ public class OidcConfiguration {
   private List<String> additionalJwkSetUris;
   private String authorizationUri;
   private String endSessionEndpointUri;
+  private String revocationEndpointUri;
+  private boolean revocationEnabled = DEFAULT_REVOCATION_ENABLED;
   private String tokenUri;
   private String userInfoUri;
   private AuthorizeRequestConfiguration authorizeRequestConfiguration =
@@ -62,6 +65,11 @@ public class OidcConfiguration {
   private String clientIdClaim;
   private String groupsClaim;
   private boolean preferUsernameClaim;
+  // Set by the setters only. Spring calls a setter only for a property that the configuration
+  // has, so these flags tell an unset claim from one set to its default value.
+  private boolean usernameClaimSet;
+  private boolean clientIdClaimSet;
+  private boolean preferUsernameClaimSet;
   private boolean preferIdTokenClaims;
   private String organizationId;
   private List<String> resource;
@@ -213,6 +221,37 @@ public class OidcConfiguration {
     this.endSessionEndpointUri = endSessionEndpointUri;
   }
 
+  /**
+   * The provider's RFC 7009 token revocation endpoint, used at logout to revoke the session's
+   * refresh token (ADR-0036). Issuer discovery already supplies this as {@code
+   * revocation_endpoint}, so it only needs setting when endpoints are configured explicitly.
+   * Leaving it unset on a provider that publishes none, as MS Entra does, skips revocation.
+   */
+  public String getRevocationEndpointUri() {
+    return revocationEndpointUri;
+  }
+
+  public void setRevocationEndpointUri(final String revocationEndpointUri) {
+    this.revocationEndpointUri = revocationEndpointUri;
+  }
+
+  /**
+   * Whether to revoke this provider's refresh token at logout (ADR-0036). Enabled by default.
+   *
+   * <p>The opt-out exists because the endpoint is usually discovered rather than configured: an IdP
+   * that publishes {@code revocation_endpoint} turns revocation on for a deployment that never
+   * asked for it, so the presence of an endpoint cannot stand in for operator intent. Disabling
+   * wins over a configured {@code revocation-endpoint-uri} and suppresses a discovered endpoint
+   * too.
+   */
+  public boolean isRevocationEnabled() {
+    return revocationEnabled;
+  }
+
+  public void setRevocationEnabled(final boolean revocationEnabled) {
+    this.revocationEnabled = revocationEnabled;
+  }
+
   public String getTokenUri() {
     return tokenUri;
   }
@@ -252,6 +291,14 @@ public class OidcConfiguration {
 
   public void setUsernameClaim(final String usernameClaim) {
     this.usernameClaim = usernameClaim;
+    usernameClaimSet = true;
+  }
+
+  /**
+   * @return {@code true} when the configuration sets {@code username-claim}, also to its default
+   */
+  public boolean isUsernameClaimSet() {
+    return usernameClaimSet;
   }
 
   public String getClientIdClaim() {
@@ -260,6 +307,14 @@ public class OidcConfiguration {
 
   public void setClientIdClaim(final String clientIdClaim) {
     this.clientIdClaim = clientIdClaim;
+    clientIdClaimSet = true;
+  }
+
+  /**
+   * @return {@code true} when the configuration sets {@code client-id-claim}, also to {@code null}
+   */
+  public boolean isClientIdClaimSet() {
+    return clientIdClaimSet;
   }
 
   public String getOrganizationId() {
@@ -289,6 +344,15 @@ public class OidcConfiguration {
 
   public void setPreferUsernameClaim(final boolean preferUsernameClaim) {
     this.preferUsernameClaim = preferUsernameClaim;
+    preferUsernameClaimSet = true;
+  }
+
+  /**
+   * @return {@code true} when the configuration sets {@code prefer-username-claim}, also to {@code
+   *     false}
+   */
+  public boolean isPreferUsernameClaimSet() {
+    return preferUsernameClaimSet;
   }
 
   public boolean isPreferIdTokenClaims() {
@@ -465,6 +529,8 @@ public class OidcConfiguration {
         || additionalJwkSetUris != null
         || authorizationUri != null
         || endSessionEndpointUri != null
+        || revocationEndpointUri != null
+        || revocationEnabled != DEFAULT_REVOCATION_ENABLED
         || tokenUri != null
         || userInfoUri != null
         || authorizeRequestConfiguration == null
@@ -513,6 +579,8 @@ public class OidcConfiguration {
     private List<String> additionalJwkSetUris;
     private String authorizationUri;
     private String endSessionEndpointUri;
+    private String revocationEndpointUri;
+    private boolean revocationEnabled = DEFAULT_REVOCATION_ENABLED;
     private String tokenUri;
     private String userInfoUri;
     private AuthorizeRequestConfiguration authorizeRequestConfiguration =
@@ -522,6 +590,9 @@ public class OidcConfiguration {
     private String clientIdClaim;
     private String groupsClaim;
     private boolean preferUsernameClaim;
+    private boolean usernameClaimSet;
+    private boolean clientIdClaimSet;
+    private boolean preferUsernameClaimSet;
     private boolean preferIdTokenClaims;
     private String organizationId;
     private String clientAuthenticationMethod = CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC;
@@ -601,6 +672,16 @@ public class OidcConfiguration {
       return this;
     }
 
+    public Builder revocationEndpointUri(final String revocationEndpointUri) {
+      this.revocationEndpointUri = revocationEndpointUri;
+      return this;
+    }
+
+    public Builder revocationEnabled(final boolean revocationEnabled) {
+      this.revocationEnabled = revocationEnabled;
+      return this;
+    }
+
     public Builder tokenUri(final String tokenUri) {
       this.tokenUri = tokenUri;
       return this;
@@ -624,11 +705,13 @@ public class OidcConfiguration {
 
     public Builder usernameClaim(final String usernameClaim) {
       this.usernameClaim = usernameClaim;
+      usernameClaimSet = true;
       return this;
     }
 
     public Builder clientIdClaim(final String clientIdClaim) {
       this.clientIdClaim = clientIdClaim;
+      clientIdClaimSet = true;
       return this;
     }
 
@@ -640,6 +723,7 @@ public class OidcConfiguration {
 
     public Builder preferUsernameClaim(final boolean preferUsernameClaim) {
       this.preferUsernameClaim = preferUsernameClaim;
+      preferUsernameClaimSet = true;
       return this;
     }
 
@@ -710,6 +794,8 @@ public class OidcConfiguration {
       config.setGrantType(grantType);
       config.setRedirectUri(redirectUri);
       config.setEndSessionEndpointUri(endSessionEndpointUri);
+      config.setRevocationEndpointUri(revocationEndpointUri);
+      config.setRevocationEnabled(revocationEnabled);
       config.setScope(scope);
       config.setJwkSetUri(jwkSetUri);
       config.setAdditionalJwkSetUris(additionalJwkSetUris);
@@ -718,10 +804,16 @@ public class OidcConfiguration {
       config.setUserInfoUri(userInfoUri);
       config.setAuthorizeRequest(authorizeRequestConfiguration);
       config.setAudiences(audiences);
-      config.setUsernameClaim(usernameClaim);
-      config.setClientIdClaim(clientIdClaim);
+      if (usernameClaimSet) {
+        config.setUsernameClaim(usernameClaim);
+      }
+      if (clientIdClaimSet) {
+        config.setClientIdClaim(clientIdClaim);
+      }
       config.setGroupsClaim(groupsClaim);
-      config.setPreferUsernameClaim(preferUsernameClaim);
+      if (preferUsernameClaimSet) {
+        config.setPreferUsernameClaim(preferUsernameClaim);
+      }
       config.setPreferIdTokenClaims(preferIdTokenClaims);
       config.setOrganizationId(organizationId);
       config.setClientAuthenticationMethod(clientAuthenticationMethod);
