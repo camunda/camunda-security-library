@@ -24,6 +24,7 @@ public enum AuthorizationResourceType {
   MAPPING_RULE(
       PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE, PermissionType.DELETE),
   MESSAGE(PermissionType.CREATE, PermissionType.READ),
+  PROBE(PermissionType.CREATE, PermissionType.ANSWER),
   RESOURCE(
       PermissionType.CREATE,
       PermissionType.READ,

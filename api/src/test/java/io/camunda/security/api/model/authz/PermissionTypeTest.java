@@ -41,6 +41,12 @@ class PermissionTypeTest {
   }
 
   @Test
+  void answerIsNotFlaggedAsReadPermission() {
+    // ANSWER lets a worker receive the secret values in a probe, so it must not be a read.
+    assertThat(PermissionType.ANSWER.isReadPermission()).isFalse();
+  }
+
+  @Test
   void pauseIsNotFlaggedAsReadPermission() {
     // PAUSE is a control operation (e.g. pausing exporting), not a read.
     assertThat(PermissionType.PAUSE.isReadPermission()).isFalse();
