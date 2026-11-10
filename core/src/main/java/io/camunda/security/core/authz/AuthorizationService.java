@@ -30,7 +30,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Default implementation of {@link AuthorizationCheckPort}. Orchestrates two distinct evaluation
+ * Default implementation of {@link AuthorizationCheckPort}. Orchestrates three distinct evaluation
  * paths:
  *
  * <p><strong>Scope-based checks</strong> ({@link #check(CamundaAuthentication,
@@ -49,13 +49,14 @@ import org.slf4j.LoggerFactory;
  * There is no equivalent path in {@link AuthorizationChecker}. Callers must not bypass this method
  * for property-based authorization.
  *
- * <p><strong>Conditional role checks</strong> (the same overload, for a resource type with a
- * registered {@link ResourceAttributeExtractor}): the principal's roles are its global roles plus
- * the roles of its conditional memberships whose conditions the resource meets (ADR-0041). With
- * these roles, the check passes when the principal holds a grant on the resource ID, or a property
- * grant that a {@link PropertyAuthorizationEvaluator} matches. A conditional membership that cannot
- * be evaluated does not count. For a resource type without an extractor, conditional memberships
- * never count.
+ * <p><strong>Conditional role checks</strong> ({@link #check(CamundaAuthentication,
+ * RequiredAuthorization, Object)}, for a resource type with a registered {@link
+ * ResourceAttributeExtractor}): the principal's roles are its global roles plus the roles of its
+ * conditional memberships whose conditions the resource meets (ADR-0041). With these roles, the
+ * check passes when the principal holds a grant on each resource ID, or a property grant that a
+ * {@link PropertyAuthorizationEvaluator} matches. A resource without an ID gets no grant by ID. A
+ * conditional membership that cannot be evaluated does not count. Conditional memberships never
+ * count for a resource type without an extractor, or in a check without a resource.
  *
  * <p>{@link #skipChecks()} is a hot-path convenience for callers: it returns {@code true} when both
  * authorization and multi-tenancy checks are globally disabled, so callers can avoid constructing
@@ -241,9 +242,12 @@ public final class AuthorizationService implements AuthorizationCheckPort {
    * <p>If a {@link ResourceAttributeExtractor} is registered for the resource type of {@code
    * authorization}, the conditional role check described in the class documentation runs instead.
    *
-   * @param resource the resource instance to evaluate the property against
+   * @param resource the resource instance to evaluate the property against; on the conditional role
+   *     check, also the source of the resource attributes and of the resource ID
    * @return {@link Either#right(Object) right(null)} when authorized or when authorization is
-   *     disabled; {@link Either#left(Object) left(rejection)} otherwise
+   *     disabled; {@link Either#left(Object) left(rejection)} otherwise. On the conditional role
+   *     check, a resource without an ID gives a {@link AuthorizationRejection.Permission} with a
+   *     {@code null} resource ID.
    * @throws IllegalArgumentException on the conditional role check if {@code authorization} has no
    *     resource IDs, no {@code resourceIdSupplier} and no resource property names
    * @throws NullPointerException on the conditional role check if {@code resource} is {@code null}
@@ -298,8 +302,9 @@ public final class AuthorizationService implements AuthorizationCheckPort {
       final RequiredAuthorization<T> authorization,
       final T resource) {
     Objects.requireNonNull(resource, "resource");
-    final List<String> resourceIds = resourceIdsOf(authorization, resource);
-    if (resourceIds.isEmpty() && !authorization.hasAnyResourcePropertyNames()) {
+    final boolean checksResourceIds =
+        authorization.hasAnyResourceIds() || authorization.resourceIdSupplier() != null;
+    if (!checksResourceIds && !authorization.hasAnyResourcePropertyNames()) {
       throw new IllegalArgumentException(
           ("A check on resource type %s, which has a ResourceAttributeExtractor, needs resource IDs,"
                   + " a resourceIdSupplier or resource property names")
@@ -309,7 +314,9 @@ public final class AuthorizationService implements AuthorizationCheckPort {
         conditionalRoleEvaluator.applicableRoleIds(
             authentication, authorization.resourceType(), resource);
 
-    final Optional<String> deniedResourceId =
+    // Empty when the resourceIdSupplier finds no ID; such a resource gets no grant by ID.
+    final List<String> resourceIds = resourceIdsOf(authorization, resource);
+    final String deniedResourceId =
         resourceIds.stream()
             .filter(
                 resourceId ->
@@ -318,8 +325,9 @@ public final class AuthorizationService implements AuthorizationCheckPort {
                         authentication,
                         authorization,
                         conditionalRoleIds))
-            .findFirst();
-    if (!resourceIds.isEmpty() && deniedResourceId.isEmpty()) {
+            .findFirst()
+            .orElse(null);
+    if (!resourceIds.isEmpty() && deniedResourceId == null) {
       return Either.right(null);
     }
     if (authorization.hasAnyResourcePropertyNames()
@@ -340,12 +348,10 @@ public final class AuthorizationService implements AuthorizationCheckPort {
         authorization.resourceType(),
         authorization.permissionType(),
         conditionalRoleIds.size());
-    if (deniedResourceId.isPresent()) {
+    if (checksResourceIds) {
       return Either.left(
           new AuthorizationRejection.Permission(
-              authorization.resourceType(),
-              authorization.permissionType(),
-              deniedResourceId.get()));
+              authorization.resourceType(), authorization.permissionType(), deniedResourceId));
     }
     return Either.left(
         new AuthorizationRejection.Property(

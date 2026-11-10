@@ -18,11 +18,14 @@ import java.util.Set;
  * are evaluated against these values.
  *
  * <p>Implementations are registered in a {@code ResourceAttributeExtractorRegistry} (core module).
- * Each pair of {@link #resourceType()} and {@link #resourceClass()} can have one extractor only. A
- * check uses the extractor of its resource type whose class accepts the resource.
+ * The extractors of one {@link #resourceType()} must have unrelated {@link #resourceClass()
+ * classes}: the registry rejects two classes of which one is the same as, or a subtype of, the
+ * other. If more than one extractor still accepts a resource, for example two interfaces that the
+ * resource both implements, none is used and conditional memberships do not count.
  *
- * <p>A conditional membership counts only for a resource type that has an extractor. An attribute
- * that the extractor does not return has no value, and a condition on it is not met.
+ * <p>A conditional membership counts only in a check on a resource object, and only for a resource
+ * type that has an extractor. An attribute that the extractor does not return has no value, and a
+ * condition on it is not met.
  *
  * @param <T> the class of the resources this extractor reads
  */

@@ -28,9 +28,9 @@ import org.slf4j.LoggerFactory;
  * Finds the conditional role memberships of a principal that apply to a resource (ADR-0041). A
  * membership applies when the attributes of the resource meet all of its conditions.
  *
- * <p>Anything that cannot be evaluated does not apply (ADR-0041 D4): no extractor for the resource,
- * an extractor that throws, and an attribute without a value. {@link Operand.Equals} compares the
- * values literally, so {@code *} matches only {@code *}.
+ * <p>Anything that cannot be evaluated does not apply (ADR-0041 D4): no single extractor for the
+ * resource, an extractor that throws, and an attribute without a value. {@link Operand.Equals}
+ * compares the values literally, so {@code *} matches only {@code *}.
  */
 final class ConditionalRoleEvaluator {
 
@@ -73,8 +73,8 @@ final class ConditionalRoleEvaluator {
         extractorRegistry.findMatching(resourceType, resource);
     if (extractor.isEmpty()) {
       LOG.debug(
-          "No ResourceAttributeExtractor for resource type [{}] accepts a resource of class [{}];"
-              + " conditional role memberships do not apply",
+          "No single ResourceAttributeExtractor for resource type [{}] accepts a resource of class"
+              + " [{}]; conditional role memberships do not apply",
           resourceType,
           resource.getClass().getName());
       return Map.of();

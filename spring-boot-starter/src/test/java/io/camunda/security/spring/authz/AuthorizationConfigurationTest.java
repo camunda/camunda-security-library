@@ -147,7 +147,7 @@ class AuthorizationConfigurationTest {
   }
 
   @Test
-  void duplicateResourceAttributeExtractorsFailTheContext() {
+  void overlappingResourceAttributeExtractorsFailTheContext() {
     runner
         .withBean(AuthorizationChecker.class, () -> mockChecker)
         .withBean("first", ResourceAttributeExtractor.class, PaymentsWorkspaceExtractor::new)
@@ -157,7 +157,7 @@ class AuthorizationConfigurationTest {
                 assertThat(ctx)
                     .getFailure()
                     .rootCause()
-                    .hasMessageContaining("Duplicate ResourceAttributeExtractor"));
+                    .hasMessageContaining("Overlapping ResourceAttributeExtractors"));
   }
 
   @Test

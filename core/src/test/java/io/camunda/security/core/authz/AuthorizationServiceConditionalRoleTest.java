@@ -305,6 +305,23 @@ class AuthorizationServiceConditionalRoleTest {
   }
 
   @Test
+  void resourceWithoutIdIsDeniedInsteadOfRejected() {
+    // given a membership that applies, and a resource for which the supplier finds no ID
+    grants.grant(EDITOR, PROCESS_DEFINITION, READ_PROCESS_DEFINITION, AuthorizationScope.WILDCARD);
+    final var alice = userWith(conditional(EDITOR, equalsCondition(WORKSPACE_ID, PAYMENTS)));
+
+    // when
+    final var result =
+        service(diagramExtractor()).check(alice, readDiagram, diagram(null, PAYMENTS, null));
+
+    // then
+    assertThat(result.leftValue())
+        .isEqualTo(
+            new AuthorizationRejection.Permission(
+                PROCESS_DEFINITION, READ_PROCESS_DEFINITION, null));
+  }
+
+  @Test
   void checkWithoutResourceIdOrPropertyNamesIsRejected() {
     // given
     final var alice = userWith(conditional(EDITOR, equalsCondition(WORKSPACE_ID, PAYMENTS)));

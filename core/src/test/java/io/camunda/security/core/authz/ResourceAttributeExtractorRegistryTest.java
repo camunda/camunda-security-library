@@ -74,6 +74,34 @@ class ResourceAttributeExtractorRegistryTest {
   }
 
   @Test
+  void rejectsExtractorsOfTheSameResourceTypeWhoseClassesAreSubtypes() {
+    // given
+    final var extractors =
+        List.of(
+            new FixedExtractor<>(PROCESS_DEFINITION, CharSequence.class),
+            new FixedExtractor<>(PROCESS_DEFINITION, String.class));
+
+    // when / then
+    assertThatThrownBy(() -> new ResourceAttributeExtractorRegistry(extractors))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining(CharSequence.class.getName())
+        .hasMessageContaining(String.class.getName());
+  }
+
+  @Test
+  void findsNoExtractorWhenTwoInterfacesAcceptTheResource() {
+    // given two unrelated interfaces, both implemented by String
+    final var registry =
+        new ResourceAttributeExtractorRegistry(
+            List.of(
+                new FixedExtractor<>(PROCESS_DEFINITION, CharSequence.class),
+                new FixedExtractor<>(PROCESS_DEFINITION, Comparable.class)));
+
+    // when / then
+    assertThat(registry.findMatching(PROCESS_DEFINITION, "resource")).isEmpty();
+  }
+
+  @Test
   void acceptsTheSameClassForDifferentResourceTypes() {
     // given
     final var extractors =
