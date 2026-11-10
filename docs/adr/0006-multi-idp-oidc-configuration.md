@@ -1,5 +1,5 @@
 ---
-status: Accepted
+status: Accepted (partially superseded by ADR-0042)
 ---
 
 # ADR-0006: Additive multi-IdP OIDC configuration with an issuer-aware `JwtDecoder`
@@ -8,7 +8,7 @@ status: Accepted
 
 ## Status
 
-Accepted
+Accepted. Partially superseded by [ADR-0042](0042-resilient-jwks-refresh-and-timeouts.md): only the `JWKSource` construction settings (`refreshAheadCache(false)` and Nimbus's default HTTP timeouts) are replaced. Every other decision in this record stays in force.
 
 ## Context
 
