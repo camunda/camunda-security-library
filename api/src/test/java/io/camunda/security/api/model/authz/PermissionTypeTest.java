@@ -35,6 +35,11 @@ class PermissionTypeTest {
   }
 
   @Test
+  void suspendProcessDefinitionIsNotFlaggedAsReadPermission() {
+    assertThat(PermissionType.SUSPEND_PROCESS_DEFINITION.isReadPermission()).isFalse();
+  }
+
+  @Test
   void revealIsNotFlaggedAsReadPermission() {
     // REVEAL exposes secret values, so it must not be treated as a read permission.
     assertThat(PermissionType.REVEAL.isReadPermission()).isFalse();
