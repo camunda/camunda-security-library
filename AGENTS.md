@@ -4,7 +4,7 @@ A unified identity and authorization library for the Camunda 8 platform. The CSL
 
 ## Stack
 
-- Java 21 / Spring Boot 4 / Spring Web MVC / Maven 3.9
+- Java 21 / Spring Boot 4 / Spring Web MVC / Maven 3.9 (the `client` module: Java 8, see [client/README.md](client/README.md))
 - Architecture: Hexagonal (ports and adapters)
 - Testing: JUnit 5, Mockito, AssertJ, ArchUnit, Testcontainers, Pact
 - Formatting: Google Java Format (Spotless)
@@ -19,6 +19,8 @@ Public consumer-facing types are exposed from the `api` module:
 
 - `api/model`: public models used by adopters (for example authentication context records)
 - `api/context`: public context/helper contracts used by adopters (for example holders/providers/converters)
+
+Outbound calls to CSL-protected services use the `client` module (not a hexagonal port, see [ADR-0042](docs/adr/0042-spring-free-client-for-csl-protected-services.md)). It is plain Java with no Spring and no dependency on other CSL modules. Spring hosts will bind named clients under `camunda.security.client.<name>.*` through the starter (follow-up PR).
 
 ### Deployment Strategies
 
@@ -45,7 +47,7 @@ In CSL, a policy is the effective access configuration derived from those buildi
 ## Key Conventions
 
 - **Models:** always Java records (never mutable classes)
-- **Config classes:** cannot be records (Spring `@ConfigurationProperties` needs mutability)
+- **Config classes:** cannot be records (Spring `@ConfigurationProperties` needs mutability) Exception: the `client` module uses immutable final classes for its config types, because it targets Java 8, see [ADR-0042](docs/adr/0042-spring-free-client-for-csl-protected-services.md).
 - **Sealed by default:** all production classes must be `final` unless they are intentional extension points
 - **No auto-configuration by default:** Configuration classes in `spring-boot-starter/` are plain `@Configuration` classes that host applications activate by explicit `@Import`. Do NOT register classes in CSL's own `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` — nothing must activate automatically from adding the dependency. The single exception is the opt-in umbrella `CamundaSecurityAutoConfiguration`, which is annotated `@AutoConfiguration` but deliberately left out of `AutoConfiguration.imports`; hosts activate it explicitly via `@ImportAutoConfiguration(CamundaSecurityAutoConfiguration.class)` or by listing it in their own imports file. See ADR-0003.
 - **`@ConditionalOnMissingBean`:** every library-supplied default bean must have `@ConditionalOnMissingBean` so a host that imports the configuration can still override individual beans.
