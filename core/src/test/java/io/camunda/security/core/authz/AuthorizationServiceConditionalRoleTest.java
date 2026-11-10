@@ -8,6 +8,7 @@
 package io.camunda.security.core.authz;
 
 import static io.camunda.security.api.model.authz.AuthorizationResourceType.PROCESS_DEFINITION;
+import static io.camunda.security.api.model.authz.AuthorizationResourceType.TENANT;
 import static io.camunda.security.api.model.authz.AuthorizationResourceType.USER_TASK;
 import static io.camunda.security.api.model.authz.PermissionType.READ_PROCESS_DEFINITION;
 import static io.camunda.security.api.model.authz.PermissionType.READ_USER_TASK;
@@ -165,6 +166,62 @@ class AuthorizationServiceConditionalRoleTest {
     // when / then
     assertThat(service.check(alice, readDiagram, diagram("d1", PAYMENTS, null)).isRight()).isTrue();
     assertThat(service.check(alice, readDiagram, diagram("d2", PAYMENTS, null)).isLeft()).isTrue();
+  }
+
+  @Test
+  void conditionalMembershipCountsForASingleExplicitResourceId() {
+    // given
+    grants.grant(EDITOR, PROCESS_DEFINITION, READ_PROCESS_DEFINITION, AuthorizationScope.WILDCARD);
+    final var alice = userWith(conditional(EDITOR, equalsCondition(WORKSPACE_ID, PAYMENTS)));
+    final RequiredAuthorization<Diagram> readD1 =
+        RequiredAuthorization.<Diagram>of(
+            b -> b.processDefinition().readProcessDefinition().resourceId("d1"));
+
+    // when
+    final var result =
+        service(diagramExtractor()).check(alice, readD1, diagram("d1", PAYMENTS, null));
+
+    // then
+    assertThat(result.isRight()).isTrue();
+  }
+
+  @Test
+  void conditionalMembershipDoesNotCountForTheIdsOfAMultiIdCheck() {
+    // given a membership that applies to the resource, and a check that also names another ID
+    grants.grant(EDITOR, PROCESS_DEFINITION, READ_PROCESS_DEFINITION, AuthorizationScope.WILDCARD);
+    final var alice = userWith(conditional(EDITOR, equalsCondition(WORKSPACE_ID, PAYMENTS)));
+    final RequiredAuthorization<Diagram> readD1AndD2 =
+        RequiredAuthorization.<Diagram>of(
+            b -> b.processDefinition().readProcessDefinition().resourceIds(List.of("d1", "d2")));
+
+    // when
+    final var result =
+        service(diagramExtractor()).check(alice, readD1AndD2, diagram("d1", PAYMENTS, null));
+
+    // then
+    assertThat(result.leftValue())
+        .isEqualTo(
+            new AuthorizationRejection.Permission(
+                PROCESS_DEFINITION, READ_PROCESS_DEFINITION, "d1"));
+  }
+
+  @Test
+  void deniedTenantCheckGivesTheTenantRejection() {
+    // given a TENANT extractor and a membership whose condition the resource does not meet
+    grants.grant(EDITOR, TENANT, PermissionType.READ, AuthorizationScope.WILDCARD);
+    final var alice = userWith(conditional(EDITOR, equalsCondition(WORKSPACE_ID, PAYMENTS)));
+    final RequiredAuthorization<Diagram> readTenant =
+        RequiredAuthorization.<Diagram>of(b -> b.tenant().read().resourceIdSupplier(Diagram::id));
+    final var tenantExtractor =
+        extractor(
+            TENANT, Diagram.class, diagram -> Map.of(WORKSPACE_ID, Set.of(diagram.workspace())));
+
+    // when
+    final var result =
+        service(tenantExtractor).check(alice, readTenant, diagram("t1", "billing", null));
+
+    // then
+    assertThat(result.leftValue()).isEqualTo(new AuthorizationRejection.Tenant("t1"));
   }
 
   @Test

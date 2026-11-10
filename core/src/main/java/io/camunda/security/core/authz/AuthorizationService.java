@@ -56,7 +56,10 @@ import org.slf4j.LoggerFactory;
  * check passes when the principal holds a grant on each resource ID, or a property grant that a
  * {@link PropertyAuthorizationEvaluator} matches. A resource without an ID gets no grant by ID. A
  * conditional membership that cannot be evaluated does not count. Conditional memberships never
- * count for a resource type without an extractor, or in a check without a resource.
+ * count for a resource type without an extractor, in a check without a resource, or for the grants
+ * by ID of a check with more than one resource ID, because the conditions describe only {@code
+ * resource}. A denied {@link AuthorizationResourceType#TENANT} check by ID produces {@link
+ * AuthorizationRejection.Tenant}, as on the scope-based path.
  *
  * <p>{@link #skipChecks()} is a hot-path convenience for callers: it returns {@code true} when both
  * authorization and multi-tenancy checks are globally disabled, so callers can avoid constructing
@@ -246,7 +249,8 @@ public final class AuthorizationService implements AuthorizationCheckPort {
    *     check, also the source of the resource attributes and of the resource ID
    * @return {@link Either#right(Object) right(null)} when authorized or when authorization is
    *     disabled; {@link Either#left(Object) left(rejection)} otherwise. On the conditional role
-   *     check, a resource without an ID gives a {@link AuthorizationRejection.Permission} with a
+   *     check, a resource without an ID gives a {@link AuthorizationRejection.Permission} (or
+   *     {@link AuthorizationRejection.Tenant} for {@link AuthorizationResourceType#TENANT}) with a
    *     {@code null} resource ID.
    * @throws IllegalArgumentException on the conditional role check if {@code authorization} has no
    *     resource IDs, no {@code resourceIdSupplier} and no resource property names
@@ -316,6 +320,10 @@ public final class AuthorizationService implements AuthorizationCheckPort {
 
     // Empty when the resourceIdSupplier finds no ID; such a resource gets no grant by ID.
     final List<String> resourceIds = resourceIdsOf(authorization, resource);
+    // The conditions were evaluated against one resource, so they say nothing about the other IDs
+    // of a multi-ID check. There, only global roles count (ADR-0041 D4).
+    final Set<String> idConditionalRoleIds =
+        resourceIds.size() == 1 ? conditionalRoleIds : Set.of();
     final String deniedResourceId =
         resourceIds.stream()
             .filter(
@@ -324,7 +332,7 @@ public final class AuthorizationService implements AuthorizationCheckPort {
                         AuthorizationScope.of(resourceId),
                         authentication,
                         authorization,
-                        conditionalRoleIds))
+                        idConditionalRoleIds))
             .findFirst()
             .orElse(null);
     if (!resourceIds.isEmpty() && deniedResourceId == null) {
@@ -348,6 +356,10 @@ public final class AuthorizationService implements AuthorizationCheckPort {
         authorization.resourceType(),
         authorization.permissionType(),
         conditionalRoleIds.size());
+    if (checksResourceIds
+        && AuthorizationResourceType.TENANT.equals(authorization.resourceType())) {
+      return Either.left(new AuthorizationRejection.Tenant(deniedResourceId));
+    }
     if (checksResourceIds) {
       return Either.left(
           new AuthorizationRejection.Permission(
