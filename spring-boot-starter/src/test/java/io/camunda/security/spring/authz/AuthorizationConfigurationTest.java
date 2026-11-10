@@ -11,10 +11,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
+import io.camunda.security.api.context.ResourceAttributeExtractor;
+import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.authz.AuthorizationResourceType;
 import io.camunda.security.api.model.authz.AuthorizationScope;
+import io.camunda.security.api.model.authz.ConditionalMembership;
 import io.camunda.security.api.model.authz.EntityType;
+import io.camunda.security.api.model.authz.MembershipCondition;
+import io.camunda.security.api.model.authz.Operand;
 import io.camunda.security.api.model.authz.PermissionType;
+import io.camunda.security.api.model.authz.ResourceAttribute;
+import io.camunda.security.core.auth.RequiredAuthorization;
 import io.camunda.security.core.authz.AuthorizationChecker;
 import io.camunda.security.core.authz.AuthorizationService;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
@@ -99,6 +106,58 @@ class AuthorizationConfigurationTest {
         .withBean(AuthorizationChecker.class, () -> mockChecker)
         .withBean(PropertyAuthorizationEvaluator.class, () -> mockEvaluator)
         .run(ctx -> assertThat(ctx).hasSingleBean(AuthorizationService.class));
+  }
+
+  @Test
+  void resourceAttributeExtractorsAreInjected() {
+    // given a host extractor that puts every String resource in workspace "payments"
+    when(mockChecker.isAuthorized(
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.any(),
+            org.mockito.ArgumentMatchers.eq(Set.of("editor"))))
+        .thenReturn(true);
+    runner
+        .withPropertyValues("camunda.security.authorizations.enabled=true")
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
+        .withBean(ResourceAttributeExtractor.class, PaymentsWorkspaceExtractor::new)
+        .run(
+            ctx -> {
+              // when a principal with a conditional membership in that workspace is checked
+              final var service = ctx.getBean(AuthorizationService.class);
+              final var membership =
+                  new ConditionalMembership(
+                      "editor",
+                      List.of(
+                          new MembershipCondition(
+                              ResourceAttribute.WORKSPACE_ID, new Operand.Equals("payments"))));
+              final var auth =
+                  CamundaAuthentication.of(
+                      b -> b.user("alice").conditionalRoleMemberships(List.of(membership)));
+              final RequiredAuthorization<String> req =
+                  RequiredAuthorization.<String>of(
+                      b ->
+                          b.processDefinition()
+                              .readProcessDefinition()
+                              .resourceIdSupplier(id -> id));
+
+              // then the membership's role counts for the check
+              assertThat(service.check(auth, req, "p1").isRight()).isTrue();
+            });
+  }
+
+  @Test
+  void duplicateResourceAttributeExtractorsFailTheContext() {
+    runner
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
+        .withBean("first", ResourceAttributeExtractor.class, PaymentsWorkspaceExtractor::new)
+        .withBean("second", ResourceAttributeExtractor.class, PaymentsWorkspaceExtractor::new)
+        .run(
+            ctx ->
+                assertThat(ctx)
+                    .getFailure()
+                    .rootCause()
+                    .hasMessageContaining("Duplicate ResourceAttributeExtractor"));
   }
 
   @Test
@@ -234,6 +293,24 @@ class AuthorizationConfigurationTest {
         final AuthorizationResourceType resourceType,
         final List<String> resourceIds) {
       return Set.of();
+    }
+  }
+
+  static final class PaymentsWorkspaceExtractor implements ResourceAttributeExtractor<String> {
+
+    @Override
+    public AuthorizationResourceType resourceType() {
+      return AuthorizationResourceType.PROCESS_DEFINITION;
+    }
+
+    @Override
+    public Class<String> resourceClass() {
+      return String.class;
+    }
+
+    @Override
+    public Map<ResourceAttribute, Set<String>> attributesOf(final String resource) {
+      return Map.of(ResourceAttribute.WORKSPACE_ID, Set.of("payments"));
     }
   }
 }
