@@ -11,6 +11,7 @@ package io.camunda.security.api.model.authz;
 public enum PermissionType {
   /** Common usage permissions. */
   ACCESS(true),
+  ANSWER,
   CREATE,
   DELETE,
   DELETE_DRD,

@@ -62,6 +62,20 @@ class ResourceTypeTest {
   }
 
   @Test
+  void probeSupportsCreateAndAnswer() {
+    assertThat(ResourceType.PROBE.getSupportedPermissionTypes())
+        .containsExactlyInAnyOrder(PermissionType.CREATE, PermissionType.ANSWER);
+  }
+
+  @Test
+  void buildResourcePermissionsMapHasProbeCreateAnswer() {
+    final var map = ResourceType.buildResourcePermissionsMap();
+
+    assertThat(map).doesNotContainKey("UNSPECIFIED");
+    assertThat(map.get("PROBE")).containsExactly("ANSWER", "CREATE");
+  }
+
+  @Test
   void backupSupportsCreateReadDeleteRestore() {
     assertThat(ResourceType.BACKUP.getSupportedPermissionTypes())
         .containsExactlyInAnyOrder(
