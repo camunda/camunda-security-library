@@ -30,10 +30,19 @@ runtime scope next to them, two loopback OpenID providers (`MockIdentityProvider
 | The method cannot change; `rotateCredentials` refuses more than credentials | `#shouldRejectAChangeOfTheAuthenticationMethod`, `#shouldRejectARotationThatChangesMoreThanTheCredentials` |
 | A scope keeps its generation, bearer tokens and session | `#shouldLeaveTheScopesUntouched` |
 | 20 changes: every earlier generation, its chains, client stack and registrations collected | `#shouldReleaseEveryRetiredPrimaryGeneration` |
+| The application's `OAuth2AuthorizedClientRepository` returns a client another chain stored with that chain's registration | `#shouldKeepTheRegistrationOfAClientThatAnotherChainStored` |
 
 Mutation checks (made the named tests fail, then reverted): an unbound primary session repository
 (`PrimaryChains.servingFingerprint()` returning `null`) fails the session test; views that keep
-serving the startup chains fail 9 of the 13 tests.
+serving the startup chains fail 9 of the 13 other tests; the rebinding repository of the base
+branch fails `#shouldKeepTheRegistrationOfAClientThatAnotherChainStored`.
+
+Regression found on the way: the base branch's in-place rotation made the application's
+`OAuth2AuthorizedClientRepository` rebind every stored client to the primary registration of the
+same id. A host that reads every scope's sessions through that bean (the camunda login converter)
+then decoded a tenant's access token with the primary provider's keys
+(`PhysicalTenantOidcLoginSeparateIdpsIT` in the monorepo). The bean is a plain session repository
+again; generations rebind through their own client stacks.
 
 ## How it works
 
@@ -70,9 +79,9 @@ Apple M5 Pro (18 cores), JDK 21, another heavy build running, loopback providers
 changes): p50 3–7 ms, max 6–21 ms over 3 runs. End to end in the camunda monorepo against Keycloak,
 the primary change took 21–48 ms per member (p50 25 ms, 48 changes) and the alias scope 17–36 ms.
 
-Full `./mvnw verify`: api 241, core 180, validation 267, spring-boot-starter 1,756, all green (base
+Full `./mvnw verify`: api 241, core 180, validation 267, spring-boot-starter 1,757, all green (base
 of this branch: 241 / 180 / 267 / 1,748; `PrimaryCredentialRotationTest`'s 5 tests are folded into
-the 13 of `PrimarySecurityReloadTest`).
+the 14 of `PrimarySecurityReloadTest`).
 
 ## Not done, or not proven
 
