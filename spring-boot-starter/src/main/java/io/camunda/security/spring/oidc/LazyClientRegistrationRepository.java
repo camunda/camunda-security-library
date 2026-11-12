@@ -38,6 +38,7 @@ public final class LazyClientRegistrationRepository
 
   private final ScopedClientRegistrationFactory factory;
   private final Map<String, OidcConfiguration> providers;
+  private final Map<String, OidcConfiguration> configuredProviders;
   private final String scopedRedirectUriPath;
   private final String scopeDescription;
   private final ScopedClientRegistrationFactory.LoginRouteChecks loginRouteChecks;
@@ -83,18 +84,20 @@ public final class LazyClientRegistrationRepository
     this.scopedRedirectUriPath = scopedRedirectUriPath;
     this.scopeDescription = scopeDescription;
     this.loginRouteChecks = loginRouteChecks;
-    // Validated before filtering: a blank registrationId is warn-only, not rejected, and that
-    // warning must still fire for it. ScopedClientRegistrationFactory#withoutBlankRegistrationIds
-    // then keeps the entry out of every reader below (iterator(), findByRegistrationId(),
-    // registrationIds(), providers()) in this one place, rather than each one filtering it again.
+    // Validated before filtering: a blank registrationId and a contradictory client type are both
+    // warn-only, not rejected, and those warnings must still fire for them.
+    // ScopedClientRegistrationFactory#withoutUnusableRegistrations then keeps such an entry out of
+    // every reader below (iterator(), findByRegistrationId(), registrationIds(), providers()) in
+    // this one place, rather than each one filtering it again.
     if (loginRouteChecks == ScopedClientRegistrationFactory.LoginRouteChecks.SKIPPED) {
       factory.validateWithoutLoginRoutes(normalized);
     } else {
       factory.validateWithoutNetwork(normalized, scopedRedirectUriPath);
     }
+    configuredProviders = normalized;
     this.providers =
         Collections.unmodifiableMap(
-            ScopedClientRegistrationFactory.withoutBlankRegistrationIds(normalized));
+            ScopedClientRegistrationFactory.withoutUnusableRegistrations(normalized));
   }
 
   /**
@@ -134,6 +137,17 @@ public final class LazyClientRegistrationRepository
    */
   public Map<String, OidcConfiguration> providers() {
     return providers;
+  }
+
+  /**
+   * The provider configuration of this repository before CSL dropped the registrations that it
+   * cannot use, keyed by registrationId. Only a caller that builds a diagnostic needs this map.
+   * {@link #providers()} cannot tell a deployment that configured no provider from a deployment
+   * whose every provider was dropped, and the two need different advice (ADR-0042). Every other
+   * caller must use {@link #providers()}. Resolves nothing.
+   */
+  public Map<String, OidcConfiguration> configuredProviders() {
+    return configuredProviders;
   }
 
   /**

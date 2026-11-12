@@ -321,6 +321,124 @@ class OidcAccessTokenDecoderFactoryTest {
     assertThat(owners.apply("https://idp.example.com")).isEqualTo("only");
   }
 
+  // ---------------------------------------------------------------------------
+  // a rejected client type reaches no part of the decoder (ADR-0042)
+  // ---------------------------------------------------------------------------
+
+  @Test
+  void shouldNotLetARejectedClientTypeOwnItsIssuer() {
+    // given a dropped provider declaring an issuer of its own, beside two valid providers
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put("rejected", contradictoryPublicClient("https://rejected.example"));
+    providers.put("a", providerWithIssuer("https://idp-a.example"));
+    providers.put("b", providerWithIssuer("https://idp-b.example"));
+
+    // when
+    final var owners = OidcAccessTokenDecoderFactory.registrationIdByIssuer(providers);
+
+    // then its issuer routes to nothing, so no token of it is claimed by any registration
+    assertThat(owners.apply("https://rejected.example")).isNull();
+    assertThat(owners.apply("https://idp-a.example")).isEqualTo("a");
+    assertThat(owners.apply("https://idp-b.example")).isEqualTo("b");
+  }
+
+  @Test
+  void shouldTakeTheSingleProviderPathWhenTheOnlyOtherProviderIsRejected() {
+    // given one real provider with no issuer-uri (valid for a single-provider deployment) plus a
+    // dropped one — the dropped entry must not flip provider "a" from the single- to the
+    // issuer-aware path, where it has no issuer to route by and every one of its tokens would be
+    // refused at runtime
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put("a", new OidcConfiguration());
+    providers.put("rejected", contradictoryPublicClient("https://rejected.example"));
+    final var factory =
+        new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
+    final var resolved = registration("a", "https://idp-a.example", "https://idp-a.example/jwks");
+
+    assertThat(factory.selectAccessTokenDecoder(providers, registrationId -> resolved)).isNotNull();
+  }
+
+  @Test
+  void shouldNotCountARejectedClientTypeTowardsTheIssuerRequirement() {
+    // given one real provider with an issuer-uri and a dropped one with none — the dropped entry
+    // must not count towards the multi-provider issuer requirement, or a single-provider
+    // deployment aborts for a provider the decoder has already decided to ignore
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put("a", providerWithIssuer("https://idp-a.example"));
+    providers.put("rejected", contradictoryPublicClient(null));
+    final var factory =
+        new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
+
+    assertThatCode(() -> factory.validateProvidersHaveIssuer(providers)).doesNotThrowAnyException();
+  }
+
+  /**
+   * The decoder is built at the first token decode (ADR-0025), so a deployment whose every provider
+   * is dropped starts and then refuses to verify any token, rather than verifying tokens against a
+   * configuration CSL has rejected. The message names the dropped providers and points at the
+   * property to correct. Telling this operator to configure a provider would be wrong advice,
+   * because they configured one.
+   */
+  @Test
+  void shouldRefuseToBuildADecoderWhenEveryProviderIsRejected() {
+    final Map<String, OidcConfiguration> providers =
+        Map.of("rejected", contradictoryPublicClient("https://rejected.example"));
+    final var factory =
+        new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
+    // Resolvable on purpose: without the filter this call would take the single-provider path and
+    // return a decoder, so the failure below can only come from the empty filtered map.
+    final var resolved =
+        registration("rejected", "https://rejected.example", "https://rejected.example/jwks");
+
+    assertThatThrownBy(
+            () -> factory.selectAccessTokenDecoder(providers, registrationId -> resolved))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("Every configured OIDC provider was rejected: rejected")
+        .hasMessageContaining("Correct the property")
+        .hasMessageNotContaining("must be configured")
+        .hasMessageNotContaining("No client registration");
+  }
+
+  /** A deployment that configured nothing still gets the message that tells it to configure. */
+  @Test
+  void shouldAskForAProviderWhenNoneIsConfiguredAtAll() {
+    final var factory =
+        new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
+
+    assertThatThrownBy(() -> factory.selectAccessTokenDecoder(Map.of(), registrationId -> null))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("At least one OIDC provider must be configured")
+        .hasMessageNotContaining("was rejected");
+  }
+
+  /** A blank registrationId was never addressable, so it is not reported as a rejected provider. */
+  @Test
+  void shouldAskForAProviderWhenOnlyABlankRegistrationIdIsConfigured() {
+    final Map<String, OidcConfiguration> providers = Map.of("", new OidcConfiguration());
+    final var factory =
+        new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
+
+    assertThatThrownBy(() -> factory.selectAccessTokenDecoder(providers, registrationId -> null))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("At least one OIDC provider must be configured")
+        .hasMessageNotContaining("was rejected");
+  }
+
+  /** A provider block CSL drops: a public client holds no client secret (ADR-0042). */
+  private static OidcConfiguration contradictoryPublicClient(final String issuerUri) {
+    final var configuration = new OidcConfiguration();
+    configuration.setType("public");
+    configuration.setClientSecret("s3cret");
+    configuration.setIssuerUri(issuerUri);
+    return configuration;
+  }
+
+  private static OidcConfiguration providerWithIssuer(final String issuerUri) {
+    final var configuration = new OidcConfiguration();
+    configuration.setIssuerUri(issuerUri);
+    return configuration;
+  }
+
   private static ClientRegistration registration(
       final String registrationId, final String issuerUri, final String jwkSetUri) {
     return ClientRegistration.withRegistrationId(registrationId)

@@ -11,6 +11,7 @@ import io.camunda.security.api.model.config.*;
 import io.camunda.security.api.model.config.headers.HeaderConfiguration;
 import io.camunda.security.api.model.config.initialization.InitializationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import io.camunda.security.spring.oidc.ScopedClientRegistrationFactory;
 import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.util.regex.Pattern;
@@ -232,8 +233,17 @@ public class CamundaSecurityLibraryProperties {
   }
 
   private void validateOidcConfiguration(final OidcConfiguration oidcConfiguration) {
-    if (oidcConfiguration != null) {
-      oidcConfiguration.validate();
+    if (oidcConfiguration == null) {
+      return;
     }
+    // This runs in @PostConstruct, where a throw stops the start of the application. A block whose
+    // client type contradicts its other properties is one CSL drops, and no check of such a block
+    // may stop a deployment whose other blocks are valid. The validation pass of
+    // ScopedClientRegistrationFactory warns about the block later, and makes no further check on
+    // it either (ADR-0042, ADR-0029).
+    if (!ScopedClientRegistrationFactory.isUsable(oidcConfiguration)) {
+      return;
+    }
+    oidcConfiguration.validate();
   }
 }

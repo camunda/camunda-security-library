@@ -17,7 +17,9 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.camunda.security.api.model.config.AssertionConfiguration;
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
+import io.camunda.security.api.model.config.KeystoreConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
@@ -42,6 +44,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.web.firewall.RequestRejectedException;
 import org.springframework.security.web.firewall.StrictHttpFirewall;
@@ -1769,6 +1772,246 @@ class ScopedClientRegistrationFactoryTest {
         .doesNotContain("secret")
         .doesNotContain("t=abc")
         .contains("accounts.example.com");
+  }
+
+  // ---------------------------------------------------------------------------
+  // client type (ADR-0042)
+  // ---------------------------------------------------------------------------
+
+  @Test
+  void shouldTreatAProviderWithoutATypeAsConfidential() {
+    final var oidc = explicitEndpoints("my-client", "https://idp.example.com");
+
+    assertThat(ScopedClientRegistrationFactory.clientType(oidc)).isEqualTo("confidential");
+    assertThat(ScopedClientRegistrationFactory.clientTypeVerdict(oidc))
+        .isEqualTo(ScopedClientRegistrationFactory.ClientTypeVerdict.USABLE);
+    assertThat(factory.createFromProviderMap(Map.of("myid", oidc)))
+        .singleElement()
+        .extracting(ClientRegistration::getClientAuthenticationMethod)
+        .isEqualTo(ClientAuthenticationMethod.CLIENT_SECRET_BASIC);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"public", "PUBLIC", " Public "})
+  void shouldReadTheTypeCaseInsensitively(final String configured) {
+    final var oidc = explicitEndpointsWith(b -> b.type(configured));
+
+    assertThat(ScopedClientRegistrationFactory.clientType(oidc)).isEqualTo("public");
+    assertThat(ScopedClientRegistrationFactory.clientTypeVerdict(oidc))
+        .isEqualTo(ScopedClientRegistrationFactory.ClientTypeVerdict.USABLE);
+  }
+
+  @Test
+  void shouldDefaultAPublicClientToClientAuthenticationMethodNone() {
+    final var oidc = explicitEndpointsWith(b -> b.type("public"));
+
+    assertThat(ScopedClientRegistrationFactory.effectiveClientAuthenticationMethod(oidc))
+        .isEqualTo("none");
+    assertThat(factory.createFromProviderMap(Map.of("myid", oidc)))
+        .singleElement()
+        .extracting(ClientRegistration::getClientAuthenticationMethod)
+        .isEqualTo(ClientAuthenticationMethod.NONE);
+  }
+
+  @Test
+  void shouldAcceptAPublicClientThatSpellsOutNone() {
+    final var oidc =
+        explicitEndpointsWith(b -> b.type("public").clientAuthenticationMethod("none"));
+
+    assertThat(ScopedClientRegistrationFactory.clientTypeVerdict(oidc))
+        .isEqualTo(ScopedClientRegistrationFactory.ClientTypeVerdict.USABLE);
+    assertThat(factory.createFromProviderMap(Map.of("myid", oidc)))
+        .singleElement()
+        .extracting(ClientRegistration::getClientAuthenticationMethod)
+        .isEqualTo(ClientAuthenticationMethod.NONE);
+  }
+
+  /** `resource` stays optional for every type, so a public client without one is usable. */
+  @Test
+  void shouldAcceptAPublicClientWithoutAResource() {
+    final var oidc = explicitEndpointsWith(b -> b.type("public"));
+
+    assertThat(oidc.getResource()).isNull();
+    assertThat(ScopedClientRegistrationFactory.clientTypeVerdict(oidc))
+        .isEqualTo(ScopedClientRegistrationFactory.ClientTypeVerdict.USABLE);
+  }
+
+  /**
+   * `hybrid` is validated exactly as `confidential`, and CSL has never checked that a confidential
+   * client has a secret — so neither gets a warning for the absence of one.
+   */
+  @Test
+  void shouldTreatAHybridClientWithoutASecretLikeAConfidentialOne() {
+    final var hybrid = explicitEndpointsWith(b -> b.type("hybrid"));
+    final var confidential = explicitEndpointsWith(b -> b.type("confidential"));
+
+    for (final var oidc : List.of(hybrid, confidential)) {
+      assertThat(oidc.getClientSecret()).isNull();
+      assertThat(ScopedClientRegistrationFactory.clientTypeVerdict(oidc))
+          .isEqualTo(ScopedClientRegistrationFactory.ClientTypeVerdict.USABLE);
+      assertThat(factory.createFromProviderMap(Map.of("myid", oidc)))
+          .singleElement()
+          .extracting(ClientRegistration::getClientAuthenticationMethod)
+          .isEqualTo(ClientAuthenticationMethod.CLIENT_SECRET_BASIC);
+    }
+  }
+
+  @Test
+  void shouldBuildAHybridClientWithASecretAsAConfidentialOne() {
+    final var oidc = explicitEndpointsWith(b -> b.type("hybrid").clientSecret("s3cret"));
+
+    assertThat(ScopedClientRegistrationFactory.clientTypeVerdict(oidc))
+        .isEqualTo(ScopedClientRegistrationFactory.ClientTypeVerdict.USABLE);
+    assertThat(factory.createFromProviderMap(Map.of("myid", oidc)))
+        .singleElement()
+        .satisfies(
+            reg -> {
+              assertThat(reg.getClientSecret()).isEqualTo("s3cret");
+              assertThat(reg.getClientAuthenticationMethod())
+                  .isEqualTo(ClientAuthenticationMethod.CLIENT_SECRET_BASIC);
+            });
+  }
+
+  /** A property CSL does not read is allowed for every type, `grant-type` among them. */
+  @Test
+  void shouldAcceptAPublicClientThatSetsAnInertProperty() {
+    final var oidc = explicitEndpointsWith(b -> b.type("public").grantType("authorization_code"));
+
+    assertThat(ScopedClientRegistrationFactory.clientTypeVerdict(oidc))
+        .isEqualTo(ScopedClientRegistrationFactory.ClientTypeVerdict.USABLE);
+  }
+
+  @MethodSource("contradictoryClientTypes")
+  @ParameterizedTest(name = "{0}")
+  void shouldWarnAboutAndDropAContradictoryClientType(
+      final String description,
+      final OidcConfiguration oidc,
+      final ScopedClientRegistrationFactory.ClientTypeVerdict expectedVerdict,
+      final String expectedProperty) {
+    // the verdict the filter reads
+    assertThat(ScopedClientRegistrationFactory.clientTypeVerdict(oidc))
+        .as(description)
+        .isEqualTo(expectedVerdict);
+
+    // the warning names the provider and the property
+    assertFactoryWarns(() -> factory.validateWithoutNetwork(Map.of("myid", oidc), null))
+        .contains("myid")
+        .contains(expectedProperty);
+
+    // and the registration is not built at all
+    assertThat(factory.createFromProviderMap(Map.of("myid", oidc))).isEmpty();
+    assertThat(ScopedClientRegistrationFactory.withoutUnusableRegistrations(Map.of("myid", oidc)))
+        .isEmpty();
+  }
+
+  static Stream<Arguments> contradictoryClientTypes() {
+    return Stream.of(
+        arguments(
+            "public with a client secret",
+            explicitEndpointsWith(b -> b.type("public").clientSecret("s3cret")),
+            ScopedClientRegistrationFactory.ClientTypeVerdict.PUBLIC_WITH_CLIENT_SECRET,
+            "client-secret"),
+        arguments(
+            "public with client_secret_basic",
+            explicitEndpointsWith(
+                b -> b.type("public").clientAuthenticationMethod("client_secret_basic")),
+            ScopedClientRegistrationFactory.ClientTypeVerdict.PUBLIC_WITH_CLIENT_AUTHENTICATION,
+            "client-authentication-method"),
+        arguments(
+            // the value reaches Spring unchanged, so NONE is not none
+            "public with NONE in the wrong case",
+            explicitEndpointsWith(b -> b.type("public").clientAuthenticationMethod("NONE")),
+            ScopedClientRegistrationFactory.ClientTypeVerdict.PUBLIC_WITH_CLIENT_AUTHENTICATION,
+            "client-authentication-method"),
+        arguments(
+            "public with assertion key material",
+            explicitEndpointsWith(b -> b.type("public").assertionConfiguration(withKeystore())),
+            ScopedClientRegistrationFactory.ClientTypeVerdict.PUBLIC_WITH_ASSERTION_KEY,
+            "assertion.keystore"),
+        arguments(
+            "confidential with none",
+            explicitEndpointsWith(b -> b.type("confidential").clientAuthenticationMethod("none")),
+            ScopedClientRegistrationFactory.ClientTypeVerdict.SECRET_BASED_TYPE_WITH_NONE,
+            "type"),
+        arguments(
+            "an unset type with none",
+            explicitEndpointsWith(b -> b.clientAuthenticationMethod("none")),
+            ScopedClientRegistrationFactory.ClientTypeVerdict.SECRET_BASED_TYPE_WITH_NONE,
+            "type"),
+        arguments(
+            "hybrid with none",
+            explicitEndpointsWith(b -> b.type("hybrid").clientAuthenticationMethod("none")),
+            ScopedClientRegistrationFactory.ClientTypeVerdict.SECRET_BASED_TYPE_WITH_NONE,
+            "type"),
+        arguments(
+            "an unknown type",
+            explicitEndpointsWith(b -> b.type("semi-public")),
+            ScopedClientRegistrationFactory.ClientTypeVerdict.UNKNOWN_TYPE,
+            "type"));
+  }
+
+  /**
+   * A rejected provider costs nobody else: the valid one beside it still builds, and the
+   * application still starts (ADR-0029).
+   */
+  @Test
+  void shouldKeepAValidProviderBesideARejectedOne() {
+    final Map<String, OidcConfiguration> providers = new LinkedHashMap<>();
+    providers.put("good", explicitEndpoints("client1", "https://idp1.example.com"));
+    providers.put("bad", explicitEndpointsWith(b -> b.type("public").clientSecret("s3cret")));
+
+    assertThat(factory.createFromProviderMap(providers))
+        .singleElement()
+        .extracting(ClientRegistration::getRegistrationId)
+        .isEqualTo("good");
+    assertThat(ScopedClientRegistrationFactory.withoutUnusableRegistrations(providers))
+        .containsOnlyKeys("good");
+  }
+
+  /**
+   * Decision 1: a literal Spring accepts but CSL does not list is warned about and still used —
+   * `client_secret_post` works end to end in Spring, and rejecting it would stop a deployment that
+   * works today.
+   */
+  @Test
+  void shouldWarnAboutButStillUseAnUnsupportedClientAuthenticationMethod() {
+    final var oidc = explicitEndpointsWith(b -> b.clientAuthenticationMethod("client_secret_post"));
+
+    assertFactoryWarns(() -> factory.validateWithoutNetwork(Map.of("myid", oidc), null))
+        .contains("myid")
+        .contains("client_secret_post")
+        .contains("does not support");
+
+    assertThat(factory.createFromProviderMap(Map.of("myid", oidc)))
+        .singleElement()
+        .extracting(ClientRegistration::getClientAuthenticationMethod)
+        .isEqualTo(ClientAuthenticationMethod.CLIENT_SECRET_POST);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"client_secret_basic", "private_key_jwt", "none"})
+  void shouldNotWarnAboutASupportedClientAuthenticationMethod(final String method) {
+    final var type = "none".equals(method) ? "public" : "confidential";
+    final var oidc = explicitEndpointsWith(b -> b.type(type).clientAuthenticationMethod(method));
+
+    final var appender = captureFactoryLogs();
+    try {
+      factory.validateWithoutNetwork(Map.of("myid", oidc), null);
+    } finally {
+      releaseFactoryLogs(appender);
+    }
+
+    assertThat(appender.list).noneMatch(event -> event.getLevel() == Level.WARN);
+  }
+
+  private static AssertionConfiguration withKeystore() {
+    final var keystore = new KeystoreConfiguration();
+    keystore.setPath("/etc/csl/keystore.p12");
+    keystore.setKeyAlias("csl");
+    keystore.setKeyPassword("changeit");
+    final var assertion = new AssertionConfiguration();
+    assertion.setKeystore(keystore);
+    return assertion;
   }
 
   private static OidcConfiguration explicitEndpointsWith(

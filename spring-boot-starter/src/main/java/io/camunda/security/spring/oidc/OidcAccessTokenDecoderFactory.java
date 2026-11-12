@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.helpers.NOPLogger;
@@ -54,9 +55,20 @@ public class OidcAccessTokenDecoderFactory {
   private static final String ERROR_MISSING_ISSUER =
       "The following OIDC Providers are missing 'issuerUri': %s";
   private static final String ERROR_NO_PROVIDER =
-      "ClientRegistrationRepository is empty — at least one OIDC provider must be configured."
+      "ClientRegistrationRepository is empty. At least one OIDC provider must be configured."
           + " Set camunda.security.authentication.oidc.* (flat) or one or more"
           + " camunda.security.authentication.providers.oidc.<id>.* entries.";
+
+  /**
+   * The failure for a deployment that configured providers and had every one of them rejected. The
+   * operator must correct a property, and not add configuration, so this message cannot be the one
+   * above. See ADR-0042.
+   */
+  private static final String ERROR_EVERY_PROVIDER_REJECTED =
+      "Every configured OIDC provider was rejected: %s. CSL does not use a provider block whose"
+          + " client type contradicts its other properties. Correct the property that the startup"
+          + " warning names for each provider above.";
+
   private static final String ERROR_MISSING_JWK =
       "OIDC Provider '%s' is missing a valid 'jwk-set-uri'. Issuer URI: %s";
   private final JWSKeySelectorFactory jwsKeySelectorFactory;
@@ -192,9 +204,9 @@ public class OidcAccessTokenDecoderFactory {
     // ignored elsewhere still flip a real provider from the single- to the issuer-aware path,
     // where it has no issuer to route by and every one of its tokens is refused.
     final var providers =
-        ScopedClientRegistrationFactory.withoutBlankRegistrationIds(providersById);
+        ScopedClientRegistrationFactory.withoutUnusableRegistrations(providersById);
     if (providers.isEmpty()) {
-      throw new IllegalStateException(ERROR_NO_PROVIDER);
+      throw new IllegalStateException(noUsableProviderMessage(providersById));
     }
     validateProvidersHaveIssuer(providers);
     if (providers.size() == 1) {
@@ -226,7 +238,7 @@ public class OidcAccessTokenDecoderFactory {
     // count towards the multi-provider check below, or it can trip a hard failure that names no
     // provider at all for an entry the decoder has already decided to ignore.
     final var withoutBlankIds =
-        ScopedClientRegistrationFactory.withoutBlankRegistrationIds(providersById);
+        ScopedClientRegistrationFactory.withoutUnusableRegistrations(providersById);
     if (withoutBlankIds.size() < 2) {
       return;
     }
@@ -630,6 +642,30 @@ public class OidcAccessTokenDecoderFactory {
     return urisByIssuer;
   }
 
+  /**
+   * Names why no provider remains. A deployment that configured none must add configuration. A
+   * deployment whose every provider was dropped must correct a property instead, so the message
+   * lists those providers and points at the startup warning for each one.
+   *
+   * <p>The registrationIds come from the configuration, so each one is escaped before it reaches
+   * the message.
+   */
+  private static String noUsableProviderMessage(
+      final Map<String, OidcConfiguration> providersById) {
+    // Addressable but filtered out means the client-type check dropped it: the blank-id filter is
+    // the only other reason, and an entry it removes was never addressable to begin with.
+    final var addressable =
+        ScopedClientRegistrationFactory.withoutBlankRegistrationIds(providersById);
+    if (addressable.isEmpty()) {
+      return ERROR_NO_PROVIDER;
+    }
+    final var rejected =
+        addressable.keySet().stream()
+            .map(ScopedClientRegistrationFactory::sanitizeForLog)
+            .collect(Collectors.joining(", "));
+    return ERROR_EVERY_PROVIDER_REJECTED.formatted(rejected);
+  }
+
   private static ClientRegistration requireRegistration(
       final String registrationId, final ClientRegistration registration) {
     if (registration == null) {
@@ -682,7 +718,7 @@ public class OidcAccessTokenDecoderFactory {
   static Function<String, String> registrationIdByIssuer(
       final Map<String, OidcConfiguration> providersById) {
     final var providers =
-        ScopedClientRegistrationFactory.withoutBlankRegistrationIds(providersById);
+        ScopedClientRegistrationFactory.withoutUnusableRegistrations(providersById);
     if (providers.size() == 1) {
       final var only = providers.keySet().iterator().next();
       return issuer -> only;

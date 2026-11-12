@@ -584,8 +584,10 @@ public final class ScopedWebappSecurityChainBuilder {
    * gets each one's own answer. Reading {@code authentication.getOidc()} alone would silently
    * ignore any provider declared only under {@code providers.oidc.*}.
    *
-   * <p>The map is total over the scope's registrations, so the handler never has to fall back to a
-   * chain-wide default: whatever it finds for a registrationId is that registration's final answer.
+   * <p>The map is total over the registrations of the scope that CSL uses, so the handler never has
+   * to fall back to a chain-wide default for one of them: whatever it finds for a registrationId is
+   * that registration's final answer. A registration that CSL dropped is absent from the map, and
+   * the handler applies the chain-wide default to it (ADR-0042).
    *
    * <p>ADR-0026. This replaced a single per-scope boolean, which forced one strict IdP to strip the
    * redirect from every other IdP in the scope (ADR-0023).
@@ -610,23 +612,23 @@ public final class ScopedWebappSecurityChainBuilder {
     // rules live in one place; this only calls them.
     clientRegistrationFactory.validatePostLogoutRedirectUris(sources);
     final Map<String, String> redirectUris = new LinkedHashMap<>();
-    sources.forEach(
-        (registrationId, oidc) -> {
-          // A blank/null registrationId already gets its own warning above, and can never be the
-          // authenticated registration id a real logout looks this map up by — Map.copyOf below
-          // rejects a null key, so keeping such an entry would still crash chain construction.
-          if (!StringUtils.hasText(registrationId)) {
-            return;
-          }
-          redirectUris.put(
-              registrationId,
-              postLogoutRedirectUri(
-                  registrationId,
-                  oidc,
-                  prefix,
-                  composedDefault,
-                  clientRegistrationFactory.isPostLogoutRedirectUriUsable(registrationId, oidc)));
-        });
+    // Validated above over the configured map, so a warning still names a registration that the
+    // filter then drops. A blank or null registrationId can never be the authenticated
+    // registration id a real logout looks this map up by. A registration whose client type
+    // contradicts its other properties is one CSL does not use, and its post-logout redirect must
+    // not reach a registration of the host application that has the same id (ADR-0042).
+    ScopedClientRegistrationFactory.withoutUnusableRegistrations(sources)
+        .forEach(
+            (registrationId, oidc) ->
+                redirectUris.put(
+                    registrationId,
+                    postLogoutRedirectUri(
+                        registrationId,
+                        oidc,
+                        prefix,
+                        composedDefault,
+                        clientRegistrationFactory.isPostLogoutRedirectUriUsable(
+                            registrationId, oidc))));
     return redirectUris;
   }
 

@@ -230,6 +230,34 @@ class ScopedWebappSecurityChainBuilderTest {
     assertThat(redirectUris).containsEntry("oidc", COMPOSED_DEFAULT);
   }
 
+  /**
+   * A host application can supply a client registration whose id is also the id of a provider block
+   * that CSL dropped. The post-logout redirect of the dropped block must not reach it, and the
+   * handler applies the chain-wide default instead.
+   */
+  @Test
+  void postLogoutRedirectUrisDropsARegistrationWhoseClientTypeContradictsItsProperties() {
+    final var factory = new ScopedClientRegistrationFactory();
+    final var dropped = new OidcConfiguration();
+    dropped.setClientId("client");
+    dropped.setIssuerUri("https://idp.example.com/realms/camunda");
+    dropped.setType(OidcConfiguration.CLIENT_TYPE_PUBLIC);
+    dropped.setClientSecret("s3cret");
+    dropped.setPostLogoutRedirectUri("https://dropped.example.com/goodbye");
+    final var kept = new OidcConfiguration();
+    kept.setClientId("client");
+    kept.setIssuerUri("https://idp.example.com/realms/camunda");
+    kept.setPostLogoutRedirectUri("https://kept.example.com/goodbye");
+
+    final var redirectUris =
+        ScopedWebappSecurityChainBuilder.postLogoutRedirectUris(
+            factory, Map.of("dropped", dropped, "kept", kept), "", COMPOSED_DEFAULT);
+
+    assertThat(redirectUris)
+        .doesNotContainKey("dropped")
+        .containsEntry("kept", "https://kept.example.com/goodbye");
+  }
+
   /** A configured path overrides the host route but still resolves under the scope. */
   @Test
   void configuredPathIsComposedUnderTheScopePrefix() {

@@ -150,7 +150,46 @@ For most conditional use cases the CSL ships purpose-built meta-annotations (see
 | `scope` | list&lt;string&gt; | `[openid, profile]` | OAuth2 scopes requested. |
 | `audiences` | list&lt;string&gt; | empty | Reserved; not consumed by the default beans. |
 | `registration-id` | string | `oidc` | Spring Security client registration id. |
-| `client-authentication-method` | string | `client_secret_basic` | Spring Security `ClientAuthenticationMethod` literal. |
+| `client-authentication-method` | string | `client_secret_basic` (`none` when `type: public` leaves it unset) | Spring Security `ClientAuthenticationMethod` literal. CSL supports `client_secret_basic`, `private_key_jwt` and `none`. Another literal that Spring accepts is used as configured and warned about. See [Client types](#client-types). |
+| `type` | string | `confidential` | The kind of OAuth2 client this registration describes: `confidential`, `public` or `hybrid`. See [Client types](#client-types). |
+
+### Client types
+
+`type` says what kind of OAuth2 client a provider block describes. It is read case-insensitively, and an unset value is `confidential`, so every configuration written before the property existed keeps its behaviour exactly.
+
+| `type` | Client authentication | Use |
+|---|---|---|
+| `confidential` (default) | A client secret, or a `private_key_jwt` assertion | The host application's own login and its token exchanges, as before this property existed. |
+| `public` | None. `client-authentication-method` defaults to `none`. | A login with PKCE and no secret, or only to validate tokens that a Camunda client application such as c8ctl obtained for itself. The type does not say which of the two, so no login-only property becomes required. |
+| `hybrid` | A client secret, exactly as `confidential` | One registration that serves both: the host application logs in with the secret, and the identity provider also permits PKCE for the same client. Validated exactly as `confidential`. |
+
+Three properties contradict `type: public`, because a public client sends no client authentication at all:
+
+| Property | Verdict for `public` |
+|---|---|
+| `client-secret` | Must be empty. Use `type: hybrid` for a client that has both a secret and PKCE. |
+| `client-authentication-method` | Must be `none`, or left unset so it defaults to `none`. The comparison is case-sensitive, because the value reaches Spring unchanged. |
+| `assertion.keystore.*` | Must be unset. The key material exists only to sign a `private_key_jwt` assertion, which `none` rules out. |
+
+`none` is valid only with `type: public`. A `confidential` or `hybrid` registration that asks for it is contradictory in the same way.
+
+No property is required by any type, and nothing is forbidden for `confidential` or `hybrid` that was permitted before. `resource` in particular stays optional for every type: identity providers request an audience in different ways, and an existing deployment that checks the audience on its resource server instead must keep working.
+
+A provider block whose `type` contradicts its other properties, or whose `type` is not one of the three values, logs a `WARN` naming the provider and the property, and CSL then behaves as if that provider was not configured: `findByRegistrationId` answers `null` for it, no login link appears for it, and no token decoder or validator is built from it. The application still starts, and the other providers of the same deployment are unaffected ([ADR-0029](../adr/0029-warn-instead-of-block-on-provider-block-validation.md), [ADR-0042](../adr/0042-oidc-client-type-and-client-authentication-method-none.md)). A rejected block makes no further check either, so a login-only misconfiguration on it cannot stop the start.
+
+The warning comes from the startup validation pass, which runs when CSL builds the client registration repository. A host that registers its own `ClientRegistrationRepository` bean runs no such pass, for this check or for any other provider block check, so that deployment gets no startup warning.
+
+A registration in such a repository joins the provider map by registration ID alone, so it can share the ID of a dropped block. CSL gives it nothing from that block: it refuses each token for that registration, and writes one `WARN` with the registration ID at the first token decode. It also sends no `post_logout_redirect_uri` for it, and it loads no assertion key for it. Correct the provider block, or give the registration an ID that no provider block uses.
+
+This applies only to a registration that CSL did not build. A registration built by CSL, which includes every registration of a scope and every registration of a `LazyClientRegistrationRepository` that the host application wires itself, carries its own issuer and audiences and keeps its own checks. A scope therefore keeps working when its own block under a registration ID is usable and the block of another scope with the same ID was dropped.
+
+If every configured provider is dropped, the application still starts. The first token decode then fails, and the failure names each dropped provider.
+
+One exception applies to UserInfo augmentation. A scope that enables it needs at least one provider that can map an issuer to a UserInfo endpoint. If a rejection removes the last such provider, that scope does not start. Disable `user-info-augmentation.enabled` for the scope, or correct the rejected provider.
+
+> **Behaviour change.** `client-authentication-method: none` was never a supported value, but Spring accepted the literal, so a registration configured that way was built. It now needs `type: public`; without it the registration is dropped with a warning that says so.
+
+PKCE on the authorization request, the token exchange without a secret, and refresh and revocation without a secret are not part of this property yet. Until they land, a `public` registration validates and builds, and it is useful for token validation rather than for a browser login.
 
 ### `redirect-uri` and the redirection endpoint
 

@@ -108,13 +108,22 @@ public class OidcWebappClientBeansConfiguration {
                   decoderSubject(lazy),
                   () ->
                       VerifiedJwtDecoder.withClaims(
+                          // The configured map, not the filtered one. The factory filters it
+                          // again, and it needs the dropped entries to say that a deployment
+                          // configured providers and CSL rejected every one of them (ADR-0042).
                           oidcAccessTokenDecoderFactory.selectAccessTokenDecoder(
-                              providers, lazy::findByRegistrationId),
+                              lazy.configuredProviders(), lazy::findByRegistrationId),
                           OidcAccessTokenDecoderFactory.registrationIdByIssuer(providers),
                           providers,
                           defaultSlot)));
     }
-    final var providers = oidcProviderConfigurationPort.getOidcAuthenticationConfigurations();
+    // Filtered: a registration CSL cannot use contributes neither its additional JWK Set URIs nor
+    // its principal claims, and a repository of the host application joins this map by
+    // registrationId alone, so a dropped entry would otherwise reach a host registration that
+    // shares its id (ADR-0042).
+    final var providers =
+        ScopedClientRegistrationFactory.withoutUnusableRegistrations(
+            oidcProviderConfigurationPort.getOidcAuthenticationConfigurations());
     return new DeferredJwtDecoder(
         () ->
             DeferredOidcResolution.resolve(
