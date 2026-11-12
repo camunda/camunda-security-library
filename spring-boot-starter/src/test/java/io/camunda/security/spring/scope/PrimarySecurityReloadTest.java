@@ -33,6 +33,7 @@ import io.camunda.security.spring.security.OidcWebappSecurityConfiguration;
 import io.camunda.security.spring.security.ScopedWebappSecurityChainBuilderConfiguration;
 import java.lang.ref.WeakReference;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -47,6 +48,13 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.OAuth2AccessToken;
 
 /**
  * The primary (unscoped) chains changed at runtime as a scope is changed, against real (loopback)
@@ -347,6 +355,45 @@ class PrimarySecurityReloadTest {
               assertThat(OidcScopeRuntimeTest.bearer(ctx, SCOPE, tokenA)).isEqualTo(200);
               assertThat(scopeSession.get(SCOPE + "/app/home").status()).isEqualTo(200);
               assertThat(bearer(ctx, tokenA)).isEqualTo(401);
+            });
+  }
+
+  @Test
+  void shouldKeepTheRegistrationOfAClientThatAnotherChainStored() throws Exception {
+    runner()
+        .run(
+            ctx -> {
+              // given
+              final var repository = ctx.getBean(OAuth2AuthorizedClientRepository.class);
+              final var scopeRegistration =
+                  ClientRegistration.withRegistrationId("oidc")
+                      .clientId("app")
+                      .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                      .redirectUri("{baseUrl}" + SCOPE + "/sso-callback")
+                      .authorizationUri(idpB.issuer() + "/auth")
+                      .tokenUri(idpB.issuer() + "/token")
+                      .build();
+              final var principal = new TestingAuthenticationToken("alice", null);
+              final var request = new MockHttpServletRequest();
+              repository.saveAuthorizedClient(
+                  new OAuth2AuthorizedClient(
+                      scopeRegistration,
+                      "alice",
+                      new OAuth2AccessToken(
+                          OAuth2AccessToken.TokenType.BEARER,
+                          "token",
+                          Instant.now(),
+                          Instant.now().plusSeconds(60))),
+                  principal,
+                  request,
+                  new MockHttpServletResponse());
+
+              // when
+              final OAuth2AuthorizedClient loaded =
+                  repository.loadAuthorizedClient("oidc", principal, request);
+
+              // then
+              assertThat(loaded.getClientRegistration()).isSameAs(scopeRegistration);
             });
   }
 

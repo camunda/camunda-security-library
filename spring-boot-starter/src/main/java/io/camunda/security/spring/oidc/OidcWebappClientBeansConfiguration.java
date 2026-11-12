@@ -192,16 +192,15 @@ public class OidcWebappClientBeansConfiguration {
   }
 
   /**
-   * Stores a session's authorized clients in the session, and rebinds each one to the registration
-   * served now when it is read, so a session created before a credential rotation refreshes and
-   * revokes its tokens with the rotated credentials ({@code PrimarySecurityReloadPort}).
+   * Stores a session's authorized clients in the session as they were authorized. A host may read
+   * every scope's sessions through this bean, so it must not rebind a client to the primary
+   * registration of the same id; a generation of the primary chains rebinds through its own client
+   * stack instead ({@code PrimarySecurityReloadPort}).
    */
   @Bean
   @ConditionalOnMissingBean
-  public OAuth2AuthorizedClientRepository authorizedClientRepository(
-      final ClientRegistrationRepository clientRegistrationRepository) {
-    return new CurrentRegistrationAuthorizedClientRepository(
-        new HttpSessionOAuth2AuthorizedClientRepository(), clientRegistrationRepository);
+  public OAuth2AuthorizedClientRepository authorizedClientRepository() {
+    return new HttpSessionOAuth2AuthorizedClientRepository();
   }
 
   @Bean
