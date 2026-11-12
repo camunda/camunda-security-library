@@ -11,8 +11,11 @@ import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
 import io.camunda.security.api.context.ResourceAttributeExtractor;
 import io.camunda.security.core.authz.AuthorizationChecker;
 import io.camunda.security.core.authz.AuthorizationService;
+import io.camunda.security.core.authz.ConditionalResourceAccessProvider;
+import io.camunda.security.core.authz.DisabledResourceAccessProvider;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.authz.PropertyAuthorizationEvaluatorRegistry;
+import io.camunda.security.core.authz.ResourceAccessProvider;
 import io.camunda.security.core.authz.ResourceAttributeExtractorRegistry;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
@@ -41,7 +44,9 @@ import org.springframework.context.annotation.Configuration;
  *
  * <p>In the same way, all {@link ResourceAttributeExtractor} beans are collected into a {@link
  * ResourceAttributeExtractorRegistry}. A resource type with an extractor evaluates the conditional
- * role memberships of the principal (ADR-0041).
+ * role memberships of the principal (ADR-0041). When at least one extractor is registered, a {@link
+ * ConditionalResourceAccessProvider} resolves the list filters with the same rule, unless the host
+ * registers its own {@link ResourceAccessProvider}.
  *
  * <p><strong>Ordering note:</strong> same timing constraint as {@link
  * AuthorizationCheckerConfiguration} — activate via the {@link
@@ -88,5 +93,30 @@ public class AuthorizationConfiguration {
         properties.getMultiTenancy().isChecksEnabled(),
         claimsConverter,
         new MicrometerAuthorizationCheckLatencyRecorder(meterRegistry));
+  }
+
+  /**
+   * Provides a {@link ConditionalResourceAccessProvider}, so that list queries count conditional
+   * role memberships the same way as single checks (ADR-0041). Only created when the host registers
+   * a {@link ResourceAttributeExtractor}, because without one no conditional membership counts.
+   * Backs off if the host registers its own {@link ResourceAccessProvider}. A {@link
+   * DisabledResourceAccessProvider} allows every resource when authorization is disabled.
+   *
+   * @param authorizationChecker the scope evaluation kernel
+   * @param attributeExtractors all registered resource attribute extractors
+   * @param properties CSL configuration properties for the authorization flag
+   */
+  @Bean
+  @ConditionalOnBean(ResourceAttributeExtractor.class)
+  @ConditionalOnMissingBean(ResourceAccessProvider.class)
+  public ResourceAccessProvider conditionalResourceAccessProvider(
+      final AuthorizationChecker authorizationChecker,
+      final List<ResourceAttributeExtractor<?>> attributeExtractors,
+      final CamundaSecurityLibraryProperties properties) {
+    if (!properties.getAuthorizations().isEnabled()) {
+      return new DisabledResourceAccessProvider();
+    }
+    return new ConditionalResourceAccessProvider(
+        authorizationChecker, new ResourceAttributeExtractorRegistry(attributeExtractors));
   }
 }
