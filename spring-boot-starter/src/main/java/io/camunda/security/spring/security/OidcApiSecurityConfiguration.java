@@ -11,6 +11,7 @@ import static io.camunda.security.spring.security.CamundaSecurityFilterChainCons
 
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.scope.ApiTokenRefreshSupport;
+import io.camunda.security.spring.scope.PrimaryChains;
 import io.camunda.security.spring.scope.ScopedApiSecurityChainBuilder;
 import io.camunda.security.spring.scope.ScopedApiSecurityChainBuilderConfiguration;
 import org.slf4j.Logger;
@@ -57,17 +58,22 @@ public class OidcApiSecurityConfiguration {
       final SecurityPathPort pathPort,
       final SessionRepositoryFilter<?> defaultSessionRepositoryFilter,
       final ObjectProvider<OAuth2AuthorizedClientRepository> authorizedClientRepositoryProvider,
-      final ObjectProvider<OAuth2AuthorizedClientManager> authorizedClientManagerProvider)
+      final ObjectProvider<OAuth2AuthorizedClientManager> authorizedClientManagerProvider,
+      final ObjectProvider<PrimaryChains> primaryChains)
       throws Exception {
     LOG.info("The API is protected by OIDC JWT authentication.");
-    return builder.buildOidcApiChain(
-        http,
-        pathPort.apiPaths(),
-        pathPort.unprotectedApiPaths(),
-        jwtDecoder,
-        null,
-        defaultSessionRepositoryFilter,
-        resolveRefreshSupport(authorizedClientRepositoryProvider, authorizedClientManagerProvider));
+    final var chain =
+        builder.buildOidcApiChain(
+            http,
+            pathPort.apiPaths(),
+            pathPort.unprotectedApiPaths(),
+            jwtDecoder,
+            null,
+            defaultSessionRepositoryFilter,
+            resolveRefreshSupport(
+                authorizedClientRepositoryProvider, authorizedClientManagerProvider));
+    final var primary = primaryChains.getIfAvailable();
+    return primary != null ? primary.api(chain, defaultSessionRepositoryFilter, ORDER_API) : chain;
   }
 
   /**

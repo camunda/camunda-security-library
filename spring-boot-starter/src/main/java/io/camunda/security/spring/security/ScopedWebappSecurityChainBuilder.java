@@ -53,8 +53,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.annotation.web.configurers.oauth2.client.OAuth2LoginConfigurer;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserRequest;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -198,6 +200,73 @@ public final class ScopedWebappSecurityChainBuilder {
       final OAuth2AuthorizedClientManager authorizedClientManager,
       final SessionRepositoryFilter<?> sessionRepositoryFilter)
       throws Exception {
+    return buildPrimaryOidcWebappChain(
+        http,
+        clientRegistrationRepository,
+        authorizedClientRepository,
+        authorizedClientManager,
+        sessionRepositoryFilter,
+        clusterAuthentication(),
+        primaryOidcSources(),
+        primaryAssertionJwkResolver(),
+        null,
+        authorizationRequestResolverProvider.getIfAvailable(),
+        oidcLoginPickerProvider.getIfAvailable(
+            () -> new CamundaLoginPickerFilter(clientRegistrationRepository, LOGIN_URL)));
+  }
+
+  /**
+   * Builds the OIDC webapp chain of the primary (non-scoped) webapp paths for a configuration other
+   * than the one the application started with (a primary generation, ADR-0040). Matchers, cookies
+   * and endpoints are those of {@link #buildOidcWebappChain(HttpSecurity,
+   * ClientRegistrationRepository, OAuth2AuthorizedClientRepository, OAuth2AuthorizedClientManager,
+   * SessionRepositoryFilter)}; registrations, authorized clients, token endpoint, assertion keys,
+   * redirect-uri and post-logout settings come from {@code authentication} and {@code oidcClients},
+   * not from the application's beans.
+   */
+  public SecurityFilterChain buildOidcWebappChain(
+      final HttpSecurity http,
+      final AuthenticationConfiguration authentication,
+      final ScopedOidcClients oidcClients,
+      final SessionRepositoryFilter<?> sessionRepositoryFilter)
+      throws Exception {
+    Objects.requireNonNull(authentication, "authentication must not be null");
+    Objects.requireNonNull(oidcClients, "oidcClients must not be null");
+    final var providers = scopedClientRegistrationFactory.flatten(authentication);
+    if (providers.isEmpty()) {
+      throw new IllegalStateException(
+          "The primary OIDC webapp chain requires at least one provider, but the configuration"
+              + " declares none");
+    }
+    final var registrations = oidcClients.registrations();
+    return buildPrimaryOidcWebappChain(
+        http,
+        registrations,
+        oidcClients.authorizedClients(),
+        oidcClients.authorizedClientManager(),
+        sessionRepositoryFilter,
+        authentication,
+        providers,
+        oidcClients.assertionJwks(),
+        oidcClients.tokenEndpoint(),
+        new CamundaOidcAuthorizationRequestResolver(
+            registrations, providers, "/oauth2/authorization", properties.oidcAuthorizeMaxAge()),
+        new CamundaLoginPickerFilter(registrations, LOGIN_URL));
+  }
+
+  private SecurityFilterChain buildPrimaryOidcWebappChain(
+      final HttpSecurity http,
+      final ClientRegistrationRepository clientRegistrationRepository,
+      final OAuth2AuthorizedClientRepository authorizedClientRepository,
+      final OAuth2AuthorizedClientManager authorizedClientManager,
+      final SessionRepositoryFilter<?> sessionRepositoryFilter,
+      final AuthenticationConfiguration authentication,
+      final Map<String, OidcConfiguration> oidcSources,
+      final Function<ClientRegistration, JWK> assertionJwkResolver,
+      final Customizer<OAuth2LoginConfigurer<HttpSecurity>.TokenEndpointConfig> tokenEndpoint,
+      final OAuth2AuthorizationRequestResolver authorizationRequestResolver,
+      final CamundaLoginPickerFilter loginPickerFilter)
+      throws Exception {
     Objects.requireNonNull(sessionRepositoryFilter, "sessionRepositoryFilter must not be null");
 
     final var matchers = withHeartbeatMatcher(pathPort.webappPaths(), HEARTBEAT_URL);
@@ -212,8 +281,7 @@ public final class ScopedWebappSecurityChainBuilder {
     // matcher matches the context-path-relative request path, so a redirect-uri that embeds the
     // context-path (as the 8.10 chart renders for a context-path'd webapp) would otherwise never
     // match the callback and loop the login (GH-569).
-    final var authentication = properties.getAuthentication();
-    final var oidc = authentication != null ? authentication.getOidc() : null;
+    final var oidc = authentication.getOidc();
     // The flat block drives this endpoint whether or not it also contributes a client registration,
     // so validate it here: a value set without a client-id is not part of the provider map and
     // would otherwise fall back to the default callback while the IdP redirects elsewhere.
@@ -271,14 +339,19 @@ public final class ScopedWebappSecurityChainBuilder {
                       .redirectionEndpoint(
                           redirectionEndpoint -> redirectionEndpoint.baseUri(redirectUri))
                       .failureHandler(loginFailureHandler("/"));
-                  tokenEndpointCustomizerProvider.ifAvailable(oauthLogin::tokenEndpoint);
+                  if (tokenEndpoint != null) {
+                    oauthLogin.tokenEndpoint(tokenEndpoint);
+                  } else {
+                    tokenEndpointCustomizerProvider.ifAvailable(oauthLogin::tokenEndpoint);
+                  }
                   oidcUserServiceProvider.ifAvailable(
                       service -> oauthLogin.userInfoEndpoint(c -> c.oidcUserService(service)));
-                  authorizationRequestResolverProvider.ifAvailable(
-                      resolver ->
-                          oauthLogin.authorizationEndpoint(
-                              authorization ->
-                                  authorization.authorizationRequestResolver(resolver)));
+                  if (authorizationRequestResolver != null) {
+                    oauthLogin.authorizationEndpoint(
+                        authorization ->
+                            authorization.authorizationRequestResolver(
+                                authorizationRequestResolver));
+                  }
                 })
             .oidcLogout(oidcLogout -> {})
             .logout(
@@ -294,10 +367,9 @@ public final class ScopedWebappSecurityChainBuilder {
                           refreshTokenRevocationLogoutHandler(
                               clientRegistrationRepository,
                               authorizedClientRepository,
-                              primaryAssertionJwkResolver()));
+                              assertionJwkResolver));
                   logout.logoutSuccessHandler(
-                      oidcLogoutSuccessHandler(
-                          clientRegistrationRepository, "", primaryOidcSources()));
+                      oidcLogoutSuccessHandler(clientRegistrationRepository, "", oidcSources));
                 });
 
     // Heartbeat is installed first among AuthorizationFilter-anchored filters (insertion order is
@@ -337,9 +409,6 @@ public final class ScopedWebappSecurityChainBuilder {
     // deployments 302 to /login -> 404. Must be added after applyCsrfConfiguration — both anchor on
     // CsrfFilter and the stable sort makes insertion order the tie-break, so the CSRF header filter
     // writes before the picker commits the response.
-    final var loginPickerFilter =
-        oidcLoginPickerProvider.getIfAvailable(
-            () -> new CamundaLoginPickerFilter(clientRegistrationRepository, loginUrl));
     filterChainBuilder.addFilterAfter(loginPickerFilter, CsrfFilter.class);
 
     applyOidcRedirectDiagnosticsFilter(filterChainBuilder, redirectUri);

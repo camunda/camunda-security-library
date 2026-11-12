@@ -8,6 +8,8 @@
 package io.camunda.security.spring.security;
 
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
+import io.camunda.security.spring.scope.PrimaryChains;
+import io.camunda.security.spring.session.ScopeAuthenticationBoundSessionRepository;
 import io.camunda.security.spring.session.WebSessionRepositories;
 import io.camunda.security.spring.session.WebSessionRepository;
 import jakarta.servlet.Filter;
@@ -19,6 +21,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.session.MapSessionRepository;
+import org.springframework.session.Session;
+import org.springframework.session.SessionRepository;
 import org.springframework.session.web.http.SessionRepositoryFilter;
 
 /**
@@ -51,7 +55,16 @@ public class DefaultWebSessionFilterConfiguration {
     final var repository =
         WebSessionRepositories.durableOrInMemory(
             webSessionRepositoryProvider.getIfAvailable(), properties.getSession(), "default");
-    return DefaultWebSessionComponentsFactory.sessionRepositoryFilter(environment, repository);
+    // Binds each session to the configuration of the primary generation that created it, so a
+    // runtime change of the primary chains ends their sessions as it ends a scope's (ADR-0040).
+    return DefaultWebSessionComponentsFactory.sessionRepositoryFilter(
+        environment, boundToPrimaryAuthentication(repository));
+  }
+
+  private static <S extends Session> SessionRepository<S> boundToPrimaryAuthentication(
+      final SessionRepository<S> repository) {
+    return new ScopeAuthenticationBoundSessionRepository<>(
+        repository, "the primary chains", PrimaryChains::servingFingerprint);
   }
 
   /**

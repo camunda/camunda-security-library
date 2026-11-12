@@ -9,6 +9,8 @@ package io.camunda.security.spring.security;
 
 import static io.camunda.security.spring.security.CamundaSecurityFilterChainConstants.ORDER_WEBAPP;
 
+import io.camunda.security.spring.scope.PrimaryChains;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
@@ -45,14 +47,20 @@ public class OidcWebappSecurityConfiguration {
       final ClientRegistrationRepository clientRegistrationRepository,
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
       final OAuth2AuthorizedClientManager authorizedClientManager,
-      final SessionRepositoryFilter<?> defaultSessionRepositoryFilter)
+      final SessionRepositoryFilter<?> defaultSessionRepositoryFilter,
+      final ObjectProvider<PrimaryChains> primaryChains)
       throws Exception {
 
-    return chainBuilder.buildOidcWebappChain(
-        http,
-        clientRegistrationRepository,
-        authorizedClientRepository,
-        authorizedClientManager,
-        defaultSessionRepositoryFilter);
+    final var chain =
+        chainBuilder.buildOidcWebappChain(
+            http,
+            clientRegistrationRepository,
+            authorizedClientRepository,
+            authorizedClientManager,
+            defaultSessionRepositoryFilter);
+    final var primary = primaryChains.getIfAvailable();
+    return primary != null
+        ? primary.webapp(chain, defaultSessionRepositoryFilter, ORDER_WEBAPP)
+        : chain;
   }
 }

@@ -194,7 +194,7 @@ public class OidcWebappClientBeansConfiguration {
   /**
    * Stores a session's authorized clients in the session, and rebinds each one to the registration
    * served now when it is read, so a session created before a credential rotation refreshes and
-   * revokes its tokens with the rotated credentials ({@code PrimaryCredentialsReloadPort}).
+   * revokes its tokens with the rotated credentials ({@code PrimarySecurityReloadPort}).
    */
   @Bean
   @ConditionalOnMissingBean

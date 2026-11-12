@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.scope;
 
+import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.ScopedSecurityDescriptor;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.spring.oidc.ScopedOidcClients;
@@ -31,6 +32,7 @@ final class ScopeGeneration {
 
   private final long number;
   private final ScopedSecurityDescriptor descriptor;
+  private final AuthenticationConfiguration authentication;
   private final ScopeFingerprints fingerprints;
   private final SecurityFilterChain api;
   private final SecurityFilterChain webapp;
@@ -46,8 +48,41 @@ final class ScopeGeneration {
       final SecurityFilterChain webapp,
       final ScopeObjects objects,
       final List<ScopedOidcClients> oidcClients) {
+    this(
+        number,
+        descriptor,
+        descriptor != null ? descriptor.authentication() : null,
+        fingerprints,
+        api,
+        webapp,
+        objects,
+        oidcClients);
+  }
+
+  /** A generation of the primary chains, which have no descriptor. */
+  ScopeGeneration(
+      final long number,
+      final AuthenticationConfiguration authentication,
+      final ScopeFingerprints fingerprints,
+      final SecurityFilterChain api,
+      final SecurityFilterChain webapp,
+      final ScopeObjects objects,
+      final List<ScopedOidcClients> oidcClients) {
+    this(number, null, authentication, fingerprints, api, webapp, objects, oidcClients);
+  }
+
+  private ScopeGeneration(
+      final long number,
+      final ScopedSecurityDescriptor descriptor,
+      final AuthenticationConfiguration authentication,
+      final ScopeFingerprints fingerprints,
+      final SecurityFilterChain api,
+      final SecurityFilterChain webapp,
+      final ScopeObjects objects,
+      final List<ScopedOidcClients> oidcClients) {
     this.number = number;
     this.descriptor = descriptor;
+    this.authentication = authentication;
     this.fingerprints = fingerprints;
     this.api = api;
     this.webapp = webapp;
@@ -68,7 +103,13 @@ final class ScopeGeneration {
             (request, response, chain) ->
                 ((HttpServletResponse) response).sendError(HttpServletResponse.SC_NOT_FOUND));
     return new ScopeGeneration(
-        number, null, null, notFound, notFound, new ScopeObjects(basePath), List.of());
+        number,
+        (ScopedSecurityDescriptor) null,
+        null,
+        notFound,
+        notFound,
+        new ScopeObjects(basePath),
+        List.of());
   }
 
   long number() {
@@ -76,12 +117,20 @@ final class ScopeGeneration {
   }
 
   boolean isTombstone() {
-    return descriptor == null;
+    return fingerprints == null;
   }
 
-  /** The descriptor this generation was built from; {@code null} for a tombstone. */
+  /**
+   * The descriptor this generation was built from; {@code null} for a tombstone and for a
+   * generation of the primary chains, which have no base path of their own.
+   */
   ScopedSecurityDescriptor descriptor() {
     return descriptor;
+  }
+
+  /** The configuration this generation was built from; {@code null} for a tombstone. */
+  AuthenticationConfiguration authentication() {
+    return authentication;
   }
 
   /** {@code null} for a tombstone. */

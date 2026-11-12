@@ -72,6 +72,9 @@ final class ScopeRetirement {
         unused.removeAll(current.issuers());
       }
     }
+    beanFactory
+        .getBeanProvider(PrimaryChains.class)
+        .ifAvailable(primary -> unused.removeAll(primary.issuersInUse()));
     factory.evictDiscovery(unused);
   }
 
