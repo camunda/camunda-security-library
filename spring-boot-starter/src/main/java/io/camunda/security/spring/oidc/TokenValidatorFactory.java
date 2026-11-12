@@ -14,9 +14,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
@@ -38,6 +44,12 @@ import org.springframework.util.StringUtils;
  *
  * <p>Hosts wire SaaS-specific or other deployment-specific validators by supplying a list of {@link
  * OAuth2TokenValidator}. These are applied to every client registration.
+ *
+ * <p>CSL drops a provider block whose {@code type} contradicts its other properties (ADR-0042). A
+ * registration that has the registration ID of such a block, and that carries no {@link
+ * ClientRegistrationMetadata} of its own, gets a validator that refuses each token. CSL holds no
+ * issuer and no audiences for it, and it would otherwise accept a token with the wrong issuer. A
+ * registration that carries that metadata describes itself, so it keeps its own checks.
  */
 public class TokenValidatorFactory {
 
@@ -49,7 +61,23 @@ public class TokenValidatorFactory {
    */
   public static final String AUDIENCES_METADATA_KEY = "camunda.security.oidc.audiences";
 
+  private static final Logger LOG = LoggerFactory.getLogger(TokenValidatorFactory.class);
+
+  /**
+   * The validator a registration gets when CSL dropped the provider block that has its registration
+   * ID. The description is short, because it reaches the caller in the {@code WWW-Authenticate}
+   * header. The {@code WARN} of {@link #createTokenValidator} carries the remedy.
+   */
+  private static final OAuth2TokenValidator<Jwt> REJECT_EVERY_TOKEN =
+      token ->
+          OAuth2TokenValidatorResult.failure(
+              new OAuth2Error(
+                  OAuth2ErrorCodes.INVALID_TOKEN,
+                  "CSL does not use the OIDC provider block with this registration ID.",
+                  null));
+
   private final Map<String, OidcConfiguration> providers;
+  private final Set<String> rejectedRegistrationIds;
   private final Duration clockSkew;
   private final List<OAuth2TokenValidator<Jwt>> extraValidators;
 
@@ -65,8 +93,16 @@ public class TokenValidatorFactory {
       final List<OAuth2TokenValidator<Jwt>> extraValidators) {
     // ScopedClientRegistrationFactory#withoutBlankRegistrationIds: Map.copyOf below rejects a
     // null key outright, and a blank registrationId is warn-only, not rejected, elsewhere.
-    this.providers =
-        Map.copyOf(ScopedClientRegistrationFactory.withoutBlankRegistrationIds(providers));
+    final var addressable = ScopedClientRegistrationFactory.withoutBlankRegistrationIds(providers);
+    final var usable = ScopedClientRegistrationFactory.withoutUnusableClientTypes(addressable);
+    this.providers = Map.copyOf(usable);
+    // The ids of the blocks that the filter above removed. CSL holds no issuer and no audiences
+    // for them, and a registration of the host application that has the same id would lose both
+    // checks. CSL refuses each token for such a registration instead (ADR-0042).
+    rejectedRegistrationIds =
+        addressable.keySet().stream()
+            .filter(registrationId -> !usable.containsKey(registrationId))
+            .collect(Collectors.toUnmodifiableSet());
     this.clockSkew = Objects.requireNonNull(clockSkew, "clockSkew");
     this.extraValidators = extraValidators == null ? List.of() : List.copyOf(extraValidators);
   }
@@ -75,11 +111,22 @@ public class TokenValidatorFactory {
    * Creates a new {@link OAuth2TokenValidator} for the given {@link ClientRegistration}.
    *
    * @param clientRegistration the client registration associated with the JWT issuer
-   * @return a composed {@code OAuth2TokenValidator} instance
+   * @return a composed {@code OAuth2TokenValidator} instance, or a validator that refuses each
+   *     token when CSL dropped the provider block that has this registration ID and the
+   *     registration describes neither its issuer nor its audiences (ADR-0042)
    */
   public OAuth2TokenValidator<Jwt> createTokenValidator(
       final ClientRegistration clientRegistration) {
     final var registrationId = clientRegistration.getRegistrationId();
+    if (rejectedRegistrationIds.contains(registrationId) && !describesItself(clientRegistration)) {
+      LOG.warn(
+          "Refusing each token for OIDC registration '{}'. CSL dropped the provider block with"
+              + " that registration ID, because its client type contradicts its other properties,"
+              + " and CSL has no issuer and no audiences to apply. Correct the provider block that"
+              + " the startup warning names.",
+          ScopedClientRegistrationFactory.sanitizeForLog(registrationId));
+      return REJECT_EVERY_TOKEN;
+    }
     final var providerConfig = providers.get(registrationId);
     final var validators = new LinkedList<OAuth2TokenValidator<Jwt>>();
 
@@ -98,6 +145,19 @@ public class TokenValidatorFactory {
     validators.addAll(extraValidators);
 
     return new DelegatingOAuth2TokenValidator<>(validators);
+  }
+
+  /**
+   * Tells if the registration carries an issuer or audiences of its own. CSL writes that metadata
+   * on each registration that it builds, and {@link #resolveIssuerUri} and {@link
+   * #resolveAudiences} read it before the provider map. A scope whose own block under a
+   * registration ID is usable therefore keeps its own checks, although the block of another scope
+   * with the same ID was dropped. A registration that the host application built carries no such
+   * metadata, and CSL then has nothing to check its tokens with.
+   */
+  private static boolean describesItself(final ClientRegistration clientRegistration) {
+    return ClientRegistrationMetadata.issuer(clientRegistration).isPresent()
+        || ClientRegistrationMetadata.audiences(clientRegistration).isPresent();
   }
 
   /**

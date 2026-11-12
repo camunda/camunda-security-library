@@ -103,10 +103,10 @@ public final class ScopedOidcClaimsProviderFactory {
     }
     clientRegistrationFactory.validateWithoutLoginRoutes(providers);
     // IssuerRegistrations.ofConfiguration copies its issuer map and would fail on a blank/null
-    // registrationId (see ScopedClientRegistrationFactory#withoutBlankRegistrationIds); providers
+    // registrationId (see ScopedClientRegistrationFactory#withoutUnusableRegistrations); providers
     // itself stays as-is for the checks above and the resolve() closure below.
     final var issuerProviders =
-        ScopedClientRegistrationFactory.withoutBlankRegistrationIds(providers);
+        ScopedClientRegistrationFactory.withoutUnusableRegistrations(providers);
     return new CachingOidcClaimsProvider(
         userInfoHttpClient,
         CachingOidcClaimsProvider.userInfoUriByIssuer(

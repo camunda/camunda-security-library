@@ -365,6 +365,180 @@ class TokenValidatorFactoryTest {
         .hasMessageContaining(Integer.class.getName());
   }
 
+  /**
+   * ADR-0042: a provider block CSL cannot use is dropped from this factory's map too, so it
+   * contributes no audience. Only a host that supplies its own {@code ClientRegistrationRepository}
+   * can reach this, since CSL's own repository never hands over a dropped registration — and the
+   * accepted trade-off is that such a block's {@code audiences} stop being applied, which the
+   * startup WARN naming the provider is there to surface.
+   */
+  @Test
+  void shouldRefuseEveryTokenOfARegistrationWhoseBlockWasDropped() {
+    // given a contradictory public registration that also declares an audience
+    final var config = new OidcConfiguration();
+    config.setType("public");
+    config.setClientSecret("s3cret");
+    config.setAudiences(Set.of("ROOT-AUD"));
+    final var factory =
+        new TokenValidatorFactory(Map.of("tenanta", config), Duration.ofSeconds(60), List.of());
+
+    // when
+    final var validator = factory.createTokenValidator(hostRegistration("tenanta"));
+
+    // then CSL applies neither the audiences nor anything else of the dropped block, so it
+    // refuses the token rather than accept one it cannot check
+    assertThat(validator.validate(jwtWithAudience(List.of("ROOT-AUD"))).hasErrors()).isTrue();
+    assertThat(validator.validate(jwtWithAudience(List.of("other"))).hasErrors()).isTrue();
+  }
+
+  @Test
+  void shouldRefuseAWrongIssuerOnAHostRegistrationThatSharesADroppedBlockId() {
+    // given a dropped block whose id a host-supplied registration also uses, with no CSL metadata
+    final var config = new OidcConfiguration();
+    config.setType("public");
+    config.setClientSecret("s3cret");
+    config.setIssuerUri("https://issuer.example.com");
+    final var factory =
+        new TokenValidatorFactory(Map.of("tenanta", config), Duration.ofSeconds(60), List.of());
+
+    // when
+    final var validator = factory.createTokenValidator(hostRegistration("tenanta"));
+
+    // then the issuer check does not silently disappear with the dropped block
+    assertThat(validator.validate(jwtWithIssuer("https://attacker.example.com")).hasErrors())
+        .isTrue();
+    assertThat(validator.validate(jwtWithIssuer("https://issuer.example.com")).hasErrors())
+        .isTrue();
+  }
+
+  @Test
+  void shouldStillValidateARegistrationWhoseBlockWasKept() {
+    // given a usable block beside the dropped one
+    final var dropped = new OidcConfiguration();
+    dropped.setType("public");
+    dropped.setClientSecret("s3cret");
+    final var kept = new OidcConfiguration();
+    kept.setIssuerUri("https://issuer.example.com");
+    final var factory =
+        new TokenValidatorFactory(
+            Map.of("dropped", dropped, "kept", kept), Duration.ofSeconds(60), List.of());
+
+    // when
+    final var validator = factory.createTokenValidator(hostRegistration("kept"));
+
+    // then only the dropped registration fails closed
+    assertThat(validator.validate(jwtWithIssuer("https://issuer.example.com")).hasErrors())
+        .isFalse();
+    assertThat(validator.validate(jwtWithIssuer("https://attacker.example.com")).hasErrors())
+        .isTrue();
+  }
+
+  /**
+   * A scope whose own block under a registration ID is usable keeps its own checks, although the
+   * block of another scope with the same ID was dropped. The registration carries both values.
+   */
+  @Test
+  void shouldKeepTheOwnChecksOfAScopedRegistrationThatSharesADroppedBlockId() {
+    final var dropped = new OidcConfiguration();
+    dropped.setType("public");
+    dropped.setClientSecret("s3cret");
+    dropped.setIssuerUri("https://dropped.example.com");
+    final var factory =
+        new TokenValidatorFactory(Map.of("oidc", dropped), Duration.ofSeconds(60), List.of());
+
+    final var validator =
+        factory.createTokenValidator(
+            scopedRegistration("oidc", "https://scope.example.com", List.of("SCOPE-AUD")));
+
+    assertThat(
+            validator
+                .validate(jwtWith("https://scope.example.com", List.of("SCOPE-AUD")))
+                .hasErrors())
+        .isFalse();
+    assertThat(
+            validator
+                .validate(jwtWith("https://attacker.example.com", List.of("SCOPE-AUD")))
+                .hasErrors())
+        .isTrue();
+    assertThat(
+            validator.validate(jwtWith("https://scope.example.com", List.of("other"))).hasErrors())
+        .isTrue();
+  }
+
+  /**
+   * A registration that carries only its issuer, as a {@code LazyClientRegistrationRepository} of
+   * the host application builds it, keeps that issuer check instead of refusing each token.
+   */
+  @Test
+  void shouldKeepTheIssuerCheckOfARegistrationThatCarriesOnlyItsIssuer() {
+    final var dropped = new OidcConfiguration();
+    dropped.setType("public");
+    dropped.setClientSecret("s3cret");
+    final var factory =
+        new TokenValidatorFactory(Map.of("oidc", dropped), Duration.ofSeconds(60), List.of());
+
+    final var registration =
+        ClientRegistration.withRegistrationId("oidc")
+            .jwkSetUri("https://example.com/jwks")
+            .authorizationUri("https://example.com/auth")
+            .tokenUri("https://example.com/token")
+            .clientId("client")
+            .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .providerConfigurationMetadata(
+                Map.of(ClientRegistrationMetadata.ISSUER, "https://scope.example.com"))
+            .build();
+
+    final var validator = factory.createTokenValidator(registration);
+
+    assertThat(validator.validate(jwtWithIssuer("https://scope.example.com")).hasErrors())
+        .isFalse();
+    assertThat(validator.validate(jwtWithIssuer("https://attacker.example.com")).hasErrors())
+        .isTrue();
+  }
+
+  private static ClientRegistration scopedRegistration(
+      final String registrationId, final String issuer, final List<String> audiences) {
+    return ClientRegistration.withRegistrationId(registrationId)
+        .jwkSetUri("https://example.com/jwks")
+        .authorizationUri("https://example.com/auth")
+        .tokenUri("https://example.com/token")
+        .clientId("client")
+        .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+        .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+        .providerConfigurationMetadata(
+            Map.of(
+                ClientRegistrationMetadata.ISSUER,
+                issuer,
+                TokenValidatorFactory.AUDIENCES_METADATA_KEY,
+                audiences))
+        .build();
+  }
+
+  private static Jwt jwtWith(final String issuer, final List<String> audiences) {
+    return new Jwt(
+        "tv",
+        Instant.now(),
+        Instant.now().plusSeconds(60),
+        Map.of("alg", "RS256"),
+        Map.of("sub", "alice", "iss", issuer, "aud", audiences));
+  }
+
+  /** A registration as a host application supplies it: no CSL metadata of any kind. */
+  private static ClientRegistration hostRegistration(final String registrationId) {
+    return ClientRegistration.withRegistrationId(registrationId)
+        .jwkSetUri("https://example.com/jwks")
+        .authorizationUri("https://example.com/auth")
+        .tokenUri("https://example.com/token")
+        .clientId("client")
+        .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+        .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+        .build();
+  }
+
   private static ClientRegistration registrationWithMetadataAudiences(
       final String registrationId, final List<String> audiences) {
     return ClientRegistration.withRegistrationId(registrationId)

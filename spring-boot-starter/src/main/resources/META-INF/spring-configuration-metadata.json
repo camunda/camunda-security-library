@@ -393,6 +393,13 @@
       "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration"
     },
     {
+      "name": "camunda.security.authentication.oidc.type",
+      "type": "java.lang.String",
+      "description": "The kind of OAuth2 client this registration describes: confidential, public or hybrid. A public client holds no client secret and authenticates with 'none'. A hybrid client is a confidential client whose identity provider also permits PKCE. A value that is not one of the three, or one that contradicts the other properties of the block, logs a warning and the registration is not used.",
+      "sourceType": "io.camunda.security.api.model.config.oidc.OidcConfiguration",
+      "defaultValue": "confidential"
+    },
+    {
       "name": "camunda.security.authentication.oidc.user-info-augmentation.cache-max-size",
       "type": "java.lang.Integer",
       "sourceType": "io.camunda.security.api.model.config.oidc.OidcUserInfoAugmentationConfiguration",
@@ -668,5 +675,50 @@
       "defaultValue": "PT30M"
     }
   ],
-  "hints": []
+  "hints": [
+    {
+      "name": "camunda.security.authentication.oidc.type",
+      "values": [
+        {
+          "value": "confidential",
+          "description": "Authenticates at the token endpoint with a client secret or a signed assertion. The default, and the only behaviour before the property existed."
+        },
+        {
+          "value": "public",
+          "description": "Holds no client secret and sends no client authentication. Used for a PKCE login, or only to validate tokens a Camunda client application obtained for itself."
+        },
+        {
+          "value": "hybrid",
+          "description": "A confidential client whose identity provider also permits PKCE for the same client, so one registration serves both."
+        }
+      ],
+      "providers": [
+        {
+          "name": "any"
+        }
+      ]
+    },
+    {
+      "name": "camunda.security.authentication.oidc.client-authentication-method",
+      "values": [
+        {
+          "value": "client_secret_basic",
+          "description": "Sends the client id and secret in the Authorization header. The default."
+        },
+        {
+          "value": "private_key_jwt",
+          "description": "Sends a client assertion signed with the key in assertion.keystore."
+        },
+        {
+          "value": "none",
+          "description": "Sends no client authentication. Valid only with type 'public'."
+        }
+      ],
+      "providers": [
+        {
+          "name": "any"
+        }
+      ]
+    }
+  ]
 }
