@@ -116,11 +116,12 @@ public final class ConditionalResourceAccessProvider implements ResourceAccessPr
   /**
    * Checks one resource with the same rule as the single check: the grants of the global roles, and
    * of the conditional roles whose conditions {@code resource} meets, on the ID of {@code
-   * resource}. The ID comes from the {@code resourceIdSupplier} of {@code requiredAuthorization},
-   * or from its only resource ID. A resource without an ID is denied.
+   * resource}. As in the single check, the ID is the only resource ID of {@code
+   * requiredAuthorization} if it names one, and comes from its {@code resourceIdSupplier}
+   * otherwise. A resource without an ID is denied.
    *
    * @throws IllegalArgumentException if {@code requiredAuthorization} has resource property names,
-   *     or neither a {@code resourceIdSupplier} nor exactly one resource ID
+   *     more than one resource ID, or neither a resource ID nor a {@code resourceIdSupplier}
    */
   @Override
   public <T> ResourceAccess hasResourceAccess(
@@ -212,14 +213,19 @@ public final class ConditionalResourceAccessProvider implements ResourceAccessPr
 
   private static <T> String resourceIdOf(
       final RequiredAuthorization<T> authorization, final T resource) {
+    if (authorization.hasAnyResourceIds()) {
+      if (authorization.resourceIds().size() == 1) {
+        return authorization.resourceIds().getFirst();
+      }
+      throw new IllegalArgumentException(
+          ("A check on resource type %s needs exactly one resource ID, but has %s")
+              .formatted(authorization.resourceType(), authorization.resourceIds()));
+    }
     if (authorization.resourceIdSupplier() != null) {
       return authorization.resourceIdSupplier().apply(resource);
     }
-    if (authorization.hasAnyResourceIds() && authorization.resourceIds().size() == 1) {
-      return authorization.resourceIds().getFirst();
-    }
     throw new IllegalArgumentException(
-        ("A check on resource type %s needs a resourceIdSupplier or exactly one resource ID")
+        ("A check on resource type %s needs exactly one resource ID or a resourceIdSupplier")
             .formatted(authorization.resourceType()));
   }
 
