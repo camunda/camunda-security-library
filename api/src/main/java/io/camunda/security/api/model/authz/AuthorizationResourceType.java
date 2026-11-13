@@ -82,7 +82,8 @@ public enum AuthorizationResourceType {
       PermissionType.COMPLETE_USER_TASK,
       PermissionType.CANCEL_PROCESS_INSTANCE,
       PermissionType.DELETE_PROCESS_INSTANCE,
-      PermissionType.SUSPEND_PROCESS_INSTANCE),
+      PermissionType.SUSPEND_PROCESS_INSTANCE,
+      PermissionType.SUSPEND_PROCESS_DEFINITION),
   USER_TASK(
       PermissionType.READ, PermissionType.UPDATE, PermissionType.CLAIM, PermissionType.COMPLETE),
   UNSPECIFIED();
