@@ -72,9 +72,11 @@ import org.springframework.util.StringUtils;
  * {@link #revokeFromSweep}, which waits for room while the provider keeps up, so a large sweep
  * against a healthy provider is not dropped. A provider that does not keep up, or a backlog that
  * has used up its waiting budget, makes the sweep drop instead, so the sweep reaches the sessions
- * of the other providers. After a registration fails to resolve, it is skipped for {@link
- * #LOOKUP_BACKOFF}, so an unreachable provider does not start a discovery for every session. The
- * session is deleted either way, and every failure is fail-soft: neither method throws.
+ * of the other providers. After it has room, the sweep reads the session again and revokes only if
+ * it is still expired: a request, such as a heartbeat, can use the session while the sweep waits.
+ * After a registration fails to resolve, it is skipped for {@link #LOOKUP_BACKOFF}, so an
+ * unreachable provider does not start a discovery for every session. The session is deleted either
+ * way, and every failure is fail-soft: neither method throws.
  */
 public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable {
 
@@ -184,22 +186,27 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
    * the calling thread, so the caller can delete it right after. Never throws.
    */
   public void revoke(final Session expiredSession) {
-    revoke(expiredSession, false);
+    revoke(expiredSession, null);
   }
 
   /**
    * Like {@link #revoke}, for the expiry sweep, which runs on its own thread: waits for room in a
    * full lane while the provider frees a place within {@link #SWEEP_WAIT}, and for at most {@link
    * #SWEEP_WAIT_BUDGET} per backlog, so a large sweep is not dropped while the provider keeps up.
-   * Never throws.
+   * Once it has room, it reads the token from what {@code stillExpired} returns, not from the
+   * snapshot, and revokes nothing when that is {@code null}. Never throws.
+   *
+   * @param snapshot the session in the sweep's snapshot, which picks the provider's lane
+   * @param stillExpired reads the session again, see {@link
+   *     io.camunda.security.spring.session.ExpiredSessionHandler#foundBySweep}
    */
-  public void revokeFromSweep(final Session expiredSession) {
-    revoke(expiredSession, true);
+  public void revokeFromSweep(final Session snapshot, final Supplier<Session> stillExpired) {
+    revoke(snapshot, Objects.requireNonNull(stillExpired, "stillExpired must not be null"));
   }
 
-  private void revoke(final Session expiredSession, final boolean mayWait) {
+  private void revoke(final Session expiredSession, final Supplier<Session> stillExpired) {
     try {
-      scheduleRevocation(expiredSession, mayWait);
+      scheduleRevocation(expiredSession, stillExpired);
     } catch (final RuntimeException e) {
       // Deliberately swallowed: deleting an expired session must not depend on revocation.
       LOG.warn(
@@ -224,7 +231,12 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
     lanes.values().forEach(lane -> lane.executor().shutdown());
   }
 
-  private void scheduleRevocation(final Session expiredSession, final boolean mayWait) {
+  /**
+   * @param stillExpired for the sweep, reads the session again once the lane has room; {@code null}
+   *     for a request, which never waits and so revokes from {@code expiredSession}
+   */
+  private void scheduleRevocation(
+      final Session expiredSession, final Supplier<Session> stillExpired) {
     if (chains.isEmpty()) {
       return;
     }
@@ -233,16 +245,16 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
       return;
     }
     final String registrationId = authentication.getAuthorizedClientRegistrationId();
-    final OAuth2AuthorizedClient authorizedClient =
-        authorizedClient(expiredSession, registrationId);
-    if (authorizedClient == null || authorizedClient.getRefreshToken() == null) {
+    final OAuth2AuthorizedClient snapshotClient = refreshableClient(expiredSession, registrationId);
+    if (snapshotClient == null) {
       LOG.debug(
           "Expired web session holds no refresh token for OIDC registration '{}'. Nothing to"
               + " revoke.",
           ScopedClientRegistrationFactory.sanitizeForLog(registrationId));
       return;
     }
-    final Lane lane = lane(laneKey(authorizedClient.getClientRegistration()));
+    final boolean mayWait = stillExpired != null;
+    final Lane lane = lane(laneKey(snapshotClient.getClientRegistration()));
     if (!lane.tryEnter(mayWait, sweepWait, sweepWaitBudget)) {
       // One WARN per backlog rather than one per session: the flag resets only once the lane's
       // backlog is gone.
@@ -257,7 +269,19 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
       }
       return;
     }
+    boolean scheduled = false;
     try {
+      // The sweep may have waited for the permit, so it acts on the session as the store holds it
+      // now. The permit is taken first, so nothing waits between this read and the deletion.
+      final OAuth2AuthorizedClient authorizedClient =
+          mayWait ? refreshableClient(stillExpired.get(), registrationId) : snapshotClient;
+      if (authorizedClient == null) {
+        LOG.debug(
+            "A web session of OIDC registration '{}' is no longer expired, or holds no refresh"
+                + " token any more. Nothing to revoke.",
+            ScopedClientRegistrationFactory.sanitizeForLog(registrationId));
+        return;
+      }
       lane.executor()
           .execute(
               () -> {
@@ -267,9 +291,13 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
                   lane.leave();
                 }
               });
+      scheduled = true;
     } catch (final RejectedExecutionException e) {
       // Only after close(): the lanes have unbounded queues.
-      lane.leave();
+    } finally {
+      if (!scheduled) {
+        lane.leave();
+      }
     }
   }
 
@@ -477,10 +505,13 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
         : null;
   }
 
-  private static OAuth2AuthorizedClient authorizedClient(
+  /** The session's authorized client of {@code registrationId}, if it holds a refresh token. */
+  private static OAuth2AuthorizedClient refreshableClient(
       final Session session, final String registrationId) {
-    return session.getAttribute(AUTHORIZED_CLIENTS_ATTRIBUTE) instanceof final Map<?, ?> clients
+    return session != null
+            && session.getAttribute(AUTHORIZED_CLIENTS_ATTRIBUTE) instanceof final Map<?, ?> clients
             && clients.get(registrationId) instanceof final OAuth2AuthorizedClient client
+            && client.getRefreshToken() != null
         ? client
         : null;
   }
