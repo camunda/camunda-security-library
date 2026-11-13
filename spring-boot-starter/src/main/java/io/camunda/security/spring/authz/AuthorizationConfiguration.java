@@ -8,10 +8,12 @@
 package io.camunda.security.spring.authz;
 
 import io.camunda.security.api.context.PropertyAuthorizationEvaluator;
+import io.camunda.security.api.context.ResourceAttributeExtractor;
 import io.camunda.security.core.authz.AuthorizationChecker;
 import io.camunda.security.core.authz.AuthorizationService;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
 import io.camunda.security.core.authz.PropertyAuthorizationEvaluatorRegistry;
+import io.camunda.security.core.authz.ResourceAttributeExtractorRegistry;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -37,6 +39,10 @@ import org.springframework.context.annotation.Configuration;
  * {@link PropertyAuthorizationEvaluatorRegistry} and passed to the service constructor. Hosts
  * register their own evaluators as Spring beans to have them picked up automatically.
  *
+ * <p>In the same way, all {@link ResourceAttributeExtractor} beans are collected into a {@link
+ * ResourceAttributeExtractorRegistry}. A resource type with an extractor evaluates the conditional
+ * role memberships of the principal (ADR-0041).
+ *
  * <p><strong>Ordering note:</strong> same timing constraint as {@link
  * AuthorizationCheckerConfiguration} — activate via the {@link
  * io.camunda.security.spring.CamundaSecurityAutoConfiguration} umbrella so that {@link
@@ -58,6 +64,7 @@ public class AuthorizationConfiguration {
    *
    * @param authorizationChecker the scope evaluation kernel
    * @param evaluators all registered property-based evaluators; empty list is valid
+   * @param attributeExtractors all registered resource attribute extractors; empty list is valid
    * @param properties CSL configuration properties for authorization and multi-tenancy flags
    * @param claimsConverter converter from raw JWT claims to {@link
    *     io.camunda.security.api.model.CamundaAuthentication}; provided by the host application
@@ -69,12 +76,14 @@ public class AuthorizationConfiguration {
   public AuthorizationService authorizationService(
       final AuthorizationChecker authorizationChecker,
       final List<PropertyAuthorizationEvaluator<?>> evaluators,
+      final List<ResourceAttributeExtractor<?>> attributeExtractors,
       final CamundaSecurityLibraryProperties properties,
       final LazyTokenClaimsConverter claimsConverter,
       @Autowired(required = false) final MeterRegistry meterRegistry) {
     return new AuthorizationService(
         authorizationChecker,
         new PropertyAuthorizationEvaluatorRegistry(evaluators),
+        new ResourceAttributeExtractorRegistry(attributeExtractors),
         properties.getAuthorizations().isEnabled(),
         properties.getMultiTenancy().isChecksEnabled(),
         claimsConverter,
