@@ -21,13 +21,13 @@ import io.camunda.security.core.port.out.SessionStorePort;
 import io.camunda.security.spring.security.ExpiredSessionRefreshTokenRevocation;
 import io.camunda.security.spring.security.RefreshTokenRevoker;
 import io.camunda.security.spring.session.WebSessionMapper.SpringBasedWebSessionAttributeConverter;
-import io.camunda.security.spring.session.WebSessionRepository.ExpiryCheck;
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -192,7 +192,7 @@ class WebSessionConfigurationTest {
       // when
       WebSessionConfiguration.expiredSessionHandler(
               beanFactory.getBeanProvider(ExpiredSessionRefreshTokenRevocation.class))
-          .accept(sessionWithRefreshToken(), ExpiryCheck.REQUEST);
+          .foundByRequest(sessionWithRefreshToken());
 
       // then
       assertThat(lookedUp.await(5, TimeUnit.SECONDS)).isTrue();
@@ -209,7 +209,7 @@ class WebSessionConfigurationTest {
             () ->
                 WebSessionConfiguration.expiredSessionHandler(
                         beanFactory.getBeanProvider(ExpiredSessionRefreshTokenRevocation.class))
-                    .accept(sessionWithRefreshToken(), ExpiryCheck.REQUEST))
+                    .foundByRequest(sessionWithRefreshToken()))
         .doesNotThrowAnyException();
   }
 
@@ -225,11 +225,12 @@ class WebSessionConfigurationTest {
     final var fromRequest = new MapSession();
 
     // when
-    handler.accept(fromSweep, ExpiryCheck.SWEEP);
-    handler.accept(fromRequest, ExpiryCheck.REQUEST);
+    final Supplier<Session> stillExpired = () -> fromSweep;
+    handler.foundBySweep(fromSweep, stillExpired);
+    handler.foundByRequest(fromRequest);
 
     // then
-    verify(revocation).revokeFromSweep(fromSweep);
+    verify(revocation).revokeFromSweep(fromSweep, stillExpired);
     verify(revocation).revoke(fromRequest);
     verifyNoMoreInteractions(revocation);
   }

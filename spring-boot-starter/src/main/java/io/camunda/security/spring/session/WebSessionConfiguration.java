@@ -13,7 +13,6 @@ import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import io.camunda.security.spring.annotation.ConditionalOnPersistentWebSessionEnabled;
 import io.camunda.security.spring.security.ExpiredSessionRefreshTokenRevocation;
 import io.camunda.security.spring.session.WebSessionMapper.SpringBasedWebSessionAttributeConverter;
-import io.camunda.security.spring.session.WebSessionRepository.ExpiryCheck;
 import jakarta.servlet.http.HttpServletRequest;
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.util.Collection;
@@ -22,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BiConsumer;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -122,22 +121,25 @@ public class WebSessionConfiguration {
   /**
    * Revokes the refresh token of each expired session the repositories delete (ADR-0043). A session
    * the sweep found goes to {@link ExpiredSessionRefreshTokenRevocation#revokeFromSweep}, which can
-   * wait briefly for room; one a request found goes to {@link
+   * wait briefly for room and then reads the session again; one a request found goes to {@link
    * ExpiredSessionRefreshTokenRevocation#revoke}, which never waits. Resolved per expired session
    * rather than at startup: the revocation bean belongs to the chain builder's configuration, and a
    * host that imports this configuration without it keeps logout-only revocation.
    */
-  static BiConsumer<Session, ExpiryCheck> expiredSessionHandler(
+  static ExpiredSessionHandler expiredSessionHandler(
       final ObjectProvider<ExpiredSessionRefreshTokenRevocation> expiredSessionRevocation) {
-    return (session, check) ->
+    return new ExpiredSessionHandler() {
+      @Override
+      public void foundByRequest(final Session session) {
+        expiredSessionRevocation.ifAvailable(revocation -> revocation.revoke(session));
+      }
+
+      @Override
+      public void foundBySweep(final Session snapshot, final Supplier<Session> stillExpired) {
         expiredSessionRevocation.ifAvailable(
-            revocation -> {
-              if (check == ExpiryCheck.SWEEP) {
-                revocation.revokeFromSweep(session);
-              } else {
-                revocation.revoke(session);
-              }
-            });
+            revocation -> revocation.revokeFromSweep(snapshot, stillExpired));
+      }
+    };
   }
 
   @Bean

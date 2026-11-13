@@ -35,7 +35,9 @@ revocation, or if it cannot read a possible match. An opt-out of one scope alway
 **D3. CSL revokes in the background, with one queue of fixed size for each provider.**
 A provider that is slow or down does not delay the other providers. A user request never waits: if
 the queue is full, CSL drops the revocation and writes one warning. The periodic deletion can wait
-a short time for space, so it does not drop many sessions that expire at the same time.
+a short time for space, so it does not drop many sessions that expire at the same time. After the
+wait, it reads the session again: a request can use the session in the meantime, and CSL neither
+revokes nor deletes a session that is no longer expired.
 
 **D4. Logout and expiry send the same revocation request.**
 Both use the same client authentication, time limits and log redaction. A provider that accepts

@@ -532,7 +532,7 @@ class ExpiredSessionRefreshTokenRevocationTest {
     holdTasks();
     revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
     final var session = expiredSession(authorizedClient(registration(CLIENT_ID, TOKEN_URI), "r"));
-    revocation.revokeFromSweep(session);
+    revocation.revokeFromSweep(session, () -> session);
     final var worker =
         Thread.ofVirtual()
             .start(
@@ -542,12 +542,50 @@ class ExpiredSessionRefreshTokenRevocationTest {
                 });
 
     // when
-    revocation.revokeFromSweep(session);
+    revocation.revokeFromSweep(session, () -> session);
     worker.join();
 
     // then the sweep's revocation is queued, not dropped
     assertThat(held).hasSize(1);
     assertThat(logs.list).noneMatch(event -> event.getLevel() == Level.WARN);
+  }
+
+  @Test
+  void shouldNotRevokeFromTheSweepWhenTheSessionIsNoLongerExpired() {
+    // given a lane with room for one revocation
+    revocation = revocationWithCapacity(1, Duration.ofSeconds(5));
+    runInline();
+    final var registration = registration(CLIENT_ID, TOKEN_URI);
+    when(firstRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    final var session = expiredSession(authorizedClient(registration, "refresh"));
+
+    // when a request, such as a heartbeat, used the session while the sweep waited
+    revocation.revokeFromSweep(session, () -> null);
+
+    // then nothing is revoked, and the lane has its room back
+    verify(firstRevoker, never()).revoke(any(), any());
+    revocation.revoke(session);
+    verify(firstRevoker).revoke(eq(registration), any());
+  }
+
+  @Test
+  void shouldRevokeFromTheSweepTheTokenTheSessionHoldsNow() {
+    // given a session whose token was refreshed after the sweep's snapshot
+    runInline();
+    final var registration = registration(CLIENT_ID, TOKEN_URI);
+    when(firstRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    final var refreshed = authorizedClient(registration, "refreshed");
+
+    // when
+    revocation.revokeFromSweep(
+        expiredSession(authorizedClient(registration, "stale")), () -> expiredSession(refreshed));
+
+    // then
+    final ArgumentCaptor<Supplier<OAuth2AuthorizedClient>> supplier = supplierCaptor();
+    verify(firstRevoker).revoke(eq(registration), supplier.capture());
+    assertThat(supplier.getValue().get()).isSameAs(refreshed);
   }
 
   @Test
@@ -558,11 +596,11 @@ class ExpiredSessionRefreshTokenRevocationTest {
     holdTasks();
     revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
     final var session = expiredSession(authorizedClient(registration(CLIENT_ID, TOKEN_URI), "r"));
-    revocation.revokeFromSweep(session);
+    revocation.revokeFromSweep(session, () -> session);
 
     // when
-    final long firstDrop = timed(() -> revocation.revokeFromSweep(session));
-    final long secondDrop = timed(() -> revocation.revokeFromSweep(session));
+    final long firstDrop = timed(() -> revocation.revokeFromSweep(session, () -> session));
+    final long secondDrop = timed(() -> revocation.revokeFromSweep(session, () -> session));
 
     // then only the first drop waited
     assertThat(firstDrop).isGreaterThanOrEqualTo(sweepWait.toMillis());
@@ -637,8 +675,8 @@ class ExpiredSessionRefreshTokenRevocationTest {
     holdTasks();
     revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
     final var session = expiredSession(authorizedClient(registration(CLIENT_ID, TOKEN_URI), "r"));
-    revocation.revokeFromSweep(session);
-    revocation.revokeFromSweep(session);
+    revocation.revokeFromSweep(session, () -> session);
+    revocation.revokeFromSweep(session, () -> session);
     final var worker =
         Thread.ofPlatform()
             .daemon()
@@ -657,7 +695,7 @@ class ExpiredSessionRefreshTokenRevocationTest {
         timed(
             () -> {
               for (int i = 0; i < 20; i++) {
-                revocation.revokeFromSweep(session);
+                revocation.revokeFromSweep(session, () -> session);
               }
             });
     worker.interrupt();

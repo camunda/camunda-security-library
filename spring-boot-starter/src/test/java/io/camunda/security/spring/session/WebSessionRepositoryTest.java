@@ -17,7 +17,6 @@ import io.camunda.security.api.model.config.SessionConfiguration;
 import io.camunda.security.api.model.session.PersistentSession;
 import io.camunda.security.core.port.out.SessionStorePort;
 import io.camunda.security.spring.session.WebSessionMapper.SpringBasedWebSessionAttributeConverter;
-import io.camunda.security.spring.session.WebSessionRepository.ExpiryCheck;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.time.Instant;
@@ -26,6 +25,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -385,14 +385,25 @@ class WebSessionRepositoryTest {
   @Test
   void handsTheHandlerWhereTheExpiryWasFound() {
     // given
-    final List<ExpiryCheck> checks = new ArrayList<>();
+    final List<String> checks = new ArrayList<>();
     final var repository =
         new WebSessionRepository(
             sessionStore,
             webSessionMapper,
             request,
             sessionConfiguration,
-            (session, check) -> checks.add(check));
+            new ExpiredSessionHandler() {
+              @Override
+              public void foundByRequest(final Session session) {
+                checks.add("request");
+              }
+
+              @Override
+              public void foundBySweep(
+                  final Session snapshot, final Supplier<Session> stillExpired) {
+                checks.add("sweep");
+              }
+            });
     final var foundByRequest = storeSession(repository, EXPIRED_LAST_ACCESS);
     repository.findById(foundByRequest.getId());
     final var savedByRequest = storeSession(repository, Instant.now());
@@ -404,7 +415,45 @@ class WebSessionRepositoryTest {
     repository.deleteExpiredWebSessions();
 
     // then the sweep can wait on the handler, a request must not
-    assertThat(checks).containsExactly(ExpiryCheck.REQUEST, ExpiryCheck.REQUEST, ExpiryCheck.SWEEP);
+    assertThat(checks).containsExactly("request", "request", "sweep");
+  }
+
+  @Test
+  void deleteExpiredWebSessionsKeepsASessionUsedWhileTheHandlerWaited() {
+    // given - an expired session, and a handler that waits while a heartbeat uses the session
+    final var expired =
+        storeSession(
+            new WebSessionRepository(sessionStore, webSessionMapper, request, sessionConfiguration),
+            EXPIRED_LAST_ACCESS);
+    final List<Session> reread = new ArrayList<>();
+    final var repository =
+        new WebSessionRepository(
+            sessionStore,
+            webSessionMapper,
+            request,
+            sessionConfiguration,
+            new ExpiredSessionHandler() {
+              @Override
+              public void foundByRequest(final Session session) {}
+
+              @Override
+              public void foundBySweep(
+                  final Session snapshot, final Supplier<Session> stillExpired) {
+                // while the handler waits for room, the heartbeat saves the session
+                final var used =
+                    webSessionMapper.fromPersistentSession(sessionStore.get(snapshot.getId()));
+                used.setLastAccessedTime(Instant.now());
+                sessionStore.upsert(webSessionMapper.toPersistentSession(used));
+                reread.add(stillExpired.get());
+              }
+            });
+
+    // when
+    repository.deleteExpiredWebSessions();
+
+    // then the handler learns that the session is live, and the sweep keeps it
+    assertThat(reread).containsExactly((Session) null);
+    assertThat(sessionStore.get(expired.getId())).isNotNull();
   }
 
   private WebSessionRepository repositoryWithHandler(final Consumer<Session> handler) {
@@ -413,7 +462,21 @@ class WebSessionRepositoryTest {
         webSessionMapper,
         request,
         sessionConfiguration,
-        (session, check) -> handler.accept(session));
+        new ExpiredSessionHandler() {
+          @Override
+          public void foundByRequest(final Session session) {
+            handler.accept(session);
+          }
+
+          @Override
+          public void foundBySweep(final Session snapshot, final Supplier<Session> stillExpired) {
+            // Like CSL's handler, act only on the session as the store holds it now.
+            final Session current = stillExpired.get();
+            if (current != null) {
+              handler.accept(current);
+            }
+          }
+        });
   }
 
   /** Writes the session straight to the store, so an expired one is not deleted on save. */
