@@ -54,6 +54,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0039: API chains refresh the session access token, with their own authorized-client stack](../adr/0039-refresh-access-tokens-on-api-chains.md)
 - [ADR-0041: Limit a membership with conditions](../adr/0041-conditional-memberships.md)
 - [ADR-0042: An OIDC client type, and `none` as a client authentication method](../adr/0042-oidc-client-type-and-client-authentication-method-none.md)
+- [ADR-0043: Revoke the refresh token when a web session expires](../adr/0043-revoke-refresh-token-on-session-expiry.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 

@@ -41,6 +41,7 @@ public final class ScopedWebSessionRepositoryFactory {
   private final WebSessionMapper webSessionMapper;
   private final HttpServletRequest request;
   private final SessionConfiguration sessionConfiguration;
+  private final ExpiredSessionHandler expiredSessionHandler;
   private final Map<String, WebSessionRepository> repositoriesByBasePath =
       new ConcurrentHashMap<>();
 
@@ -49,10 +50,30 @@ public final class ScopedWebSessionRepositoryFactory {
       final WebSessionMapper webSessionMapper,
       final HttpServletRequest request,
       final SessionConfiguration sessionConfiguration) {
+    this(
+        storePortProvider,
+        webSessionMapper,
+        request,
+        sessionConfiguration,
+        ExpiredSessionHandler.NONE);
+  }
+
+  /**
+   * @param expiredSessionHandler passed to every repository this factory builds, see {@link
+   *     WebSessionRepository#WebSessionRepository(SessionStorePort, WebSessionMapper,
+   *     HttpServletRequest, SessionConfiguration, ExpiredSessionHandler)}
+   */
+  public ScopedWebSessionRepositoryFactory(
+      final ScopedSessionStorePortProvider storePortProvider,
+      final WebSessionMapper webSessionMapper,
+      final HttpServletRequest request,
+      final SessionConfiguration sessionConfiguration,
+      final ExpiredSessionHandler expiredSessionHandler) {
     this.storePortProvider = storePortProvider;
     this.webSessionMapper = webSessionMapper;
     this.request = request;
     this.sessionConfiguration = sessionConfiguration;
+    this.expiredSessionHandler = expiredSessionHandler;
   }
 
   /**
@@ -92,6 +113,7 @@ public final class ScopedWebSessionRepositoryFactory {
         Objects.requireNonNull(
             storePortProvider.forBasePath(basePath),
             () -> "ScopedSessionStorePortProvider returned null for basePath=" + basePath);
-    return new WebSessionRepository(storePort, webSessionMapper, request, sessionConfiguration);
+    return new WebSessionRepository(
+        storePort, webSessionMapper, request, sessionConfiguration, expiredSessionHandler);
   }
 }

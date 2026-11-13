@@ -27,16 +27,37 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
   private final WebSessionMapper webSessionMapper;
   private final HttpServletRequest request;
   private final SessionConfiguration sessionConfiguration;
+  private final ExpiredSessionHandler expiredSessionHandler;
 
   public WebSessionRepository(
       final SessionStorePort sessionStorePort,
       final WebSessionMapper webSessionMapper,
       final HttpServletRequest request,
       final SessionConfiguration sessionConfiguration) {
+    this(
+        sessionStorePort,
+        webSessionMapper,
+        request,
+        sessionConfiguration,
+        ExpiredSessionHandler.NONE);
+  }
+
+  /**
+   * @param expiredSessionHandler called with each session that expired, right before this
+   *     repository deletes it: in the expiry sweep, when a request finds its session expired, or
+   *     when a request saves a session that expired while it ran
+   */
+  public WebSessionRepository(
+      final SessionStorePort sessionStorePort,
+      final WebSessionMapper webSessionMapper,
+      final HttpServletRequest request,
+      final SessionConfiguration sessionConfiguration,
+      final ExpiredSessionHandler expiredSessionHandler) {
     this.sessionStorePort = sessionStorePort;
     this.webSessionMapper = webSessionMapper;
     this.request = request;
     this.sessionConfiguration = sessionConfiguration;
+    this.expiredSessionHandler = expiredSessionHandler;
   }
 
   /**
@@ -65,6 +86,8 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
     if (!webSession.shouldBeDeleted()) {
       saveWebSessionIfChanged(webSession);
     } else {
+      // A request can load a live session and finish after its idle deadline.
+      notifyIfExpired(webSession);
       deleteById(webSession.getId());
     }
   }
@@ -101,10 +124,49 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
             () -> deleteById(persistentSession.id()));
   }
 
-  private void deleteWebSessionIfExpired(final WebSession webSession) {
-    if (webSession.shouldBeDeleted()) {
-      deleteById(webSession.getId());
+  /**
+   * Deletes a session that the {@code getAll()} snapshot shows as expired, after reading it again.
+   * The snapshot can be stale: a request may have used the session since, and the handler can make
+   * the sweep wait. So the handler gets the snapshot and a way to read the session again after it
+   * waits, and the session is deleted only if that read still finds it to be deleted. A session
+   * that is expired in the store stays expired, because a request that finds it expired deletes it.
+   */
+  private void deleteWebSessionIfExpired(final WebSession snapshot) {
+    if (!snapshot.shouldBeDeleted()) {
+      return;
     }
+    final var stored = new StoredSession(snapshot.getId());
+    if (snapshot.isExpired()) {
+      try {
+        expiredSessionHandler.foundBySweep(snapshot, stored::expired);
+      } catch (final RuntimeException e) {
+        warnHandlerFailed(e);
+      }
+    }
+    stored.deleteIfToBeDeleted();
+  }
+
+  /**
+   * Hands an expired session that a request found to the handler before it is deleted. Only expiry
+   * counts: a session deleted because its authentication was invalidated, for example after a
+   * failed token refresh, holds no token worth revoking.
+   */
+  private void notifyIfExpired(final WebSession webSession) {
+    if (!webSession.isExpired()) {
+      return;
+    }
+    try {
+      expiredSessionHandler.foundByRequest(webSession);
+    } catch (final RuntimeException e) {
+      warnHandlerFailed(e);
+    }
+  }
+
+  private static void warnHandlerFailed(final RuntimeException e) {
+    // The session ID is a credential until the session is deleted, so it is not logged here.
+    LOGGER.warn(
+        "Expired-session handler failed; the expired web session is still deleted. Cause: {}",
+        e.getClass().getName());
   }
 
   private void saveWebSessionIfChanged(final WebSession webSession) {
@@ -128,6 +190,9 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
       // if session is expired (or has no valid authentication),
       // or the web session could not be restored,
       // then immediately delete the persistent session
+      if (webSession != null) {
+        notifyIfExpired(webSession);
+      }
       deleteById(persistentSession.id());
       return null;
     }
@@ -176,5 +241,45 @@ public final class WebSessionRepository implements SessionRepository<WebSession>
 
   private boolean isSessionIdNotEmpty(final String sessionId) {
     return sessionId != null && !sessionId.isEmpty();
+  }
+
+  /** A session as the store holds it when it is first read, which is after the handler waited. */
+  private final class StoredSession {
+
+    private final String id;
+    private boolean read;
+    private PersistentSession persistentSession;
+    private WebSession webSession;
+
+    private StoredSession(final String id) {
+      this.id = id;
+    }
+
+    /** The session, if it is still expired; {@code null} otherwise. */
+    WebSession expired() {
+      read();
+      return webSession != null && webSession.isExpired() ? webSession : null;
+    }
+
+    void deleteIfToBeDeleted() {
+      read();
+      if (persistentSession == null) {
+        // Deleted in the meantime, for example by a request that found it expired.
+        return;
+      }
+      // A session that cannot be restored is deleted too.
+      if (webSession == null || webSession.shouldBeDeleted()) {
+        deleteById(id);
+      }
+    }
+
+    private void read() {
+      if (read) {
+        return;
+      }
+      persistentSession = sessionStorePort.get(id);
+      webSession = persistentSession == null ? null : toWebSession(persistentSession).orElse(null);
+      read = true;
+    }
   }
 }
