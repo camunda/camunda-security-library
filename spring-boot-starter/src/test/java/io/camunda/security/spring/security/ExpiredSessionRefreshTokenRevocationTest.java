@@ -750,6 +750,32 @@ class ExpiredSessionRefreshTokenRevocationTest {
   }
 
   @Test
+  void shouldRevokeThroughTheChainWithTheSecretOfTheSession() {
+    // given two chains of one client during a secret rotation; the session used the new secret
+    runInline();
+    final var oldSecret =
+        ClientRegistration.withClientRegistration(
+                registration(CLIENT_ID, TOKEN_URI, REVOCATION_URI))
+            .clientSecret("old-secret")
+            .build();
+    final var newSecret =
+        ClientRegistration.withClientRegistration(oldSecret).clientSecret("new-secret").build();
+    when(firstRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(oldSecret);
+    when(secondRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(newSecret);
+    when(firstRevoker.canAuthenticate(any())).thenReturn(true);
+    when(secondRevoker.canAuthenticate(any())).thenReturn(true);
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+    revocation.register(secondRepository, SESSION_CLIENTS, secondRevoker);
+
+    // when
+    revocation.revoke(expiredSession(authorizedClient(newSecret, "refresh")));
+
+    // then
+    verify(firstRevoker, never()).revoke(any(), any());
+    verify(secondRevoker).revoke(eq(newSecret), any());
+  }
+
+  @Test
   void shouldRevokeThroughTheChainWhoseSigningKeyLoads() {
     // given two chains of one private_key_jwt client; the first chain's keystore is unreadable
     runInline();
