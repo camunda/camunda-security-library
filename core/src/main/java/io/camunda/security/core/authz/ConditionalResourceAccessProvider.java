@@ -190,16 +190,14 @@ public final class ConditionalResourceAccessProvider implements ResourceAccessPr
   }
 
   /**
-   * Returns {@code authorization} with the IDs that {@code scopes} grant, so that a consumer that
-   * reads only {@link ResourceAccess#authorization()} sees the resources granted without
-   * conditions. Returns {@code authorization} unchanged if they grant no ID.
+   * Returns {@code authorization} with exactly the IDs that {@code scopes} grant, none if they
+   * grant none, so that a consumer that reads only {@link ResourceAccess#authorization()} sees only
+   * the resources granted without conditions. The IDs that {@code authorization} requested are
+   * dropped: a conditional grant may cover them only for some resources.
    */
   private static <T> RequiredAuthorization<T> withGrantedResourceIds(
       final RequiredAuthorization<T> authorization, final List<AuthorizationScope> scopes) {
-    final Set<String> resourceIds = resourceIdsOf(scopes);
-    return resourceIds.isEmpty()
-        ? authorization
-        : authorization.withResourceIds(List.copyOf(resourceIds));
+    return authorization.withResourceIds(List.copyOf(resourceIdsOf(scopes)));
   }
 
   private static Set<String> resourceIdsOf(final List<AuthorizationScope> scopes) {
