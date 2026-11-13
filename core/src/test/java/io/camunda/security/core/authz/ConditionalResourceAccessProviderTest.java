@@ -232,6 +232,23 @@ class ConditionalResourceAccessProviderTest {
   }
 
   @Test
+  void checksTheRequestedResourceIdBeforeTheSupplierAsTheSingleCheckDoes() {
+    // given a grant on d1 only, and a requirement for d2 on the diagram d1
+    grants.grant(VIEWER, PROCESS_DEFINITION, READ_PROCESS_DEFINITION, AuthorizationScope.id("d1"));
+    final var alice = user(List.of(VIEWER));
+    final var d1 = diagram("d1", "payments", null);
+    final var readD2 = READ_DIAGRAM.withResourceId("d2");
+    final var readTwo = READ_DIAGRAM.withResourceIds(List.of("d1", "d2"));
+    final var provider = provider();
+
+    // when / then
+    assertThat(provider.hasResourceAccess(alice, readD2, d1).denied()).isTrue();
+    assertThat(service().check(alice, readD2, d1).isLeft()).isTrue();
+    assertThatThrownBy(() -> provider.hasResourceAccess(alice, readTwo, d1))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
   void checksAResourceIdWithGlobalRolesOnly() {
     // given
     grantEverything(EDITOR);
