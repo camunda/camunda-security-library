@@ -24,7 +24,10 @@ import io.camunda.security.api.model.authz.ResourceAttribute;
 import io.camunda.security.core.auth.RequiredAuthorization;
 import io.camunda.security.core.authz.AuthorizationChecker;
 import io.camunda.security.core.authz.AuthorizationService;
+import io.camunda.security.core.authz.ConditionalResourceAccessProvider;
+import io.camunda.security.core.authz.DisabledResourceAccessProvider;
 import io.camunda.security.core.authz.LazyTokenClaimsConverter;
+import io.camunda.security.core.authz.ResourceAccessProvider;
 import io.camunda.security.core.port.in.AuthorizationCheckPort;
 import io.camunda.security.core.port.out.AuthorizationCheckLatencyRecorder;
 import io.camunda.security.core.port.out.AuthorizationScopeRepositoryPort;
@@ -221,6 +224,54 @@ class AuthorizationConfigurationTest {
                   meterRegistry.find(AuthorizationCheckLatencyRecorder.METRIC_NAME).timer();
               assertThat(timer).isNotNull();
               assertThat(timer.count()).isEqualTo(1);
+            });
+  }
+
+  @Test
+  void conditionalResourceAccessProviderIsRegisteredWhenAnExtractorIsPresent() {
+    runner
+        .withPropertyValues("camunda.security.authorizations.enabled=true")
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
+        .withBean(ResourceAttributeExtractor.class, PaymentsWorkspaceExtractor::new)
+        .run(
+            ctx ->
+                assertThat(ctx)
+                    .getBean(ResourceAccessProvider.class)
+                    .isInstanceOf(ConditionalResourceAccessProvider.class));
+  }
+
+  @Test
+  void resourceAccessProviderIsAbsentWithoutExtractor() {
+    // a host without extractors, such as OC, keeps its own providers
+    runner
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
+        .run(ctx -> assertThat(ctx).doesNotHaveBean(ResourceAccessProvider.class));
+  }
+
+  @Test
+  void resourceAccessProviderAllowsEverythingWhenAuthorizationIsDisabled() {
+    runner
+        .withPropertyValues("camunda.security.authorizations.enabled=false")
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
+        .withBean(ResourceAttributeExtractor.class, PaymentsWorkspaceExtractor::new)
+        .run(
+            ctx ->
+                assertThat(ctx)
+                    .getBean(ResourceAccessProvider.class)
+                    .isInstanceOf(DisabledResourceAccessProvider.class));
+  }
+
+  @Test
+  void hostCanOverrideTheResourceAccessProvider() {
+    final ResourceAccessProvider hostProvider = new DisabledResourceAccessProvider();
+    runner
+        .withBean(AuthorizationChecker.class, () -> mockChecker)
+        .withBean(ResourceAttributeExtractor.class, PaymentsWorkspaceExtractor::new)
+        .withBean(ResourceAccessProvider.class, () -> hostProvider)
+        .run(
+            ctx -> {
+              assertThat(ctx).hasSingleBean(ResourceAccessProvider.class);
+              assertThat(ctx.getBean(ResourceAccessProvider.class)).isSameAs(hostProvider);
             });
   }
 

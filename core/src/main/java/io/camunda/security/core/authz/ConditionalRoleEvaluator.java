@@ -11,8 +11,6 @@ import io.camunda.security.api.context.ResourceAttributeExtractor;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.authz.AuthorizationResourceType;
 import io.camunda.security.api.model.authz.ConditionalMembership;
-import io.camunda.security.api.model.authz.MembershipCondition;
-import io.camunda.security.api.model.authz.Operand;
 import io.camunda.security.api.model.authz.ResourceAttribute;
 import java.util.List;
 import java.util.Map;
@@ -26,11 +24,13 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Finds the conditional role memberships of a principal that apply to a resource (ADR-0041). A
- * membership applies when the attributes of the resource meet all of its conditions.
+ * membership applies when the attributes of the resource meet all of its conditions, by the rule in
+ * {@link ResourceConditions}.
  *
  * <p>Anything that cannot be evaluated does not apply (ADR-0041 D4): no single extractor for the
- * resource, an extractor that throws, and an attribute without a value. {@link Operand.Equals}
- * compares the values literally, so {@code *} matches only {@code *}.
+ * resource, an extractor that throws, and an attribute without a value. {@link
+ * io.camunda.security.api.model.authz.Operand.Equals} compares the values literally, so {@code *}
+ * matches only {@code *}.
  */
 final class ConditionalRoleEvaluator {
 
@@ -62,7 +62,7 @@ final class ConditionalRoleEvaluator {
       return Set.of();
     }
     return memberships.stream()
-        .filter(membership -> allMet(membership.conditions(), attributes))
+        .filter(membership -> ResourceConditions.allMet(membership.conditions(), attributes))
         .map(ConditionalMembership::id)
         .collect(Collectors.toUnmodifiableSet());
   }
@@ -109,22 +109,5 @@ final class ConditionalRoleEvaluator {
           resourceType,
           e);
     }
-  }
-
-  private static boolean allMet(
-      final List<MembershipCondition> conditions,
-      final Map<ResourceAttribute, Set<String>> attributes) {
-    return conditions.stream().allMatch(condition -> isMet(condition, attributes));
-  }
-
-  private static boolean isMet(
-      final MembershipCondition condition, final Map<ResourceAttribute, Set<String>> attributes) {
-    final Set<String> values = attributes.get(condition.attribute());
-    if (values == null || values.isEmpty()) {
-      return false;
-    }
-    return switch (condition.operand()) {
-      case Operand.Equals equals -> values.contains(equals.value());
-    };
   }
 }
