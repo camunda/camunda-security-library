@@ -173,6 +173,33 @@ class RefreshTokenRevocationLogoutHandlerTest {
   }
 
   @Test
+  void shouldRevokeRefreshTokenOfAPublicClientWithItsClientIdOnly() {
+    // given a public client, which has no credentials to send
+    final var registration = registration(ClientAuthenticationMethod.NONE).build();
+    givenAuthorizedSession(registration);
+    server
+        .expect(requestTo(REVOCATION_ENDPOINT))
+        .andExpect(
+            headers(
+                headers ->
+                    assertThat(headers.headerNames()).doesNotContain(HttpHeaders.AUTHORIZATION)))
+        .andExpect(
+            formBody(
+                fields ->
+                    assertThat(fields)
+                        .containsEntry("client_id", CLIENT_ID)
+                        .containsEntry("token", REFRESH_TOKEN_VALUE)
+                        .doesNotContainKeys("client_secret", "client_assertion")))
+        .andRespond(withSuccess());
+
+    // when the user logs out
+    handler(null).logout(request, response, authentication(registration));
+
+    // then the client identified itself, as RFC 7009 asks of a public client
+    server.verify();
+  }
+
+  @Test
   void shouldRevokeRefreshTokenWithPrivateKeyJwtClientAuthentication() throws Exception {
     // given a private_key_jwt registration and a resolvable signing key
     final var registration = registration(ClientAuthenticationMethod.PRIVATE_KEY_JWT).build();

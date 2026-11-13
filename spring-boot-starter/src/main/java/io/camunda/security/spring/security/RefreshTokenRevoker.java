@@ -344,8 +344,8 @@ public final class RefreshTokenRevoker {
   private String unsupportedClientAuthentication(final ClientRegistration clientRegistration) {
     final var method = clientRegistration.getClientAuthenticationMethod();
     if (ClientAuthenticationMethod.CLIENT_SECRET_JWT.equals(method)) {
-      // CSL's CLIENT_AUTHENTICATION_METHODS permits only client_secret_basic and private_key_jwt,
-      // so it has no client-secret-derived octet key to MAC an assertion with. Such a registration
+      // CSL's CLIENT_AUTHENTICATION_METHODS does not permit client_secret_jwt, so it has no
+      // client-secret-derived octet key to MAC an assertion with. Such a registration
       // can only come from a host-supplied ClientRegistrationRepository.
       return "'client_secret_jwt' is not supported for refresh-token revocation";
     }
@@ -360,10 +360,10 @@ public final class RefreshTokenRevoker {
    * The client-authentication parameters for the request body, mirroring what Spring's {@code
    * DefaultOAuth2TokenRequestParametersConverter} sends to the token endpoint: no {@code client_id}
    * for {@code client_secret_basic} (it travels in the {@code Authorization} header instead), a
-   * {@code client_secret} for {@code client_secret_post}, and a {@code client_assertion} pair for
-   * the assertion-based methods. That converter itself is not reused because it would also add the
-   * {@code grant_type} and {@code refresh_token} of a token request, which have no place in a
-   * revocation request.
+   * {@code client_secret} for {@code client_secret_post}, a {@code client_assertion} pair for the
+   * assertion-based methods, and only the {@code client_id} for a public client ({@code none}).
+   * That converter itself is not reused because it would also add the {@code grant_type} and {@code
+   * refresh_token} of a token request, which have no place in a revocation request.
    */
   private MultiValueMap<String, String> clientAuthenticationParameters(
       final OAuth2RefreshTokenGrantRequest grantRequest) {
