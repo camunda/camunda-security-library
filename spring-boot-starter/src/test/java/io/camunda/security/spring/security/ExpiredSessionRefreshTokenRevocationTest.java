@@ -730,6 +730,26 @@ class ExpiredSessionRefreshTokenRevocationTest {
   }
 
   @Test
+  void shouldNotCheckHowTheOnlyOwnerAuthenticates() {
+    // given one private_key_jwt chain, whose check would load its signing key
+    runInline();
+    final var registration =
+        ClientRegistration.withClientRegistration(
+                registration(CLIENT_ID, TOKEN_URI, REVOCATION_URI))
+            .clientAuthenticationMethod(ClientAuthenticationMethod.PRIVATE_KEY_JWT)
+            .build();
+    when(firstRepository.findByRegistrationId(REGISTRATION_ID)).thenReturn(registration);
+    revocation.register(firstRepository, SESSION_CLIENTS, firstRevoker);
+
+    // when
+    revocation.revoke(expiredSession(authorizedClient(registration, "refresh")));
+
+    // then the key is loaded once, to sign the request
+    verify(firstRevoker).revoke(eq(registration), any());
+    verify(firstRevoker, never()).canAuthenticate(any());
+  }
+
+  @Test
   void shouldRevokeThroughTheChainWhoseSigningKeyLoads() {
     // given two chains of one private_key_jwt client; the first chain's keystore is unreadable
     runInline();

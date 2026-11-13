@@ -358,9 +358,11 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
       return;
     }
     final Owner owner =
-        RefreshTokenRevoker.revocationEndpoint(owners.getFirst().registration()) == null
-            // Nothing is sent without an endpoint, so the choice does not matter, and checking
-            // how an owner authenticates could load a signing key for nothing.
+        owners.size() == 1
+                || RefreshTokenRevoker.revocationEndpoint(owners.getFirst().registration()) == null
+            // With one owner, or without an endpoint, where nothing is sent, the choice does not
+            // matter, and checking how an owner authenticates could load a signing key for
+            // nothing: the revoker loads it again to sign the request.
             ? owners.getFirst()
             : owningChainOfTheSession(owners, authorizedClient.getClientRegistration());
     owner.chain().revoker().revoke(owner.registration(), () -> authorizedClient);
