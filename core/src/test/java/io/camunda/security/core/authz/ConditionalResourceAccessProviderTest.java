@@ -123,6 +123,21 @@ class ConditionalResourceAccessProviderTest {
   }
 
   @Test
+  void dropsRequestedResourceIdsThatNoGlobalGrantCovers() {
+    // given only a conditional grant, which d2 may not meet
+    grantEverything(EDITOR);
+    final var alice = user(List.of(), conditional(EDITOR, workspaceIs("payments")));
+
+    // when
+    final var access = provider().resolveResourceAccess(alice, READ_DIAGRAM.withResourceId("d2"));
+
+    // then
+    assertThat(access.filter())
+        .isEqualTo(new AnyOf(List.of(new Term(Set.of(), List.of(workspaceIs("payments"))))));
+    assertThat(access.authorization().resourceIds()).isEmpty();
+  }
+
+  @Test
   void ignoresConditionalMembershipsForAResourceTypeWithoutExtractor() {
     // given
     grants.grant(EDITOR, USER_TASK, READ_USER_TASK, AuthorizationScope.WILDCARD);
