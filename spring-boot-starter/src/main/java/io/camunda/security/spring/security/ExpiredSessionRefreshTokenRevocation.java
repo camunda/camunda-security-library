@@ -423,9 +423,10 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
 
   /**
    * The owner to revoke through. Two chains of one client can use different client authentication,
-   * and a chain can lack the signing key its method needs, so the owners are tried in this order:
-   * one that can authenticate the way the session's own chain did, one that can authenticate at
-   * all, one with the session's method, and the first.
+   * a chain can lack the signing key its method needs, and during a secret rotation two chains can
+   * hold different secrets. So the owners are tried in this order: one that can authenticate with
+   * the session's method and secret, one that can authenticate with its method, one that can
+   * authenticate at all, one with the session's method, and the first.
    */
   private static Owner owningChainOfTheSession(
       final List<Owner> owners, final ClientRegistration stored) {
@@ -436,7 +437,13 @@ public final class ExpiredSessionRefreshTokenRevocation implements AutoCloseable
             Objects.equals(
                 owner.registration().getClientAuthenticationMethod(),
                 stored.getClientAuthenticationMethod());
-    return Stream.of(canAuthenticate.and(sameMethod), canAuthenticate, sameMethod)
+    final Predicate<Owner> sameSecret =
+        owner -> Objects.equals(owner.registration().getClientSecret(), stored.getClientSecret());
+    return Stream.of(
+            canAuthenticate.and(sameMethod).and(sameSecret),
+            canAuthenticate.and(sameMethod),
+            canAuthenticate,
+            sameMethod)
         .flatMap(preference -> owners.stream().filter(preference).limit(1))
         .findFirst()
         .orElse(owners.getFirst());
