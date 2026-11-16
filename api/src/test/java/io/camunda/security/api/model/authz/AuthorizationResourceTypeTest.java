@@ -42,6 +42,12 @@ class AuthorizationResourceTypeTest {
   }
 
   @Test
+  void processDefinitionSupportsSuspendProcessDefinition() {
+    assertThat(AuthorizationResourceType.PROCESS_DEFINITION.getSupportedPermissionTypes())
+        .contains(PermissionType.SUSPEND_PROCESS_DEFINITION);
+  }
+
+  @Test
   void batchSupportsCreateBatchOperationSuspendProcessInstance() {
     assertThat(AuthorizationResourceType.BATCH.getSupportedPermissionTypes())
         .contains(PermissionType.CREATE_BATCH_OPERATION_SUSPEND_PROCESS_INSTANCE);
