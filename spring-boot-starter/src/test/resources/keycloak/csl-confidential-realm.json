@@ -1,0 +1,45 @@
+{
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "accessTokenLifespan": 300,
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "alice@example.com",
+      "firstName": "Alice",
+      "lastName": "Example",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "s3cret",
+          "temporary": false
+        }
+      ]
+    }
+  ],
+  "realm": "csl-confidential",
+  "clients": [
+    {
+      "clientId": "csl-confidential",
+      "name": "CSL confidential client",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "csl-confidential-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost/*"
+      ],
+      "webOrigins": [
+        "http://localhost"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "+"
+      }
+    }
+  ]
+}
