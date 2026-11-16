@@ -172,6 +172,71 @@ class RefreshTokenRevocationLogoutHandlerTest {
     server.verify();
   }
 
+  /**
+   * A public client has no credential to send, so the revocation request names the client and stops
+   * there. The provider identifies the client by {@code client_id} alone, which is what it also
+   * does at the token endpoint for the method {@code none}.
+   */
+  @Test
+  void shouldRevokeRefreshTokenOfAPublicClientWithoutClientAuthentication() {
+    // given a public registration, which holds no client secret
+    final var registration =
+        registration(ClientAuthenticationMethod.NONE).clientSecret(null).build();
+    givenAuthorizedSession(registration);
+    server
+        .expect(requestTo(REVOCATION_ENDPOINT))
+        .andExpect(post())
+        .andExpect(
+            headers(
+                headers ->
+                    assertThat(headers.headerNames()).doesNotContain(HttpHeaders.AUTHORIZATION)))
+        .andExpect(
+            formBody(
+                fields ->
+                    assertThat(fields)
+                        .containsEntry("client_id", CLIENT_ID)
+                        .containsEntry("token", REFRESH_TOKEN_VALUE)
+                        .containsEntry("token_type_hint", "refresh_token")
+                        .doesNotContainKey("client_secret")))
+        .andRespond(withSuccess());
+
+    // when the user logs out
+    handler(null).logout(request, response, authentication(registration));
+
+    // then the refresh token was revoked with no client authentication
+    server.verify();
+  }
+
+  /**
+   * A deployment that has an assertion key for another provider resolves one here too. The
+   * converter of Spring answers for the method of the registration, so a public client still sends
+   * no assertion, and the request stays one the provider accepts.
+   */
+  @Test
+  void shouldNotSendAClientAssertionForAPublicClient() throws Exception {
+    // given a public registration in a deployment that can resolve a signing key
+    final var registration =
+        registration(ClientAuthenticationMethod.NONE).clientSecret(null).build();
+    givenAuthorizedSession(registration);
+    server
+        .expect(requestTo(REVOCATION_ENDPOINT))
+        .andExpect(
+            formBody(
+                fields ->
+                    assertThat(fields)
+                        .containsEntry("client_id", CLIENT_ID)
+                        .containsEntry("token", REFRESH_TOKEN_VALUE)
+                        .doesNotContainKeys(
+                            "client_secret", "client_assertion", "client_assertion_type")))
+        .andRespond(withSuccess());
+
+    // when the user logs out
+    handler(jwkResolver(rsaJwk())).logout(request, response, authentication(registration));
+
+    // then the key was left unused
+    server.verify();
+  }
+
   @Test
   void shouldRevokeRefreshTokenOfAPublicClientWithItsClientIdOnly() {
     // given a public client, which has no credentials to send

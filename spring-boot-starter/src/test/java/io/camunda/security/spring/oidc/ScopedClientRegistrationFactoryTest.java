@@ -1881,6 +1881,52 @@ class ScopedClientRegistrationFactoryTest {
         .isEqualTo(ScopedClientRegistrationFactory.ClientTypeVerdict.USABLE);
   }
 
+  /**
+   * The registration of a public client carries no credential at all: Spring stores an unset
+   * `client-secret` as the empty string, and `none` tells its token response client to send no
+   * client authentication.
+   */
+  @Test
+  void shouldBuildAPublicClientWithoutAClientSecret() {
+    final var oidc = explicitEndpointsWith(b -> b.type("public"));
+
+    assertThat(factory.createFromProviderMap(Map.of("myid", oidc)))
+        .singleElement()
+        .satisfies(
+            reg -> {
+              assertThat(reg.getClientSecret()).isEmpty();
+              assertThat(reg.getClientAuthenticationMethod())
+                  .isEqualTo(ClientAuthenticationMethod.NONE);
+            });
+  }
+
+  /** Each provider of a deployment follows its own type, so the two can sit side by side. */
+  @Test
+  void shouldBuildAPublicAndAConfidentialProviderSideBySide() {
+    final Map<String, OidcConfiguration> providers = new LinkedHashMap<>();
+    providers.put("public-idp", explicitEndpointsWith(b -> b.type("public")));
+    providers.put(
+        "confidential-idp",
+        explicitEndpointsWith(b -> b.type("confidential").clientSecret("s3cret")));
+
+    final var registrations = factory.createFromProviderMap(providers);
+
+    assertThat(registrations)
+        .satisfiesExactly(
+            publicClient -> {
+              assertThat(publicClient.getRegistrationId()).isEqualTo("public-idp");
+              assertThat(publicClient.getClientAuthenticationMethod())
+                  .isEqualTo(ClientAuthenticationMethod.NONE);
+              assertThat(publicClient.getClientSecret()).isEmpty();
+            },
+            confidentialClient -> {
+              assertThat(confidentialClient.getRegistrationId()).isEqualTo("confidential-idp");
+              assertThat(confidentialClient.getClientAuthenticationMethod())
+                  .isEqualTo(ClientAuthenticationMethod.CLIENT_SECRET_BASIC);
+              assertThat(confidentialClient.getClientSecret()).isEqualTo("s3cret");
+            });
+  }
+
   @MethodSource("contradictoryClientTypes")
   @ParameterizedTest(name = "{0}")
   void shouldWarnAboutAndDropAContradictoryClientType(
