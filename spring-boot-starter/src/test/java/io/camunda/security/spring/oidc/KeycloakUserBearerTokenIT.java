@@ -78,7 +78,9 @@ class KeycloakUserBearerTokenIT {
             ctx -> {
               final var authentication = callApiWith(ctx, token);
 
-              assertThat(authentication.authenticatedUsername()).isNotBlank();
+              assertThat(authentication.authenticatedUsername())
+                  .as("the principal must come from the configured sub, not from a user name claim")
+                  .isEqualTo(KeycloakTestServer.subjectOf(token));
               assertThat(authentication.authenticatedClientId()).isNull();
               assertThat(authentication.authenticatedRoleIds()).containsExactly("operator");
             });
@@ -104,7 +106,10 @@ class KeycloakUserBearerTokenIT {
               final var fromPublic = callApiWith(ctx, throughPublicClient);
               final var fromHybrid = callApiWith(ctx, throughHybridClient);
 
+              assertThat(fromPublic.authenticatedUsername())
+                  .isEqualTo(KeycloakTestServer.subjectOf(throughPublicClient));
               assertThat(fromHybrid.authenticatedUsername())
+                  .isEqualTo(KeycloakTestServer.subjectOf(throughHybridClient))
                   .isEqualTo(fromPublic.authenticatedUsername());
               assertThat(fromHybrid.authenticatedClientId()).isNull();
             });

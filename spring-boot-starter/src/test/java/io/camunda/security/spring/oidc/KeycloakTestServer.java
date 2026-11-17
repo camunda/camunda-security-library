@@ -56,6 +56,7 @@ public final class KeycloakTestServer {
   private static final Pattern ACCESS_TOKEN =
       Pattern.compile("\"access_token\"\\s*:\\s*\"([^\"]+)\"");
   private static final Pattern EXPIRY = Pattern.compile("\"exp\"\\s*:\\s*(\\d+)");
+  private static final Pattern SUBJECT = Pattern.compile("\"sub\"\\s*:\\s*\"([^\"]+)\"");
 
   private static final GenericContainer<?> KEYCLOAK =
       new GenericContainer<>(DockerImageName.parse("quay.io/keycloak/keycloak:26.4"))
@@ -198,6 +199,18 @@ public final class KeycloakTestServer {
     final var matcher = EXPIRY.matcher(payload);
     assertThat(matcher.find()).as("the token holds no exp claim").isTrue();
     return Instant.ofEpochSecond(Long.parseLong(matcher.group(1)));
+  }
+
+  /**
+   * The subject of the token, read from its {@code sub} claim. The payload is read without
+   * verification, which is enough for a test that compares the principal CSL resolved against the
+   * claim the token carries.
+   */
+  public static String subjectOf(final String token) {
+    final var payload = new String(Base64.getUrlDecoder().decode(token.split("\\.")[1]), UTF_8);
+    final var matcher = SUBJECT.matcher(payload);
+    assertThat(matcher.find()).as("the token holds no sub claim").isTrue();
+    return matcher.group(1);
   }
 
   public static Map<String, String> queryParameters(final URI uri) {
