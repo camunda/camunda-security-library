@@ -297,4 +297,70 @@ class AuthorizationCheckerTest {
       assertThat(result).isEmpty();
     }
   }
+
+  @Nested
+  class AdditionalRoleIds {
+
+    @Test
+    void isAuthorizedCountsAdditionalRolesNextToGlobalRoles() {
+      final var auth = CamundaAuthentication.of(a -> a.user("alice").roleIds(List.of("viewer")));
+      final var authorization =
+          RequiredAuthorization.of(a -> a.processDefinition().readProcessDefinition());
+      when(scopeRepository.hasAuthorizedScope(
+              eq(
+                  Map.of(
+                      EntityType.USER,
+                      Set.of("alice"),
+                      EntityType.ROLE,
+                      Set.of("viewer", "editor"))),
+              eq(AuthorizationResourceType.PROCESS_DEFINITION),
+              eq(PermissionType.READ_PROCESS_DEFINITION),
+              eq(List.of(AuthorizationScope.WILDCARD.getResourceId(), "pd-1"))))
+          .thenReturn(true);
+
+      final var result =
+          authorizationChecker.isAuthorized(
+              AuthorizationScope.id("pd-1"), auth, authorization, Set.of("editor"));
+
+      assertThat(result).isTrue();
+    }
+
+    @Test
+    void isAuthorizedAddsTheRoleOwnerTypeForAPrincipalWithoutGlobalRoles() {
+      final var auth = CamundaAuthentication.of(a -> a.user("alice"));
+      final var authorization =
+          RequiredAuthorization.of(a -> a.processDefinition().readProcessDefinition());
+      when(scopeRepository.hasAuthorizedScope(
+              eq(Map.of(EntityType.USER, Set.of("alice"), EntityType.ROLE, Set.of("editor"))),
+              eq(AuthorizationResourceType.PROCESS_DEFINITION),
+              eq(PermissionType.READ_PROCESS_DEFINITION),
+              eq(List.of(AuthorizationScope.WILDCARD.getResourceId(), "pd-1"))))
+          .thenReturn(true);
+
+      final var result =
+          authorizationChecker.isAuthorized(
+              AuthorizationScope.id("pd-1"), auth, authorization, Set.of("editor"));
+
+      assertThat(result).isTrue();
+    }
+
+    @Test
+    void retrieveAuthorizedPropertyScopesCountsAdditionalRoles() {
+      final var auth = CamundaAuthentication.of(a -> a.user("alice"));
+      final var authorization = RequiredAuthorization.of(a -> a.userTask().readUserTask());
+      final var expectedScope = AuthorizationScope.property("assignee");
+      when(scopeRepository.findAuthorizedPropertyScopes(
+              eq(Map.of(EntityType.USER, Set.of("alice"), EntityType.ROLE, Set.of("editor"))),
+              eq(AuthorizationResourceType.USER_TASK),
+              eq(PermissionType.READ_USER_TASK),
+              eq(Set.of("assignee"))))
+          .thenReturn(List.of(expectedScope));
+
+      final var result =
+          authorizationChecker.retrieveAuthorizedPropertyScopes(
+              auth, authorization, Set.of("assignee"), Set.of("editor"));
+
+      assertThat(result).containsExactly(expectedScope);
+    }
+  }
 }

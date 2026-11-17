@@ -11,6 +11,7 @@ package io.camunda.security.api.model.authz;
 public enum PermissionType {
   /** Common usage permissions. */
   ACCESS(true),
+  ANSWER,
   CREATE,
   DELETE,
   DELETE_DRD,
@@ -55,6 +56,7 @@ public enum PermissionType {
   READ_PROCESS_INSTANCE(true),
   READ_TASK_LISTENER(true),
   READ_USER_TASK(true),
+  SUSPEND_PROCESS_DEFINITION,
   SUSPEND_PROCESS_INSTANCE,
   UPDATE_PROCESS_INSTANCE,
   UPDATE_TASK_LISTENER,

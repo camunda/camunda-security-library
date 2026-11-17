@@ -14,7 +14,11 @@ import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.model.config.oidc.AuthorizeRequestConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +34,9 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
+import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
+import org.springframework.security.oauth2.core.endpoint.PkceParameterNames;
 
 /**
  * Unit tests for {@link CamundaOidcAuthorizationRequestResolver}. The resolver lifts OC's
@@ -334,6 +341,107 @@ class CamundaOidcAuthorizationRequestResolverTest {
       }
     } finally {
       executor.shutdownNow();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // PKCE
+  // ---------------------------------------------------------------------------
+
+  /**
+   * A public client holds no secret, so PKCE is what binds the authorization code to the client
+   * that asked for it. Spring applies PKCE for the client authentication method {@code none}, and
+   * the customizer of CSL only adds parameters, so it cannot remove it.
+   */
+  @Test
+  void shouldSendPkceForAPublicClient() {
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(publicClient());
+    final var resolver =
+        new CamundaOidcAuthorizationRequestResolver(
+            clientRegistrationRepository, Map.of(REGISTRATION_ID, new OidcConfiguration()));
+
+    final var result =
+        resolver.resolve(new MockHttpServletRequest("GET", AUTHORIZATION_REQUEST_URI));
+
+    assertPkce(result);
+  }
+
+  /**
+   * Spring Security 7 sets {@code ClientSettings#requireProofKey} to true for every
+   * authorization-code registration, so a confidential client sends PKCE too. CSL relies on that
+   * default instead of applying PKCE itself, and this test is the guard: an upgrade that drops the
+   * default fails here, and not at the login of a customer.
+   */
+  @Test
+  void shouldSendPkceForAConfidentialClient() {
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(clientRegistration);
+    final var resolver =
+        new CamundaOidcAuthorizationRequestResolver(
+            clientRegistrationRepository, Map.of(REGISTRATION_ID, new OidcConfiguration()));
+
+    final var result =
+        resolver.resolve(new MockHttpServletRequest("GET", AUTHORIZATION_REQUEST_URI));
+
+    assertThat(clientRegistration.getClientSettings().isRequireProofKey()).isTrue();
+    assertPkce(result);
+  }
+
+  /** The configured parameters of a provider are added next to PKCE, and not in place of it. */
+  @Test
+  void shouldKeepPkceWhenTheRequestCarriesConfiguredParameters() {
+    when(clientRegistrationRepository.findByRegistrationId(REGISTRATION_ID))
+        .thenReturn(publicClient());
+    final var oidc = new OidcConfiguration();
+    oidc.setResource(List.of("https://api.example.com"));
+    final var authorize = new AuthorizeRequestConfiguration();
+    authorize.setAdditionalParameters(Map.<String, Object>of("prompt", "consent"));
+    oidc.setAuthorizeRequest(authorize);
+    final var resolver =
+        new CamundaOidcAuthorizationRequestResolver(
+            clientRegistrationRepository,
+            Map.of(REGISTRATION_ID, oidc),
+            "/oauth2/authorization",
+            Duration.ofMinutes(5));
+
+    final var result =
+        resolver.resolve(new MockHttpServletRequest("GET", AUTHORIZATION_REQUEST_URI));
+
+    assertThat(result.getAdditionalParameters())
+        .containsEntry("prompt", "consent")
+        .containsEntry("resource", List.of("https://api.example.com"))
+        .containsEntry("max_age", 300L);
+    assertPkce(result);
+  }
+
+  private ClientRegistration publicClient() {
+    return ClientRegistration.withClientRegistration(clientRegistration)
+        .clientSecret(null)
+        .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
+        .build();
+  }
+
+  /**
+   * Asserts the challenge against the verifier that the same request stored, so the test fails for
+   * a pair that no provider could ever match, and not only for a missing parameter.
+   */
+  private static void assertPkce(final OAuth2AuthorizationRequest request) {
+    final String codeVerifier = request.getAttribute(PkceParameterNames.CODE_VERIFIER);
+    assertThat(codeVerifier).isNotNull();
+    assertThat(request.getAdditionalParameters())
+        .containsEntry(PkceParameterNames.CODE_CHALLENGE_METHOD, "S256")
+        .containsEntry(PkceParameterNames.CODE_CHALLENGE, sha256Challenge(codeVerifier));
+  }
+
+  private static String sha256Challenge(final String codeVerifier) {
+    try {
+      final var digest =
+          MessageDigest.getInstance("SHA-256")
+              .digest(codeVerifier.getBytes(StandardCharsets.US_ASCII));
+      return Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
+    } catch (final NoSuchAlgorithmException e) {
+      throw new IllegalStateException("SHA-256 is required of every JVM", e);
     }
   }
 }

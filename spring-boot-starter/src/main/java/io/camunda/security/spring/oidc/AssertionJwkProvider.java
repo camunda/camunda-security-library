@@ -49,6 +49,17 @@ public final class AssertionJwkProvider {
       throw new IllegalArgumentException(
           "No OIDC configuration found for registrationId '" + clientRegistrationId + "'");
     }
+    // A block whose client type contradicts its other properties is one CSL does not use, so its
+    // key material must not sign anything either. A host that supplies its own client registration
+    // repository can still reach this method with the registrationId of such a block (ADR-0042).
+    if (!ScopedClientRegistrationFactory.isUsable(oidcConfig)) {
+      throw new IllegalStateException(
+          "CSL does not use the OIDC provider block for registrationId '"
+              + clientRegistrationId
+              + "', because its client type contradicts its other properties. CSL does not load"
+              + " the assertion key of such a block. Correct the provider block that the startup"
+              + " warning names.");
+    }
 
     final var assertionConfig = oidcConfig.getAssertion();
     if (assertionConfig == null) {

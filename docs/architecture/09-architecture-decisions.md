@@ -52,9 +52,14 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0037: Resolve the web app authorization flag per request](../adr/0037-resolve-web-app-authorization-flag-per-request.md)
 - [ADR-0038: A verified token carries the principal claims of the provider that verified it](../adr/0038-verified-token-carries-its-provider-claims.md)
 - [ADR-0039: API chains refresh the session access token, with their own authorized-client stack](../adr/0039-refresh-access-tokens-on-api-chains.md)
+- [ADR-0040: Derive the groups modes from every OIDC provider](../adr/0040-derive-groups-modes-from-every-oidc-provider.md)
 - [ADR-0041: Limit a membership with conditions](../adr/0041-conditional-memberships.md)
-- [ADR-0042: Scheduled refresh-ahead JWKS caching and realistic HTTP timeouts](../adr/0042-resilient-jwks-refresh-and-timeouts.md)
-- [ADR-0043: No `Thread.sleep` in tests; wait on conditions with Awaitility](../adr/0043-no-thread-sleep-in-tests-use-awaitility.md)
+- [ADR-0042: An OIDC client type, and `none` as a client authentication method](../adr/0042-oidc-client-type-and-client-authentication-method-none.md)
+- [ADR-0043: Revoke the refresh token when a web session expires](../adr/0043-revoke-refresh-token-on-session-expiry.md)
+- [ADR-0044: CSL sends PKCE through the default of Spring Security](../adr/0044-pkce-through-the-spring-security-default.md)
+- [ADR-0045: Integration tests run against a container, in the verify phase](../adr/0045-integration-tests-in-the-verify-phase.md)
+- [ADR-0046: Scheduled refresh-ahead JWKS caching and realistic HTTP timeouts](../adr/0046-resilient-jwks-refresh-and-timeouts.md)
+- [ADR-0047: No `Thread.sleep` in tests; wait on conditions with Awaitility](../adr/0047-no-thread-sleep-in-tests-use-awaitility.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 

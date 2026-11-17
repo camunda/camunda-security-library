@@ -9,6 +9,11 @@ package io.camunda.security.api.model.config;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcProvidersConfiguration;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Authentication configuration bound to {@code camunda.security.authentication.*}.
@@ -130,12 +135,123 @@ public class AuthenticationConfiguration {
     this.providers = providers != null ? providers : new OidcProvidersConfiguration();
   }
 
-  /** Camunda-managed groups are disabled when OIDC is active and a groups claim is configured. */
+  /**
+   * Whether some users get their groups from Camunda: the method is not OIDC, or an OIDC provider
+   * has no groups claim. A host shows Camunda's group management when this is {@code true}.
+   *
+   * <p>A provider without its own {@code groups-claim} uses the one of the {@code oidc} block. Of
+   * several providers of one issuer, only the first counts, because it verifies the tokens. With a
+   * single provider this is always the opposite of {@link #isExternalGroupsEnabled()}; with
+   * several, both can be {@code true}.
+   */
   public boolean isCamundaGroupsEnabled() {
-    final var oidcConfiguration = getOidc();
-    return !(getMethod() == AuthenticationMethod.OIDC
-        && oidcConfiguration != null
-        && oidcConfiguration.isGroupsClaimConfigured());
+    return getMethod() != AuthenticationMethod.OIDC
+        || issuerOwners().stream().anyMatch(provider -> groupsClaimOf(provider) == null);
+  }
+
+  /**
+   * Whether some users get their groups from a groups claim of their OIDC provider. Camunda does
+   * not know those groups, so a host must not require a group it is given to exist in Camunda when
+   * this is {@code true}.
+   *
+   * <p>A provider without its own {@code groups-claim} uses the one of the {@code oidc} block. Of
+   * several providers of one issuer, only the first counts, because it verifies the tokens.
+   */
+  public boolean isExternalGroupsEnabled() {
+    return getMethod() == AuthenticationMethod.OIDC
+        && issuerOwners().stream().anyMatch(provider -> groupsClaimOf(provider) != null);
+  }
+
+  /**
+   * The groups claim to read the groups of a token of {@code issuer} from: the one of the first
+   * provider with that {@code issuer-uri}, the {@code oidc} block first. Issuer-uris that differ
+   * only by a trailing slash are one issuer, because discovery settles both on the provider's
+   * issuer. That is the provider that verifies the token. With a single provider, that provider
+   * verifies every token whatever its issuer, so its claim applies even without an {@code
+   * issuer-uri}. A provider without its own {@code groups-claim}, and a token of no known issuer,
+   * use the one of the {@code oidc} block.
+   *
+   * <p>Several providers of one issuer are not supported for groups, by intent. A browser login
+   * through a later provider of the issuer also gets the groups claim of the first provider.
+   *
+   * @param issuer the {@code iss} claim of the token, or {@code null}
+   * @return the groups claim, or {@code null} when the groups of the token's user come from Camunda
+   */
+  public String getGroupsClaim(final String issuer) {
+    if (getMethod() != AuthenticationMethod.OIDC) {
+      return null;
+    }
+    final List<OidcConfiguration> providers = oidcProviders();
+    if (providers.size() == 1) {
+      // The token decoder routes every token to the only provider, whatever its issuer.
+      return groupsClaimOf(providers.getFirst());
+    }
+    return providers.stream()
+        .filter(provider -> isSameIssuer(issuer, provider.getIssuerUri()))
+        .findFirst()
+        .map(this::groupsClaimOf)
+        .orElseGet(() -> groupsClaimOf(getOidc()));
+  }
+
+  /**
+   * The OIDC providers, in the order of the configuration: the {@code oidc} block when it has a
+   * {@code client-id}, then the named providers. A named provider with the registration ID of the
+   * {@code oidc} block replaces it, as the client registrations do. A provider with a blank
+   * registration ID is left out, as the token decoders leave it out. Without any provider, the
+   * {@code oidc} block alone, so its {@code groups-claim} still decides.
+   */
+  private List<OidcConfiguration> oidcProviders() {
+    final Map<String, OidcConfiguration> byRegistrationId = new LinkedHashMap<>();
+    if (hasText(getOidc().getClientId())) {
+      byRegistrationId.put(getOidc().getRegistrationId(), getOidc());
+    }
+    getProviders()
+        .getOidc()
+        .forEach(
+            (registrationId, provider) -> {
+              if (provider != null) {
+                byRegistrationId.put(registrationId, provider);
+              }
+            });
+    byRegistrationId.keySet().removeIf(registrationId -> !hasText(registrationId));
+    return byRegistrationId.isEmpty() ? List.of(getOidc()) : List.copyOf(byRegistrationId.values());
+  }
+
+  /**
+   * The providers whose groups claim can apply to a token: of the providers that share an issuer,
+   * trailing slash ignored, only the first, as in {@link #getGroupsClaim(String)}. The others never
+   * verify a token, so their groups claim is never read. A provider without an {@code issuer-uri}
+   * is kept.
+   */
+  private List<OidcConfiguration> issuerOwners() {
+    final Set<String> ownedIssuers = new HashSet<>();
+    return oidcProviders().stream()
+        .filter(
+            provider ->
+                !hasText(provider.getIssuerUri())
+                    || ownedIssuers.add(withoutTrailingSlash(provider.getIssuerUri())))
+        .toList();
+  }
+
+  private String groupsClaimOf(final OidcConfiguration provider) {
+    if (provider.isGroupsClaimConfigured()) {
+      return provider.getGroupsClaim();
+    }
+    return getOidc().isGroupsClaimConfigured() ? getOidc().getGroupsClaim() : null;
+  }
+
+  private static boolean hasText(final String value) {
+    return value != null && !value.isBlank();
+  }
+
+  private static boolean isSameIssuer(final String issuer, final String issuerUri) {
+    return hasText(issuer)
+        && hasText(issuerUri)
+        && withoutTrailingSlash(issuer).equals(withoutTrailingSlash(issuerUri));
+  }
+
+  private static String withoutTrailingSlash(final String issuer) {
+    return issuer.endsWith("/") ? issuer.substring(0, issuer.length() - 1) : issuer;
   }
 
   /** Camunda-managed users are disabled when OIDC authentication is active. */

@@ -179,6 +179,51 @@ final class ScopedOidcClaimsProviderFactoryTest {
         .hasMessageContaining("no OIDC provider can yield");
   }
 
+  /**
+   * ADR-0042: a rejected client type removes the provider from this factory too. When it was the
+   * last provider that could yield an issuer to UserInfo mapping, the pre-existing requirement in
+   * CachingOidcClaimsProvider throws, which ADR-0029 deliberately leaves in place. This test
+   * records that result. Only a configuration that names a client type can reach it.
+   */
+  @Test
+  void shouldThrowWhenRejectionRemovesTheLastProviderThatCanAugment() {
+    // given a scope whose only provider contradicts its own client type
+    final var authentication =
+        authEnabled("https://idp.example.com", "https://idp.example.com/userinfo");
+    authentication.getOidc().setType("public");
+    authentication.getOidc().setClientSecret("s3cret");
+    when(clientRegistrationFactory.flatten(authentication))
+        .thenReturn(Map.of("oidc", authentication.getOidc()));
+
+    // then the scope cannot be built
+    assertThatThrownBy(() -> factory.buildClaimsProvider(authentication))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("no OIDC provider can yield");
+  }
+
+  /** A rejected provider beside a valid one leaves augmentation working for the valid one. */
+  @Test
+  void shouldKeepAugmentingWhenOnlyOneProviderIsRejected() {
+    // given a valid provider and a rejected one
+    final var authentication =
+        authEnabled("https://idp.example.com", "https://idp.example.com/userinfo");
+    final var rejected = OidcConfiguration.builder().clientId("bad").build();
+    rejected.setIssuerUri("https://bad.example.com");
+    rejected.setUserInfoUri("https://bad.example.com/userinfo");
+    rejected.setType("public");
+    rejected.setClientSecret("s3cret");
+    final Map<String, OidcConfiguration> providers = new LinkedHashMap<>();
+    providers.put("oidc", authentication.getOidc());
+    providers.put("bad", rejected);
+    when(clientRegistrationFactory.flatten(authentication)).thenReturn(providers);
+
+    // then the scope builds, and the rejected provider contributes no issuer
+    final var provider = factory.buildClaimsProvider(authentication);
+
+    assertThat(claimsForAugmentedToken(provider, "https://bad.example.com"))
+        .containsEntry("iss", "https://bad.example.com");
+  }
+
   // Augmentation disabled → NoopOidcClaimsProvider (no network calls made)
   @Test
   void shouldBuildNoopProviderWhenAugmentationDisabled() {

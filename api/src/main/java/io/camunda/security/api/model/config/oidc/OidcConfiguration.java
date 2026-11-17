@@ -25,10 +25,38 @@ public class OidcConfiguration {
   public static final String CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC =
       "client_secret_basic";
   public static final String CLIENT_AUTHENTICATION_METHOD_PRIVATE_KEY_JWT = "private_key_jwt";
+  public static final String CLIENT_AUTHENTICATION_METHOD_NONE = "none";
+
+  /**
+   * The client authentication methods CSL supports. A value outside this list that Spring's {@code
+   * ClientAuthenticationMethod} accepts is still used as configured, with a warning; see ADR-0042.
+   */
   public static final List<String> CLIENT_AUTHENTICATION_METHODS =
       List.of(
           CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC,
-          CLIENT_AUTHENTICATION_METHOD_PRIVATE_KEY_JWT);
+          CLIENT_AUTHENTICATION_METHOD_PRIVATE_KEY_JWT,
+          CLIENT_AUTHENTICATION_METHOD_NONE);
+
+  /** A client that authenticates at the token endpoint with a secret or a signed assertion. */
+  public static final String CLIENT_TYPE_CONFIDENTIAL = "confidential";
+
+  /**
+   * A client that holds no secret and sends no client authentication. It is used either for the
+   * session login with PKCE, or only to validate the tokens that a Camunda client application
+   * obtained for itself. The type does not say which.
+   */
+  public static final String CLIENT_TYPE_PUBLIC = "public";
+
+  /**
+   * A confidential client whose identity provider also permits PKCE for the same client, so one
+   * registration serves both the host application's own login and a Camunda client application.
+   */
+  public static final String CLIENT_TYPE_HYBRID = "hybrid";
+
+  public static final List<String> CLIENT_TYPES =
+      List.of(CLIENT_TYPE_CONFIDENTIAL, CLIENT_TYPE_PUBLIC, CLIENT_TYPE_HYBRID);
+
+  public static final String DEFAULT_CLIENT_TYPE = CLIENT_TYPE_CONFIDENTIAL;
   public static final Duration DEFAULT_CLOCK_SKEW = Duration.ofSeconds(60);
   public static final String DEFAULT_GRANT_TYPE = "authorization_code";
   public static final String DEFAULT_ID_TOKEN_ALGORITHM = "RS256";
@@ -73,7 +101,11 @@ public class OidcConfiguration {
   private boolean preferIdTokenClaims;
   private String organizationId;
   private List<String> resource;
+  private String type = DEFAULT_CLIENT_TYPE;
   private String clientAuthenticationMethod = CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC;
+  // Set by the setter only, as the claim flags above are. A public client defaults the method to
+  // `none`, which needs an unset value told apart from an explicit `client_secret_basic`.
+  private boolean clientAuthenticationMethodSet;
   private AssertionConfiguration assertionConfiguration = new AssertionConfiguration();
   private Duration clockSkew = DEFAULT_CLOCK_SKEW;
   private boolean idpLogoutEnabled = DEFAULT_IDP_LOGOUT_ENABLED;
@@ -363,12 +395,39 @@ public class OidcConfiguration {
     this.preferIdTokenClaims = preferIdTokenClaims;
   }
 
+  /**
+   * The configured client type, unparsed. CSL reads it case-insensitively and treats a value
+   * outside {@link #CLIENT_TYPES} as a contradictory configuration, rather than binding an enum
+   * that would fail Spring's binder before CSL can warn (ADR-0029, ADR-0042).
+   */
+  public String getType() {
+    return type;
+  }
+
+  public void setType(final String type) {
+    this.type = type;
+  }
+
+  /**
+   * The configured client authentication method, unresolved. A {@code public} registration that
+   * sets none defaults to {@link #CLIENT_AUTHENTICATION_METHOD_NONE}, and that default is resolved
+   * where the registration is built, not here; see {@link #isClientAuthenticationMethodSet()}.
+   */
   public String getClientAuthenticationMethod() {
     return clientAuthenticationMethod;
   }
 
   public void setClientAuthenticationMethod(final String clientAuthenticationMethod) {
     this.clientAuthenticationMethod = clientAuthenticationMethod;
+    clientAuthenticationMethodSet = true;
+  }
+
+  /**
+   * @return {@code true} when the configuration sets {@code client-authentication-method}, also to
+   *     its default
+   */
+  public boolean isClientAuthenticationMethodSet() {
+    return clientAuthenticationMethodSet;
   }
 
   public AssertionConfiguration getAssertion() {
@@ -543,6 +602,7 @@ public class OidcConfiguration {
         || preferIdTokenClaims
         || organizationId != null
         || !CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC.equals(clientAuthenticationMethod)
+        || !DEFAULT_CLIENT_TYPE.equals(type)
         || currentAssertionConfiguration == null
         || currentKeystoreConfiguration == null
         || currentKeystoreConfiguration.getPath() != null
@@ -595,7 +655,9 @@ public class OidcConfiguration {
     private boolean preferUsernameClaimSet;
     private boolean preferIdTokenClaims;
     private String organizationId;
+    private String type = DEFAULT_CLIENT_TYPE;
     private String clientAuthenticationMethod = CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC;
+    private boolean clientAuthenticationMethodSet;
     private AssertionConfiguration assertionConfiguration = new AssertionConfiguration();
     private Duration clockSkew = DEFAULT_CLOCK_SKEW;
     private boolean idpLogoutEnabled = DEFAULT_IDP_LOGOUT_ENABLED;
@@ -737,8 +799,14 @@ public class OidcConfiguration {
       return this;
     }
 
+    public Builder type(final String type) {
+      this.type = type;
+      return this;
+    }
+
     public Builder clientAuthenticationMethod(final String clientAuthenticationMethod) {
       this.clientAuthenticationMethod = clientAuthenticationMethod;
+      clientAuthenticationMethodSet = true;
       return this;
     }
 
@@ -816,7 +884,10 @@ public class OidcConfiguration {
       }
       config.setPreferIdTokenClaims(preferIdTokenClaims);
       config.setOrganizationId(organizationId);
-      config.setClientAuthenticationMethod(clientAuthenticationMethod);
+      config.setType(type);
+      if (clientAuthenticationMethodSet) {
+        config.setClientAuthenticationMethod(clientAuthenticationMethod);
+      }
       config.setAssertion(assertionConfiguration);
       config.setClockSkew(clockSkew);
       config.setIdpLogoutEnabled(idpLogoutEnabled);

@@ -393,6 +393,45 @@ class ScopedWebappSecurityChainBuilderScopedTest {
                     logoutHandlers(ctx, "primaryOidcTestChain")));
   }
 
+  /**
+   * ADR-0043. The primary chain registers its revoker for expired sessions, or a session that times
+   * out keeps a valid refresh token at the IdP.
+   */
+  @Test
+  void primaryOidcChainRegistersItsRevokerForExpiredSessions() {
+    new WebApplicationContextRunner()
+        // Same configuration set as
+        // primaryOidcChainRevokesRefreshTokenBeforeInvalidatingTheSession.
+        .withUserConfiguration(
+            ObjectMapperConfig.class,
+            StubPathsWithPostLogoutRoute.class,
+            HostSuppliedProviderPortConfig.class,
+            PrimaryOidcChainConfig.class)
+        .withConfiguration(
+            AutoConfigurations.of(
+                CamundaSecurityConfiguration.class,
+                BaseSecurityConfiguration.class,
+                AuthFailureHandlerConfiguration.class,
+                ScopedOidcInfrastructureConfiguration.class,
+                ScopedWebappSecurityChainBuilderConfiguration.class))
+        .run(
+            ctx ->
+                assertThat(
+                        ctx.getBean(ExpiredSessionRefreshTokenRevocation.class)
+                            .registeredChainCount())
+                    .isPositive());
+  }
+
+  /** ADR-0043, for a scoped chain. */
+  @Test
+  void scopedOidcChainRegistersItsRevokerForExpiredSessions() {
+    runner.run(
+        ctx ->
+            assertThat(
+                    ctx.getBean(ExpiredSessionRefreshTokenRevocation.class).registeredChainCount())
+                .isPositive());
+  }
+
   @Test
   void scopedOidcChainRevokesRefreshTokenBeforeInvalidatingTheSession() {
     runner.run(

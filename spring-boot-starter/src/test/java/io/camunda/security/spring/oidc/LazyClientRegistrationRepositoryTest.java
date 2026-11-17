@@ -23,6 +23,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 
 /**
  * Behaviour tests for {@link LazyClientRegistrationRepository} against a local OIDC discovery
@@ -341,6 +342,41 @@ final class LazyClientRegistrationRepositoryTest {
         .hasMessageContaining("user-info-required=true");
   }
 
+  /**
+   * ADR-0042: a dropped registration must not stop the start. The validation pass runs before the
+   * filter, so a later check that throws would otherwise kill a deployment for a provider CSL has
+   * already decided not to use.
+   */
+  @Test
+  void shouldNotStopTheStartForALoginOnlyMisconfigurationOnARejectedRegistration()
+      throws Exception {
+    // given a rejected registration that also carries a login-only misconfiguration which throws
+    server = OidcTestServer.startRsa("key");
+    final var rejected = server.oidcConfiguration("public-client");
+    rejected.setType("public");
+    rejected.setClientSecret("s3cret");
+    rejected.setUserInfoRequired(true);
+    rejected.setUserInfoEnabled(false);
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put("rejected", rejected);
+    providers.put("valid", server.oidcConfiguration("confidential-client"));
+
+    // when / then the repository builds, and the valid provider beside it still resolves
+    final var repository = newRepository(providers);
+
+    assertThat(repository.providers()).containsOnlyKeys("valid");
+    assertThat(repository.findByRegistrationId("valid").getClientId())
+        .isEqualTo("confidential-client");
+  }
+
+  /** The same misconfiguration on a registration CSL does use still stops the start. */
+  @Test
+  void shouldStillStopTheStartForALoginOnlyMisconfigurationOnAUsedRegistration() {
+    assertThatThrownBy(() -> newRepository(userInfoRequiredWithoutUserInfo()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("user-info-required=true");
+  }
+
   private static Map<String, OidcConfiguration> userInfoRequiredWithoutUserInfo() {
     final var oidc =
         OidcConfiguration.builder()
@@ -351,6 +387,128 @@ final class LazyClientRegistrationRepositoryTest {
     oidc.setUserInfoRequired(true);
     oidc.setUserInfoEnabled(false);
     return Map.of("oidc", oidc);
+  }
+
+  /**
+   * ADR-0042: a provider block whose client type contradicts its other properties is dropped from
+   * every reader of the repository, so CSL behaves as if it was never configured — while the
+   * application still starts and the valid provider beside it still resolves (ADR-0029).
+   */
+  @Test
+  void shouldDropAContradictoryClientTypeAndKeepAValidProviderBesideIt() throws Exception {
+    // given a public registration that also carries a client secret, beside a confidential one
+    server = OidcTestServer.startRsa("key");
+    final var contradictory = server.oidcConfiguration("public-client");
+    contradictory.setType("public");
+    contradictory.setClientSecret("s3cret");
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put("rejected", contradictory);
+    providers.put("valid", server.oidcConfiguration("confidential-client"));
+
+    // when the repository is built — which must not throw
+    final LazyClientRegistrationRepository repository = newRepository(providers);
+
+    // then the rejected registration is absent from every reader
+    assertThat(repository.registrationIds()).containsExactly("valid");
+    assertThat(repository.providers()).containsOnlyKeys("valid");
+    assertThat(repository.clientNamesByRegistrationId()).containsOnlyKeys("valid");
+    assertThat(repository.findByRegistrationId("rejected")).isNull();
+
+    // and the valid one still resolves
+    assertThat(repository.findByRegistrationId("valid").getClientId())
+        .isEqualTo("confidential-client");
+
+    // and iterating yields only the valid one
+    final var iterated = new LinkedHashMap<String, String>();
+    repository.forEach(
+        registration -> iterated.put(registration.getRegistrationId(), registration.getClientId()));
+    assertThat(iterated).containsExactly(entry("valid", "confidential-client"));
+  }
+
+  /**
+   * The bearer-only API chain builds its repository through {@code withoutLoginRoutes}, which runs
+   * the SKIPPED validation mode. A contradictory client type is dropped there too, so a token of a
+   * rejected registration reaches no decoder on that chain either (ADR-0042).
+   */
+  @Test
+  void shouldDropAContradictoryClientTypeOnTheApiChainRepositoryToo() throws Exception {
+    // given
+    server = OidcTestServer.startRsa("key");
+    final var contradictory = server.oidcConfiguration("public-client");
+    contradictory.setType("public");
+    contradictory.setClientSecret("s3cret");
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put("rejected", contradictory);
+    providers.put("valid", server.oidcConfiguration("confidential-client"));
+
+    // when
+    final var repository =
+        LazyClientRegistrationRepository.withoutLoginRoutes(
+            new ScopedClientRegistrationFactory(), providers, "basePath=/physical-tenants/a");
+
+    // then
+    assertThat(repository.providers()).containsOnlyKeys("valid");
+    assertThat(repository.registrationIds()).containsExactly("valid");
+    assertThat(repository.findByRegistrationId("rejected")).isNull();
+    assertThat(repository.findByRegistrationId("valid").getClientId())
+        .isEqualTo("confidential-client");
+  }
+
+  /** The WARN belongs to the validation pass, so a lookup never repeats it (ADR-0042). */
+  @Test
+  void shouldWarnAboutAContradictoryClientTypeOnceAndNotOnEveryLookup() throws Exception {
+    // given a repository built over one rejected and one valid provider — the construction warns
+    server = OidcTestServer.startRsa("key");
+    final var contradictory = server.oidcConfiguration("public-client");
+    contradictory.setType("public");
+    contradictory.setClientSecret("s3cret");
+    final var providers = new LinkedHashMap<String, OidcConfiguration>();
+    providers.put("rejected", contradictory);
+    providers.put("valid", server.oidcConfiguration("confidential-client"));
+    final var repository = newRepository(providers);
+
+    // when the registrations are looked up repeatedly, after construction
+    final var appender = captureFactoryLogs();
+    try {
+      for (int i = 0; i < 3; i++) {
+        repository.findByRegistrationId("rejected");
+        repository.findByRegistrationId("valid");
+      }
+    } finally {
+      releaseFactoryLogs(appender);
+    }
+
+    // then no further warning is logged
+    assertThat(appender.list).noneMatch(event -> event.getLevel() == Level.WARN);
+  }
+
+  private static ListAppender<ILoggingEvent> captureFactoryLogs() {
+    final var appender = new ListAppender<ILoggingEvent>();
+    appender.start();
+    ((Logger) LoggerFactory.getLogger(ScopedClientRegistrationFactory.class)).addAppender(appender);
+    return appender;
+  }
+
+  private static void releaseFactoryLogs(final ListAppender<ILoggingEvent> appender) {
+    ((Logger) LoggerFactory.getLogger(ScopedClientRegistrationFactory.class))
+        .detachAppender(appender);
+    appender.stop();
+  }
+
+  @Test
+  void shouldBuildAPublicRegistrationWithClientAuthenticationMethodNone() throws Exception {
+    // given a public registration that leaves client-authentication-method unset
+    server = OidcTestServer.startRsa("key");
+    final var publicClient = server.oidcConfiguration("public-client");
+    publicClient.setType("public");
+
+    // when
+    final var registration =
+        newRepository(Map.of("oidc", publicClient)).findByRegistrationId("oidc");
+
+    // then the method defaults to none rather than to client_secret_basic
+    assertThat(registration.getClientAuthenticationMethod())
+        .isEqualTo(ClientAuthenticationMethod.NONE);
   }
 
   private static LazyClientRegistrationRepository newRepository(

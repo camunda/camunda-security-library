@@ -35,9 +35,20 @@ class PermissionTypeTest {
   }
 
   @Test
+  void suspendProcessDefinitionIsNotFlaggedAsReadPermission() {
+    assertThat(PermissionType.SUSPEND_PROCESS_DEFINITION.isReadPermission()).isFalse();
+  }
+
+  @Test
   void revealIsNotFlaggedAsReadPermission() {
     // REVEAL exposes secret values, so it must not be treated as a read permission.
     assertThat(PermissionType.REVEAL.isReadPermission()).isFalse();
+  }
+
+  @Test
+  void answerIsNotFlaggedAsReadPermission() {
+    // ANSWER lets a worker receive the secret values in a probe, so it must not be a read.
+    assertThat(PermissionType.ANSWER.isReadPermission()).isFalse();
   }
 
   @Test

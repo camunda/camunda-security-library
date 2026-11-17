@@ -8,6 +8,10 @@
 package io.camunda.security.api.model.config.oidc;
 
 import static io.camunda.security.api.model.config.oidc.OidcConfiguration.CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC;
+import static io.camunda.security.api.model.config.oidc.OidcConfiguration.CLIENT_AUTHENTICATION_METHOD_NONE;
+import static io.camunda.security.api.model.config.oidc.OidcConfiguration.CLIENT_TYPE_HYBRID;
+import static io.camunda.security.api.model.config.oidc.OidcConfiguration.CLIENT_TYPE_PUBLIC;
+import static io.camunda.security.api.model.config.oidc.OidcConfiguration.DEFAULT_CLIENT_TYPE;
 import static io.camunda.security.api.model.config.oidc.OidcConfiguration.DEFAULT_CLOCK_SKEW;
 import static io.camunda.security.api.model.config.oidc.OidcConfiguration.DEFAULT_GRANT_TYPE;
 import static io.camunda.security.api.model.config.oidc.OidcConfiguration.DEFAULT_ID_TOKEN_ALGORITHM;
@@ -317,6 +321,14 @@ public class OidcConfigurationTest {
                 .assertionConfiguration(AssertionConfiguration.builder().build())
                 .build(),
             false),
+        Arguments.of(
+            "default type is set",
+            OidcConfiguration.builder().type(DEFAULT_CLIENT_TYPE).build(),
+            false),
+        Arguments.of(
+            "type is public", OidcConfiguration.builder().type(CLIENT_TYPE_PUBLIC).build(), true),
+        Arguments.of(
+            "type is hybrid", OidcConfiguration.builder().type(CLIENT_TYPE_HYBRID).build(), true),
         Arguments.of("diagnostics.enabled is set", oidcConfigWithEnabledDiagnostics(), true));
   }
 
@@ -363,5 +375,75 @@ public class OidcConfigurationTest {
       Assertions.assertThat(config.isClientIdClaimSet()).isTrue();
       Assertions.assertThat(config.isPreferUsernameClaimSet()).isTrue();
     }
+  }
+
+  @Test
+  void shouldDefaultTypeToConfidential() {
+    // when
+    final var fromConstructor = new OidcConfiguration();
+    final var fromBuilder = OidcConfiguration.builder().clientId("client").build();
+
+    // then
+    for (final var config : List.of(fromConstructor, fromBuilder)) {
+      Assertions.assertThat(config.getType()).isEqualTo(DEFAULT_CLIENT_TYPE);
+    }
+    Assertions.assertThat(DEFAULT_CLIENT_TYPE).isEqualTo("confidential");
+  }
+
+  @Test
+  void shouldCarryTheConfiguredType() {
+    // when
+    final var fromSetter = new OidcConfiguration();
+    fromSetter.setType("PUBLIC");
+    final var fromBuilder = OidcConfiguration.builder().type(CLIENT_TYPE_HYBRID).build();
+
+    // then — the value is carried unparsed; the factory reads it case-insensitively
+    Assertions.assertThat(fromSetter.getType()).isEqualTo("PUBLIC");
+    Assertions.assertThat(fromBuilder.getType()).isEqualTo(CLIENT_TYPE_HYBRID);
+  }
+
+  @Test
+  void shouldNotMarkClientAuthenticationMethodAsSetByDefault() {
+    // when
+    final var fromConstructor = new OidcConfiguration();
+    final var fromBuilder = OidcConfiguration.builder().clientId("client").build();
+
+    // then
+    for (final var config : List.of(fromConstructor, fromBuilder)) {
+      Assertions.assertThat(config.isClientAuthenticationMethodSet()).isFalse();
+      Assertions.assertThat(config.getClientAuthenticationMethod())
+          .isEqualTo(CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC);
+    }
+  }
+
+  @Test
+  void shouldMarkClientAuthenticationMethodAsSetAlsoForTheDefaultValue() {
+    // when
+    final var fromSetter = new OidcConfiguration();
+    fromSetter.setClientAuthenticationMethod(CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC);
+    final var fromBuilder =
+        OidcConfiguration.builder()
+            .clientAuthenticationMethod(CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC)
+            .build();
+
+    // then
+    for (final var config : List.of(fromSetter, fromBuilder)) {
+      Assertions.assertThat(config.isClientAuthenticationMethodSet()).isTrue();
+    }
+  }
+
+  @Test
+  void shouldListNoneAmongTheSupportedClientAuthenticationMethods() {
+    Assertions.assertThat(OidcConfiguration.CLIENT_AUTHENTICATION_METHODS)
+        .containsExactly(
+            CLIENT_AUTHENTICATION_METHOD_CLIENT_SECRET_BASIC,
+            OidcConfiguration.CLIENT_AUTHENTICATION_METHOD_PRIVATE_KEY_JWT,
+            CLIENT_AUTHENTICATION_METHOD_NONE);
+  }
+
+  @Test
+  void shouldListTheThreeClientTypes() {
+    Assertions.assertThat(OidcConfiguration.CLIENT_TYPES)
+        .containsExactly("confidential", "public", "hybrid");
   }
 }

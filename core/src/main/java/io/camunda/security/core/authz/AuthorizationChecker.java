@@ -79,6 +79,7 @@ public final class AuthorizationChecker {
       final CamundaAuthentication authentication, final RequiredAuthorization<?> authorization) {
     return getOrElseDefaultResult(
         authentication,
+        Set.of(),
         ownerIds -> {
           final var scopes =
               scopeRepository.findAuthorizedScopes(
@@ -110,8 +111,24 @@ public final class AuthorizationChecker {
       final CamundaAuthentication authentication,
       final RequiredAuthorization<?> authorization,
       final Set<String> propertyNames) {
+    return retrieveAuthorizedPropertyScopes(authentication, authorization, propertyNames, Set.of());
+  }
+
+  /**
+   * Like {@link #retrieveAuthorizedPropertyScopes(CamundaAuthentication, RequiredAuthorization,
+   * Set)}, and also counts the grants of {@code additionalRoleIds}: for example the roles of the
+   * conditional memberships that apply to the checked resource.
+   *
+   * @param additionalRoleIds role IDs to count next to the global roles of {@code authentication}
+   */
+  public List<AuthorizationScope> retrieveAuthorizedPropertyScopes(
+      final CamundaAuthentication authentication,
+      final RequiredAuthorization<?> authorization,
+      final Set<String> propertyNames,
+      final Set<String> additionalRoleIds) {
     return getOrElseDefaultResult(
         authentication,
+        additionalRoleIds,
         ownerIds -> {
           final var scopes =
               scopeRepository.findAuthorizedPropertyScopes(
@@ -144,8 +161,24 @@ public final class AuthorizationChecker {
       final AuthorizationScope authorizationScope,
       final CamundaAuthentication authentication,
       final RequiredAuthorization<?> authorization) {
+    return isAuthorized(authorizationScope, authentication, authorization, Set.of());
+  }
+
+  /**
+   * Like {@link #isAuthorized(AuthorizationScope, CamundaAuthentication, RequiredAuthorization)},
+   * and also counts the grants of {@code additionalRoleIds}: for example the roles of the
+   * conditional memberships that apply to the checked resource.
+   *
+   * @param additionalRoleIds role IDs to count next to the global roles of {@code authentication}
+   */
+  public boolean isAuthorized(
+      final AuthorizationScope authorizationScope,
+      final CamundaAuthentication authentication,
+      final RequiredAuthorization<?> authorization,
+      final Set<String> additionalRoleIds) {
     return getOrElseDefaultResult(
         authentication,
+        additionalRoleIds,
         ownerIds ->
             scopeRepository.hasAuthorizedScope(
                 ownerIds,
@@ -174,6 +207,7 @@ public final class AuthorizationChecker {
       final CamundaAuthentication authentication) {
     return getOrElseDefaultResult(
         authentication,
+        Set.of(),
         ownerIds ->
             scopeRepository.findPermissionTypes(
                 ownerIds,
@@ -184,9 +218,10 @@ public final class AuthorizationChecker {
 
   private <T> T getOrElseDefaultResult(
       final CamundaAuthentication authentication,
+      final Set<String> additionalRoleIds,
       final Function<Map<EntityType, Set<String>>, T> resultSupplier,
       final Supplier<T> defaultResultSupplier) {
-    final var ownerTypeToOwnerIds = collectOwnerTypeToOwnerIds(authentication);
+    final var ownerTypeToOwnerIds = collectOwnerTypeToOwnerIds(authentication, additionalRoleIds);
     return Optional.of(ownerTypeToOwnerIds)
         .filter(m -> !m.isEmpty())
         .map(resultSupplier)
@@ -194,7 +229,7 @@ public final class AuthorizationChecker {
   }
 
   private Map<EntityType, Set<String>> collectOwnerTypeToOwnerIds(
-      final CamundaAuthentication authentication) {
+      final CamundaAuthentication authentication, final Set<String> additionalRoleIds) {
     final var ownerTypeToOwnerIds = new HashMap<EntityType, Set<String>>();
     if (authentication.authenticatedUsername() != null) {
       ownerTypeToOwnerIds.put(EntityType.USER, Set.of(authentication.authenticatedUsername()));
@@ -206,9 +241,13 @@ public final class AuthorizationChecker {
     if (groups != null && !groups.isEmpty()) {
       ownerTypeToOwnerIds.put(EntityType.GROUP, new HashSet<>(groups));
     }
-    final var roles = authentication.authenticatedRoleIds();
-    if (roles != null && !roles.isEmpty()) {
-      ownerTypeToOwnerIds.put(EntityType.ROLE, new HashSet<>(roles));
+    final var roles = new HashSet<String>();
+    if (authentication.authenticatedRoleIds() != null) {
+      roles.addAll(authentication.authenticatedRoleIds());
+    }
+    roles.addAll(additionalRoleIds);
+    if (!roles.isEmpty()) {
+      ownerTypeToOwnerIds.put(EntityType.ROLE, roles);
     }
     final var mappingRules = authentication.authenticatedMappingRuleIds();
     if (mappingRules != null && !mappingRules.isEmpty()) {

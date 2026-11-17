@@ -44,6 +44,56 @@ class CamundaSecurityLibraryPropertiesTest {
             });
   }
 
+  /**
+   * The assertion check runs in {@code @PostConstruct}, where a throw stops the start. A block that
+   * CSL drops must not reach it (ADR-0042, ADR-0029).
+   */
+  @Test
+  void shouldNotValidateTheAssertionConfigurationOfADroppedFlatBlock() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.type=public",
+            "camunda.security.authentication.oidc.client-secret=s3cret",
+            "camunda.security.authentication.oidc.assertion.kid-encoding=BASE64URL",
+            "camunda.security.authentication.oidc.assertion.kid-case=LOWER")
+        .run(context -> assertThat(context).hasNotFailed());
+  }
+
+  @Test
+  void shouldNotLetADroppedProviderStopTheStartOfAValidOne() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.dropped.type=public",
+            "camunda.security.authentication.providers.oidc.dropped.client-secret=s3cret",
+            "camunda.security.authentication.providers.oidc.dropped.assertion.kid-encoding=BASE64URL",
+            "camunda.security.authentication.providers.oidc.dropped.assertion.kid-case=LOWER",
+            "camunda.security.authentication.providers.oidc.valid.client-id=valid-client",
+            "camunda.security.authentication.providers.oidc.valid.issuer-uri=https://idp.example.com")
+        .run(
+            context -> {
+              assertThat(context).hasNotFailed();
+              final var properties = context.getBean(CamundaSecurityLibraryProperties.class);
+              assertThat(properties.getAuthentication().getProviders().getOidc())
+                  .containsKeys("dropped", "valid");
+            });
+  }
+
+  @Test
+  void shouldStillValidateTheAssertionConfigurationOfAUsableProvider() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.valid.client-id=valid-client",
+            "camunda.security.authentication.providers.oidc.valid.assertion.kid-encoding=BASE64URL",
+            "camunda.security.authentication.providers.oidc.valid.assertion.kid-case=LOWER")
+        .run(
+            context -> {
+              assertThat(context).hasFailed();
+              assertThat(context.getStartupFailure())
+                  .hasRootCauseInstanceOf(IllegalStateException.class)
+                  .hasRootCauseMessage("kidCase can only be set when kidEncoding is HEX");
+            });
+  }
+
   @Test
   void shouldDefaultProvidersOidcToEmptyMap() {
     runner.run(
@@ -459,5 +509,62 @@ class CamundaSecurityLibraryPropertiesTest {
           final var properties = context.getBean(CamundaSecurityLibraryProperties.class);
           assertThat(properties.oidcAuthorizeMaxAge()).isNull();
         });
+  }
+
+  @Test
+  void shouldBindTheClientTypeInBothShapes() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=flat-id",
+            "camunda.security.authentication.oidc.type=hybrid",
+            "camunda.security.authentication.providers.oidc.cli.client-id=cli-id",
+            "camunda.security.authentication.providers.oidc.cli.type=public")
+        .run(
+            context -> {
+              final var authentication =
+                  context.getBean(CamundaSecurityLibraryProperties.class).getAuthentication();
+              assertThat(authentication.getOidc().getType()).isEqualTo("hybrid");
+              assertThat(authentication.getProviders().getOidc().get("cli").getType())
+                  .isEqualTo("public");
+            });
+  }
+
+  @Test
+  void shouldDefaultTheClientTypeToConfidential() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=flat-id",
+            "camunda.security.authentication.providers.oidc.cli.client-id=cli-id")
+        .run(
+            context -> {
+              final var authentication =
+                  context.getBean(CamundaSecurityLibraryProperties.class).getAuthentication();
+              assertThat(authentication.getOidc().getType()).isEqualTo("confidential");
+              assertThat(authentication.getProviders().getOidc().get("cli").getType())
+                  .isEqualTo("confidential");
+            });
+  }
+
+  /**
+   * ADR-0042, decision 2: {@code type} binds as a string, so an unknown value reaches CSL instead
+   * of failing Spring's binder, and CSL warns about it rather than stopping the start (ADR-0029).
+   */
+  @Test
+  void shouldNotFailTheContextForAnUnknownClientType() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=flat-id",
+            "camunda.security.authentication.oidc.type=semi-public")
+        .run(
+            context -> {
+              assertThat(context).hasNotFailed();
+              assertThat(
+                      context
+                          .getBean(CamundaSecurityLibraryProperties.class)
+                          .getAuthentication()
+                          .getOidc()
+                          .getType())
+                  .isEqualTo("semi-public");
+            });
   }
 }

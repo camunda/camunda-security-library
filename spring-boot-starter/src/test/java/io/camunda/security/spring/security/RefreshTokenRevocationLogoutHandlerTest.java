@@ -172,6 +172,98 @@ class RefreshTokenRevocationLogoutHandlerTest {
     server.verify();
   }
 
+  /**
+   * A public client has no credential to send, so the revocation request names the client and stops
+   * there. The provider identifies the client by {@code client_id} alone, which is what it also
+   * does at the token endpoint for the method {@code none}.
+   */
+  @Test
+  void shouldRevokeRefreshTokenOfAPublicClientWithoutClientAuthentication() {
+    // given a public registration, which holds no client secret
+    final var registration =
+        registration(ClientAuthenticationMethod.NONE).clientSecret(null).build();
+    givenAuthorizedSession(registration);
+    server
+        .expect(requestTo(REVOCATION_ENDPOINT))
+        .andExpect(post())
+        .andExpect(
+            headers(
+                headers ->
+                    assertThat(headers.headerNames()).doesNotContain(HttpHeaders.AUTHORIZATION)))
+        .andExpect(
+            formBody(
+                fields ->
+                    assertThat(fields)
+                        .containsEntry("client_id", CLIENT_ID)
+                        .containsEntry("token", REFRESH_TOKEN_VALUE)
+                        .containsEntry("token_type_hint", "refresh_token")
+                        .doesNotContainKey("client_secret")))
+        .andRespond(withSuccess());
+
+    // when the user logs out
+    handler(null).logout(request, response, authentication(registration));
+
+    // then the refresh token was revoked with no client authentication
+    server.verify();
+  }
+
+  /**
+   * A deployment that has an assertion key for another provider resolves one here too. The
+   * converter of Spring answers for the method of the registration, so a public client still sends
+   * no assertion, and the request stays one the provider accepts.
+   */
+  @Test
+  void shouldNotSendAClientAssertionForAPublicClient() throws Exception {
+    // given a public registration in a deployment that can resolve a signing key
+    final var registration =
+        registration(ClientAuthenticationMethod.NONE).clientSecret(null).build();
+    givenAuthorizedSession(registration);
+    server
+        .expect(requestTo(REVOCATION_ENDPOINT))
+        .andExpect(
+            formBody(
+                fields ->
+                    assertThat(fields)
+                        .containsEntry("client_id", CLIENT_ID)
+                        .containsEntry("token", REFRESH_TOKEN_VALUE)
+                        .doesNotContainKeys(
+                            "client_secret", "client_assertion", "client_assertion_type")))
+        .andRespond(withSuccess());
+
+    // when the user logs out
+    handler(jwkResolver(rsaJwk())).logout(request, response, authentication(registration));
+
+    // then the key was left unused
+    server.verify();
+  }
+
+  @Test
+  void shouldRevokeRefreshTokenOfAPublicClientWithItsClientIdOnly() {
+    // given a public client, which has no credentials to send
+    final var registration = registration(ClientAuthenticationMethod.NONE).build();
+    givenAuthorizedSession(registration);
+    server
+        .expect(requestTo(REVOCATION_ENDPOINT))
+        .andExpect(
+            headers(
+                headers ->
+                    assertThat(headers.headerNames()).doesNotContain(HttpHeaders.AUTHORIZATION)))
+        .andExpect(
+            formBody(
+                fields ->
+                    assertThat(fields)
+                        .containsEntry("client_id", CLIENT_ID)
+                        .containsEntry("token", REFRESH_TOKEN_VALUE)
+                        .doesNotContainKeys("client_secret", "client_assertion")))
+        .andRespond(withSuccess());
+
+    // when the user logs out
+    handler(null).logout(request, response, authentication(registration));
+
+    // then the client identified itself, as RFC 7009 asks of a public client
+    server.verify();
+  }
+
   @Test
   void shouldRevokeRefreshTokenWithPrivateKeyJwtClientAuthentication() throws Exception {
     // given a private_key_jwt registration and a resolvable signing key
@@ -658,21 +750,31 @@ class RefreshTokenRevocationLogoutHandlerTest {
     }
   }
 
+  /**
+   * Captures the handler's own lines and those of the {@link RefreshTokenRevoker} it sends the
+   * request through, which logs every revocation outcome.
+   */
   private static ListAppender<ILoggingEvent> attachHandlerDebugAppender() {
-    final Logger logger =
-        (Logger) LoggerFactory.getLogger(RefreshTokenRevocationLogoutHandler.class);
-    logger.setLevel(Level.DEBUG);
     final ListAppender<ILoggingEvent> appender = new ListAppender<>();
     appender.start();
-    logger.addAppender(appender);
+    for (final Logger logger : handlerLoggers()) {
+      logger.setLevel(Level.DEBUG);
+      logger.addAppender(appender);
+    }
     return appender;
   }
 
   private static void detachHandlerDebugAppender(final ListAppender<ILoggingEvent> appender) {
-    final Logger logger =
-        (Logger) LoggerFactory.getLogger(RefreshTokenRevocationLogoutHandler.class);
-    logger.detachAppender(appender);
-    logger.setLevel(null);
+    for (final Logger logger : handlerLoggers()) {
+      logger.detachAppender(appender);
+      logger.setLevel(null);
+    }
+  }
+
+  private static List<Logger> handlerLoggers() {
+    return List.of(
+        (Logger) LoggerFactory.getLogger(RefreshTokenRevocationLogoutHandler.class),
+        (Logger) LoggerFactory.getLogger(RefreshTokenRevoker.class));
   }
 
   private static ListAppender<ILoggingEvent> attachRestClientDebugAppender() {

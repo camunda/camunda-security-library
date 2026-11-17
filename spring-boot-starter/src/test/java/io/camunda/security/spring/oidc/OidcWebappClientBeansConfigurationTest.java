@@ -8,8 +8,10 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.camunda.security.spring.CamundaSecurityConfiguration;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -88,6 +90,65 @@ class OidcWebappClientBeansConfigurationTest {
               assertThat(context)
                   .getBean(JwtDecoder.class)
                   .isSameAs(context.getBean(HostJwtDecoderConfig.class).jwtDecoder());
+            });
+  }
+
+  /**
+   * ADR-0042 with ADR-0029: a deployment whose only provider block is contradictory still starts.
+   * The emptiness check in {@link OidcWebappClientBeansConfiguration#clientRegistrationRepository}
+   * reads the configured map, not the filtered one, so dropping the registration leaves an empty
+   * repository rather than a failed context.
+   */
+  @Test
+  void startsWithAnEmptyRepositoryWhenEveryProviderIsContradictory() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=test-client",
+            // public clients hold no secret, so this block contradicts itself
+            "camunda.security.authentication.oidc.type=public",
+            "camunda.security.authentication.oidc.client-secret=secret",
+            "camunda.security.authentication.oidc.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.oidc.authorization-uri=https://idp.example.com/authorize",
+            "camunda.security.authentication.oidc.token-uri=https://idp.example.com/token",
+            "camunda.security.authentication.oidc.jwk-set-uri=https://idp.example.com/jwks")
+        .run(
+            context -> {
+              assertThat(context).hasNotFailed();
+              assertThat(context).hasSingleBean(ClientRegistrationRepository.class);
+              assertThat(context.getBean(ClientRegistrationRepository.class))
+                  .asInstanceOf(
+                      InstanceOfAssertFactories.type(LazyClientRegistrationRepository.class))
+                  .satisfies(repository -> assertThat(repository.providers()).isEmpty());
+              assertThat(
+                      context
+                          .getBean(ClientRegistrationRepository.class)
+                          .findByRegistrationId("oidc"))
+                  .isNull();
+            });
+  }
+
+  /**
+   * ADR-0042: the diagnostic has to reach the operator through the default bean wiring, and not
+   * only through a direct call on the factory with an unfiltered map.
+   */
+  @Test
+  void namesTheRejectedProvidersAtTheFirstDecodeWhenEveryProviderIsContradictory() {
+    runner
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=test-client",
+            "camunda.security.authentication.oidc.type=public",
+            "camunda.security.authentication.oidc.client-secret=secret",
+            "camunda.security.authentication.oidc.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
+            "camunda.security.authentication.oidc.authorization-uri=https://idp.example.com/authorize",
+            "camunda.security.authentication.oidc.token-uri=https://idp.example.com/token",
+            "camunda.security.authentication.oidc.jwk-set-uri=https://idp.example.com/jwks")
+        .run(
+            context -> {
+              assertThat(context).hasNotFailed();
+
+              assertThatThrownBy(() -> context.getBean(JwtDecoder.class).decode("any-token"))
+                  .hasStackTraceContaining("Every configured OIDC provider was rejected: oidc")
+                  .hasStackTraceContaining("Correct the property");
             });
   }
 

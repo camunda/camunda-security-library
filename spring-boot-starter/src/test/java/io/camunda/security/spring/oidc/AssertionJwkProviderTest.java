@@ -83,6 +83,26 @@ class AssertionJwkProviderTest {
     assertThat(rsaKey.getKeyID()).isEqualTo("opaYc1PqzH6XYGbL3KF4BK1rkNRS4IuMAfh3qPZILHo");
   }
 
+  /**
+   * A host application can supply a client registration whose id is also the id of a provider block
+   * that CSL dropped. The key material of the dropped block must not sign anything.
+   */
+  @Test
+  void createJwkRefusesABlockWhoseClientTypeContradictsItsProperties() {
+    final var oidcConfig =
+        OidcConfiguration.builder()
+            .type(OidcConfiguration.CLIENT_TYPE_PUBLIC)
+            .assertionConfiguration(
+                AssertionConfiguration.builder().keystoreConfiguration(keystoreConfig).build())
+            .build();
+    when(oidcProviderConfigurationPort.getOidcAuthenticationConfigurationById(REGISTRATION_ID))
+        .thenReturn(oidcConfig);
+
+    assertThatThrownBy(() -> assertionJwkProvider.createJwk(REGISTRATION_ID))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("client type contradicts its other properties");
+  }
+
   @Test
   void createJwkThrowsForUnknownRegistrationId() {
     when(oidcProviderConfigurationPort.getOidcAuthenticationConfigurationById("unknown"))

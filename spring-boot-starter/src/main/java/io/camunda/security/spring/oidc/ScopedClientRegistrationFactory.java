@@ -48,9 +48,16 @@ import org.springframework.web.util.pattern.PatternParseException;
  *
  * <p><b>Provider-block validation never blocks startup</b> (see ADR-0029). A provider block that
  * looks wrong — a bad URL, a missing field, an unusable redirect-uri — logs a {@code WARN} naming
- * the provider and the problem, and the application starts regardless. A provider can still fail to
- * build: Spring's own {@link ClientRegistration.Builder#build()} throws for some of the same
- * problems (a blank client-id, for one), and so do {@link
+ * the provider and the problem, and the application starts regardless.
+ *
+ * <p><b>A contradictory client type costs the registration</b> (see ADR-0042). A block whose {@code
+ * type} disagrees with its other properties — a {@code public} client that sets a client secret, a
+ * {@code confidential} one that asks for {@code none} — is warned about once, by the validation
+ * pass, and then dropped by {@link #withoutUnusableRegistrations}, so CSL behaves as if it was
+ * never configured. Startup is unaffected, and the other providers of the same deployment are
+ * unaffected. {@link #clientTypeVerdict} is the single verdict both steps read. A provider can
+ * still fail to build: Spring's own {@link ClientRegistration.Builder#build()} throws for some of
+ * the same problems (a blank client-id, for one), and so do {@link
  * org.springframework.security.oauth2.core.ClientAuthenticationMethod}'s constructor and {@link
  * ClientRegistrations#fromIssuerLocation} for a malformed {@code issuer-uri}. Whether that failure
  * is deferred to first use, rather than blocking startup, depends on the caller: {@link
@@ -252,7 +259,9 @@ public final class ScopedClientRegistrationFactory {
       final String scopedRedirectUriPath,
       final LoginRouteChecks loginRouteChecks) {
     validateWithoutNetwork(providers, scopedRedirectUriPath, loginRouteChecks);
-    return buildAll(providers, scopedRedirectUriPath, loginRouteChecks);
+    // Validated first, so the WARN still names a rejected registration, then dropped, so an eager
+    // caller cannot hand a contradictory registration to Spring either.
+    return buildAll(withoutUnusableClientTypes(providers), scopedRedirectUriPath, loginRouteChecks);
   }
 
   /**
@@ -333,6 +342,52 @@ public final class ScopedClientRegistrationFactory {
   }
 
   /**
+   * Drops each registration whose {@code type} contradicts its other properties, so CSL behaves as
+   * if it was never configured (ADR-0042). The validation pass has already named each of them in a
+   * {@code WARN}; this filter is silent, so a consumer can apply it as often as it needs to without
+   * repeating the diagnostic.
+   *
+   * <p>Separate from {@link #withoutUnusableRegistrations} because a caller that builds
+   * registrations eagerly must not also lose a blank registrationId, which has always built one.
+   */
+  static Map<String, OidcConfiguration> withoutUnusableClientTypes(
+      final Map<String, OidcConfiguration> providers) {
+    final var usable = new LinkedHashMap<String, OidcConfiguration>();
+    providers.forEach(
+        (registrationId, config) -> {
+          if (isUsable(config)) {
+            usable.put(registrationId, config);
+          }
+        });
+    return usable;
+  }
+
+  /**
+   * Tells if CSL uses this provider block. CSL drops a block whose {@code type} contradicts its
+   * other properties (ADR-0042). A reader that looks one block up by registration ID cannot apply
+   * {@link #withoutUnusableRegistrations}. Such a reader makes this test instead. A check that
+   * would stop the start of the application makes it too, because a block that CSL does not use
+   * must not stop a deployment whose other blocks are valid (ADR-0029).
+   */
+  public static boolean isUsable(final OidcConfiguration oidc) {
+    return clientTypeVerdict(oidc) == ClientTypeVerdict.USABLE;
+  }
+
+  /**
+   * The provider view every consumer of a registrationId-keyed provider map should build from:
+   * {@link #withoutBlankRegistrationIds} for the keys a routing map cannot hold, and {@link
+   * #withoutUnusableClientTypes} for the registrations CSL cannot use. Both are warn-only in the
+   * validation pass and dropped here, in one place, rather than in each consumer's own copy.
+   *
+   * <p>Public because a consumer outside this package reads the same map. The builder of the
+   * security filter chain is one, when it composes the post-logout redirect of each registration.
+   */
+  public static Map<String, OidcConfiguration> withoutUnusableRegistrations(
+      final Map<String, OidcConfiguration> providers) {
+    return withoutUnusableClientTypes(withoutBlankRegistrationIds(providers));
+  }
+
+  /**
    * Flattens the {@link AuthenticationConfiguration} and then builds all {@link ClientRegistration}
    * instances from the result.
    *
@@ -379,7 +434,14 @@ public final class ScopedClientRegistrationFactory {
             warnIfRegistrationIdNotAddressableByTheLoginRoute(registrationId);
           }
           warnIfNoClientId(registrationId, oidc);
+          if (warnIfClientTypeContradictsProperties(registrationId, oidc)) {
+            // CSL drops this registration, so no later check can change what a request does with
+            // it. One of them throws, and a provider that CSL does not use must not stop the
+            // start of a deployment whose other providers are valid (ADR-0042, ADR-0029).
+            return;
+          }
           warnIfUnusableClientAuthenticationMethod(registrationId, oidc);
+          warnIfUnsupportedClientAuthenticationMethod(registrationId, oidc);
           warnIfUnusableScopes(registrationId, oidc);
           warnIfNotAbsoluteEndpointUrls(registrationId, oidc, loginRouteChecks);
           if (loginRouteChecks == LoginRouteChecks.ENFORCED) {
@@ -527,11 +589,215 @@ public final class ScopedClientRegistrationFactory {
     }
   }
 
+  /**
+   * Why a provider block's {@code type} contradicts its other properties, or {@link
+   * ClientTypeVerdict#USABLE} when it does not. Side-effect free, so the warning pass and the
+   * filter that drops a rejected registration reach the same verdict from one implementation; see
+   * ADR-0042.
+   *
+   * <p>The method compares {@code client-authentication-method} case-sensitively, because the value
+   * reaches Spring verbatim: {@code NONE} builds a {@link ClientAuthenticationMethod} that does not
+   * equal Spring's own {@code NONE}, so accepting it here would promise a public-client token
+   * exchange that Spring would not perform.
+   */
+  static ClientTypeVerdict clientTypeVerdict(final OidcConfiguration oidc) {
+    final var type = clientType(oidc);
+    if (type == null) {
+      return ClientTypeVerdict.UNKNOWN_TYPE;
+    }
+    if (OidcConfiguration.CLIENT_TYPE_PUBLIC.equals(type)) {
+      if (StringUtils.hasText(oidc.getClientSecret())) {
+        return ClientTypeVerdict.PUBLIC_WITH_CLIENT_SECRET;
+      }
+      if (oidc.isClientAuthenticationMethodSet()
+          && !OidcConfiguration.CLIENT_AUTHENTICATION_METHOD_NONE.equals(
+              oidc.getClientAuthenticationMethod())) {
+        return ClientTypeVerdict.PUBLIC_WITH_CLIENT_AUTHENTICATION;
+      }
+      if (hasAssertionKeyMaterial(oidc)) {
+        return ClientTypeVerdict.PUBLIC_WITH_ASSERTION_KEY;
+      }
+      return ClientTypeVerdict.USABLE;
+    }
+    if (OidcConfiguration.CLIENT_AUTHENTICATION_METHOD_NONE.equals(
+        oidc.getClientAuthenticationMethod())) {
+      return ClientTypeVerdict.SECRET_BASED_TYPE_WITH_NONE;
+    }
+    return ClientTypeVerdict.USABLE;
+  }
+
+  /**
+   * The verdict on one provider block's {@code type}. Each value but {@link #USABLE} makes CSL drop
+   * the registration, so it behaves as if it was never configured (ADR-0042), while the application
+   * still starts (ADR-0029).
+   */
+  enum ClientTypeVerdict {
+    USABLE,
+    UNKNOWN_TYPE,
+    PUBLIC_WITH_CLIENT_SECRET,
+    PUBLIC_WITH_CLIENT_AUTHENTICATION,
+    PUBLIC_WITH_ASSERTION_KEY,
+    SECRET_BASED_TYPE_WITH_NONE
+  }
+
+  /**
+   * The configured {@code type}, lower-cased, or {@code null} when the value names no known type.
+   * An unset value is {@link OidcConfiguration#DEFAULT_CLIENT_TYPE}, so every registration that
+   * predates this property is a confidential client.
+   */
+  static String clientType(final OidcConfiguration oidc) {
+    final var configured = oidc.getType();
+    if (!StringUtils.hasText(configured)) {
+      return OidcConfiguration.DEFAULT_CLIENT_TYPE;
+    }
+    final var normalized = configured.trim().toLowerCase(Locale.ROOT);
+    return OidcConfiguration.CLIENT_TYPES.contains(normalized) ? normalized : null;
+  }
+
+  /**
+   * The client authentication method the registration is built with. A {@code public} registration
+   * that sets none authenticates with {@code none}, which is the one place that default is applied
+   * — {@link OidcConfiguration#getClientAuthenticationMethod()} keeps returning the configured
+   * value, so a host reading the configuration still sees what the operator wrote.
+   */
+  static String effectiveClientAuthenticationMethod(final OidcConfiguration oidc) {
+    if (OidcConfiguration.CLIENT_TYPE_PUBLIC.equals(clientType(oidc))
+        && !oidc.isClientAuthenticationMethodSet()) {
+      return OidcConfiguration.CLIENT_AUTHENTICATION_METHOD_NONE;
+    }
+    return oidc.getClientAuthenticationMethod();
+  }
+
+  /**
+   * Whether the provider block carries private-key assertion material. Any one of the keystore
+   * values is enough: an operator who set a path but no alias still means to authenticate with an
+   * assertion, which is what contradicts a public client.
+   */
+  private static boolean hasAssertionKeyMaterial(final OidcConfiguration oidc) {
+    final var assertion = oidc.getAssertion();
+    if (assertion == null) {
+      return false;
+    }
+    final var keystore = assertion.getKeystore();
+    if (keystore == null) {
+      return false;
+    }
+    return StringUtils.hasText(keystore.getPath())
+        || StringUtils.hasText(keystore.getPassword())
+        || StringUtils.hasText(keystore.getKeyAlias())
+        || StringUtils.hasText(keystore.getKeyPassword());
+  }
+
+  /**
+   * Warns about a {@code type} that contradicts the other properties of its provider block, naming
+   * the provider and the property an operator has to change. The same verdict makes CSL drop the
+   * registration (see {@link #withoutUnusableClientTypes}), so this is logged once, by the
+   * validation pass, and not on every lookup of the registration.
+   *
+   * @return {@code true} when CSL drops the registration. The caller then makes no further check on
+   *     it: a check on a provider that CSL does not use can only add noise, and {@link
+   *     #requireUserInfoRequiredConsistency} would stop the start for it.
+   */
+  private static boolean warnIfClientTypeContradictsProperties(
+      final String registrationId, final OidcConfiguration oidc) {
+    final var verdict = clientTypeVerdict(oidc);
+    if (verdict == ClientTypeVerdict.USABLE) {
+      return false;
+    }
+    final var safeId = sanitizeForLog(registrationId);
+    switch (verdict) {
+      case UNKNOWN_TYPE ->
+          LOG.warn(
+              "OIDC provider '{}' has an unknown client type and is not used. Set"
+                  + " camunda.security.authentication.oidc.type (flat) or"
+                  + " camunda.security.authentication.providers.oidc.{}.type to one of {}.",
+              safeId,
+              safeId,
+              OidcConfiguration.CLIENT_TYPES);
+      case PUBLIC_WITH_CLIENT_SECRET ->
+          LOG.warn(
+              "OIDC provider '{}' is type '{}' and must not set client-secret, so it is not used."
+                  + " Remove"
+                  + " camunda.security.authentication.providers.oidc.{}.client-secret (or the flat"
+                  + " camunda.security.authentication.oidc.client-secret), or set type to '{}'.",
+              safeId,
+              OidcConfiguration.CLIENT_TYPE_PUBLIC,
+              safeId,
+              OidcConfiguration.CLIENT_TYPE_HYBRID);
+      case PUBLIC_WITH_CLIENT_AUTHENTICATION ->
+          LOG.warn(
+              "OIDC provider '{}' is type '{}', whose only client-authentication-method is '{}', so"
+                  + " it is not used. Set"
+                  + " camunda.security.authentication.providers.oidc.{}.client-authentication-method"
+                  + " (or the flat camunda.security.authentication.oidc.client-authentication-method)"
+                  + " to '{}', or leave it unset.",
+              safeId,
+              OidcConfiguration.CLIENT_TYPE_PUBLIC,
+              OidcConfiguration.CLIENT_AUTHENTICATION_METHOD_NONE,
+              safeId,
+              OidcConfiguration.CLIENT_AUTHENTICATION_METHOD_NONE);
+      case PUBLIC_WITH_ASSERTION_KEY ->
+          LOG.warn(
+              "OIDC provider '{}' is type '{}' and sends no client authentication, so its"
+                  + " assertion keystore cannot be used and the registration is not used. Remove"
+                  + " camunda.security.authentication.providers.oidc.{}.assertion.keystore.* (or"
+                  + " the flat camunda.security.authentication.oidc.assertion.keystore.*), or set"
+                  + " type to '{}' with client-authentication-method '{}'.",
+              safeId,
+              OidcConfiguration.CLIENT_TYPE_PUBLIC,
+              safeId,
+              OidcConfiguration.CLIENT_TYPE_CONFIDENTIAL,
+              OidcConfiguration.CLIENT_AUTHENTICATION_METHOD_PRIVATE_KEY_JWT);
+      case SECRET_BASED_TYPE_WITH_NONE ->
+          LOG.warn(
+              "OIDC provider '{}' is type '{}', which authenticates at the token endpoint, so"
+                  + " client-authentication-method '{}' cannot be used and the registration is not"
+                  + " used. Set"
+                  + " camunda.security.authentication.providers.oidc.{}.type (or the flat"
+                  + " camunda.security.authentication.oidc.type) to '{}', or choose another"
+                  + " client-authentication-method.",
+              safeId,
+              clientType(oidc),
+              OidcConfiguration.CLIENT_AUTHENTICATION_METHOD_NONE,
+              safeId,
+              OidcConfiguration.CLIENT_TYPE_PUBLIC);
+      default -> throw new IllegalStateException("Unhandled client type verdict: " + verdict);
+    }
+    return true;
+  }
+
+  /**
+   * Warns about a {@code client-authentication-method} that Spring accepts and CSL does not list in
+   * {@link OidcConfiguration#CLIENT_AUTHENTICATION_METHODS}. The value is still used as configured:
+   * a literal such as {@code client_secret_post} works end to end in Spring today, and rejecting it
+   * on an upgrade would stop a deployment that works (ADR-0042, decision 1). A blank value is left
+   * to {@link #warnIfUnusableClientAuthenticationMethod}, which names the build failure it causes.
+   */
+  private static void warnIfUnsupportedClientAuthenticationMethod(
+      final String registrationId, final OidcConfiguration oidc) {
+    final var method = effectiveClientAuthenticationMethod(oidc);
+    if (!StringUtils.hasText(method)
+        || OidcConfiguration.CLIENT_AUTHENTICATION_METHODS.contains(method)) {
+      return;
+    }
+    final var safeId = sanitizeForLog(registrationId);
+    LOG.warn(
+        "OIDC provider '{}' has client-authentication-method '{}', which CSL does not support. It"
+            + " is used as configured, and the provider may still work, but CSL tests only {}."
+            + " Set camunda.security.authentication.oidc.client-authentication-method (flat) or"
+            + " camunda.security.authentication.providers.oidc.{}.client-authentication-method to"
+            + " a supported value.",
+        safeId,
+        sanitizeForLog(method),
+        OidcConfiguration.CLIENT_AUTHENTICATION_METHODS,
+        safeId);
+  }
+
   /** Warns early about a {@link ClientAuthenticationMethod} the build path would also reject. */
   private static void warnIfUnusableClientAuthenticationMethod(
       final String registrationId, final OidcConfiguration oidc) {
     try {
-      new ClientAuthenticationMethod(oidc.getClientAuthenticationMethod());
+      new ClientAuthenticationMethod(effectiveClientAuthenticationMethod(oidc));
     } catch (final IllegalArgumentException rejected) {
       final var safeId = sanitizeForLog(registrationId);
       LOG.warn(
@@ -1143,7 +1409,7 @@ public final class ScopedClientRegistrationFactory {
             .clientId(oidc.getClientId())
             .clientSecret(oidc.getClientSecret())
             .clientAuthenticationMethod(
-                new ClientAuthenticationMethod(oidc.getClientAuthenticationMethod()))
+                new ClientAuthenticationMethod(effectiveClientAuthenticationMethod(oidc)))
             .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
             .redirectUri(redirectUri)
             .scope(oidc.getScope());

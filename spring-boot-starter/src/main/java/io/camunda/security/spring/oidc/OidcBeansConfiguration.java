@@ -94,7 +94,7 @@ public class OidcBeansConfiguration {
     // Blank ids are filtered for the same reason the claims-converter bean below filters them: a
     // blank key can never match a ClientRegistration's registrationId, so it would only ever be
     // dead weight in the lookup.
-    ScopedClientRegistrationFactory.withoutBlankRegistrationIds(
+    ScopedClientRegistrationFactory.withoutUnusableRegistrations(
             oidcProviderConfigurationPort.getOidcAuthenticationConfigurations())
         .forEach(
             (registrationId, config) -> {
@@ -158,7 +158,7 @@ public class OidcBeansConfiguration {
     // unknown. The library's own decoders tag each token with its provider's claims instead.
     final var winningRegistrationIdByIssuer =
         IssuerOwnership.registrationIdByIssuer(
-            ScopedClientRegistrationFactory.withoutBlankRegistrationIds(configurations),
+            ScopedClientRegistrationFactory.withoutUnusableRegistrations(configurations),
             LOG,
             "the claim configuration",
             false);

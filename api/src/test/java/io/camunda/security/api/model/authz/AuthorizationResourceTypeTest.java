@@ -42,6 +42,12 @@ class AuthorizationResourceTypeTest {
   }
 
   @Test
+  void processDefinitionSupportsSuspendProcessDefinition() {
+    assertThat(AuthorizationResourceType.PROCESS_DEFINITION.getSupportedPermissionTypes())
+        .contains(PermissionType.SUSPEND_PROCESS_DEFINITION);
+  }
+
+  @Test
   void batchSupportsCreateBatchOperationSuspendProcessInstance() {
     assertThat(AuthorizationResourceType.BATCH.getSupportedPermissionTypes())
         .contains(PermissionType.CREATE_BATCH_OPERATION_SUSPEND_PROCESS_INSTANCE);
@@ -59,6 +65,20 @@ class AuthorizationResourceTypeTest {
 
     assertThat(map).doesNotContainKey("UNSPECIFIED");
     assertThat(map.get("SECRET")).containsExactlyInAnyOrder("READ", "REVEAL");
+  }
+
+  @Test
+  void probeSupportsCreateAndAnswer() {
+    assertThat(AuthorizationResourceType.PROBE.getSupportedPermissionTypes())
+        .containsExactlyInAnyOrder(PermissionType.CREATE, PermissionType.ANSWER);
+  }
+
+  @Test
+  void buildResourcePermissionsMapHasProbeCreateAnswer() {
+    final var map = AuthorizationResourceType.buildResourcePermissionsMap();
+
+    assertThat(map).doesNotContainKey("UNSPECIFIED");
+    assertThat(map.get("PROBE")).containsExactly("ANSWER", "CREATE");
   }
 
   @Test

@@ -106,11 +106,13 @@ public final class CamundaOidcAuthorizationRequestResolver
               + authorizationRequestBaseUri);
     }
     this.clientRegistrationRepository = clientRegistrationRepository;
-    // ScopedClientRegistrationFactory#withoutBlankRegistrationIds: Map.copyOf below rejects a
-    // null key outright, and a blank registrationId is warn-only, not rejected, elsewhere.
+    // ScopedClientRegistrationFactory#withoutUnusableRegistrations: Map.copyOf below rejects a
+    // null key outright, and a blank registrationId is warn-only, not rejected, elsewhere. The
+    // same filter drops a registration whose client type contradicts its other properties, so no
+    // authorization request is built for one CSL cannot use (ADR-0042).
     this.sourcesByRegistrationId =
         Map.copyOf(
-            ScopedClientRegistrationFactory.withoutBlankRegistrationIds(sourcesByRegistrationId));
+            ScopedClientRegistrationFactory.withoutUnusableRegistrations(sourcesByRegistrationId));
     this.authorizationRequestBaseUri = normalizedBaseUri;
     if (maxAge != null && maxAge.isNegative()) {
       throw new IllegalArgumentException("maxAge must not be negative: " + maxAge);

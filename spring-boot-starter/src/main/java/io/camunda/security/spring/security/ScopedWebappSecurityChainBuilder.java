@@ -136,11 +136,16 @@ public final class ScopedWebappSecurityChainBuilder {
   private final ObjectProvider<OidcProviderConfigurationPort> oidcProviderConfigurationPortProvider;
   private final ObjectProvider<OidcLoginFailurePort> oidcLoginFailurePortProvider;
   private final ObjectProvider<AssertionJwkProvider> assertionJwkProviderProvider;
+  private final ObjectProvider<ExpiredSessionRefreshTokenRevocation>
+      expiredSessionRevocationProvider;
 
   /**
    * @param oidcLoginFailurePortProvider the host's explanations for failed browser logins. It is
    *     resolved on each failed login, not while the chains are built; when it holds no bean, or
    *     more than one, the page shows generic text (ADR-0035).
+   * @param expiredSessionRevocationProvider where each OIDC chain registers its refresh-token
+   *     revoker, so the session store can revoke the token of a session that expires (ADR-0043).
+   *     When it holds no bean, only logout revokes.
    */
   public ScopedWebappSecurityChainBuilder(
       final AuthFailureHandler authFailureHandler,
@@ -160,7 +165,8 @@ public final class ScopedWebappSecurityChainBuilder {
       final ObjectProvider<SecurityHeadersCustomizer> securityHeadersCustomizers,
       final ObjectProvider<OidcProviderConfigurationPort> oidcProviderConfigurationPortProvider,
       final ObjectProvider<OidcLoginFailurePort> oidcLoginFailurePortProvider,
-      final ObjectProvider<AssertionJwkProvider> assertionJwkProviderProvider) {
+      final ObjectProvider<AssertionJwkProvider> assertionJwkProviderProvider,
+      final ObjectProvider<ExpiredSessionRefreshTokenRevocation> expiredSessionRevocationProvider) {
     this.authFailureHandler = authFailureHandler;
     this.properties = properties;
     this.pathPort = pathPort;
@@ -179,6 +185,7 @@ public final class ScopedWebappSecurityChainBuilder {
     this.oidcProviderConfigurationPortProvider = oidcProviderConfigurationPortProvider;
     this.oidcLoginFailurePortProvider = oidcLoginFailurePortProvider;
     this.assertionJwkProviderProvider = assertionJwkProviderProvider;
+    this.expiredSessionRevocationProvider = expiredSessionRevocationProvider;
   }
 
   /**
@@ -584,8 +591,10 @@ public final class ScopedWebappSecurityChainBuilder {
    * gets each one's own answer. Reading {@code authentication.getOidc()} alone would silently
    * ignore any provider declared only under {@code providers.oidc.*}.
    *
-   * <p>The map is total over the scope's registrations, so the handler never has to fall back to a
-   * chain-wide default: whatever it finds for a registrationId is that registration's final answer.
+   * <p>The map is total over the registrations of the scope that CSL uses, so the handler never has
+   * to fall back to a chain-wide default for one of them: whatever it finds for a registrationId is
+   * that registration's final answer. A registration that CSL dropped is absent from the map, and
+   * the handler applies the chain-wide default to it (ADR-0042).
    *
    * <p>ADR-0026. This replaced a single per-scope boolean, which forced one strict IdP to strip the
    * redirect from every other IdP in the scope (ADR-0023).
@@ -610,23 +619,23 @@ public final class ScopedWebappSecurityChainBuilder {
     // rules live in one place; this only calls them.
     clientRegistrationFactory.validatePostLogoutRedirectUris(sources);
     final Map<String, String> redirectUris = new LinkedHashMap<>();
-    sources.forEach(
-        (registrationId, oidc) -> {
-          // A blank/null registrationId already gets its own warning above, and can never be the
-          // authenticated registration id a real logout looks this map up by — Map.copyOf below
-          // rejects a null key, so keeping such an entry would still crash chain construction.
-          if (!StringUtils.hasText(registrationId)) {
-            return;
-          }
-          redirectUris.put(
-              registrationId,
-              postLogoutRedirectUri(
-                  registrationId,
-                  oidc,
-                  prefix,
-                  composedDefault,
-                  clientRegistrationFactory.isPostLogoutRedirectUriUsable(registrationId, oidc)));
-        });
+    // Validated above over the configured map, so a warning still names a registration that the
+    // filter then drops. A blank or null registrationId can never be the authenticated
+    // registration id a real logout looks this map up by. A registration whose client type
+    // contradicts its other properties is one CSL does not use, and its post-logout redirect must
+    // not reach a registration of the host application that has the same id (ADR-0042).
+    ScopedClientRegistrationFactory.withoutUnusableRegistrations(sources)
+        .forEach(
+            (registrationId, oidc) ->
+                redirectUris.put(
+                    registrationId,
+                    postLogoutRedirectUri(
+                        registrationId,
+                        oidc,
+                        prefix,
+                        composedDefault,
+                        clientRegistrationFactory.isPostLogoutRedirectUriUsable(
+                            registrationId, oidc))));
     return redirectUris;
   }
 
@@ -735,12 +744,19 @@ public final class ScopedWebappSecurityChainBuilder {
    *
    * <p>An empty {@code sources} map yields no resolver, and the handler then says so on the one
    * client-authentication method that needs one.
+   *
+   * <p>The same revoker is registered for the chain's expired sessions (ADR-0043), so a session
+   * that times out has its refresh token revoked with the same client authentication as one the
+   * user logs out of.
    */
   private LogoutHandler refreshTokenRevocationLogoutHandler(
       final ClientRegistrationRepository repo,
       final OAuth2AuthorizedClientRepository authorizedClientRepository,
       final Function<ClientRegistration, JWK> jwkResolver) {
-    return new RefreshTokenRevocationLogoutHandler(repo, authorizedClientRepository, jwkResolver);
+    final var revoker = new RefreshTokenRevoker(jwkResolver);
+    expiredSessionRevocationProvider.ifAvailable(
+        revocation -> revocation.register(repo, authorizedClientRepository, revoker));
+    return RefreshTokenRevocationLogoutHandler.sharing(repo, authorizedClientRepository, revoker);
   }
 
   /**
