@@ -58,6 +58,8 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0043: Revoke the refresh token when a web session expires](../adr/0043-revoke-refresh-token-on-session-expiry.md)
 - [ADR-0044: CSL sends PKCE through the default of Spring Security](../adr/0044-pkce-through-the-spring-security-default.md)
 - [ADR-0045: Integration tests run against a container, in the verify phase](../adr/0045-integration-tests-in-the-verify-phase.md)
+- [ADR-0046: Scheduled refresh-ahead JWKS caching and realistic HTTP timeouts](../adr/0046-resilient-jwks-refresh-and-timeouts.md)
+- [ADR-0047: No `Thread.sleep` in tests; wait on conditions with Awaitility](../adr/0047-no-thread-sleep-in-tests-use-awaitility.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 
