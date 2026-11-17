@@ -152,6 +152,9 @@ For most conditional use cases the CSL ships purpose-built meta-annotations (see
 | `registration-id` | string | `oidc` | Spring Security client registration id. |
 | `client-authentication-method` | string | `client_secret_basic` (`none` when `type: public` leaves it unset) | Spring Security `ClientAuthenticationMethod` literal. CSL supports `client_secret_basic`, `private_key_jwt` and `none`. Another literal that Spring accepts is used as configured and warned about. See [Client types](#client-types). |
 | `type` | string | `confidential` | The kind of OAuth2 client this registration describes: `confidential`, `public` or `hybrid`. See [Client types](#client-types). |
+| `username-claim` | string | `sub` | The claim that holds the user name of a token. See [Telling a user token from a machine token](#telling-a-user-token-from-a-machine-token). |
+| `client-id-claim` | string | unset | The claim that holds the client ID of a token. Unset means every token resolves to a user. See [Telling a user token from a machine token](#telling-a-user-token-from-a-machine-token). |
+| `prefer-username-claim` | boolean | `false` | When `true`, a token that carries both claims resolves to a user. See [Telling a user token from a machine token](#telling-a-user-token-from-a-machine-token). |
 
 ### Client types
 
@@ -190,6 +193,115 @@ One exception applies to UserInfo augmentation. A scope that enables it needs at
 > **Behaviour change.** `client-authentication-method: none` was never a supported value, but Spring accepted the literal, so a registration configured that way was built. It now needs `type: public`; without it the registration is dropped with a warning that says so.
 
 PKCE on the authorization request, the token exchange without a secret, and refresh and revocation without a secret are not part of this property yet. Until they land, a `public` registration validates and builds, and it is useful for token validation rather than for a browser login.
+
+### Telling a user token from a machine token
+
+A Camunda client application such as c8ctl or Desktop Modeler signs a user in itself, with PKCE and
+a `public` or `hybrid` registration, and calls the API with the access token it receives. There is
+no session. A machine client calls the same API with a token of the client credentials flow. Both
+tokens arrive as `Authorization: Bearer <token>` on an API path, and CSL must give the first one a
+user principal and the second one a client principal.
+
+CSL reads the token for this, not the registration. Three properties control it:
+
+| Property | Type | Default | Effect |
+|---|---|---|---|
+| `username-claim` | string | `sub` | The claim that holds the user name. A plain claim name, or a JSONPath expression that starts with `$`. |
+| `client-id-claim` | string | unset | The claim that holds the client ID. Unset means CSL can never recognise a client, so every token becomes a user. |
+| `prefer-username-claim` | boolean | `false` | When `true`, a token that has both claims becomes a user. |
+
+The order is:
+
+1. If the client ID claim is present, the caller is a client.
+2. Else, if the user name claim is present, the caller is a user.
+3. With `prefer-username-claim: true`, steps 1 and 2 change places.
+4. If neither claim is present, CSL refuses the token.
+
+So the settings must name a claim that only one of the two token kinds carries. Which claim that is
+depends on the identity provider.
+
+The principal that comes out is the key of every membership and every authorization, so it must
+also be stable. A claim that an operator can change, such as a user name or an email address,
+moves the identity of the person with it. Prefer a claim that the identity provider never reuses
+and never rewrites.
+
+A mutable user name claim carries a second risk, and it is the worse of the two. If the identity
+provider later gives the same value to another account, that account becomes the same principal
+here. It inherits every membership and every authorization that is still keyed to that value, and
+the audit trail names the person who left. Remove the grants of a person before the identity
+provider can give their user name to somebody else, or stop the provider from reusing a user name
+at all. A stable claim that the provider never reassigns, such as `sub` on Keycloak or `uid` on
+Okta, avoids both risks.
+
+#### Recommended settings per identity provider
+
+| Identity provider | `username-claim` | `client-id-claim` | `prefer-username-claim` | Why |
+|---|---|---|---|---|
+| Keycloak | `sub` (the default) | `client_id` | `false` | Keycloak adds `client_id` to a service account token only, through the `service_account` client scope. That claim alone separates the two kinds, so the user name claim does not have to, and it stays on the stable `sub`. Do not use `azp`: a user token carries it too, so `client-id-claim: azp` turns every user into a client. Do not set `prefer-username-claim: true`: a service account token carries `preferred_username` as `service-account-<client>`, so it would turn every machine into a user. |
+| Microsoft Entra ID | `preferred_username` | `azp` | `true` | **Read the caveat below before using this row.** A user token and an app-only token both carry `azp`, `sub` and `oid`, so no stable claim separates them. `preferred_username` needs the `profile` scope. A client credentials request can only ask for `<resource>/.default`, so an app-only token never carries it. The token must be v2.0; CSL refuses a v1.0 Entra token. |
+| Auth0 | a user-only claim from an Action, holding the `user_id` | `azp`, or `client_id` on the RFC 9068 profile | `true` | An Auth0 access token carries the client ID and `sub` in both flows, and no claim that only a user has. Add an Action that writes a namespaced claim for user flows, and put the stable `user_id` in it. Without the Action, no setting separates the two. The claim that names the client depends on the token profile of the API: the Auth0 profile emits `azp` and no `client_id`, the RFC 9068 profile emits `client_id` and no `azp`. |
+| Okta (custom authorization server) | `uid` | `cid` | `true` | `cid` is the client that requested the token and is in both flows. `uid` is the stable identifier of the user, and Okta leaves it out when no user is bound to the token, which is every client credentials token. |
+| PingFederate | the user attribute of the access token manager contract, for example a stable user identifier | `client_id` | `true` | An access token manager instance has one attribute contract and one access token mapping per context. Fill the user attribute in the mapping of the user flow and leave it empty in the client credentials mapping. `client_id` is the default name of the client ID claim, configurable on the Instance Configuration tab of the instance. |
+
+#### Caveat for Microsoft Entra ID
+
+Entra is the one provider where the two goals pull apart. Its stable identifiers of a person,
+`sub` and `oid`, appear in an app-only token as well, where they name the service principal, so
+neither can separate the two kinds of token. The only user-only claims are `preferred_username`,
+`upn` and `name`, and Microsoft states that all of them are mutable and must not drive
+authorization decisions.
+
+So on Entra a deployment picks one:
+
+- **Recognise machine tokens.** Use the row above. The principal of a person is then
+  `preferred_username`, and a rename at the identity provider gives that person a new identity in
+  Camunda, with no memberships and no authorizations until an operator re-creates them.
+- **Keep a stable principal.** Leave `client-id-claim` unset and use `username-claim: oid`. Every
+  token on the chain then resolves to a user, which is the behaviour of every release before this
+  table, and the chain cannot tell a machine token from a user token.
+
+A deployment that needs both on the same chain is not served by these settings today. Report it,
+so the trade-off can be weighed with real deployments behind it.
+
+The rows do not rest on the same evidence.
+[ADR-0048](../adr/0048-recognising-user-tokens-on-the-api-chains.md) lists every source.
+
+- Keycloak is measured against a real server in `KeycloakUserBearerTokenIT`, on every build.
+- Entra is what Camunda already ships. The Helm guide for an external Entra tenant configures
+  these three settings today, so the row records a deployed configuration rather than a proposal.
+- Auth0 is measured, although not here: the behaviour of a user login against the Camunda Auth0
+  tenant was tested in November 2026, and a post-login action adds the user-only claim that this
+  row needs.
+- Okta and PingFederate rest on the reference pages of the provider alone. For Okta, the
+  Camunda JWT claims reference names other claims than Okta's own reference does, so check the
+  first token your deployment issues before you trust either.
+
+The PingFederate row is a pattern rather than a fixed token shape, because every claim of a
+PingFederate access token comes from the attribute contract the operator defines. It says what to
+map, not what to expect.
+
+Every row is covered by `IdpTokenShapePrincipalResolutionTest`, which also shows what the settings
+next to the recommended ones do.
+
+#### What the defaults do
+
+The defaults are `username-claim: sub`, no `client-id-claim` and `prefer-username-claim: false`. A
+deployment that sets none of them turns every token into a user, which is what a user Bearer token
+needs, and which is the behaviour of every release before these settings were written down. Set
+`client-id-claim` only when the deployment must recognise machine tokens too.
+
+#### Other rules on this path
+
+- A Bearer token is accepted on an API path only. A Bearer token on a webapp path gets HTTP 401. A
+  host that wants Bearer access on a path must declare that path under `apiPaths()`. See
+  [ADR-0011](../adr/0011-oidc-bearer-tokens-on-api-chain-only.md).
+- The token checks are the same for both kinds of token: the time, the issuer, and the audience
+  when `audiences` is set. CSL does not check the client ID of a token and does not refuse a token
+  because of it.
+- A named provider inherits each of the three settings that it does not set from the flat block.
+  See [ADR-0034](../adr/0034-named-providers-inherit-principal-claims.md).
+- See [ADR-0048](../adr/0048-recognising-user-tokens-on-the-api-chains.md) for the analysis behind
+  this table.
 
 ### `redirect-uri` and the redirection endpoint
 
