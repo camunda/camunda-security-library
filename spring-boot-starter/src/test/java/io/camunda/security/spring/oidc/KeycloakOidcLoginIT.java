@@ -7,7 +7,6 @@
  */
 package io.camunda.security.spring.oidc;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
@@ -23,23 +22,12 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import java.net.URI;
-import java.net.URLDecoder;
-import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpClient.Redirect;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.net.http.HttpResponse.BodyHandlers;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.assertj.AssertableWebApplicationContext;
@@ -63,12 +51,6 @@ import org.springframework.security.oauth2.core.OAuth2RefreshToken;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
-import org.testcontainers.utility.MountableFile;
 
 /**
  * The OIDC login of CSL against a real identity provider.
@@ -86,36 +68,13 @@ import org.testcontainers.utility.MountableFile;
  * <p>This test needs Docker. {@code ./mvnw verify} runs it, and {@code ./mvnw verify -DskipITs}
  * leaves it out.
  */
-@Testcontainers
 class KeycloakOidcLoginIT {
 
   private static final String PUBLIC_REGISTRATION = "public-client";
   private static final String CONFIDENTIAL_REGISTRATION = "confidential-client";
-  private static final String USERNAME = "alice";
-  private static final String PASSWORD = "s3cret";
   private static final String CALLBACK_PATH = "/sso-callback";
   private static final String WEBAPP_PATH = "/operate/index.html";
   private static final String OIDC_CHAIN_BEAN = "oidcWebappSecurityFilterChain";
-  private static final Pattern FORM_ACTION = Pattern.compile("action=\"([^\"]+)\"");
-
-  @Container
-  private static final GenericContainer<?> KEYCLOAK =
-      new GenericContainer<>(DockerImageName.parse("quay.io/keycloak/keycloak:26.4"))
-          .withExposedPorts(8080)
-          .withEnv("KC_BOOTSTRAP_ADMIN_USERNAME", "admin")
-          .withEnv("KC_BOOTSTRAP_ADMIN_PASSWORD", "admin")
-          .withCopyFileToContainer(
-              MountableFile.forClasspathResource("keycloak/csl-public-realm.json"),
-              "/opt/keycloak/data/import/csl-public-realm.json")
-          .withCopyFileToContainer(
-              MountableFile.forClasspathResource("keycloak/csl-confidential-realm.json"),
-              "/opt/keycloak/data/import/csl-confidential-realm.json")
-          .withCommand("start-dev", "--import-realm")
-          .waitingFor(
-              Wait.forHttp("/realms/csl-public/.well-known/openid-configuration")
-                  .forPort(8080)
-                  .forStatusCode(200)
-                  .withStartupTimeout(Duration.ofMinutes(3)));
 
   @Test
   void shouldCompleteTheLoginOfAPublicClientWithPkce() {
@@ -243,65 +202,6 @@ class KeycloakOidcLoginIT {
     return byName.values().toArray(new Cookie[0]);
   }
 
-  private static URI signInAtKeycloak(final String authorizationUrl) throws Exception {
-    final var http =
-        HttpClient.newBuilder()
-            .followRedirects(Redirect.NEVER)
-            .connectTimeout(Duration.ofSeconds(10))
-            .build();
-
-    final var loginPage =
-        http.send(
-            HttpRequest.newBuilder(URI.create(authorizationUrl)).GET().build(),
-            BodyHandlers.ofString());
-    assertThat(loginPage.statusCode()).as("Keycloak served no login page").isEqualTo(200);
-
-    final var form =
-        "username="
-            + URLEncoder.encode(USERNAME, UTF_8)
-            + "&password="
-            + URLEncoder.encode(PASSWORD, UTF_8)
-            + "&credentialId=";
-    final var submitted =
-        http.send(
-            HttpRequest.newBuilder(URI.create(loginFormAction(loginPage.body())))
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .header("Cookie", cookiesOf(loginPage))
-                .POST(HttpRequest.BodyPublishers.ofString(form))
-                .build(),
-            BodyHandlers.ofString());
-
-    assertThat(submitted.statusCode())
-        .as("Keycloak did not sign the user in: %s", submitted.body())
-        .isEqualTo(302);
-    return URI.create(submitted.headers().firstValue("Location").orElseThrow());
-  }
-
-  /**
-   * The cookies of a response, as a request header. Keycloak keeps the state of a login in them,
-   * and the {@code CookieManager} of the JDK stores no cookie of a host name without a dot.
-   */
-  private static String cookiesOf(final HttpResponse<String> response) {
-    return response.headers().allValues("set-cookie").stream()
-        .map(header -> header.split(";", 2)[0])
-        .collect(Collectors.joining("; "));
-  }
-
-  private static String loginFormAction(final String html) {
-    final var matcher = FORM_ACTION.matcher(html);
-    assertThat(matcher.find()).as("no form on the Keycloak login page").isTrue();
-    return matcher.group(1).replace("&amp;", "&");
-  }
-
-  private static Map<String, String> queryParameters(final URI uri) {
-    return Arrays.stream(uri.getRawQuery().split("&"))
-        .map(pair -> pair.split("=", 2))
-        .collect(
-            Collectors.toMap(
-                pair -> URLDecoder.decode(pair[0], UTF_8),
-                pair -> pair.length > 1 ? URLDecoder.decode(pair[1], UTF_8) : ""));
-  }
-
   private WebApplicationContextRunner runner() {
     return new WebApplicationContextRunner()
         .withUserConfiguration(ObjectMapperConfig.class, StubPaths.class)
@@ -328,22 +228,16 @@ class KeycloakOidcLoginIT {
       "camunda.security.csrf.enabled=false",
       publicProvider + "type=public",
       publicProvider + "client-id=csl-public",
-      publicProvider + "issuer-uri=" + realmUrl("csl-public"),
+      publicProvider + "issuer-uri=" + KeycloakTestServer.realmUrl(KeycloakTestServer.PUBLIC_REALM),
       publicProvider + "redirect-uri={baseUrl}" + CALLBACK_PATH,
       confidentialProvider + "type=confidential",
       confidentialProvider + "client-id=csl-confidential",
       confidentialProvider + "client-secret=csl-confidential-secret",
-      confidentialProvider + "issuer-uri=" + realmUrl("csl-confidential"),
+      confidentialProvider
+          + "issuer-uri="
+          + KeycloakTestServer.realmUrl(KeycloakTestServer.CONFIDENTIAL_REALM),
       confidentialProvider + "redirect-uri={baseUrl}" + CALLBACK_PATH
     };
-  }
-
-  private static String keycloakBaseUrl() {
-    return "http://" + KEYCLOAK.getHost() + ":" + KEYCLOAK.getMappedPort(8080);
-  }
-
-  private static String realmUrl(final String realm) {
-    return keycloakBaseUrl() + "/realms/" + realm;
   }
 
   /** What one login produced: the session of the user, and the client that holds their tokens. */
@@ -372,13 +266,14 @@ class KeycloakOidcLoginIT {
 
       assertThat(response.getStatus()).isEqualTo(302);
       final var location = response.getRedirectedUrl();
-      assertThat(location).startsWith(keycloakBaseUrl());
+      assertThat(location).startsWith(KeycloakTestServer.baseUrl());
       return location;
     }
 
     /** Signs the user in at Keycloak, hands the code to the application, and reads the session. */
     private LoggedIn signInAndReturn(final String authorizationUrl) throws Exception {
-      final var callbackParameters = queryParameters(signInAtKeycloak(authorizationUrl));
+      final var callbackParameters =
+          KeycloakTestServer.queryParameters(KeycloakTestServer.signIn(authorizationUrl));
       assertThat(callbackParameters).containsKey("code");
 
       final var callback = request("GET", CALLBACK_PATH);
