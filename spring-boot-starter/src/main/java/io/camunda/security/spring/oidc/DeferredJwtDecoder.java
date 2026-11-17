@@ -11,7 +11,6 @@ import java.util.Objects;
 import java.util.function.Supplier;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.JwtDecoderInitializationException;
 import org.springframework.security.oauth2.jwt.JwtException;
 
 /**
@@ -36,14 +35,14 @@ public final class DeferredJwtDecoder implements JwtDecoder {
   }
 
   /**
-   * Reports a failed build as {@code SupplierJwtDecoder} reports it, so the chain answers with a
-   * server error and not with a refused credential.
+   * Reports a failed build as {@link IdentityProviderUnavailableException}, so the chain answers
+   * that the provider is unavailable and not with a refused credential.
    */
   private static JwtDecoder build(final Supplier<JwtDecoder> delegateSupplier) {
     try {
       return delegateSupplier.get();
     } catch (final RuntimeException failed) {
-      throw new JwtDecoderInitializationException(
+      throw new IdentityProviderUnavailableException(
           "Failed to lazily resolve the supplied JwtDecoder instance", failed);
     }
   }

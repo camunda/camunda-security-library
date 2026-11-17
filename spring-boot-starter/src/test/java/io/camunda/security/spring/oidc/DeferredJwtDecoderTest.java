@@ -17,7 +17,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.JwtDecoderInitializationException;
 
 class DeferredJwtDecoderTest {
 
@@ -59,7 +58,7 @@ class DeferredJwtDecoderTest {
               return unused -> TOKEN;
             });
     assertThatThrownBy(() -> decoder.decode("token"))
-        .isInstanceOf(JwtDecoderInitializationException.class)
+        .isInstanceOf(IdentityProviderUnavailableException.class)
         .hasRootCauseInstanceOf(IllegalStateException.class);
 
     // when the provider answers again

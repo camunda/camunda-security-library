@@ -21,6 +21,7 @@ import io.camunda.security.api.model.config.oidc.OidcProvidersConfiguration;
 import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
+import io.camunda.security.spring.oidc.IdentityProviderUnavailableException;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
 import io.camunda.security.spring.oidc.OidcClaimsProviderConfiguration;
 import io.camunda.security.spring.oidc.OidcTestServer;
@@ -48,7 +49,6 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.JwtDecoderInitializationException;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.session.MapSessionRepository;
@@ -102,7 +102,7 @@ class OidcUnreachableIssuerStartupTest {
                 // Same outcome as an identity provider that goes down after startup: the token
                 // cannot be verified, so the request is rejected.
                 assertThatThrownBy(() -> ctx.getBean(JwtDecoder.class).decode("any-token"))
-                    .isInstanceOf(JwtDecoderInitializationException.class));
+                    .isInstanceOf(IdentityProviderUnavailableException.class));
   }
 
   @Test
@@ -136,7 +136,7 @@ class OidcUnreachableIssuerStartupTest {
               final var decoder = ctx.getBean(JwtDecoder.class);
 
               assertThatThrownBy(() -> decoder.decode("any-token"))
-                  .isInstanceOf(JwtDecoderInitializationException.class);
+                  .isInstanceOf(IdentityProviderUnavailableException.class);
 
               // The failed resolution is not cached: the next request resolves the provider and
               // gets as far as rejecting the token itself, without the process being restarted.
@@ -200,7 +200,7 @@ class OidcUnreachableIssuerStartupTest {
               // One scope's unreachable provider is that scope's problem: the other scope gets as
               // far as rejecting the token itself.
               assertThatThrownBy(() -> unreachable.decode("any-token"))
-                  .isInstanceOf(JwtDecoderInitializationException.class);
+                  .isInstanceOf(IdentityProviderUnavailableException.class);
               assertThatThrownBy(() -> healthy.decode("any-token"))
                   .isInstanceOf(BadJwtException.class);
             });
@@ -221,7 +221,7 @@ class OidcUnreachableIssuerStartupTest {
                           "basePath=" + SCOPE_BASE_PATH);
 
               assertThatThrownBy(() -> decoder.decode("any-token"))
-                  .isInstanceOf(JwtDecoderInitializationException.class);
+                  .isInstanceOf(IdentityProviderUnavailableException.class);
 
               // As for the cluster chain, the failed resolution is not cached.
               assertThatThrownBy(() -> decoder.decode("any-token"))
