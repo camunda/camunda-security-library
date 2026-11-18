@@ -166,10 +166,24 @@ jobs:
           # Pick the highest stable semver tag below this release by version order, not by
           # ancestry: release tags live on release/<version> branches and may not be reachable
           # from the branch we release from.
-          prev=$(git tag --list \
-            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
-            | { cat; echo "${RELEASE_VERSION}"; } | sort -V -u \
-            | grep -B1 -Fx "${RELEASE_VERSION}" | head -n1)
+          # How: add the release version to the stable tags, sort by version, and print the
+          # line before it. If no lower tag exists, that line is the release version itself.
+          # grep exits 1 when no tag is stable. The group { ...; echo; } takes the exit status
+          # of its last command, so that exit does not stop the job (bash -eo pipefail).
+          # "|| true" only makes that intent explicit.
+          prev_tag() { # $1 = release version; tag list on stdin
+            { grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || true; echo "$1"; } \
+              | sort -V -u | grep -B1 -Fx "$1" | head -n1
+          }
+
+          # Self-test with the same function, so the check and the test cannot drift apart.
+          # The assignments check the exit status too, not only the output.
+          out=$(printf '1.2.2\n1.10.0\n1.2.10\n' | prev_tag 1.3.0) && [[ "$out" == 1.2.10 ]] \
+            || { echo "::error::prev_tag self-test failed: version order"; exit 1; }
+          out=$(printf '1.3.0-rc1\nfoo\n' | prev_tag 1.3.0) && [[ "$out" == 1.3.0 ]] \
+            || { echo "::error::prev_tag self-test failed: no stable tag"; exit 1; }
+
+          prev=$(git tag --list | prev_tag "${RELEASE_VERSION}")
           [[ "$prev" == "${RELEASE_VERSION}" ]] && prev=""
           echo "prevTag=${prev}" >> "$GITHUB_OUTPUT"
           echo "Previous release tag: ${prev:-<none>}"
@@ -320,15 +334,9 @@ jobs:
               info = {"adrs": [], "adopters_docs": [], "api_classes": []}
               
               try:
-                  # Prefer the tag resolved by the "Resolve previous release tag" step.
-                  # Fall back to git describe, which only works when a tag is an ancestor.
+                  # Resolved by the "Resolve previous release tag" step. Empty means
+                  # there is no previous stable tag.
                   prev_tag = os.environ.get("PREV_TAG", "").strip()
-                  if not prev_tag:
-                      result = subprocess.run(
-                          ["git", "describe", "--tags", "--abbrev=0", release_tag + "^"],
-                          capture_output=True, text=True
-                      )
-                      prev_tag = result.stdout.strip() if result.returncode == 0 else ""
                   if not prev_tag:
                       print("Warning: no previous release tag found; skipping structural diff.")
                       return info
@@ -550,7 +558,7 @@ jobs:
               sys.exit(0)
           EOF
 
-      - name: Open mergeback PR
+      - name: Open mergeback PR, trigger CI, enable auto-merge
         if: ${{ steps.resolve.outputs.mode == 'create' && !inputs.dryRun }}
         env:
           BASE_BRANCH: ${{ steps.resolve.outputs.baseBranch }}
@@ -601,12 +609,21 @@ jobs:
           # required check would never report. workflow_dispatch is exempt from that
           # rule: dispatch the build on the release branch, and its check attaches to
           # the PR head commit.
-          gh workflow run build.yml --repo "${{ github.repository }}" --ref "${RELEASE_BRANCH}"
+          if run_out=$(gh workflow run build.yml --repo "${{ github.repository }}" --ref "${RELEASE_BRANCH}" 2>&1); then
+            echo "::notice::Dispatched the build on ${RELEASE_BRANCH}. ${run_out}"
+          else
+            echo "::warning::Could not dispatch the build on ${RELEASE_BRANCH}: ${run_out}"
+          fi
+          echo "::notice::If the required check does not appear on ${pr_url}, close and reopen the PR, or run the build workflow on ${RELEASE_BRANCH} by hand."
 
-          # Merge commit, not squash or rebase: the release tag lives on the release
-          # branch, and it must stay reachable from the base branch so later tooling
-          # (git describe, release notes) finds it as the previous tag.
-          gh pr merge "${pr_url}" --repo "${{ github.repository }}" --auto --merge
+          # Merge commit, not squash or rebase: the release tag lives on the release branch
+          # and must stay reachable from the base branch.
+          # Needs: Settings > "Allow merge commits", and the main ruleset must require an
+          # approving review, or auto-merge merges as soon as the build is green.
+          # A failure here only warns: the release is already published at this point.
+          if ! merge_out=$(gh pr merge "${pr_url}" --repo "${{ github.repository }}" --auto --merge 2>&1); then
+            echo "::warning::Could not enable auto-merge on ${pr_url}: ${merge_out}. Check Settings > Allow merge commits, then merge the PR with a merge commit, not squash or rebase."
+          fi
 
       - name: Cleanup Maven Central GPG Key
         if: always()
