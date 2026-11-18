@@ -8,10 +8,11 @@
 #   RELEASE_VERSION   version string used in the label (e.g. 0.1.0)
 #
 # Optional:
-#   PREV_TAG          previous release tag to scope the range from. If unset,
-#                     it is resolved via `git describe --tags --abbrev=0 "${RELEASE_TAG}^"`.
+#   PREV_TAG          previous stable release tag. The release workflow always
+#                     passes it. If it is empty, the generate-notes API chooses
+#                     the start of the range.
 #
-# Requires: gh CLI (authenticated via GH_TOKEN), git.
+# Requires: gh CLI (authenticated via GH_TOKEN).
 set -euo pipefail
 
 : "${REPO:?REPO is required}"
@@ -27,9 +28,7 @@ gh label create "${LABEL}" \
   --description "Marks an issue as being completely or in parts released in ${RELEASE_VERSION}" \
   --force
 
-if [[ -z "${PREV_TAG:-}" ]]; then
-  PREV_TAG=$(git describe --tags --abbrev=0 "${RELEASE_TAG}^" 2>/dev/null || true)
-fi
+PREV_TAG="${PREV_TAG:-}"
 
 # Use the releases/generate-notes API to get the exact set of PRs in this
 # release's tag range — the same range that --generate-notes uses for the
