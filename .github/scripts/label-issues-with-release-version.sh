@@ -15,6 +15,7 @@
 set -euo pipefail
 
 : "${REPO:?REPO is required}"
+export REPO  # read by jq as env.REPO
 : "${RELEASE_TAG:?RELEASE_TAG is required}"
 : "${RELEASE_VERSION:?RELEASE_VERSION is required}"
 
@@ -60,6 +61,8 @@ declare -A labeled_issues
 failed_prs=0
 
 for pr_number in ${pr_numbers}; do
+  # Keep only issues from this repo: a PR can close issues in other repos, whose numbers
+  # would otherwise label an unrelated issue here. REPO is exported, so jq reads env.REPO.
   echo "Resolving closing issue references for PR #${pr_number}..."
   if ! closing_issues=$(gh api graphql \
     -f query='
@@ -69,6 +72,9 @@ for pr_number in ${pr_numbers}; do
             closingIssuesReferences(first: 100) {
               nodes {
                 number
+                repository {
+                  nameWithOwner
+                }
               }
             }
           }
@@ -77,7 +83,7 @@ for pr_number in ${pr_numbers}; do
     -F owner="${REPO%%/*}" \
     -F repo="${REPO##*/}" \
     -F pr="${pr_number}" \
-    --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[].number'); then
+    --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[] | select(.repository.nameWithOwner == env.REPO) | .number'); then
     echo "::warning::Failed to fetch closing issues for PR #${pr_number} — skipping."
     ((failed_prs++)) || true
     continue
