@@ -24,11 +24,12 @@ Conventional Commits format: `<type>(<scope>): <subject>`
 - Required before merge: CI checks green, no unresolved comments
 - Squash-merge to keep main history clean
 - Exception: release mergeback PRs (`chore(release): merge back ...`) use a merge commit. The release workflow sets this with auto-merge. Do not squash or rebase them. The release tag must stay reachable from `main`.
+- The mergeback auto-merge needs two repository settings. "Allow merge commits" must be on, and the `main` ruleset must require one approving review. Without the first, the release workflow only shows a warning, and you must merge the PR by hand with a merge commit. Without the second, the PR merges with no review.
 - Link relevant issues in the PR description
 
 ## Releases
 
-The release notes cover the range from the previous stable semver tag to the new tag. For example, the notes for 1.3.0 list the changes since 1.2.2. The release workflow finds the previous tag by version order, not by git history.
+The release notes cover the range from the previous stable semver tag to the new tag. For example, the notes for 1.3.0 list the changes since 1.2.2. The release workflow finds the previous tag by version order, not by git history. The tags live on the release branches. Earlier mergeback PRs were squashed or rebased, so older tags are not reachable from `main`.
 
 ## Architecture Decision Records
 
