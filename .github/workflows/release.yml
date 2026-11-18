@@ -52,6 +52,7 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
+      actions: write  # dispatch the build workflow on the release branch (gh workflow run)
       # Required for GitHub Models API access (used in "Generate AI release summary" step)
       # See: https://docs.github.com/en/github-models/prototyping-with-ai-models
       models: read
@@ -159,6 +160,20 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve previous release tag
+        id: prev
+        run: |
+          # Pick the highest stable semver tag below this release by version order, not by
+          # ancestry: release tags live on release/<version> branches and may not be reachable
+          # from the branch we release from.
+          prev=$(git tag --list \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            | { cat; echo "${RELEASE_VERSION}"; } | sort -V -u \
+            | grep -B1 -Fx "${RELEASE_VERSION}" | head -n1)
+          [[ "$prev" == "${RELEASE_VERSION}" ]] && prev=""
+          echo "prevTag=${prev}" >> "$GITHUB_OUTPUT"
+          echo "Previous release tag: ${prev:-<none>}"
+
       - name: Git User Setup
         run: |
           git config --global user.email "github-actions[release]@users.noreply.github.com"
@@ -256,17 +271,26 @@ jobs:
         if: ${{ !inputs.dryRun }}
         env:
           RELEASE_BRANCH: ${{ steps.resolve.outputs.releaseBranch }}
+          PREV_TAG: ${{ steps.prev.outputs.prevTag }}
         run: |
+          # Name the start tag explicitly: GitHub cannot find it by ancestry
+          # because release tags are not reachable from the base branch.
+          args=()
+          if [[ -n "${PREV_TAG}" ]]; then
+            args+=(--notes-start-tag "${PREV_TAG}")
+          fi
           gh release create "${RELEASE_TAG}" \
             --repo "${{ github.repository }}" \
             --target "${RELEASE_BRANCH}" \
             --title "${RELEASE_VERSION}" \
-            --generate-notes
+            --generate-notes \
+            "${args[@]}"
 
       - name: Label issues delivered in this release
         if: ${{ !inputs.dryRun }}
         env:
           REPO: ${{ github.repository }}
+          PREV_TAG: ${{ steps.prev.outputs.prevTag }}
         run: .github/scripts/label-issues-with-release-version.sh
 
       - name: Generate AI release summary
@@ -275,6 +299,8 @@ jobs:
         # is accessible with GITHUB_TOKEN for repos that have GitHub Models enabled.
         # Falls back silently to the auto-generated notes if the API call fails
         # (rate limit, token permissions, network) so the release is never blocked.
+        env:
+          PREV_TAG: ${{ steps.prev.outputs.prevTag }}
         run: |
           python3 - <<'EOF'
           import json, os, subprocess, sys, tempfile, urllib.request, urllib.error
@@ -294,13 +320,18 @@ jobs:
               info = {"adrs": [], "adopters_docs": [], "api_classes": []}
               
               try:
-                  # Get all commits since the previous tag
-                  # Try to find the previous tag before this release
-                  result = subprocess.run(
-                      ["git", "describe", "--tags", "--abbrev=0", release_tag + "^"],
-                      capture_output=True, text=True
-                  )
-                  prev_tag = result.stdout.strip() if result.returncode == 0 else "HEAD~100"
+                  # Prefer the tag resolved by the "Resolve previous release tag" step.
+                  # Fall back to git describe, which only works when a tag is an ancestor.
+                  prev_tag = os.environ.get("PREV_TAG", "").strip()
+                  if not prev_tag:
+                      result = subprocess.run(
+                          ["git", "describe", "--tags", "--abbrev=0", release_tag + "^"],
+                          capture_output=True, text=True
+                      )
+                      prev_tag = result.stdout.strip() if result.returncode == 0 else ""
+                  if not prev_tag:
+                      print("Warning: no previous release tag found; skipping structural diff.")
+                      return info
                   
                   # Get added/modified/renamed files between previous tag and current release.
                   # Using --diff-filter=AMR excludes deleted files so removed ADRs/docs/API classes
@@ -535,8 +566,10 @@ jobs:
 
           Tag: [\`${RELEASE_TAG}\`](https://github.com/${{ github.repository }}/releases/tag/${RELEASE_TAG})
 
-          > **Note:** PRs opened via \`GITHUB_TOKEN\` do not trigger workflow runs.
-          > To run CI on this PR, push an empty commit (\`git commit --allow-empty\`) or close-and-reopen the PR.
+          > **Note:** The release workflow dispatches the \`build\` workflow on \`${RELEASE_BRANCH}\`,
+          > so the required check runs on this PR.
+          > Auto-merge uses a merge commit on purpose. It keeps the release tag reachable from
+          > \`${BASE_BRANCH}\`. Do not switch it to squash or rebase.
           EOF
           )
 
@@ -553,16 +586,27 @@ jobs:
             --json number,url \
             --jq '.[0].url // empty')
           if [[ -n "$existing" ]]; then
-            echo "Mergeback PR already exists: ${existing} — skipping creation."
-            exit 0
+            echo "Mergeback PR already exists: ${existing} — reusing it."
+            pr_url="${existing}"
+          else
+            pr_url=$(gh pr create \
+              --repo "${{ github.repository }}" \
+              --base "${BASE_BRANCH}" \
+              --head "${RELEASE_BRANCH}" \
+              --title "chore(release): merge back ${RELEASE_VERSION} into ${BASE_BRANCH}" \
+              --body "${body}")
           fi
 
-          gh pr create \
-            --repo "${{ github.repository }}" \
-            --base "${BASE_BRANCH}" \
-            --head "${RELEASE_BRANCH}" \
-            --title "chore(release): merge back ${RELEASE_VERSION} into ${BASE_BRANCH}" \
-            --body "${body}"
+          # PRs created with GITHUB_TOKEN do not trigger pull_request runs, so the
+          # required check would never report. workflow_dispatch is exempt from that
+          # rule: dispatch the build on the release branch, and its check attaches to
+          # the PR head commit.
+          gh workflow run build.yml --repo "${{ github.repository }}" --ref "${RELEASE_BRANCH}"
+
+          # Merge commit, not squash or rebase: the release tag lives on the release
+          # branch, and it must stay reachable from the base branch so later tooling
+          # (git describe, release notes) finds it as the previous tag.
+          gh pr merge "${pr_url}" --repo "${{ github.repository }}" --auto --merge
 
       - name: Cleanup Maven Central GPG Key
         if: always()

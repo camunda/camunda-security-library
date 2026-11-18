@@ -23,7 +23,12 @@ Conventional Commits format: `<type>(<scope>): <subject>`
 - PR title must follow the Conventional Commits format
 - Required before merge: CI checks green, no unresolved comments
 - Squash-merge to keep main history clean
+- Exception: release mergeback PRs (`chore(release): merge back ...`) use a merge commit. The release workflow sets this with auto-merge. Do not squash or rebase them. The release tag must stay reachable from `main`.
 - Link relevant issues in the PR description
+
+## Releases
+
+The release notes cover the range from the previous stable semver tag to the new tag. For example, the notes for 1.3.0 list the changes since 1.2.2. The release workflow finds the previous tag by version order, not by git history.
 
 ## Architecture Decision Records
 

@@ -8,8 +8,9 @@
 #   RELEASE_VERSION   version string used in the label (e.g. 0.1.0)
 #
 # Optional:
-#   PREV_TAG          previous release tag to scope the range from. If unset,
-#                     it is resolved via `git describe --tags --abbrev=0 "${RELEASE_TAG}^"`.
+#   PREV_TAG          previous release tag to scope the range from. The release
+#                     workflow passes it. If unset, the script falls back to
+#                     `git describe --tags --abbrev=0 "${RELEASE_TAG}^"`.
 #
 # Requires: gh CLI (authenticated via GH_TOKEN), git.
 set -euo pipefail
