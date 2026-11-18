@@ -275,16 +275,19 @@ jobs:
         run: |
           # Name the start tag explicitly: GitHub cannot find it by ancestry
           # because release tags are not reachable from the base branch.
-          args=()
+          args=(-f tag_name="${RELEASE_TAG}" -f target_commitish="${RELEASE_BRANCH}")
           if [[ -n "${PREV_TAG}" ]]; then
-            args+=(--notes-start-tag "${PREV_TAG}")
+            args+=(-f previous_tag_name="${PREV_TAG}")
           fi
+          # GitHub groups generated notes only by PR label, and our PRs carry none.
+          # Group them by Conventional Commits title prefix instead.
+          gh api "repos/${{ github.repository }}/releases/generate-notes" "${args[@]}" --jq '.body' \
+            | python3 .github/scripts/group_release_notes.py > "${RUNNER_TEMP}/release-notes.md"
           gh release create "${RELEASE_TAG}" \
             --repo "${{ github.repository }}" \
             --target "${RELEASE_BRANCH}" \
             --title "${RELEASE_VERSION}" \
-            --generate-notes \
-            "${args[@]}"
+            --notes-file "${RUNNER_TEMP}/release-notes.md"
 
       - name: Label issues delivered in this release
         if: ${{ !inputs.dryRun }}
