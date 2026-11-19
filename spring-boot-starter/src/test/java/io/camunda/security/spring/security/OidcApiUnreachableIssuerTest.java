@@ -111,7 +111,9 @@ class OidcApiUnreachableIssuerTest {
               assertThat(logs.list).hasSize(1);
               final var event = logs.list.get(0);
               assertThat(event.getLevel()).isEqualTo(Level.WARN);
-              assertThat(event.getFormattedMessage()).contains("Identity provider is unavailable");
+              assertThat(event.getFormattedMessage())
+                  .contains("Identity provider is unavailable")
+                  .contains("Failed to lazily resolve the supplied JwtDecoder instance: ");
               assertThat(event.getThrowableProxy()).isNull();
             });
   }

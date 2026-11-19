@@ -42,15 +42,6 @@ public final class LoggingAuthenticationFailureHandler implements Authentication
       final HttpServletResponse response,
       final AuthenticationException exception)
       throws IOException, ServletException {
-    if (exception.getCause() instanceof IdentityProviderUnavailableException unavailable) {
-      LOG.warn(
-          "{} while authenticating a bearer token: {}",
-          IDENTITY_PROVIDER_UNAVAILABLE,
-          rootCauseMessage(unavailable));
-      response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE, IDENTITY_PROVIDER_UNAVAILABLE);
-      return;
-    }
-
     // AuthenticationServiceException isn't handled by default failure handlers — without this
     // wrapper it would bubble up to Tomcat and produce a noisy ERROR log.
     if (!AuthenticationServiceException.class.isAssignableFrom(exception.getClass())) {
@@ -58,17 +49,20 @@ public final class LoggingAuthenticationFailureHandler implements Authentication
       return;
     }
 
+    // Spring wraps the decoder's JwtException into the AuthenticationServiceException, so the
+    // decoder's own exception is its cause.
+    if (exception.getCause() instanceof final IdentityProviderUnavailableException unavailable) {
+      LOG.warn(
+          "{} while authenticating a bearer token: {}",
+          IDENTITY_PROVIDER_UNAVAILABLE,
+          unavailable.getMessage());
+      response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE, IDENTITY_PROVIDER_UNAVAILABLE);
+      return;
+    }
+
     LOG.warn("A technical authentication problem occurred", exception);
 
     request.setAttribute(RequestDispatcher.ERROR_EXCEPTION, exception);
     response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-  }
-
-  private static String rootCauseMessage(final Throwable failure) {
-    Throwable root = failure;
-    while (root.getCause() != null && root.getCause() != root) {
-      root = root.getCause();
-    }
-    return root.getMessage();
   }
 }

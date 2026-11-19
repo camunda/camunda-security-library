@@ -43,7 +43,8 @@ public final class DeferredJwtDecoder implements JwtDecoder {
       return delegateSupplier.get();
     } catch (final RuntimeException failed) {
       throw new IdentityProviderUnavailableException(
-          "Failed to lazily resolve the supplied JwtDecoder instance", failed);
+          "Failed to lazily resolve the supplied JwtDecoder instance: " + failed.getMessage(),
+          failed);
     }
   }
 }

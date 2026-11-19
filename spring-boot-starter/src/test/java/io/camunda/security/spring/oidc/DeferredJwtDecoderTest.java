@@ -59,6 +59,7 @@ class DeferredJwtDecoderTest {
             });
     assertThatThrownBy(() -> decoder.decode("token"))
         .isInstanceOf(IdentityProviderUnavailableException.class)
+        .hasMessageContaining("unreachable")
         .hasRootCauseInstanceOf(IllegalStateException.class);
 
     // when the provider answers again
