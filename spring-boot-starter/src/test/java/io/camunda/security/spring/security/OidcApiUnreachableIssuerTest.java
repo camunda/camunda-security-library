@@ -18,6 +18,7 @@ import io.camunda.security.core.port.out.SecurityPathPort;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import io.camunda.security.spring.handler.AuthFailureHandlerConfiguration;
 import io.camunda.security.spring.handler.LoggingAuthenticationFailureHandler;
+import io.camunda.security.spring.oidc.DeferredOidcResolution;
 import io.camunda.security.spring.oidc.OidcBeansConfiguration;
 import io.camunda.security.spring.oidc.OidcTestServer;
 import io.camunda.security.spring.oidc.OidcWebappClientBeansConfiguration;
@@ -48,22 +49,30 @@ class OidcApiUnreachableIssuerTest {
   private static final String API_CHAIN_BEAN = "oidcApiSecurityFilterChain";
 
   private OidcTestServer server;
+  private OidcTestServer otherServer;
   private Logger handlerLogger;
+  private Logger resolutionLogger;
   private ListAppender<ILoggingEvent> logs;
 
   @BeforeEach
   void attachAppender() {
     handlerLogger = (Logger) LoggerFactory.getLogger(LoggingAuthenticationFailureHandler.class);
+    resolutionLogger = (Logger) LoggerFactory.getLogger(DeferredOidcResolution.class);
     logs = new ListAppender<>();
     logs.start();
     handlerLogger.addAppender(logs);
+    resolutionLogger.addAppender(logs);
   }
 
   @AfterEach
   void cleanUp() {
     handlerLogger.detachAppender(logs);
+    resolutionLogger.detachAppender(logs);
     if (server != null) {
       server.stop();
+    }
+    if (otherServer != null) {
+      otherServer.stop();
     }
   }
 
@@ -91,7 +100,7 @@ class OidcApiUnreachableIssuerTest {
   }
 
   @Test
-  void shouldLogOneWarnWithoutStackTraceWhileTheIssuerIsUnreachable() throws Exception {
+  void shouldReportTheOutageOnceAtWarnWhileTheIssuerIsUnreachable() throws Exception {
     // given an issuer that does not answer discovery
     server = OidcTestServer.startRsa("key");
     server.failNextDiscoveryRequests(1);
@@ -107,14 +116,47 @@ class OidcApiUnreachableIssuerTest {
                   new MockHttpServletResponse(),
                   new MockFilterChain());
 
-              // then one WARN names the cause, and it has no stack trace
-              assertThat(logs.list).hasSize(1);
-              final var event = logs.list.get(0);
-              assertThat(event.getLevel()).isEqualTo(Level.WARN);
-              assertThat(event.getFormattedMessage())
-                  .contains("Identity provider is unavailable")
-                  .contains("Failed to lazily resolve the supplied JwtDecoder instance: ");
-              assertThat(event.getThrowableProxy()).isNull();
+              // then the rate-limited resolution log is the one WARN, and the handler adds none
+              final var warnings =
+                  logs.list.stream().filter(event -> event.getLevel() == Level.WARN).toList();
+              assertThat(warnings).hasSize(1);
+              assertThat(warnings.get(0).getLoggerName())
+                  .isEqualTo(DeferredOidcResolution.class.getName());
+            });
+  }
+
+  @Test
+  void shouldAnswer503WithoutLeakingAnExceptionWhenOneOfSeveralIssuersIsUnreachable()
+      throws Exception {
+    // given two providers, one of which does not answer discovery
+    server = OidcTestServer.startRsa("key");
+    otherServer = OidcTestServer.startRsa("other-key");
+    server.failNextDiscoveryRequests(1);
+
+    multiProviderRunner(server.issuerUri(), otherServer.issuerUri())
+        .run(
+            ctx -> {
+              final var proxy = proxyOf(ctx.getBean(API_CHAIN_BEAN, SecurityFilterChain.class));
+              final var unavailable = new MockHttpServletResponse();
+
+              // when a token of the unreachable provider arrives
+              proxy.doFilter(
+                  bearerRequest(server.sign(server.issuerUri())),
+                  unavailable,
+                  new MockFilterChain());
+
+              // then the chain answers 503 and no exception escapes it
+              assertThat(unavailable.getStatus()).isEqualTo(503);
+              assertThat(unavailable.getErrorMessage())
+                  .isEqualTo("Identity provider is unavailable");
+
+              // when the provider answers and the same request arrives again
+              final var retried = new MockHttpServletResponse();
+              proxy.doFilter(
+                  bearerRequest(server.sign(server.issuerUri())), retried, new MockFilterChain());
+
+              // then discovery ran again and the request no longer fails as unavailable
+              assertThat(retried.getStatus()).isEqualTo(200);
             });
   }
 
@@ -155,6 +197,29 @@ class OidcApiUnreachableIssuerTest {
   }
 
   private static WebApplicationContextRunner runner(final String issuerUri) {
+    return baseRunner()
+        .withPropertyValues(
+            "camunda.security.authentication.oidc.client-id=test-client",
+            "camunda.security.authentication.oidc.client-secret=secret",
+            "camunda.security.authentication.oidc.redirect-uri=http://localhost/sso-callback",
+            "camunda.security.authentication.oidc.issuer-uri=" + issuerUri);
+  }
+
+  private static WebApplicationContextRunner multiProviderRunner(
+      final String firstIssuerUri, final String secondIssuerUri) {
+    return baseRunner()
+        .withPropertyValues(
+            "camunda.security.authentication.providers.oidc.first.client-id=first-client",
+            "camunda.security.authentication.providers.oidc.first.client-secret=secret",
+            "camunda.security.authentication.providers.oidc.first.redirect-uri=http://localhost/sso-callback",
+            "camunda.security.authentication.providers.oidc.first.issuer-uri=" + firstIssuerUri,
+            "camunda.security.authentication.providers.oidc.second.client-id=second-client",
+            "camunda.security.authentication.providers.oidc.second.client-secret=secret",
+            "camunda.security.authentication.providers.oidc.second.redirect-uri=http://localhost/sso-callback",
+            "camunda.security.authentication.providers.oidc.second.issuer-uri=" + secondIssuerUri);
+  }
+
+  private static WebApplicationContextRunner baseRunner() {
     return new WebApplicationContextRunner()
         .withUserConfiguration(ObjectMapperConfig.class, StubPaths.class)
         .withConfiguration(
@@ -166,12 +231,7 @@ class OidcApiUnreachableIssuerTest {
                 OidcBeansConfiguration.class,
                 OidcWebappClientBeansConfiguration.class,
                 ScopedOidcInfrastructureConfiguration.class))
-        .withPropertyValues(
-            "camunda.security.authentication.method=oidc",
-            "camunda.security.authentication.oidc.client-id=test-client",
-            "camunda.security.authentication.oidc.client-secret=secret",
-            "camunda.security.authentication.oidc.redirect-uri=http://localhost/sso-callback",
-            "camunda.security.authentication.oidc.issuer-uri=" + issuerUri);
+        .withPropertyValues("camunda.security.authentication.method=oidc");
   }
 
   @Configuration

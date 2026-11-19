@@ -408,6 +408,11 @@ public class OidcAccessTokenDecoderFactory {
    * {@code RemoteJWKSet} for I/O errors); those are infrastructure faults and should keep their
    * {@link JwtException} mapping so an IdP outage surfaces as a 500 rather than a misleading 401.
    *
+   * <p>A failure caused by {@link UnresolvedProviderKeySourceException} is the exception to that:
+   * the issuer's provider could not be reached to resolve its registration, so the wrap reports it
+   * as {@link IdentityProviderUnavailableException} and the chain answers that the provider is
+   * unavailable.
+   *
    * <p>{@link NimbusJwtDecoder} catches {@link KeySourceException} (a {@code JOSEException}) and
    * rewraps it as a {@link JwtException} rather than a {@link BadJwtException}; this wrap restores
    * the correct response code at the boundary every adopter of CSL consumes, without disguising
@@ -422,6 +427,9 @@ public class OidcAccessTokenDecoderFactory {
       } catch (final JwtException ex) {
         if (ex.getCause() instanceof BadJwtKeySourceException) {
           throw new BadJwtException(ex.getMessage(), ex.getCause());
+        }
+        if (ex.getCause() instanceof final UnresolvedProviderKeySourceException unresolved) {
+          throw new IdentityProviderUnavailableException(unresolved.getMessage(), unresolved);
         }
         throw ex;
       }

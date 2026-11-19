@@ -50,9 +50,10 @@ public final class LoggingAuthenticationFailureHandler implements Authentication
     }
 
     // Spring wraps the decoder's JwtException into the AuthenticationServiceException, so the
-    // decoder's own exception is its cause.
+    // decoder's own exception is its cause. The resolution that failed has already reported the
+    // outage at WARN, rate-limited per provider, so a request logs it at DEBUG only.
     if (exception.getCause() instanceof final IdentityProviderUnavailableException unavailable) {
-      LOG.warn(
+      LOG.debug(
           "{} while authenticating a bearer token: {}",
           IDENTITY_PROVIDER_UNAVAILABLE,
           unavailable.getMessage());

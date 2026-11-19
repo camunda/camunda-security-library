@@ -59,7 +59,6 @@ class DeferredJwtDecoderTest {
             });
     assertThatThrownBy(() -> decoder.decode("token"))
         .isInstanceOf(IdentityProviderUnavailableException.class)
-        .hasMessageContaining("unreachable")
         .hasRootCauseInstanceOf(IllegalStateException.class);
 
     // when the provider answers again
@@ -68,6 +67,23 @@ class DeferredJwtDecoderTest {
     // then the deployment recovers without a restart
     assertThat(jwt).isEqualTo(TOKEN);
     assertThat(builds).hasValue(2);
+  }
+
+  @Test
+  void shouldNameTheFailureWithoutQuotingItsMessage() {
+    // given a build that fails with a message that quotes an endpoint with credentials
+    final var decoder =
+        new DeferredJwtDecoder(
+            () -> {
+              throw new IllegalStateException("GET https://user:s3cret@idp.example.com/discovery");
+            });
+
+    // when the decoder is used
+    // then the exception names the failure, and the message of the failure stays out of it
+    assertThatThrownBy(() -> decoder.decode("token"))
+        .isInstanceOf(IdentityProviderUnavailableException.class)
+        .hasMessageContaining("IllegalStateException")
+        .hasMessageNotContaining("s3cret");
   }
 
   @Test
