@@ -9,7 +9,6 @@ package io.camunda.security.spring.handler;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import ch.qos.logback.classic.Level;
@@ -21,6 +20,10 @@ import io.camunda.security.spring.oidc.IdentityProviderUnavailableException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -31,11 +34,11 @@ import org.springframework.security.web.authentication.AuthenticationFailureHand
  * Covers how the failure handler answers a decoder that reports an unavailable identity provider,
  * and what it writes to the log for it.
  */
+@ExtendWith(MockitoExtension.class)
 class LoggingAuthenticationFailureHandlerTest {
 
-  private final AuthenticationFailureHandler delegate = mock(AuthenticationFailureHandler.class);
-  private final LoggingAuthenticationFailureHandler handler =
-      new LoggingAuthenticationFailureHandler(delegate);
+  @Mock private AuthenticationFailureHandler delegate;
+  @InjectMocks private LoggingAuthenticationFailureHandler handler;
   private Logger handlerLogger;
   private Level originalLevel;
   private ListAppender<ILoggingEvent> logs;
