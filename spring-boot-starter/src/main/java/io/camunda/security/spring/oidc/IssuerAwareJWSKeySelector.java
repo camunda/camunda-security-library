@@ -129,7 +129,9 @@ public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelecto
       clientRegistration = issuerRegistrations.forIssuer(issuer);
     } catch (final RuntimeException unresolved) {
       throw new UnresolvedProviderKeySourceException(
-          ERROR_UNRESOLVED_ISSUER.formatted(issuer) + " " + FailureDescription.describe(unresolved),
+          ERROR_UNRESOLVED_ISSUER.formatted(UrlRedaction.redact(issuer))
+              + " "
+              + FailureDescription.describe(unresolved),
           unresolved);
     }
     if (clientRegistration == null) {

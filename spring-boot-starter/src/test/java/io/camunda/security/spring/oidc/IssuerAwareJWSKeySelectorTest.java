@@ -124,7 +124,7 @@ class IssuerAwareJWSKeySelectorTest {
   }
 
   @Test
-  void shouldThrowKeySourceExceptionWhenTheProviderOfTheIssuerCannotBeResolved() {
+  void shouldThrowUnresolvedProviderKeySourceExceptionWhenTheProviderOfTheIssuerCannotBeResolved() {
     // given a configured provider that does not answer
     final var registrations =
         IssuerRegistrations.ofConfiguration(
@@ -137,13 +137,37 @@ class IssuerAwareJWSKeySelectorTest {
     final var claims = new JWTClaimsSet.Builder().issuer("https://known-issuer").build();
     final var header = new JWSHeader(JWSAlgorithm.RS256);
 
-    // when / then the provider is the reason and not the token, so the failure keeps the plain
-    // KeySourceException, which the caller answers with a server error, and the marker subtype
+    // when / then the provider is the reason and not the token, so the failure carries the marker
+    // that the caller answers with "provider unavailable", and the BadJwtKeySourceException marker
     // stays with the tokens of an issuer no provider declares
     assertThatThrownBy(() -> selector.selectKeys(header, claims, null))
-        .isInstanceOf(KeySourceException.class)
+        .isInstanceOf(UnresolvedProviderKeySourceException.class)
         .isNotInstanceOf(BadJwtKeySourceException.class)
         .hasMessageContaining("https://known-issuer");
+  }
+
+  @Test
+  void shouldKeepTheCredentialsOfTheIssuerOutOfTheMessageOfAnUnresolvedProvider() {
+    // given a configured issuer that carries user-info and a query secret, and does not answer
+    final var issuer = "https://user:s3cret@known-issuer/realm?token=abc123";
+    final var registrations =
+        IssuerRegistrations.ofConfiguration(
+            Map.of("provider-a", providerWithIssuer(issuer)),
+            registrationId -> {
+              throw new IllegalArgumentException("GET " + issuer);
+            });
+    final var selector =
+        new IssuerAwareJWSKeySelector(registrations, jwsKeySelectorFactory, Map.of());
+    final var claims = new JWTClaimsSet.Builder().issuer(issuer).build();
+    final var header = new JWSHeader(JWSAlgorithm.RS256);
+
+    // when / then the message names the provider by its redacted issuer and quotes nothing of the
+    // failure below it
+    assertThatThrownBy(() -> selector.selectKeys(header, claims, null))
+        .isInstanceOf(UnresolvedProviderKeySourceException.class)
+        .hasMessageContaining("known-issuer")
+        .hasMessageNotContaining("s3cret")
+        .hasMessageNotContaining("abc123");
   }
 
   @Test
