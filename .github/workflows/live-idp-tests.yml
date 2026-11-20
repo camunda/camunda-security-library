@@ -1,0 +1,115 @@
+name: live-idp-tests
+
+# The live identity provider tests call real Entra and Auth0 tenants, so they never run on a pull
+# request: a fork has no credentials, and an outage at the provider would block merges. They run
+# on a schedule and on demand instead, which is what the Engineering DRI asked for in
+# https://github.com/camunda/camunda-security-library/issues/811#issuecomment-6919094595
+#
+# The job runs the whole build rather than the two live tests alone. The live tests skip
+# themselves when the tenant settings are absent, so the same command is what a developer runs,
+# and a weekly full verification costs little and catches more.
+
+on:
+  schedule:
+    # Every Monday at 05:00 UTC, before the European working day.
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: live-idp-tests
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  live-idp-tests:
+    name: Verify against real Entra and Auth0 tenants
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write # mint a GitHub OIDC token for Vault JWT auth
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Java 21
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '25.0.5+8.0.LTS'
+          cache: maven
+
+      - name: Import the tenant settings
+        id: tenants
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4.0.0
+        with:
+          url: ${{ secrets.VAULT_ADDR }}
+          method: jwt
+          role: ${{ secrets.VAULT_JWT_ROLE }}
+          path: ${{ secrets.VAULT_JWT_PATH }}
+          jwtGithubAudience: ${{ secrets.VAULT_JWT_AUDIENCE }}
+          exportEnv: false
+          secrets: |
+            secret/data/products/camunda-security-library/live-idp-tests ENTRA_TENANT_ID;
+            secret/data/products/camunda-security-library/live-idp-tests ENTRA_CLIENT_ID;
+            secret/data/products/camunda-security-library/live-idp-tests ENTRA_CLIENT_SECRET;
+            secret/data/products/camunda-security-library/live-idp-tests ENTRA_REFRESH_TOKEN;
+            secret/data/products/camunda-security-library/live-idp-tests AUTH0_DOMAIN;
+            secret/data/products/camunda-security-library/live-idp-tests AUTH0_CLIENT_ID;
+            secret/data/products/camunda-security-library/live-idp-tests AUTH0_CLIENT_SECRET;
+            secret/data/products/camunda-security-library/live-idp-tests AUTH0_AUDIENCE;
+            secret/data/products/camunda-security-library/live-idp-tests AUTH0_TEST_USER;
+            secret/data/products/camunda-security-library/live-idp-tests AUTH0_TEST_USER_PASSWORD;
+
+      # A silent skip is the failure mode to fear here. The live tests skip themselves when a
+      # setting is absent, so a missing secret would leave this job green while nothing was
+      # measured. Fail before the build instead, and name the variable that is missing.
+      - name: Check the tenant settings arrived
+        env:
+          CSL_ENTRA_TENANT_ID: ${{ steps.tenants.outputs.ENTRA_TENANT_ID }}
+          CSL_ENTRA_CLIENT_ID: ${{ steps.tenants.outputs.ENTRA_CLIENT_ID }}
+          CSL_ENTRA_CLIENT_SECRET: ${{ steps.tenants.outputs.ENTRA_CLIENT_SECRET }}
+          CSL_ENTRA_REFRESH_TOKEN: ${{ steps.tenants.outputs.ENTRA_REFRESH_TOKEN }}
+          CSL_AUTH0_DOMAIN: ${{ steps.tenants.outputs.AUTH0_DOMAIN }}
+          CSL_AUTH0_CLIENT_ID: ${{ steps.tenants.outputs.AUTH0_CLIENT_ID }}
+          CSL_AUTH0_CLIENT_SECRET: ${{ steps.tenants.outputs.AUTH0_CLIENT_SECRET }}
+          CSL_AUTH0_AUDIENCE: ${{ steps.tenants.outputs.AUTH0_AUDIENCE }}
+          CSL_AUTH0_TEST_USER: ${{ steps.tenants.outputs.AUTH0_TEST_USER }}
+          CSL_AUTH0_TEST_USER_PASSWORD: ${{ steps.tenants.outputs.AUTH0_TEST_USER_PASSWORD }}
+        run: |
+          missing=""
+          for name in CSL_ENTRA_TENANT_ID CSL_ENTRA_CLIENT_ID CSL_ENTRA_CLIENT_SECRET \
+                      CSL_ENTRA_REFRESH_TOKEN CSL_AUTH0_DOMAIN CSL_AUTH0_CLIENT_ID \
+                      CSL_AUTH0_CLIENT_SECRET CSL_AUTH0_AUDIENCE CSL_AUTH0_TEST_USER \
+                      CSL_AUTH0_TEST_USER_PASSWORD; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::The live tests would skip themselves. Missing from Vault:$missing"
+            exit 1
+          fi
+          echo "All ten tenant settings arrived."
+
+      - name: Verify
+        env:
+          CSL_ENTRA_TENANT_ID: ${{ steps.tenants.outputs.ENTRA_TENANT_ID }}
+          CSL_ENTRA_CLIENT_ID: ${{ steps.tenants.outputs.ENTRA_CLIENT_ID }}
+          CSL_ENTRA_CLIENT_SECRET: ${{ steps.tenants.outputs.ENTRA_CLIENT_SECRET }}
+          CSL_ENTRA_REFRESH_TOKEN: ${{ steps.tenants.outputs.ENTRA_REFRESH_TOKEN }}
+          CSL_AUTH0_DOMAIN: ${{ steps.tenants.outputs.AUTH0_DOMAIN }}
+          CSL_AUTH0_CLIENT_ID: ${{ steps.tenants.outputs.AUTH0_CLIENT_ID }}
+          CSL_AUTH0_CLIENT_SECRET: ${{ steps.tenants.outputs.AUTH0_CLIENT_SECRET }}
+          CSL_AUTH0_AUDIENCE: ${{ steps.tenants.outputs.AUTH0_AUDIENCE }}
+          CSL_AUTH0_TEST_USER: ${{ steps.tenants.outputs.AUTH0_TEST_USER }}
+          CSL_AUTH0_TEST_USER_PASSWORD: ${{ steps.tenants.outputs.AUTH0_TEST_USER_PASSWORD }}
+        run: ./mvnw --batch-mode --no-transfer-progress -T 1C clean verify
+
+      - name: Upload the failsafe reports
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: failsafe-reports
+          path: '**/target/failsafe-reports/**'
+          retention-days: 7
+          if-no-files-found: ignore
