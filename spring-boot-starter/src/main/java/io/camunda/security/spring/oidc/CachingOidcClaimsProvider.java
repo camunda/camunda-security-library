@@ -223,10 +223,14 @@ public final class CachingOidcClaimsProvider implements OidcClaimsProvider {
     } catch (final AuthenticationException alreadyClassified) {
       throw alreadyClassified;
     } catch (final RuntimeException unresolved) {
+      final var message =
+          "Failed to resolve the UserInfo endpoint of issuer '%s'. %s"
+              .formatted(UrlRedaction.redact(issuer), FailureDescription.describe(unresolved));
       throw new AuthenticationServiceException(
-          "Failed to resolve the UserInfo endpoint of issuer '%s': %s"
-              .formatted(issuer, unresolved.getMessage()),
-          unresolved);
+          message,
+          IdentityProviderOutage.isCausing(unresolved)
+              ? new IdentityProviderUnavailableException(message, unresolved)
+              : unresolved);
     }
     if (registration == null) {
       return null;

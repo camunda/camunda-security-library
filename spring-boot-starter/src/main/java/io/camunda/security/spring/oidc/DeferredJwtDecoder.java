@@ -36,13 +36,22 @@ public final class DeferredJwtDecoder implements JwtDecoder {
   }
 
   /**
-   * Reports a failed build as {@code SupplierJwtDecoder} reports it, so the chain answers with a
-   * server error and not with a refused credential.
+   * Reports a build that failed on an outage of the provider as {@link
+   * IdentityProviderUnavailableException}, so the chain answers that the provider is unavailable
+   * and not with a refused credential. Any other failure is a configuration error that no retry
+   * removes, so it keeps the {@link JwtDecoderInitializationException} that {@code
+   * SupplierJwtDecoder} reports, and the answer stays a server error.
    */
   private static JwtDecoder build(final Supplier<JwtDecoder> delegateSupplier) {
     try {
       return delegateSupplier.get();
     } catch (final RuntimeException failed) {
+      if (IdentityProviderOutage.isCausing(failed)) {
+        throw new IdentityProviderUnavailableException(
+            "Failed to lazily resolve the supplied JwtDecoder instance: "
+                + FailureDescription.describe(failed),
+            failed);
+      }
       throw new JwtDecoderInitializationException(
           "Failed to lazily resolve the supplied JwtDecoder instance", failed);
     }

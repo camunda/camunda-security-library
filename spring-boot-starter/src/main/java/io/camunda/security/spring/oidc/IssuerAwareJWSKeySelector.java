@@ -119,8 +119,10 @@ public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelecto
    *
    * @throws BadJwtKeySourceException if no configured provider declares the issuer. The token is
    *     the reason, so the marker subtype gives 401 {@code invalid_token}.
-   * @throws KeySourceException if the resolution fails. The infrastructure is the reason, so the
-   *     base type keeps the server error, as a JWKS outage does.
+   * @throws UnresolvedProviderKeySourceException if the resolution fails on an outage of the
+   *     provider, so the marker subtype gives the answer that the provider is unavailable.
+   * @throws KeySourceException if the resolution fails for another reason. That is a configuration
+   *     error that no retry removes, so the base type keeps the server error.
    */
   private ClientRegistration getClientRegistrationByIssuer(final String issuer)
       throws KeySourceException {
@@ -128,7 +130,13 @@ public class IssuerAwareJWSKeySelector implements JWTClaimsSetAwareJWSKeySelecto
     try {
       clientRegistration = issuerRegistrations.forIssuer(issuer);
     } catch (final RuntimeException unresolved) {
-      throw new KeySourceException(ERROR_UNRESOLVED_ISSUER.formatted(issuer), unresolved);
+      final var message =
+          ERROR_UNRESOLVED_ISSUER.formatted(UrlRedaction.redact(issuer))
+              + " "
+              + FailureDescription.describe(unresolved);
+      throw IdentityProviderOutage.isCausing(unresolved)
+          ? new UnresolvedProviderKeySourceException(message, unresolved)
+          : new KeySourceException(message, unresolved);
     }
     if (clientRegistration == null) {
       throw new BadJwtKeySourceException(ERROR_UNKNOWN_ISSUER.formatted(issuer));

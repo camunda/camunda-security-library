@@ -8,15 +8,20 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import java.net.ConnectException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Function;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.web.client.ResourceAccessException;
 
 /**
  * Whether a token is augmented from UserInfo is decided by the provider that owns its issuer. Two
@@ -84,6 +89,56 @@ class CachingOidcClaimsProviderUserInfoOwnerTest {
                   case "without-user-info" -> withoutUserInfo;
                   default -> throw new AssertionError("not resolved in these tests: " + id);
                 });
+    return CachingOidcClaimsProvider.userInfoUriByIssuer(registrations, providers);
+  }
+
+  @Test
+  void shouldReportAnUnreachableProviderAsUnavailableWithoutQuotingItsCredentials() {
+    // given a provider with UserInfo whose issuer carries credentials, and which does not answer
+    final var issuer = "https://user:s3cret@idp";
+    final var userInfoUriByIssuer =
+        unresolvableUserInfo(
+            issuer,
+            new IllegalArgumentException(
+                "Unable to resolve Configuration",
+                new ResourceAccessException(
+                    "GET " + issuer + "/discovery", new ConnectException("refused"))));
+
+    // when / then the failure reads as an outage, and its message holds no credential
+    assertThatThrownBy(() -> userInfoUriByIssuer.apply(issuer))
+        .isInstanceOf(AuthenticationServiceException.class)
+        .hasCauseInstanceOf(IdentityProviderUnavailableException.class)
+        .hasMessageNotContaining("s3cret");
+  }
+
+  @Test
+  void shouldKeepAConfigurationFailureAsAServerErrorWithoutQuotingItsCredentials() {
+    // given a provider with UserInfo whose issuer carries credentials, and whose resolution fails
+    // for a reason that no retry removes
+    final var issuer = "https://user:s3cret@idp";
+    final var userInfoUriByIssuer =
+        unresolvableUserInfo(
+            issuer, new IllegalStateException("The issuer-uri " + issuer + " is not valid"));
+
+    // when / then the failure keeps the server error, and its message holds no credential
+    assertThatThrownBy(() -> userInfoUriByIssuer.apply(issuer))
+        .isInstanceOf(AuthenticationServiceException.class)
+        .hasMessageNotContaining("s3cret")
+        .hasCauseInstanceOf(IllegalStateException.class)
+        .cause()
+        .isNotInstanceOf(IdentityProviderUnavailableException.class);
+  }
+
+  private static Function<String, String> unresolvableUserInfo(
+      final String issuer, final RuntimeException failure) {
+    final Map<String, OidcConfiguration> providers =
+        Map.of("idp", OidcConfiguration.builder().issuerUri(issuer).userInfoEnabled(true).build());
+    final var registrations =
+        IssuerRegistrations.ofConfiguration(
+            providers,
+            id -> {
+              throw failure;
+            });
     return CachingOidcClaimsProvider.userInfoUriByIssuer(registrations, providers);
   }
 
