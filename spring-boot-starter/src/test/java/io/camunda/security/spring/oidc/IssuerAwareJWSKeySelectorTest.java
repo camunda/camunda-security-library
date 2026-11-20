@@ -23,6 +23,7 @@ import com.nimbusds.jose.proc.JWSKeySelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jwt.JWTClaimsSet;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import java.net.ConnectException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +47,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.ClientRegistration.ProviderDetails;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
+import org.springframework.web.client.ResourceAccessException;
 
 @ExtendWith(MockitoExtension.class)
 class IssuerAwareJWSKeySelectorTest {
@@ -130,7 +132,9 @@ class IssuerAwareJWSKeySelectorTest {
         IssuerRegistrations.ofConfiguration(
             Map.of("provider-a", providerWithIssuer("https://known-issuer")),
             registrationId -> {
-              throw new IllegalArgumentException("unreachable");
+              throw new IllegalArgumentException(
+                  "Unable to resolve Configuration",
+                  new ResourceAccessException("unreachable", new ConnectException("refused")));
             });
     final var selector =
         new IssuerAwareJWSKeySelector(registrations, jwsKeySelectorFactory, Map.of());
@@ -147,6 +151,27 @@ class IssuerAwareJWSKeySelectorTest {
   }
 
   @Test
+  void shouldKeepThePlainKeySourceExceptionWhenTheResolutionFailsForAConfigurationReason() {
+    // given a configured provider whose resolution fails for a reason that no retry removes
+    final var registrations =
+        IssuerRegistrations.ofConfiguration(
+            Map.of("provider-a", providerWithIssuer("https://known-issuer")),
+            registrationId -> {
+              throw new IllegalStateException("The issuer-uri is not valid");
+            });
+    final var selector =
+        new IssuerAwareJWSKeySelector(registrations, jwsKeySelectorFactory, Map.of());
+    final var claims = new JWTClaimsSet.Builder().issuer("https://known-issuer").build();
+    final var header = new JWSHeader(JWSAlgorithm.RS256);
+
+    // when / then the failure keeps the server error and does not read as an outage to retry
+    assertThatThrownBy(() -> selector.selectKeys(header, claims, null))
+        .isInstanceOf(KeySourceException.class)
+        .isNotInstanceOf(UnresolvedProviderKeySourceException.class)
+        .isNotInstanceOf(BadJwtKeySourceException.class);
+  }
+
+  @Test
   void shouldKeepTheCredentialsOfTheIssuerOutOfTheMessageOfAnUnresolvedProvider() {
     // given a configured issuer that carries user-info and a query secret, and does not answer
     final var issuer = "https://user:s3cret@known-issuer/realm?token=abc123";
@@ -154,7 +179,7 @@ class IssuerAwareJWSKeySelectorTest {
         IssuerRegistrations.ofConfiguration(
             Map.of("provider-a", providerWithIssuer(issuer)),
             registrationId -> {
-              throw new IllegalArgumentException("GET " + issuer);
+              throw new ResourceAccessException("GET " + issuer, new ConnectException("refused"));
             });
     final var selector =
         new IssuerAwareJWSKeySelector(registrations, jwsKeySelectorFactory, Map.of());

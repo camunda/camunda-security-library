@@ -17,6 +17,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.spring.oidc.DeferredJwtDecoder;
 import io.camunda.security.spring.oidc.IdentityProviderUnavailableException;
+import java.net.ConnectException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
+import org.springframework.web.client.ResourceAccessException;
 
 /**
  * Covers how the failure handler answers a decoder that reports an unavailable identity provider,
@@ -66,7 +68,9 @@ class LoggingAuthenticationFailureHandlerTest {
     final var decoder =
         new DeferredJwtDecoder(
             () -> {
-              throw new IllegalStateException("GET https://user:s3cret@idp.example.com/discovery");
+              throw new ResourceAccessException(
+                  "GET https://user:s3cret@idp.example.com/discovery",
+                  new ConnectException("refused"));
             });
     final var unavailable = catchThrowable(() -> decoder.decode("token"));
     assertThat(unavailable).isInstanceOf(IdentityProviderUnavailableException.class);
