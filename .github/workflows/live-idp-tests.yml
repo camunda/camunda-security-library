@@ -10,6 +10,13 @@ name: live-idp-tests
 # and a weekly full verification costs little and catches more.
 
 on:
+  # TEMPORARY, REMOVE BEFORE MERGE. `workflow_dispatch` only appears once this file is on the
+  # default branch, so there is no way to prove the Vault read before this pull request merges.
+  # This trigger is scoped to the branch of that pull request, so it can fire for nothing else.
+  # The Vault role binds on repository and owner, not on the ref, so a run from this branch
+  # authenticates exactly as a scheduled run from main would.
+  push:
+    branches: [test/live-idp-tests]
   schedule:
     # Every Monday at 05:00 UTC, before the European working day.
     - cron: '0 5 * * 1'
