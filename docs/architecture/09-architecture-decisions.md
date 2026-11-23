@@ -61,6 +61,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0046: Scheduled refresh-ahead JWKS caching and realistic HTTP timeouts](../adr/0046-resilient-jwks-refresh-and-timeouts.md)
 - [ADR-0047: No `Thread.sleep` in tests; wait on conditions with Awaitility](../adr/0047-no-thread-sleep-in-tests-use-awaitility.md)
 - [ADR-0048: The existing claim settings recognise user tokens on the API chains](../adr/0048-recognising-user-tokens-on-the-api-chains.md)
+- [ADR-0049: A Spring-free client adds credentials to calls to CSL-protected services](../adr/0049-spring-free-client-for-csl-protected-services.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 
