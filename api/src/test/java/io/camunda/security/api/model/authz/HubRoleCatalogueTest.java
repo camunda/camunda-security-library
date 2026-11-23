@@ -21,10 +21,12 @@ import static io.camunda.security.api.model.authz.AuthorizationResourceType.PROJ
 import static io.camunda.security.api.model.authz.AuthorizationResourceType.VERSION;
 import static io.camunda.security.api.model.authz.AuthorizationResourceType.WORKSPACE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Named.named;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -267,21 +269,24 @@ class HubRoleCatalogueTest {
               VERSION, Set.of(PermissionType.DELETE),
               PROJECT_SNAPSHOT, Set.of(PermissionType.DELETE)));
 
-  private static List<Role> roles() {
+  private static List<Named<Role>> roles() {
     return List.of(
-        ORGANIZATION_OWNER,
-        ORGANIZATION_ADMIN,
-        DEVOPS,
-        ANALYST,
-        MEMBER,
-        WORKSPACE_ADMIN,
-        EDITOR,
-        COMMENTER,
-        VIEWER,
-        API_READ,
-        API_CREATE,
-        API_UPDATE,
-        API_DELETE);
+            ORGANIZATION_OWNER,
+            ORGANIZATION_ADMIN,
+            DEVOPS,
+            ANALYST,
+            MEMBER,
+            WORKSPACE_ADMIN,
+            EDITOR,
+            COMMENTER,
+            VIEWER,
+            API_READ,
+            API_CREATE,
+            API_UPDATE,
+            API_DELETE)
+        .stream()
+        .map(role -> named(role.name(), role))
+        .toList();
   }
 
   @ParameterizedTest(name = "{0}")
