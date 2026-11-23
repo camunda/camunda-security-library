@@ -2,7 +2,7 @@
 
 **DRI**: Patrick Wunderlich (p-wunderlich)
 **Deciders**: Patrick Wunderlich (p-wunderlich)
-**Status**: Accepted (1.3)
+**Status**: Accepted (1.4.0)
 **Purpose**: Defines how CSL supplies credentials for outgoing calls to CSL-protected services.
 **Audience**: CSL maintainers, and OC and Hub engineers who call CSL-protected services.
 
