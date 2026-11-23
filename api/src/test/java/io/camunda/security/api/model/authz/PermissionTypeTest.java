@@ -62,4 +62,16 @@ class PermissionTypeTest {
     // RESTORE is a control operation (e.g. restoring a backup), not a read.
     assertThat(PermissionType.RESTORE.isReadPermission()).isFalse();
   }
+
+  @Test
+  void hubPermissionsAreNotReadPermissions() {
+    // PURGE/DEPLOY/EXECUTE/SHARE/REQUEST_REVIEW/SUBMIT_REVIEW are write or control
+    // operations, not reads.
+    assertThat(PermissionType.PURGE.isReadPermission()).isFalse();
+    assertThat(PermissionType.DEPLOY.isReadPermission()).isFalse();
+    assertThat(PermissionType.EXECUTE.isReadPermission()).isFalse();
+    assertThat(PermissionType.SHARE.isReadPermission()).isFalse();
+    assertThat(PermissionType.REQUEST_REVIEW.isReadPermission()).isFalse();
+    assertThat(PermissionType.SUBMIT_REVIEW.isReadPermission()).isFalse();
+  }
 }
