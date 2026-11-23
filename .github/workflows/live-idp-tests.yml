@@ -51,16 +51,16 @@ jobs:
           jwtGithubAudience: ${{ secrets.VAULT_JWT_AUDIENCE }}
           exportEnv: false
           secrets: |
-            secret/data/products/camunda-security-library/live-idp-tests ENTRA_TENANT_ID;
-            secret/data/products/camunda-security-library/live-idp-tests ENTRA_CLIENT_ID;
-            secret/data/products/camunda-security-library/live-idp-tests ENTRA_CLIENT_SECRET;
-            secret/data/products/camunda-security-library/live-idp-tests ENTRA_REFRESH_TOKEN;
-            secret/data/products/camunda-security-library/live-idp-tests AUTH0_DOMAIN;
-            secret/data/products/camunda-security-library/live-idp-tests AUTH0_CLIENT_ID;
-            secret/data/products/camunda-security-library/live-idp-tests AUTH0_CLIENT_SECRET;
-            secret/data/products/camunda-security-library/live-idp-tests AUTH0_AUDIENCE;
-            secret/data/products/camunda-security-library/live-idp-tests AUTH0_TEST_USER;
-            secret/data/products/camunda-security-library/live-idp-tests AUTH0_TEST_USER_PASSWORD;
+            secret/data/products/identity/ci/csl-live-idp-tests ENTRA_TENANT_ID;
+            secret/data/products/identity/ci/csl-live-idp-tests ENTRA_CLIENT_ID;
+            secret/data/products/identity/ci/csl-live-idp-tests ENTRA_CLIENT_SECRET;
+            secret/data/products/identity/ci/csl-live-idp-tests ENTRA_REFRESH_TOKEN;
+            secret/data/products/identity/ci/csl-live-idp-tests AUTH0_DOMAIN;
+            secret/data/products/identity/ci/csl-live-idp-tests AUTH0_CLIENT_ID;
+            secret/data/products/identity/ci/csl-live-idp-tests AUTH0_CLIENT_SECRET;
+            secret/data/products/identity/ci/csl-live-idp-tests AUTH0_AUDIENCE;
+            secret/data/products/identity/ci/csl-live-idp-tests AUTH0_TEST_USER;
+            secret/data/products/identity/ci/csl-live-idp-tests AUTH0_TEST_USER_PASSWORD;
 
       # A silent skip is the failure mode to fear here. The live tests skip themselves when a
       # setting is absent, so a missing secret would leave this job green while nothing was
