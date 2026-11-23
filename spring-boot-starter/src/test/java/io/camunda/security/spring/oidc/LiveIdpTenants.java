@@ -210,7 +210,10 @@ public final class LiveIdpTenants {
 
   private static Map<?, ?> claimsOf(final String token) throws Exception {
     final var parts = token.split("\\.");
-    assertThat(parts).as("the token is not a JSON Web Token").hasSize(3);
+    // Assert on the count and never on the array. A provider that answers with an opaque token
+    // fails here, and an assertion over the array would print its segments into a public workflow
+    // log and into the uploaded reports.
+    assertThat(parts.length).as("the token is not a JSON Web Token").isEqualTo(3);
     return JSON.readValue(new String(Base64.getUrlDecoder().decode(parts[1]), UTF_8), Map.class);
   }
 

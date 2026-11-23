@@ -83,10 +83,15 @@ jobs:
                       CSL_ENTRA_REFRESH_TOKEN CSL_AUTH0_DOMAIN CSL_AUTH0_CLIENT_ID \
                       CSL_AUTH0_CLIENT_SECRET CSL_AUTH0_AUDIENCE CSL_AUTH0_TEST_USER \
                       CSL_AUTH0_TEST_USER_PASSWORD; do
-            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+            # Blank, not just empty. The tests call String.isBlank(), so a value of spaces or a
+            # stray newline would skip them while passing an emptiness check, and the job would
+            # stay green having measured nothing.
+            if [ -z "$(printf '%s' "${!name}" | tr -d '[:space:]')" ]; then
+              missing="$missing $name"
+            fi
           done
           if [ -n "$missing" ]; then
-            echo "::error::The live tests would skip themselves. Missing from Vault:$missing"
+            echo "::error::The live tests would skip themselves. Missing or blank in Vault:$missing"
             exit 1
           fi
           echo "All ten tenant settings arrived."
