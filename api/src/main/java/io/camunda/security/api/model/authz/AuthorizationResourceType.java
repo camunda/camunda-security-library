@@ -42,6 +42,52 @@ public enum AuthorizationResourceType {
   TENANT(PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE, PermissionType.DELETE),
   USER(PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE, PermissionType.DELETE),
 
+  /** Hub resources. */
+  BUSINESS_VALUE(PermissionType.READ, PermissionType.UPDATE),
+  CATALOG(
+      PermissionType.READ,
+      PermissionType.READ_USAGE_METRIC,
+      PermissionType.CREATE,
+      PermissionType.UPDATE,
+      PermissionType.DELETE),
+  CATALOG_ASSET(PermissionType.READ, PermissionType.UPDATE),
+  CLUSTER(PermissionType.READ, PermissionType.UPDATE),
+  COMMENT(PermissionType.CREATE, PermissionType.READ),
+  ENVIRONMENT(PermissionType.READ, PermissionType.UPDATE),
+  FILE(
+      PermissionType.CREATE,
+      PermissionType.READ,
+      PermissionType.UPDATE,
+      PermissionType.DELETE,
+      PermissionType.RESTORE,
+      PermissionType.PURGE,
+      PermissionType.DEPLOY,
+      PermissionType.EXECUTE,
+      PermissionType.SHARE),
+  GIT_SYNC(PermissionType.READ, PermissionType.UPDATE),
+  PROJECT(PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE, PermissionType.DELETE),
+  PROJECT_SNAPSHOT(
+      PermissionType.CREATE,
+      PermissionType.READ,
+      PermissionType.UPDATE,
+      PermissionType.DELETE,
+      PermissionType.RESTORE,
+      PermissionType.REQUEST_REVIEW,
+      PermissionType.SUBMIT_REVIEW),
+  VERSION(
+      PermissionType.CREATE,
+      PermissionType.READ,
+      PermissionType.UPDATE,
+      PermissionType.DELETE,
+      PermissionType.RESTORE),
+  WORKSPACE(
+      PermissionType.CREATE,
+      PermissionType.READ,
+      PermissionType.UPDATE,
+      PermissionType.DELETE,
+      PermissionType.RESTORE,
+      PermissionType.PURGE),
+
   /** Engine-related resources. */
   BATCH(
       PermissionType.CREATE,

@@ -121,4 +121,93 @@ class AuthorizationResourceTypeTest {
         .isInstanceOf(UnsupportedOperationException.class);
     assertThatThrownBy(permissions::clear).isInstanceOf(UnsupportedOperationException.class);
   }
+
+  @Test
+  void workspaceSupportsCreateReadUpdateDeleteRestorePurge() {
+    assertThat(AuthorizationResourceType.WORKSPACE.getSupportedPermissionTypes())
+        .containsExactlyInAnyOrder(
+            PermissionType.CREATE,
+            PermissionType.READ,
+            PermissionType.UPDATE,
+            PermissionType.DELETE,
+            PermissionType.RESTORE,
+            PermissionType.PURGE);
+  }
+
+  @Test
+  void fileSupportsAllContentPermissions() {
+    assertThat(AuthorizationResourceType.FILE.getSupportedPermissionTypes())
+        .containsExactlyInAnyOrder(
+            PermissionType.CREATE,
+            PermissionType.READ,
+            PermissionType.UPDATE,
+            PermissionType.DELETE,
+            PermissionType.RESTORE,
+            PermissionType.PURGE,
+            PermissionType.DEPLOY,
+            PermissionType.EXECUTE,
+            PermissionType.SHARE);
+  }
+
+  @Test
+  void projectSnapshotSupportsReviewPermissions() {
+    assertThat(AuthorizationResourceType.PROJECT_SNAPSHOT.getSupportedPermissionTypes())
+        .containsExactlyInAnyOrder(
+            PermissionType.CREATE,
+            PermissionType.READ,
+            PermissionType.UPDATE,
+            PermissionType.DELETE,
+            PermissionType.RESTORE,
+            PermissionType.REQUEST_REVIEW,
+            PermissionType.SUBMIT_REVIEW);
+  }
+
+  @Test
+  void catalogSupportsReadUsageAndCrud() {
+    assertThat(AuthorizationResourceType.CATALOG.getSupportedPermissionTypes())
+        .containsExactlyInAnyOrder(
+            PermissionType.READ,
+            PermissionType.READ_USAGE_METRIC,
+            PermissionType.CREATE,
+            PermissionType.UPDATE,
+            PermissionType.DELETE);
+  }
+
+  @Test
+  void businessValueSupportsReadUpdate() {
+    assertThat(AuthorizationResourceType.BUSINESS_VALUE.getSupportedPermissionTypes())
+        .containsExactlyInAnyOrder(PermissionType.READ, PermissionType.UPDATE);
+  }
+
+  @Test
+  void buildResourcePermissionsMapHasHubTypes() {
+    final var map = AuthorizationResourceType.buildResourcePermissionsMap();
+
+    assertThat(map.get("WORKSPACE"))
+        .containsExactlyInAnyOrder("CREATE", "READ", "UPDATE", "DELETE", "RESTORE", "PURGE");
+    assertThat(map.get("FILE"))
+        .containsExactlyInAnyOrder(
+            "CREATE", "READ", "UPDATE", "DELETE", "RESTORE", "PURGE", "DEPLOY", "EXECUTE", "SHARE");
+    assertThat(map)
+        .containsKeys(
+            "BUSINESS_VALUE",
+            "CATALOG",
+            "CATALOG_ASSET",
+            "CLUSTER",
+            "COMMENT",
+            "ENVIRONMENT",
+            "GIT_SYNC",
+            "PROJECT",
+            "PROJECT_SNAPSHOT",
+            "VERSION");
+  }
+
+  @Test
+  void getUserProvidedResourceTypesIncludesHubTypes() {
+    assertThat(AuthorizationResourceType.getUserProvidedResourceTypes())
+        .contains(
+            AuthorizationResourceType.WORKSPACE,
+            AuthorizationResourceType.PROJECT,
+            AuthorizationResourceType.FILE);
+  }
 }
