@@ -89,7 +89,10 @@ public final class ConditionalResourceAccessProvider implements ResourceAccessPr
         authorizationChecker.retrieveAuthorizedAuthorizationScopes(authentication, authorization);
     final List<Term> terms = new ArrayList<>(termsOf(globalScopes, List.of()));
 
-    if (extractorRegistry.hasExtractorsFor(authorization.resourceType())) {
+    // A global grant on every resource already yields All; conditional grants cannot widen that, so
+    // skip their per-role lookups.
+    final boolean grantsEveryResource = terms.stream().anyMatch(Term::matchesAll);
+    if (!grantsEveryResource && extractorRegistry.hasExtractorsFor(authorization.resourceType())) {
       final Map<String, List<AuthorizationScope>> scopesByRole = new HashMap<>();
       for (final ConditionalMembership membership : authentication.conditionalRoleMemberships()) {
         final var scopes =

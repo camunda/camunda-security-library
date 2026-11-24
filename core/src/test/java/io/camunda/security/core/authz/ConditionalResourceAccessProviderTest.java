@@ -174,6 +174,25 @@ class ConditionalResourceAccessProviderTest {
   }
 
   @Test
+  void skipsConditionalRoleLookupsWhenAGlobalGrantCoversEveryResource() {
+    // given a global wildcard grant and a conditional membership of another role
+    final var queries = new AtomicInteger();
+    grantEverything(EDITOR);
+    final var provider =
+        new ConditionalResourceAccessProvider(
+            new AuthorizationChecker(new CountingGrants(grants, queries)),
+            new ResourceAttributeExtractorRegistry(List.of(diagramExtractor())));
+    final var alice = user(List.of(EDITOR), conditional("reviewer", workspaceIs("payments")));
+
+    // when
+    final var access = provider.resolveResourceAccess(alice, READ_DIAGRAM);
+
+    // then the conditional role is not queried; the global grant alone yields a wildcard
+    assertThat(access.wildcard()).isTrue();
+    assertThat(queries).hasValue(1);
+  }
+
+  @Test
   void rejectsResourcePropertyNames() {
     // given
     final RequiredAuthorization<Diagram> byProperty =
