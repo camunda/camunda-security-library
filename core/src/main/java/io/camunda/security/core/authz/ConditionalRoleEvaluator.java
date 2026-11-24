@@ -57,7 +57,7 @@ final class ConditionalRoleEvaluator {
     if (memberships.isEmpty()) {
       return Set.of();
     }
-    final var attributes = attributesOf(resourceType, resource);
+    final var attributes = attributesOf(authentication, resourceType, resource);
     if (attributes.isEmpty()) {
       return Set.of();
     }
@@ -68,7 +68,9 @@ final class ConditionalRoleEvaluator {
   }
 
   private <T> Map<ResourceAttribute, Set<String>> attributesOf(
-      final AuthorizationResourceType resourceType, final T resource) {
+      final CamundaAuthentication authentication,
+      final AuthorizationResourceType resourceType,
+      final T resource) {
     final Optional<ResourceAttributeExtractor<T>> extractor =
         extractorRegistry.findMatching(resourceType, resource);
     if (extractor.isEmpty()) {
@@ -83,12 +85,13 @@ final class ConditionalRoleEvaluator {
       final var attributes = extractor.get().attributesOf(resource);
       return attributes == null ? Map.of() : attributes;
     } catch (final RuntimeException e) {
-      reportExtractorFailure(resourceType, extractor.get(), e);
+      reportExtractorFailure(authentication, resourceType, extractor.get(), e);
       return Map.of();
     }
   }
 
   private void reportExtractorFailure(
+      final CamundaAuthentication authentication,
       final AuthorizationResourceType resourceType,
       final ResourceAttributeExtractor<?> extractor,
       final RuntimeException e) {
@@ -96,17 +99,19 @@ final class ConditionalRoleEvaluator {
     if (reportedFailingExtractors.add(extractorClass)) {
       LOG.warn(
           "ResourceAttributeExtractor [{}] for resource type [{}] threw while reading resource"
-              + " attributes; conditional role memberships do not apply. Later failures of this"
-              + " extractor are logged at DEBUG.",
+              + " attributes for principal [{}]; conditional role memberships do not apply. Later"
+              + " failures of this extractor are logged at DEBUG.",
           extractorClass.getName(),
           resourceType,
+          authentication.formattedPrincipal(),
           e);
     } else {
       LOG.debug(
           "ResourceAttributeExtractor [{}] for resource type [{}] threw while reading resource"
-              + " attributes; conditional role memberships do not apply",
+              + " attributes for principal [{}]; conditional role memberships do not apply",
           extractorClass.getName(),
           resourceType,
+          authentication.formattedPrincipal(),
           e);
     }
   }
