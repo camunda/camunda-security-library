@@ -22,17 +22,22 @@ class OutboundCredentialsProvidersTest {
 
   @Test
   void twoNamedClientsSendDifferentCredentials() throws IOException {
-    final var providers =
-        new OutboundCredentialsProviders(
-            Map.of(
-                "hub",
-                OutboundCredentialsProviders.basic(new BasicAuthConfiguration("hub", "hub")),
-                "legacy",
-                OutboundCredentialsProviders.basic(new BasicAuthConfiguration("demo", "demo"))));
+    try (final TokenEndpoint endpoint = new TokenEndpoint()) {
+      final var providers =
+          new OutboundCredentialsProviders(
+              Map.of(
+                  "hub",
+                  OutboundCredentialsProviders.oidc(
+                      OidcClientCredentialsConfiguration.builder(
+                              endpoint.uri(), "hub-client", "secret")
+                          .build()),
+                  "legacy",
+                  OutboundCredentialsProviders.basic(new BasicAuthConfiguration("demo", "demo"))));
 
-    assertThat(header(providers.get("hub"))).isEqualTo("Basic aHViOmh1Yg==");
-    assertThat(header(providers.get("legacy"))).isEqualTo("Basic ZGVtbzpkZW1v");
-    assertThat(providers.get("legacy").shouldRetryRequest(StatusCode.ofHttp(401))).isFalse();
+      assertThat(header(providers.get("hub"))).isEqualTo("Bearer token-1");
+      assertThat(header(providers.get("legacy"))).isEqualTo("Basic ZGVtbzpkZW1v");
+      assertThat(providers.get("legacy").shouldRetryRequest(StatusCode.ofHttp(401))).isFalse();
+    }
   }
 
   @Test

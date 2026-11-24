@@ -60,6 +60,10 @@ public final class OutboundCredentialsProviders implements AutoCloseable {
     }
   }
 
+  public static OutboundCredentialsProvider oidc(final OidcClientCredentialsConfiguration config) {
+    return new OidcClientCredentialsProvider(config);
+  }
+
   public static OutboundCredentialsProvider basic(final BasicAuthConfiguration config) {
     return new BasicAuthCredentialsProvider(config);
   }

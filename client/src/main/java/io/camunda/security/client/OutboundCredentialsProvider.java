@@ -40,7 +40,8 @@ public interface OutboundCredentialsProvider extends AutoCloseable {
   /**
    * Sets the credential headers, for example {@code Authorization}, through the applier.
    *
-   * @throws IOException if the credentials cannot be obtained.
+   * @throws IOException if the credentials cannot be obtained. A failed token request is a {@link
+   *     TokenRequestException}, also when the token endpoint gave no response.
    */
   void applyCredentials(CredentialsApplier applier) throws IOException;
 
