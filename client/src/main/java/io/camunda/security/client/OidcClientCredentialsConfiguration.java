@@ -244,7 +244,8 @@ public final class OidcClientCredentialsConfiguration {
 
     /**
      * Sets the longest time that a call waits for a token. The wait for the token request of
-     * another caller counts. Null keeps the default of 30 seconds.
+     * another caller counts. If the token request of a call runs out of time and the old token is
+     * still valid, the call uses the old token. Null keeps the default of 30 seconds.
      *
      * @param requestTimeout The request timeout. It must be positive.
      * @return this builder
