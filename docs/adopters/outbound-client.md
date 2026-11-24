@@ -86,16 +86,15 @@ a token request of another caller. If the time is up and no valid token is cache
 If the token request of a call runs out of time and the old token is still valid, the call uses the
 old token, as after any failed refresh.
 
-The token request runs on one worker thread for each provider. When the time is up, the provider
-closes the connection. This stops a response that is slow. The provider cannot stop the DNS
-lookup, the connect, the TLS handshake or the request body. The worker closes the connection when
-these steps end. Only `connectTimeout` and `readTimeout` limit them, and the DNS lookup has no
-timeout. While such a request still runs, the next token requests fail at once, so threads do not
-pile up.
+The token request runs on one worker thread for each provider, with Apache HttpClient 5. When the
+time is up, the provider cancels the request. This stops a slow response and a TLS handshake that
+does not end. The provider cannot stop the DNS lookup, and the DNS lookup has no timeout. The
+worker ends the request when the lookup ends. `connectTimeout` also limits the connect. While such
+a request still runs, the next token requests fail at once, so threads do not pile up.
 
-`readTimeout` limits each wait for data, not the whole request. An interrupt does not stop the
-token request, because the SDK sends with `HttpURLConnection`. An interrupt stops the caller that
-waits, and that caller always fails, also when the old token is still valid.
+`readTimeout` limits each wait for data, not the whole request. An interrupt cancels the token
+request and stops the caller that waits. That caller always fails, also when the old token is
+still valid.
 
 ### Lifecycle
 

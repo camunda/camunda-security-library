@@ -46,12 +46,12 @@ public final class OidcClientCredentialsProvider implements OutboundCredentialsP
   private boolean refreshFailing;
 
   public OidcClientCredentialsProvider(final OidcClientCredentialsConfiguration config) {
-    this(config, Clock.systemUTC(), TokenRequestWorker::sendOverConnection);
+    this(config, Clock.systemUTC(), TokenRequestWorker.DIRECT);
   }
 
   OidcClientCredentialsProvider(
       final OidcClientCredentialsConfiguration config, final Clock clock) {
-    this(config, clock, TokenRequestWorker::sendOverConnection);
+    this(config, clock, TokenRequestWorker.DIRECT);
   }
 
   OidcClientCredentialsProvider(

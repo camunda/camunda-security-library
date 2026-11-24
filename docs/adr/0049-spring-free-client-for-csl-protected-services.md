@@ -44,6 +44,14 @@ types are in `client`, not in `api/model/config/`, because `client` must not dep
 are immutable final classes, not records, because `client` targets Java 8. The Spring binding types
 of #797 are in `api/model/config/client/`, like the other configuration types of the starter.
 
+**D5. The token request goes over Apache HttpClient 5.**
+`client` sends the token request with the classic API of Apache HttpClient 5, not with the JDK
+`HttpURLConnection`. The REST calls of the Java client already use HttpClient 5, so #133 has one
+HTTP library. HttpClient 5 can cancel a request from another thread, also during the TLS handshake,
+and it gives the body of an error response directly. The request uses HTTP/1.1, with no redirects,
+no retries, no cookies and no compression. The DNS lookup still blocks, so the worker thread and its
+time limit stay.
+
 ## Alternatives considered
 
 - **Spring Security's OAuth2 client.** It needs Spring, and the broker has no Spring.
@@ -52,6 +60,9 @@ of #797 are in `api/model/config/client/`, like the other configuration types of
   the small `client` jar off the classpath, because the starter already has the Nimbus OAuth SDK
   through Spring Security.
 - **The client in `api` or `core`.** The broker would then get the full public model.
+- **Keep `HttpURLConnection`.** It adds no dependency, and the token request of the Java client uses
+  it. But `client` then needs a hand-written cancel and a copy of the send code of the SDK, and it
+  cannot stop a TLS handshake.
 - **A hand-written token request.** The Nimbus OAuth SDK already does this on Java 8, and it
   supports `private_key_jwt` and mTLS for #133.
 
@@ -62,6 +73,10 @@ of #797 are in `api/model/config/client/`, like the other configuration types of
 - The Nimbus OAuth SDK comes onto the broker classpath. OC already has it. In #133 it becomes a new
   dependency of the Java client, and its version can conflict with the Nimbus version of a
   customer's Spring Security.
+- HttpClient 5 (three jars, about 2.2 MB) can come onto the broker classpath. Its version can
+  differ from the version of the Java client. `spring-boot-starter` depends on `client`, so
+  HttpClient 5 reaches every starter host. Spring Boot then prefers it for `RestClient` and
+  `RestTemplate`, so OC and Hub must check their HTTP stack.
 - There are no resilience features until #133. A failing token endpoint affects all callers.
 
 ## Source

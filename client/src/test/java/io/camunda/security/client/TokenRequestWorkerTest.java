@@ -12,11 +12,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.URI;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.apache.hc.client5.http.classic.methods.HttpUriRequestBase;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -48,7 +56,7 @@ class TokenRequestWorkerTest extends OidcTestSupport {
     final var provider =
         provider(
             Duration.ofMillis(200),
-            (request, connection) -> {
+            (request, real) -> {
               try {
                 // The worker gets its connection only after the caller gave up.
                 timedOut.await();
@@ -56,7 +64,7 @@ class TokenRequestWorkerTest extends OidcTestSupport {
                 Thread.currentThread().interrupt();
                 throw new IOException(e);
               }
-              return TokenRequestWorker.sendOverConnection(request, connection);
+              return real.send(request);
             });
     final CountDownLatch release = endpoint.blockResponses();
     try {
@@ -101,7 +109,7 @@ class TokenRequestWorkerTest extends OidcTestSupport {
     final var provider =
         provider(
             Duration.ofMillis(200),
-            (request, connection) -> {
+            (request, real) -> {
               entered.countDown();
               try {
                 // Holds the worker where closing the connection cannot reach it.
@@ -110,7 +118,7 @@ class TokenRequestWorkerTest extends OidcTestSupport {
                 Thread.currentThread().interrupt();
                 throw new IOException(e);
               }
-              return TokenRequestWorker.sendOverConnection(request, connection);
+              return real.send(request);
             });
     try {
       assertTimedOut(catchThrowable(() -> authorization(provider)));
@@ -168,7 +176,7 @@ class TokenRequestWorkerTest extends OidcTestSupport {
     final var provider =
         provider(
             Duration.ofSeconds(1),
-            (request, connection) -> {
+            (request, real) -> {
               if (holdNext.get()) {
                 entered.countDown();
                 try {
@@ -179,7 +187,7 @@ class TokenRequestWorkerTest extends OidcTestSupport {
                   throw new IOException(e);
                 }
               }
-              return TokenRequestWorker.sendOverConnection(request, connection);
+              return real.send(request);
             });
     try {
       assertThat(authorization(provider)).isEqualTo("Authorization=Bearer token-1");
@@ -281,6 +289,122 @@ class TokenRequestWorkerTest extends OidcTestSupport {
           .hasCauseInstanceOf(IOException.class);
     } finally {
       release.countDown();
+    }
+  }
+
+  @Test
+  void redirectIsNotFollowed() {
+    endpoint.respondWith(302, "");
+    endpoint.respondWithHeader("Location", endpoint.uri().toString());
+    final var provider = provider();
+
+    assertThat(catchThrowable(() -> authorization(provider)))
+        .isInstanceOfSatisfying(
+            TokenRequestException.class, e -> assertThat(e.getStatus()).isEqualTo(302));
+    assertThat(endpoint.requestCount()).isEqualTo(1);
+  }
+
+  @Test
+  void cancelBeforeExecuteNeverReachesTheEndpoint() throws Exception {
+    final var request = new HttpUriRequestBase("POST", endpoint.uri());
+    request.cancel();
+    final List<Throwable> failures = new ArrayList<>();
+    final var provider =
+        provider(
+            Duration.ofSeconds(5),
+            (original, real) -> {
+              try {
+                return real.send(request);
+              } catch (final IOException | RuntimeException e) {
+                failures.add(e);
+                throw e;
+              }
+            });
+
+    assertThat(catchThrowable(() -> authorization(provider)))
+        .isInstanceOf(TokenRequestException.class);
+    assertThat(failures).hasSize(1);
+    assertThat(endpoint.requestCount()).isZero();
+  }
+
+  /** A server that accepts the connection and never answers the TLS handshake. */
+  @Test
+  @Timeout(60)
+  void cancelStopsAHungHandshake() throws Exception {
+    try (var silent = new SilentServer()) {
+      final var provider = silent.provider(Duration.ofSeconds(20), Duration.ofMillis(500));
+      final long start = System.nanoTime();
+      assertTimedOut(catchThrowable(() -> authorization(provider)));
+      assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(5));
+
+      // The 20 s read timeout is far away: only the cancel can have freed the worker. The next call
+      // is not "still running", it starts a new handshake, and the cancel ends that one too.
+      for (int i = 0; i < 2; i++) {
+        final long again = System.nanoTime();
+        assertTimedOut(catchThrowable(() -> authorization(provider)));
+        assertThat(Duration.ofNanos(System.nanoTime() - again)).isLessThan(Duration.ofSeconds(5));
+      }
+      provider.close();
+    }
+  }
+
+  @Test
+  @Timeout(60)
+  void handshakeTimeoutDoesNotBreakTheNextRequest() throws Exception {
+    try (var silent = new SilentServer()) {
+      final var provider = silent.provider(Duration.ofMillis(300), Duration.ofSeconds(20));
+      for (int i = 0; i < 3; i++) {
+        final Throwable failure = catchThrowable(() -> authorization(provider));
+        assertThat(failure).isInstanceOf(TokenRequestException.class);
+        assertThat(failure.getMessage()).doesNotContain("still running");
+        assertThat(failure).hasCauseInstanceOf(IOException.class);
+        assertThat(failure.getCause()).hasMessageNotContaining("closed");
+      }
+      provider.close();
+    }
+  }
+
+  /** A loopback server that accepts connections and never answers. */
+  private final class SilentServer implements AutoCloseable {
+    private final ServerSocket server = new ServerSocket(0, 5, InetAddress.getLoopbackAddress());
+    private final List<Socket> accepted = new CopyOnWriteArrayList<>();
+
+    SilentServer() throws IOException {
+      final Thread acceptor =
+          new Thread(
+              () -> {
+                try {
+                  while (true) {
+                    accepted.add(server.accept());
+                  }
+                } catch (final IOException e) {
+                  // The test closed the server socket.
+                }
+              });
+      acceptor.setDaemon(true);
+      acceptor.start();
+    }
+
+    OidcClientCredentialsProvider provider(
+        final Duration readTimeout, final Duration requestTimeout) {
+      final var config =
+          OidcClientCredentialsConfiguration.builder(
+                  URI.create("https://localhost:" + server.getLocalPort() + "/token"),
+                  "my-client",
+                  SECRET)
+              .connectTimeout(Duration.ofSeconds(20))
+              .readTimeout(readTimeout)
+              .requestTimeout(requestTimeout)
+              .build();
+      return new OidcClientCredentialsProvider(config, clock);
+    }
+
+    @Override
+    public void close() throws IOException {
+      server.close();
+      for (final Socket socket : accepted) {
+        socket.close();
+      }
     }
   }
 }

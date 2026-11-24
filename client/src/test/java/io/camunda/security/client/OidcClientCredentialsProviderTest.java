@@ -465,9 +465,9 @@ class OidcClientCredentialsProviderTest extends OidcTestSupport {
     final var provider =
         provider(
             Duration.ofSeconds(10),
-            (request, connection) -> {
+            (request, real) -> {
               if (first.getAndSet(false)) {
-                return TokenRequestWorker.sendOverConnection(request, connection);
+                return real.send(request);
               }
               entered.countDown();
               try {
@@ -476,7 +476,7 @@ class OidcClientCredentialsProviderTest extends OidcTestSupport {
                 Thread.currentThread().interrupt();
                 throw new IOException(e);
               }
-              return TokenRequestWorker.sendOverConnection(request, connection);
+              return real.send(request);
             });
     final ExecutorService other = Executors.newSingleThreadExecutor();
     try {

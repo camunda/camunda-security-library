@@ -20,7 +20,6 @@ import com.nimbusds.oauth2.sdk.http.HTTPResponse;
 import com.nimbusds.oauth2.sdk.id.ClientID;
 import com.nimbusds.oauth2.sdk.token.AccessToken;
 import com.nimbusds.oauth2.sdk.token.AccessTokenType;
-import java.time.Duration;
 import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,9 +53,6 @@ final class TokenResponses {
     putIfPresent(builder, "resource", config.resource());
     final HTTPRequest request = builder.build().toHTTPRequest();
     request.setAccept("application/json");
-    request.setConnectTimeout(toMillis(config.connectTimeout()));
-    request.setReadTimeout(toMillis(config.readTimeout()));
-    request.setFollowRedirects(false);
     return request;
   }
 
@@ -65,11 +61,6 @@ final class TokenResponses {
     if (!ConfigurationChecks.isBlank(value)) {
       builder.customParameter(name, value);
     }
-  }
-
-  /** At least 1 ms, because {@code HttpURLConnection} reads 0 as "wait forever". */
-  private static int toMillis(final Duration timeout) {
-    return (int) Math.max(1L, (timeout.toNanos() + 999_999L) / 1_000_000L);
   }
 
   static CachedToken parseToken(

@@ -40,15 +40,23 @@ abstract class OidcTestSupport {
   MutableClock clock;
 
   /**
-   * Loads the Nimbus classes once, so that the first token request of a test does not spend its
-   * short request timeout on class loading.
+   * Loads the Nimbus and HttpClient classes once, so that the first token request of a test does
+   * not spend its short request timeout on class loading. One real request to a throwaway endpoint
+   * loads the HttpClient execution chain and the TLS classes.
    */
   @BeforeAll
-  static void loadTokenRequestClasses() {
+  static void loadTokenRequestClasses() throws Exception {
     TokenResponses.buildRequest(
         OidcClientCredentialsConfiguration.builder(
                 URI.create("https://localhost/token"), "warm-up", SECRET)
             .build());
+    try (var warmUpEndpoint = new TokenEndpoint();
+        var warmUp =
+            new OidcClientCredentialsProvider(
+                OidcClientCredentialsConfiguration.builder(warmUpEndpoint.uri(), "warm-up", SECRET)
+                    .build())) {
+      authorization(warmUp);
+    }
   }
 
   @BeforeEach
@@ -101,7 +109,7 @@ abstract class OidcTestSupport {
   }
 
   OidcClientCredentialsProvider providerWithRequestTimeout(final Duration requestTimeout) {
-    return provider(requestTimeout, TokenRequestWorker::sendOverConnection);
+    return provider(requestTimeout, TokenRequestWorker.DIRECT);
   }
 
   /** Calls until the worker is free again; fails if it is still busy after 10 seconds. */

@@ -36,6 +36,7 @@ final class TokenEndpoint implements AutoCloseable {
   private volatile CountDownLatch release = new CountDownLatch(0);
   private volatile CountDownLatch releaseFirst = new CountDownLatch(0);
   private final AtomicBoolean firstPending = new AtomicBoolean();
+  private volatile String[] extraHeader;
   private volatile Duration delayPerByte = Duration.ZERO;
 
   TokenEndpoint() throws IOException {
@@ -61,6 +62,11 @@ final class TokenEndpoint implements AutoCloseable {
   void respondWith(final int newStatus, final String newBody) {
     status = newStatus;
     body = newBody;
+  }
+
+  /** Adds this header to every response. */
+  void respondWithHeader(final String name, final String value) {
+    extraHeader = new String[] {name, value};
   }
 
   /** Answers with this content type instead of {@code application/json}. */
@@ -115,6 +121,9 @@ final class TokenEndpoint implements AutoCloseable {
                 .formatted(issued.incrementAndGet());
     final byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
     exchange.getResponseHeaders().add("Content-Type", contentType);
+    if (extraHeader != null) {
+      exchange.getResponseHeaders().add(extraHeader[0], extraHeader[1]);
+    }
     exchange.sendResponseHeaders(status, bytes.length);
     writeBody(exchange, bytes);
     exchange.close();

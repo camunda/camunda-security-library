@@ -16,5 +16,7 @@ this module (#133). The rest of CSL uses Java 21.
   Java 21.
 - Dependencies must also run on Java 8. All runtime dependencies have class version 52 or lower.
   The build does not check this. When you add or upgrade a dependency, check its class version.
+  This includes Apache HttpClient 5 (`httpclient5`, `httpcore5`, `httpcore5-h2`), which sends the
+  token request. All three have class version 52.
 
 When the Java client raises its baseline, you can remove this limit.
