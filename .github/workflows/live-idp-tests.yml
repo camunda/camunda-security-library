@@ -40,6 +40,18 @@ jobs:
           java-version: '25.0.5+8.0.LTS'
           cache: maven
 
+      # The Identity team (@camunda/identity) owns the tenant settings below. Two of them expire,
+      # and this job fails on the day either one does:
+      #
+      #   ENTRA_CLIENT_SECRET   2028-11-19
+      #   ENTRA_REFRESH_TOKEN   about 2027-02-21, 90 days after the sign-in that produced it
+      #
+      # To renew the refresh token, sign in as the Entra test user, take the new refresh token
+      # from the response, and write it to the Vault path below. The sign-in is interactive
+      # because the tenant forces multifactor registration, which is the same reason the test
+      # cannot use the password flow. That user's password is in the same Vault path as
+      # ENTRA_TEST_USER_PASSWORD, which no step here reads. The Auth0 client secret and the
+      # Auth0 test user password do not expire.
       - name: Import the tenant settings
         id: tenants
         uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4.0.0
