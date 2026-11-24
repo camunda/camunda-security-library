@@ -26,11 +26,17 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A {@link ResourceAccessProvider} that counts the conditional role memberships of the principal
- * (ADR-0041), by the same rule as the single check of {@link AuthorizationService}. A list filtered
- * by {@link #resolveResourceAccess} therefore contains exactly the resources that the single check
- * allows, provided that each resource has an ID and the host stores the attributes that its
- * extractor reads. The single check denies a resource without an ID, and a resource whose extractor
- * throws gets no conditional role.
+ * (ADR-0041), by the same rule as the single check of {@link AuthorizationService}.
+ *
+ * <p>A list filtered by {@link #resolveResourceAccess} matches the resources the single check
+ * allows only when the host's stored attributes agree, for every resource, with what the resource
+ * type's extractor computes. The single check runs the extractor in process and grants no
+ * conditional role when it cannot evaluate one (ADR-0041 D4: the extractor throws or is ambiguous,
+ * or an attribute has no value), denying that resource. The filter cannot observe any of this: it
+ * only hands the conditions to the host to match against its storage. So where the stored
+ * attributes differ from what the extractor would compute, the list can include a resource the
+ * single check denies. A host keeps the two in step by storing exactly the attributes its extractor
+ * reads, from the same source. The single check also denies a resource without an ID.
  *
  * <p>{@link #resolveResourceAccess} returns a {@link ResourceAccess} whose {@link
  * ResourceAccess#filter() filter} has these terms:
@@ -181,6 +187,8 @@ public final class ConditionalResourceAccessProvider implements ResourceAccessPr
       final List<AuthorizationScope> scopes, final List<MembershipCondition> conditions) {
     final List<Term> terms = new ArrayList<>();
     if (scopes.stream().anyMatch(s -> s.getMatcher() == AuthorizationResourceMatcher.ANY)) {
+      // Matches every resource (-> filter All) only for a global grant, where conditions is empty:
+      // a conditional membership always carries conditions, so its ANY term stays condition-gated.
       terms.add(new Term(Set.of(), conditions));
     }
     final Set<String> resourceIds = resourceIdsOf(scopes);
