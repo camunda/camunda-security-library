@@ -289,16 +289,37 @@ jobs:
         run: |
           # Name the start tag explicitly: GitHub cannot find it by ancestry
           # because release tags are not reachable from the base branch.
-          args=()
+          args=(-f tag_name="${RELEASE_TAG}" -f target_commitish="${RELEASE_BRANCH}")
           if [[ -n "${PREV_TAG}" ]]; then
-            args+=(--notes-start-tag "${PREV_TAG}")
+            args+=(-f previous_tag_name="${PREV_TAG}")
+          fi
+          # GitHub groups generated notes only by PR label, and our PRs carry none.
+          # Group them by Conventional Commits title prefix instead.
+          if ! gh api "repos/${{ github.repository }}/releases/generate-notes" "${args[@]}" --jq '.body' \
+                 > "${RUNNER_TEMP}/raw-notes.md" \
+               || [[ -z "$(tr -d '[:space:]' < "${RUNNER_TEMP}/raw-notes.md")" ]]; then
+            # The artifacts and the tag are already published, so still create the release.
+            echo "::warning::Could not generate the release notes. Publishing a minimal body."
+            if [[ -n "${PREV_TAG}" ]]; then
+              printf '**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
+                "${GITHUB_REPOSITORY}" "${PREV_TAG}" "${RELEASE_TAG}" > "${RUNNER_TEMP}/raw-notes.md"
+            else
+              printf 'Release %s\n' "${RELEASE_VERSION}" > "${RUNNER_TEMP}/raw-notes.md"
+            fi
+          fi
+          # An older release branch can lack the script. The artifacts and the tag are already
+          # published here, so a grouping failure must not stop the release: use the raw notes.
+          if ! { python3 .github/scripts/group_release_notes.py \
+                 < "${RUNNER_TEMP}/raw-notes.md" > "${RUNNER_TEMP}/release-notes.md" \
+               && [[ -s "${RUNNER_TEMP}/release-notes.md" ]]; }; then
+            echo "::warning::Could not group the release notes. Publishing them ungrouped."
+            cp "${RUNNER_TEMP}/raw-notes.md" "${RUNNER_TEMP}/release-notes.md"
           fi
           gh release create "${RELEASE_TAG}" \
             --repo "${{ github.repository }}" \
             --target "${RELEASE_BRANCH}" \
             --title "${RELEASE_VERSION}" \
-            --generate-notes \
-            "${args[@]}"
+            --notes-file "${RUNNER_TEMP}/release-notes.md"
 
       - name: Label issues delivered in this release
         if: ${{ !inputs.dryRun }}
