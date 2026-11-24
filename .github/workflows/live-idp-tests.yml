@@ -7,7 +7,7 @@ name: live-idp-tests
 #
 # The job runs the whole build rather than the two live tests alone. The live tests skip
 # themselves when the tenant settings are absent, so the same command is what a developer runs,
-# and a weekly full verification costs little and catches more.
+# and a full verification on each run costs little and catches more.
 
 on:
   schedule:
@@ -41,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Java 21
+      - name: Set up Java
         uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
@@ -160,7 +160,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": ":tick: The <${{ env.BUILD_URL }}|live IdP tests> passed against the real Entra and Auth0 tenants."
+                    "text": ":white_check_mark: The <${{ env.BUILD_URL }}|live IdP tests> passed against the real Entra and Auth0 tenants."
                   }
                 }
               ]
@@ -179,7 +179,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": ":cross: The <${{ env.BUILD_URL }}|live IdP tests> failed."
+                    "text": ":x: The <${{ env.BUILD_URL }}|live IdP tests> failed."
                   }
                 },
                 {

@@ -66,6 +66,14 @@ public final class LiveIdpTenants {
 
   private static final ObjectMapper JSON = new ObjectMapper();
 
+  // One token of each kind per run, because several tests ask for the same one. An identity
+  // provider rate-limits repeated sign-ins of the same user, and the job now runs every working
+  // day. The tokens outlive a run by a wide margin, so fetching each one once is safe.
+  private static String cachedEntraAppOnlyToken;
+  private static String cachedEntraUserToken;
+  private static String cachedAuth0ClientCredentialsToken;
+  private static String cachedAuth0UserToken;
+
   private LiveIdpTenants() {}
 
   public static boolean entraIsConfigured() {
@@ -104,18 +112,23 @@ public final class LiveIdpTenants {
 
   /** The app-only token of the client credentials flow. No person is behind it. */
   public static String entraAppOnlyToken() throws Exception {
-    return accessTokenOf(
-        post(
-            entraTokenUri(),
-            Map.of(
-                "grant_type",
-                "client_credentials",
-                "client_id",
-                env(ENTRA_CLIENT_ID),
-                "client_secret",
-                env(ENTRA_CLIENT_SECRET),
-                "scope",
-                "api://" + env(ENTRA_CLIENT_ID) + "/.default")));
+    if (cachedEntraAppOnlyToken != null) {
+      return cachedEntraAppOnlyToken;
+    }
+    cachedEntraAppOnlyToken =
+        accessTokenOf(
+            post(
+                entraTokenUri(),
+                Map.of(
+                    "grant_type",
+                    "client_credentials",
+                    "client_id",
+                    env(ENTRA_CLIENT_ID),
+                    "client_secret",
+                    env(ENTRA_CLIENT_SECRET),
+                    "scope",
+                    "api://" + env(ENTRA_CLIENT_ID) + "/.default")));
+    return cachedEntraAppOnlyToken;
   }
 
   /**
@@ -123,6 +136,9 @@ public final class LiveIdpTenants {
    * registration is a public client, so the exchange sends no client secret.
    */
   public static String entraUserToken() throws Exception {
+    if (cachedEntraUserToken != null) {
+      return cachedEntraUserToken;
+    }
     final var response =
         send(
             entraTokenUri(),
@@ -142,7 +158,8 @@ public final class LiveIdpTenants {
                 + " secret store. The response was: %s",
             ENTRA_REFRESH_TOKEN, response.body())
         .isEqualTo(200);
-    return accessTokenOf(response);
+    cachedEntraUserToken = accessTokenOf(response);
+    return cachedEntraUserToken;
   }
 
   public static String auth0IssuerUri() {
@@ -163,14 +180,19 @@ public final class LiveIdpTenants {
 
   /** The machine token of the client credentials flow. */
   public static String auth0ClientCredentialsToken() throws Exception {
-    return accessTokenOf(
-        post(
-            auth0TokenUri(),
-            Map.of(
-                "grant_type", "client_credentials",
-                "client_id", env(AUTH0_CLIENT_ID),
-                "client_secret", env(AUTH0_CLIENT_SECRET),
-                "audience", env(AUTH0_AUDIENCE))));
+    if (cachedAuth0ClientCredentialsToken != null) {
+      return cachedAuth0ClientCredentialsToken;
+    }
+    cachedAuth0ClientCredentialsToken =
+        accessTokenOf(
+            post(
+                auth0TokenUri(),
+                Map.of(
+                    "grant_type", "client_credentials",
+                    "client_id", env(AUTH0_CLIENT_ID),
+                    "client_secret", env(AUTH0_CLIENT_SECRET),
+                    "audience", env(AUTH0_AUDIENCE))));
+    return cachedAuth0ClientCredentialsToken;
   }
 
   /**
@@ -179,17 +201,22 @@ public final class LiveIdpTenants {
    * table in ADR-0048 names.
    */
   public static String auth0UserToken() throws Exception {
-    return accessTokenOf(
-        post(
-            auth0TokenUri(),
-            Map.of(
-                "grant_type", "password",
-                "client_id", env(AUTH0_CLIENT_ID),
-                "client_secret", env(AUTH0_CLIENT_SECRET),
-                "username", env(AUTH0_TEST_USER),
-                "password", env(AUTH0_TEST_USER_PASSWORD),
-                "audience", env(AUTH0_AUDIENCE),
-                "scope", "openid profile email")));
+    if (cachedAuth0UserToken != null) {
+      return cachedAuth0UserToken;
+    }
+    cachedAuth0UserToken =
+        accessTokenOf(
+            post(
+                auth0TokenUri(),
+                Map.of(
+                    "grant_type", "password",
+                    "client_id", env(AUTH0_CLIENT_ID),
+                    "client_secret", env(AUTH0_CLIENT_SECRET),
+                    "username", env(AUTH0_TEST_USER),
+                    "password", env(AUTH0_TEST_USER_PASSWORD),
+                    "audience", env(AUTH0_AUDIENCE),
+                    "scope", "openid profile email")));
+    return cachedAuth0UserToken;
   }
 
   /**
