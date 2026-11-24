@@ -99,20 +99,35 @@ final class ConditionalRoleEvaluator {
     if (reportedFailingExtractors.add(extractorClass)) {
       LOG.warn(
           "ResourceAttributeExtractor [{}] for resource type [{}] threw while reading resource"
-              + " attributes for principal [{}]; conditional role memberships do not apply. Later"
+              + " attributes for a [{}] principal; conditional role memberships do not apply. Later"
               + " failures of this extractor are logged at DEBUG.",
           extractorClass.getName(),
           resourceType,
-          authentication.formattedPrincipal(),
+          principalType(authentication),
           e);
     } else {
       LOG.debug(
           "ResourceAttributeExtractor [{}] for resource type [{}] threw while reading resource"
-              + " attributes for principal [{}]; conditional role memberships do not apply",
+              + " attributes for a [{}] principal; conditional role memberships do not apply",
           extractorClass.getName(),
           resourceType,
-          authentication.formattedPrincipal(),
+          principalType(authentication),
           e);
     }
+  }
+
+  // The principal type only (never the username, which may be PII): matches the convention of the
+  // other authorization logs. See the no-personal-data logging rule in AGENTS.md.
+  private static String principalType(final CamundaAuthentication authentication) {
+    if (authentication.isAnonymous()) {
+      return "anonymous";
+    }
+    if (authentication.authenticatedUsername() != null) {
+      return "user";
+    }
+    if (authentication.authenticatedClientId() != null) {
+      return "client";
+    }
+    return "unknown";
   }
 }
