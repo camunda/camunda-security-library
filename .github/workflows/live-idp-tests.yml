@@ -11,8 +11,10 @@ name: live-idp-tests
 
 on:
   schedule:
-    # Every Monday at 05:00 UTC, before the European working day.
-    - cron: '0 5 * * 1'
+    # Every working day at 05:00 UTC, before the European working day. The run is short and the
+    # tenants are free, so a daily check finds a break on the day it happens rather than up to a
+    # week later.
+    - cron: '0 5 * * 1-5'
   workflow_dispatch:
 
 concurrency:
@@ -30,6 +32,12 @@ jobs:
     permissions:
       contents: read
       id-token: write # mint a GitHub OIDC token for Vault JWT auth
+    env:
+      # Read here and not from Vault on purpose. A Vault outage is one of the failures this job
+      # has to report, so the notification must not depend on Vault. The steps that use this skip
+      # themselves while the secret is absent, so the job works before the secret is added.
+      SLACK_WEBHOOK_URL: ${{ secrets.CI_CD_SLACK_WEBHOOK_URL }}
+      BUILD_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -130,3 +138,56 @@ jobs:
           path: '**/target/failsafe-reports/**'
           retention-days: 7
           if-no-files-found: ignore
+
+      # Report the result to Slack, in the same shape as the Mgmt Identity compatibility check.
+      # The success message stays for now, for the reason that check gives: a scheduled job that
+      # quietly stops running is exactly the failure this job exists to catch, and one short
+      # message a day is the cheapest proof that it ran. Replace both with a summary if the
+      # channel gets noisy.
+      #
+      # Both steps skip themselves while CI_CD_SLACK_WEBHOOK_URL is absent, so the job keeps
+      # working until the secret is added to this repository.
+      - name: Notify Slack of success
+        if: success() && env.SLACK_WEBHOOK_URL != ''
+        uses: slackapi/slack-github-action@0bc3581177d9a0f8d555e07689384b376528e8fa # v4.1.0
+        with:
+          webhook: ${{ env.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":tick: The <${{ env.BUILD_URL }}|live IdP tests> passed against the real Entra and Auth0 tenants."
+                  }
+                }
+              ]
+            }
+
+      - name: Notify Slack of failure
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
+        uses: slackapi/slack-github-action@0bc3581177d9a0f8d555e07689384b376528e8fa # v4.1.0
+        with:
+          webhook: ${{ env.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":cross: The <${{ env.BUILD_URL }}|live IdP tests> failed."
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "Check the <${{ env.BUILD_URL }}|run>. If the Entra user token failed, the refresh token has most likely expired. The workflow file says how to renew it."
+                  }
+                }
+              ]
+            }
