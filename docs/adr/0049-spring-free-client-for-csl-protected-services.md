@@ -1,9 +1,13 @@
 # ADR-0049: A Spring-free client adds credentials to calls to CSL-protected services
 
 **DRI**: Patrick Wunderlich (p-wunderlich)
-**Deciders**: Patrick Wunderlich (p-wunderlich)
+
+**Deciders**: Patrick Wunderlich (p-wunderlich), Sebastian Bathke (megglos), Christian Thiel (stoerti)
+
 **Status**: Accepted (1.4.0)
+
 **Purpose**: Defines how CSL supplies credentials for outgoing calls to CSL-protected services.
+
 **Audience**: CSL maintainers, and OC and Hub engineers who call CSL-protected services.
 
 ## Context
@@ -30,17 +34,23 @@ call different services or physical tenants.
 **D3. The provider has the shape of the Java client's `CredentialsProvider`, and only the caller retries.**
 `OutboundCredentialsProvider` has `applyCredentials`, `shouldRetryRequest` and `close`. With the
 same shape, #133 can move the Java client to this module without an API break. After a `401`, the
-provider gets a new token, but it never sends the request again. A second `POST` can change data a
-second time, and only the caller knows if that is safe.
+caller asks the provider through `shouldRetryRequest`. The provider then gets a new token, but it
+never sends the request again. A second `POST` can change data a second time, and only the caller
+knows if that is safe.
 
 **D4. `client` does not follow three CSL conventions.**
 `OutboundCredentialsProvider` is not a `*Port`, because `client` has no domain. The configuration
 types are in `client`, not in `api/model/config/`, because `client` must not depend on `api`. They
-are immutable final classes, not records, because `client` targets Java 8.
+are immutable final classes, not records, because `client` targets Java 8. The Spring binding types
+of #797 are in `api/model/config/client/`, like the other configuration types of the starter.
 
 ## Alternatives considered
 
 - **Spring Security's OAuth2 client.** It needs Spring, and the broker has no Spring.
+- **A separate Spring module, for example `client-spring`.** OC and Hub already bind
+  `CamundaSecurityLibraryProperties`, so a second module adds a release and an import. It keeps only
+  the small `client` jar off the classpath, because the starter already has the Nimbus OAuth SDK
+  through Spring Security.
 - **The client in `api` or `core`.** The broker would then get the full public model.
 - **A hand-written token request.** The Nimbus OAuth SDK already does this on Java 8, and it
   supports `private_key_jwt` and mTLS for #133.
