@@ -14,13 +14,14 @@ Conventional Commits format: `<type>(<scope>): <subject>`
 
 - Header line (`<type>(<scope>): <subject>`): max 100 characters, imperative mood, no trailing period — aligns with [commitlint config-conventional `header-max-length`](https://github.com/conventional-changelog/commitlint/tree/master/%40commitlint/config-conventional#header-max-length)
 - Body: wrap at 100 characters; explain *why*, not *what*
-- Breaking changes: `BREAKING CHANGE:` footer required
+- Breaking changes: put `!` before the colon in the header, and add a `BREAKING CHANGE:` footer. Example: `feat(api)!: remove the legacy port`
 - Types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`, `build`, `perf`
 - Scope is optional but encouraged (e.g., `feat(policy): add snapshot apply`)
 
 ## PR Process
 
 - PR title must follow the Conventional Commits format
+- A breaking PR has `!` in its title. The release notes use only the PR title. Without the `!`, the change does not show in the Breaking changes section.
 - Required before merge: CI checks green, no unresolved comments
 - Squash-merge to keep main history clean
 - Exception: release mergeback PRs (`chore(release): merge back ...`) use a merge commit. The release workflow sets this with auto-merge. Do not squash or rebase them. The release tag must stay reachable from `main`.

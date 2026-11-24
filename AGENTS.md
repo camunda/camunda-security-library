@@ -137,6 +137,7 @@ mvn verify
 
 - Branch naming: `<type>/<short-description>` (e.g., `feat/add-policy-model`)
 - Commit format: Conventional Commits — `<type>(<scope>): <subject>`
+- Breaking change: put `!` before the colon in the PR title and the commit header, and add a `BREAKING CHANGE:` footer. The release notes read only the PR title.
 - Squash-merge to keep main history clean
 - A pre-push hook will enforce quality gates before code reaches the remote
 

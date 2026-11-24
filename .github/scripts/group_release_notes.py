@@ -3,9 +3,8 @@
 
 GitHub can only group generated notes by PR label, and our PRs carry no type
 labels. PR titles follow Conventional Commits, so this script groups the
-"What's Changed" entries by the title prefix instead. It then adds a
-"Contributors" section with every human author of the release. All other
-sections (New Contributors, Full Changelog) stay as they are.
+"What's Changed" entries by the title prefix instead. The sections after
+"What's Changed" (New Contributors, Full Changelog) stay as they are.
 
 Usage: group_release_notes.py < generated-notes.md > grouped-notes.md
 """
@@ -32,12 +31,6 @@ OTHER = "Other changes"
 # "* <type>(<scope>)!: <subject> by @user in <url>"
 ENTRY = re.compile(r"^\* (?P<type>[A-Za-z]+)(?:\((?P<scope>[^)]*)\))?(?P<bang>!)?: ")
 WHATS_CHANGED = "## What's Changed"
-# The author block follows the last " by @": "... by @alice in https://..." or
-# "... by @alice with @Copilot in https://...". Mentions in the title come before it.
-AUTHORS = re.compile(r"^.* by (?P<authors>@.+?) in https://\S+$")
-HANDLE = re.compile(r"@([A-Za-z0-9-]+(?:\[bot\])?)")
-# AI coding assistants that GitHub lists as co-authors; not people to credit.
-NON_HUMAN = {"copilot", "claude"}
 
 
 def classify(entry):
@@ -54,22 +47,6 @@ def classify(entry):
         if commit_type in types:
             return heading
     return OTHER
-
-
-def contributors(entries):
-    # Keyed on the lowercased login, so "@Alice" and "@alice" count once.
-    names = {}
-    for entry in entries:
-        match = AUTHORS.search(entry)
-        if match:
-            for name in HANDLE.findall(match.group("authors")):
-                names.setdefault(name.lower(), name)
-    humans = [
-        name
-        for key, name in names.items()
-        if not key.endswith("[bot]") and key not in NON_HUMAN
-    ]
-    return sorted(humans, key=str.lower)
 
 
 def group(notes):
@@ -91,9 +68,6 @@ def group(notes):
     for heading in [h for h, _ in SECTIONS] + [OTHER]:
         if heading in groups:
             out += ["", f"### {heading}", *groups[heading]]
-    names = contributors(entries)
-    if names:
-        out += ["", "## Contributors", ", ".join(f"@{n}" for n in names)]
     out.append("")
     return "\n".join(lines[:start] + out + lines[end:]).rstrip("\n") + "\n"
 

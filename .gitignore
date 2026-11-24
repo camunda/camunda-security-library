@@ -70,3 +70,6 @@ Desktop.ini
 
 # Linux
 *~
+
+# Python
+__pycache__/

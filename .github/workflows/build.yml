@@ -21,6 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Test release notes script
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
+
       - name: Check ADR numbering is unique
         run: |
           adr_dupes() { ls "$1"/*.md | sed 's|.*/0*\([0-9][0-9]*\)-.*|\1|' | sort | uniq -d; }
