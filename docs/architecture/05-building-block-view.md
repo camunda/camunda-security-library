@@ -409,7 +409,7 @@ In addition to core ports, the library is structured across the following Maven 
 - `api/` — public, host-facing surface: model records (`api/model/`), context/helper contracts (`api/context/`), and configuration classes bound by Spring in the starter (`api/model/config/`). No dependency on `core/`.
 - `validation/` — centralized validators for identity initialization data (users, groups, tenants, roles, mapping rules, authorizations). Used by the starter to validate initialization configuration.
 - `spring-boot-starter/` — Spring configuration classes, filter chain assembly, and default port implementations. Hosts activate these via explicit `@Import` (see [ADR-0003](../adr/0003-no-spring-boot-auto-configuration.md)).
-- `client/` — Spring-free client that adds credentials (HTTP Basic) to outgoing calls to CSL-protected services. Depends on no other CSL module (see [ADR-0049](../adr/0049-spring-free-client-for-csl-protected-services.md)).
+- `client/` — Spring-free client that adds credentials (OIDC client credentials or Basic) to outgoing calls to CSL-protected services. Depends on no other CSL module (see [ADR-0049](../adr/0049-spring-free-client-for-csl-protected-services.md)).
 
 The `api` contracts are consumer-facing and do not need to be outbound host-implemented adapters.
 
