@@ -530,6 +530,38 @@ class CamundaSecurityLibraryPropertiesTest {
   }
 
   @Test
+  void shouldBindOutboundClientsMap() {
+    new ApplicationContextRunner()
+        .withConfiguration(AutoConfigurations.of(CamundaSecurityConfiguration.class))
+        .withPropertyValues(
+            "camunda.security.client.hub.oidc.token-uri=https://idp.example.com/token",
+            "camunda.security.client.hub.oidc.client-id=c",
+            "camunda.security.client.hub.oidc.client-secret=s",
+            "camunda.security.client.hub.oidc.scopes[0]=read",
+            "camunda.security.client.hub.oidc.scopes[1]=write",
+            "camunda.security.client.hub.oidc.connect-timeout=3s",
+            "camunda.security.client.hub.oidc.read-timeout=5s",
+            "camunda.security.client.hub.oidc.request-timeout=20s",
+            "camunda.security.client.ops.basic.username=ops",
+            "camunda.security.client.ops.basic.password=pw")
+        .run(
+            context -> {
+              final var clients =
+                  context.getBean(CamundaSecurityLibraryProperties.class).getClient();
+              assertThat(clients).containsOnlyKeys("hub", "ops");
+              final var oidc = clients.get("hub").getOidc();
+              assertThat(oidc.getTokenUri()).isEqualTo("https://idp.example.com/token");
+              assertThat(oidc.getScopes()).containsExactly("read", "write");
+              assertThat(oidc.getConnectTimeout()).isEqualTo(Duration.ofSeconds(3));
+              assertThat(oidc.getReadTimeout()).isEqualTo(Duration.ofSeconds(5));
+              assertThat(oidc.getRequestTimeout()).isEqualTo(Duration.ofSeconds(20));
+              assertThat(clients.get("hub").getBasic()).isNull();
+              assertThat(clients.get("ops").getBasic().getUsername()).isEqualTo("ops");
+              assertThat(clients.get("ops").getBasic().getPassword()).isEqualTo("pw");
+            });
+  }
+
+  @Test
   void shouldDefaultTheClientTypeToConfidential() {
     runner
         .withPropertyValues(
@@ -566,5 +598,13 @@ class CamundaSecurityLibraryPropertiesTest {
                           .getType())
                   .isEqualTo("semi-public");
             });
+  }
+
+  @Test
+  void shouldRestoreEmptyClientMapWhenSetterCalledWithNull() {
+    final var properties = new CamundaSecurityLibraryProperties();
+    assertThat(properties.getClient()).isEmpty();
+    properties.setClient(null);
+    assertThat(properties.getClient()).isNotNull().isEmpty();
   }
 }

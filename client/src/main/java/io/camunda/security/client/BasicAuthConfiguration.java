@@ -17,12 +17,12 @@ public final class BasicAuthConfiguration {
 
   /**
    * @param username the user name; it must not be blank and must not contain {@code ':'}
-   * @param password the password; it must not be null
+   * @param password the password; it must not be blank
    */
   public BasicAuthConfiguration(final String username, final String password) {
     ConfigurationChecks.requireText(username, "username");
     ConfigurationChecks.requireNoColon(username, "username");
-    Objects.requireNonNull(password, "password must not be null");
+    ConfigurationChecks.requireText(password, "password");
     this.username = username;
     this.password = password;
   }

@@ -26,8 +26,11 @@ class ConfigurationRecordsTest {
     assertThatThrownBy(() -> new BasicAuthConfiguration("", "pw"))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("username");
-    assertThatThrownBy(() -> new BasicAuthConfiguration("u", null))
-        .isInstanceOf(NullPointerException.class);
+    for (final String password : new String[] {null, "", "  "}) {
+      assertThatThrownBy(() -> new BasicAuthConfiguration("u", password))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessage("password must not be blank");
+    }
 
     assertThat(new BasicAuthConfiguration("u", "pw-secret").toString())
         .doesNotContain("pw-secret")
