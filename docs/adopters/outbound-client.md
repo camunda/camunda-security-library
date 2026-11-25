@@ -62,7 +62,8 @@ one more token request. Retry at most once per request, as above, to limit this.
 The token is cached and refreshed 30 seconds before it expires, or halfway through its lifetime if
 that is shorter. If the refresh fails, the provider keeps sending the old token until it expires.
 It does not do this after a `401` for that token, because the IdP rejected it. The first failed
-refresh that keeps the old token logs a WARN. The next failures in a row log at DEBUG, until a
+refresh that keeps the old token logs a WARN. When no valid token is left and a call fails, the
+provider logs a WARN too. A failure with the same cause as the last one logs at DEBUG, until a
 token request succeeds again. A response without `expires_in`, or with `0`, is not cached.
 
 One caller at a time makes a token request. The other callers wait, and then use the token that it
@@ -77,8 +78,8 @@ responses that follow RFC 6749:
 - `expires_in`, if present, is a number or a numeric string with no spaces, and it is not
   negative.
 
-Other responses fail with a `TokenRequestException` that names the field. A token response larger
-than 64 KiB fails too. A real token response is a few KB.
+Other responses fail with a `TokenRequestException`. The message does not quote the response,
+because the response can contain the token. A token response larger than 64 KiB fails too. A real token response is a few KB.
 
 ### Timeouts
 

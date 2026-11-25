@@ -8,6 +8,7 @@
 package io.camunda.security.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -28,6 +29,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -107,16 +109,22 @@ abstract class OidcTestSupport {
   /** Calls until the worker is free again; fails if it is still busy after 10 seconds. */
   static String authorizationOnceTheWorkerIsFree(final OutboundCredentialsProvider provider)
       throws Exception {
-    final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-    while (true) {
-      try {
-        return authorization(provider);
-      } catch (final TokenRequestException e) {
-        assertThat(e.getMessage()).contains("still running");
-        assertThat(System.nanoTime()).as("the worker was not freed").isLessThan(deadline);
-        TimeUnit.MILLISECONDS.sleep(5);
-      }
-    }
+    final AtomicReference<String> result = new AtomicReference<>();
+    await("the worker was not freed")
+        .atMost(Duration.ofSeconds(10))
+        .pollInterval(Duration.ofMillis(5))
+        .pollInSameThread()
+        .until(
+            () -> {
+              try {
+                result.set(authorization(provider));
+                return true;
+              } catch (final TokenRequestException e) {
+                assertThat(e.getMessage()).contains("still running");
+                return false;
+              }
+            });
+    return result.get();
   }
 
   static void assertTimedOut(final Throwable failure) {
@@ -137,12 +145,11 @@ abstract class OidcTestSupport {
   }
 
   /** Waits until the endpoint has received the given number of token requests. */
-  void awaitRequests(final int expected) throws InterruptedException {
-    final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-    while (endpoint.requestCount() < expected) {
-      assertThat(System.nanoTime()).as("token request did not arrive").isLessThan(deadline);
-      TimeUnit.MILLISECONDS.sleep(5);
-    }
+  void awaitRequests(final int expected) {
+    await("token request did not arrive")
+        .atMost(Duration.ofSeconds(10))
+        .pollInterval(Duration.ofMillis(5))
+        .until(() -> endpoint.requestCount() >= expected);
   }
 
   static TokenRequestException failureOf(final Future<?> result) throws Exception {
@@ -222,12 +229,11 @@ abstract class OidcTestSupport {
      * Waits until every started caller is parked: one blocked on the token request, the others on
      * the lock.
      */
-    void awaitAllWaiting() throws InterruptedException {
-      final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-      while (!allParked()) {
-        assertThat(System.nanoTime()).as("callers did not park in time").isLessThan(deadline);
-        TimeUnit.MILLISECONDS.sleep(5);
-      }
+    void awaitAllWaiting() {
+      await("callers did not park in time")
+          .atMost(Duration.ofSeconds(10))
+          .pollInterval(Duration.ofMillis(5))
+          .until(this::allParked);
     }
 
     private boolean allParked() {

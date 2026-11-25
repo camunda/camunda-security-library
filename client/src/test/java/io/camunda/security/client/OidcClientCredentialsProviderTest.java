@@ -15,6 +15,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import io.camunda.security.client.OutboundCredentialsProvider.StatusCode;
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.URI;
@@ -582,6 +583,149 @@ class OidcClientCredentialsProviderTest extends OidcTestSupport {
       release.countDown();
       pool.shutdownNow();
     }
+  }
+
+  @Test
+  void outageThatOutlivesTheOldTokenWarnsAgainWhenNoTokenIsLeft() throws IOException {
+    final var provider = provider();
+    authorization(provider);
+    clock.advance(Duration.ofSeconds(3590));
+    endpoint.respondWith(503, "{\"error\":\"temporarily_unavailable\"}");
+
+    try (var logs = new LogCapture()) {
+      assertThat(authorization(provider)).isEqualTo("Authorization=Bearer token-1");
+      assertThat(authorization(provider)).isEqualTo("Authorization=Bearer token-1");
+      clock.advance(Duration.ofSeconds(20));
+      assertThatThrownBy(() -> authorization(provider)).isInstanceOf(TokenRequestException.class);
+      assertThatThrownBy(() -> authorization(provider)).isInstanceOf(TokenRequestException.class);
+
+      assertThat(logs.eventsContaining("Token refresh for client"))
+          .extracting(ILoggingEvent::getLevel)
+          .containsExactly(Level.WARN, Level.DEBUG);
+      final List<ILoggingEvent> noToken = logs.eventsContaining("No valid token for client");
+      assertThat(noToken)
+          .extracting(ILoggingEvent::getLevel)
+          .containsExactly(Level.WARN, Level.DEBUG);
+      assertThat(noToken)
+          .allSatisfy(
+              event ->
+                  assertThat(event.getFormattedMessage())
+                      .contains("my-client", "HTTP 503")
+                      .doesNotContain(SECRET, "token-1"));
+    }
+  }
+
+  @Test
+  void failureWithNoTokenWarnsAgainAfterASuccess() {
+    final var provider = provider();
+    endpoint.respondWith(503, "{\"error\":\"temporarily_unavailable\"}");
+
+    try (var logs = new LogCapture()) {
+      assertThatThrownBy(() -> authorization(provider)).isInstanceOf(TokenRequestException.class);
+      assertThatThrownBy(() -> authorization(provider)).isInstanceOf(TokenRequestException.class);
+      // Without expires_in, the token is returned but not cached, so the next call asks again.
+      endpoint.respondWith(200, "{\"access_token\":\"token-9\",\"token_type\":\"Bearer\"}");
+      assertThat(catchThrowable(() -> authorization(provider))).isNull();
+      endpoint.respondWith(503, "{\"error\":\"temporarily_unavailable\"}");
+      assertThatThrownBy(() -> authorization(provider)).isInstanceOf(TokenRequestException.class);
+
+      assertThat(logs.eventsContaining("No valid token for client"))
+          .extracting(ILoggingEvent::getLevel)
+          .containsExactly(Level.WARN, Level.DEBUG, Level.WARN);
+    }
+  }
+
+  @Test
+  void failureWithNoTokenWarnsAgainWhenTheCauseChanges() {
+    final AtomicBoolean refuse = new AtomicBoolean();
+    final var provider =
+        provider(
+            Duration.ofSeconds(10),
+            (request, connection) -> {
+              if (refuse.get()) {
+                throw new ConnectException("Connection refused");
+              }
+              return TokenRequestWorker.sendOverConnection(request, connection);
+            });
+    endpoint.respondWith(503, "{\"error\":\"temporarily_unavailable\"}");
+
+    try (var logs = new LogCapture()) {
+      assertThatThrownBy(() -> authorization(provider)).isInstanceOf(TokenRequestException.class);
+      assertThatThrownBy(() -> authorization(provider)).isInstanceOf(TokenRequestException.class);
+      endpoint.respondWith(400, "{\"error\":\"invalid_client\"}");
+      assertThatThrownBy(() -> authorization(provider)).isInstanceOf(TokenRequestException.class);
+      refuse.set(true);
+      assertThatThrownBy(() -> authorization(provider)).isInstanceOf(TokenRequestException.class);
+
+      final List<ILoggingEvent> noToken = logs.eventsContaining("No valid token for client");
+      assertThat(noToken)
+          .extracting(ILoggingEvent::getLevel)
+          .containsExactly(Level.WARN, Level.DEBUG, Level.WARN, Level.WARN);
+      assertThat(noToken)
+          .allSatisfy(event -> assertThat(event.getFormattedMessage()).doesNotContain(SECRET));
+    } finally {
+      provider.close();
+    }
+  }
+
+  @Test
+  void closeDuringAFirstTokenRequestLogsNoFailure() throws Exception {
+    final CountDownLatch entered = new CountDownLatch(1);
+    final CountDownLatch hold = new CountDownLatch(1);
+    final var provider = provider(Duration.ofSeconds(10), holdingSender(entered, hold));
+    final ExecutorService other = Executors.newSingleThreadExecutor();
+    try (var logs = new LogCapture()) {
+      final Future<String> call = other.submit(() -> authorization(provider));
+      assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+
+      provider.close();
+
+      assertThat(catchThrowable(() -> call.get(10, TimeUnit.SECONDS)))
+          .cause()
+          .hasMessageContaining("the provider is closed");
+      assertThat(logs.eventsContaining("No valid token for client")).isEmpty();
+    } finally {
+      hold.countDown();
+      other.shutdownNow();
+    }
+  }
+
+  @Test
+  void interruptDuringAFirstTokenRequestLogsNoFailure() throws Exception {
+    final CountDownLatch entered = new CountDownLatch(1);
+    final CountDownLatch hold = new CountDownLatch(1);
+    final var provider = provider(Duration.ofSeconds(10), holdingSender(entered, hold));
+    final Callers pool = new Callers(1);
+    try (var logs = new LogCapture()) {
+      final Future<String> call = pool.submit(() -> authorization(provider));
+      assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+
+      pool.threads().getFirst().interrupt();
+
+      assertThat(catchThrowable(() -> call.get(10, TimeUnit.SECONDS)))
+          .cause()
+          .hasMessageContaining("interrupted");
+      assertThat(logs.eventsContaining("No valid token for client")).isEmpty();
+    } finally {
+      hold.countDown();
+      pool.shutdownNow();
+      provider.close();
+    }
+  }
+
+  /** Sends nothing: counts down {@code entered}, then waits for {@code hold}. */
+  private static TokenRequestWorker.TokenSender holdingSender(
+      final CountDownLatch entered, final CountDownLatch hold) {
+    return (request, connection) -> {
+      entered.countDown();
+      try {
+        hold.await();
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IOException(e);
+      }
+      throw new IOException("held");
+    };
   }
 
   /** A clock that fails once armed; the provider reads it before it sends a token request. */

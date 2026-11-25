@@ -42,8 +42,9 @@ public final class OidcClientCredentialsProvider implements OutboundCredentialsP
   private final ReentrantLock lock = new ReentrantLock(true);
   // Read without the lock, written only under it.
   private volatile CachedToken cached;
-  // Guarded by the lock: true after a failed refresh that kept the old token, until a success.
-  private boolean refreshFailing;
+  // Guarded by the lock: the state and cause of the last failure logged at WARN, null after a
+  // success.
+  private String lastLoggedFailure;
 
   public OidcClientCredentialsProvider(final OidcClientCredentialsConfiguration config) {
     this(config, Clock.systemUTC(), TokenRequestWorker::sendOverConnection);
@@ -120,6 +121,7 @@ public final class OidcClientCredentialsProvider implements OutboundCredentialsP
    * fetches a token. {@code rejected} is {@code null} unless a {@code 401} is being handled.
    */
   private CachedToken refresh(final CachedToken rejected) throws TokenRequestException {
+    // The sum can wrap around. Only remaining() reads it, and its subtraction stays correct.
     final long deadline = System.nanoTime() + config.requestTimeout().toNanos();
     acquireLock(deadline);
     try {
@@ -172,34 +174,62 @@ public final class OidcClientCredentialsProvider implements OutboundCredentialsP
     try {
       final CachedToken token = fetchToken(deadline);
       cached = token.refreshAt() != null ? token : null;
-      refreshFailing = false;
+      lastLoggedFailure = null;
       return token;
     } catch (final TokenRequestException e) {
-      // Without an old token, do not read the clock: it may be what failed. After close(), never
-      // fall back to the old token.
-      if (!mayKeepOld
-          || old == null
-          || worker.isClosed()
-          || Thread.currentThread().isInterrupted()
-          || !clock.instant().isBefore(old.expiresAt())) {
+      // After close(), never fall back to the old token. The 401 path logs in shouldRetryRequest.
+      if (!mayKeepOld || worker.isClosed() || Thread.currentThread().isInterrupted()) {
         throw e;
       }
-      logKeptOldToken(old, e);
+      // Without an old token, do not read the clock: it can be what failed.
+      if (old == null || !clock.instant().isBefore(old.expiresAt())) {
+        logFailure(
+            "no-token",
+            e,
+            "No valid token for client '{}' is cached, and the token request failed: {}",
+            config.clientId(),
+            e.getMessage());
+        throw e;
+      }
+      logFailure(
+          "kept-old",
+          e,
+          "Token refresh for client '{}' failed; the old token is used until {}: {}",
+          config.clientId(),
+          old.expiresAt(),
+          e.getMessage());
       return old;
     }
   }
 
-  /** A WARN for the first failure in a row, DEBUG for the next ones, so an outage logs once. */
-  private void logKeptOldToken(final CachedToken old, final TokenRequestException e) {
-    final String message =
-        "Token refresh for client '{}' failed; the old token is used until {}: {}";
+  /**
+   * Logs a WARN when the state or the cause differs from the last WARN, and DEBUG otherwise. So an
+   * outage logs one WARN for each state and cause, also when every call fails.
+   */
+  private void logFailure(
+      final String state,
+      final TokenRequestException e,
+      final String message,
+      final Object... arguments) {
+    final String key = state + " " + causeOf(e);
     // The message is sanitized and has no secret, so no stack trace is needed.
-    if (refreshFailing) {
-      LOG.debug(message, config.clientId(), old.expiresAt(), e.getMessage());
+    if (key.equals(lastLoggedFailure)) {
+      LOG.debug(message, arguments);
     } else {
-      refreshFailing = true;
-      LOG.warn(message, config.clientId(), old.expiresAt(), e.getMessage());
+      lastLoggedFailure = key;
+      LOG.warn(message, arguments);
     }
+  }
+
+  /**
+   * A stable cause, not the message: the error_description of the IdP can change on every response,
+   * for example with a request ID.
+   */
+  private static String causeOf(final TokenRequestException e) {
+    if (e.getStatus() != TokenRequestException.NO_RESPONSE) {
+      return "HTTP " + e.getStatus() + " " + e.getError();
+    }
+    return e.getCause() == null ? "no-response" : e.getCause().getClass().getSimpleName();
   }
 
   private boolean isUsable(final CachedToken token) {

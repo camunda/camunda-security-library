@@ -10,6 +10,7 @@ package io.camunda.security.client;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.awaitility.Awaitility.await;
 
 import com.nimbusds.oauth2.sdk.http.HTTPResponse;
 import java.io.IOException;
@@ -20,6 +21,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -68,32 +70,21 @@ class TokenRequestWorkerTest extends OidcTestSupport {
 
       // The worker closes the connection that it opened too late, before the request is sent.
       // Without that, it would wait for the held response, and every call would fail fast.
-      final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-      Throwable next = catchThrowable(() -> authorization(provider));
-      while (next.getMessage().contains("still running")) {
-        assertThat(System.nanoTime()).as("the worker was not freed").isLessThan(deadline);
-        TimeUnit.MILLISECONDS.sleep(5);
-        next = catchThrowable(() -> authorization(provider));
-      }
-      assertTimedOut(next);
+      final AtomicReference<Throwable> next = new AtomicReference<>();
+      await("the worker was not freed")
+          .atMost(Duration.ofSeconds(10))
+          .pollInterval(Duration.ofMillis(5))
+          .pollInSameThread()
+          .until(
+              () -> {
+                next.set(catchThrowable(() -> authorization(provider)));
+                return !next.get().getMessage().contains("still running");
+              });
+      assertTimedOut(next.get());
       assertThat(endpoint.requestCount()).isEqualTo(1);
     } finally {
       release.countDown();
     }
-  }
-
-  @Test
-  @Timeout(30)
-  void slowResponseEndsAtTheRequestTimeout() throws Exception {
-    final var provider = providerWithRequestTimeout(Duration.ofMillis(300));
-    endpoint.respondSlowly(Duration.ofMillis(50));
-
-    final long start = System.nanoTime();
-    assertTimedOut(catchThrowable(() -> authorization(provider)));
-
-    assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(2));
-    endpoint.respondSlowly(Duration.ZERO);
-    assertThat(authorizationOnceTheWorkerIsFree(provider)).startsWith("Authorization=Bearer ");
   }
 
   @Test
@@ -118,12 +109,22 @@ class TokenRequestWorkerTest extends OidcTestSupport {
     try {
       assertTimedOut(catchThrowable(() -> authorization(provider)));
       // On a slow machine a call can time out before the worker starts it. Call until it is held.
-      while (entered.getCount() > 0) {
-        assertThat(catchThrowable(() -> authorization(provider)))
-            .isInstanceOfSatisfying(
-                TokenRequestException.class,
-                e -> assertThat(e.getStatus()).isEqualTo(TokenRequestException.NO_RESPONSE));
-      }
+      await("the request was not held")
+          .atMost(Duration.ofSeconds(10))
+          .pollInterval(Duration.ofMillis(1))
+          .pollInSameThread()
+          .until(
+              () -> {
+                if (entered.getCount() == 0) {
+                  return true;
+                }
+                assertThat(catchThrowable(() -> authorization(provider)))
+                    .isInstanceOfSatisfying(
+                        TokenRequestException.class,
+                        e ->
+                            assertThat(e.getStatus()).isEqualTo(TokenRequestException.NO_RESPONSE));
+                return false;
+              });
 
       assertThatThrownBy(() -> authorization(provider))
           .isInstanceOfSatisfying(

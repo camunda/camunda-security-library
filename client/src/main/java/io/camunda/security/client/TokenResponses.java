@@ -79,11 +79,11 @@ final class TokenResponses {
     try {
       token = TokenResponse.parse(response).toSuccessResponse().getTokens().getAccessToken();
     } catch (final ParseException e) {
-      // No cause: the Nimbus exception can quote the response body, and so the token.
-      throw unusableResponse(e, response.getStatusCode(), clientId);
+      // No cause and no Nimbus text, because the response can contain the token.
+      throw unusableResponse(response.getStatusCode(), clientId);
     }
-    // Nimbus parses only Bearer, DPoP and N_A. It rejects other types with a ParseException, and
-    // describe() sanitizes that message, so no sanitizing is needed here.
+    // Nimbus parses only Bearer, DPoP and N_A. It rejects other types with a ParseException, which
+    // gets the fixed message above. This check handles DPoP and N_A and names the token_type.
     if (!AccessTokenType.BEARER.equals(token.getType())) {
       throw new TokenRequestException(
           "Token response of client '"
@@ -100,28 +100,13 @@ final class TokenResponses {
         token.toAuthorizationHeader(), token.getValue(), sentAt, token.getLifetime(), clientId);
   }
 
-  private static TokenRequestException unusableResponse(
-      final ParseException e, final int status, final String clientId) {
+  private static TokenRequestException unusableResponse(final int status, final String clientId) {
     return new TokenRequestException(
-        "Token response of client '" + clientId + "' is not usable: " + describe(e),
+        "Token response of client '" + clientId + "' is not usable: the response cannot be parsed",
         status,
         null,
         null,
         null);
-  }
-
-  /**
-   * Nimbus names the field that is wrong, not its value. A message that repeats the message of its
-   * cause is withheld: the JSON parser quotes the input there, and so maybe the token.
-   */
-  static String describe(final ParseException e) {
-    final String message = e.getMessage();
-    final Throwable cause = e.getCause();
-    if (message == null
-        || cause != null && cause.getMessage() != null && message.contains(cause.getMessage())) {
-      return "the response cannot be parsed";
-    }
-    return sanitize(truncate(message));
   }
 
   static TokenRequestException failure(final HTTPResponse response, final String clientId) {
@@ -149,11 +134,6 @@ final class TokenResponses {
         error,
         description,
         null);
-  }
-
-  /** Replaces line breaks and other control characters, so a response cannot forge log lines. */
-  private static String sanitize(final String value) {
-    return value == null ? null : value.replaceAll("[\\p{Cc}\\u2028\\u2029]", "?");
   }
 
   private static String truncate(final String value) {

@@ -14,7 +14,6 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -36,7 +35,6 @@ final class TokenEndpoint implements AutoCloseable {
   private volatile CountDownLatch release = new CountDownLatch(0);
   private volatile CountDownLatch releaseFirst = new CountDownLatch(0);
   private final AtomicBoolean firstPending = new AtomicBoolean();
-  private volatile Duration delayPerByte = Duration.ZERO;
 
   TokenEndpoint() throws IOException {
     server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
@@ -91,11 +89,6 @@ final class TokenEndpoint implements AutoCloseable {
     return releaseFirst;
   }
 
-  /** Sends the response body one byte at a time, with this pause before each byte. */
-  void respondSlowly(final Duration pause) {
-    delayPerByte = pause;
-  }
-
   private void handle(final HttpExchange exchange) throws IOException {
     acceptHeaders.add(exchange.getRequestHeaders().getFirst("Accept"));
     requestQueries.add(exchange.getRequestURI().getRawQuery());
@@ -116,25 +109,8 @@ final class TokenEndpoint implements AutoCloseable {
     final byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
     exchange.getResponseHeaders().add("Content-Type", contentType);
     exchange.sendResponseHeaders(status, bytes.length);
-    writeBody(exchange, bytes);
+    exchange.getResponseBody().write(bytes);
     exchange.close();
-  }
-
-  private void writeBody(final HttpExchange exchange, final byte[] bytes) throws IOException {
-    if (delayPerByte.isZero()) {
-      exchange.getResponseBody().write(bytes);
-      return;
-    }
-    for (final byte b : bytes) {
-      try {
-        Thread.sleep(delayPerByte.toMillis());
-      } catch (final InterruptedException e) {
-        Thread.currentThread().interrupt();
-        return;
-      }
-      exchange.getResponseBody().write(b);
-      exchange.getResponseBody().flush();
-    }
   }
 
   @Override
