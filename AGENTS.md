@@ -20,7 +20,7 @@ Public consumer-facing types are exposed from the `api` module:
 - `api/model`: public models used by adopters (for example authentication context records)
 - `api/context`: public context/helper contracts used by adopters (for example holders/providers/converters)
 
-Outbound calls to CSL-protected services use the `client` module (not a hexagonal port, see [ADR-0049](docs/adr/0049-spring-free-client-for-csl-protected-services.md)). It is plain Java with no Spring and no dependency on other CSL modules. Spring hosts will bind named clients under `camunda.security.client.<name>.*` through the starter (follow-up PR).
+Outbound calls to CSL-protected services use the `client` module (not a hexagonal port, see [ADR-0049](docs/adr/0049-spring-free-client-for-csl-protected-services.md)). It is plain Java with no Spring and no dependency on other CSL modules. In the starter, `CamundaSecurityLibraryProperties` binds the named clients under `camunda.security.client.<name>.*`. `OutboundCredentialsConfiguration` builds the providers from them.
 
 ### Deployment Strategies
 
