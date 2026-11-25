@@ -10,6 +10,7 @@ package io.camunda.security.spring.oidc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.net.ConnectException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtDecoderInitializationException;
+import org.springframework.web.client.ResourceAccessException;
 
 class DeferredJwtDecoderTest {
 
@@ -54,13 +56,13 @@ class DeferredJwtDecoderTest {
         new DeferredJwtDecoder(
             () -> {
               if (builds.incrementAndGet() == 1) {
-                throw new IllegalStateException("unreachable");
+                throw new ResourceAccessException("unreachable", new ConnectException("refused"));
               }
               return unused -> TOKEN;
             });
     assertThatThrownBy(() -> decoder.decode("token"))
-        .isInstanceOf(JwtDecoderInitializationException.class)
-        .hasRootCauseInstanceOf(IllegalStateException.class);
+        .isInstanceOf(IdentityProviderUnavailableException.class)
+        .hasRootCauseInstanceOf(ConnectException.class);
 
     // when the provider answers again
     final var jwt = decoder.decode("token");
@@ -68,6 +70,42 @@ class DeferredJwtDecoderTest {
     // then the deployment recovers without a restart
     assertThat(jwt).isEqualTo(TOKEN);
     assertThat(builds).hasValue(2);
+  }
+
+  @Test
+  void shouldNameTheFailureWithoutQuotingItsMessage() {
+    // given a build that fails with a message that quotes an endpoint with credentials
+    final var decoder =
+        new DeferredJwtDecoder(
+            () -> {
+              throw new ResourceAccessException(
+                  "GET https://user:s3cret@idp.example.com/discovery",
+                  new ConnectException("refused"));
+            });
+
+    // when the decoder is used
+    // then the exception names the failure, and the message of the failure stays out of it
+    assertThatThrownBy(() -> decoder.decode("token"))
+        .isInstanceOf(IdentityProviderUnavailableException.class)
+        .hasMessageContaining("ResourceAccessException")
+        .hasMessageNotContaining("s3cret");
+  }
+
+  @Test
+  void shouldNotReportAConfigurationFailureAsAnUnavailableProvider() {
+    // given a build that fails for a reason that no retry removes
+    final var decoder =
+        new DeferredJwtDecoder(
+            () -> {
+              throw new IllegalStateException("The issuer-uri is not valid");
+            });
+
+    // when the decoder is used
+    // then the failure keeps the server error, and does not read as an outage to retry
+    assertThatThrownBy(() -> decoder.decode("token"))
+        .isInstanceOf(JwtDecoderInitializationException.class)
+        .isNotInstanceOf(IdentityProviderUnavailableException.class)
+        .hasRootCauseInstanceOf(IllegalStateException.class);
   }
 
   @Test
