@@ -9,14 +9,13 @@ package io.camunda.security.spring.handler;
 
 import static io.camunda.security.spring.oidc.UrlRedaction.escapeControlCharacters;
 
+import io.camunda.security.spring.html.HtmlTemplate;
 import io.camunda.security.spring.spi.OidcLoginFailureNotice;
 import io.camunda.security.spring.spi.OidcLoginFailurePort;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -25,8 +24,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -37,7 +34,6 @@ import org.springframework.security.web.DefaultRedirectStrategy;
 import org.springframework.security.web.RedirectStrategy;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler;
-import org.springframework.web.util.HtmlUtils;
 
 /**
  * Handles OIDC login failures on the stateful webapp chains.
@@ -74,11 +70,10 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
       "We could not sign you in to this application. Your account may not have access to it."
           + " Try again, or contact your administrator if the problem continues.";
   static final String PAGE_TEMPLATE_RESOURCE = "oidc-login-failure-page.html";
+  static final String FORWARD_LINK_TEMPLATE_RESOURCE = "oidc-login-failure-forward-link.html";
 
   private static final Logger LOG =
       LoggerFactory.getLogger(OAuth2AuthenticationExceptionHandler.class);
-  private static final Pattern PLACEHOLDER =
-      Pattern.compile("\\{\\{(language|title|message|retryHref|retryText|forwardLink)}}");
 
   private final AuthenticationFailureHandler delegate;
   private final Supplier<OidcLoginFailurePort> loginFailurePort;
@@ -180,21 +175,17 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
       final String pageTemplate,
       final OidcLoginFailureNotice notice)
       throws IOException {
-    final String forwardLink =
-        notice.optionalLink().map(link -> anchor(link.target().toString(), link.text())).orElse("");
-    final Map<String, String> values =
-        Map.of(
-            "language", HtmlUtils.htmlEscape(notice.language().toLanguageTag()),
-            "title", HtmlUtils.htmlEscape(notice.title()),
-            "message", HtmlUtils.htmlEscape(notice.message()),
-            "retryHref", HtmlUtils.htmlEscape(request.getContextPath() + applicationRoot),
-            "retryText", HtmlUtils.htmlEscape(notice.retryText()),
-            "forwardLink", forwardLink);
-    // One pass, so a value that happens to contain a placeholder is never substituted again.
+    final String forwardLink = notice.optionalLink().map(this::forwardLink).orElse("");
     final String page =
-        PLACEHOLDER
-            .matcher(pageTemplate)
-            .replaceAll(placeholder -> Matcher.quoteReplacement(values.get(placeholder.group(1))));
+        HtmlTemplate.render(
+            pageTemplate,
+            Map.of(
+                "language", notice.language().toLanguageTag(),
+                "title", notice.title(),
+                "message", notice.message(),
+                "retryHref", request.getContextPath() + applicationRoot,
+                "retryText", notice.retryText()),
+            Map.of("forwardLink", forwardLink));
 
     response.setStatus(notice.status());
     response.setCharacterEncoding(StandardCharsets.UTF_8.name());
@@ -203,9 +194,14 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
     response.getWriter().write(page);
   }
 
-  private static String anchor(final String href, final String text) {
-    return "<a href=\"%s\">%s</a>"
-        .formatted(HtmlUtils.htmlEscape(href), HtmlUtils.htmlEscape(text));
+  /** The notice's optional link, or nothing when its template is missing (already logged). */
+  private String forwardLink(final OidcLoginFailureNotice.Link link) {
+    return PageTemplate.FORWARD_LINK
+        .map(
+            template ->
+                HtmlTemplate.render(
+                    template, Map.of("href", link.target().toString(), "text", link.text())))
+        .orElse("");
   }
 
   /**
@@ -237,24 +233,11 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
    * startup. Failed logins then get the delegate's plain response instead of the page.
    */
   static Optional<String> loadPageTemplate(final String resource) {
-    try (final InputStream template =
-        OAuth2AuthenticationExceptionHandler.class.getResourceAsStream(resource)) {
-      if (template == null) {
-        LOG.error(
-            "Missing resource {}; failed OIDC logins get a plain error response instead of the"
-                + " failed-login page.",
-            resource);
-        return Optional.empty();
-      }
-      return Optional.of(new String(template.readAllBytes(), StandardCharsets.UTF_8));
-    } catch (final IOException | UncheckedIOException e) {
-      LOG.error(
-          "Failed to read resource {}; failed OIDC logins get a plain error response instead of"
-              + " the failed-login page.",
-          resource,
-          e);
-      return Optional.empty();
-    }
+    return HtmlTemplate.load(
+        OAuth2AuthenticationExceptionHandler.class,
+        resource,
+        LOG,
+        "failed OIDC logins get a plain error response instead of the failed-login page.");
   }
 
   /**
@@ -299,5 +282,7 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
    */
   private static final class PageTemplate {
     private static final Optional<String> HTML = loadPageTemplate(PAGE_TEMPLATE_RESOURCE);
+    private static final Optional<String> FORWARD_LINK =
+        loadPageTemplate(FORWARD_LINK_TEMPLATE_RESOURCE);
   }
 }
