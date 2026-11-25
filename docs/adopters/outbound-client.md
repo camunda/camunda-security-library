@@ -63,8 +63,8 @@ The token is cached and refreshed 30 seconds before it expires, or halfway throu
 that is shorter. If the refresh fails, the provider keeps sending the old token until it expires.
 It does not do this after a `401` for that token, because the IdP rejected it. The first failed
 refresh that keeps the old token logs a WARN. When no valid token is left and a call fails, the
-provider logs a WARN too. A failure with the same cause as the last one logs at DEBUG, until a
-token request succeeds again. A response without `expires_in`, or with `0`, is not cached.
+provider logs a WARN too. A failure with the same cause as the last one logs at DEBUG, and every
+100th one logs a WARN again. A successful token request resets this. A response without `expires_in`, or with `0`, is not cached.
 
 One caller at a time makes a token request. The other callers wait, and then use the token that it
 cached. If that request failed, each waiting caller makes its own request.

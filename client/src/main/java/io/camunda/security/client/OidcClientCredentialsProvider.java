@@ -12,6 +12,7 @@ import com.nimbusds.oauth2.sdk.http.HTTPResponse;
 import java.io.IOException;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
@@ -33,6 +34,12 @@ import org.slf4j.LoggerFactory;
  */
 public final class OidcClientCredentialsProvider implements OutboundCredentialsProvider {
 
+  /**
+   * An unchanged failure logs a WARN again after this many repeats, so a long outage stays visible
+   * at WARN.
+   */
+  static final int WARN_EVERY = 100;
+
   private static final Logger LOG = LoggerFactory.getLogger(OidcClientCredentialsProvider.class);
 
   private final OidcClientCredentialsConfiguration config;
@@ -45,6 +52,8 @@ public final class OidcClientCredentialsProvider implements OutboundCredentialsP
   // Guarded by the lock: the state and cause of the last failure logged at WARN, null after a
   // success.
   private String lastLoggedFailure;
+  // Guarded by the lock: the failures with the key above since the last WARN.
+  private int repeats;
 
   public OidcClientCredentialsProvider(final OidcClientCredentialsConfiguration config) {
     this(config, Clock.systemUTC(), TokenRequestWorker::sendOverConnection);
@@ -96,7 +105,7 @@ public final class OidcClientCredentialsProvider implements OutboundCredentialsP
         LOG.debug(
             "Client '{}' was interrupted while waiting for a token; no retry", config.clientId());
       } else {
-        // The message is sanitized and has no secret, so no stack trace is needed.
+        // The message has no secret and no control characters, so no stack trace is needed.
         LOG.warn(
             "Cannot retry after an unauthorized response: token request for client '{}' failed: {}",
             config.clientId(),
@@ -183,42 +192,41 @@ public final class OidcClientCredentialsProvider implements OutboundCredentialsP
       }
       // Without an old token, do not read the clock: it can be what failed.
       if (old == null || !clock.instant().isBefore(old.expiresAt())) {
-        logFailure(
-            "no-token",
-            e,
-            "No valid token for client '{}' is cached, and the token request failed: {}",
-            config.clientId(),
-            e.getMessage());
+        logFailure(FailureState.NO_TOKEN, e, config.clientId(), e.getMessage());
         throw e;
       }
-      logFailure(
-          "kept-old",
-          e,
-          "Token refresh for client '{}' failed; the old token is used until {}: {}",
-          config.clientId(),
-          old.expiresAt(),
-          e.getMessage());
+      logFailure(FailureState.KEPT_OLD, e, config.clientId(), old.expiresAt(), e.getMessage());
       return old;
     }
   }
 
   /**
    * Logs a WARN when the state or the cause differs from the last WARN, and DEBUG otherwise. So an
-   * outage logs one WARN for each state and cause, also when every call fails.
+   * outage logs one WARN for each state and cause, also when every call fails. After {@link
+   * #WARN_EVERY} repeats of the same failure, it logs a WARN again.
    */
   private void logFailure(
-      final String state,
-      final TokenRequestException e,
-      final String message,
-      final Object... arguments) {
-    final String key = state + " " + causeOf(e);
-    // The message is sanitized and has no secret, so no stack trace is needed.
-    if (key.equals(lastLoggedFailure)) {
-      LOG.debug(message, arguments);
-    } else {
+      final FailureState state, final TokenRequestException e, final Object... arguments) {
+    final String key = state.name() + " " + causeOf(e);
+    // The message has no secret and no control characters, so no stack trace is needed.
+    if (!key.equals(lastLoggedFailure)) {
       lastLoggedFailure = key;
-      LOG.warn(message, arguments);
+      repeats = 0;
+      LOG.warn(state.message, arguments);
+    } else if (++repeats == WARN_EVERY) {
+      repeats = 0;
+      LOG.warn(
+          state.message + " ({} more failures with the same cause since the last WARN)",
+          append(arguments, WARN_EVERY));
+    } else {
+      LOG.debug(state.message, arguments);
     }
+  }
+
+  private static Object[] append(final Object[] arguments, final Object last) {
+    final Object[] result = Arrays.copyOf(arguments, arguments.length + 1);
+    result[arguments.length] = last;
+    return result;
   }
 
   /**
@@ -266,5 +274,17 @@ public final class OidcClientCredentialsProvider implements OutboundCredentialsP
       throw TokenResponses.failure(response, config.clientId());
     }
     return TokenResponses.parseToken(response, sentAt, config.clientId());
+  }
+
+  /** The state of a failed token request, with the message that describes it. */
+  private enum FailureState {
+    NO_TOKEN("No valid token for client '{}' is cached, and the token request failed: {}"),
+    KEPT_OLD("Token refresh for client '{}' failed; the old token is used until {}: {}");
+
+    private final String message;
+
+    FailureState(final String message) {
+      this.message = message;
+    }
   }
 }

@@ -10,6 +10,7 @@ package io.camunda.security.client;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -35,6 +37,7 @@ final class TokenEndpoint implements AutoCloseable {
   private volatile CountDownLatch release = new CountDownLatch(0);
   private volatile CountDownLatch releaseFirst = new CountDownLatch(0);
   private final AtomicBoolean firstPending = new AtomicBoolean();
+  private volatile Trickle trickle;
 
   TokenEndpoint() throws IOException {
     server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
@@ -89,10 +92,29 @@ final class TokenEndpoint implements AutoCloseable {
     return releaseFirst;
   }
 
+  /**
+   * Sends the body of the next responses one byte for each element that the test hands over to
+   * {@link Trickle#pace()}, with no end.
+   */
+  Trickle trickle() {
+    trickle = new Trickle(new SynchronousQueue<>(), new AtomicInteger(), new CountDownLatch(1));
+    return trickle;
+  }
+
+  /** Answers the next requests normally again. */
+  void stopTrickle() {
+    trickle = null;
+  }
+
   private void handle(final HttpExchange exchange) throws IOException {
     acceptHeaders.add(exchange.getRequestHeaders().getFirst("Accept"));
     requestQueries.add(exchange.getRequestURI().getRawQuery());
     requestBodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+    final Trickle current = trickle;
+    if (current != null) {
+      trickleBody(exchange, current);
+      return;
+    }
     try {
       release.await();
       if (firstPending.compareAndSet(true, false)) {
@@ -113,9 +135,35 @@ final class TokenEndpoint implements AutoCloseable {
     exchange.close();
   }
 
+  /** Stops when the client closes the connection, or when {@link #close()} interrupts it. */
+  private static void trickleBody(final HttpExchange exchange, final Trickle trickle) {
+    try {
+      exchange.getResponseHeaders().add("Content-Type", "application/json");
+      // Length 0: chunked, so the body has no end.
+      exchange.sendResponseHeaders(200, 0);
+      final OutputStream out = exchange.getResponseBody();
+      while (true) {
+        trickle.pace().take();
+        out.write(' ');
+        out.flush();
+        trickle.written().incrementAndGet();
+      }
+    } catch (final IOException e) {
+      // The client closed the connection.
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+    } finally {
+      trickle.ended().countDown();
+      exchange.close();
+    }
+  }
+
   @Override
   public void close() {
     server.stop(0);
     ((java.util.concurrent.ExecutorService) server.getExecutor()).shutdownNow();
   }
+
+  /** The bytes of a trickled body: {@code ended} counts down when the endpoint stops sending. */
+  record Trickle(SynchronousQueue<Object> pace, AtomicInteger written, CountDownLatch ended) {}
 }
