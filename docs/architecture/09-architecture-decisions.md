@@ -62,7 +62,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0047: No `Thread.sleep` in tests; wait on conditions with Awaitility](../adr/0047-no-thread-sleep-in-tests-use-awaitility.md)
 - [ADR-0048: The existing claim settings recognise user tokens on the API chains](../adr/0048-recognising-user-tokens-on-the-api-chains.md)
 - [ADR-0049: A Spring-free client adds credentials to calls to CSL-protected services](../adr/0049-spring-free-client-for-csl-protected-services.md)
-- [ADR-0050: Hosts own the authorization resource-type catalogue; CSL reasons over an abstract resource type](../adr/0050-hosts-own-the-resource-type-catalogue.md)
+- [ADR-0050: Hosts own the authorization type catalogues; CSL reasons over abstract resource and permission types](../adr/0050-hosts-own-the-authorization-type-catalogues.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 
