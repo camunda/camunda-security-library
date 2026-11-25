@@ -61,7 +61,8 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0046: Scheduled refresh-ahead JWKS caching and realistic HTTP timeouts](../adr/0046-resilient-jwks-refresh-and-timeouts.md)
 - [ADR-0047: No `Thread.sleep` in tests; wait on conditions with Awaitility](../adr/0047-no-thread-sleep-in-tests-use-awaitility.md)
 - [ADR-0048: The existing claim settings recognise user tokens on the API chains](../adr/0048-recognising-user-tokens-on-the-api-chains.md)
-- [ADR-0049: Hub resource types get Zeebe-protocol counterparts, not a host-only category](../adr/0049-hub-resource-types-get-zeebe-protocol-counterparts.md)
+- [ADR-0049: A Spring-free client adds credentials to calls to CSL-protected services](../adr/0049-spring-free-client-for-csl-protected-services.md)
+- [ADR-0050: Hub resource types get Zeebe-protocol counterparts, not a host-only category](../adr/0050-hub-resource-types-get-zeebe-protocol-counterparts.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 

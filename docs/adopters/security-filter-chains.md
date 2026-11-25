@@ -247,9 +247,22 @@ Okta, avoids both risks.
 
 Entra is the one provider where the two goals pull apart. Its stable identifiers of a person,
 `sub` and `oid`, appear in an app-only token as well, where they name the service principal, so
-neither can separate the two kinds of token. The only user-only claims are `preferred_username`,
-`upn` and `name`, and Microsoft states that all of them are mutable and must not drive
-authorization decisions.
+neither can separate the two kinds of token. The user-only claims that identify the person
+are `preferred_username`, `upn`, `name` and `email`, and Microsoft states that every one of them
+is mutable and must not drive authorization decisions. Which of them a token carries depends on
+the account and on the optional claims the application requests.
+
+A real token pair carries two more user-only claims, and neither helps. `scp` holds the scopes
+that were requested and consented to, so it describes what the token may do and not who holds it,
+and any number of people share one value. `sid` is the session identifier, so it changes at every
+sign-in. A claim must identify the person to be a user name claim, and these two do not.
+
+The kind of account changes the shape as well. In the tokens measured against a Camunda
+development tenant in November 2026, a member carried `upn` while a B2B guest carried `email` and
+`idp` and no `upn`. Do not read that as a rule for every tenant: the optional claim
+`include_externally_authenticated_upn` puts a `upn` in a guest token, and the claim configuration
+of the application changes the rest. Decode one token of each kind your own deployment issues
+before you choose the claim.
 
 So on Entra a deployment picks one:
 
@@ -267,8 +280,10 @@ The rows do not rest on the same evidence.
 [ADR-0048](../adr/0048-recognising-user-tokens-on-the-api-chains.md) lists every source.
 
 - Keycloak is measured against a real server in `KeycloakUserBearerTokenIT`, on every build.
-- Entra is what Camunda already ships. The Helm guide for an external Entra tenant configures
-  these three settings today, so the row records a deployed configuration rather than a proposal.
+- Entra is measured. Three real tokens from one application in a Camunda identity development
+  tenant on 2026-11-20: one app-only token, and one user token each for a member and a guest. The
+  row is also what Camunda already ships, because the Helm guide for an external Entra tenant
+  configures these three settings today.
 - Auth0 is measured, although not here: the behaviour of a user login against the Camunda Auth0
   tenant was tested in November 2026, and a post-login action adds the user-only claim that this
   row needs.

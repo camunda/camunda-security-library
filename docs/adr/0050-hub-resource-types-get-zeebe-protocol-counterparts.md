@@ -1,4 +1,4 @@
-# ADR-0049: Hub resource types get Zeebe-protocol counterparts, not a host-only category
+# ADR-0050: Hub resource types get Zeebe-protocol counterparts, not a host-only category
 
 **DRI**: Ben Sheppard (Ben-Sheppard)
 

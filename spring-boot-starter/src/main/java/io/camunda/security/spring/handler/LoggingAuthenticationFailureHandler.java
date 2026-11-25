@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.handler;
 
+import io.camunda.security.spring.oidc.IdentityProviderUnavailableException;
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,6 +28,8 @@ public final class LoggingAuthenticationFailureHandler implements Authentication
   private static final Logger LOG =
       LoggerFactory.getLogger(LoggingAuthenticationFailureHandler.class);
 
+  private static final String IDENTITY_PROVIDER_UNAVAILABLE = "Identity provider is unavailable";
+
   private final AuthenticationFailureHandler delegate;
 
   public LoggingAuthenticationFailureHandler(final AuthenticationFailureHandler delegate) {
@@ -43,6 +46,18 @@ public final class LoggingAuthenticationFailureHandler implements Authentication
     // wrapper it would bubble up to Tomcat and produce a noisy ERROR log.
     if (!AuthenticationServiceException.class.isAssignableFrom(exception.getClass())) {
       delegate.onAuthenticationFailure(request, response, exception);
+      return;
+    }
+
+    // Spring wraps the decoder's JwtException into the AuthenticationServiceException, so the
+    // decoder's own exception is its cause. The resolution that failed has already reported the
+    // outage at WARN, rate-limited per provider, so a request logs it at DEBUG only.
+    if (exception.getCause() instanceof final IdentityProviderUnavailableException unavailable) {
+      LOG.debug(
+          "{} while authenticating a bearer token: {}",
+          IDENTITY_PROVIDER_UNAVAILABLE,
+          unavailable.getMessage());
+      response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE, IDENTITY_PROVIDER_UNAVAILABLE);
       return;
     }
 

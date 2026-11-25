@@ -52,6 +52,7 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
+      actions: write  # dispatch the build workflow on the release branch (gh workflow run)
       # Required for GitHub Models API access (used in "Generate AI release summary" step)
       # See: https://docs.github.com/en/github-models/prototyping-with-ai-models
       models: read
@@ -159,6 +160,34 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve previous release tag
+        id: prev
+        run: |
+          # Pick the highest stable semver tag below this release by version order, not by
+          # ancestry: release tags live on release/<version> branches and may not be reachable
+          # from the branch we release from.
+          # How: add the release version to the stable tags, sort by version, and print the
+          # line before it. If no lower tag exists, that line is the release version itself.
+          # grep exits 1 when no tag is stable. The group { ...; echo; } takes the exit status
+          # of its last command, so that exit does not stop the job (bash -eo pipefail).
+          # "|| true" only makes that intent explicit.
+          prev_tag() { # $1 = release version; tag list on stdin
+            { grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || true; echo "$1"; } \
+              | sort -V -u | grep -B1 -Fx "$1" | head -n1
+          }
+
+          # Self-test with the same function, so the check and the test cannot drift apart.
+          # The assignments check the exit status too, not only the output.
+          out=$(printf '1.2.2\n1.10.0\n1.2.10\n' | prev_tag 1.3.0) && [[ "$out" == 1.2.10 ]] \
+            || { echo "::error::prev_tag self-test failed: version order"; exit 1; }
+          out=$(printf '1.3.0-rc1\nfoo\n' | prev_tag 1.3.0) && [[ "$out" == 1.3.0 ]] \
+            || { echo "::error::prev_tag self-test failed: no stable tag"; exit 1; }
+
+          prev=$(git tag --list | prev_tag "${RELEASE_VERSION}")
+          [[ "$prev" == "${RELEASE_VERSION}" ]] && prev=""
+          echo "prevTag=${prev}" >> "$GITHUB_OUTPUT"
+          echo "Previous release tag: ${prev:-<none>}"
+
       - name: Git User Setup
         run: |
           git config --global user.email "github-actions[release]@users.noreply.github.com"
@@ -190,7 +219,7 @@ jobs:
         uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
-          java-version: '25.0.5+8.0.LTS'
+          java-version: '25.0.5+100000002.0.LTS'
           cache: maven
 
       - name: Create Maven settings.xml
@@ -256,17 +285,47 @@ jobs:
         if: ${{ !inputs.dryRun }}
         env:
           RELEASE_BRANCH: ${{ steps.resolve.outputs.releaseBranch }}
+          PREV_TAG: ${{ steps.prev.outputs.prevTag }}
         run: |
+          # Name the start tag explicitly: GitHub cannot find it by ancestry
+          # because release tags are not reachable from the base branch.
+          args=(-f tag_name="${RELEASE_TAG}" -f target_commitish="${RELEASE_BRANCH}")
+          if [[ -n "${PREV_TAG}" ]]; then
+            args+=(-f previous_tag_name="${PREV_TAG}")
+          fi
+          # GitHub groups generated notes only by PR label, and our PRs carry none.
+          # Group them by Conventional Commits title prefix instead.
+          if ! gh api "repos/${{ github.repository }}/releases/generate-notes" "${args[@]}" --jq '.body' \
+                 > "${RUNNER_TEMP}/raw-notes.md" \
+               || [[ -z "$(tr -d '[:space:]' < "${RUNNER_TEMP}/raw-notes.md")" ]]; then
+            # The artifacts and the tag are already published, so still create the release.
+            echo "::warning::Could not generate the release notes. Publishing a minimal body."
+            if [[ -n "${PREV_TAG}" ]]; then
+              printf '**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
+                "${GITHUB_REPOSITORY}" "${PREV_TAG}" "${RELEASE_TAG}" > "${RUNNER_TEMP}/raw-notes.md"
+            else
+              printf 'Release %s\n' "${RELEASE_VERSION}" > "${RUNNER_TEMP}/raw-notes.md"
+            fi
+          fi
+          # An older release branch can lack the script. The artifacts and the tag are already
+          # published here, so a grouping failure must not stop the release: use the raw notes.
+          if ! { python3 .github/scripts/group_release_notes.py \
+                 < "${RUNNER_TEMP}/raw-notes.md" > "${RUNNER_TEMP}/release-notes.md" \
+               && [[ -s "${RUNNER_TEMP}/release-notes.md" ]]; }; then
+            echo "::warning::Could not group the release notes. Publishing them ungrouped."
+            cp "${RUNNER_TEMP}/raw-notes.md" "${RUNNER_TEMP}/release-notes.md"
+          fi
           gh release create "${RELEASE_TAG}" \
             --repo "${{ github.repository }}" \
             --target "${RELEASE_BRANCH}" \
             --title "${RELEASE_VERSION}" \
-            --generate-notes
+            --notes-file "${RUNNER_TEMP}/release-notes.md"
 
       - name: Label issues delivered in this release
         if: ${{ !inputs.dryRun }}
         env:
           REPO: ${{ github.repository }}
+          PREV_TAG: ${{ steps.prev.outputs.prevTag }}
         run: .github/scripts/label-issues-with-release-version.sh
 
       - name: Generate AI release summary
@@ -275,6 +334,8 @@ jobs:
         # is accessible with GITHUB_TOKEN for repos that have GitHub Models enabled.
         # Falls back silently to the auto-generated notes if the API call fails
         # (rate limit, token permissions, network) so the release is never blocked.
+        env:
+          PREV_TAG: ${{ steps.prev.outputs.prevTag }}
         run: |
           python3 - <<'EOF'
           import json, os, subprocess, sys, tempfile, urllib.request, urllib.error
@@ -294,13 +355,12 @@ jobs:
               info = {"adrs": [], "adopters_docs": [], "api_classes": []}
               
               try:
-                  # Get all commits since the previous tag
-                  # Try to find the previous tag before this release
-                  result = subprocess.run(
-                      ["git", "describe", "--tags", "--abbrev=0", release_tag + "^"],
-                      capture_output=True, text=True
-                  )
-                  prev_tag = result.stdout.strip() if result.returncode == 0 else "HEAD~100"
+                  # Resolved by the "Resolve previous release tag" step. Empty means
+                  # there is no previous stable tag.
+                  prev_tag = os.environ.get("PREV_TAG", "").strip()
+                  if not prev_tag:
+                      print("Warning: no previous release tag found; skipping structural diff.")
+                      return info
                   
                   # Get added/modified/renamed files between previous tag and current release.
                   # Using --diff-filter=AMR excludes deleted files so removed ADRs/docs/API classes
@@ -519,7 +579,7 @@ jobs:
               sys.exit(0)
           EOF
 
-      - name: Open mergeback PR
+      - name: Open mergeback PR, trigger CI, enable auto-merge
         if: ${{ steps.resolve.outputs.mode == 'create' && !inputs.dryRun }}
         env:
           BASE_BRANCH: ${{ steps.resolve.outputs.baseBranch }}
@@ -535,8 +595,10 @@ jobs:
 
           Tag: [\`${RELEASE_TAG}\`](https://github.com/${{ github.repository }}/releases/tag/${RELEASE_TAG})
 
-          > **Note:** PRs opened via \`GITHUB_TOKEN\` do not trigger workflow runs.
-          > To run CI on this PR, push an empty commit (\`git commit --allow-empty\`) or close-and-reopen the PR.
+          > **Note:** The release workflow dispatches the \`build\` workflow on \`${RELEASE_BRANCH}\`,
+          > so the required check runs on this PR.
+          > Auto-merge uses a merge commit on purpose. It keeps the release tag reachable from
+          > \`${BASE_BRANCH}\`. Do not switch it to squash or rebase.
           EOF
           )
 
@@ -553,16 +615,36 @@ jobs:
             --json number,url \
             --jq '.[0].url // empty')
           if [[ -n "$existing" ]]; then
-            echo "Mergeback PR already exists: ${existing} — skipping creation."
-            exit 0
+            echo "Mergeback PR already exists: ${existing} — reusing it."
+            pr_url="${existing}"
+          else
+            pr_url=$(gh pr create \
+              --repo "${{ github.repository }}" \
+              --base "${BASE_BRANCH}" \
+              --head "${RELEASE_BRANCH}" \
+              --title "chore(release): merge back ${RELEASE_VERSION} into ${BASE_BRANCH}" \
+              --body "${body}")
           fi
 
-          gh pr create \
-            --repo "${{ github.repository }}" \
-            --base "${BASE_BRANCH}" \
-            --head "${RELEASE_BRANCH}" \
-            --title "chore(release): merge back ${RELEASE_VERSION} into ${BASE_BRANCH}" \
-            --body "${body}"
+          # PRs created with GITHUB_TOKEN do not trigger pull_request runs, so the
+          # required check would never report. workflow_dispatch is exempt from that
+          # rule: dispatch the build on the release branch, and its check attaches to
+          # the PR head commit.
+          if run_out=$(gh workflow run build.yml --repo "${{ github.repository }}" --ref "${RELEASE_BRANCH}" 2>&1); then
+            echo "::notice::Dispatched the build on ${RELEASE_BRANCH}. ${run_out}"
+          else
+            echo "::warning::Could not dispatch the build on ${RELEASE_BRANCH}: ${run_out}"
+          fi
+          echo "::notice::If the required check does not appear on ${pr_url}, close and reopen the PR, or run the build workflow on ${RELEASE_BRANCH} by hand."
+
+          # Merge commit, not squash or rebase: the release tag lives on the release branch
+          # and must stay reachable from the base branch.
+          # Needs: Settings > "Allow merge commits", and the main ruleset must require an
+          # approving review, or auto-merge merges as soon as the build is green.
+          # A failure here only warns: the release is already published at this point.
+          if ! merge_out=$(gh pr merge "${pr_url}" --repo "${{ github.repository }}" --auto --merge 2>&1); then
+            echo "::warning::Could not enable auto-merge on ${pr_url}: ${merge_out}. Check Settings > Allow merge commits, then merge the PR with a merge commit, not squash or rebase."
+          fi
 
       - name: Cleanup Maven Central GPG Key
         if: always()

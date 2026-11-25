@@ -8,13 +8,15 @@
 #   RELEASE_VERSION   version string used in the label (e.g. 0.1.0)
 #
 # Optional:
-#   PREV_TAG          previous release tag to scope the range from. If unset,
-#                     it is resolved via `git describe --tags --abbrev=0 "${RELEASE_TAG}^"`.
+#   PREV_TAG          previous stable release tag. The release workflow always
+#                     passes it. If it is empty, the generate-notes API chooses
+#                     the start of the range.
 #
-# Requires: gh CLI (authenticated via GH_TOKEN), git.
+# Requires: gh CLI (authenticated via GH_TOKEN).
 set -euo pipefail
 
 : "${REPO:?REPO is required}"
+export REPO  # read by jq as env.REPO
 : "${RELEASE_TAG:?RELEASE_TAG is required}"
 : "${RELEASE_VERSION:?RELEASE_VERSION is required}"
 
@@ -27,9 +29,7 @@ gh label create "${LABEL}" \
   --description "Marks an issue as being completely or in parts released in ${RELEASE_VERSION}" \
   --force
 
-if [[ -z "${PREV_TAG:-}" ]]; then
-  PREV_TAG=$(git describe --tags --abbrev=0 "${RELEASE_TAG}^" 2>/dev/null || true)
-fi
+PREV_TAG="${PREV_TAG:-}"
 
 # Use the releases/generate-notes API to get the exact set of PRs in this
 # release's tag range — the same range that --generate-notes uses for the
@@ -60,6 +60,8 @@ declare -A labeled_issues
 failed_prs=0
 
 for pr_number in ${pr_numbers}; do
+  # Keep only issues from this repo: a PR can close issues in other repos, whose numbers
+  # would otherwise label an unrelated issue here. REPO is exported, so jq reads env.REPO.
   echo "Resolving closing issue references for PR #${pr_number}..."
   if ! closing_issues=$(gh api graphql \
     -f query='
@@ -69,6 +71,9 @@ for pr_number in ${pr_numbers}; do
             closingIssuesReferences(first: 100) {
               nodes {
                 number
+                repository {
+                  nameWithOwner
+                }
               }
             }
           }
@@ -77,7 +82,7 @@ for pr_number in ${pr_numbers}; do
     -F owner="${REPO%%/*}" \
     -F repo="${REPO##*/}" \
     -F pr="${pr_number}" \
-    --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[].number'); then
+    --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[] | select(.repository.nameWithOwner == env.REPO) | .number'); then
     echo "::warning::Failed to fetch closing issues for PR #${pr_number} — skipping."
     ((failed_prs++)) || true
     continue

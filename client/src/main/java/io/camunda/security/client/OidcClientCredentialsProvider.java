@@ -1,0 +1,290 @@
+/*
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH under
+ * one or more contributor license agreements. See the NOTICE file distributed
+ * with this work for additional information regarding copyright ownership.
+ * Licensed under the Camunda License 1.0. You may not use this file
+ * except in compliance with the Camunda License 1.0.
+ */
+package io.camunda.security.client;
+
+import com.nimbusds.oauth2.sdk.http.HTTPRequest;
+import com.nimbusds.oauth2.sdk.http.HTTPResponse;
+import java.io.IOException;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.Arrays;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Obtains an access token with the OAuth2 client credentials grant ({@code client_secret_post}) and
+ * sends it as {@code Authorization: Bearer ...}.
+ *
+ * <p>The token is cached and refreshed shortly before it expires (30 seconds, or half the lifetime
+ * of a short-lived token). One caller at a time makes a token request; the others wait, and then
+ * use the token it cached. A response without {@code expires_in} is not cached. If a refresh fails,
+ * the old token is used until it expires. After a {@code 401}, {@link #shouldRetryRequest} drops
+ * the rejected token and fetches a new one. {@code shouldRetryRequest} may be called from any
+ * thread; the provider never repeats a request itself.
+ *
+ * <p>{@link TokenRequestWorker} sets the timeouts of a token request, and {@link TokenResponses}
+ * sets the rules for the response.
+ */
+public final class OidcClientCredentialsProvider implements OutboundCredentialsProvider {
+
+  /**
+   * An unchanged failure logs a WARN again after this many repeats, so a long outage stays visible
+   * at WARN.
+   */
+  static final int WARN_EVERY = 100;
+
+  private static final Logger LOG = LoggerFactory.getLogger(OidcClientCredentialsProvider.class);
+
+  private final OidcClientCredentialsConfiguration config;
+  private final Clock clock;
+  private final TokenRequestWorker worker;
+  // Fair, so that new callers overtake queued waiters less often.
+  private final ReentrantLock lock = new ReentrantLock(true);
+  // Read without the lock, written only under it.
+  private volatile CachedToken cached;
+  // Guarded by the lock: the state and cause of the last failure logged at WARN, null after a
+  // success.
+  private String lastLoggedFailure;
+  // Guarded by the lock: the failures with the key above since the last WARN.
+  private int repeats;
+
+  public OidcClientCredentialsProvider(final OidcClientCredentialsConfiguration config) {
+    this(config, Clock.systemUTC(), TokenRequestWorker::sendOverConnection);
+  }
+
+  OidcClientCredentialsProvider(
+      final OidcClientCredentialsConfiguration config, final Clock clock) {
+    this(config, clock, TokenRequestWorker::sendOverConnection);
+  }
+
+  OidcClientCredentialsProvider(
+      final OidcClientCredentialsConfiguration config,
+      final Clock clock,
+      final TokenRequestWorker.TokenSender sender) {
+    this.config = config;
+    this.clock = clock;
+    worker = new TokenRequestWorker(config, sender);
+  }
+
+  @Override
+  public void applyCredentials(final CredentialsApplier applier) throws IOException {
+    if (worker.isClosed()) {
+      throw worker.noResponse("the provider is closed", null);
+    }
+    final CachedToken token = cached;
+    applier.put("Authorization", (isUsable(token) ? token : refresh(null)).authorizationHeader());
+  }
+
+  /**
+   * Compares the new token with the cached one, not with the token that the failed request carried.
+   * A late {@code 401} for an old token after a refresh therefore drops the new token too.
+   */
+  @Override
+  public boolean shouldRetryRequest(final StatusCode statusCode) {
+    if (!statusCode.isUnauthorized() || worker.isClosed()) {
+      return false;
+    }
+    final CachedToken seen = cached;
+    if (seen == null) {
+      // Cold start, a failed cold start, or a token that is not cached: the retry fetches a new
+      // token anyway.
+      return true;
+    }
+    try {
+      // The same token again means the IdP does not help; a retry would be rejected again.
+      return !seen.accessToken().equals(refresh(seen).accessToken());
+    } catch (final TokenRequestException e) {
+      if (Thread.currentThread().isInterrupted()) {
+        LOG.debug(
+            "Client '{}' was interrupted while waiting for a token; no retry", config.clientId());
+      } else {
+        // The message has no secret and no control characters, so no stack trace is needed.
+        LOG.warn(
+            "Cannot retry after an unauthorized response: token request for client '{}' failed: {}",
+            config.clientId(),
+            e.getMessage());
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Stops the worker thread and closes a running token request. Later calls fail, also with a
+   * cached token. If a running token request reads a body that stopped, close waits up to the read
+   * timeout.
+   */
+  @Override
+  public void close() {
+    worker.close();
+  }
+
+  /**
+   * Under the lock: drops {@code rejected} if it is still cached, checks the cache again, and else
+   * fetches a token. {@code rejected} is {@code null} unless a {@code 401} is being handled.
+   */
+  private CachedToken refresh(final CachedToken rejected) throws TokenRequestException {
+    // The sum can wrap around. Only remaining() reads it, and its subtraction stays correct.
+    final long deadline = System.nanoTime() + config.requestTimeout().toNanos();
+    acquireLock(deadline);
+    try {
+      CachedToken current = cached;
+      if (rejected != null && current == rejected) {
+        cached = null;
+        current = null;
+      }
+      if (isUsable(current)) {
+        return current;
+      }
+      return fetchOrKeepOld(current, rejected == null, deadline);
+    } finally {
+      lock.unlock();
+    }
+  }
+
+  private void acquireLock(final long deadline) throws TokenRequestException {
+    try {
+      if (!lock.tryLock(TokenRequestWorker.remaining(deadline), TimeUnit.NANOSECONDS)) {
+        throw new TokenRequestException(
+            "Timed out after "
+                + config.requestTimeout()
+                + " waiting for a token request of client '"
+                + config.clientId()
+                + "'",
+            TokenRequestException.NO_RESPONSE,
+            null,
+            null,
+            null);
+      }
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new TokenRequestException(
+          "Interrupted while waiting for an access token for client '" + config.clientId() + "'",
+          TokenRequestException.NO_RESPONSE,
+          null,
+          null,
+          e);
+    }
+  }
+
+  /**
+   * Must be called under the lock. If the request fails and {@code mayKeepOld} is set, the old
+   * token is used until it expires. An interrupted caller always fails.
+   */
+  private CachedToken fetchOrKeepOld(
+      final CachedToken old, final boolean mayKeepOld, final long deadline)
+      throws TokenRequestException {
+    try {
+      final CachedToken token = fetchToken(deadline);
+      cached = token.refreshAt() != null ? token : null;
+      lastLoggedFailure = null;
+      return token;
+    } catch (final TokenRequestException e) {
+      // After close(), never fall back to the old token. The 401 path logs in shouldRetryRequest.
+      if (!mayKeepOld || worker.isClosed() || Thread.currentThread().isInterrupted()) {
+        throw e;
+      }
+      // Without an old token, do not read the clock: it can be what failed.
+      if (old == null || !clock.instant().isBefore(old.expiresAt())) {
+        logFailure(FailureState.NO_TOKEN, e, config.clientId(), e.getMessage());
+        throw e;
+      }
+      logFailure(FailureState.KEPT_OLD, e, config.clientId(), old.expiresAt(), e.getMessage());
+      return old;
+    }
+  }
+
+  /**
+   * Logs a WARN when the state or the cause differs from the last WARN, and DEBUG otherwise. So an
+   * outage logs one WARN for each state and cause, also when every call fails. After {@link
+   * #WARN_EVERY} repeats of the same failure, it logs a WARN again.
+   */
+  private void logFailure(
+      final FailureState state, final TokenRequestException e, final Object... arguments) {
+    final String key = state.name() + " " + causeOf(e);
+    // The message has no secret and no control characters, so no stack trace is needed.
+    if (!key.equals(lastLoggedFailure)) {
+      lastLoggedFailure = key;
+      repeats = 0;
+      LOG.warn(state.message, arguments);
+    } else if (++repeats == WARN_EVERY) {
+      repeats = 0;
+      LOG.warn(
+          state.message + " ({} more failures with the same cause since the last WARN)",
+          append(arguments, WARN_EVERY));
+    } else {
+      LOG.debug(state.message, arguments);
+    }
+  }
+
+  private static Object[] append(final Object[] arguments, final Object last) {
+    final Object[] result = Arrays.copyOf(arguments, arguments.length + 1);
+    result[arguments.length] = last;
+    return result;
+  }
+
+  /**
+   * A stable cause, not the message: the error_description of the IdP can change on every response,
+   * for example with a request ID.
+   */
+  private static String causeOf(final TokenRequestException e) {
+    if (e.getStatus() != TokenRequestException.NO_RESPONSE) {
+      return "HTTP " + e.getStatus() + " " + e.getError();
+    }
+    return e.getCause() == null ? "no-response" : e.getCause().getClass().getSimpleName();
+  }
+
+  private boolean isUsable(final CachedToken token) {
+    return token != null && clock.instant().isBefore(token.refreshAt());
+  }
+
+  /** Every failure, including transport errors and unexpected ones, is a TokenRequestException. */
+  private CachedToken fetchToken(final long deadline) throws TokenRequestException {
+    try {
+      return requestToken(deadline);
+    } catch (final TokenRequestException e) {
+      throw e;
+    } catch (final IOException | RuntimeException e) {
+      throw new TokenRequestException(
+          String.format(
+              "Token request for client '%s' to %s failed: %s",
+              config.clientId(), config.redactedTokenUri(), e.getClass().getSimpleName()),
+          TokenRequestException.NO_RESPONSE,
+          null,
+          null,
+          e);
+    }
+  }
+
+  private CachedToken requestToken(final long deadline) throws IOException {
+    LOG.debug(
+        "Requesting access token for client '{}' from {}",
+        config.clientId(),
+        config.redactedTokenUri());
+    final HTTPRequest request = TokenResponses.buildRequest(config);
+    final Instant sentAt = clock.instant();
+    final HTTPResponse response = worker.send(request, deadline);
+    if (response.getStatusCode() != HTTPResponse.SC_OK) {
+      throw TokenResponses.failure(response, config.clientId());
+    }
+    return TokenResponses.parseToken(response, sentAt, config.clientId());
+  }
+
+  /** The state of a failed token request, with the message that describes it. */
+  private enum FailureState {
+    NO_TOKEN("No valid token for client '{}' is cached, and the token request failed: {}"),
+    KEPT_OLD("Token refresh for client '{}' failed; the old token is used until {}: {}");
+
+    private final String message;
+
+    FailureState(final String message) {
+      this.message = message;
+    }
+  }
+}

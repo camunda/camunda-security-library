@@ -8,6 +8,7 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
@@ -16,6 +17,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import java.net.ConnectException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -36,6 +38,8 @@ import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtException;
+import org.springframework.web.client.ResourceAccessException;
 
 @ExtendWith(MockitoExtension.class)
 class IssuerAwareTokenValidatorTest {
@@ -54,6 +58,39 @@ class IssuerAwareTokenValidatorTest {
     final var error = result.getErrors().iterator().next();
     assertThat(error.getErrorCode()).isEqualTo(OAuth2ErrorCodes.INVALID_TOKEN);
     assertThat(error.getDescription()).isEqualTo("Token issuer 'unknown-issuer' is not trusted");
+  }
+
+  @Test
+  void shouldReportAnUnreachableProviderAsUnavailable() {
+    // given a configured provider whose resolution fails on I/O
+    final var validator =
+        new IssuerAwareTokenValidator(
+            unresolvableRegistrations(
+                new IllegalArgumentException(
+                    "Unable to resolve Configuration",
+                    new ResourceAccessException("unreachable", new ConnectException("refused")))),
+            new NoopTokenValidatorFactory());
+    final var jwt = createJwtWithIssuer("https://known-issuer");
+
+    // when / then the token is not the reason, so the failure reads as an outage
+    assertThatThrownBy(() -> validator.validate(jwt))
+        .isInstanceOf(IdentityProviderUnavailableException.class)
+        .hasRootCauseInstanceOf(ConnectException.class);
+  }
+
+  @Test
+  void shouldKeepAConfigurationFailureAsAServerError() {
+    // given a configured provider whose resolution fails for a reason that no retry removes
+    final var validator =
+        new IssuerAwareTokenValidator(
+            unresolvableRegistrations(new IllegalStateException("The issuer-uri is not valid")),
+            new NoopTokenValidatorFactory());
+    final var jwt = createJwtWithIssuer("https://known-issuer");
+
+    // when / then the failure keeps the server error and does not read as an outage to retry
+    assertThatThrownBy(() -> validator.validate(jwt))
+        .isInstanceOf(JwtException.class)
+        .isNotInstanceOf(IdentityProviderUnavailableException.class);
   }
 
   @Test
@@ -155,6 +192,14 @@ class IssuerAwareTokenValidatorTest {
     // then - the owner's rules decide both
     assertThat(first.hasErrors()).isNotEqualTo(accepted);
     assertThat(second.hasErrors()).isNotEqualTo(accepted);
+  }
+
+  private static IssuerRegistrations unresolvableRegistrations(final RuntimeException failure) {
+    return IssuerRegistrations.ofConfiguration(
+        Map.of("provider-a", OidcConfiguration.builder().issuerUri("https://known-issuer").build()),
+        registrationId -> {
+          throw failure;
+        });
   }
 
   private static ClientRegistration registration(

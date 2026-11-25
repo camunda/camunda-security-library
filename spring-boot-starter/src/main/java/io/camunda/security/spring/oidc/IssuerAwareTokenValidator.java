@@ -98,17 +98,23 @@ public class IssuerAwareTokenValidator implements OAuth2TokenValidator<Jwt> {
   }
 
   /**
-   * @throws JwtException if the resolution of the registration fails. The token is not the reason,
-   *     so this keeps the server error that the key selector of the decoder gives.
+   * @throws IdentityProviderUnavailableException if the resolution of the registration fails on an
+   *     outage of the provider. The token is not the reason, so this gives the answer that the key
+   *     selector of the decoder gives for the same outage.
+   * @throws JwtException if the resolution fails for another reason. That is a configuration error
+   *     that no retry removes, so this keeps the server error.
    */
   protected ClientRegistration getClientRegistrationByIssuer(final String issuer) {
     final ClientRegistration registration;
     try {
       registration = issuerRegistrations.forIssuer(issuer);
     } catch (final RuntimeException unresolved) {
-      throw new JwtException(
-          "Failed to resolve the client registration of issuer '%s'.".formatted(issuer),
-          unresolved);
+      final var message =
+          "Failed to resolve the client registration of issuer '%s'. %s"
+              .formatted(UrlRedaction.redact(issuer), FailureDescription.describe(unresolved));
+      throw IdentityProviderOutage.isCausing(unresolved)
+          ? new IdentityProviderUnavailableException(message, unresolved)
+          : new JwtException(message, unresolved);
     }
     if (registration == null) {
       LOG.debug("No matching client registration found for issuer uri {}", issuer);
