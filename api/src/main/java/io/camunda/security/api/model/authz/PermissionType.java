@@ -26,6 +26,14 @@ public enum PermissionType {
   REVEAL,
   UPDATE,
 
+  /** Hub usage permissions. */
+  DEPLOY,
+  EXECUTE,
+  PURGE,
+  REQUEST_REVIEW,
+  SHARE,
+  SUBMIT_REVIEW,
+
   /** Engine usage permissions. */
   CANCEL_PROCESS_INSTANCE,
   CLAIM,
