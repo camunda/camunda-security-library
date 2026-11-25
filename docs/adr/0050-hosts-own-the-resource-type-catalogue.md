@@ -2,7 +2,7 @@
 
 **DRI**: Ben Sheppard (Ben-Sheppard)
 
-**Deciders**: Ben Sheppard (Ben-Sheppard), Bojan Mudric (bojan-mudric)
+**Deciders**: Ben Sheppard (Ben-Sheppard), Bojan Mudric (bmudric)
 
 **Status**: Proposed
 
