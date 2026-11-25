@@ -57,7 +57,12 @@ public enum ResourceType {
       PermissionType.UPDATE,
       PermissionType.DELETE),
   CATALOG_ASSET(PermissionType.READ, PermissionType.UPDATE),
-  CLUSTER(PermissionType.READ, PermissionType.UPDATE),
+  CLUSTER(
+      PermissionType.READ,
+      PermissionType.READ_USAGE_METRIC,
+      PermissionType.CREATE,
+      PermissionType.UPDATE,
+      PermissionType.DELETE),
   COMMENT(PermissionType.CREATE, PermissionType.READ),
   ENVIRONMENT(PermissionType.READ, PermissionType.UPDATE),
   FILE(
@@ -71,7 +76,13 @@ public enum ResourceType {
       PermissionType.EXECUTE,
       PermissionType.SHARE),
   GIT_SYNC(PermissionType.READ, PermissionType.UPDATE),
-  PROJECT(PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE, PermissionType.DELETE),
+  PROJECT(
+      PermissionType.CREATE,
+      PermissionType.READ,
+      PermissionType.UPDATE,
+      PermissionType.DELETE,
+      PermissionType.RESTORE,
+      PermissionType.PURGE),
   PROJECT_SNAPSHOT(
       PermissionType.CREATE,
       PermissionType.READ,

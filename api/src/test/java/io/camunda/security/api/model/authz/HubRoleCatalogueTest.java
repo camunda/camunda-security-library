@@ -20,6 +20,7 @@ import static io.camunda.security.api.model.authz.AuthorizationResourceType.PROJ
 import static io.camunda.security.api.model.authz.AuthorizationResourceType.PROJECT_SNAPSHOT;
 import static io.camunda.security.api.model.authz.AuthorizationResourceType.VERSION;
 import static io.camunda.security.api.model.authz.AuthorizationResourceType.WORKSPACE;
+import static java.util.Map.entry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Named.named;
 
@@ -54,22 +55,83 @@ class HubRoleCatalogueTest {
 
   // --- Organization roles (unconditional memberships) ---
 
+  // Organization Admin holds every organization-level grant plus each workspace-level permission on
+  // each workspace (issue #813). ENVIRONMENT carries UPDATE here (admin manages environments),
+  // unlike the workspace Editor/Viewer roles below.
   private static final Role ORGANIZATION_ADMIN =
       new Role(
           "Organization Admin",
-          Map.of(
-              CLUSTER, Set.of(PermissionType.READ, PermissionType.UPDATE),
-              CATALOG,
+          Map.ofEntries(
+              entry(
+                  CLUSTER,
                   Set.of(
                       PermissionType.READ,
                       PermissionType.READ_USAGE_METRIC,
                       PermissionType.CREATE,
                       PermissionType.UPDATE,
-                      PermissionType.DELETE),
-              CATALOG_ASSET, Set.of(PermissionType.READ, PermissionType.UPDATE),
-              ENVIRONMENT, Set.of(PermissionType.READ),
-              BUSINESS_VALUE, Set.of(PermissionType.READ, PermissionType.UPDATE),
-              COMPONENT, Set.of(PermissionType.ACCESS)));
+                      PermissionType.DELETE)),
+              entry(
+                  CATALOG,
+                  Set.of(
+                      PermissionType.READ,
+                      PermissionType.READ_USAGE_METRIC,
+                      PermissionType.CREATE,
+                      PermissionType.UPDATE,
+                      PermissionType.DELETE)),
+              entry(CATALOG_ASSET, Set.of(PermissionType.READ, PermissionType.UPDATE)),
+              entry(BUSINESS_VALUE, Set.of(PermissionType.READ, PermissionType.UPDATE)),
+              entry(COMPONENT, Set.of(PermissionType.ACCESS)),
+              entry(
+                  WORKSPACE,
+                  Set.of(
+                      PermissionType.CREATE,
+                      PermissionType.READ,
+                      PermissionType.UPDATE,
+                      PermissionType.DELETE,
+                      PermissionType.RESTORE,
+                      PermissionType.PURGE)),
+              entry(
+                  PROJECT,
+                  Set.of(
+                      PermissionType.CREATE,
+                      PermissionType.READ,
+                      PermissionType.UPDATE,
+                      PermissionType.DELETE,
+                      PermissionType.RESTORE,
+                      PermissionType.PURGE)),
+              entry(
+                  PROJECT_SNAPSHOT,
+                  Set.of(
+                      PermissionType.CREATE,
+                      PermissionType.READ,
+                      PermissionType.UPDATE,
+                      PermissionType.DELETE,
+                      PermissionType.RESTORE,
+                      PermissionType.REQUEST_REVIEW,
+                      PermissionType.SUBMIT_REVIEW)),
+              entry(
+                  FILE,
+                  Set.of(
+                      PermissionType.CREATE,
+                      PermissionType.READ,
+                      PermissionType.UPDATE,
+                      PermissionType.DELETE,
+                      PermissionType.RESTORE,
+                      PermissionType.PURGE,
+                      PermissionType.DEPLOY,
+                      PermissionType.EXECUTE,
+                      PermissionType.SHARE)),
+              entry(
+                  VERSION,
+                  Set.of(
+                      PermissionType.CREATE,
+                      PermissionType.READ,
+                      PermissionType.UPDATE,
+                      PermissionType.DELETE,
+                      PermissionType.RESTORE)),
+              entry(COMMENT, Set.of(PermissionType.CREATE, PermissionType.READ)),
+              entry(ENVIRONMENT, Set.of(PermissionType.READ, PermissionType.UPDATE)),
+              entry(GIT_SYNC, Set.of(PermissionType.READ, PermissionType.UPDATE))));
 
   // Organization Owner adds billing/ownership transfer (ORGANIZATION-level, deferred); among
   // implemented types its grants equal the Admin's.
@@ -81,7 +143,13 @@ class HubRoleCatalogueTest {
           "DevOps",
           Map.of(
               WORKSPACE, Set.of(PermissionType.CREATE),
-              CLUSTER, Set.of(PermissionType.READ, PermissionType.UPDATE),
+              CLUSTER,
+                  Set.of(
+                      PermissionType.READ,
+                      PermissionType.READ_USAGE_METRIC,
+                      PermissionType.CREATE,
+                      PermissionType.UPDATE,
+                      PermissionType.DELETE),
               CATALOG, Set.of(PermissionType.READ),
               ENVIRONMENT, Set.of(PermissionType.READ),
               COMPONENT, Set.of(PermissionType.ACCESS)));
@@ -123,7 +191,9 @@ class HubRoleCatalogueTest {
                       PermissionType.CREATE,
                       PermissionType.READ,
                       PermissionType.UPDATE,
-                      PermissionType.DELETE),
+                      PermissionType.DELETE,
+                      PermissionType.RESTORE,
+                      PermissionType.PURGE),
               PROJECT_SNAPSHOT,
                   Set.of(
                       PermissionType.CREATE,
@@ -166,7 +236,8 @@ class HubRoleCatalogueTest {
                       PermissionType.CREATE,
                       PermissionType.READ,
                       PermissionType.UPDATE,
-                      PermissionType.DELETE),
+                      PermissionType.DELETE,
+                      PermissionType.RESTORE),
               PROJECT_SNAPSHOT,
                   Set.of(
                       PermissionType.CREATE,
@@ -222,23 +293,26 @@ class HubRoleCatalogueTest {
   private static final Role API_READ =
       new Role(
           "API read",
-          Map.of(
-              CATALOG, Set.of(PermissionType.READ, PermissionType.READ_USAGE_METRIC),
-              ENVIRONMENT, Set.of(PermissionType.READ),
-              WORKSPACE, Set.of(PermissionType.READ),
-              PROJECT, Set.of(PermissionType.READ),
-              PROJECT_SNAPSHOT, Set.of(PermissionType.READ),
-              FILE, Set.of(PermissionType.READ),
-              VERSION, Set.of(PermissionType.READ),
-              COMMENT, Set.of(PermissionType.READ),
-              GIT_SYNC, Set.of(PermissionType.READ),
-              CATALOG_ASSET, Set.of(PermissionType.READ)));
+          Map.ofEntries(
+              entry(CLUSTER, Set.of(PermissionType.READ, PermissionType.READ_USAGE_METRIC)),
+              entry(CATALOG, Set.of(PermissionType.READ, PermissionType.READ_USAGE_METRIC)),
+              entry(ENVIRONMENT, Set.of(PermissionType.READ)),
+              entry(WORKSPACE, Set.of(PermissionType.READ)),
+              entry(PROJECT, Set.of(PermissionType.READ)),
+              entry(PROJECT_SNAPSHOT, Set.of(PermissionType.READ)),
+              entry(FILE, Set.of(PermissionType.READ)),
+              entry(VERSION, Set.of(PermissionType.READ)),
+              entry(COMMENT, Set.of(PermissionType.READ)),
+              entry(GIT_SYNC, Set.of(PermissionType.READ)),
+              entry(CATALOG_ASSET, Set.of(PermissionType.READ))));
 
   private static final Role API_CREATE =
       new Role(
           "API create",
           Map.of(
+              CLUSTER, Set.of(PermissionType.CREATE),
               CATALOG, Set.of(PermissionType.CREATE),
+              WORKSPACE, Set.of(PermissionType.CREATE),
               PROJECT, Set.of(PermissionType.CREATE),
               FILE, Set.of(PermissionType.CREATE),
               VERSION, Set.of(PermissionType.CREATE),
@@ -248,24 +322,31 @@ class HubRoleCatalogueTest {
                       PermissionType.REQUEST_REVIEW,
                       PermissionType.SUBMIT_REVIEW)));
 
+  // POST /clusters needs create+update, so the update role carries CLUSTER UPDATE. The restoration
+  // endpoints check the `update` scope but map to the RESTORE permission.
   private static final Role API_UPDATE =
       new Role(
           "API update",
           Map.of(
+              CLUSTER, Set.of(PermissionType.UPDATE),
               CATALOG, Set.of(PermissionType.UPDATE),
               ENVIRONMENT, Set.of(PermissionType.UPDATE),
-              PROJECT, Set.of(PermissionType.UPDATE),
-              FILE, Set.of(PermissionType.UPDATE),
-              VERSION, Set.of(PermissionType.UPDATE),
-              PROJECT_SNAPSHOT, Set.of(PermissionType.UPDATE)));
+              WORKSPACE, Set.of(PermissionType.UPDATE, PermissionType.RESTORE),
+              PROJECT, Set.of(PermissionType.UPDATE, PermissionType.RESTORE),
+              FILE, Set.of(PermissionType.UPDATE, PermissionType.RESTORE),
+              VERSION, Set.of(PermissionType.UPDATE, PermissionType.RESTORE),
+              PROJECT_SNAPSHOT, Set.of(PermissionType.UPDATE, PermissionType.RESTORE)));
 
+  // The permanent-delete endpoints check the `delete` scope but map to the PURGE permission.
   private static final Role API_DELETE =
       new Role(
           "API delete",
           Map.of(
+              CLUSTER, Set.of(PermissionType.DELETE),
               CATALOG, Set.of(PermissionType.DELETE),
-              PROJECT, Set.of(PermissionType.DELETE),
-              FILE, Set.of(PermissionType.DELETE),
+              WORKSPACE, Set.of(PermissionType.DELETE, PermissionType.PURGE),
+              PROJECT, Set.of(PermissionType.DELETE, PermissionType.PURGE),
+              FILE, Set.of(PermissionType.DELETE, PermissionType.PURGE),
               VERSION, Set.of(PermissionType.DELETE),
               PROJECT_SNAPSHOT, Set.of(PermissionType.DELETE)));
 

@@ -38,7 +38,14 @@ class AuthzResourceEnumParityTest {
                   PermissionType.UPDATE,
                   PermissionType.DELETE)),
           entry("CATALOG_ASSET", Set.of(PermissionType.READ, PermissionType.UPDATE)),
-          entry("CLUSTER", Set.of(PermissionType.READ, PermissionType.UPDATE)),
+          entry(
+              "CLUSTER",
+              Set.of(
+                  PermissionType.READ,
+                  PermissionType.READ_USAGE_METRIC,
+                  PermissionType.CREATE,
+                  PermissionType.UPDATE,
+                  PermissionType.DELETE)),
           entry("COMMENT", Set.of(PermissionType.CREATE, PermissionType.READ)),
           entry("ENVIRONMENT", Set.of(PermissionType.READ, PermissionType.UPDATE)),
           entry(
@@ -60,7 +67,9 @@ class AuthzResourceEnumParityTest {
                   PermissionType.CREATE,
                   PermissionType.READ,
                   PermissionType.UPDATE,
-                  PermissionType.DELETE)),
+                  PermissionType.DELETE,
+                  PermissionType.RESTORE,
+                  PermissionType.PURGE)),
           entry(
               "PROJECT_SNAPSHOT",
               Set.of(
