@@ -12,6 +12,9 @@ import java.io.IOException;
 /**
  * The token endpoint answered with an error or an unusable response. Carries the HTTP status and
  * the OAuth {@code error} fields only, never the request, the secret or a token.
+ *
+ * <p>The message is safe to log. The cause, if present, is the original JDK or Nimbus exception. It
+ * is not guaranteed to be free of sensitive text.
  */
 public final class TokenRequestException extends IOException {
 

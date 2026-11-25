@@ -11,7 +11,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
-import com.nimbusds.oauth2.sdk.ParseException;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
@@ -48,15 +47,21 @@ class TokenResponsesTest extends OidcTestSupport {
   }
 
   @Test
-  void tokenTypeWithControlCharactersIsSanitizedInTheMessage() {
+  void unsupportedTokenTypeGetsTheFixedMessage() {
     endpoint.respondWith(
         200,
         "{\"access_token\":\"t\",\"token_type\":\"x\\r\\n\\u0085\\u2028y\",\"expires_in\":60}");
 
-    assertThatThrownBy(() -> authorization(provider()))
+    final Throwable failure = catchThrowable(() -> authorization(provider()));
+
+    // Nimbus rejects the type and quotes it in its message. The fixed message does not.
+    assertThat(failure)
         .isInstanceOf(TokenRequestException.class)
-        // Nimbus rejects the type and quotes it in its message; describe() sanitizes that message.
-        .hasMessageContaining("Unsupported token_type: x????y");
+        .hasMessageContaining("is not usable: the response cannot be parsed")
+        .hasMessageNotContaining("token_type")
+        .hasMessageNotContaining("\r")
+        .hasMessageNotContaining("\n")
+        .hasMessageNotContaining("\u0085");
   }
 
   @Test
@@ -122,7 +127,7 @@ class TokenResponsesTest extends OidcTestSupport {
     assertThat(failure)
         .isInstanceOf(TokenRequestException.class)
         .hasMessageContaining("not usable")
-        .hasMessageContaining("token_type")
+        .hasMessageContaining("the response cannot be parsed")
         .hasNoCause();
     assertNoneOfTheMessagesContains(failure, "abc");
   }
@@ -167,7 +172,9 @@ class TokenResponsesTest extends OidcTestSupport {
             TokenRequestException.class,
             e -> {
               assertThat(e).hasNoCause();
-              assertThat(e.getMessage()).contains("not usable").contains("access_token");
+              assertThat(e.getMessage())
+                  .contains("not usable")
+                  .contains("the response cannot be parsed");
             });
   }
 
@@ -177,7 +184,7 @@ class TokenResponsesTest extends OidcTestSupport {
 
     assertThatThrownBy(() -> authorization(provider()))
         .isInstanceOf(TokenRequestException.class)
-        .hasMessageContaining("is not usable: Invalid JSON");
+        .hasMessageContaining("is not usable: the response cannot be parsed");
   }
 
   @Test
@@ -187,7 +194,7 @@ class TokenResponsesTest extends OidcTestSupport {
     final Throwable failure = catchThrowable(() -> authorization(provider()));
 
     assertThat(failure).isInstanceOf(TokenRequestException.class).hasNoCause();
-    assertThat(failure.getMessage()).contains("is not usable: Invalid JSON");
+    assertThat(failure.getMessage()).contains("is not usable: the response cannot be parsed");
     assertNoneOfTheMessagesContains(failure, "leaky-token", "oops");
   }
 
@@ -208,18 +215,6 @@ class TokenResponsesTest extends OidcTestSupport {
               assertThat(e.getErrorDescription()).isEqualTo("abcde");
               assertThat(e.getMessage()).doesNotContain("\r", "\n", "\u2028", "\u0085", "\t");
             });
-  }
-
-  @Test
-  void parseMessageThatQuotesItsCauseIsWithheld() {
-    final var quoting =
-        new ParseException(
-            "Unexpected exception: leaky-token", new IllegalStateException("leaky-token"));
-    final var naming = new ParseException("Missing JSON object member with key access_token");
-
-    assertThat(TokenResponses.describe(quoting)).isEqualTo("the response cannot be parsed");
-    assertThat(TokenResponses.describe(naming))
-        .isEqualTo("Missing JSON object member with key access_token");
   }
 
   @ParameterizedTest
