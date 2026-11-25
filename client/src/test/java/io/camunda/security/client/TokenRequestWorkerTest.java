@@ -16,6 +16,8 @@ import com.nimbusds.oauth2.sdk.http.HTTPResponse;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -44,6 +46,34 @@ class TokenRequestWorkerTest extends OidcTestSupport {
     } finally {
       release.countDown();
     }
+  }
+
+  @Test
+  @Timeout(30)
+  void tricklingBodyEndsAtTheRequestTimeout() throws Exception {
+    // Bytes keep coming, so no read timeout ends the read. At the deadline the worker closes the
+    // connection, and this stops a body that is still arriving. Without that close, the worker
+    // reads on to the 64 KiB limit.
+    final var provider = providerWithRequestTimeout(Duration.ofMillis(100));
+    final TokenEndpoint.Trickle trickle = endpoint.trickle();
+    final ExecutorService caller = Executors.newSingleThreadExecutor();
+    try {
+      final Future<Throwable> call =
+          caller.submit(() -> catchThrowable(() -> authorization(provider)));
+      // The endpoint takes each byte when it can send it, so it sets the pace. Feed until the
+      // endpoint stops. If the call ended before the request reached the endpoint, stop at once.
+      while (!call.isDone() || (trickle.written().get() > 0 && trickle.ended().getCount() > 0)) {
+        trickle.pace().offer(Boolean.TRUE, 10, TimeUnit.MILLISECONDS);
+      }
+
+      assertTimedOut(call.get());
+      // About 9000 bytes arrive in 100 ms on a laptop.
+      assertThat(trickle.written().get()).isLessThan(TokenRequestWorker.MAX_RESPONSE_BYTES);
+    } finally {
+      caller.shutdownNow();
+    }
+    endpoint.stopTrickle();
+    assertThat(authorizationOnceTheWorkerIsFree(provider)).startsWith("Authorization=Bearer ");
   }
 
   @Test

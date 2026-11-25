@@ -116,6 +116,8 @@ final class TokenResponses {
     try {
       final TokenErrorResponse parsed = TokenErrorResponse.parse(response);
       // Nimbus drops an error code with illegal characters and strips them from the description.
+      // No other code removes them. TokenResponsesTest.errorResponseWithLineBreaksIsSanitized fails
+      // if a Nimbus update stops this.
       error = parsed.getErrorObject().getCode();
       description = truncate(parsed.getErrorObject().getDescription());
     } catch (final ParseException | RuntimeException e) {

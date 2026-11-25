@@ -636,6 +636,29 @@ class OidcClientCredentialsProviderTest extends OidcTestSupport {
   }
 
   @Test
+  void unchangedFailureWarnsAgainAfterEveryHundredRepeats() {
+    final var provider = provider();
+    endpoint.respondWith(503, "{\"error\":\"temporarily_unavailable\"}");
+
+    try (var logs = new LogCapture()) {
+      for (int i = 0; i <= OidcClientCredentialsProvider.WARN_EVERY; i++) {
+        assertThatThrownBy(() -> authorization(provider)).isInstanceOf(TokenRequestException.class);
+      }
+
+      final List<ILoggingEvent> events = logs.eventsContaining("No valid token for client");
+      final List<Level> expected = new ArrayList<>();
+      expected.add(Level.WARN);
+      for (int i = 1; i < OidcClientCredentialsProvider.WARN_EVERY; i++) {
+        expected.add(Level.DEBUG);
+      }
+      expected.add(Level.WARN);
+      assertThat(events).extracting(ILoggingEvent::getLevel).containsExactlyElementsOf(expected);
+      assertThat(events.getLast().getFormattedMessage())
+          .contains("100 more failures with the same cause since the last WARN");
+    }
+  }
+
+  @Test
   void failureWithNoTokenWarnsAgainWhenTheCauseChanges() {
     final AtomicBoolean refuse = new AtomicBoolean();
     final var provider =
