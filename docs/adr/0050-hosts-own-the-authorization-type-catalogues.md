@@ -18,7 +18,17 @@ This ownership has a cost. The CSL enums hold host and engine vocabulary, for ex
 
 The check mechanism does not need the concrete types. `AuthorizationService` and `AuthorizationChecker` match the resource type and the permission as keys. They do not test specific values. Only `TENANT` has special behaviour, and `TENANT` is a CSL policy-model concept.
 
-This decision reverses the central rule of ADR-0008. It therefore supersedes ADR-0008. The background and the options are in the summary at https://claude.ai/artifact/6CqNtjKbE7V7zDYNsXqWF2
+This decision reverses the central rule of ADR-0008. It therefore supersedes ADR-0008.
+
+### Background: the mirrored enums
+
+Today the resource type and the permission type exist in two copies. CSL holds one copy in `AuthorizationResourceType` and `PermissionType`. The engine record protocol holds the other copy in `camunda/camunda`. `AuthzModelMapper` converts between them by the enum name (`valueOf(value.name())`). The `AuthzModelMapperTest` parity tests fail if the two copies differ.
+
+The engine copy has a reason to exist. The engine writes authorization records to storage (RocksDB), and exporters read them into ES, OS, or RDBMS. The engine enum is a storage contract, so it must stay stable and independent of the CSL release schedule. The match by name lets the two enums keep a different order and evolve apart, as long as the names stay equal.
+
+The cost is the duplicate permission list. To add one resource type, you write the full definition in CSL and the same permission list again in the engine enum. The constant name is one line, but the permission list is long. The two copies already differ (the engine has `PROBE`, CSL does not). Since May 2026, every change to the CSL enums was an OC type or an OC permission, about one each month, and each change needed two repositories and a release. No change touched a shared type.
+
+The check mechanism does not need the concrete types. So CSL can own the mechanism and let the host own the catalogue. This is Option 4 of the options that the team reviewed, and it is the decision below. ADR-0008 rejected a similar no-catalogue direction (its Option C, "CSL uses string constants"). The reason was that CSL does not enumerate all values, so Hub cannot maintain the rules. That objection no longer holds. OC publishes its catalogue, and Hub validates its rules against it (D4), so Hub gets a complete set without a CSL catalogue.
 
 ## Decision
 
@@ -49,7 +59,6 @@ These need a decision in the next revision, with @p-wunderlich and @StevePascoe.
 - How OC publishes its catalogue to Hub: runtime registration, or a versioned schema file.
 - What OC does with an unknown type when the Hub policy and the OC cluster run different versions. One option is to skip the authorization and log a warning. The other is to reject the whole snapshot. A skip denies more access than the Hub policy shows. A reject also blocks the next changes, which include revocations.
 - The host-supplied registry that converts a name into a type. Configuration binding needs it, because `ConfiguredAuthorization` binds the enums by name and Spring cannot bind an interface. Persistence and the Hub snapshots also need it.
-- Inline the background and the options into this ADR, in place of the claude.ai link.
 
 ## Alternatives considered
 
@@ -70,7 +79,6 @@ These need a decision in the next revision, with @p-wunderlich and @StevePascoe.
 
 ## Source
 
-- Background and the options: https://claude.ai/artifact/6CqNtjKbE7V7zDYNsXqWF2
 - Supersedes [ADR-0008](0008-authz-enum-ownership-and-layered-usage.md).
 - Issues: [#880](https://github.com/camunda/camunda-security-library/issues/880), camunda/camunda#67685, [#813](https://github.com/camunda/camunda-security-library/issues/813), [#793](https://github.com/camunda/camunda-security-library/issues/793)
 - Related ADRs: [ADR-0013](0013-camunda-security-scope-provider-spi.md), [ADR-0009](0009-session-store-port-and-web-session-ownership.md), [ADR-0019](0019-authorization-check-latency-metric.md)
