@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.registration.ClientRegistrations;
@@ -39,8 +40,8 @@ public final class LazyClientRegistrationRepository
   private final ScopedClientRegistrationFactory factory;
   private final Map<String, OidcConfiguration> providers;
   private final Map<String, OidcConfiguration> configuredProviders;
-  private final String scopedRedirectUriPath;
-  private final String scopeDescription;
+  private final @Nullable String scopedRedirectUriPath;
+  private final @Nullable String scopeDescription;
   private final ScopedClientRegistrationFactory.LoginRouteChecks loginRouteChecks;
   private final Map<String, ClientRegistration> resolved = new ConcurrentHashMap<>();
 
@@ -61,8 +62,8 @@ public final class LazyClientRegistrationRepository
   public LazyClientRegistrationRepository(
       final ScopedClientRegistrationFactory factory,
       final Map<String, OidcConfiguration> providers,
-      final String scopedRedirectUriPath,
-      final String scopeDescription) {
+      final @Nullable String scopedRedirectUriPath,
+      final @Nullable String scopeDescription) {
     this(
         factory,
         providers,
@@ -74,8 +75,8 @@ public final class LazyClientRegistrationRepository
   private LazyClientRegistrationRepository(
       final ScopedClientRegistrationFactory factory,
       final Map<String, OidcConfiguration> providers,
-      final String scopedRedirectUriPath,
-      final String scopeDescription,
+      final @Nullable String scopedRedirectUriPath,
+      final @Nullable String scopeDescription,
       final ScopedClientRegistrationFactory.LoginRouteChecks loginRouteChecks) {
     this.factory = Objects.requireNonNull(factory, "factory must not be null");
     final var normalized =
@@ -116,7 +117,7 @@ public final class LazyClientRegistrationRepository
   public static LazyClientRegistrationRepository withoutLoginRoutes(
       final ScopedClientRegistrationFactory factory,
       final Map<String, OidcConfiguration> providers,
-      final String scopeDescription) {
+      final @Nullable String scopeDescription) {
     return new LazyClientRegistrationRepository(
         factory,
         providers,
@@ -177,7 +178,7 @@ public final class LazyClientRegistrationRepository
   }
 
   @Override
-  public ClientRegistration findByRegistrationId(final String registrationId) {
+  public @Nullable ClientRegistration findByRegistrationId(final String registrationId) {
     final var config = providers.get(registrationId);
     if (config == null) {
       return null;

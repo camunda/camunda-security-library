@@ -8,6 +8,7 @@
 package io.camunda.security.core.authz;
 
 import io.camunda.security.api.model.CamundaAuthentication;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Resolves whether a principal represented by a {@link CamundaAuthentication} has access to a
@@ -43,7 +44,8 @@ public interface TenantAccessProvider {
    * @param authentication the resolved authentication context of the caller
    * @param tenantId the ID of the tenant to check
    */
-  TenantAccess hasTenantAccessByTenantId(CamundaAuthentication authentication, String tenantId);
+  TenantAccess hasTenantAccessByTenantId(
+      CamundaAuthentication authentication, @Nullable String tenantId);
 
   /**
    * Selects the {@link TenantAccessProvider} implementation for the given multi-tenancy setting:

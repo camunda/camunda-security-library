@@ -10,8 +10,8 @@ package io.camunda.security.spring.oidc;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcPrincipalClaims;
 import java.util.Map;
-import java.util.Objects;
 import java.util.function.Function;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimNames;
@@ -57,7 +57,7 @@ final class VerifiedJwtDecoder implements JwtDecoder {
       final JwtDecoder delegate,
       final Function<String, String> registrationIdByIssuer,
       final Map<String, OidcConfiguration> providers,
-      final OidcConfiguration defaultSlot) {
+      final @Nullable OidcConfiguration defaultSlot) {
     final var inherited = defaultSlot != null ? defaultSlot : new OidcConfiguration();
     return new VerifiedJwtDecoder(
         delegate,
@@ -97,7 +97,7 @@ final class VerifiedJwtDecoder implements JwtDecoder {
       final JwtDecoder delegate,
       final Function<String, String> registrationIdByIssuer,
       final Map<String, OidcConfiguration> providers,
-      final OidcConfiguration defaultSlot,
+      final @Nullable OidcConfiguration defaultSlot,
       final Function<String, ClientRegistration> registrationById) {
     final var inherited = defaultSlot != null ? defaultSlot : new OidcConfiguration();
     final var augmentation = inherited.getUserInfoAugmentation();
@@ -128,21 +128,23 @@ final class VerifiedJwtDecoder implements JwtDecoder {
   @Override
   public Jwt decode(final String token) throws JwtException {
     final var jwt = delegate.decode(token);
+    final var issuer = jwt.getClaims().get(JwtClaimNames.ISS);
     final var registrationId =
-        registrationIdByIssuer.apply(
-            Objects.toString(jwt.getClaims().get(JwtClaimNames.ISS), null));
+        registrationIdByIssuer.apply(issuer == null ? null : issuer.toString());
     if (registrationId == null) {
       return new VerifiedJwt(jwt, null);
     }
     final var tag = tagByRegistrationId.apply(registrationId);
-    return tag.userInfo() == null
+    final var userInfo = tag.userInfo();
+    return userInfo == null
         ? new VerifiedJwt(jwt, tag.claims())
-        : new VerifiedJwt(jwt, tag.claims(), tag.userInfo().enabled(), tag.userInfo().uri());
+        : new VerifiedJwt(jwt, tag.claims(), userInfo.enabled(), userInfo.uri());
   }
 
   /** What a token carries: its claims, and its UserInfo use if the decoder decides it. */
-  private record VerifiedJwtTag(OidcPrincipalClaims claims, UserInfoUse userInfo) {}
+  private record VerifiedJwtTag(
+      @Nullable OidcPrincipalClaims claims, @Nullable UserInfoUse userInfo) {}
 
   /** Whether the verifying provider uses UserInfo, and the endpoint of its registration. */
-  private record UserInfoUse(boolean enabled, String uri) {}
+  private record UserInfoUse(boolean enabled, @Nullable String uri) {}
 }

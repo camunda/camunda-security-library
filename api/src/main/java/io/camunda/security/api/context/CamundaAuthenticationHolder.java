@@ -8,6 +8,7 @@
 package io.camunda.security.api.context;
 
 import io.camunda.security.api.model.CamundaAuthentication;
+import org.jspecify.annotations.Nullable;
 
 /** Associates a given {@link CamundaAuthentication} with the current request handling context. */
 public interface CamundaAuthenticationHolder {
@@ -25,7 +26,7 @@ public interface CamundaAuthenticationHolder {
   void set(final CamundaAuthentication authentication);
 
   /** Obtains the current {@link CamundaAuthentication}, or null if not present. */
-  CamundaAuthentication get();
+  @Nullable CamundaAuthentication get();
 
   /** Clears the current {@link CamundaAuthentication} from the active execution context. */
   void clear();

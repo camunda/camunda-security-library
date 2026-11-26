@@ -11,8 +11,10 @@ import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.util.StringUtils;
@@ -79,7 +81,7 @@ public final class ScopedJwtDecoderFactory {
    *     basePath=/physical-tenants/t1}), or {@code null} for the unscoped text
    */
   public JwtDecoder buildIssuerAwareDecoder(
-      final AuthenticationConfiguration authentication, final String scopeDescription) {
+      final AuthenticationConfiguration authentication, final @Nullable String scopeDescription) {
     final var providers = clientRegistrationFactory.flatten(authentication);
     if (providers.isEmpty()) {
       throw new IllegalStateException(
@@ -121,11 +123,11 @@ public final class ScopedJwtDecoderFactory {
    * LazyClientRegistrationRepository} does it: a lock would hold another caller for the whole
    * discovery timeout of an unreachable provider. The first result wins.
    */
-  private ClientRegistration resolveOnce(
+  private @Nullable ClientRegistration resolveOnce(
       final Map<String, ClientRegistration> resolved,
       final Map<String, OidcConfiguration> providers,
       final String registrationId,
-      final String scopeDescription) {
+      final @Nullable String scopeDescription) {
     final var cached = resolved.get(registrationId);
     if (cached != null) {
       return cached;
@@ -146,8 +148,8 @@ public final class ScopedJwtDecoderFactory {
   private ClientRegistration resolve(
       final Map<String, OidcConfiguration> providers,
       final String registrationId,
-      final String scopeDescription) {
-    final var config = providers.get(registrationId);
+      final @Nullable String scopeDescription) {
+    final var config = Objects.requireNonNull(providers.get(registrationId));
     // buildAll, not createWithoutLoginRoutes: the whole map was already validated once above,
     // before this decoder started resolving registrations. Repeating that validation on every
     // retry of a registration that keeps failing to build would re-log the same WARN on every
@@ -164,14 +166,16 @@ public final class ScopedJwtDecoderFactory {
   }
 
   private static String registrationSubject(
-      final String registrationId, final OidcConfiguration config, final String scopeDescription) {
+      final String registrationId,
+      final OidcConfiguration config,
+      final @Nullable String scopeDescription) {
     return "OIDC client registration "
         + DeferredOidcResolution.describeProvider(registrationId, config)
         + (StringUtils.hasText(scopeDescription) ? " for " + scopeDescription : "");
   }
 
   private static String decoderSubject(
-      final Map<String, OidcConfiguration> providers, final String scopeDescription) {
+      final Map<String, OidcConfiguration> providers, final @Nullable String scopeDescription) {
     return "the OIDC access-token decoder"
         + (StringUtils.hasText(scopeDescription) ? " for " + scopeDescription : "")
         + " with provider(s) "

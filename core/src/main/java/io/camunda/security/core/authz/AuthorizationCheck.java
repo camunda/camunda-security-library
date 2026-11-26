@@ -14,6 +14,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Predicate;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Describes whether resource-level authorization should be enforced for a query or operation, and
@@ -26,7 +27,8 @@ import java.util.function.Predicate;
  * <p>Used by {@link ResourceAccessChecks} and search backends to scope query results to resources
  * the authenticated principal is allowed to see.
  */
-public record AuthorizationCheck(boolean enabled, AuthorizationCondition authorizationCondition) {
+public record AuthorizationCheck(
+    boolean enabled, @Nullable AuthorizationCondition authorizationCondition) {
 
   /**
    * Creates an enabled check wrapping a single {@link RequiredAuthorization} as a {@link
@@ -41,7 +43,8 @@ public record AuthorizationCheck(boolean enabled, AuthorizationCondition authori
    * authorizationCondition} may be {@code null}, in which case {@link #hasAnyResourceAccess()}
    * returns {@code false}.
    */
-  public static AuthorizationCheck enabled(final AuthorizationCondition authorizationCondition) {
+  public static AuthorizationCheck enabled(
+      final @Nullable AuthorizationCondition authorizationCondition) {
     return new AuthorizationCheck(true, authorizationCondition);
   }
 

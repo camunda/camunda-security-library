@@ -11,6 +11,7 @@ import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Describes why an authorization check was rejected.
@@ -29,10 +30,12 @@ public sealed interface AuthorizationRejection
         AuthorizationRejection.Permission,
         AuthorizationRejection.Property {
 
-  record Tenant(String tenantId) implements AuthorizationRejection {}
+  record Tenant(@Nullable String tenantId) implements AuthorizationRejection {}
 
   record Permission(
-      AuthorizationResourceType resourceType, PermissionType permissionType, String resourceId)
+      AuthorizationResourceType resourceType,
+      PermissionType permissionType,
+      @Nullable String resourceId)
       implements AuthorizationRejection {}
 
   record Property(

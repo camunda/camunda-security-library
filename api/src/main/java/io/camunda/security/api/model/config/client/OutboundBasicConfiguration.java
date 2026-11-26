@@ -7,28 +7,30 @@
  */
 package io.camunda.security.api.model.config.client;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * HTTP Basic settings of an outbound client. This class has no {@code toString} method that shows
  * the password.
  */
 public final class OutboundBasicConfiguration {
 
-  private String username;
-  private String password;
+  private @Nullable String username;
+  private @Nullable String password;
 
-  public String getUsername() {
+  public @Nullable String getUsername() {
     return username;
   }
 
-  public void setUsername(final String username) {
+  public void setUsername(final @Nullable String username) {
     this.username = username;
   }
 
-  public String getPassword() {
+  public @Nullable String getPassword() {
     return password;
   }
 
-  public void setPassword(final String password) {
+  public void setPassword(final @Nullable String password) {
     this.password = password;
   }
 }

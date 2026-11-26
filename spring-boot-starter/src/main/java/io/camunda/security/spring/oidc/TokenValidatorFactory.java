@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -166,8 +167,9 @@ public class TokenValidatorFactory {
    * registration ID can have different issuers. An empty issuer entry does not fall back to the
    * map, so a scope without an issuer never uses the issuer of another scope.
    */
-  private static String resolveIssuerUri(
-      final ClientRegistration clientRegistration, final OidcConfiguration providerConfig) {
+  private static @Nullable String resolveIssuerUri(
+      final ClientRegistration clientRegistration,
+      final @Nullable OidcConfiguration providerConfig) {
     return ClientRegistrationMetadata.issuer(clientRegistration)
         .orElse(providerConfig != null ? providerConfig.getIssuerUri() : null);
   }
@@ -178,7 +180,8 @@ public class TokenValidatorFactory {
    * validation), otherwise the {@code providers}-map audiences.
    */
   private Set<String> resolveAudiences(
-      final ClientRegistration clientRegistration, final OidcConfiguration providerConfig) {
+      final ClientRegistration clientRegistration,
+      final @Nullable OidcConfiguration providerConfig) {
     return ClientRegistrationMetadata.audiences(clientRegistration)
         .orElseGet(
             () ->

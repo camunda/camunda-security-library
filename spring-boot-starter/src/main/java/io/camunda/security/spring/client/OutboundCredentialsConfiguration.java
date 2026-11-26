@@ -18,6 +18,7 @@ import io.camunda.security.spring.CamundaSecurityLibraryProperties;
 import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -84,7 +85,7 @@ public class OutboundCredentialsConfiguration {
     }
   }
 
-  private static URI parseTokenUri(final String path, final String tokenUri) {
+  private static URI parseTokenUri(final String path, final @Nullable String tokenUri) {
     if (tokenUri == null || tokenUri.isBlank()) {
       throw new IllegalStateException(path + ".token-uri must be set");
     }

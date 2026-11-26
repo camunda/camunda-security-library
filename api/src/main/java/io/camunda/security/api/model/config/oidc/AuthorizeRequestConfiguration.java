@@ -9,12 +9,13 @@ package io.camunda.security.api.model.config.oidc;
 
 import java.util.HashMap;
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 
 /** Configures additional query parameters for OIDC authorization requests. */
 public class AuthorizeRequestConfiguration {
-  private Map<String, Object> additionalParameters;
+  private @Nullable Map<String, Object> additionalParameters;
 
-  public Map<String, Object> getAdditionalParameters() {
+  public @Nullable Map<String, Object> getAdditionalParameters() {
     return additionalParameters;
   }
 

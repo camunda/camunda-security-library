@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -183,7 +184,7 @@ public final class OidcRedirectDiagnosticsFilter extends OncePerRequestFilter {
         && request.getSession(false) == null;
   }
 
-  static String extractRedirectUri(final String location) {
+  static @Nullable String extractRedirectUri(final String location) {
     if (location == null || location.isBlank()) {
       return null;
     }

@@ -14,15 +14,16 @@ import io.camunda.security.api.model.authz.PermissionType;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.jspecify.annotations.Nullable;
 
 public class ConfiguredAuthorization {
 
-  private AuthorizationOwnerType ownerType;
-  private String ownerId;
-  private AuthorizationResourceType resourceType;
-  private String resourceId;
-  private String resourcePropertyName;
-  private Set<PermissionType> permissions;
+  private @Nullable AuthorizationOwnerType ownerType;
+  private @Nullable String ownerId;
+  private @Nullable AuthorizationResourceType resourceType;
+  private @Nullable String resourceId;
+  private @Nullable String resourcePropertyName;
+  private @Nullable Set<PermissionType> permissions;
 
   public ConfiguredAuthorization() {}
 
@@ -30,8 +31,8 @@ public class ConfiguredAuthorization {
       final AuthorizationOwnerType ownerType,
       final String ownerId,
       final AuthorizationResourceType resourceType,
-      final String resourceId,
-      final String resourcePropertyName,
+      final @Nullable String resourceId,
+      final @Nullable String resourcePropertyName,
       final Set<PermissionType> permissions) {
     this.ownerType = ownerType;
     this.ownerId = ownerId;
@@ -69,27 +70,27 @@ public class ConfiguredAuthorization {
         ownerType, ownerId, resourceType, null, resourcePropertyName, permissions);
   }
 
-  public AuthorizationOwnerType ownerType() {
+  public @Nullable AuthorizationOwnerType ownerType() {
     return ownerType;
   }
 
-  public String ownerId() {
+  public @Nullable String ownerId() {
     return ownerId;
   }
 
-  public AuthorizationResourceType resourceType() {
+  public @Nullable AuthorizationResourceType resourceType() {
     return resourceType;
   }
 
-  public String resourceId() {
+  public @Nullable String resourceId() {
     return resourceId;
   }
 
-  public String resourcePropertyName() {
+  public @Nullable String resourcePropertyName() {
     return resourcePropertyName;
   }
 
-  public Set<PermissionType> permissions() {
+  public @Nullable Set<PermissionType> permissions() {
     return permissions;
   }
 
@@ -126,7 +127,7 @@ public class ConfiguredAuthorization {
    * entries (e.g. from trailing commas or whitespace), and converts valid entries to {@link
    * PermissionType}. See <a href="https://github.com/camunda/camunda/issues/42323">#42323</a>.
    */
-  public void setPermissions(final Set<String> permissions) {
+  public void setPermissions(final @Nullable Set<String> permissions) {
     if (permissions == null) {
       this.permissions = Set.of();
       return;

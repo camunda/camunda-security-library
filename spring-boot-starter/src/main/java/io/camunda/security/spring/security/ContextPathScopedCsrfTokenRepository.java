@@ -9,6 +9,7 @@ package io.camunda.security.spring.security;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
@@ -44,13 +45,15 @@ final class ContextPathScopedCsrfTokenRepository implements CsrfTokenRepository 
 
   @Override
   public void saveToken(
-      final CsrfToken token, final HttpServletRequest request, final HttpServletResponse response) {
+      final @Nullable CsrfToken token,
+      final HttpServletRequest request,
+      final HttpServletResponse response) {
     configureCookiePath(request);
     delegate.saveToken(token, request, response);
   }
 
   @Override
-  public CsrfToken loadToken(final HttpServletRequest request) {
+  public @Nullable CsrfToken loadToken(final HttpServletRequest request) {
     return delegate.loadToken(request);
   }
 

@@ -7,12 +7,14 @@
  */
 package io.camunda.security.api.model.config.oidc.validator;
 
+import org.jspecify.annotations.Nullable;
+
 /** Validates and normalizes OIDC groups-claim configuration values. */
 public final class OidcGroupsClaimValidator {
 
   private OidcGroupsClaimValidator() {}
 
-  public static void validate(final String groupsClaim) {
+  public static void validate(final @Nullable String groupsClaim) {
     if (groupsClaim == null || groupsClaim.isBlank()) {
       return;
     }
@@ -34,7 +36,7 @@ public final class OidcGroupsClaimValidator {
     }
   }
 
-  public static String sanitizeClaimPath(final String groupsClaim) {
+  public static @Nullable String sanitizeClaimPath(final @Nullable String groupsClaim) {
     validate(groupsClaim);
 
     if (groupsClaim == null || groupsClaim.isBlank()) {

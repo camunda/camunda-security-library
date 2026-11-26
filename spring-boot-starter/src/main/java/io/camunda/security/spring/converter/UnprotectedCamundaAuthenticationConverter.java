@@ -9,6 +9,7 @@ package io.camunda.security.spring.converter;
 
 import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.model.CamundaAuthentication;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 
@@ -41,7 +42,7 @@ public class UnprotectedCamundaAuthenticationConverter
    *     AnonymousAuthenticationToken}; {@code false} otherwise
    */
   @Override
-  public boolean supports(final Authentication authentication) {
+  public boolean supports(final @Nullable Authentication authentication) {
     // 1) apiProtection == false and consolidated-auth profile used => authentication == null
     // 2) apiProtection == false and no auth profile used => authentication ==
     // AnonymousAuthenticationToken
@@ -58,7 +59,7 @@ public class UnprotectedCamundaAuthenticationConverter
    * @return a {@link CamundaAuthentication} representing an anonymous user
    */
   @Override
-  public CamundaAuthentication convert(final Authentication authentication) {
+  public CamundaAuthentication convert(final @Nullable Authentication authentication) {
     return CamundaAuthentication.anonymous();
   }
 }

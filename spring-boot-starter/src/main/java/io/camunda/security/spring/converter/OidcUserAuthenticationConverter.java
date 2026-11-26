@@ -19,9 +19,11 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -29,7 +31,6 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
-import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
@@ -104,16 +105,16 @@ public class OidcUserAuthenticationConverter
   }
 
   @Override
-  public boolean supports(final Authentication authentication) {
+  public boolean supports(final @Nullable Authentication authentication) {
     return Optional.ofNullable(authentication)
         .filter(OAuth2AuthenticationToken.class::isInstance)
         .isPresent();
   }
 
   @Override
-  public CamundaAuthentication convert(final Authentication authentication) {
+  public CamundaAuthentication convert(final @Nullable Authentication authentication) {
     try {
-      return Optional.of(authentication)
+      return Optional.of(Objects.requireNonNull(authentication))
           .map(OAuth2AuthenticationToken.class::cast)
           .map(this::getClaims)
           .map(tokenClaimsConverter::convert)
@@ -151,7 +152,7 @@ public class OidcUserAuthenticationConverter
 
   private boolean shouldPreferIdTokenClaims(
       final OAuth2AuthenticationToken authenticationToken,
-      final OAuth2AuthorizedClient authorizedClient) {
+      final @Nullable OAuth2AuthorizedClient authorizedClient) {
     final var registrationId = authenticationToken.getAuthorizedClientRegistrationId();
     if (registrationId == null) {
       return false;
@@ -171,7 +172,7 @@ public class OidcUserAuthenticationConverter
    *     #getAccessTokenClaims(OAuth2AuthenticationToken, OAuth2AuthorizedClient)}.
    */
   @Deprecated(since = "1.1.0")
-  protected Map<String, Object> getAccessTokenClaims(
+  protected @Nullable Map<String, Object> getAccessTokenClaims(
       final OAuth2AuthenticationToken authenticationToken) {
     return getAccessTokenClaims(
         authenticationToken, getAuthorizedClient(authenticationToken, request));
@@ -181,30 +182,33 @@ public class OidcUserAuthenticationConverter
    * Decodes the access token of {@code authorizedClient}, or returns {@code null} when there is
    * none or it does not decode.
    */
-  protected Map<String, Object> getAccessTokenClaims(
+  protected @Nullable Map<String, Object> getAccessTokenClaims(
       final OAuth2AuthenticationToken authenticationToken,
-      final OAuth2AuthorizedClient authorizedClient) {
-    return Optional.ofNullable(authorizedClient)
-        .map(OAuth2AuthorizedClient::getAccessToken)
-        .map(OAuth2AccessToken::getTokenValue)
-        .map(
-            tokenValue -> {
-              final var clientRegistration = authorizedClient.getClientRegistration();
-              final var jwtDecoder = getJwtDecoder(clientRegistration);
-              return decodeAccessToken(loggingFailures(jwtDecoder, clientRegistration), tokenValue);
-            })
-        .map(Jwt::getClaims)
-        .orElse(null);
+      final @Nullable OAuth2AuthorizedClient authorizedClient) {
+    if (authorizedClient == null) {
+      return null;
+    }
+    final var accessToken = authorizedClient.getAccessToken();
+    if (accessToken == null) {
+      return null;
+    }
+    final var clientRegistration = authorizedClient.getClientRegistration();
+    final var jwtDecoder = getJwtDecoder(clientRegistration);
+    final var jwt =
+        decodeAccessToken(
+            loggingFailures(jwtDecoder, clientRegistration), accessToken.getTokenValue());
+    return jwt == null ? null : jwt.getClaims();
   }
 
-  protected OAuth2AuthorizedClient getAuthorizedClient(
+  protected @Nullable OAuth2AuthorizedClient getAuthorizedClient(
       final OAuth2AuthenticationToken authenticationToken, final HttpServletRequest request) {
     final var clientRegistrationId = authenticationToken.getAuthorizedClientRegistrationId();
     return authorizedClientRepository.loadAuthorizedClient(
         clientRegistrationId, authenticationToken, request);
   }
 
-  protected Jwt decodeAccessToken(final JwtDecoder jwtDecoder, final String accessTokenValue) {
+  protected @Nullable Jwt decodeAccessToken(
+      final JwtDecoder jwtDecoder, final String accessTokenValue) {
     try {
       return jwtDecoder.decode(accessTokenValue);
     } catch (final JwtException e) {
@@ -243,7 +247,7 @@ public class OidcUserAuthenticationConverter
    * The message of a failed claim check names only the claim. Other failures, for example of the
    * key source, can name the JWK Set URL with credentials in it, so only their type is logged.
    */
-  private static String reasonForLog(final JwtException e) {
+  private static @Nullable String reasonForLog(final JwtException e) {
     return e instanceof JwtValidationException
         ? sanitizeForLog(e.getMessage())
         : e.getClass().getSimpleName();
@@ -271,7 +275,7 @@ public class OidcUserAuthenticationConverter
             accessTokenDecoderFactory.createAccessTokenDecoder(clientRegistration, additionalUris));
   }
 
-  private List<String> additionalJwkSetUris(final ClientRegistration clientRegistration) {
+  private @Nullable List<String> additionalJwkSetUris(final ClientRegistration clientRegistration) {
     final var own = ClientRegistrationMetadata.additionalJwkSetUris(clientRegistration);
     if (own.isEmpty()) {
       return additionalJwkSetUris.get(clientRegistration.getRegistrationId());
@@ -280,7 +284,7 @@ public class OidcUserAuthenticationConverter
     return own.get().isEmpty() ? null : own.get();
   }
 
-  private static String issuerForLog(final ClientRegistration clientRegistration) {
+  private static @Nullable String issuerForLog(final ClientRegistration clientRegistration) {
     final var details = clientRegistration.getProviderDetails();
     return ClientRegistrationMetadata.issuer(clientRegistration)
         .orElse(details != null ? details.getIssuerUri() : null);
@@ -293,9 +297,9 @@ public class OidcUserAuthenticationConverter
 
   private record DecoderKey(
       String registrationId,
-      String issuerUri,
-      String issuerMetadata,
-      String jwkSetUri,
-      Set<String> audiences,
-      List<String> additionalJwkSetUris) {}
+      @Nullable String issuerUri,
+      @Nullable String issuerMetadata,
+      @Nullable String jwkSetUri,
+      @Nullable Set<String> audiences,
+      @Nullable List<String> additionalJwkSetUris) {}
 }

@@ -9,6 +9,7 @@ package io.camunda.security.api.model.user;
 
 import java.util.List;
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Public view of the authenticated user returned by {@code CamundaUserPort#getCurrentUser()}
@@ -19,14 +20,14 @@ import java.util.Map;
  * "tasklist"}); hosts that store stronger types convert them to strings at the boundary.
  */
 public record CamundaUserDTO(
-    String displayName,
-    String username,
-    String email,
+    @Nullable String displayName,
+    @Nullable String username,
+    @Nullable String email,
     List<String> authorizedComponents,
     List<String> tenants,
     List<String> groups,
     List<String> roles,
-    String salesPlanType,
+    @Nullable String salesPlanType,
     Map<String, String> c8Links,
     boolean canLogout) {
 

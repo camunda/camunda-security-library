@@ -11,6 +11,7 @@ import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.core.auth.condition.AuthorizationCondition;
 import io.camunda.security.core.auth.condition.AuthorizationConditions;
 import java.util.function.Function;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Represents the security context for the current operation, containing both authentication and
@@ -18,15 +19,16 @@ import java.util.function.Function;
  * along with the permissions that need to be checked for the current operation.
  */
 public record SecurityContext(
-    CamundaAuthentication authentication, AuthorizationCondition authorizationCondition) {
+    @Nullable CamundaAuthentication authentication,
+    @Nullable AuthorizationCondition authorizationCondition) {
 
   public static SecurityContext of(final Function<Builder, Builder> builderFunction) {
     return builderFunction.apply(new Builder()).build();
   }
 
   public static final class Builder {
-    private CamundaAuthentication authentication;
-    private AuthorizationCondition authorizationCondition;
+    private @Nullable CamundaAuthentication authentication;
+    private @Nullable AuthorizationCondition authorizationCondition;
 
     public Builder withAuthentication(final CamundaAuthentication authentication) {
       this.authentication = authentication;

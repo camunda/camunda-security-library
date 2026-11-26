@@ -11,6 +11,7 @@ import io.camunda.security.api.context.CamundaAuthenticationConverter;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.exception.CamundaAuthenticationException;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.core.Authentication;
 
 /**
@@ -49,7 +50,7 @@ public class CamundaSpringAuthenticationDelegatingConverter
    * @return {@code true} always
    */
   @Override
-  public boolean supports(final Authentication authentication) {
+  public boolean supports(final @Nullable Authentication authentication) {
     return true;
   }
 
@@ -64,7 +65,7 @@ public class CamundaSpringAuthenticationDelegatingConverter
    *     converter supports its type
    */
   @Override
-  public CamundaAuthentication convert(final Authentication authentication) {
+  public @Nullable CamundaAuthentication convert(final @Nullable Authentication authentication) {
     final var converter = getConverter(authentication);
     return converter == null ? null : converter.convert(authentication);
   }
@@ -78,8 +79,8 @@ public class CamundaSpringAuthenticationDelegatingConverter
    * @throws CamundaAuthenticationException if {@code authentication} is non-{@code null} and no
    *     converter in the list supports its type
    */
-  protected CamundaAuthenticationConverter<Authentication> getConverter(
-      final Authentication authentication) {
+  protected @Nullable CamundaAuthenticationConverter<Authentication> getConverter(
+      final @Nullable Authentication authentication) {
     final var match =
         converters.stream().filter(c -> c != this && c.supports(authentication)).findFirst();
     if (match.isPresent()) {

@@ -28,6 +28,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.stream.Stream;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.CollectionUtils;
@@ -136,7 +137,7 @@ public class JWSKeySelectorFactory {
    * @return a {@link JWSVerificationKeySelector} configured with the allowed algorithms
    * @throws IllegalArgumentException if the URI is malformed
    */
-  public JWSKeySelector<SecurityContext> createJWSKeySelector(final String jwkSetUri) {
+  public JWSKeySelector<SecurityContext> createJWSKeySelector(final @Nullable String jwkSetUri) {
     if (!StringUtils.hasText(jwkSetUri)) {
       throw new IllegalArgumentException(ERROR_MISSING_JWK_SET_URI);
     }
@@ -158,7 +159,7 @@ public class JWSKeySelectorFactory {
    * @throws IllegalArgumentException if the primary URI is malformed
    */
   public JWSKeySelector<SecurityContext> createJWSKeySelector(
-      final String jwkSetUri, final List<String> additionalJwkSetUris) {
+      final @Nullable String jwkSetUri, final @Nullable List<String> additionalJwkSetUris) {
     if (CollectionUtils.isEmpty(additionalJwkSetUris)) {
       return createJWSKeySelector(jwkSetUri);
     }

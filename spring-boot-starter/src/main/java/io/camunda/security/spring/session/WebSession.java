@@ -13,6 +13,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.Set;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.session.MapSession;
@@ -56,7 +57,7 @@ public final class WebSession implements Session {
   }
 
   @Override
-  public <T> T getAttribute(final String attributeName) {
+  public <T> @Nullable T getAttribute(final String attributeName) {
     return delegate.getAttribute(attributeName);
   }
 
@@ -98,7 +99,7 @@ public final class WebSession implements Session {
         .orElse(false);
   }
 
-  private Authentication getAuthentication() {
+  private @Nullable Authentication getAuthentication() {
     return Optional.ofNullable((SecurityContext) delegate.getAttribute(SPRING_SECURITY_CONTEXT_KEY))
         .map(SecurityContext::getAuthentication)
         .orElse(null);
