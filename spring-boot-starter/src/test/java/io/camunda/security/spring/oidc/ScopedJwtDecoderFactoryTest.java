@@ -72,9 +72,22 @@ final class ScopedJwtDecoderFactoryTest {
   private static ScopedJwtDecoderFactory factoryWithHost(
       final TokenValidatorFactory hostValidatorFactory) {
     final var decoderFactory =
-        new OidcAccessTokenDecoderFactory(new JWSKeySelectorFactory(), hostValidatorFactory);
+        new OidcAccessTokenDecoderFactory(
+            new JWSKeySelectorFactory(),
+            new TokenValidatorFactory(Map.of(), OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of()));
     return new ScopedJwtDecoderFactory(
         new ScopedClientRegistrationFactory(), decoderFactory, hostValidatorFactory);
+  }
+
+  private static TokenValidatorFactory hostFactoryRejectingOtherCluster() {
+    final OAuth2TokenValidator<Jwt> rejectOtherCluster =
+        token ->
+            "other".equals(token.getClaimAsString("cluster"))
+                ? OAuth2TokenValidatorResult.failure(
+                    new OAuth2Error(OAuth2ErrorCodes.INVALID_TOKEN, "other cluster", null))
+                : OAuth2TokenValidatorResult.success();
+    return new TokenValidatorFactory(
+        Map.of(), OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of(rejectOtherCluster));
   }
 
   @AfterEach
@@ -138,16 +151,7 @@ final class ScopedJwtDecoderFactoryTest {
   void shouldApplyTheExtraValidatorsOfTheHostFactory() throws Exception {
     // given
     serverA = OidcTestServer.startRsa("key-a");
-    final OAuth2TokenValidator<Jwt> rejectOtherCluster =
-        token ->
-            "other".equals(token.getClaimAsString("cluster"))
-                ? OAuth2TokenValidatorResult.failure(
-                    new OAuth2Error(OAuth2ErrorCodes.INVALID_TOKEN, "other cluster", null))
-                : OAuth2TokenValidatorResult.success();
-    final var factory =
-        factoryWithHost(
-            new TokenValidatorFactory(
-                Map.of(), OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of(rejectOtherCluster)));
+    final var factory = factoryWithHost(hostFactoryRejectingOtherCluster());
     final var decoder = factory.buildIssuerAwareDecoder(singleProviderAuth("provider-a", serverA));
 
     // when / then
@@ -158,6 +162,27 @@ final class ScopedJwtDecoderFactoryTest {
             () -> decoder.decode(serverA.sign(serverA.issuerUri(), Map.of("cluster", "other"))))
         .isInstanceOf(BadJwtException.class)
         .hasMessageContaining("other cluster");
+  }
+
+  @Test
+  void shouldApplyTheExtraValidatorsOfTheHostFactoryForEachOfTwoProviders() throws Exception {
+    // given
+    serverA = OidcTestServer.startRsa("key-a");
+    serverB = OidcTestServer.startRsa("key-b");
+    final var decoder =
+        factoryWithHost(hostFactoryRejectingOtherCluster())
+            .buildIssuerAwareDecoder(twoProviderAuth(serverA, serverB));
+
+    // when / then
+    for (final var server : List.of(serverA, serverB)) {
+      assertThat(decoder.decode(server.sign(server.issuerUri(), Map.of("cluster", "own"))))
+          .extracting(jwt -> jwt.getClaimAsString("cluster"))
+          .isEqualTo("own");
+      assertThatThrownBy(
+              () -> decoder.decode(server.sign(server.issuerUri(), Map.of("cluster", "other"))))
+          .isInstanceOf(BadJwtException.class)
+          .hasMessageContaining("other cluster");
+    }
   }
 
   @Test
