@@ -26,16 +26,30 @@ This decision reverses the central rule of ADR-0008. It therefore supersedes ADR
 CSL evaluates a `RequiredAuthorization` against the granted `AuthorizationScope`s over an abstract resource type and an abstract permission type. CSL does not define the host resource types or permission types. This reverses ADR-0008, which made CSL the canonical owner of both enums.
 
 **D2. The abstract types are host-supplied contracts, matched by name.**
-CSL defines an abstract resource-type contract and an abstract permission-type contract. Host catalogues supply the concrete values. CSL compares them by name. The concrete shape of each contract is an implementation choice for [#880](https://github.com/camunda/camunda-security-library/issues/880). A marker interface that host enums implement keeps compile-time safety, and it lets the existing `AuthorizationResourceType` and `PermissionType` implement the contracts, so the first step can stay additive. An opaque value, for example a string, is simpler but changes every call site at once.
+CSL defines an abstract resource-type contract and an abstract permission-type contract. Host catalogues supply the concrete values. Each contract is a marker interface that the host enums implement. The existing `AuthorizationResourceType` and `PermissionType` implement the contracts too, so the first step stays additive. CSL compares and stores `name()` values only. Two contract values with the same `name()` are the same type for the check, even when they come from different enums. Java enums cannot override `equals` and `hashCode`, so an object match fails across enums, and the `name()` rule is the fix. [#880](https://github.com/camunda/camunda-security-library/issues/880) implements this shape.
 
-**D3. CSL keeps only the types that it reasons about.**
-`TENANT` stays, because `AuthorizationService` has `TENANT`-specific behaviour (the tenant rejection). `COMPONENT` and `ACCESS` stay, because CSL's own `WebAppAuthorizationCheckFilter` reasons about them — it asks the check port for `ACCESS` on the resolved web app as a `COMPONENT` resource ([ADR-0014](0014-unified-authz-framework-in-core.md) §10). CSL keeps the permission types that its own retained types need, for example the CRUD actions on `TENANT`. Review the other policy-model resource types (`ROLE`, `GROUP`, `USER`, `MAPPING_RULE`, `AUTHORIZATION`, `ORGANIZATION`) and their permissions. Keep one only if CSL logic needs it, not for completeness.
+**D3. CSL keeps the types that CSL owns.**
+CSL keeps a type if CSL owns the entity, not only if CSL logic needs it. The CSL-owned types are the Unified Policy Model types (`TENANT`, `ROLE`, `GROUP`, `USER`, `MAPPING_RULE`, `AUTHORIZATION`, and `ORGANIZATION`) and `COMPONENT` with `ACCESS`. CSL authors these entities, so they are CSL types, not exceptions. The ownership test replaces the earlier "keep only if CSL logic needs it" test, which let a later review move an owned entity such as `ROLE` to a host. Two owned types also carry CSL logic. `AuthorizationService` has `TENANT`-specific behaviour (the tenant rejection). `WebAppAuthorizationCheckFilter` asks the check port for `ACCESS` on the resolved web app as a `COMPONENT` resource ([ADR-0014](0014-unified-authz-framework-in-core.md) §10). CSL keeps the permission types that its owned types need, for example the CRUD actions on `TENANT`.
 
 **D4. Hosts own their catalogues and the supported-permission metadata.**
-OC owns the engine resource types, the matching permission types, and the typed builder helpers (`processDefinition()`, `userTask()`, and the others). The `resourceType → supported PermissionType` mapping travels with the resource type. The host owns this mapping for host types, and CSL keeps it only for its retained types. `AuthorizationResourceType#getSupportedPermissionTypes()` and `buildResourcePermissionsMap()` move to the host side for host types. The engine keeps its own enforcement enums. Hub owns its own catalogues later.
+OC owns the engine resource types, the matching permission types, and the typed builder helpers (`processDefinition()`, `userTask()`, and the others). The engine protocol enum in `camunda-security-protocol` is the single source of the OC types, and it implements the CSL contract from D2. `camunda-security-protocol` already depends on `camunda-security-library-api`, so the OC types need no new enum and no new mapping. The `resourceType → supported PermissionType` mapping travels with the resource type. The host owns this mapping for host types, and CSL keeps it only for its owned types. `AuthorizationResourceType#getSupportedPermissionTypes()` and `buildResourcePermissionsMap()` move to the host side for host types.
+
+Hub owns only the types that only Hub uses. Hub does not own the OC types. In the `oc-managed` strategy, Hub authors policies for OC, so Hub uses the OC types through the catalogue that OC publishes. Hub keeps the type names as opaque values and validates them against that catalogue.
 
 **D5. The migration is staged.**
 The first step adds the contracts in CSL ([#880](https://github.com/camunda/camunda-security-library/issues/880)) and keeps the existing enums, so it can be additive if the chosen contract shape allows it. Later steps remove the host types from CSL and move them to OC (camunda/camunda#67685). CSL releases between the steps stay compatible. On acceptance, the status of ADR-0008 changes to `Superseded by ADR-0050`, per the supersession process in [docs/workflows/adr.md](../workflows/adr.md).
+
+**D6. Two rules enforce the ownership, one for each direction.**
+A host type must not leak into CSL core. An ArchUnit rule in the CSL build enforces this. The classes in `io.camunda.security.core.authz` depend only on the abstract contracts from D2 and the CSL enums that carry the owned types. They do not depend on a concrete host enum or on `camunda-security-protocol`. A host must use the CSL constants for the owned types. ArchUnit cannot check this, because the CSL build does not see the host code. CSL ships a contract test that each host runs in its build. The test makes sure that each owned type maps once from a host constant with the same name. It also makes sure that no other host constant uses a CSL name. The ArchUnit rule works because the migration splits the owned types and the host types into different Java types. ArchUnit checks type dependencies, not single enum constants.
+
+## Open points
+
+These need a decision in the next revision, with @p-wunderlich and @StevePascoe. The shared-kernel approach above (owned types as CSL constants, name-based matching, the host contract test) needs their sign-off before the ADR moves to Accepted.
+
+- How OC publishes its catalogue to Hub: runtime registration, or a versioned schema file.
+- What OC does with an unknown type when the Hub policy and the OC cluster run different versions. One option is to skip the authorization and log a warning. The other is to reject the whole snapshot. A skip denies more access than the Hub policy shows. A reject also blocks the next changes, which include revocations.
+- The host-supplied registry that converts a name into a type. Configuration binding needs it, because `ConfiguredAuthorization` binds the enums by name and Spring cannot bind an interface. Persistence and the Hub snapshots also need it.
+- Inline the background and the options into this ADR, in place of the claude.ai link.
 
 ## Alternatives considered
 
@@ -47,8 +61,8 @@ The first step adds the contracts in CSL ([#880](https://github.com/camunda/camu
 ## Consequences
 
 - CSL core and api hold no host resource type and no host permission type. The opaque-scope-key rule now also covers the authorization types.
-- Hub onboarding adds no types to CSL. Hub gets a complete set from its own catalogue, not from CSL. This replaces the Hub rationale in ADR-0008.
-- The cross-repo mirror and its `AuthzModelMapperTest` parity burden move into `camunda/camunda`, or go away.
+- Hub onboarding adds no types to CSL. Hub owns only the Hub types, and Hub uses the OC catalogue for the OC types. This replaces the Hub rationale in ADR-0008.
+- The mapping in `camunda/camunda` covers only the shared CSL types. `AuthzModelMapper` no longer maps every type and every permission, so the `AuthzModelMapperTest` parity burden gets small.
 - CSL loses the typed builder helpers for host types. OC keeps them on its side.
 - The engine keeps its own typed enums for enforcement. They do not become string-typed.
 - OC callers that use the typed builder methods change when the host types move (camunda/camunda#67685).
