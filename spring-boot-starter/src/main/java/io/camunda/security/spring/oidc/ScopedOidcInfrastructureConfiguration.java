@@ -86,12 +86,13 @@ public class ScopedOidcInfrastructureConfiguration {
       final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
       final OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory,
       final ObjectProvider<TokenValidatorFactory> globalTokenValidatorFactory) {
-    final var hostValidatorFactory = globalTokenValidatorFactory.getIfAvailable();
-    return hostValidatorFactory == null
-        ? new ScopedJwtDecoderFactory(
-            scopedClientRegistrationFactory, oidcAccessTokenDecoderFactory)
-        : new ScopedJwtDecoderFactory(
-            scopedClientRegistrationFactory, oidcAccessTokenDecoderFactory, hostValidatorFactory);
+    final var hostValidatorFactory =
+        globalTokenValidatorFactory.getIfAvailable(
+            () ->
+                new TokenValidatorFactory(
+                    Map.of(), OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of()));
+    return new ScopedJwtDecoderFactory(
+        scopedClientRegistrationFactory, oidcAccessTokenDecoderFactory, hostValidatorFactory);
   }
 
   /**

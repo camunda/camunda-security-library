@@ -66,7 +66,10 @@ final class ScopedJwtDecoderFactoryTest {
     final var decoderFactory =
         new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
     final var registrationFactory = new ScopedClientRegistrationFactory();
-    return new ScopedJwtDecoderFactory(registrationFactory, decoderFactory);
+    return new ScopedJwtDecoderFactory(
+        registrationFactory,
+        decoderFactory,
+        new TokenValidatorFactory(Map.of(), OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of()));
   }
 
   private static ScopedJwtDecoderFactory factoryWithHost(

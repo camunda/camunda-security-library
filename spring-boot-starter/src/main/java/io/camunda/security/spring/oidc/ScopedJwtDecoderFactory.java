@@ -39,7 +39,13 @@ public final class ScopedJwtDecoderFactory {
   /**
    * Builds decoders that check the timestamps with the default clock skew and apply no host
    * validators.
+   *
+   * @deprecated the decoders skip the checks of the host {@link TokenValidatorFactory}, for example
+   *     the SaaS organization and cluster checks. Use {@link
+   *     #ScopedJwtDecoderFactory(ScopedClientRegistrationFactory, OidcAccessTokenDecoderFactory,
+   *     TokenValidatorFactory)}.
    */
+  @Deprecated(since = "1.4.0")
   public ScopedJwtDecoderFactory(
       final ScopedClientRegistrationFactory clientRegistrationFactory,
       final OidcAccessTokenDecoderFactory decoderFactory) {
