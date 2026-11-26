@@ -37,7 +37,7 @@ Rejected. This adds an extension contract that no consumer uses.
 
 - This is a breaking change. A subclass of `TokenValidatorFactory` does not compile with CSL 1.4.0. No known consumer has one.
 - The scoped decoders apply the same host checks as the global decoder. A host cannot lose a check through a subclass.
-- A host cannot set a clock skew per registration. This gap existed before, but the subclass path is now closed too.
+- A host cannot set a clock skew per registration. This gap existed before. Now a host also cannot use a subclass for it.
 - Tests that need a special factory use a Mockito mock. Mockito 5 mocks final classes by default.
 
 ## Source
