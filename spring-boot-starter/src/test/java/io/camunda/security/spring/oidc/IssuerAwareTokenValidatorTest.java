@@ -9,6 +9,7 @@ package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
@@ -18,7 +19,6 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.net.ConnectException;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -46,10 +46,11 @@ class IssuerAwareTokenValidatorTest {
 
   @Mock private ClientRegistration clientRegistration;
   @Mock private ProviderDetails providerDetails;
+  @Mock private TokenValidatorFactory tokenValidatorFactory;
 
   @Test
   void shouldRejectWhenIssuerUnknown() {
-    final var validator = new IssuerAwareTokenValidator(List.of(), new NoopTokenValidatorFactory());
+    final var validator = new IssuerAwareTokenValidator(List.of(), acceptingEveryToken());
     final var jwt = createJwtWithIssuer("unknown-issuer");
 
     final var result = validator.validate(jwt);
@@ -69,7 +70,7 @@ class IssuerAwareTokenValidatorTest {
                 new IllegalArgumentException(
                     "Unable to resolve Configuration",
                     new ResourceAccessException("unreachable", new ConnectException("refused")))),
-            new NoopTokenValidatorFactory());
+            acceptingEveryToken());
     final var jwt = createJwtWithIssuer("https://known-issuer");
 
     // when / then the token is not the reason, so the failure reads as an outage
@@ -84,7 +85,7 @@ class IssuerAwareTokenValidatorTest {
     final var validator =
         new IssuerAwareTokenValidator(
             unresolvableRegistrations(new IllegalStateException("The issuer-uri is not valid")),
-            new NoopTokenValidatorFactory());
+            acceptingEveryToken());
     final var jwt = createJwtWithIssuer("https://known-issuer");
 
     // when / then the failure keeps the server error and does not read as an outage to retry
@@ -95,7 +96,7 @@ class IssuerAwareTokenValidatorTest {
 
   @Test
   void shouldRejectWhenIssuerClaimAbsent() {
-    final var validator = new IssuerAwareTokenValidator(List.of(), new NoopTokenValidatorFactory());
+    final var validator = new IssuerAwareTokenValidator(List.of(), acceptingEveryToken());
     final var jwt =
         new Jwt(
             "tv",
@@ -119,7 +120,7 @@ class IssuerAwareTokenValidatorTest {
     when(clientRegistration.getProviderDetails()).thenReturn(providerDetails);
 
     final var validator =
-        new IssuerAwareTokenValidator(List.of(clientRegistration), new NoopTokenValidatorFactory());
+        new IssuerAwareTokenValidator(List.of(clientRegistration), acceptingEveryToken());
     final var jwt = createJwtWithIssuer("known-issuer");
 
     assertThat(validator.validate(jwt).hasErrors()).isFalse();
@@ -136,8 +137,7 @@ class IssuerAwareTokenValidatorTest {
     try {
       // when a token of that issuer is validated
       final var validator =
-          new IssuerAwareTokenValidator(
-              List.of(owner, loser), new RegistrationScopedTokenValidatorFactory("owner"));
+          new IssuerAwareTokenValidator(List.of(owner, loser), acceptingOnly("owner"));
       final var result = validator.validate(createJwtWithIssuer(issuer));
 
       // then the rules of the first registration decide, and the operator reads whose rules
@@ -183,7 +183,7 @@ class IssuerAwareTokenValidatorTest {
         new IssuerAwareTokenValidator(
             IssuerRegistrations.ofConfiguration(
                 providers, id -> "lenient".equals(id) ? lenient : strict),
-            new RegistrationScopedTokenValidatorFactory("lenient"));
+            acceptingOnly("lenient"));
 
     // when - a token of the slash form comes first, then one of the provider's form
     final var first = validator.validate(createJwtWithIssuer("https://idp/"));
@@ -236,38 +236,28 @@ class IssuerAwareTokenValidatorTest {
         Map.of("iss", issuer));
   }
 
-  /** Accepts a token only for the registration the constructor names. */
-  private static class RegistrationScopedTokenValidatorFactory extends TokenValidatorFactory {
-
-    private final String acceptingRegistrationId;
-
-    RegistrationScopedTokenValidatorFactory(final String acceptingRegistrationId) {
-      super(Map.of(), Duration.ZERO, List.of());
-      this.acceptingRegistrationId = acceptingRegistrationId;
-    }
-
-    @Override
-    public OAuth2TokenValidator<Jwt> createTokenValidator(
-        final ClientRegistration clientRegistration) {
-      final var accepts = acceptingRegistrationId.equals(clientRegistration.getRegistrationId());
-      return token ->
-          accepts
-              ? OAuth2TokenValidatorResult.success()
-              : OAuth2TokenValidatorResult.failure(
-                  new OAuth2Error(OAuth2ErrorCodes.INVALID_TOKEN, "rejected by the loser", null));
-    }
+  private TokenValidatorFactory acceptingEveryToken() {
+    lenient()
+        .when(tokenValidatorFactory.createTokenValidator(any()))
+        .thenReturn(token -> OAuth2TokenValidatorResult.success());
+    return tokenValidatorFactory;
   }
 
-  private static class NoopTokenValidatorFactory extends TokenValidatorFactory {
-
-    NoopTokenValidatorFactory() {
-      super(Map.of(), Duration.ZERO, List.of());
-    }
-
-    @Override
-    public OAuth2TokenValidator<Jwt> createTokenValidator(
-        final ClientRegistration clientRegistration) {
-      return token -> OAuth2TokenValidatorResult.success();
-    }
+  /** Accepts a token only for the registration with the given ID. */
+  private TokenValidatorFactory acceptingOnly(final String acceptingRegistrationId) {
+    when(tokenValidatorFactory.createTokenValidator(any()))
+        .thenAnswer(
+            invocation -> {
+              final ClientRegistration registration = invocation.getArgument(0);
+              final var accepts = acceptingRegistrationId.equals(registration.getRegistrationId());
+              return (OAuth2TokenValidator<Jwt>)
+                  token ->
+                      accepts
+                          ? OAuth2TokenValidatorResult.success()
+                          : OAuth2TokenValidatorResult.failure(
+                              new OAuth2Error(
+                                  OAuth2ErrorCodes.INVALID_TOKEN, "rejected by the loser", null));
+            });
+    return tokenValidatorFactory;
   }
 }

@@ -42,8 +42,10 @@ import org.springframework.util.StringUtils;
  *   <li>Any extra validators supplied by the host (e.g. SaaS organization/cluster validators)
  * </ul>
  *
- * <p>Hosts wire SaaS-specific or other deployment-specific validators by supplying a list of {@link
- * OAuth2TokenValidator}. These are applied to every client registration.
+ * <p>A host adds its own checks, for example the SaaS organization and cluster checks, as extra
+ * {@link OAuth2TokenValidator} instances. The global decoder and every scoped decoder apply them to
+ * every client registration. The class is final (ADR-0050). A host cannot add checks through a
+ * subclass.
  *
  * <p>CSL drops a provider block whose {@code type} contradicts its other properties (ADR-0042). A
  * registration that has the registration ID of such a block, and that carries no {@link
@@ -51,7 +53,7 @@ import org.springframework.util.StringUtils;
  * issuer and no audiences for it, and it would otherwise accept a token with the wrong issuer. A
  * registration that carries that metadata describes itself, so it keeps its own checks.
  */
-public class TokenValidatorFactory {
+public final class TokenValidatorFactory {
 
   /**
    * Key under which a {@link ClientRegistration} carries its scope-specific audiences in {@code
@@ -105,6 +107,18 @@ public class TokenValidatorFactory {
             .collect(Collectors.toUnmodifiableSet());
     this.clockSkew = Objects.requireNonNull(clockSkew, "clockSkew");
     this.extraValidators = extraValidators == null ? List.of() : List.copyOf(extraValidators);
+  }
+
+  /**
+   * Returns a factory for other providers, with the clock skew and the extra validators of this
+   * factory. A scope uses it to check its tokens against its own issuers and audiences, and also
+   * with the validators of the host.
+   *
+   * @param providers the OIDC provider configurations, by registration ID
+   * @return a new factory; this factory does not change
+   */
+  public TokenValidatorFactory withProviders(final Map<String, OidcConfiguration> providers) {
+    return new TokenValidatorFactory(providers, clockSkew, extraValidators);
   }
 
   /**

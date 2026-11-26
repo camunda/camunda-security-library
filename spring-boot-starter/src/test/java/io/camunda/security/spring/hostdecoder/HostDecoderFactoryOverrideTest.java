@@ -118,7 +118,11 @@ class HostDecoderFactoryOverrideTest {
     final var scope = new AuthenticationConfiguration();
     scope.getProviders().getOidc().put("kc", provider);
     final var decoder =
-        new ScopedJwtDecoderFactory(new ScopedClientRegistrationFactory(), factory)
+        new ScopedJwtDecoderFactory(
+                new ScopedClientRegistrationFactory(),
+                factory,
+                new TokenValidatorFactory(
+                    Map.of(), OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of()))
             .buildIssuerAwareDecoder(scope);
 
     // when / then
