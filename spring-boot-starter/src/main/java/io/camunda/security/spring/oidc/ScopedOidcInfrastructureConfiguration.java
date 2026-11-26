@@ -31,16 +31,13 @@ import org.springframework.core.env.Environment;
  * OidcBeansConfiguration}, can override an individual factory. The global {@link
  * OidcBeansConfiguration} declares no duplicate {@code @Bean} definition for these types.
  *
- * <p>The injected {@link TokenValidatorFactory} parameter on {@link
- * #oidcAccessTokenDecoderFactory(JWSKeySelectorFactory, ObjectProvider)} uses an {@link
- * ObjectProvider}: when the cluster runs in global OIDC mode, {@link OidcBeansConfiguration}
- * produces a {@link TokenValidatorFactory} seeded with the global provider configurations, and that
- * instance is injected here. When no global {@link TokenValidatorFactory} is present (non-OIDC
- * cluster), a lightweight empty-provider default is used instead. Per-scope chains build a
- * scope-specific {@link TokenValidatorFactory} inside {@link
- * ScopedJwtDecoderFactory#buildIssuerAwareDecoder(io.camunda.security.api.model.config.AuthenticationConfiguration)}.
- * It takes the issuers and audiences of the scope, and the clock skew and the extra validators of
- * the global factory, if one exists.
+ * <p>Two beans get the global {@link TokenValidatorFactory} through an {@link ObjectProvider}:
+ * {@link #oidcAccessTokenDecoderFactory(JWSKeySelectorFactory, ObjectProvider)} and {@link
+ * #scopedJwtDecoderFactory}. In global OIDC mode, {@link OidcBeansConfiguration} supplies this
+ * factory with the global providers. A cluster without global OIDC has no such factory. The two
+ * beans then use a default without providers, with the default clock skew and without extra
+ * validators. Each per-scope chain takes the issuers and audiences of its own scope. It takes the
+ * clock skew and the extra validators from the global factory, if one exists.
  */
 @Configuration
 public class ScopedOidcInfrastructureConfiguration {

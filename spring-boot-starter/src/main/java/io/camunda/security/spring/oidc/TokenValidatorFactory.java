@@ -112,7 +112,7 @@ public class TokenValidatorFactory {
    * factory. A scope uses it to check its tokens against its own issuers and audiences, and also
    * with the validators of the host.
    *
-   * @param providers OIDC provider configurations keyed by registration ID
+   * @param providers the OIDC provider configurations, by registration ID
    * @return a new factory; this factory does not change
    */
   public TokenValidatorFactory withProviders(final Map<String, OidcConfiguration> providers) {
