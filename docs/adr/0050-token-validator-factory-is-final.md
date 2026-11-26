@@ -1,9 +1,13 @@
 # ADR-0050: `TokenValidatorFactory` is final, and hosts add token checks through extra validators
 
 **DRI**: Sebastian Bathke (megglos)
+
 **Deciders**: Sebastian Bathke (megglos), Patrick Wunderlich (p-wunderlich)
+
 **Status**: Accepted (1.4.0)
+
 **Purpose**: Defines how a host adds its own access-token checks, now that the scoped decoders use the factory of the host.
+
 **Audience**: CSL maintainers, and OC and Hub engineers who add access-token checks.
 
 ## Context
