@@ -36,11 +36,11 @@ import org.springframework.core.env.Environment;
  * ObjectProvider}: when the cluster runs in global OIDC mode, {@link OidcBeansConfiguration}
  * produces a {@link TokenValidatorFactory} seeded with the global provider configurations, and that
  * instance is injected here. When no global {@link TokenValidatorFactory} is present (non-OIDC
- * cluster), a lightweight empty-provider default is used instead. The injected factory is only used
- * by the global {@code jwtDecoder} path — per-scope chains always build a fresh scope-specific
- * {@link TokenValidatorFactory} inside {@link
- * ScopedJwtDecoderFactory#buildIssuerAwareDecoder(io.camunda.security.api.model.config.AuthenticationConfiguration)},
- * so the injected default has no effect on per-scope audience or issuer validation.
+ * cluster), a lightweight empty-provider default is used instead. Per-scope chains build a
+ * scope-specific {@link TokenValidatorFactory} inside {@link
+ * ScopedJwtDecoderFactory#buildIssuerAwareDecoder(io.camunda.security.api.model.config.AuthenticationConfiguration)}.
+ * It takes the issuers and audiences of the scope, and the clock skew and the extra validators of
+ * the global factory, if one exists.
  */
 @Configuration
 public class ScopedOidcInfrastructureConfiguration {
@@ -87,9 +87,14 @@ public class ScopedOidcInfrastructureConfiguration {
   @ConditionalOnMissingBean
   public ScopedJwtDecoderFactory scopedJwtDecoderFactory(
       final ScopedClientRegistrationFactory scopedClientRegistrationFactory,
-      final OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory) {
-    return new ScopedJwtDecoderFactory(
-        scopedClientRegistrationFactory, oidcAccessTokenDecoderFactory);
+      final OidcAccessTokenDecoderFactory oidcAccessTokenDecoderFactory,
+      final ObjectProvider<TokenValidatorFactory> globalTokenValidatorFactory) {
+    final var hostValidatorFactory = globalTokenValidatorFactory.getIfAvailable();
+    return hostValidatorFactory == null
+        ? new ScopedJwtDecoderFactory(
+            scopedClientRegistrationFactory, oidcAccessTokenDecoderFactory)
+        : new ScopedJwtDecoderFactory(
+            scopedClientRegistrationFactory, oidcAccessTokenDecoderFactory, hostValidatorFactory);
   }
 
   /**

@@ -12,12 +12,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtException;
@@ -60,6 +67,14 @@ final class ScopedJwtDecoderFactoryTest {
         new OidcAccessTokenDecoderFactory(jwsKeySelectorFactory, tokenValidatorFactory);
     final var registrationFactory = new ScopedClientRegistrationFactory();
     return new ScopedJwtDecoderFactory(registrationFactory, decoderFactory);
+  }
+
+  private static ScopedJwtDecoderFactory factoryWithHost(
+      final TokenValidatorFactory hostValidatorFactory) {
+    final var decoderFactory =
+        new OidcAccessTokenDecoderFactory(new JWSKeySelectorFactory(), hostValidatorFactory);
+    return new ScopedJwtDecoderFactory(
+        new ScopedClientRegistrationFactory(), decoderFactory, hostValidatorFactory);
   }
 
   @AfterEach
@@ -117,6 +132,83 @@ final class ScopedJwtDecoderFactoryTest {
     final var tokenWrongIssuer = serverA.sign("https://unknown-idp.example.com");
 
     assertThatThrownBy(() -> decoder.decode(tokenWrongIssuer)).isInstanceOf(BadJwtException.class);
+  }
+
+  @Test
+  void shouldApplyTheExtraValidatorsOfTheHostFactory() throws Exception {
+    // given
+    serverA = OidcTestServer.startRsa("key-a");
+    final OAuth2TokenValidator<Jwt> rejectOtherCluster =
+        token ->
+            "other".equals(token.getClaimAsString("cluster"))
+                ? OAuth2TokenValidatorResult.failure(
+                    new OAuth2Error(OAuth2ErrorCodes.INVALID_TOKEN, "other cluster", null))
+                : OAuth2TokenValidatorResult.success();
+    final var factory =
+        factoryWithHost(
+            new TokenValidatorFactory(
+                Map.of(), OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of(rejectOtherCluster)));
+    final var decoder = factory.buildIssuerAwareDecoder(singleProviderAuth("provider-a", serverA));
+
+    // when / then
+    assertThat(decoder.decode(serverA.sign(serverA.issuerUri(), Map.of("cluster", "own"))))
+        .extracting(jwt -> jwt.getClaimAsString("cluster"))
+        .isEqualTo("own");
+    assertThatThrownBy(
+            () -> decoder.decode(serverA.sign(serverA.issuerUri(), Map.of("cluster", "other"))))
+        .isInstanceOf(BadJwtException.class)
+        .hasMessageContaining("other cluster");
+  }
+
+  @Test
+  void shouldApplyTheClockSkewOfTheHostFactory() throws Exception {
+    // given
+    serverA = OidcTestServer.startRsa("key-a");
+    final var authentication = singleProviderAuth("provider-a", serverA);
+    final var now = Instant.now();
+    final var expiredThirtySecondsAgo =
+        serverA.sign(
+            serverA.issuerUri(),
+            Map.of("iat", Date.from(now.minusSeconds(90)), "exp", Date.from(now.minusSeconds(30))));
+    final var withSmallSkew =
+        factoryWithHost(new TokenValidatorFactory(Map.of(), Duration.ofSeconds(5), List.of()))
+            .buildIssuerAwareDecoder(authentication);
+    final var withDefaultSkew =
+        factoryFor(Map.of("provider-a", serverA.oidcConfiguration("test-client")))
+            .buildIssuerAwareDecoder(authentication);
+
+    // when / then
+    assertThat(withDefaultSkew.decode(expiredThirtySecondsAgo).getSubject()).isEqualTo("alice");
+    assertThatThrownBy(() -> withSmallSkew.decode(expiredThirtySecondsAgo))
+        .isInstanceOf(BadJwtException.class)
+        .hasMessageContaining("expired");
+  }
+
+  @Test
+  void shouldKeepTheAudiencesOfTheScopeWithAHostFactory() throws Exception {
+    // given
+    serverA = OidcTestServer.startRsa("key-a");
+    final var hostProvider = serverA.oidcConfiguration("host-client");
+    hostProvider.setAudiences(Set.of("host-aud"));
+    final var factory =
+        factoryWithHost(
+            new TokenValidatorFactory(
+                Map.of("provider-a", hostProvider),
+                OidcConfiguration.DEFAULT_CLOCK_SKEW,
+                List.of()));
+    final var authentication = singleProviderAuth("provider-a", serverA);
+    authentication.getOidc().setAudiences(Set.of("scope-aud"));
+    final var decoder = factory.buildIssuerAwareDecoder(authentication);
+
+    // when / then
+    assertThat(
+            decoder
+                .decode(serverA.signWithAudience(serverA.issuerUri(), "scope-aud"))
+                .getAudience())
+        .containsExactly("scope-aud");
+    assertThatThrownBy(
+            () -> decoder.decode(serverA.signWithAudience(serverA.issuerUri(), "host-aud")))
+        .isInstanceOf(BadJwtException.class);
   }
 
   // ---------------------------------------------------------------------------

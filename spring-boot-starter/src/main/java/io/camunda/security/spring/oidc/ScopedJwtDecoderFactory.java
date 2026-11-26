@@ -11,6 +11,7 @@ import io.camunda.security.api.model.config.AuthenticationConfiguration;
 import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -33,12 +34,34 @@ public final class ScopedJwtDecoderFactory {
 
   private final ScopedClientRegistrationFactory clientRegistrationFactory;
   private final OidcAccessTokenDecoderFactory decoderFactory;
+  private final TokenValidatorFactory hostValidatorFactory;
 
+  /**
+   * Builds decoders that check the timestamps with the default clock skew and apply no host
+   * validators.
+   */
   public ScopedJwtDecoderFactory(
       final ScopedClientRegistrationFactory clientRegistrationFactory,
       final OidcAccessTokenDecoderFactory decoderFactory) {
+    this(
+        clientRegistrationFactory,
+        decoderFactory,
+        new TokenValidatorFactory(Map.of(), OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of()));
+  }
+
+  /**
+   * @param hostValidatorFactory the factory of the host; each decoder takes its clock skew and its
+   *     extra validators (for example the SaaS organization and cluster checks), but not its
+   *     providers
+   */
+  public ScopedJwtDecoderFactory(
+      final ScopedClientRegistrationFactory clientRegistrationFactory,
+      final OidcAccessTokenDecoderFactory decoderFactory,
+      final TokenValidatorFactory hostValidatorFactory) {
     this.clientRegistrationFactory = clientRegistrationFactory;
     this.decoderFactory = decoderFactory;
+    this.hostValidatorFactory =
+        Objects.requireNonNull(hostValidatorFactory, "hostValidatorFactory");
   }
 
   /**
@@ -50,7 +73,8 @@ public final class ScopedJwtDecoderFactory {
    * so that audience and issuer-claim validation are performed against the scope's own provider
    * configuration. This ensures that scopes sharing the same issuer but declaring different
    * audiences each validate tokens against their own audience list rather than a global
-   * singleton's.
+   * singleton's. The clock skew and the extra validators come from the host factory, as on the
+   * global decoder.
    *
    * <p>The decoder that this method returns resolves the OIDC discovery document of a provider at
    * the first token of the issuer of that provider, and not here. This method runs while the
@@ -95,9 +119,7 @@ public final class ScopedJwtDecoderFactory {
             DeferredOidcResolution.resolve(
                 decoderSubject(providers, scopeDescription),
                 () -> {
-                  final var validatorFactory =
-                      new TokenValidatorFactory(
-                          providers, OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of());
+                  final var validatorFactory = hostValidatorFactory.withProviders(providers);
                   // Resolved once per registration and shared with the tagging below, which reads
                   // the UserInfo endpoint of the registration that verified a token.
                   final Map<String, ClientRegistration> resolved = new ConcurrentHashMap<>();
