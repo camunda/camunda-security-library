@@ -28,10 +28,20 @@ import java.util.Set;
  * allowed result that names no resource IDs, for example one expressed through resource property
  * names.
  *
- * <p><strong>When a result carries conditional terms, the other fields do not describe the
- * access:</strong> {@code wildcard} is {@code false} and {@code authorization} lists no resource
- * IDs for the resources that the conditions match. Use {@link #filter()}. {@link
+ * <p>The old fields ({@code allowed}, {@code wildcard}, {@code authorization}) describe only the
+ * access that they can express: a grant on every resource, or on fixed resource IDs. They do not
+ * describe a conditional grant, which only {@link #filter()} describes. A result whose only access
+ * is conditional has {@code allowed == false} and no resource IDs, so a reader of the old fields
+ * treats it as denied and shows nothing (ADR-0051). A consumer that honours conditional grants must
+ * read {@link #filter()}, and must not act on {@code allowed} alone. {@link
  * ConditionalResourceAccessProvider} creates such results.
+ *
+ * <p>The canonical constructor rejects a contradictory state: a denied result with a filter other
+ * than {@link ResourceAccessFilter.None}, an allowed result with the {@code None} filter, or a
+ * {@code wildcard} flag that disagrees with an {@link ResourceAccessFilter.All} filter. These were
+ * silently constructible through the earlier three-argument constructor; they now fail fast. Build
+ * results through the factory methods ({@link #allowed}, {@link #denied}, {@link #wildcard}, {@link
+ * #of}) rather than the constructor.
  *
  * @param allowed whether the principal may access the resource, or for a list, at least one
  *     resource
@@ -47,8 +57,10 @@ public record ResourceAccess(
 
   public ResourceAccess {
     Objects.requireNonNull(authorization, "Authorization must not be null");
-    if (!allowed && !(filter instanceof ResourceAccessFilter.None)) {
-      throw new IllegalArgumentException("A denied access must carry the None filter");
+    if (!allowed
+        && !(filter instanceof ResourceAccessFilter.None)
+        && !(filter instanceof ResourceAccessFilter.AnyOf)) {
+      throw new IllegalArgumentException("A denied access must carry the None or AnyOf filter");
     }
     if (allowed && filter instanceof ResourceAccessFilter.None) {
       throw new IllegalArgumentException("An allowed access must not carry the None filter");
@@ -56,6 +68,11 @@ public record ResourceAccess(
     if (wildcard != (filter instanceof ResourceAccessFilter.All)) {
       throw new IllegalArgumentException(
           "A wildcard access must carry the All filter, and only a wildcard access may");
+    }
+    if (filter instanceof ResourceAccessFilter.AnyOf
+        && allowed != authorization.hasAnyResourceIds()) {
+      throw new IllegalArgumentException(
+          "An AnyOf result is allowed exactly when its authorization lists resource IDs (ADR-0051)");
     }
   }
 
@@ -96,8 +113,11 @@ public record ResourceAccess(
 
   /**
    * Creates the result for the resources that {@code filter} describes: denied for {@link
-   * ResourceAccessFilter.None}, a wildcard for {@link ResourceAccessFilter.All}, and allowed with
-   * {@code filter} for {@link ResourceAccessFilter.AnyOf}.
+   * ResourceAccessFilter.None}, a wildcard for {@link ResourceAccessFilter.All}, and the {@code
+   * filter} for {@link ResourceAccessFilter.AnyOf}. For an {@code AnyOf}, the result is allowed
+   * when {@code authorization} lists resource IDs, and denied otherwise, so a conditional-only
+   * result reads as denied through the old fields (ADR-0051). {@code authorization} must list
+   * exactly the IDs that the filter grants without a condition.
    */
   public static ResourceAccess of(
       final RequiredAuthorization<?> authorization, final ResourceAccessFilter filter) {
@@ -105,7 +125,7 @@ public record ResourceAccess(
       case ResourceAccessFilter.None none -> denied(authorization);
       case ResourceAccessFilter.All all -> wildcard(authorization);
       case ResourceAccessFilter.AnyOf anyOf ->
-          new ResourceAccess(true, false, authorization, anyOf);
+          new ResourceAccess(authorization.hasAnyResourceIds(), false, authorization, anyOf);
     };
   }
 

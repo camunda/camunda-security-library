@@ -92,9 +92,11 @@ class ConditionalResourceAccessProviderTest {
     // when
     final var access = provider().resolveResourceAccess(alice, READ_DIAGRAM);
 
-    // then
-    assertThat(access.allowed()).isTrue();
+    // then the old fields read as denied (conditional-only, no plain IDs), the filter holds the
+    // conditional access (ADR-0051)
+    assertThat(access.denied()).isTrue();
     assertThat(access.wildcard()).isFalse();
+    assertThat(access.authorization().resourceIds()).isEmpty();
     assertThat(access.filter())
         .isEqualTo(
             new AnyOf(

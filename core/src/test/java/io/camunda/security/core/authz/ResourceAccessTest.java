@@ -50,13 +50,38 @@ class ResourceAccessTest {
   void createsTheResultThatMatchesAFilter() {
     assertThat(ResourceAccess.of(READ, new None())).isEqualTo(ResourceAccess.denied(READ));
     assertThat(ResourceAccess.of(READ, new All())).isEqualTo(ResourceAccess.wildcard(READ));
+    // a conditional-only AnyOf with no plain IDs is denied through the old fields (ADR-0051)
     assertThat(ResourceAccess.of(READ, PAYMENTS))
-        .isEqualTo(new ResourceAccess(true, false, READ, PAYMENTS));
+        .isEqualTo(new ResourceAccess(false, false, READ, PAYMENTS));
+    // an AnyOf whose authorization lists plain IDs is allowed
+    final var withId = READ.withResourceIds(List.of("d1"));
+    final var plusPlainGrant =
+        new AnyOf(List.of(new Term(Set.of("d1"), List.of()), PAYMENTS.terms().getFirst()));
+    assertThat(ResourceAccess.of(withId, plusPlainGrant))
+        .isEqualTo(new ResourceAccess(true, false, withId, plusPlainGrant));
+  }
+
+  @Test
+  void deniedResultCanCarryAnAnyOfFilter() {
+    final var access = new ResourceAccess(false, false, READ, PAYMENTS);
+
+    assertThat(access.denied()).isTrue();
+    assertThat(access.filter()).isEqualTo(PAYMENTS);
   }
 
   @Test
   void rejectsAFilterThatContradictsTheVerdict() {
-    assertThatThrownBy(() -> new ResourceAccess(false, false, READ, PAYMENTS))
+    // the fail-open shape: allowed with an AnyOf but no resource IDs (ADR-0051)
+    assertThatThrownBy(() -> new ResourceAccess(true, false, READ, PAYMENTS))
+        .isInstanceOf(IllegalArgumentException.class);
+    // a denied AnyOf that still lists resource IDs is inconsistent
+    assertThatThrownBy(
+            () ->
+                new ResourceAccess(
+                    false,
+                    false,
+                    READ.withResourceIds(List.of("d1")),
+                    new AnyOf(List.of(new Term(Set.of("d1"), List.of())))))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> new ResourceAccess(false, false, READ, null))
         .isInstanceOf(IllegalArgumentException.class);
