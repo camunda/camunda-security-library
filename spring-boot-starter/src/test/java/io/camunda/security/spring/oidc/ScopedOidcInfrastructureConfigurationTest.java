@@ -8,11 +8,15 @@
 package io.camunda.security.spring.oidc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.camunda.security.api.model.config.AuthenticationConfiguration;
+import io.camunda.security.api.model.config.oidc.OidcConfiguration;
 import io.camunda.security.spring.CamundaSecurityConfiguration;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -22,6 +26,10 @@ import org.springframework.context.annotation.Import;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
+import org.springframework.security.oauth2.jwt.BadJwtException;
 
 /**
  * Verifies that {@link ScopedOidcInfrastructureConfiguration#scopedOidcClaimsProviderFactory} is
@@ -88,6 +96,71 @@ class ScopedOidcInfrastructureConfigurationTest {
               assertThat(ctx.getBean(ScopedOidcClaimsProviderFactory.class))
                   .isSameAs(ctx.getBean(CustomScopedFactory.class).customFactory);
             });
+  }
+
+  @Test
+  void shouldApplyTheGlobalValidatorsToScopedDecoders() throws Exception {
+    try (final var server = OidcTestServer.startRsa("key")) {
+      new ApplicationContextRunner()
+          .withUserConfiguration(StubObjectMapper.class, RejectingGlobalValidatorFactory.class)
+          .withUserConfiguration(UmbrellaOrderedImports.class)
+          .run(
+              ctx -> {
+                // given
+                assertThat(ctx).hasNotFailed();
+                final var decoder =
+                    ctx.getBean(ScopedJwtDecoderFactory.class)
+                        .buildIssuerAwareDecoder(scopeOf(server));
+
+                // when / then
+                assertThatThrownBy(() -> decoder.decode(server.sign(server.issuerUri())))
+                    .isInstanceOf(BadJwtException.class)
+                    .hasMessageContaining("rejected by the host");
+              });
+    }
+  }
+
+  @Test
+  void shouldBuildScopedDecodersWithoutGlobalValidatorFactory() throws Exception {
+    try (final var server = OidcTestServer.startRsa("key")) {
+      new ApplicationContextRunner()
+          .withUserConfiguration(StubObjectMapper.class)
+          .withUserConfiguration(UmbrellaOrderedImports.class)
+          .run(
+              ctx -> {
+                // given
+                assertThat(ctx).hasNotFailed();
+                assertThat(ctx).doesNotHaveBean(TokenValidatorFactory.class);
+                final var decoder =
+                    ctx.getBean(ScopedJwtDecoderFactory.class)
+                        .buildIssuerAwareDecoder(scopeOf(server));
+
+                // when / then
+                assertThat(decoder.decode(server.sign(server.issuerUri())).getSubject())
+                    .isEqualTo("alice");
+              });
+    }
+  }
+
+  private static AuthenticationConfiguration scopeOf(final OidcTestServer server) {
+    final var authentication = new AuthenticationConfiguration();
+    authentication.setOidc(server.oidcConfiguration("client"));
+    return authentication;
+  }
+
+  @Configuration
+  static class RejectingGlobalValidatorFactory {
+    @Bean
+    TokenValidatorFactory tokenValidatorFactory() {
+      return new TokenValidatorFactory(
+          Map.of(),
+          OidcConfiguration.DEFAULT_CLOCK_SKEW,
+          List.of(
+              token ->
+                  OAuth2TokenValidatorResult.failure(
+                      new OAuth2Error(
+                          OAuth2ErrorCodes.INVALID_TOKEN, "rejected by the host", null))));
+    }
   }
 
   /**
