@@ -79,6 +79,10 @@ Conventional Commits format: `<type>(<scope>): <subject>`
 - Squash-merge to keep main history clean
 - Link relevant issues in the PR description
 
+### Build tooling
+
+Build with the Maven wrapper (`./mvnw`), not a system `mvn`. `.mvn/jvm.config` holds the `--add-exports`/`--add-opens` flags that Error Prone and NullAway need on JDK 17+, and Maven only picks that file up through the wrapper's project root. IntelliJ compiles with its own javac and does not run Error Prone, so importing and compiling in the IDE works without it; NullAway findings only appear in Maven builds.
+
 ### Git Hooks
 
 Three hooks live in `.mvn/hooks/` and are checked into the repository. On `./mvnw initialize` (triggered by any higher phase — `verify`, `test`, `install`), Maven runs `git config --local core.hooksPath .mvn/hooks`, which tells git to execute hooks from the in-tree path directly. No files are copied into `.git/hooks/`.
