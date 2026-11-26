@@ -64,8 +64,9 @@ public class ScopedOidcInfrastructureConfiguration {
    * (declared in {@link OidcBeansConfiguration}) calls {@link
    * OidcAccessTokenDecoderFactory#selectAccessTokenDecoder(java.util.List, Map)} — the 2-arg
    * overload that forwards to the singleton factory. Per-scope chains always call the 3-arg
-   * overload with a scope-specific factory, so the injected value does not affect scope-level
-   * validation.
+   * overload with a scope-specific factory. That factory does not use the providers of the injected
+   * factory, but it uses its clock skew and its extra validators, see {@link
+   * #scopedJwtDecoderFactory}.
    */
   @Bean
   @ConditionalOnMissingBean
