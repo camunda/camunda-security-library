@@ -51,7 +51,7 @@ import org.springframework.util.StringUtils;
  * issuer and no audiences for it, and it would otherwise accept a token with the wrong issuer. A
  * registration that carries that metadata describes itself, so it keeps its own checks.
  */
-public class TokenValidatorFactory {
+public final class TokenValidatorFactory {
 
   /**
    * Key under which a {@link ClientRegistration} carries its scope-specific audiences in {@code
@@ -111,10 +111,6 @@ public class TokenValidatorFactory {
    * Returns a factory for other providers, with the clock skew and the extra validators of this
    * factory. A scope uses it to check its tokens against its own issuers and audiences, and also
    * with the validators of the host.
-   *
-   * <p>The returned factory is a {@code TokenValidatorFactory}, not a subclass. A subclass that
-   * overrides {@link #createTokenValidator} must also override this method. Otherwise the scoped
-   * decoders do not apply its own checks.
    *
    * @param providers the OIDC provider configurations, by registration ID
    * @return a new factory; this factory does not change
