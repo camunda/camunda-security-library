@@ -99,13 +99,19 @@ public final class AuthorizationChecker {
   /**
    * Returns the {@link AuthorizationScope} records that the role {@code roleId} holds, on its own,
    * for the resource type and permission declared in {@code authorization}. Used for a role of a
-   * conditional membership, whose grants count only where its conditions are met.
+   * conditional membership, whose grants count only where its conditions are met. Returns an empty
+   * list for a null or blank {@code roleId}, so a missing role grants nothing rather than failing
+   * the whole list query, as the sibling {@code retrieve*} methods do for an unidentifiable
+   * principal.
    *
    * @param roleId the ID of the role
    * @param authorization the authorization requirement specifying the resource type and permission
    */
   public List<AuthorizationScope> retrieveAuthorizedAuthorizationScopesOfRole(
       final String roleId, final RequiredAuthorization<?> authorization) {
+    if (roleId == null || roleId.isBlank()) {
+      return List.of();
+    }
     return scopeRepository.findAuthorizedScopes(
         Map.of(EntityType.ROLE, Set.of(roleId)),
         authorization.resourceType(),
