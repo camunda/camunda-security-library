@@ -42,8 +42,10 @@ import org.springframework.util.StringUtils;
  *   <li>Any extra validators supplied by the host (e.g. SaaS organization/cluster validators)
  * </ul>
  *
- * <p>Hosts wire SaaS-specific or other deployment-specific validators by supplying a list of {@link
- * OAuth2TokenValidator}. These are applied to every client registration.
+ * <p>A host adds its own checks, for example the SaaS organization and cluster checks, as extra
+ * {@link OAuth2TokenValidator} instances. The global decoder and every scoped decoder apply them to
+ * every client registration. The class is final (ADR-0050). A host cannot add checks through a
+ * subclass.
  *
  * <p>CSL drops a provider block whose {@code type} contradicts its other properties (ADR-0042). A
  * registration that has the registration ID of such a block, and that carries no {@link
