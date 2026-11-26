@@ -7,6 +7,8 @@
  */
 package io.camunda.security.api.model.config.client;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Settings of one named outbound client, bound from {@code camunda.security.client.<name>}. Set
  * exactly one of {@link #getOidc() oidc} and {@link #getBasic() basic}. The starter checks this
@@ -14,22 +16,22 @@ package io.camunda.security.api.model.config.client;
  */
 public final class OutboundClientConfiguration {
 
-  private OutboundOidcConfiguration oidc;
-  private OutboundBasicConfiguration basic;
+  private @Nullable OutboundOidcConfiguration oidc;
+  private @Nullable OutboundBasicConfiguration basic;
 
-  public OutboundOidcConfiguration getOidc() {
+  public @Nullable OutboundOidcConfiguration getOidc() {
     return oidc;
   }
 
-  public void setOidc(final OutboundOidcConfiguration oidc) {
+  public void setOidc(final @Nullable OutboundOidcConfiguration oidc) {
     this.oidc = oidc;
   }
 
-  public OutboundBasicConfiguration getBasic() {
+  public @Nullable OutboundBasicConfiguration getBasic() {
     return basic;
   }
 
-  public void setBasic(final OutboundBasicConfiguration basic) {
+  public void setBasic(final @Nullable OutboundBasicConfiguration basic) {
     this.basic = basic;
   }
 }

@@ -10,6 +10,7 @@ package io.camunda.security.api.model.config.client;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 
 /**
  * OIDC client credentials settings of an outbound client. This class has no {@code toString} method
@@ -17,45 +18,45 @@ import java.util.List;
  */
 public final class OutboundOidcConfiguration {
 
-  private String tokenUri;
-  private String clientId;
-  private String clientSecret;
-  private String audience;
+  private @Nullable String tokenUri;
+  private @Nullable String clientId;
+  private @Nullable String clientSecret;
+  private @Nullable String audience;
   private List<String> scopes = new ArrayList<>();
-  private String resource;
-  private Duration connectTimeout;
-  private Duration readTimeout;
-  private Duration requestTimeout;
+  private @Nullable String resource;
+  private @Nullable Duration connectTimeout;
+  private @Nullable Duration readTimeout;
+  private @Nullable Duration requestTimeout;
 
-  public String getTokenUri() {
+  public @Nullable String getTokenUri() {
     return tokenUri;
   }
 
-  public void setTokenUri(final String tokenUri) {
+  public void setTokenUri(final @Nullable String tokenUri) {
     this.tokenUri = tokenUri;
   }
 
-  public String getClientId() {
+  public @Nullable String getClientId() {
     return clientId;
   }
 
-  public void setClientId(final String clientId) {
+  public void setClientId(final @Nullable String clientId) {
     this.clientId = clientId;
   }
 
-  public String getClientSecret() {
+  public @Nullable String getClientSecret() {
     return clientSecret;
   }
 
-  public void setClientSecret(final String clientSecret) {
+  public void setClientSecret(final @Nullable String clientSecret) {
     this.clientSecret = clientSecret;
   }
 
-  public String getAudience() {
+  public @Nullable String getAudience() {
     return audience;
   }
 
-  public void setAudience(final String audience) {
+  public void setAudience(final @Nullable String audience) {
     this.audience = audience;
   }
 
@@ -63,42 +64,42 @@ public final class OutboundOidcConfiguration {
     return scopes;
   }
 
-  public void setScopes(final List<String> scopes) {
+  public void setScopes(final @Nullable List<String> scopes) {
     this.scopes = scopes != null ? scopes : new ArrayList<>();
   }
 
-  public String getResource() {
+  public @Nullable String getResource() {
     return resource;
   }
 
-  public void setResource(final String resource) {
+  public void setResource(final @Nullable String resource) {
     this.resource = resource;
   }
 
   /** The connect timeout, or {@code null} to use the client default. */
-  public Duration getConnectTimeout() {
+  public @Nullable Duration getConnectTimeout() {
     return connectTimeout;
   }
 
-  public void setConnectTimeout(final Duration connectTimeout) {
+  public void setConnectTimeout(final @Nullable Duration connectTimeout) {
     this.connectTimeout = connectTimeout;
   }
 
   /** The read timeout, or {@code null} to use the client default. */
-  public Duration getReadTimeout() {
+  public @Nullable Duration getReadTimeout() {
     return readTimeout;
   }
 
-  public void setReadTimeout(final Duration readTimeout) {
+  public void setReadTimeout(final @Nullable Duration readTimeout) {
     this.readTimeout = readTimeout;
   }
 
   /** The longest time that a call waits for a token, or {@code null} to use the client default. */
-  public Duration getRequestTimeout() {
+  public @Nullable Duration getRequestTimeout() {
     return requestTimeout;
   }
 
-  public void setRequestTimeout(final Duration requestTimeout) {
+  public void setRequestTimeout(final @Nullable Duration requestTimeout) {
     this.requestTimeout = requestTimeout;
   }
 }

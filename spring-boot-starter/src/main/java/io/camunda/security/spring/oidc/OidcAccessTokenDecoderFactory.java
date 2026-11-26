@@ -432,7 +432,8 @@ public class OidcAccessTokenDecoderFactory {
           throw new BadJwtException(Objects.toString(ex.getMessage(), ""), ex.getCause());
         }
         if (ex.getCause() instanceof final UnresolvedProviderKeySourceException unresolved) {
-          throw new IdentityProviderUnavailableException(unresolved.getMessage(), unresolved);
+          throw new IdentityProviderUnavailableException(
+              Objects.toString(unresolved.getMessage(), ""), unresolved);
         }
         throw ex;
       }
