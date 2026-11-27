@@ -20,6 +20,7 @@ import static io.camunda.security.api.model.authz.AuthorizationResourceType.PROJ
 import static io.camunda.security.api.model.authz.AuthorizationResourceType.PROJECT_SNAPSHOT;
 import static io.camunda.security.api.model.authz.AuthorizationResourceType.VERSION;
 import static io.camunda.security.api.model.authz.AuthorizationResourceType.WORKSPACE;
+import static io.camunda.security.api.model.authz.AuthorizationResourceType.WORKSPACE_MEMBER;
 import static java.util.Map.entry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Named.named;
@@ -44,12 +45,16 @@ import org.junit.jupiter.params.provider.MethodSource;
  * <ul>
  *   <li>{@code ORGANIZATION} read/update — every organization role (issue Q4 overlap with {@code
  *       SYSTEM}, Q5 billing/ownership transfer).
- *   <li>{@code WORKSPACE_MEMBER} create/read/update — every workspace role (Q2 invitations, Q4
- *       overlap with {@code ROLE}/{@code USER}/{@code AUTHORIZATION}).
  *   <li>{@code IDP_APPLICATION} — workspace roles and the API create role's document uploads (Q8;
  *       may fold into {@code FILE}/{@code PROJECT}).
  *   <li>{@code CATALOG PUBLISH} — Q7 (Shared-resources / Catalog integration).
  * </ul>
+ *
+ * <p>{@code WORKSPACE_MEMBER} create/read/update is now included (Q4 overlap cleared: it is a
+ * dedicated Hub resource, distinct from the orchestration-cluster {@code ROLE}/{@code USER}/{@code
+ * AUTHORIZATION} types). Q2 — whether a Commenter should see invitations as well as members — stays
+ * a flagged decision; this catalogue follows the #813 matrix, which grants the Commenter {@code
+ * READ}. A separate invitation permission can be added later if sign-off decides otherwise.
  */
 class HubRoleCatalogueTest {
 
@@ -131,7 +136,10 @@ class HubRoleCatalogueTest {
                       PermissionType.RESTORE)),
               entry(COMMENT, Set.of(PermissionType.CREATE, PermissionType.READ)),
               entry(ENVIRONMENT, Set.of(PermissionType.READ, PermissionType.UPDATE)),
-              entry(GIT_SYNC, Set.of(PermissionType.READ, PermissionType.UPDATE))));
+              entry(GIT_SYNC, Set.of(PermissionType.READ, PermissionType.UPDATE)),
+              entry(
+                  WORKSPACE_MEMBER,
+                  Set.of(PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE))));
 
   // Organization Owner adds billing/ownership transfer (ORGANIZATION-level, deferred); among
   // implemented types its grants equal the Admin's.
@@ -224,7 +232,9 @@ class HubRoleCatalogueTest {
               COMMENT, Set.of(PermissionType.CREATE, PermissionType.READ),
               ENVIRONMENT, Set.of(PermissionType.READ, PermissionType.UPDATE),
               GIT_SYNC, Set.of(PermissionType.READ, PermissionType.UPDATE),
-              CATALOG_ASSET, Set.of(PermissionType.READ)));
+              CATALOG_ASSET, Set.of(PermissionType.READ),
+              WORKSPACE_MEMBER,
+                  Set.of(PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE)));
 
   private static final Role EDITOR =
       new Role(
@@ -267,7 +277,8 @@ class HubRoleCatalogueTest {
               COMMENT, Set.of(PermissionType.CREATE, PermissionType.READ),
               ENVIRONMENT, Set.of(PermissionType.READ, PermissionType.UPDATE),
               GIT_SYNC, Set.of(PermissionType.READ),
-              CATALOG_ASSET, Set.of(PermissionType.READ)));
+              CATALOG_ASSET, Set.of(PermissionType.READ),
+              WORKSPACE_MEMBER, Set.of(PermissionType.READ)));
 
   private static final Role COMMENTER =
       new Role(
@@ -277,7 +288,8 @@ class HubRoleCatalogueTest {
               PROJECT, Set.of(PermissionType.READ),
               FILE, Set.of(PermissionType.READ),
               COMMENT, Set.of(PermissionType.CREATE, PermissionType.READ),
-              CATALOG_ASSET, Set.of(PermissionType.READ)));
+              CATALOG_ASSET, Set.of(PermissionType.READ),
+              WORKSPACE_MEMBER, Set.of(PermissionType.READ)));
 
   private static final Role VIEWER =
       new Role(

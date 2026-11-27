@@ -135,6 +135,13 @@ class AuthorizationResourceTypeTest {
   }
 
   @Test
+  void workspaceMemberSupportsCreateReadUpdate() {
+    assertThat(AuthorizationResourceType.WORKSPACE_MEMBER.getSupportedPermissionTypes())
+        .containsExactlyInAnyOrder(
+            PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE);
+  }
+
+  @Test
   void fileSupportsAllContentPermissions() {
     assertThat(AuthorizationResourceType.FILE.getSupportedPermissionTypes())
         .containsExactlyInAnyOrder(
@@ -199,7 +206,8 @@ class AuthorizationResourceTypeTest {
             "GIT_SYNC",
             "PROJECT",
             "PROJECT_SNAPSHOT",
-            "VERSION");
+            "VERSION",
+            "WORKSPACE_MEMBER");
   }
 
   @Test

@@ -104,6 +104,7 @@ public enum ResourceType {
       PermissionType.DELETE,
       PermissionType.RESTORE,
       PermissionType.PURGE),
+  WORKSPACE_MEMBER(PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE),
 
   /** Engine-related resources. */
   BATCH(

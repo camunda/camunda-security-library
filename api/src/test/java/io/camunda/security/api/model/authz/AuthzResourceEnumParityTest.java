@@ -96,7 +96,10 @@ class AuthzResourceEnumParityTest {
                   PermissionType.UPDATE,
                   PermissionType.DELETE,
                   PermissionType.RESTORE,
-                  PermissionType.PURGE)));
+                  PermissionType.PURGE)),
+          entry(
+              "WORKSPACE_MEMBER",
+              Set.of(PermissionType.CREATE, PermissionType.READ, PermissionType.UPDATE)));
 
   @Test
   void authorizationResourceTypeAndResourceTypeStayInParity() {
