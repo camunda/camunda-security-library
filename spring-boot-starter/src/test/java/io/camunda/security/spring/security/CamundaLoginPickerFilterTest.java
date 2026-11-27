@@ -13,6 +13,7 @@ import static org.mockito.Mockito.verify;
 
 import jakarta.servlet.FilterChain;
 import java.util.Arrays;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -205,6 +206,53 @@ class CamundaLoginPickerFilterTest {
         .as("a host-configured client name must never be written to the page unescaped")
         .doesNotContain("<script>alert(1)</script>")
         .contains("&lt;script&gt;");
+  }
+
+  @Test
+  void fallsThroughWhenTheDefaultTemplatesAreMissing() throws Exception {
+    final var filter =
+        new CamundaLoginPickerFilter(registrations("oidc", "oidc-secondary"), "/login") {
+          @Override
+          boolean defaultTemplatesAvailable() {
+            return false;
+          }
+        };
+    final var request = new MockHttpServletRequest("GET", "/login");
+    final var response = new MockHttpServletResponse();
+
+    filter.doFilter(request, response, filterChain);
+
+    verify(filterChain).doFilter(request, response);
+    assertThat(response.getContentAsString()).isEmpty();
+  }
+
+  @Test
+  void rendersAHostOverrideEvenWhenTheDefaultTemplatesAreMissing() throws Exception {
+    // ADR-0022: a host brands the picker by overriding renderPickerHtml; its markup must not
+    // depend on CSL's own templates being on the classpath.
+    final var filter =
+        new CamundaLoginPickerFilter(registrations("oidc", "oidc-secondary"), "/login") {
+          @Override
+          boolean defaultTemplatesAvailable() {
+            return false;
+          }
+
+          @Override
+          protected String renderPickerHtml(final Map<String, String> links) {
+            return "<p>host picker: " + String.join(",", links.keySet()) + "</p>";
+          }
+        };
+    final var request = new MockHttpServletRequest("GET", "/login");
+    final var response = new MockHttpServletResponse();
+
+    filter.doFilter(request, response, filterChain);
+
+    verify(filterChain, never()).doFilter(request, response);
+    assertThat(response.getStatus()).isEqualTo(200);
+    assertThat(response.getContentAsString())
+        .startsWith("<p>host picker: ")
+        .containsPattern("/oauth2/authorization/oidc[,<]")
+        .contains("/oauth2/authorization/oidc-secondary");
   }
 
   private static ClientRegistrationRepository registrations(final String... registrationIds) {

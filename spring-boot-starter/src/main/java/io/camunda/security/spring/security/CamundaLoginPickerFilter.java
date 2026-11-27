@@ -7,6 +7,7 @@
  */
 package io.camunda.security.spring.security;
 
+import io.camunda.security.spring.html.HtmlTemplate;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -15,6 +16,10 @@ import java.io.IOException;
 import java.time.Year;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
@@ -23,7 +28,6 @@ import org.springframework.security.web.RedirectStrategy;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
-import org.springframework.web.util.HtmlUtils;
 
 /**
  * Renders a Camunda-branded identity-provider picker for {@code GET} requests to the configured
@@ -50,88 +54,10 @@ import org.springframework.web.util.HtmlUtils;
  */
 public class CamundaLoginPickerFilter extends OncePerRequestFilter {
 
-  private static final String CAMUNDA_LOGO_SVG =
-      "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"96\" height=\"33\" viewBox=\"0 0 96 33\""
-          + " role=\"img\" aria-label=\"Camunda\"><path fill-rule=\"evenodd\" d=\"M96 26.907V33H0v"
-          + "-6.093zM43.826.296l3.602.003-.015 17.744c-.002 1.643.718 2.235 1.864 2.236s1.867-.59"
-          + " 1.869-2.233L51.16.302l3.405.003-.015 17.514c-.003 3.68-1.838 5.782-5.375 5.779s-5.368"
-          + "-2.108-5.365-5.788zM5.385 0c3.537.003 5.368 2.108 5.365 5.788l-.002 2.234-3.405-.003"
-          + ".002-2.464c.001-1.643-.718-2.268-1.865-2.269-1.146 0-1.866.623-1.868 2.266l-.01 12.42c"
-          + "-.002 1.644.718 2.236 1.864 2.237s1.867-.59 1.869-2.233l.002-3.286 3.406.003-.003 3.056"
-          + "c-.003 3.68-1.838 5.782-5.375 5.779S-.003 21.42 0 17.74L.01 5.779C.013 2.099 1.85-.003"
-          + " 5.385 0M87.08.332l5.272.005L96 23.342l-3.635-.003-.619-4.174-4.42-.004-.625"
-          + " 4.173-3.308-.003zM71.003.32 76.7.324c3.601.003 5.368 2.009 5.365 5.69l-.01 11.632c"
-          + "-.003 3.68-1.773 5.683-5.375 5.68l-5.698-.006zM56.989.307l4.519.004 3.688 13.771.011"
-          + "-13.768 3.21.003-.02 23.001-3.7-.003-4.472-16.663-.014 16.66-3.242-.003zM26.242.281l5.01"
-          + ".004 2.639 16.333L36.36.29l5.01.005-.02 23.001-3.405-.002.013-16.496-2.502"
-          + " 16.494-3.406-.003-2.67-16.268-.014 16.265-3.144-.003zM15.666.27l5.272.005 3.648"
-          + " 23.005-3.635-.003-.618-4.174-4.42-.003-.627 4.172-3.307-.003zm58.936 3.337-.014 16.43"
-          + " 2.03.002c1.146 0 1.834-.59 1.836-2.233l.01-11.961c.001-1.643-.686-2.235-1.832-2.236zm"
-          + "14.93.801L87.788 16.04l3.471.003zm-71.414-.06-1.745 11.63 3.471.003z\"/></svg>";
+  static final String PAGE_TEMPLATE_RESOURCE = "login-picker-page.html";
+  static final String PROVIDER_TEMPLATE_RESOURCE = "login-picker-provider.html";
 
-  // Tokens mirror @camunda/design-system's .c4-ui scope (light: zinc-50/900, dark: zinc-950/50;
-  // brand accent #c2410c / #fb923c; 0.5rem radius) — the design system the webapp is migrating to.
-  // No external font/stylesheet requests: this page must render standalone, without depending on a
-  // CSP allowlist or third-party network access.
-  private static final String PAGE_TEMPLATE =
-      "<!doctype html>\n"
-          + "<html lang=\"en\">\n"
-          + "<head>\n"
-          + "<meta charset=\"UTF-8\">\n"
-          + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
-          + "<title>Sign in to Camunda</title>\n"
-          + "<style>\n"
-          + ":root{--background:#fafafa;--foreground:#18181b;--border:rgba(161,161,170,.2);"
-          + "--popover:#fff;--popover-foreground:#18181b;--muted-foreground:#71717a;"
-          + "--accent-action-default:#c2410c;--ring:#ea580c;--radius-md:.375rem;--radius-lg:.5rem}\n"
-          + "@media(prefers-color-scheme:dark){:root{--background:#09090b;--foreground:#fafafa;"
-          + "--border:rgba(255,255,255,.16);--popover:#27272a;--popover-foreground:#fafafa;"
-          + "--muted-foreground:#a1a1aa;--accent-action-default:#fb923c;--ring:#fb923c}}\n"
-          + "*{box-sizing:border-box}\n"
-          + "body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;"
-          + "background:var(--background);color:var(--foreground);"
-          + "font-family:system-ui,-apple-system,\"Segoe UI\",sans-serif;padding:2rem 1rem}\n"
-          + ".frame{width:100%;max-width:26rem;display:flex;flex-direction:column;gap:1.25rem}\n"
-          + ".card{background:var(--popover);color:var(--popover-foreground);"
-          + "border:1px solid var(--border);border-radius:var(--radius-lg);"
-          + "box-shadow:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.04);"
-          + "padding:1.5rem;display:flex;flex-direction:column;gap:1rem}\n"
-          + ".logo{display:flex;justify-content:center;padding-top:.5rem;color:var(--foreground)}\n"
-          + ".logo svg{display:block;height:2rem;width:auto;fill:currentColor}\n"
-          + "h1{margin:0 0 .5rem;padding-bottom:.5rem;font-size:1.25rem;line-height:1.4;"
-          + "font-weight:600;letter-spacing:-.01em;text-align:center}\n"
-          + ".subtitle{margin:-.75rem 0 .25rem;text-align:center;font-size:.875rem;"
-          + "color:var(--muted-foreground)}\n"
-          + ".providers{display:flex;flex-direction:column;gap:.5rem}\n"
-          + ".provider{display:flex;align-items:center;gap:.75rem;width:100%;height:2.75rem;"
-          + "padding:0 .875rem;background:var(--popover);border:1px solid var(--border);"
-          + "border-radius:var(--radius-md);color:var(--popover-foreground);"
-          + "font-family:inherit;font-size:.875rem;font-weight:500;text-align:left;"
-          + "text-decoration:none;cursor:pointer;"
-          + "transition:border-color 120ms ease}\n"
-          + ".provider:hover{border-color:var(--accent-action-default)}\n"
-          + ".provider:focus-visible{outline:2px solid var(--ring);outline-offset:2px}\n"
-          + ".provider-name{flex:1}\n"
-          + ".provider-arrow{flex:none;color:var(--muted-foreground)}\n"
-          + "footer{text-align:center;font-size:.75rem;color:var(--muted-foreground)}\n"
-          + "</style>\n"
-          + "</head>\n"
-          + "<body>\n"
-          + "<div class=\"frame\">\n"
-          + "<div class=\"card\">\n"
-          + "<div class=\"logo\" aria-hidden=\"true\">"
-          + CAMUNDA_LOGO_SVG
-          + "</div>\n"
-          + "<h1>Sign in to Camunda</h1>\n"
-          + "<p class=\"subtitle\">Choose an identity provider to continue.</p>\n"
-          + "<div class=\"providers\">\n"
-          + "{{providers}}"
-          + "</div>\n"
-          + "</div>\n"
-          + "<footer>&copy; Camunda Services GmbH, {{year}}. All rights reserved.</footer>\n"
-          + "</div>\n"
-          + "</body>\n"
-          + "</html>\n";
+  private static final Logger LOG = LoggerFactory.getLogger(CamundaLoginPickerFilter.class);
 
   private final ClientRegistrationRepository clientRegistrationRepository;
   private final String loginPageUrl;
@@ -184,11 +110,20 @@ public class CamundaLoginPickerFilter extends OncePerRequestFilter {
       redirectStrategy.sendRedirect(request, response, links.keySet().iterator().next());
       return;
     }
+    final String html;
+    try {
+      html = renderPickerHtml(withContextPath(links, request.getContextPath()));
+    } catch (final MissingTemplatesException e) {
+      // Only the default rendering needs the templates: a host's renderPickerHtml override that
+      // doesn't call super still renders without them.
+      filterChain.doFilter(request, response);
+      return;
+    }
 
     response.setStatus(HttpServletResponse.SC_OK);
     response.setContentType(MediaType.TEXT_HTML_VALUE);
     response.setCharacterEncoding("UTF-8");
-    response.getWriter().write(renderPickerHtml(withContextPath(links, request.getContextPath())));
+    response.getWriter().write(html);
   }
 
   /**
@@ -219,22 +154,57 @@ public class CamundaLoginPickerFilter extends OncePerRequestFilter {
    * HTML-escaped before being written into the page. The URL is already servlet
    * context-path–prefixed (see {@link #withContextPath}); a subclass overriding this method should
    * not prefix it again.
+   *
+   * <p>If the default templates are missing from the classpath, this default rendering throws an
+   * exception the filter turns into a fall-through to the next filter, as it did before the page
+   * moved into templates. An override that doesn't call {@code super} doesn't need them.
    */
   protected String renderPickerHtml(final Map<String, String> links) {
-    final var providers = new StringBuilder();
-    links.forEach(
-        (url, name) ->
-            providers
-                .append("<a class=\"provider\" href=\"")
-                .append(HtmlUtils.htmlEscape(url))
-                .append("\">")
-                .append("<span class=\"provider-name\">")
-                .append(HtmlUtils.htmlEscape(name))
-                .append("</span>")
-                .append("<span class=\"provider-arrow\" aria-hidden=\"true\">&rarr;</span>")
-                .append("</a>\n"));
-    return PAGE_TEMPLATE
-        .replace("{{providers}}", providers.toString())
-        .replace("{{year}}", String.valueOf(Year.now().getValue()));
+    if (!defaultTemplatesAvailable()) {
+      throw new MissingTemplatesException();
+    }
+    final String provider = Templates.PROVIDER.orElseThrow(MissingTemplatesException::new);
+    final String providers =
+        links.entrySet().stream()
+            .map(
+                link ->
+                    HtmlTemplate.render(
+                        provider, Map.of("href", link.getKey(), "name", link.getValue())))
+            .collect(Collectors.joining());
+    return HtmlTemplate.render(
+        Templates.PAGE.orElseThrow(MissingTemplatesException::new),
+        Map.of("year", String.valueOf(Year.now().getValue())),
+        Map.of("providers", providers));
+  }
+
+  /** Whether the default picker templates loaded; package-private so tests can simulate a gap. */
+  boolean defaultTemplatesAvailable() {
+    return Templates.PAGE.isPresent() && Templates.PROVIDER.isPresent();
+  }
+
+  /** The default rendering's templates are missing; the filter falls through to the next one. */
+  private static final class MissingTemplatesException extends IllegalStateException {
+    private MissingTemplatesException() {
+      super("The login picker templates are missing; see the log.");
+    }
+  }
+
+  /**
+   * The page's markup and styling, kept as resources in this class's package so they can be read
+   * and edited as HTML (ADR-0050). The style tokens mirror {@code @camunda/design-system}'s {@code
+   * .c4-ui} scope (light: zinc-50/900, dark: zinc-950/50; brand accent #c2410c / #fb923c; 0.5rem
+   * radius), the design system the webapp is migrating to. The page makes no external font or
+   * stylesheet requests: it must render standalone, without depending on a CSP allowlist or
+   * third-party network access. Loaded on the first rendered picker rather than with the filter, by
+   * the holder idiom.
+   */
+  private static final class Templates {
+    private static final String FALLBACK =
+        "the login page falls through to the next filter instead of showing the picker.";
+    private static final Optional<String> PAGE =
+        HtmlTemplate.load(CamundaLoginPickerFilter.class, PAGE_TEMPLATE_RESOURCE, LOG, FALLBACK);
+    private static final Optional<String> PROVIDER =
+        HtmlTemplate.load(
+            CamundaLoginPickerFilter.class, PROVIDER_TEMPLATE_RESOURCE, LOG, FALLBACK);
   }
 }
