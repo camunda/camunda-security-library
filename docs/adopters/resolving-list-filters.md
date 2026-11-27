@@ -67,7 +67,9 @@ var caller   = authenticationProvider.getCamundaAuthentication();
 var required = RequiredAuthorization.of(b -> b.resourceType(SOME_TYPE).permissionType(SOME_PERM));
 var resolved = resourceAccessProvider.resolveResourceAccess(caller, required);
 
-if (resolved.denied()) {
+// Guard on the filter, not on denied(). A conditional-only result reads as denied() through
+// the old fields, but its AnyOf filter still grants access, so test for None (ADR-0051).
+if (resolved.filter() instanceof ResourceAccessFilter.None) {
   return emptyPage();                         // None → nothing visible
 }
 R authzQuery = resolved.filter().translate(myTranslator);
@@ -144,7 +146,9 @@ var required = RequiredAuthorization.of(
     b -> b.resourceType(AuthorizationResourceType.FILE).permissionType(PermissionType.READ));
 var resolved = resourceAccessProvider.resolveResourceAccess(caller, required);
 
-if (resolved.denied()) {
+// Test the filter, not denied(): a conditional-only result reads as denied() but its
+// AnyOf filter still grants matching files (ADR-0051).
+if (resolved.filter() instanceof ResourceAccessFilter.None) {
   return Page.empty(pageable);
 }
 Specification<File> authz = resolved.filter().translate(translator);
