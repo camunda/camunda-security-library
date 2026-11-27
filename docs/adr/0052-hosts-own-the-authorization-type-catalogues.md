@@ -2,7 +2,7 @@
 
 **DRI**: Ben Sheppard (Ben-Sheppard)
 
-**Deciders**: Ben Sheppard (Ben-Sheppard), Bojan Mudric (bmudric)
+**Deciders**: Ben Sheppard (Ben-Sheppard), Bojan Mudric (bmudric), Steve Pascoe (StevePascoe)
 
 **Status**: Proposed. On acceptance, this ADR supersedes [ADR-0008](0008-authz-enum-ownership-and-layered-usage.md).
 
@@ -52,13 +52,17 @@ The first step adds the contracts in CSL ([#880](https://github.com/camunda/camu
 **D6. Two rules enforce the ownership, one for each direction.**
 A host type must not leak into CSL core. An ArchUnit rule in the CSL build enforces this. The rule covers all of `io.camunda.security.core..`, as the existing `DomainArchTest` does for the protocol boundary, not only `core.authz`. The wider scope also covers the requirement builders in `core.auth` (`RequiredAuthorization`), which hold the typed helpers (`processDefinition()`, `userTask()`) until D4 moves them to the host side. The core classes depend only on the abstract contracts from D2 and the CSL enums that carry the owned types. They do not depend on a concrete host enum or on `camunda-security-protocol`. A host must use the CSL constants for the owned types. ArchUnit cannot check this, because the CSL build does not see the host code. CSL ships a contract test that each host runs in its build. The test makes sure that each owned type maps once from a host constant with the same name. It also makes sure that no other host constant uses a CSL name. The ArchUnit rule works because the migration splits the owned types and the host types into different Java types. ArchUnit checks type dependencies, not single enum constants.
 
-## Open points
+## Follow-up work
 
-These need a decision in the next revision, with @p-wunderlich and @StevePascoe. The shared-kernel approach above (owned types as CSL constants, name-based matching, the host contract test) needs their sign-off before the ADR moves to Accepted.
+Ben Sheppard, Bojan Mudric, and Steve Pascoe reviewed this ADR on 2026-11-27. They agreed the ownership model (D1 to D6). CSL owns a type when CSL needs the common construct and the logic behind it, for example `USER`, `GROUP`, and `ROLE`. Each host defines its own host-only types through the contract from D2, for example `WORKSPACE` and `FILE` for Hub, or `PROCESS_DEFINITION` for OC. This splits ownership on a clear line and reduces the cost to adopt CSL.
 
-- How OC publishes its catalogue to Hub: runtime registration, or a versioned schema file.
-- What OC does with an unknown type when the Hub policy and the OC cluster run different versions. One option is to skip the authorization and log a warning. The other is to reject the whole snapshot. A skip denies more access than the Hub policy shows. A reject also blocks the next changes, which include revocations.
-- The host-supplied registry that converts a name into a type. Configuration binding needs it, because `ConfiguredAuthorization` binds the enums by name and Spring cannot bind an interface. Persistence and the Hub snapshots also need it.
+The items below do not block this ADR. The ownership model stands on its own. Each item is a separate follow-up.
+
+- Governance boundaries. A boundary such as a tenant or a workspace needs a check in CSL, but the host owns the name. This ADR keeps `TENANT` as a CSL-owned type with its current check (D3), to keep the impact small. A later ADR defines the general model, where CSL checks the boundary and the host names it, and applies the model to `TENANT` and to the Hub workspace.
+- The fan-out to many components. When Hub is the central authority, CSL does not hold the types of every component. Hub reads each catalogue from its component, for example OC or Optimize. The next point covers how a component publishes its catalogue.
+- How a component publishes its catalogue to Hub: runtime registration, or a versioned schema file.
+- What a component does with an unknown type when the Hub policy and the component run different versions. One option skips the authorization and logs a warning. The other rejects the whole snapshot. A skip denies more access than the Hub policy shows. A reject also blocks the next changes, which include revocations.
+- The host-supplied registry that converts a name into a type. Configuration binding needs it, because `ConfiguredAuthorization` binds the enums by name, and Spring cannot bind an interface. Persistence and the Hub snapshots also need it.
 
 ## Alternatives considered
 
