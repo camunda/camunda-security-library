@@ -2,7 +2,7 @@
 
 **DRI**: Ben Sheppard (Ben-Sheppard)
 
-**Deciders**: Ben Sheppard (Ben-Sheppard)
+**Deciders**: Ben Sheppard (Ben-Sheppard), Lukas Taake (mrm1st3r), Timothy Cline (timcline)
 
 **Status**: Accepted (1.4.0)
 
