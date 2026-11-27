@@ -241,6 +241,18 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
   }
 
   /**
+   * Reads the optional forward-link fragment like {@link #loadPageTemplate}, but logs what its
+   * absence actually does: the failed-login page is still shown, only without the link.
+   */
+  static Optional<String> loadForwardLinkTemplate(final String resource) {
+    return HtmlTemplate.load(
+        OAuth2AuthenticationExceptionHandler.class,
+        resource,
+        LOG,
+        "the failed-login page is shown without its optional forward link.");
+  }
+
+  /**
    * Whether the request's Accept header prefers HTML: HTML is acceptable ({@code q > 0}) and no
    * other type is accepted at a higher quality. A bare {@code *}{@code /*} does not count as asking
    * for HTML, and an exact {@code text/html} entry overrides {@code text/*}. An unparseable header
@@ -283,6 +295,6 @@ public final class OAuth2AuthenticationExceptionHandler implements Authenticatio
   private static final class PageTemplate {
     private static final Optional<String> HTML = loadPageTemplate(PAGE_TEMPLATE_RESOURCE);
     private static final Optional<String> FORWARD_LINK =
-        loadPageTemplate(FORWARD_LINK_TEMPLATE_RESOURCE);
+        loadForwardLinkTemplate(FORWARD_LINK_TEMPLATE_RESOURCE);
   }
 }

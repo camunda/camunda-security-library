@@ -397,6 +397,29 @@ class OAuth2AuthenticationExceptionHandlerTest {
   }
 
   @Test
+  void shouldReportAMissingForwardLinkAsOnlyDroppingTheLink() {
+    // the page still renders without the optional link, so the log must not claim a plain response
+    assertThat(OAuth2AuthenticationExceptionHandler.loadForwardLinkTemplate("no-such-link.html"))
+        .isEmpty();
+    assertThat(logs.list)
+        .filteredOn(event -> event.getLevel() == Level.ERROR)
+        .extracting(ILoggingEvent::getFormattedMessage)
+        .singleElement()
+        .asString()
+        .contains("no-such-link.html")
+        .contains("without its optional forward link")
+        .doesNotContain("plain error response");
+  }
+
+  @Test
+  void shouldLoadTheShippedForwardLinkTemplate() {
+    assertThat(
+            OAuth2AuthenticationExceptionHandler.loadForwardLinkTemplate(
+                OAuth2AuthenticationExceptionHandler.FORWARD_LINK_TEMPLATE_RESOURCE))
+        .isPresent();
+  }
+
+  @Test
   void shouldLoadTheShippedPageTemplate() {
     assertThat(
             OAuth2AuthenticationExceptionHandler.loadPageTemplate(
