@@ -11,8 +11,6 @@ import io.camunda.security.api.context.ResourceAttributeExtractor;
 import io.camunda.security.api.model.CamundaAuthentication;
 import io.camunda.security.api.model.authz.AuthorizationResourceType;
 import io.camunda.security.api.model.authz.ConditionalMembership;
-import io.camunda.security.api.model.authz.MembershipCondition;
-import io.camunda.security.api.model.authz.Operand;
 import io.camunda.security.api.model.authz.ResourceAttribute;
 import java.util.List;
 import java.util.Map;
@@ -26,11 +24,13 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Finds the conditional role memberships of a principal that apply to a resource (ADR-0041). A
- * membership applies when the attributes of the resource meet all of its conditions.
+ * membership applies when the attributes of the resource meet all of its conditions, by the rule in
+ * {@link ResourceConditions}.
  *
  * <p>Anything that cannot be evaluated does not apply (ADR-0041 D4): no single extractor for the
- * resource, an extractor that throws, and an attribute without a value. {@link Operand.Equals}
- * compares the values literally, so {@code *} matches only {@code *}.
+ * resource, an extractor that throws, and an attribute without a value. {@link
+ * io.camunda.security.api.model.authz.Operand.Equals} compares the values literally, so {@code *}
+ * matches only {@code *}.
  */
 final class ConditionalRoleEvaluator {
 
@@ -57,18 +57,20 @@ final class ConditionalRoleEvaluator {
     if (memberships.isEmpty()) {
       return Set.of();
     }
-    final var attributes = attributesOf(resourceType, resource);
+    final var attributes = attributesOf(authentication, resourceType, resource);
     if (attributes.isEmpty()) {
       return Set.of();
     }
     return memberships.stream()
-        .filter(membership -> allMet(membership.conditions(), attributes))
+        .filter(membership -> ResourceConditions.allMet(membership.conditions(), attributes))
         .map(ConditionalMembership::id)
         .collect(Collectors.toUnmodifiableSet());
   }
 
   private <T> Map<ResourceAttribute, Set<String>> attributesOf(
-      final AuthorizationResourceType resourceType, final T resource) {
+      final CamundaAuthentication authentication,
+      final AuthorizationResourceType resourceType,
+      final T resource) {
     final Optional<ResourceAttributeExtractor<T>> extractor =
         extractorRegistry.findMatching(resourceType, resource);
     if (extractor.isEmpty()) {
@@ -83,12 +85,13 @@ final class ConditionalRoleEvaluator {
       final var attributes = extractor.get().attributesOf(resource);
       return attributes == null ? Map.of() : attributes;
     } catch (final RuntimeException e) {
-      reportExtractorFailure(resourceType, extractor.get(), e);
+      reportExtractorFailure(authentication, resourceType, extractor.get(), e);
       return Map.of();
     }
   }
 
   private void reportExtractorFailure(
+      final CamundaAuthentication authentication,
       final AuthorizationResourceType resourceType,
       final ResourceAttributeExtractor<?> extractor,
       final RuntimeException e) {
@@ -96,35 +99,35 @@ final class ConditionalRoleEvaluator {
     if (reportedFailingExtractors.add(extractorClass)) {
       LOG.warn(
           "ResourceAttributeExtractor [{}] for resource type [{}] threw while reading resource"
-              + " attributes; conditional role memberships do not apply. Later failures of this"
-              + " extractor are logged at DEBUG.",
+              + " attributes for a [{}] principal; conditional role memberships do not apply. Later"
+              + " failures of this extractor are logged at DEBUG.",
           extractorClass.getName(),
           resourceType,
+          principalType(authentication),
           e);
     } else {
       LOG.debug(
           "ResourceAttributeExtractor [{}] for resource type [{}] threw while reading resource"
-              + " attributes; conditional role memberships do not apply",
+              + " attributes for a [{}] principal; conditional role memberships do not apply",
           extractorClass.getName(),
           resourceType,
+          principalType(authentication),
           e);
     }
   }
 
-  private static boolean allMet(
-      final List<MembershipCondition> conditions,
-      final Map<ResourceAttribute, Set<String>> attributes) {
-    return conditions.stream().allMatch(condition -> isMet(condition, attributes));
-  }
-
-  private static boolean isMet(
-      final MembershipCondition condition, final Map<ResourceAttribute, Set<String>> attributes) {
-    final Set<String> values = attributes.get(condition.attribute());
-    if (values == null || values.isEmpty()) {
-      return false;
+  // The principal type only (never the username, which may be PII): matches the convention of the
+  // other authorization logs. See the no-personal-data logging rule in AGENTS.md.
+  private static String principalType(final CamundaAuthentication authentication) {
+    if (authentication.isAnonymous()) {
+      return "anonymous";
     }
-    return switch (condition.operand()) {
-      case Operand.Equals equals -> values.contains(equals.value());
-    };
+    if (authentication.authenticatedUsername() != null) {
+      return "user";
+    }
+    if (authentication.authenticatedClientId() != null) {
+      return "client";
+    }
+    return "unknown";
   }
 }

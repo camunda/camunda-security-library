@@ -63,6 +63,7 @@ This section contains detailed Architectural Decision Records (ADRs) for the Cam
 - [ADR-0048: The existing claim settings recognise user tokens on the API chains](../adr/0048-recognising-user-tokens-on-the-api-chains.md)
 - [ADR-0049: A Spring-free client adds credentials to calls to CSL-protected services](../adr/0049-spring-free-client-for-csl-protected-services.md)
 - [ADR-0050: `TokenValidatorFactory` is final, and hosts add token checks through extra validators](../adr/0050-token-validator-factory-is-final.md)
+- [ADR-0051: The filter is the source of truth for a resource-access result](../adr/0051-filter-is-the-source-of-truth-for-resource-access.md)
 
 ### 9.2 Vision documents (proposed, not yet decided)
 

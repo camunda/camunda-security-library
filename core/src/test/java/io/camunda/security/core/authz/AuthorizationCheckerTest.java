@@ -9,6 +9,7 @@ package io.camunda.security.core.authz;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.camunda.security.api.model.CamundaAuthentication;
@@ -67,6 +68,36 @@ class AuthorizationCheckerTest {
             authScope, CamundaAuthentication.of(a -> a), RequiredAuthorization.of(a -> a));
 
     assertThat(result).isFalse();
+  }
+
+  @Test
+  void noScopesReturnedForRoleWhenRoleIdIsNullOrBlank() {
+    final var authorization = RequiredAuthorization.of(a -> a);
+
+    assertThat(
+            authorizationChecker.retrieveAuthorizedAuthorizationScopesOfRole(null, authorization))
+        .isEmpty();
+    assertThat(
+            authorizationChecker.retrieveAuthorizedAuthorizationScopesOfRole("  ", authorization))
+        .isEmpty();
+    verifyNoInteractions(scopeRepository);
+  }
+
+  @Test
+  void retrievesScopesForARole() {
+    final var scope = AuthorizationScope.id("d1");
+    final RequiredAuthorization<?> authorization =
+        RequiredAuthorization.of(b -> b.processDefinition().readProcessDefinition());
+    when(scopeRepository.findAuthorizedScopes(
+            eq(Map.of(EntityType.ROLE, Set.of("editor"))),
+            eq(AuthorizationResourceType.PROCESS_DEFINITION),
+            eq(PermissionType.READ_PROCESS_DEFINITION)))
+        .thenReturn(List.of(scope));
+
+    assertThat(
+            authorizationChecker.retrieveAuthorizedAuthorizationScopesOfRole(
+                "editor", authorization))
+        .containsExactly(scope);
   }
 
   @Nested
