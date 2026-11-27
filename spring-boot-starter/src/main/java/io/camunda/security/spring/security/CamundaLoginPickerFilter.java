@@ -110,7 +110,12 @@ public class CamundaLoginPickerFilter extends OncePerRequestFilter {
       redirectStrategy.sendRedirect(request, response, links.keySet().iterator().next());
       return;
     }
-    if (Templates.PAGE.isEmpty() || Templates.PROVIDER.isEmpty()) {
+    final String html;
+    try {
+      html = renderPickerHtml(withContextPath(links, request.getContextPath()));
+    } catch (final MissingTemplatesException e) {
+      // Only the default rendering needs the templates: a host's renderPickerHtml override that
+      // doesn't call super still renders without them.
       filterChain.doFilter(request, response);
       return;
     }
@@ -118,7 +123,7 @@ public class CamundaLoginPickerFilter extends OncePerRequestFilter {
     response.setStatus(HttpServletResponse.SC_OK);
     response.setContentType(MediaType.TEXT_HTML_VALUE);
     response.setCharacterEncoding("UTF-8");
-    response.getWriter().write(renderPickerHtml(withContextPath(links, request.getContextPath())));
+    response.getWriter().write(html);
   }
 
   /**
@@ -149,9 +154,16 @@ public class CamundaLoginPickerFilter extends OncePerRequestFilter {
    * HTML-escaped before being written into the page. The URL is already servlet
    * context-path–prefixed (see {@link #withContextPath}); a subclass overriding this method should
    * not prefix it again.
+   *
+   * <p>If the default templates are missing from the classpath, this default rendering throws an
+   * exception the filter turns into a fall-through to the next filter, as it did before the page
+   * moved into templates. An override that doesn't call {@code super} doesn't need them.
    */
   protected String renderPickerHtml(final Map<String, String> links) {
-    final String provider = Templates.PROVIDER.orElseThrow(Templates::missing);
+    if (!defaultTemplatesAvailable()) {
+      throw new MissingTemplatesException();
+    }
+    final String provider = Templates.PROVIDER.orElseThrow(MissingTemplatesException::new);
     final String providers =
         links.entrySet().stream()
             .map(
@@ -160,9 +172,21 @@ public class CamundaLoginPickerFilter extends OncePerRequestFilter {
                         provider, Map.of("href", link.getKey(), "name", link.getValue())))
             .collect(Collectors.joining());
     return HtmlTemplate.render(
-        Templates.PAGE.orElseThrow(Templates::missing),
+        Templates.PAGE.orElseThrow(MissingTemplatesException::new),
         Map.of("year", String.valueOf(Year.now().getValue())),
         Map.of("providers", providers));
+  }
+
+  /** Whether the default picker templates loaded; package-private so tests can simulate a gap. */
+  boolean defaultTemplatesAvailable() {
+    return Templates.PAGE.isPresent() && Templates.PROVIDER.isPresent();
+  }
+
+  /** The default rendering's templates are missing; the filter falls through to the next one. */
+  private static final class MissingTemplatesException extends IllegalStateException {
+    private MissingTemplatesException() {
+      super("The login picker templates are missing; see the log.");
+    }
   }
 
   /**
@@ -182,9 +206,5 @@ public class CamundaLoginPickerFilter extends OncePerRequestFilter {
     private static final Optional<String> PROVIDER =
         HtmlTemplate.load(
             CamundaLoginPickerFilter.class, PROVIDER_TEMPLATE_RESOURCE, LOG, FALLBACK);
-
-    private static IllegalStateException missing() {
-      return new IllegalStateException("The login picker templates are missing; see the log.");
-    }
   }
 }
