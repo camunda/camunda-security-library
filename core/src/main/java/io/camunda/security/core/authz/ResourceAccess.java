@@ -8,7 +8,9 @@
 package io.camunda.security.core.authz;
 
 import io.camunda.security.core.auth.RequiredAuthorization;
+import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * The result of evaluating whether a principal has access to a specific resource.
@@ -19,12 +21,81 @@ import java.util.Objects;
  *
  * <p>Produced by {@link ResourceAccessProvider} implementations and consumed by search backends to
  * determine query-level resource filters.
+ *
+ * <p>{@link #filter()} describes the accessible resources. A result created without a filter
+ * derives one: {@link ResourceAccessFilter.None} when denied, {@link ResourceAccessFilter.All} for
+ * a wildcard, and the resource IDs of {@code authorization} otherwise. It is {@code null} for an
+ * allowed result that names no resource IDs, for example one expressed through resource property
+ * names.
+ *
+ * <p>The old fields ({@code allowed}, {@code wildcard}, {@code authorization}) describe only the
+ * access that they can express: a grant on every resource, or on fixed resource IDs. They do not
+ * describe a conditional grant, which only {@link #filter()} describes. A result whose only access
+ * is conditional has {@code allowed == false} and no resource IDs, so a reader of the old fields
+ * treats it as denied and shows nothing (ADR-0051). A consumer that honours conditional grants must
+ * read {@link #filter()}, and must not act on {@code allowed} alone. {@link
+ * ConditionalResourceAccessProvider} creates such results.
+ *
+ * <p>The canonical constructor rejects a contradictory state: a denied result with a filter other
+ * than {@link ResourceAccessFilter.None}, an allowed result with the {@code None} filter, or a
+ * {@code wildcard} flag that disagrees with an {@link ResourceAccessFilter.All} filter. These were
+ * silently constructible through the earlier three-argument constructor; they now fail fast. Build
+ * results through the factory methods ({@link #allowed}, {@link #denied}, {@link #wildcard}, {@link
+ * #of}) rather than the constructor.
+ *
+ * @param allowed whether the principal may access the resource, or for a list, at least one
+ *     resource
+ * @param wildcard whether the principal may access every resource
+ * @param authorization the requirement that produced this result
+ * @param filter the accessible resources, or {@code null} if this result does not describe them
  */
 public record ResourceAccess(
-    boolean allowed, boolean wildcard, RequiredAuthorization<?> authorization) {
+    boolean allowed,
+    boolean wildcard,
+    RequiredAuthorization<?> authorization,
+    ResourceAccessFilter filter) {
 
   public ResourceAccess {
     Objects.requireNonNull(authorization, "Authorization must not be null");
+    if (!allowed
+        && !(filter instanceof ResourceAccessFilter.None)
+        && !(filter instanceof ResourceAccessFilter.AnyOf)) {
+      throw new IllegalArgumentException("A denied access must carry the None or AnyOf filter");
+    }
+    if (allowed && filter instanceof ResourceAccessFilter.None) {
+      throw new IllegalArgumentException("An allowed access must not carry the None filter");
+    }
+    if (wildcard != (filter instanceof ResourceAccessFilter.All)) {
+      throw new IllegalArgumentException(
+          "A wildcard access must carry the All filter, and only a wildcard access may");
+    }
+    if (filter instanceof ResourceAccessFilter.AnyOf
+        && allowed != authorization.hasAnyResourceIds()) {
+      throw new IllegalArgumentException(
+          "An AnyOf result is allowed exactly when its authorization lists resource IDs (ADR-0051)");
+    }
+  }
+
+  /** Creates a result whose {@link #filter()} is derived from the other fields. */
+  public ResourceAccess(
+      final boolean allowed, final boolean wildcard, final RequiredAuthorization<?> authorization) {
+    this(allowed, wildcard, authorization, derivedFilter(allowed, wildcard, authorization));
+  }
+
+  private static ResourceAccessFilter derivedFilter(
+      final boolean allowed, final boolean wildcard, final RequiredAuthorization<?> authorization) {
+    if (!allowed) {
+      return new ResourceAccessFilter.None();
+    }
+    if (wildcard) {
+      return new ResourceAccessFilter.All();
+    }
+    if (authorization != null && authorization.hasAnyResourceIds()) {
+      return ResourceAccessFilter.anyOf(
+          List.of(
+              new ResourceAccessFilter.Term(Set.copyOf(authorization.resourceIds()), List.of())));
+    }
+    return null;
   }
 
   /** Returns {@code true} when the principal does not have access to the resource. */
@@ -38,6 +109,24 @@ public record ResourceAccess(
    */
   public static ResourceAccess allowed(final RequiredAuthorization<?> authorization) {
     return new ResourceAccess(true, false, authorization);
+  }
+
+  /**
+   * Creates the result for the resources that {@code filter} describes: denied for {@link
+   * ResourceAccessFilter.None}, a wildcard for {@link ResourceAccessFilter.All}, and the {@code
+   * filter} for {@link ResourceAccessFilter.AnyOf}. For an {@code AnyOf}, the result is allowed
+   * when {@code authorization} lists resource IDs, and denied otherwise, so a conditional-only
+   * result reads as denied through the old fields (ADR-0051). {@code authorization} must list
+   * exactly the IDs that the filter grants without a condition.
+   */
+  public static ResourceAccess of(
+      final RequiredAuthorization<?> authorization, final ResourceAccessFilter filter) {
+    return switch (filter) {
+      case ResourceAccessFilter.None none -> denied(authorization);
+      case ResourceAccessFilter.All all -> wildcard(authorization);
+      case ResourceAccessFilter.AnyOf anyOf ->
+          new ResourceAccess(authorization.hasAnyResourceIds(), false, authorization, anyOf);
+    };
   }
 
   /** Creates an access result indicating the principal is not permitted to access the resource. */

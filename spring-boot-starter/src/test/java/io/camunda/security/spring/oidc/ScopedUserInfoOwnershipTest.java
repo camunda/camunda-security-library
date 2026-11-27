@@ -82,7 +82,9 @@ class ScopedUserInfoOwnershipTest {
                 new OidcAccessTokenDecoderFactory(
                     new JWSKeySelectorFactory(),
                     new TokenValidatorFactory(
-                        Map.of("b", providerB), OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of())))
+                        Map.of("b", providerB), OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of())),
+                new TokenValidatorFactory(
+                    Map.of(), OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of()))
             .buildIssuerAwareDecoder(scope);
 
     // when
@@ -119,7 +121,9 @@ class ScopedUserInfoOwnershipTest {
                 new OidcAccessTokenDecoderFactory(
                     new JWSKeySelectorFactory(),
                     new TokenValidatorFactory(
-                        Map.of("b", providerB), OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of())))
+                        Map.of("b", providerB), OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of())),
+                new TokenValidatorFactory(
+                    Map.of(), OidcConfiguration.DEFAULT_CLOCK_SKEW, List.of()))
             .buildIssuerAwareDecoder(scope);
 
     // when

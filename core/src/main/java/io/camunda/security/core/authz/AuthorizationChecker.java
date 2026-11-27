@@ -34,10 +34,12 @@ import org.slf4j.LoggerFactory;
  * results (rather than throwing) when the authentication carries no identifiable principal — this
  * covers anonymous and unset authentication contexts.
  *
- * <p>The public methods correspond to the query patterns used by OC:
+ * <p>The public methods correspond to the query patterns of the hosts:
  *
  * <ul>
  *   <li>{@link #retrieveAuthorizedAuthorizationScopes} — bulk scope fetch for search pre-filtering
+ *   <li>{@link #retrieveAuthorizedAuthorizationScopesOfRole} — bulk scope fetch for one role, for
+ *       the list filter over conditional memberships
  *   <li>{@link #retrieveAuthorizedPropertyScopes} — bulk property-scope fetch for the
  *       property-based authorization check
  *   <li>{@link #isAuthorized} — point check for get-by-id operations
@@ -92,6 +94,28 @@ public final class AuthorizationChecker {
           return scopes;
         },
         List::of);
+  }
+
+  /**
+   * Returns the {@link AuthorizationScope} records that the role {@code roleId} holds, on its own,
+   * for the resource type and permission declared in {@code authorization}. Used for a role of a
+   * conditional membership, whose grants count only where its conditions are met. Returns an empty
+   * list for a null or blank {@code roleId}, so a missing role grants nothing rather than failing
+   * the whole list query, as the sibling {@code retrieve*} methods do for an unidentifiable
+   * principal.
+   *
+   * @param roleId the ID of the role
+   * @param authorization the authorization requirement specifying the resource type and permission
+   */
+  public List<AuthorizationScope> retrieveAuthorizedAuthorizationScopesOfRole(
+      final String roleId, final RequiredAuthorization<?> authorization) {
+    if (roleId == null || roleId.isBlank()) {
+      return List.of();
+    }
+    return scopeRepository.findAuthorizedScopes(
+        Map.of(EntityType.ROLE, Set.of(roleId)),
+        authorization.resourceType(),
+        authorization.permissionType());
   }
 
   /**

@@ -1,5 +1,5 @@
 ---
-status: Accepted (partially superseded by ADR-0042)
+status: Accepted (partially superseded by ADR-0046 and ADR-0050)
 ---
 
 # ADR-0006: Additive multi-IdP OIDC configuration with an issuer-aware `JwtDecoder`
@@ -8,7 +8,7 @@ status: Accepted (partially superseded by ADR-0042)
 
 ## Status
 
-Accepted. Partially superseded by [ADR-0042](0042-resilient-jwks-refresh-and-timeouts.md): only the `JWKSource` construction settings (`refreshAheadCache(false)` and Nimbus's default HTTP timeouts) are replaced. Every other decision in this record stays in force.
+Accepted. Partially superseded by [ADR-0046](0046-resilient-jwks-refresh-and-timeouts.md): only the `JWKSource` construction settings (`refreshAheadCache(false)` and Nimbus's default HTTP timeouts) are replaced. Partially superseded by [ADR-0050](0050-token-validator-factory-is-final.md): ADR-0050 replaces only the per-registration clock skew override in the consequences. Every other decision in this record stays in force.
 
 ## Context
 
