@@ -280,6 +280,11 @@ class HubRoleCatalogueTest {
               CATALOG_ASSET, Set.of(PermissionType.READ),
               WORKSPACE_MEMBER, Set.of(PermissionType.READ)));
 
+  // Commenter and Viewer carry ENVIRONMENT READ: Hub makes workspace environments visible to every
+  // workspace member, so a task worker or analyst can reach the runtime applications (e.g.
+  // Tasklist,
+  // Optimize). Visibility only — changing an environment still needs UPDATE. Runtime access is
+  // granted at the orchestration-cluster level.
   private static final Role COMMENTER =
       new Role(
           "Commenter",
@@ -289,6 +294,7 @@ class HubRoleCatalogueTest {
               FILE, Set.of(PermissionType.READ),
               COMMENT, Set.of(PermissionType.CREATE, PermissionType.READ),
               CATALOG_ASSET, Set.of(PermissionType.READ),
+              ENVIRONMENT, Set.of(PermissionType.READ),
               WORKSPACE_MEMBER, Set.of(PermissionType.READ)));
 
   private static final Role VIEWER =
@@ -298,7 +304,8 @@ class HubRoleCatalogueTest {
               WORKSPACE, Set.of(PermissionType.READ),
               PROJECT, Set.of(PermissionType.READ),
               FILE, Set.of(PermissionType.READ),
-              CATALOG_ASSET, Set.of(PermissionType.READ)));
+              CATALOG_ASSET, Set.of(PermissionType.READ),
+              ENVIRONMENT, Set.of(PermissionType.READ)));
 
   // --- Built-in API roles (public API scopes become roles) ---
 
