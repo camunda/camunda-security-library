@@ -1,0 +1,193 @@
+name: live-idp-tests
+
+# The live identity provider tests call real Entra and Auth0 tenants, so they never run on a pull
+# request: a fork has no credentials, and an outage at the provider would block merges. They run
+# on a schedule and on demand instead, which is what the Engineering DRI asked for in
+# https://github.com/camunda/camunda-security-library/issues/811#issuecomment-6919094595
+#
+# The job runs the whole build rather than the two live tests alone. The live tests skip
+# themselves when the tenant settings are absent, so the same command is what a developer runs,
+# and a full verification on each run costs little and catches more.
+
+on:
+  schedule:
+    # Every working day at 05:00 UTC, before the European working day. The run is short and the
+    # tenants are free, so a daily check finds a break on the day it happens rather than up to a
+    # week later.
+    - cron: '0 5 * * 1-5'
+  workflow_dispatch:
+
+concurrency:
+  group: live-idp-tests
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  live-idp-tests:
+    name: Verify against real Entra and Auth0 tenants
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write # mint a GitHub OIDC token for Vault JWT auth
+    env:
+      # Read here and not from Vault on purpose. A Vault outage is one of the failures this job
+      # has to report, so the notification must not depend on Vault. The steps that use this skip
+      # themselves while the secret is absent, so the job works before the secret is added.
+      SLACK_WEBHOOK_URL: ${{ secrets.CI_CD_SLACK_WEBHOOK_URL }}
+      BUILD_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Java
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '25.0.5+8.0.LTS'
+          cache: maven
+
+      # The Identity team (@camunda/identity) owns the tenant settings below. Two of them expire,
+      # and this job fails on the day either one does:
+      #
+      #   ENTRA_CLIENT_SECRET   2028-11-19
+      #   ENTRA_REFRESH_TOKEN   about 2027-02-21, 90 days after the sign-in that produced it
+      #
+      # To renew the refresh token, sign in as the Entra test user, take the new refresh token
+      # from the response, and write it to the Vault path below. The sign-in is interactive
+      # because the tenant forces multifactor registration, which is the same reason the test
+      # cannot use the password flow. That user's password is in the same Vault path as
+      # ENTRA_TEST_USER_PASSWORD, which no step here reads. The Auth0 client secret and the
+      # Auth0 test user password do not expire.
+      - name: Import the tenant settings
+        id: tenants
+        uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc # v4.0.0
+        with:
+          url: ${{ secrets.VAULT_ADDR }}
+          method: jwt
+          role: ${{ secrets.VAULT_JWT_ROLE }}
+          path: ${{ secrets.VAULT_JWT_PATH }}
+          jwtGithubAudience: ${{ secrets.VAULT_JWT_AUDIENCE }}
+          exportEnv: false
+          secrets: |
+            secret/data/products/identity/ci/csl-live-idp-tests ENTRA_TENANT_ID;
+            secret/data/products/identity/ci/csl-live-idp-tests ENTRA_CLIENT_ID;
+            secret/data/products/identity/ci/csl-live-idp-tests ENTRA_CLIENT_SECRET;
+            secret/data/products/identity/ci/csl-live-idp-tests ENTRA_REFRESH_TOKEN;
+            secret/data/products/identity/ci/csl-live-idp-tests AUTH0_DOMAIN;
+            secret/data/products/identity/ci/csl-live-idp-tests AUTH0_CLIENT_ID;
+            secret/data/products/identity/ci/csl-live-idp-tests AUTH0_CLIENT_SECRET;
+            secret/data/products/identity/ci/csl-live-idp-tests AUTH0_AUDIENCE;
+            secret/data/products/identity/ci/csl-live-idp-tests AUTH0_TEST_USER;
+            secret/data/products/identity/ci/csl-live-idp-tests AUTH0_TEST_USER_PASSWORD;
+
+      # A silent skip is the failure mode to fear here. The live tests skip themselves when a
+      # setting is absent, so a missing secret would leave this job green while nothing was
+      # measured. Fail before the build instead, and name the variable that is missing.
+      - name: Check the tenant settings arrived
+        env:
+          CSL_ENTRA_TENANT_ID: ${{ steps.tenants.outputs.ENTRA_TENANT_ID }}
+          CSL_ENTRA_CLIENT_ID: ${{ steps.tenants.outputs.ENTRA_CLIENT_ID }}
+          CSL_ENTRA_CLIENT_SECRET: ${{ steps.tenants.outputs.ENTRA_CLIENT_SECRET }}
+          CSL_ENTRA_REFRESH_TOKEN: ${{ steps.tenants.outputs.ENTRA_REFRESH_TOKEN }}
+          CSL_AUTH0_DOMAIN: ${{ steps.tenants.outputs.AUTH0_DOMAIN }}
+          CSL_AUTH0_CLIENT_ID: ${{ steps.tenants.outputs.AUTH0_CLIENT_ID }}
+          CSL_AUTH0_CLIENT_SECRET: ${{ steps.tenants.outputs.AUTH0_CLIENT_SECRET }}
+          CSL_AUTH0_AUDIENCE: ${{ steps.tenants.outputs.AUTH0_AUDIENCE }}
+          CSL_AUTH0_TEST_USER: ${{ steps.tenants.outputs.AUTH0_TEST_USER }}
+          CSL_AUTH0_TEST_USER_PASSWORD: ${{ steps.tenants.outputs.AUTH0_TEST_USER_PASSWORD }}
+        run: |
+          missing=""
+          for name in CSL_ENTRA_TENANT_ID CSL_ENTRA_CLIENT_ID CSL_ENTRA_CLIENT_SECRET \
+                      CSL_ENTRA_REFRESH_TOKEN CSL_AUTH0_DOMAIN CSL_AUTH0_CLIENT_ID \
+                      CSL_AUTH0_CLIENT_SECRET CSL_AUTH0_AUDIENCE CSL_AUTH0_TEST_USER \
+                      CSL_AUTH0_TEST_USER_PASSWORD; do
+            # Blank, not just empty. The tests call String.isBlank(), so a value of spaces or a
+            # stray newline would skip them while passing an emptiness check, and the job would
+            # stay green having measured nothing.
+            if [ -z "$(printf '%s' "${!name}" | tr -d '[:space:]')" ]; then
+              missing="$missing $name"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::The live tests would skip themselves. Missing or blank in Vault:$missing"
+            exit 1
+          fi
+          echo "All ten tenant settings arrived."
+
+      - name: Verify
+        env:
+          CSL_ENTRA_TENANT_ID: ${{ steps.tenants.outputs.ENTRA_TENANT_ID }}
+          CSL_ENTRA_CLIENT_ID: ${{ steps.tenants.outputs.ENTRA_CLIENT_ID }}
+          CSL_ENTRA_CLIENT_SECRET: ${{ steps.tenants.outputs.ENTRA_CLIENT_SECRET }}
+          CSL_ENTRA_REFRESH_TOKEN: ${{ steps.tenants.outputs.ENTRA_REFRESH_TOKEN }}
+          CSL_AUTH0_DOMAIN: ${{ steps.tenants.outputs.AUTH0_DOMAIN }}
+          CSL_AUTH0_CLIENT_ID: ${{ steps.tenants.outputs.AUTH0_CLIENT_ID }}
+          CSL_AUTH0_CLIENT_SECRET: ${{ steps.tenants.outputs.AUTH0_CLIENT_SECRET }}
+          CSL_AUTH0_AUDIENCE: ${{ steps.tenants.outputs.AUTH0_AUDIENCE }}
+          CSL_AUTH0_TEST_USER: ${{ steps.tenants.outputs.AUTH0_TEST_USER }}
+          CSL_AUTH0_TEST_USER_PASSWORD: ${{ steps.tenants.outputs.AUTH0_TEST_USER_PASSWORD }}
+        run: ./mvnw --batch-mode --no-transfer-progress -T 1C clean verify
+
+      - name: Upload the failsafe reports
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: failsafe-reports
+          path: '**/target/failsafe-reports/**'
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # Report the result to Slack, in the same shape as the Mgmt Identity compatibility check.
+      # The success message stays for now, for the reason that check gives: a scheduled job that
+      # quietly stops running is exactly the failure this job exists to catch, and one short
+      # message a day is the cheapest proof that it ran. Replace both with a summary if the
+      # channel gets noisy.
+      #
+      # Both steps skip themselves while CI_CD_SLACK_WEBHOOK_URL is absent, so the job keeps
+      # working until the secret is added to this repository.
+      - name: Notify Slack of success
+        if: success() && env.SLACK_WEBHOOK_URL != ''
+        uses: slackapi/slack-github-action@0bc3581177d9a0f8d555e07689384b376528e8fa # v4.1.0
+        with:
+          webhook: ${{ env.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":white_check_mark: The <${{ env.BUILD_URL }}|live IdP tests> passed against the real Entra and Auth0 tenants."
+                  }
+                }
+              ]
+            }
+
+      - name: Notify Slack of failure
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
+        uses: slackapi/slack-github-action@0bc3581177d9a0f8d555e07689384b376528e8fa # v4.1.0
+        with:
+          webhook: ${{ env.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":x: The <${{ env.BUILD_URL }}|live IdP tests> failed."
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "Check the <${{ env.BUILD_URL }}|run>. If the Entra user token failed, the refresh token has most likely expired. The workflow file says how to renew it."
+                  }
+                }
+              ]
+            }
